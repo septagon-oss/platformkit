@@ -56,7 +56,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	// resolution that fails open on an error then fails open on every request.
 	t.Run("a miss is not an error", func(t *testing.T) {
 		c := fresh(t, store)
-		val, found, err := c.Get(context.Background(), cache.Shared("host").Entry("nobody.example"))
+		val, found, _, err := c.Get(context.Background(), cache.Shared("host").Entry("nobody.example"))
 		if err != nil || found || val != nil {
 			t.Fatalf("Get of an absent key = %q, found=%v, err=%v; want nothing, false, no error", val, found, err)
 		}
@@ -69,10 +69,10 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		c := fresh(t, store)
 		want := []byte{0x00, 0xff, 0xfe, 'a', 0x00, 0x7f, 0xc3, 0x28}
 		key := cache.Shared("host").Entry("example.com")
-		if err := c.Set(context.Background(), key, want, time.Minute); err != nil {
+		if err := fill(t, c, key, want, time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
-		got, found, err := c.Get(context.Background(), key)
+		got, found, _, err := c.Get(context.Background(), key)
 		if err != nil || !found {
 			t.Fatalf("Get: found=%v err=%v", found, err)
 		}
@@ -87,12 +87,16 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("an entry with no lifetime is refused", func(t *testing.T) {
 		c := fresh(t, store)
 		key := cache.Shared("host").Entry("example.com")
+		_, _, under, err := c.Get(context.Background(), key)
+		if err != nil {
+			t.Fatalf("reading the generation to write under: %v", err)
+		}
 		for _, ttl := range []time.Duration{0, -time.Second} {
-			err := c.Set(context.Background(), key, []byte("x"), ttl)
+			err := c.Set(context.Background(), key, []byte("x"), ttl, under)
 			if !errors.Is(err, cache.ErrNoLifetime) {
 				t.Errorf("Set with ttl %s = %v; want ErrNoLifetime", ttl, err)
 			}
-			if _, found, err := c.Get(context.Background(), key); err != nil || found {
+			if _, found, _, err := c.Get(context.Background(), key); err != nil || found {
 				t.Errorf("the refused Set wrote something: found=%v err=%v", found, err)
 			}
 		}
@@ -105,14 +109,14 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("an entry expires", func(t *testing.T) {
 		c := fresh(t, store)
 		key := cache.Shared("host").Entry("example.com")
-		if err := c.Set(context.Background(), key, []byte("x"), 60*time.Millisecond); err != nil {
+		if err := fill(t, c, key, []byte("x"), 60*time.Millisecond); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
-		if _, found, err := c.Get(context.Background(), key); err != nil || !found {
+		if _, found, _, err := c.Get(context.Background(), key); err != nil || !found {
 			t.Fatalf("the entry was not there to begin with: found=%v err=%v", found, err)
 		}
 		time.Sleep(300 * time.Millisecond)
-		if _, found, err := c.Get(context.Background(), key); err != nil || found {
+		if _, found, _, err := c.Get(context.Background(), key); err != nil || found {
 			t.Errorf("the entry outlived its lifetime: found=%v err=%v", found, err)
 		}
 	})
@@ -123,10 +127,10 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("two replicas share one entry", func(t *testing.T) {
 		a, b := fresh(t, store), fresh(t, store)
 		key := cache.Of(tenantA, "app").Entry("composed")
-		if err := a.Set(context.Background(), key, []byte("one"), time.Minute); err != nil {
+		if err := fill(t, a, key, []byte("one"), time.Minute); err != nil {
 			t.Fatalf("Set through replica A: %v", err)
 		}
-		got, found, err := b.Get(context.Background(), key)
+		got, found, _, err := b.Get(context.Background(), key)
 		if err != nil || !found || !bytes.Equal(got, []byte("one")) {
 			t.Fatalf("replica B read %q, found=%v, err=%v; the store is not shared", got, found, err)
 		}
@@ -138,13 +142,13 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("what one replica deletes the other cannot read", func(t *testing.T) {
 		a, b := fresh(t, store), fresh(t, store)
 		key := cache.Of(tenantA, "app").Entry("composed")
-		if err := a.Set(context.Background(), key, []byte("one"), time.Minute); err != nil {
+		if err := fill(t, a, key, []byte("one"), time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
 		if err := a.Delete(context.Background(), key); err != nil {
 			t.Fatalf("Delete: %v", err)
 		}
-		if _, found, err := b.Get(context.Background(), key); err != nil || found {
+		if _, found, _, err := b.Get(context.Background(), key); err != nil || found {
 			t.Fatalf("replica B still reads an entry replica A deleted: found=%v err=%v", found, err)
 		}
 		// The same invalidation run twice is not an error the second time: a route
@@ -161,7 +165,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("another tenant's entry is unreachable", func(t *testing.T) {
 		c := fresh(t, store)
 		key := cache.Of(tenantA, "app").Entry("settings")
-		if err := c.Set(context.Background(), key, []byte("A's"), time.Minute); err != nil {
+		if err := fill(t, c, key, []byte("A's"), time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
 		for _, other := range []cache.Key{
@@ -169,7 +173,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 			cache.Shared("app").Entry("settings"),
 			cache.Of(tenantA, "other").Entry("settings"),
 		} {
-			if _, found, err := c.Get(context.Background(), other); err != nil || found {
+			if _, found, _, err := c.Get(context.Background(), other); err != nil || found {
 				t.Errorf("%s reads another owner's entry: found=%v err=%v", other, found, err)
 			}
 		}
@@ -180,10 +184,10 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	// caller shares — which is what a "convention" about the nil tenant becomes.
 	t.Run("a scope naming no tenant is refused", func(t *testing.T) {
 		c := fresh(t, store)
-		if err := c.Set(context.Background(), cache.Of(uuid.Nil, "app").Entry("x"), []byte("y"), time.Minute); !errors.Is(err, cache.ErrNoScope) {
+		if err := c.Set(context.Background(), cache.Of(uuid.Nil, "app").Entry("x"), []byte("y"), time.Minute, cache.Generation{}); !errors.Is(err, cache.ErrNoScope) {
 			t.Errorf("Set under a scope built from the nil tenant = %v; want ErrNoScope", err)
 		}
-		if _, _, err := c.Get(context.Background(), cache.Key{}); !errors.Is(err, cache.ErrNoScope) {
+		if _, _, _, err := c.Get(context.Background(), cache.Key{}); !errors.Is(err, cache.ErrNoScope) {
 			t.Errorf("Get of a key nobody built = %v; want ErrNoScope", err)
 		}
 		if err := c.Move(context.Background(), cache.Scope{}); !errors.Is(err, cache.ErrNoScope) {
@@ -198,10 +202,10 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	t.Run("a key name cannot forge another owner's prefix", func(t *testing.T) {
 		c := fresh(t, store)
 		forged := cache.Of(tenantA, "app").Entry(tenantB.String() + "/secret")
-		if err := c.Set(context.Background(), forged, []byte("A's"), time.Minute); err != nil {
+		if err := fill(t, c, forged, []byte("A's"), time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
-		if _, found, err := c.Get(context.Background(), cache.Of(tenantB, "app").Entry("secret")); err != nil || found {
+		if _, found, _, err := c.Get(context.Background(), cache.Of(tenantB, "app").Entry("secret")); err != nil || found {
 			t.Errorf("tenant B read what tenant A wrote under B's own id: found=%v err=%v", found, err)
 		}
 	})
@@ -214,10 +218,14 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		c := fresh(t, store)
 		ctx := context.Background()
 		scope := cache.Shared("bulk")
+		_, _, under, err := c.Get(ctx, scope.Entry("entry-0000"))
+		if err != nil {
+			t.Fatalf("reading the generation to write under: %v", err)
+		}
 		keys := make([]cache.Key, 0, 1000)
 		for i := range 1000 {
 			k := scope.Entry(fmt.Sprintf("entry-%04d", i))
-			if err := c.Set(ctx, k, []byte("x"), time.Minute); err != nil {
+			if err := c.Set(ctx, k, []byte("x"), time.Minute, under); err != nil {
 				t.Fatalf("Set %s: %v", k, err)
 			}
 			keys = append(keys, k)
@@ -226,7 +234,7 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 			t.Fatalf("Delete of 1000 keys: %v", err)
 		}
 		for _, k := range []cache.Key{keys[0], keys[500], keys[999]} {
-			if _, found, err := c.Get(ctx, k); err != nil || found {
+			if _, found, _, err := c.Get(ctx, k); err != nil || found {
 				t.Fatalf("%s survived the delete: found=%v err=%v", k, found, err)
 			}
 		}
@@ -273,34 +281,35 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		ctx := context.Background()
 		scope := cache.Shared("host")
 		live := scope.Entry("still.example")
-		if err := c.Set(ctx, live, []byte("tenant"), time.Minute); err != nil {
+		if err := fill(t, c, live, []byte("tenant"), time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
 		if err := c.Move(ctx, scope); err != nil {
 			t.Fatalf("Move: %v", err)
 		}
-		if _, found, err := c.Get(ctx, live); err != nil || found {
+		if _, found, _, err := c.Get(ctx, live); err != nil || found {
 			t.Errorf("an entry written before the move survived it: found=%v err=%v", found, err)
 		}
-		// The Scope is not closed to new work: a Set that reads the open generation
-		// after the move is believed.
-		if err := c.Set(ctx, live, []byte("fresh"), time.Minute); err != nil {
+		// The Scope is not closed to new work: a Set stamped by a read made after
+		// the move is believed. The stamp, not the clock, is what a write lives or
+		// dies by — Generations below is the same rule from the other side.
+		if err := fill(t, c, live, []byte("fresh"), time.Minute); err != nil {
 			t.Fatalf("Set after the move: %v", err)
 		}
-		if got, found, err := c.Get(ctx, live); err != nil || !found || !bytes.Equal(got, []byte("fresh")) {
+		if got, found, _, err := c.Get(ctx, live); err != nil || !found || !bytes.Equal(got, []byte("fresh")) {
 			t.Errorf("a write after the move was not believed: %q found=%v err=%v", got, found, err)
 		}
 		// A move of one Scope leaves every other owner's entries alone: closing
 		// the installation's host index must not be a way to lose a tenant's own
 		// composed value.
 		mine := cache.Of(tenantA, "app").Entry("settings")
-		if err := c.Set(ctx, mine, []byte("kept"), time.Minute); err != nil {
+		if err := fill(t, c, mine, []byte("kept"), time.Minute); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
 		if err := c.Move(ctx, scope); err != nil {
 			t.Fatalf("Move: %v", err)
 		}
-		if got, found, err := c.Get(ctx, mine); err != nil || !found || !bytes.Equal(got, []byte("kept")) {
+		if got, found, _, err := c.Get(ctx, mine); err != nil || !found || !bytes.Equal(got, []byte("kept")) {
 			t.Errorf("moving another scope lost a tenant's entry: %q found=%v err=%v", got, found, err)
 		}
 	})
@@ -311,11 +320,18 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 	// closed.
 	t.Run("an unreachable store is an error and not a panic", func(t *testing.T) {
 		c := fresh(t, failing)
+		live := fresh(t, store)
 		ctx := context.Background()
 		key := cache.Shared("host").Entry("example.com")
+		// The stamp the write below carries comes from a store that is answering,
+		// so what the case refuses is a write a real caller could have made.
+		_, _, under, err := live.Get(ctx, key)
+		if err != nil {
+			t.Fatalf("reading the generation to write under: %v", err)
+		}
 		for name, call := range map[string]func() error{
-			"Get":    func() error { _, _, err := c.Get(ctx, key); return err },
-			"Set":    func() error { return c.Set(ctx, key, []byte("x"), time.Minute) },
+			"Get":    func() error { _, _, _, err := c.Get(ctx, key); return err },
+			"Set":    func() error { return c.Set(ctx, key, []byte("x"), time.Minute, under) },
 			"Delete": func() error { return c.Delete(ctx, key) },
 			"Move":   func() error { return c.Move(ctx, cache.Shared("host")) },
 		} {
@@ -341,20 +357,21 @@ func Conformance(t *testing.T, store Store, failing Failing) {
 		if err := c.Close(); !errors.Is(err, cache.ErrClosed) {
 			t.Errorf("second Close = %v; want ErrClosed", err)
 		}
-		if _, _, err := c.Get(context.Background(), cache.Shared("host").Entry("example.com")); !errors.Is(err, cache.ErrClosed) {
+		if _, _, _, err := c.Get(context.Background(), cache.Shared("host").Entry("example.com")); !errors.Is(err, cache.ErrClosed) {
 			t.Errorf("Get after Close = %v; want ErrClosed", err)
 		}
 	})
 }
 
 // Generations runs the port's own invalidation rules against a store the suite
-// controls, so the one interleaving that matters can be ordered rather than hoped
-// for: the write that read the generation *before* the move and lands *after* it.
+// controls, so the two things a racing write turns on can be observed instead of
+// raced for: which generation it was stamped by, and how many commands it cost the
+// store to say so.
 //
 // It runs wherever kit/cache's store runs — both adapters share that code — and it
 // is the case a delete-only adapter passes today and must not.
 func Generations(t *testing.T) {
-	t.Run("a write stamped with a closed generation is not believed", func(t *testing.T) {
+	t.Run("a write stamped by the read before a move is not believed", func(t *testing.T) {
 		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
 		c, err := cache.New("pkit", backend)
 		if err != nil {
@@ -363,28 +380,64 @@ func Generations(t *testing.T) {
 		ctx := context.Background()
 		key := cache.Shared("host").Entry("acme.example")
 
-		// Replica B misses, loads, and begins to write. Its first command is the
-		// generation read; it stops there, before the write, and the suite holds it
-		// there while the suspension is committed and invalidated in replica A.
-		backend.pauseAfterRead()
-		errc := make(chan error, 1)
-		go func() { errc <- c.Set(ctx, key, []byte("the tenant as it was before the suspension"), time.Minute) }()
-		<-backend.paused
-		if err := c.Move(ctx, cache.Shared("host")); err != nil {
-			t.Fatalf("Move during the racing write: %v", err)
+		// Replica B misses, and the miss hands it the generation it missed under.
+		// It goes to the loader — the slow part, the one a suspension overtakes —
+		// and replica A commits the suspension and moves the Scope while B is away.
+		// Nothing orders these two any more: the stamp is the synchronisation.
+		_, found, under, err := c.Get(ctx, key)
+		if err != nil || found {
+			t.Fatalf("the read that decided the load: found=%v err=%v", found, err)
 		}
-		backend.resume()
-		if err := <-errc; err != nil {
-			t.Fatalf("the racing Set: %v", err)
+		if err := c.Move(ctx, cache.Shared("host")); err != nil {
+			t.Fatalf("Move during the racing load: %v", err)
 		}
 
-		if _, found, err := c.Get(ctx, key); err != nil || found {
+		// B writes what it loaded. The port neither refuses nor warns: the entry
+		// carries a closed generation, which is the state a delete left it in, and
+		// it expires on the lifetime this call was made with.
+		reads, writes := backend.commands()
+		if err := c.Set(ctx, key, []byte("the tenant as it was before the suspension"), time.Minute, under); err != nil {
+			t.Fatalf("the racing Set: %v", err)
+		}
+		// The stamp travelled for free. A write that asked the store what is open
+		// would cost one more command on every fill — and would stamp this entry
+		// with the generation that just opened, which is the resurrection below.
+		if r, w := backend.commands(); r != reads || w != writes+1 {
+			t.Errorf("one fill cost %d reads and %d writes; want no read and one write", r-reads, w-writes)
+		}
+
+		if _, found, _, err := c.Get(ctx, key); err != nil || found {
 			t.Fatalf("the answer the installation revoked came back: found=%v err=%v; a delete alone leaves exactly this window", found, err)
 		}
 		// And the entry expires on its own: the resurrection is bounded even where
 		// the invalidation is missed, which is why every Set carries a lifetime.
 		if _, ok := backend.expiry(key.String()); !ok {
 			t.Error("the racing write was stored with no expiry")
+		}
+	})
+
+	t.Run("a write stamped by no read is refused and writes nothing", func(t *testing.T) {
+		backend := &scripted{entries: map[string]stored{}, counters: map[string]int64{}}
+		c, err := cache.New("pkit", backend)
+		if err != nil {
+			t.Fatalf("New: %v", err)
+		}
+		ctx := context.Background()
+		key := cache.Shared("host").Entry("acme.example")
+
+		// A Generation is not a number a caller may reach for. A write that names
+		// no read can only be stamped with the open generation at the moment of
+		// the write, which is the one stamp that survives a move that already
+		// happened — so it is refused rather than guessed at, and it writes nothing.
+		reads, writes := backend.commands()
+		if err := c.Set(ctx, key, []byte("a guess"), time.Minute, cache.Generation{}); !errors.Is(err, cache.ErrNoGeneration) {
+			t.Errorf("Set under no read = %v; want ErrNoGeneration", err)
+		}
+		if r, w := backend.commands(); r != reads || w != writes {
+			t.Errorf("the refused write cost the store %d reads and %d writes", r-reads, w-writes)
+		}
+		if _, found, _, err := c.Get(ctx, key); err != nil || found {
+			t.Errorf("the refused write stored something: found=%v err=%v", found, err)
 		}
 	})
 
@@ -661,6 +714,19 @@ func fresh(t *testing.T, store func(t *testing.T) cache.Cache) cache.Cache {
 	return c
 }
 
+// fill stores one value the only way a caller can: it reads the entry, then
+// stamps the write with the generation that read found open. Every incidental
+// write in this suite goes through it, so no adapter is ever exercised through a
+// write no real caller is able to make.
+func fill(t *testing.T, c cache.Cache, key cache.Key, val []byte, ttl time.Duration) error {
+	t.Helper()
+	_, _, under, err := c.Get(context.Background(), key)
+	if err != nil {
+		return err
+	}
+	return c.Set(context.Background(), key, val, ttl, under)
+}
+
 // countingCompose returns a compose that counts its calls and answers the entry's
 // own name, so a case can tell which value it got back.
 func countingCompose(calls *int, mu *sync.Mutex) func(context.Context, cache.Key) (string, error) {
@@ -687,12 +753,12 @@ func (s *switchable) swap(c cache.Cache) {
 	s.Cache = c
 }
 
-func (s *switchable) Get(ctx context.Context, k cache.Key) ([]byte, bool, error) {
+func (s *switchable) Get(ctx context.Context, k cache.Key) ([]byte, bool, cache.Generation, error) {
 	return s.current().Get(ctx, k)
 }
 
-func (s *switchable) Set(ctx context.Context, k cache.Key, val []byte, ttl time.Duration) error {
-	return s.current().Set(ctx, k, val, ttl)
+func (s *switchable) Set(ctx context.Context, k cache.Key, val []byte, ttl time.Duration, under cache.Generation) error {
+	return s.current().Set(ctx, k, val, ttl, under)
 }
 
 func (s *switchable) Delete(ctx context.Context, keys ...cache.Key) error {
@@ -727,31 +793,25 @@ type stored struct {
 	until time.Time
 }
 
-// scripted is a cache.Backend the suite drives: it behaves, except that it can be
-// told to stop after answering one read until the suite lets it go. That pause is
-// the race, and it is the reason this file holds a store of its own: the
-// interleaving cannot be tested by hoping two goroutines meet at the right moment.
+// scripted is a cache.Backend the suite drives, and it counts the commands it was
+// asked for. The port's own bookkeeping — which generation a write carries, how
+// many commands a fill costs — is invisible to a caller and to an adapter's
+// server unless the server is there to count it, and the store that skips is the
+// one case that cannot be.
 type scripted struct {
 	mu       sync.Mutex
 	entries  map[string]stored
 	counters map[string]int64
-	paused   chan struct{}
-	release  chan struct{}
-	armed    bool
-	once     sync.Once
+	reads    int
+	writes   int
 }
 
-// pauseAfterRead arms the one pause: the next read answers, reports on paused and
-// waits for resume. It fires once, because the invalidation the suite runs during
-// the pause reads the same counter.
-func (s *scripted) pauseAfterRead() {
-	s.paused = make(chan struct{}, 1)
-	s.release = make(chan struct{})
-	s.armed = true
+// commands is what the store was asked to do since the last look.
+func (s *scripted) commands() (reads, writes int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.reads, s.writes
 }
-
-// resume lets the paused command finish.
-func (s *scripted) resume() { s.once.Do(func() { close(s.release) }) }
 
 // counter reads a generation by the name the Scope gave it, without the caller
 // having to re-derive the whole key this package owns.
@@ -781,6 +841,7 @@ func (s *scripted) GetMany(ctx context.Context, keys ...string) ([]cache.Value, 
 		return nil, err
 	}
 	s.mu.Lock()
+	s.reads++
 	now := time.Now()
 	values := make([]cache.Value, 0, len(keys))
 	for _, k := range keys {
@@ -798,13 +859,7 @@ func (s *scripted) GetMany(ctx context.Context, keys ...string) ([]cache.Value, 
 		}
 		values = append(values, cache.Value{Val: e.val, Found: true})
 	}
-	armed := s.armed
-	s.armed = false
 	s.mu.Unlock()
-	if armed {
-		s.paused <- struct{}{}
-		<-s.release
-	}
 	return values, nil
 }
 
@@ -814,6 +869,7 @@ func (s *scripted) Set(ctx context.Context, key string, val []byte, ttl time.Dur
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.writes++
 	s.entries[key] = stored{val: val, until: time.Now().Add(ttl)}
 	return nil
 }

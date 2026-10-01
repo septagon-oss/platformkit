@@ -49,10 +49,12 @@ not allowed to be a different cache.
 
 A `Move` and not a `Delete` is what makes an invalidation survive the racing load: two replicas miss the same
 host, both call the loader, one finishes a suspension and deletes, and the other writes back the tenant it loaded
-before the suspension began. Every entry carries the generation it was written under, so a move closes what was
-already written and not only what happens to be there. Its cost is coarseness — one suspension costs every host
-one loader query on its next request — which for a handful of operator actions a day over an indexed query is the
-right trade, named in `kit/cache`'s own comment on `Move`.
+before the suspension began. Every entry carries the generation it was written under, and `Get` answers the
+generation its own read found open so that `Set` is stamped with **that** read and not with whatever is open when
+the write lands: a move during the loader closes the answer that loader is bringing back, so it serves the one
+request already waiting for it instead of every replica for the rest of the TTL. Its cost is coarseness — one
+suspension costs every host one loader query on its next request — which for a handful of operator actions a day
+over an indexed query is the right trade, named in `kit/cache`'s own comment on `Move`.
 
 An installation with one process may leave `cache.adapter` empty and get the in-process store, which is a complete
 deployment for one process; `kit/app` says so once at boot, because a claim nobody reads is not a warning. An

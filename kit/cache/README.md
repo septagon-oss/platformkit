@@ -16,8 +16,11 @@ store lives, and `kit/db/dbtest` as the precedent for a kernel package's harness
 **Added**: the two things no shared map gives you. A `Key` that cannot be built
 without saying whose value it is (`Of` for a tenant's, `Shared` for the
 installation's), and `Move`, which closes a generation: every entry carries the
-generation it was written under, so a write that read the counter before an
-invalidation and lands after it is not believed. `Group[V]` is decision 0028 §4's
+generation it was written under, and `Get` hands back the generation its own read
+found open so that `Set` can be stamped with the read that decided the load rather
+than with whatever happens to be open when the write lands. A write stamped before
+an invalidation and landing after it is therefore not believed, and `Set` asks the
+store for nothing to arrange it. `Group[V]` is decision 0028 §4's
 bounded lazy composition on the same port.
 
 **Made reusable**: `Backend`, four commands (`GetMany`, `Set`, `Delete`, `Raise`).

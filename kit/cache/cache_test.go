@@ -36,6 +36,17 @@ func TestComposedValuesAreBoundedAndShared(t *testing.T) {
 	cachetest.Groups(t, memory(t), broken(t))
 }
 
+// write stores one value the way a caller does: the write is stamped with the
+// generation a read of this key answered open, and there is no other way to write.
+func write(t *testing.T, c cache.Cache, key cache.Key, val []byte, ttl time.Duration) error {
+	t.Helper()
+	_, _, under, err := c.Get(context.Background(), key)
+	if err != nil {
+		return err
+	}
+	return c.Set(context.Background(), key, val, ttl, under)
+}
+
 // TestTheKeyNamesTheTenantFirst is the type's rule stated as bytes: two customers
 // asking the same question of the same namespace get different addresses, in the
 // same process and in the same store, whatever the name says.
@@ -45,19 +56,19 @@ func TestTheKeyNamesTheTenantFirst(t *testing.T) {
 	ctx := context.Background()
 	first, second := uuid.New(), uuid.New()
 	key := cache.Of(first, ns).Entry("example.com")
-	if err := c.Set(ctx, key, []byte("first"), time.Minute); err != nil {
+	if err := write(t, c, key, []byte("first"), time.Minute); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if _, found, err := c.Get(ctx, cache.Of(second, ns).Entry("example.com")); err != nil || found {
+	if _, found, _, err := c.Get(ctx, cache.Of(second, ns).Entry("example.com")); err != nil || found {
 		t.Fatalf("a second tenant read the first one's entry: found=%v err=%v", found, err)
 	}
 	// A name that repeats another tenant's whole address is still a name inside
 	// this one's key: the tenant segment is fixed-width and first.
 	forged := cache.Of(first, ns).Entry(second.String() + "/example.com")
-	if err := c.Set(ctx, forged, []byte("first"), time.Minute); err != nil {
+	if err := write(t, c, forged, []byte("first"), time.Minute); err != nil {
 		t.Fatalf("Set of a forged name: %v", err)
 	}
-	if _, found, err := c.Get(ctx, cache.Of(second, ns).Entry("example.com")); err != nil || found {
+	if _, found, _, err := c.Get(ctx, cache.Of(second, ns).Entry("example.com")); err != nil || found {
 		t.Fatalf("a forged name reached another tenant's address: found=%v err=%v", found, err)
 	}
 }
@@ -69,16 +80,16 @@ func TestAMoveReachesEveryReaderOfTheNamespace(t *testing.T) {
 	ctx := context.Background()
 	writer, reader := memory(t)(t), memory(t)(t)
 	host := cache.Shared("host").Entry("acme.example")
-	if err := writer.Set(ctx, host, []byte("the tenant behind it"), time.Minute); err != nil {
+	if err := write(t, writer, host, []byte("the tenant behind it"), time.Minute); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if _, found, err := reader.Get(ctx, host); err != nil || !found {
+	if _, found, _, err := reader.Get(ctx, host); err != nil || !found {
 		t.Fatalf("the second reader cannot see what the first wrote: found=%v err=%v", found, err)
 	}
 	if err := writer.Move(ctx, cache.Shared("host")); err != nil {
 		t.Fatalf("Move: %v", err)
 	}
-	if _, found, err := reader.Get(ctx, host); err != nil || found {
+	if _, found, _, err := reader.Get(ctx, host); err != nil || found {
 		t.Fatalf("the second reader still believes a closed generation: found=%v err=%v", found, err)
 	}
 }
@@ -88,13 +99,13 @@ func TestAMoveReachesEveryReaderOfTheNamespace(t *testing.T) {
 func TestANamespaceThatNamesNothingWritesNothing(t *testing.T) {
 	c := memory(t)(t)
 	ctx := context.Background()
-	if err := c.Set(ctx, cache.Shared("").Entry("x"), []byte("y"), time.Minute); err == nil {
+	if err := c.Set(ctx, cache.Shared("").Entry("x"), []byte("y"), time.Minute, cache.Generation{}); err == nil {
 		t.Error("Set under a scope with no namespace wrote something")
 	}
-	if err := c.Set(ctx, cache.Shared("a/b").Entry("x"), []byte("y"), time.Minute); err == nil {
+	if err := c.Set(ctx, cache.Shared("a/b").Entry("x"), []byte("y"), time.Minute, cache.Generation{}); err == nil {
 		t.Error("Set under a namespace holding a slash wrote something: a namespace with a slash in it cannot be separated from its entries")
 	}
-	if err := c.Set(ctx, cache.Shared("host").Entry(""), []byte("y"), time.Minute); err == nil {
+	if err := c.Set(ctx, cache.Shared("host").Entry(""), []byte("y"), time.Minute, cache.Generation{}); err == nil {
 		t.Error("Set of an entry with no name wrote something")
 	}
 }
@@ -125,7 +136,7 @@ func TestTheBudgetBoundsAStoreThatNeverAnswers(t *testing.T) {
 	}
 	defer c.Close()
 	start := time.Now()
-	if _, _, err := c.Get(context.Background(), cache.Shared("host").Entry("example.com")); err == nil {
+	if _, _, _, err := c.Get(context.Background(), cache.Shared("host").Entry("example.com")); err == nil {
 		t.Fatal("a store that never answered produced no error")
 	}
 	if elapsed := time.Since(start); elapsed > 2*time.Second {

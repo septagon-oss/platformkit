@@ -99,8 +99,9 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 		return t, nil
 	}
 	shared, err, _ := a.resolving.Do(host, func() (any, error) {
-		if t, ok := a.cached(ctx, key); ok {
-			return t, nil
+		resolved, hit, under := a.cachedUnder(ctx, key)
+		if hit {
+			return resolved, nil
 		}
 		// WithoutCancel, because this lookup is shared: the request that
 		// happened to arrive first must not take everyone else's answer with
@@ -113,61 +114,80 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 			t, err = a.opts.Tenants.ByHost(rctx, tx, host)
 			return err
 		})
-		return t, err
+		if err != nil {
+			return tenancy.Tenant{}, err
+		}
+		if t.ID == uuid.Nil {
+			// A loader that answers with the zero Tenant and no error has resolved
+			// nothing and does not know it. Taking it at its word would scope the
+			// request's transaction to the nil UUID and, worse, make every zero
+			// Principal a member of it. It is refused here, before the store sees it,
+			// so no path — this load or a later read of an entry — can put the nil
+			// tenant on a request.
+			return tenancy.Tenant{}, fmt.Errorf("the loader returned the zero tenant for %q", host)
+		}
+		// Successes only. Caching a failure would turn one blink of the database into
+		// half a minute of refusals for that host, and would let anyone fill the store
+		// with Host headers they invented; remembering only real tenants bounds it by
+		// data the operator owns.
+		buf, err := json.Marshal(newCachedTenant(t))
+		if err != nil {
+			// A tenant this package cannot serialise is a tenant this store has no
+			// business holding; the request is served from the loader anyway.
+			a.log.DebugContext(ctx, "httpx: could not put a host resolution in the shared store", "host", host, "error", err)
+			return t, nil
+		}
+		// The write carries the generation the miss above read open, so a move that
+		// lands during this query closes the entry it would have written: the answer
+		// the installation stopped believing serves the request that was already
+		// loading and is not believed for hostTTL by every replica that reads this
+		// store. One Set per shared load, not one per request that waited for it.
+		if err := a.opts.Cache.Set(ctx, key, buf, hostTTL, under); err != nil {
+			a.log.WarnContext(ctx, "httpx: could not store a host resolution; this replica will ask again",
+				"host", host, "error", err)
+		}
+		return t, nil
 	})
 	if err != nil {
 		return tenancy.Tenant{}, err
 	}
 	t := shared.(tenancy.Tenant)
-	if t.ID == uuid.Nil {
-		// A loader that answers with the zero Tenant and no error has resolved
-		// nothing and does not know it. Taking it at its word would scope the
-		// request's transaction to the nil UUID and, worse, make every zero
-		// Principal a member of it. The same check runs on the way out of the
-		// store, so neither path can put the nil tenant on a request.
-		return tenancy.Tenant{}, fmt.Errorf("the loader returned the zero tenant for %q", host)
-	}
-	// Successes only. Caching a failure would turn one blink of the database into
-	// half a minute of refusals for that host, and would let anyone fill the store
-	// with Host headers they invented; remembering only real tenants bounds it by
-	// data the operator owns.
-	buf, err := json.Marshal(newCachedTenant(t))
-	if err != nil {
-		// A tenant this package cannot serialise is a tenant this store has no
-		// business holding; the request is served from the loader anyway.
-		a.log.DebugContext(ctx, "httpx: could not put a host resolution in the shared store", "host", host, "error", err)
-		return t, nil
-	}
-	if err := a.opts.Cache.Set(ctx, key, buf, hostTTL); err != nil {
-		a.log.WarnContext(ctx, "httpx: could not store a host resolution; this replica will ask again",
-			"host", host, "error", err)
-	}
 	return t, nil
 }
 
-// cached reads the store. A miss, a value that will not decode, a resolution of the
-// nil tenant and an unreachable store are all "ask the loader": the database is the
-// truth for a resolution, so failing open to it is always correct and costs one
-// query. The distinction the log keeps is the one an operator needs — a store that
-// is answering nothing is an outage, and a cold cache is not.
+// cached reads the store and takes the answer at its word. See cachedUnder, which
+// is the same read with the half a caller needs to write.
 func (a *API) cached(ctx context.Context, key cache.Key) (tenancy.Tenant, bool) {
-	buf, found, err := a.opts.Cache.Get(ctx, key)
+	t, ok, _ := a.cachedUnder(ctx, key)
+	return t, ok
+}
+
+// cachedUnder reads the store and answers the generation its read found open,
+// which is what a write that follows this miss has to be stamped with.
+//
+// A miss, a value that will not decode, a resolution of the nil tenant and an
+// unreachable store are all "ask the loader": the database is the truth for a
+// resolution, so failing open to it is always correct and costs one query. The
+// distinction the log keeps is the one an operator needs — a store that is
+// answering nothing is an outage, and a cold cache is not.
+func (a *API) cachedUnder(ctx context.Context, key cache.Key) (tenancy.Tenant, bool, cache.Generation) {
+	buf, found, under, err := a.opts.Cache.Get(ctx, key)
 	if err != nil {
 		a.log.WarnContext(ctx, "httpx: the shared cache is not answering; resolving from the database",
 			"host", key.Entry(), "error", err)
-		return tenancy.Tenant{}, false
+		return tenancy.Tenant{}, false, cache.Generation{}
 	}
 	if !found {
-		return tenancy.Tenant{}, false
+		return tenancy.Tenant{}, false, under
 	}
 	var c cachedTenant
 	if err := json.Unmarshal(buf, &c); err != nil {
-		return tenancy.Tenant{}, false
+		return tenancy.Tenant{}, false, under
 	}
 	if c.ID == uuid.Nil {
-		return tenancy.Tenant{}, false
+		return tenancy.Tenant{}, false, under
 	}
-	return c.tenant(), true
+	return c.tenant(), true, under
 }
 
 // tenant resolves the request host to a tenant and puts it on the context,

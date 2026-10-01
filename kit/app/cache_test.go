@@ -181,13 +181,17 @@ func TestTheInProcessStoreSaysSoOnceAndReachesOneProcess(t *testing.T) {
 		t.Fatalf("cache: %v", err)
 	}
 	key := cache.Shared("hosts").Entry("acme.test")
-	if err := first.Set(t.Context(), key, []byte("acme"), time.Minute); err != nil {
+	_, _, under, err := first.Get(t.Context(), key)
+	if err != nil {
+		t.Fatalf("Get before the write: %v", err)
+	}
+	if err := first.Set(t.Context(), key, []byte("acme"), time.Minute, under); err != nil {
 		t.Fatalf("Set: %v", err)
 	}
-	if _, found, err := first.Get(t.Context(), key); err != nil || !found {
+	if _, found, _, err := first.Get(t.Context(), key); err != nil || !found {
 		t.Fatalf("Get through the store that wrote it = found %v, err %v, want the value back", found, err)
 	}
-	if _, found, err := second.Get(t.Context(), key); err != nil || found {
+	if _, found, _, err := second.Get(t.Context(), key); err != nil || found {
 		t.Fatalf("Get through a second process's store = found %v, err %v, want a miss: an in-process store reaches one process", found, err)
 	}
 	line := log.String()

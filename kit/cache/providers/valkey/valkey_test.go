@@ -61,12 +61,28 @@ func TestARequestCostsOneRoundTrip(t *testing.T) {
 	scope := cache.Of(uuid.New(), "resolution")
 	key := scope.Entry("acme.example")
 
-	if err := c.Set(ctx, key, []byte("acme"), time.Minute); err != nil {
+	// The write is stamped by a read, as every write is; the MGET below counts
+	// only what the lookup under test costs.
+	_, _, under, err := c.Get(ctx, key)
+	if err != nil {
+		t.Fatalf("Get before the write: %v", err)
+	}
+	sets, mgetsBefore := commands(t, url, "set"), commands(t, url, "mget")
+	if err := c.Set(ctx, key, []byte("acme"), time.Minute, under); err != nil {
 		t.Fatalf("Set: %v", err)
+	}
+	// One fill is one command. A Set that asked the store which generation is
+	// open would be a second one, and would stamp the entry with the generation
+	// that moved since the read that decided the load.
+	if got := commands(t, url, "set") - sets; got != 1 {
+		t.Errorf("one write cost %d SET commands; want 1", got)
+	}
+	if got := commands(t, url, "mget") - mgetsBefore; got != 0 {
+		t.Errorf("one write cost %d MGET commands; want 0 — the generation travels with the read, not with the write", got)
 	}
 	mgets := commands(t, url, "mget")
 	incrBefore := commands(t, url, "incr")
-	if _, found, err := c.Get(ctx, key); err != nil || !found {
+	if _, found, _, err := c.Get(ctx, key); err != nil || !found {
 		t.Fatalf("Get: found=%v err=%v", found, err)
 	}
 	if got := commands(t, url, "mget") - mgets; got != 1 {
@@ -78,7 +94,7 @@ func TestARequestCostsOneRoundTrip(t *testing.T) {
 	if got := commands(t, url, "incr") - incrBefore; got != 1 {
 		t.Errorf("one move cost %d INCR commands; want 1 — a move closes a generation, it does not sweep a prefix", got)
 	}
-	if _, found, err := c.Get(ctx, key); err != nil || found {
+	if _, found, _, err := c.Get(ctx, key); err != nil || found {
 		t.Errorf("Get after Move = found=%v err=%v; want a miss", found, err)
 	}
 }
@@ -94,10 +110,14 @@ func TestDeletingAThousandKeysIsTwoCommands(t *testing.T) {
 	ctx := context.Background()
 	scope := cache.Of(uuid.New(), "hosts")
 
+	_, _, under, err := c.Get(ctx, scope.Entry("host-0.example"))
+	if err != nil {
+		t.Fatalf("Get before the writes: %v", err)
+	}
 	keys := make([]cache.Key, 0, 1000)
 	for i := range 1000 {
 		k := scope.Entry("host-" + strconv.Itoa(i) + ".example")
-		if err := c.Set(ctx, k, []byte("v"), time.Minute); err != nil {
+		if err := c.Set(ctx, k, []byte("v"), time.Minute, under); err != nil {
 			t.Fatalf("Set: %v", err)
 		}
 		keys = append(keys, k)
@@ -111,7 +131,7 @@ func TestDeletingAThousandKeysIsTwoCommands(t *testing.T) {
 		t.Errorf("deleting 1000 keys cost %d DEL commands; want %d", got, want)
 	}
 	for _, k := range keys[:10] {
-		if _, found, err := c.Get(ctx, k); err != nil || found {
+		if _, found, _, err := c.Get(ctx, k); err != nil || found {
 			t.Fatalf("Get after Delete: found=%v err=%v", found, err)
 		}
 	}

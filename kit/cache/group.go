@@ -137,6 +137,17 @@ func (g *Group[V]) Get(ctx context.Context, key Key) (V, error) {
 		if v, ok := g.peek(key); ok {
 			return v, nil
 		}
+		// The read before the compose is what stamps the marker after it. A
+		// composition reads the configuration of the process, and a move that
+		// lands while it is doing so must close the marker this call is about to
+		// write — otherwise one slow composition reopens a scope every other
+		// process just closed, for the whole ttl.
+		_, _, under, err := g.cache.Get(ctx, key)
+		if err != nil {
+			// The store is not answering; it will hold no marker, which is the
+			// same outage the failed write below costs and is logged there.
+			under = Generation{}
+		}
 		v, err := g.compose(ctx, key)
 		if err != nil {
 			// A failed composition is remembered nowhere. Caching it would turn
@@ -146,7 +157,7 @@ func (g *Group[V]) Get(ctx context.Context, key Key) (V, error) {
 			return zero, err
 		}
 		g.remember(key, v)
-		if err := g.cache.Set(ctx, key, markerValue, g.ttl); err != nil {
+		if err := g.cache.Set(ctx, key, markerValue, g.ttl, under); err != nil {
 			// The value is composed and this process holds it; a marker nobody
 			// can write costs the next request one lookup and costs this one
 			// nothing. Refusing here would be a cache deciding the answer.
@@ -192,7 +203,7 @@ func (g *Group[V]) local(ctx context.Context, key Key) (V, bool) {
 	if !ok {
 		return zero, false
 	}
-	val, found, err := g.cache.Get(ctx, key)
+	val, found, _, err := g.cache.Get(ctx, key)
 	switch {
 	case err != nil:
 		g.log.WarnContext(ctx, "cache: could not ask whether a composed entry is still believed; serving it anyway",

@@ -69,7 +69,27 @@ var (
 	// the process's resources and releases them once; a lookup that arrived
 	// after the release is a request nobody routed.
 	ErrClosed = errors.New("cache: this store is closed")
+
+	// ErrNoGeneration is what Set answers for a Generation that came from no read.
+	// A write has to be stamped by the read that decided it: stamped with anything
+	// else — the open generation at the moment of the write, or a number someone
+	// made up — it survives a move that already happened, which is the window this
+	// whole package exists to close. It is immutable, a caller bug, and it writes
+	// nothing.
+	ErrNoGeneration = errors.New("cache: this write names no read; a write stamped by nothing outlives the invalidation that should have closed it")
 )
+
+// Generation is the open generation of a Scope, as one read answered it, and the
+// only thing that may stamp a write.
+//
+// It is a value with unexported fields because the fact it carries is *when*: the
+// moment a lookup was made is what decides whether a later write is still
+// believed, and a number assembled by hand claims a moment that never happened.
+// Get answers one, Set takes one, and there is no third way to obtain it.
+type Generation struct {
+	gen  int64
+	read bool
+}
 
 // Scope is one owner's namespace inside this app: the half of a key that an
 // invalidation works on. Its fields are unexported because the only fact that
@@ -164,13 +184,26 @@ func (k Key) valid() error {
 // transaction to open — kit/httpx resolves a host precisely to decide whether one
 // may be opened.
 type Cache interface {
-	// Get answers the value under key. found=false is a miss and never an error,
-	// and a miss costs the caller its own lookup, not a refusal.
-	Get(ctx context.Context, key Key) (val []byte, found bool, err error)
+	// Get answers the value under key, and the generation its own read found open.
+	// found=false is a miss and never an error, and a miss costs the caller its own
+	// lookup, not a refusal.
+	//
+	// The Generation is the second half of the answer and not a detail of it: an
+	// entry is believed because the read that found it ran under the generation
+	// that is still open, and a caller that decides to load on a miss can only
+	// promise what its write is worth by stamping it with that same read. Pass it
+	// to Set.
+	Get(ctx context.Context, key Key) (val []byte, found bool, under Generation, err error)
 
-	// Set stores val under key for ttl. ttl <= 0 is refused with ErrNoLifetime
-	// and writes nothing.
-	Set(ctx context.Context, key Key, val []byte, ttl time.Duration) error
+	// Set stores val under key for ttl, stamped with the generation a read of this
+	// same key answered open — the read that decided the load, not a later one.
+	//
+	// It asks the store for nothing: the write is worth exactly what the read that
+	// bought it was worth, so a move that lands between the two closes this entry
+	// too, and the racing write is believed by nobody rather than refused noisily.
+	// under from no read is refused with ErrNoGeneration and writes nothing; so is
+	// ttl <= 0, with ErrNoLifetime.
+	Set(ctx context.Context, key Key, val []byte, ttl time.Duration, under Generation) error
 
 	// Delete drops exactly these keys, in as few calls to the store as the store
 	// allows. Deleting a key nobody holds is not an error: a route that runs
@@ -188,7 +221,8 @@ type Cache interface {
 	// is there when it runs; a move forbids what arrives afterwards.
 	//
 	// Its cost is its coarseness: a move closes every entry in the Scope, so one
-	// suspension costs every other host one loader query on its next request.
+	// suspension costs every other host one loader query on its next request —
+	// including the request whose load is in flight, whose write this move closes.
 	// For host resolution, where the operator changes a handful of hosts a day
 	// and the query is indexed, that is the right trade; a finer generation, one
 	// per entry, is the same mechanism at one key per entry and is deferred until
@@ -256,9 +290,9 @@ type store struct {
 	backend Backend
 }
 
-func (s *store) Get(ctx context.Context, k Key) ([]byte, bool, error) {
+func (s *store) Get(ctx context.Context, k Key) ([]byte, bool, Generation, error) {
 	if err := k.valid(); err != nil {
-		return nil, false, err
+		return nil, false, Generation{}, err
 	}
 	values, err := s.call(ctx, func(c context.Context) ([]Value, error) {
 		// The generation and the entry arrive together: the entry carries the
@@ -268,50 +302,49 @@ func (s *store) Get(ctx context.Context, k Key) ([]byte, bool, error) {
 		return s.backend.GetMany(c, s.generationKey(k.scope), s.entryKey(k))
 	})
 	if err != nil {
-		return nil, false, fmt.Errorf("cache: get %s: %w", k, err)
+		return nil, false, Generation{}, fmt.Errorf("cache: get %s: %w", k, err)
 	}
-	if len(values) != 2 || !values[1].Found {
-		return nil, false, nil
+	if len(values) != 2 {
+		return nil, false, Generation{}, nil
+	}
+	open, ok := openGeneration(values[0])
+	if !ok {
+		// A counter that answers nonsense is a namespace this package cannot
+		// invalidate, so nothing under it is believed and no write may be stamped
+		// under it either: the caller loads from its own truth and stores nothing.
+		return nil, false, Generation{}, nil
+	}
+	under := Generation{gen: open, read: true}
+	if !values[1].Found {
+		return nil, false, under, nil
 	}
 	gen, val, ok := decodeEnvelope(values[1].Val)
 	if !ok {
 		// A value this package did not write is not a value it can believe.
 		// Reading it as one would let anything sharing the store's keyspace put a
 		// tenant on a request.
-		return nil, false, nil
+		return nil, false, under, nil
 	}
-	open, ok := openGeneration(values[0])
-	if !ok {
-		return nil, false, nil
-	}
-	return val, gen == open, nil
+	return val, gen == open, under, nil
 }
 
-func (s *store) Set(ctx context.Context, k Key, val []byte, ttl time.Duration) error {
+func (s *store) Set(ctx context.Context, k Key, val []byte, ttl time.Duration, under Generation) error {
 	if err := k.valid(); err != nil {
 		return err
 	}
 	if ttl <= 0 {
 		return fmt.Errorf("cache: refusing to store %s: %w", k, ErrNoLifetime)
 	}
+	if !under.read {
+		return fmt.Errorf("cache: refusing to store %s: %w", k, ErrNoGeneration)
+	}
 	_, err := s.call(ctx, func(c context.Context) ([]Value, error) {
-		// The write is stamped with the generation it read, not a later one, so a
-		// move that lands between this read and this write still closes it. Two
-		// round trips, and the only reason this port is not a pure proxy.
-		values, err := s.backend.GetMany(c, s.generationKey(k.scope))
-		if err != nil {
-			return nil, err
-		}
-		if len(values) != 1 {
-			return nil, errors.New("the store answered the generation read with something else")
-		}
-		open, ok := openGeneration(values[0])
-		if !ok {
-			// Writing under a generation nobody can name would be writing a value no
-			// invalidation could ever close, which is the one thing this cache is for.
-			return nil, errors.New("the open generation of this namespace is unreadable")
-		}
-		return nil, s.backend.Set(c, s.entryKey(k), encodeEnvelope(open, val), ttl)
+		// One command, and no read of the counter: the write is stamped with the
+		// generation the caller's own read found open, which is the moment that
+		// decides whether anything may still believe it. A move in between does not
+		// meet an error — it lands, is read as a miss from then on, and expires on
+		// the lifetime this call was made with.
+		return nil, s.backend.Set(c, s.entryKey(k), encodeEnvelope(under.gen, val), ttl)
 	})
 	if err != nil {
 		return fmt.Errorf("cache: set %s: %w", k, err)
