@@ -162,7 +162,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// The shared component families add 811 typed examples with both sides'
 	// styles present, and the reduced-motion floor sits in the base layer. The digest
 	// below is that tree's export, remeasured with `go run ./tools/designexport`.
-	if legacy.SHA256 != "d766adb29c834c848c0348d5ebe66373112946484339e2b8ad29f45a8dd09370" {
+	// Refusal and selection validation clears four Gallery examples: the two
+	// refused DataLists lose retained result props/slots, and the two removed-map
+	// selections retain only the remaining point. All 811 IDs, CSS, notices,
+	// themes and icons are unchanged in the before/after export comparison.
+	if legacy.SHA256 != "1ae5c204f9c267f8bfe9042d5a6b4936d2e072f655427298a0e4dd2eff82a95b" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
