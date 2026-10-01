@@ -89,6 +89,8 @@ Both public routes are reads; the module has no public write, so `kit/limit` is 
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
 
+What an operator does instead of a route is two steps beside `make rehearse`: `make backup` writes one dump of the database plus a copy of the on-disk byte store and a `manifest.sha256` of every artefact, and `make restore-drill` puts a backup back into a scratch database and compares — every object against the digest taken before the backup, every table's row set in both databases, and the restored database against its own second dump — printing `restore_drill_pass_ratio=N/M` (`scripts/backup.sh`, `scripts/restore_drill.sh`). The rows and the bytes live in two places, so a promise that the installation can be put back is only answerable by restoring it, which is what the drill is; an object store backs its own bytes up and the drill's object half then says it had nothing to count.
+
 ### Provisioning
 
 The code names no role. A composition grants `file:read` to people who may browse, download and mint a grant, `file:manage` to people who may upload and delete, `file:retain` to whoever may keep a file past its class, and `file:erase` to whoever answers a data-protection request — the last two are the ones a broad support role should not hold by default.
