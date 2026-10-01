@@ -153,3 +153,12 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # How long each retention class lives, keyed by the `kind` an upload carried.
+  # A kind this table does not name is never deleted, only logged, so the empty
+  # table below keeps everything and is the safe default for an example. A
+  # duration is Go's own spelling — "8760h", not "365d" — and a class name is the
+  # token the upload sent and not a word this repository invents: the application
+  # that stores invoices under kind invoice is the one that says how long one
+  # lives. An entry with no class name, or one that is not a positive duration,
+  # fails the load rather than quietly deleting nothing.
+  retention: {}
