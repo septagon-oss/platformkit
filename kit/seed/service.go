@@ -156,7 +156,11 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 	plan.At = s.clock.Now().UTC()
 	plan.Kinds = []string{"starter"}
 	if selection.Demo {
-		if !db.TenantOf(tx).Demo {
+		demo, err := persistedDemo(tx)
+		if err != nil {
+			return Plan{}, err
+		}
+		if !demo {
 			return Plan{}, errors.New("seed: demo records are refused for a non-demo tenant")
 		}
 		plan.Kinds = append(plan.Kinds, "demo")
@@ -323,7 +327,17 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 					return fmt.Errorf("seed: %s: %w", doc.Source, err)
 				}
 				if !row.Present {
-					return fmt.Errorf("seed: %s: owned %s/%s has no owner row", doc.Source, alias, key.Value)
+					// House rule 8: the write that finds none is not refused.
+					// Somebody already deleted the owner's row through the product;
+					// what remains to do is forget the mapping, so the run stops
+					// refusing this file forever the moment the record is dropped.
+					if apply {
+						if err := deleteKey(tx, resource, key.Value); err != nil {
+							return fmt.Errorf("seed: %s: %w", doc.Source, err)
+						}
+					}
+					plan.Items = append(plan.Items, Item{Action: Prune, Resource: alias, Key: key.Value, Source: doc.Source})
+					continue
 				}
 				if apply {
 					if err := writer.Delete(ctx, tx, row); err != nil {

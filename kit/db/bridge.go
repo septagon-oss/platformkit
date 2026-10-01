@@ -12,6 +12,15 @@ import (
 // hook. The caller still owns the commit. A failed callback leaves the settings
 // changed, so even a caller that discards its error cannot commit through
 // RunSystem's final scope check.
+//
+// The view dies with the callback. The settings it borrows live on the system
+// transaction's connection, and the restore at the end puts cross-tenant access
+// back there; a db.Tx[db.Tenant] the hook kept would still be typed for one
+// tenant while reading every tenant. So the callback runs under a context this
+// call cancels on its way out, and every statement the lent handle carries —
+// the handle itself, or one taken from the context inside — fails as soon as the
+// callback returns, before reaching the server. Tenancy stays held by the type
+// and by the context, never by the caller's restraint.
 func InTenant(ctx context.Context, system Tx[System], tenant tenancy.Tenant, fn func(context.Context, Tx[Tenant]) error) error {
 	currentTx, ok := current(ctx)
 	if !ok || !currentTx.system || currentTx.db != system.db || system.db == nil || tenant.ID == uuid.Nil || fn == nil {
@@ -26,8 +35,15 @@ func InTenant(ctx context.Context, system Tx[System], tenant tenancy.Tenant, fn 
 	if err := system.db.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", tenant.ID.String()).Error; err != nil {
 		return fmt.Errorf("db: set bridged tenant: %w", err)
 	}
-	tenantCtx := context.WithValue(tenancy.WithTenant(ctx, tenant), txKey{}, openTx{db: system.db, tenant: tenant})
-	if err := fn(tenantCtx, Tx[Tenant]{db: system.db, scope: Tenant{tenant: tenant}}); err != nil {
+	lentCtx, release := context.WithCancel(tenancy.WithTenant(ctx, tenant))
+	defer release()
+	// One session of the caller's transaction, bound to the context this call
+	// owns. It shares the transaction's connection and its settings, and nothing
+	// else: committing, rolling back and restoring the settings stay with the
+	// system handle the caller passed in.
+	lent := system.db.WithContext(lentCtx)
+	tenantCtx := context.WithValue(lentCtx, txKey{}, openTx{db: lent, tenant: tenant})
+	if err := fn(tenantCtx, Tx[Tenant]{db: lent, scope: Tenant{tenant: tenant}}); err != nil {
 		return err
 	}
 	if err := sealed(system.db, tenant.ID.String(), "false"); err != nil {

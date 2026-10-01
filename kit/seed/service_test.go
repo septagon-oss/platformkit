@@ -110,8 +110,8 @@ func seedTenant(t *testing.T, demo bool, fn func(context.Context, db.Tx[db.Tenan
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Demo: demo}
-	if _, err := admin.ExecContext(t.Context(), `INSERT INTO tenants (id, slug, name) VALUES ($1, $2, $2)`,
-		tenant.ID, tenant.Slug); err != nil {
+	if _, err := admin.ExecContext(t.Context(), `INSERT INTO tenants (id, slug, name, demo) VALUES ($1, $2, $2, $3)`,
+		tenant.ID, tenant.Slug, demo); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenant), app, fn); err != nil {

@@ -10,6 +10,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 )
 
+// persistedDemo reads the flag the run is documented to obey — the one written
+// when the tenant was created — under the run's own transaction. Row-level
+// security lets a tenant transaction read exactly its own tenants row, so a
+// caller cannot bring demo records to a tenant whose row says false by handing
+// db.Run a tenancy.Tenant value that claims otherwise.
+func persistedDemo(tx db.Tx[db.Tenant]) (bool, error) {
+	var demo bool
+	if err := tx.DB().Raw(`SELECT demo FROM tenants WHERE id = ?`, db.TenantOf(tx).ID).Row().Scan(&demo); err != nil {
+		return false, fmt.Errorf("read tenant demo flag: %w", err)
+	}
+	return demo, nil
+}
+
 func lookupKey(tx db.Tx[db.Tenant], resource Resource, value string) (Key, bool, error) {
 	key := Key{Value: value}
 	var id *uuid.UUID
