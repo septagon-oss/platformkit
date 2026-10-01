@@ -144,6 +144,34 @@ utility classes; a sheet assembled inline sits outside that count, and the count
 itself belongs to the sweep's own checkout rather than to this one.
 The cure is the client's own share — `css.VarRef` for the colour, its own hook or its
 own class for the selector (T-0139, T-0126).
+**The sidebar panel now gives way to the line drawn across it.** Review round 21 found
+the fifth ground a shipped rule paints a component's edge on, and the first one no gate
+named. `clSidebarSectionHeader` draws `BorderColor(style.BorderPrimary)` and declares no
+fill of its own; `clSidebarColumnAdmin` fills the column it sits inside with
+`Bg(style.SurfaceInverse)`, which is the `sidebar-bg` token — a colour a seed decides and
+a client may file. Over the corpus that round read, 35 of 800 readings fell under 3:1,
+worst 2.65:1, and a `design.yaml` the door accepted measured 2.05:1 there. The pair is
+gated at `MinContrastGraphic` in both vocabularies — `bodyContrast` names
+`border-default` on `sidebar-bg`, and the new `PanelEdgeRolePairs` names
+`border-primary` on `surface-inverse` — so `Client.Resolve` refuses a file that erases
+the rule and `FromSeed` refuses a seed that does. It is a fifth list rather than a fifth
+ground of `edgeRolePairs` because the two kinds of ground give way in opposite
+directions: the page grounds are light in a light theme, so the line is repaired dark
+against them, while the panel is dark in a light theme because it carries the theme's own
+light copy, so the panel is the half with room — `generatedTheme` now darkens it under
+the line (`settleDarker`, the walk toward black alone). Over 400 generated seeds that
+leaves no reading under 3:1 (narrowest 3.10:1), refuses no seed, and costs the separation
+nothing: the closest pair of the corpus is 0.0006 where it was 0.0005, and colliding
+pairs went from 2840 to 2578. 254 of the 400 light sidebars moved, 29 of them to pure
+black, which is where the arithmetic puts them: an edge the surfaces force to luminance
+.10 can only reach 3.0 on black, so the 3.5 the generator aims at is out of reach and the
+walk reports the far pole. `edgeRolePairs` still names the page's own surfaces alone, and
+review 16's coverage case — which measures every rule that declares no fill against every
+ground in that list — stays green, which is the check that the split is a real one:
+`clInputError`, `clInputTone` and `clTabsUnderlineActive` draw a status tone or the brand
+colour with no fill, are painted on the page and never inside a sidebar, and no danger red
+that reads on a light card can reach 3:1 on a panel dark enough to be a sidebar.
+
 **A tenant's brand colour is now measured before it is painted.** Review round 19 found
 the third door a colour comes through. `design.yaml` is refused by `Client.Resolve` and
 a generated palette is repaired by `FromSeed`, both of which are doors a file passes;
