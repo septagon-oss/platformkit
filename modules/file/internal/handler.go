@@ -180,10 +180,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Method:        http.MethodDelete,
 		Path:          path + "/{id}",
 		Summary:       "Delete a file",
-		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted.",
+		Description:   "Removes the record now and the bytes once this commits: a blob delete cannot be rolled back, so it is done by whoever handles file.deleted. A file under a live hold is refused with 409 and nothing is written.",
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusNoContent,
-		Errors:        faults,
+		Errors:        append(slices.Clone(faults), http.StatusConflict),
 		Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted}},
 	}, httpx.Permission(contracts.PermissionFileManage),
 		func(ctx context.Context, in *idInput) (*struct{}, error) {
@@ -204,7 +204,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Summary:     "Mint a time-limited URL for a private file",
 		Description: "A URL that serves the bytes until it expires, with no request to this application in the path. A public file is refused: it already has an open door. A store that cannot sign one is refused with 501.",
 		Tags:        []string{"file"},
-		Errors:      faults,
+		Errors:      append(slices.Clone(faults), http.StatusNotImplemented),
 	}, httpx.Permission(contracts.PermissionFileRead),
 		func(ctx context.Context, in *grantInput) (*rest.Item[*contracts.Grant], error) {
 			tx, err := transaction(ctx)
@@ -233,7 +233,12 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			if err != nil {
 				return nil, err
 			}
-			hold, err := svc.Retain(ctx, tx, in.ID, in.Until, in.Reason)
+			var until *time.Time
+			reason := ""
+			if in.Body != nil {
+				until, reason = in.Body.Until, in.Body.Reason
+			}
+			hold, err := svc.Retain(ctx, tx, in.ID, until, reason)
 			if err != nil {
 				return nil, fault(err)
 			}
@@ -277,7 +282,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			if err != nil {
 				return nil, err
 			}
-			receipt, err := svc.EraseSubject(ctx, tx, in.Subject, in.Reason)
+			subject, reason := uuid.Nil, ""
+			if in.Body != nil {
+				subject, reason = in.Body.Subject, in.Body.Reason
+			}
+			receipt, err := svc.EraseSubject(ctx, tx, subject, reason)
 			if err != nil {
 				return nil, fault(err)
 			}
@@ -390,6 +399,14 @@ func fault(err error) error {
 	// broken, this capability was simply not wired.
 	case errors.Is(err, contracts.ErrNotSignable):
 		return problem.New(http.StatusNotImplemented, err.Error())
+	// A hold is why this removal did not happen, and it is the caller's to act
+	// on — release the hold or stop asking — which makes it a conflict and not
+	// an outage. rest.Fault's ErrConflict arm cannot see it: this sentinel is
+	// the module's, and nothing about it says the kernel's word for "those two
+	// states cannot both be true". The two routes that refuse say 409 in their
+	// declarations, and this is where that promise is kept.
+	case errors.Is(err, contracts.ErrHeld):
+		return problem.Conflict(err.Error())
 	default:
 		return rest.Fault(err)
 	}
@@ -408,13 +425,28 @@ type grantInput struct {
 	Expires time.Duration `query:"expires" default:"0" doc:"How long the URL lives, as a Go duration; at most 24h"`
 }
 
+// retainInput is the hold's body beside the file it names. The body is a
+// pointer to its own struct and not flat fields on this one, which is how
+// kit/rest spells a command body (commandInput) and not a style choice: huma
+// reads a body from a nested struct field, and the JSON fields of a struct that
+// also carries a path tag are no body at all — a route written that way answers
+// every request as though the caller had sent nothing, and says so in a schema
+// whose request body has no properties in it.
 type retainInput struct {
-	ID     uuid.UUID  `path:"id" format:"uuid" doc:"The file to hold"`
-	Until  *time.Time `json:"until,omitempty" format:"date-time" doc:"When the hold expires; omit to hold until released"`
-	Reason string     `json:"reason" doc:"Why it is held"`
+	ID   uuid.UUID `path:"id" format:"uuid" doc:"The file to hold"`
+	Body *retainBody
+}
+
+type retainBody struct {
+	Until  *time.Time `json:"until,omitempty" format:"date-time" doc:"When the hold expires; omit to hold until released" required:"false"`
+	Reason string     `json:"reason" doc:"Why it is held" example:"court order 2026-0412"`
 }
 
 type eraseInput struct {
+	Body *eraseBody
+}
+
+type eraseBody struct {
 	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The subject whose files are being erased"`
 	Reason  string    `json:"reason" doc:"Why, for the audit trail"`
 }

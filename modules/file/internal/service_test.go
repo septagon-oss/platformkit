@@ -695,3 +695,111 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 		t.Errorf("the sweep left %v, want only the blob a row names", left)
 	}
 }
+
+// TestAHoldStopsEveryDoorThatRemovesAFile is the promise a hold is bought for,
+// read against the rows rather than the fake.
+//
+// A hold is not a flag on the file, and this is the case that shows why: three
+// different commands reach for the same removal — a person's delete, a subject
+// erasure, the sweep — and each has to ask the same question and get the same
+// answer. The one answer this module gives for "the clock is still stopped" is
+// ErrHeld, and a refusal writes nothing, so everything the caller could act on
+// is still there afterwards.
+func TestAHoldStopsEveryDoorThatRemovesAFile(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+	subject := uuid.New()
+	ctx := tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), subject)
+
+	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "evidence.txt", ContentType: "text/plain", Declared: -1,
+			Body: strings.NewReader("keep"),
+		})
+		if err != nil {
+			return err
+		}
+		// A hold that has already expired holds nothing, and says so rather
+		// than writing a row that looks like a promise and keeps no clock.
+		past := db.Now().Add(-time.Hour)
+		if _, err := svc.Retain(ctx, tx, f.ID, &past, "stale"); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("a hold expiring in the past = %v, want crud.ErrInvalid", err)
+		}
+		hold, err := svc.Retain(ctx, tx, f.ID, nil, "court order 2026-0412")
+		if err != nil {
+			return err
+		}
+		if hold.Until != nil || hold.Reason != "court order 2026-0412" {
+			t.Errorf("the hold is %v %q, want one that stops when a person says so, with its reason", hold.Until, hold.Reason)
+		}
+		// A second hold replaces the first: "until when" is one question, and
+		// two rows would be two answers a query could pick between.
+		later := db.Now().Add(time.Hour)
+		if _, err := svc.Retain(ctx, tx, f.ID, &later, "appeal"); err != nil {
+			return err
+		}
+		var holds int
+		if err := tx.DB().Raw(`SELECT count(*) FROM file_holds WHERE file_id = ?`, f.ID).
+			Scan(&holds).Error; err != nil {
+			return err
+		}
+		if holds != 1 {
+			t.Errorf("placing a hold twice wrote %d rows, want one replaced", holds)
+		}
+		if _, err := svc.Delete(ctx, tx, f.ID); !errors.Is(err, contracts.ErrHeld) {
+			t.Errorf("a delete under a hold = %v, want ErrHeld", err)
+		}
+		if _, err := svc.EraseSubject(ctx, tx, subject, "data protection request"); !errors.Is(err, contracts.ErrHeld) {
+			t.Errorf("a subject erasure over a held file = %v, want ErrHeld naming it", err)
+		}
+		// A refusal wrote nothing at all: the row, its hold and the trail are
+		// all still here, which is what makes the caller's next step possible.
+		var rows int
+		if err := tx.DB().Raw(`SELECT count(*) FROM files WHERE id = ?`, f.ID).Scan(&rows).Error; err != nil {
+			return err
+		}
+		if rows != 1 {
+			t.Fatalf("the refused erasure left %d rows, want the file where it was", rows)
+		}
+
+		if err := svc.Release(ctx, tx, f.ID); err != nil {
+			return err
+		}
+		// Releasing a file with no hold is the success it is: refusing it would
+		// be refusing a write that found nothing.
+		if err := svc.Release(ctx, tx, f.ID); err != nil {
+			t.Errorf("releasing a file with no hold = %v, want the answer that it is already free", err)
+		}
+		receipt, err := svc.EraseSubject(ctx, tx, subject, "data protection request")
+		if err != nil {
+			return err
+		}
+		if receipt.Files != 1 || receipt.Bytes != 4 || receipt.Subject != subject {
+			t.Errorf("the erasure receipt is %+v, want this subject's one file and its four bytes", receipt)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("a hold, a refusal and a release: %v", err)
+	}
+
+	// An erasure of a subject with nothing here is an answer and not a failure:
+	// zero in every count, no row, no event.
+	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		receipt, err := svc.EraseSubject(ctx, tx, uuid.New(), "nobody")
+		if err != nil {
+			return err
+		}
+		if receipt.Files != 0 || receipt.Bytes != 0 {
+			t.Errorf("a subject with no files erased %+v, want the receipt of nothing", receipt)
+		}
+		if _, err := svc.EraseSubject(ctx, tx, uuid.Nil, "nobody"); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("an erasure naming no subject = %v, want crud.ErrInvalid", err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("erasing a subject with nothing here: %v", err)
+	}
+}

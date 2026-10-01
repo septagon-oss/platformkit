@@ -382,3 +382,125 @@ func TestAnOverlongContentTypeIsTheCallersMistake(t *testing.T) {
 // separately, because validating the composition is the composition's job and
 // holding a *Router would be holding one door of three.
 func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("file") }
+
+// ask sends one request with a JSON body and returns the answer.
+func ask(t *testing.T, r http.Handler, method, at, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+host+at, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+// TestAHeldFileRefusesTheDeleteWithAConflict is the answer a caller gets when a
+// hold stops it, at the door it knocked on.
+//
+// The refusal itself lived in the service and nowhere a caller could read it:
+// fault() had no arm for contracts.ErrHeld, so rest.Fault — which knows the
+// kernel's sentinels and none of this module's — handed it back unclassified and
+// the caller read their own successful hold as a 500 outage. 409 is the sentence
+// that means "these two things cannot both be true; go and release the other
+// one", and a refused mutation writes nothing, which is checked here rather than
+// asserted: the file the delete would have taken is still readable.
+func TestAHeldFileRefusesTheDeleteWithAConflict(t *testing.T) {
+	router := mounted(t)
+	code, out := upload(t, router, files, "evidence.txt", "text/plain", "keep this")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	id := field(t, out, "id")
+
+	// 200 and not 201: this command places *or replaces*, and the answer is the
+	// one hold there now, not the creation of a row.
+	if code, out = ask(t, router, http.MethodPost, files+"/"+id+"/hold", `{"reason":"court order 2026-0412"}`); code != http.StatusOK {
+		t.Fatalf("POST the hold = %d %s", code, out)
+	}
+	if !strings.Contains(out, "court order 2026-0412") {
+		t.Errorf("the hold answers %s, which does not carry the reason it was placed for", out)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id, true); code != http.StatusConflict {
+		t.Errorf("DELETE a held file = %d %s, want 409 and not an outage", code, out)
+	}
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+id, true); code != http.StatusOK {
+		t.Errorf("the file the refused delete would have taken reads %d, want it still there", code)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id+"/hold", true); code != http.StatusNoContent {
+		t.Fatalf("DELETE the hold = %d %s", code, out)
+	}
+	// Releasing a file with no hold is the success it is: the caller's intent is
+	// already true, and refusing a write that found nothing is this
+	// architecture's refusal, not its answer.
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id+"/hold", true); code != http.StatusNoContent {
+		t.Errorf("releasing twice = %d %s, want 204 both times", code, out)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id, true); code != http.StatusNoContent {
+		t.Errorf("the same delete after the release = %d %s, want 204", code, out)
+	}
+}
+
+// TestAGrantIsRefusedBeforeTheStoreIsAsked pins the order of Grant's refusals,
+// which is the whole reason one sentinel is not enough: the module's own ceiling
+// and a public file are the request's to fix (422), and a deployment wired a
+// store that cannot sign is neither — it is a wiring fact, answered 501 and not
+// the 500 an operator would page about.
+func TestAGrantIsRefusedBeforeTheStoreIsAsked(t *testing.T) {
+	router := mounted(t)
+	code, out := upload(t, router, files, "notes.txt", "text/plain", "private")
+	if code != http.StatusCreated {
+		t.Fatalf("POST a private file = %d %s", code, out)
+	}
+	private := field(t, out, "id")
+	if code, out = upload(t, router, files+"?visibility=public", "logo.png", "image/png", png); code != http.StatusCreated {
+		t.Fatalf("POST a public file = %d %s", code, out)
+	}
+	open := field(t, out, "id")
+
+	// Past the module's 24h cap — refused and not clamped, before anyone asks
+	// the store what it can do.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+private+"/grant?expires=25h", true); code != http.StatusUnprocessableEntity {
+		t.Errorf("a 25h grant = %d %s, want 422 naming the expiry", code, out)
+	}
+	// A public file already has an open door; no signature teaches that signing
+	// is where the access control lives. This is the same disk store, so the
+	// refusal has to come first or it would never be seen.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+open+"/grant", true); code != http.StatusUnprocessableEntity {
+		t.Errorf("a grant for a public file = %d %s, want 422", code, out)
+	}
+	// And the disk store says so out loud.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+private+"/grant", true); code != http.StatusNotImplemented {
+		t.Errorf("a grant from a store that cannot sign = %d %s, want 501", code, out)
+	}
+}
+
+// TestAnErasureNamesTheSubjectOrIsRefused is the other half of the same route,
+// and the reason it is written as a receipt rather than a removal: the harness
+// gives every request its own principal, so this is the one way to see that the
+// command read its body at all. A body nobody read is a zero uuid, and a zero
+// subject is a refusal — so the answer that names the subject back is the proof
+// that the bytes on the wire arrived.
+func TestAnErasureNamesTheSubjectOrIsRefused(t *testing.T) {
+	router := mounted(t)
+	if code, out := upload(t, router, files, "notes.txt", "text/plain", "hello"); code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	subject := uuid.NewString()
+
+	code, out := ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+subject+`","reason":"data protection request"}`)
+	if code != http.StatusOK {
+		t.Fatalf("POST an erasure of a subject with nothing here = %d %s", code, out)
+	}
+	if !strings.Contains(out, `"subject":"`+subject+`"`) || !strings.Contains(out, `"files":0`) {
+		t.Errorf("the receipt reads %s, which does not name the subject it answered for", out)
+	}
+	// An erasure of nobody is the request's to fix, and says so rather than
+	// removing everything this tenant happens to hold.
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"reason":"data protection request"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("an erasure that names no subject = %d %s, want 422", code, out)
+	}
+	// And the file that subject did not upload is where it was.
+	if code, _, _ = send(t, router, http.MethodGet, files, true); code != http.StatusOK {
+		t.Errorf("the list after an erasure of nothing = %d", code)
+	}
+}
