@@ -15,11 +15,15 @@ package internal_test
 // surface, and the person reviewing the diff is the one who has to have
 // written its row.
 //
-// Two compositions are read, because five of the 23 are conditional legs: the
-// register door is whichever registration policy the composition chose, and the
-// two OIDC legs appear only when some tenant can reach a provider. A row that
-// stopped being conditional would fail the second case, and a conditional leg
-// that had quietly become permanent would fail it too.
+// Three compositions are read, because the register door is whichever
+// registration policy the composition chose and the two OIDC legs appear only
+// when some tenant can reach a provider. A row that stopped being conditional
+// would fail the second case, a conditional leg that had quietly become
+// permanent would fail it too, and a door belonging to one registration policy
+// and not the other would fail the third. The third composition is the one the
+// reference application runs — apps/platformkit/modules.go chooses
+// EmailRegistration — so the two mailbox doors its sign-up page posts to are
+// named here instead of being mounted in a composition no record reads.
 
 import (
 	"sort"
@@ -77,13 +81,57 @@ var wholeSurface = []route{
 	{"app", "GET", "/api/v1/auth/oidc/callback", "public"},
 }
 
-// conditionalLegs are the five rows above that a plain composition does not
+// conditionalLegs are the three rows above that a plain composition does not
 // mount: no registration policy, so no register door, and no issuer at all, so
 // no door onto one.
 var conditionalLegs = map[string]bool{
 	route{"public", "POST", "/api/v1/public/auth/register", "public"}.String(): true,
 	route{"app", "GET", "/api/v1/auth/oidc/start", "public"}.String():          true,
 	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String():       true,
+}
+
+// issuerLegs are the two OIDC rows, conditional in every registration policy
+// alike: they appear when the installation names an issuer and not otherwise.
+var issuerLegs = map[string]bool{
+	route{"app", "GET", "/api/v1/auth/oidc/start", "public"}.String():    true,
+	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String(): true,
+}
+
+// mailboxDoors are the two public operations the email-confirmation policy adds
+// beside the /register address it shares with the open policy, and which the
+// open policy does not mount at all.
+var mailboxDoors = []route{
+	{"public", "POST", "/api/v1/public/auth/resend-verification", "public"},
+	{"public", "POST", "/api/v1/public/auth/verify-email", "public"},
+}
+
+// TestTheMailboxRegistrationPolicyMountsItsOwnDoors reads the composition the
+// reference application actually runs: the email-confirmation policy rather than
+// the open register door, and no issuer. It answers with 23 operations again, of
+// which two are mailbox doors the table above does not carry and the two OIDC
+// legs are absent. This is the case that sees a route written into
+// email_registration.go, which neither of the other two compositions mounts.
+func TestTheMailboxRegistrationPolicyMountsItsOwnDoors(t *testing.T) {
+	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
+	_, _, _, api := mountRecorded(t, conn, auth.OIDC{}, false, emailSignup)
+
+	want := make([]route, 0, len(wholeSurface))
+	for _, r := range wholeSurface {
+		if issuerLegs[r.String()] {
+			continue
+		}
+		want = append(want, r)
+	}
+	want = append(want, mailboxDoors...)
+
+	got := mountedHere(api)
+	if len(got) != len(want) {
+		t.Fatalf("the email-confirmation composition mounted %d operations, want %d: %s",
+			len(got), len(want), diff(got, want))
+	}
+	if d := diff(got, want); d != "" {
+		t.Fatalf("the mailbox policy moved without this list moving with it: %s", d)
+	}
 }
 
 func TestTheModuleAnswersWithExactlyTheSurfaceItDeclares(t *testing.T) {
