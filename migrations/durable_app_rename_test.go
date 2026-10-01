@@ -37,6 +37,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/migrations"
@@ -80,11 +81,39 @@ func ownTheLedgers(t *testing.T, ctx context.Context, admin *sql.DB, appURL stri
 	}
 }
 
-// ledgerRow is one claim or one dead letter as the test plants it: which tenant, which
-// event, and the durable spelling it was written under.
+// ledgerRow is one claim or one dead letter as the test plants it: which tenant, and
+// which module's which event. The durable is never spelled here: it is whatever
+// appname.Durable forms, because the migration and the runtime that reads the ledger
+// have to agree on that string and a hand-written copy in the test could agree with
+// nobody. The old spelling is the same constructor with no slug set, which is exactly
+// what an installation that named no app wrote.
 type ledgerRow struct {
-	tenant  string
-	durable string
+	tenant string
+	module string
+	event  string
+}
+
+// unscoped is the durable a build before the app segment wrote into the ledger.
+func unscoped(module, event string) string { return appname.Durable("", module, event) }
+
+// scoped is the durable appname.Durable forms now, and the only name a subscription of
+// that app will ever ask the ledger for again.
+func scoped(app, module, event string) string {
+	return appname.Durable(appname.MustParse(app), module, event)
+}
+
+// wantName is the durable a row of this ledger is expected to carry once the file ran:
+// the app-scoped one for a tenant of an app, the unscoped one for a tenant of an
+// installation that names no slug.
+func wantName(row ledgerRow) string {
+	switch row.tenant {
+	case "acme-tenant":
+		return scoped("acme", row.module, row.event)
+	case "academy-tenant":
+		return scoped("academy", row.module, row.event)
+	default:
+		return unscoped(row.module, row.event)
+	}
 }
 
 func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
@@ -105,15 +134,15 @@ func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
 	}
 
 	handled := []ledgerRow{
-		{tenant: "acme-tenant", durable: "billing-plan-created"},
-		{tenant: "acme-tenant", durable: "task-task-updated"},
-		{tenant: "academy-tenant", durable: "billing-plan-created"},
-		{tenant: "unnamed-tenant", durable: "billing-plan-created"},
+		{tenant: "acme-tenant", module: "billing", event: "plan.created"},
+		{tenant: "acme-tenant", module: "task", event: "task.updated"},
+		{tenant: "academy-tenant", module: "billing", event: "plan.created"},
+		{tenant: "unnamed-tenant", module: "billing", event: "plan.created"},
 	}
 	dead := []ledgerRow{
-		{tenant: "acme-tenant", durable: "billing-plan-failed"},
-		{tenant: "academy-tenant", durable: "billing-plan-failed"},
-		{tenant: "unnamed-tenant", durable: "billing-plan-failed"},
+		{tenant: "acme-tenant", module: "billing", event: "plan.failed"},
+		{tenant: "academy-tenant", module: "billing", event: "plan.failed"},
+		{tenant: "unnamed-tenant", module: "billing", event: "plan.failed"},
 	}
 	// The rolling window's collision: one event of app acme, claimed twice, once by a
 	// pod that named no app and once by a pod that did. Both rows exist; the event ran
@@ -141,23 +170,24 @@ func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
 			}
 			ids[slug] = id
 		}
-		claim := func(table, event string, rows []ledgerRow, into map[uuid.UUID]ledgerRow, one uuid.UUID, unscoped bool) {
+		claim := func(table, event string, rows []ledgerRow, into map[uuid.UUID]ledgerRow, one uuid.UUID, window bool) {
 			for _, r := range rows {
 				id := uuid.New()
-				if unscoped && r.tenant == "acme-tenant" && r.durable == "billing-plan-created" {
+				if window && r.tenant == "acme-tenant" && r.event == "plan.created" {
 					id = one
 				}
+				durable := unscoped(r.module, r.event)
 				stmt := `INSERT INTO ` + table + ` (event_id, durable, tenant_id) VALUES ($1, $2, $3)`
 				if table == "platformkit_dead_letters" {
 					stmt = `INSERT INTO ` + table + `
 					  (event_id, durable, tenant_id, name, error) VALUES ($1, $2, $3, $4, $5)`
 				}
-				args := []any{id, r.durable, ids[r.tenant]}
+				args := []any{id, durable, ids[r.tenant]}
 				if table == "platformkit_dead_letters" {
 					args = append(args, event, "the handler refused it the third time as it refuses it now")
 				}
 				if _, err := admin.ExecContext(ctx, stmt, args...); err != nil {
-					t.Fatalf("planting %s (%s, %s) in %s: %v", r.durable, r.tenant, id, table, err)
+					t.Fatalf("planting %s (%s, %s) in %s: %v", durable, r.tenant, id, table, err)
 				}
 				into[id] = r
 			}
@@ -166,12 +196,12 @@ func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
 		claim("platformkit_dead_letters", "billing.plan.failed", dead, deadIDs, uuid.Nil, false)
 		if _, err := admin.ExecContext(ctx,
 			`INSERT INTO platformkit_handled (event_id, durable, tenant_id) VALUES ($1, $2, $3)`,
-			collision, "acme+billing-plan-created", ids["acme-tenant"]); err != nil {
+			collision, scoped("acme", "billing", "plan.created"), ids["acme-tenant"]); err != nil {
 			t.Fatalf("planting the collision's scoped twin: %v", err)
 		}
 		if _, err := admin.ExecContext(ctx,
 			`INSERT INTO platformkit_handled (event_id, durable, tenant_id) VALUES ($1, $2, $3)`,
-			unnamedHandled, "billing-plan-created", ids["unnamed-tenant"]); err != nil {
+			unnamedHandled, unscoped("billing", "plan.created"), ids["unnamed-tenant"]); err != nil {
 			t.Fatalf("planting a second row for the unnamed tenant: %v", err)
 		}
 		t.Cleanup(func() {
@@ -207,23 +237,22 @@ func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
 			}
 			return durables
 		}
-		prefix := map[string]string{"acme-tenant": "acme+", "academy-tenant": "academy+", "unnamed-tenant": ""}
 		for id, row := range handledIDs {
-			if got, expected := want("platformkit_handled", id, row), prefix[row.tenant]+row.durable; got != expected {
+			if got, expected := want("platformkit_handled", id, row), wantName(row); got != expected {
 				t.Errorf("the handled claim of %s at %s reads %q, want the durable this app's subscription asks for, %q",
-					row.tenant, row.durable, got, expected)
+					row.tenant, unscoped(row.module, row.event), got, expected)
 			}
 		}
 		for id, row := range deadIDs {
-			if got, expected := want("platformkit_dead_letters", id, row), prefix[row.tenant]+row.durable; got != expected {
+			if got, expected := want("platformkit_dead_letters", id, row), wantName(row); got != expected {
 				t.Errorf("the dead letter of %s at %s reads %q, want %q: a targeted replay deletes by the exact durable, so a row left under the old name is invisible to the command that would replay it",
-					row.tenant, row.durable, got, expected)
+					row.tenant, unscoped(row.module, row.event), got, expected)
 			}
 		}
-		if got := want("platformkit_handled", collision, ledgerRow{}); got != "acme+billing-plan-created" {
+		if got := want("platformkit_handled", collision, ledgerRow{}); got != scoped("acme", "billing", "plan.created") {
 			t.Errorf("the event the window handled under both spellings reads %q: one event handled twice is one event that ran, so the scoped row stands and the unscoped twin goes", got)
 		}
-		if got := want("platformkit_handled", unnamedHandled, ledgerRow{}); got != "billing-plan-created" {
+		if got := want("platformkit_handled", unnamedHandled, ledgerRow{}); got != unscoped("billing", "plan.created") {
 			t.Errorf("an installation that names no slug had its handled row moved to %q: its durable did not change, so the move is a rename of a key its subscription will never ask for", got)
 		}
 
@@ -231,7 +260,7 @@ func TestTheHandledLedgerAndTheDeadLettersMoveWithTheirDurables(t *testing.T) {
 		// nothing left to move: every row already carries a '+'.
 		run("the same role, once more")
 		for id, row := range handledIDs {
-			if got := want("platformkit_handled", id, row); prefix[row.tenant]+row.durable != got {
+			if got := want("platformkit_handled", id, row); wantName(row) != got {
 				t.Errorf("the second run moved the handled claim of %s again: it reads %q", row.tenant, got)
 			}
 		}

@@ -113,8 +113,24 @@ func TestTheWindowsAnswerEveryAddressTheRolloutPublishes(t *testing.T) {
 // name can hold — see TestADurableNameBelongsToExactlyOneApp.
 func TestADurableCarriesNoDot(t *testing.T) {
 	d := appname.Durable(collect, "cart", "cart.checked_out")
-	if d != "collect+cart+cart-checked_out" {
+	if d != "collect+cart-cart-checked_out" {
 		t.Errorf("the durable is %q", d)
+	}
+	// The app is a prefix and nothing else: 000031 moves the handled ledger and
+	// the dead letters by prefixing the stored name, because a durable row holds
+	// no module and no event name to rebuild from, so the scoped name has to be
+	// the unscoped one with "<app>+" in front of it. A second '+' behind the app
+	// would break that and the migration with it.
+	for _, name := range []struct{ module, event string }{
+		{"cart", "cart.checked_out"},
+		{"task", "task.updated"},
+		{"file", "file.uploaded.v2"},
+	} {
+		unscoped, scoped := appname.Durable("", name.module, name.event), appname.Durable(collect, name.module, name.event)
+		if scoped != "collect+"+unscoped {
+			t.Errorf("%s/%s: %q is not the unscoped durable %q with the app prefixed",
+				name.module, name.event, scoped, "collect+"+unscoped)
+		}
 	}
 	if strings.ContainsAny(d, ".>*/ ") {
 		t.Errorf("%q holds a character a JetStream consumer name refuses", d)

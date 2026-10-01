@@ -106,9 +106,12 @@ var census = []rule{
 		// The event name's dots turned into dashes is a consumer name, whatever
 		// it is joined with: the operands below are the transliteration itself, so
 		// the rule reads the join spelled through strings.Join as well as the one
-		// kit/events wrote.
+		// kit/events wrote. And the join character may be spelled as appname's own
+		// named constant: a rule that fired on the literal alone would go quiet the
+		// moment the package gave the character a name, which is the day this rule
+		// is most needed.
 		name:    "durable consumer names",
-		pattern: regexp.MustCompile(`ReplaceAll\([a-z]+, "\.", "-"\)`),
+		pattern: regexp.MustCompile(`ReplaceAll\([a-z]+, "\.", (?:eventJoin|"-")\)`),
 		allow: []allowed{
 			{"kit/appname/appname.go", 2, "owner"},
 		},
