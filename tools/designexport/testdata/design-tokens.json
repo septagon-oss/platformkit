@@ -1,0 +1,297 @@
+{
+  "schema": "platformkit.design-export.v1",
+  "themes": [
+    {
+      "mode": "light",
+      "name": "light",
+      "tokens": [
+        {
+          "name": "--pk-color-surface-canvas",
+          "type": "color",
+          "value": "#f2efe7"
+        },
+        {
+          "name": "--pk-color-surface-primary",
+          "type": "color",
+          "value": "#fffdf7"
+        },
+        {
+          "name": "--pk-color-surface-muted",
+          "type": "color",
+          "value": "#e9e4d8"
+        },
+        {
+          "name": "--pk-color-text-primary",
+          "type": "color",
+          "value": "#15221f"
+        },
+        {
+          "name": "--pk-color-text-muted",
+          "type": "color",
+          "value": "#5f6b65"
+        },
+        {
+          "name": "--pk-color-border-default",
+          "type": "color",
+          "value": "#cbc5b8"
+        },
+        {
+          "name": "--pk-color-border-strong",
+          "type": "color",
+          "value": "#8f988f"
+        },
+        {
+          "name": "--pk-color-accent-default",
+          "type": "color",
+          "value": "#0f5d4e"
+        },
+        {
+          "name": "--pk-color-accent-hover",
+          "type": "color",
+          "value": "#0a493e"
+        },
+        {
+          "name": "--pk-color-accent-on",
+          "type": "color",
+          "value": "#f9fff9"
+        },
+        {
+          "name": "--pk-color-focus",
+          "type": "color",
+          "value": "#326de6"
+        },
+        {
+          "name": "--pk-color-status-ok",
+          "type": "color",
+          "value": "#12715d"
+        },
+        {
+          "name": "--pk-color-status-okbg",
+          "type": "color",
+          "value": "#dcf3e8"
+        },
+        {
+          "name": "--pk-color-status-warning",
+          "type": "color",
+          "value": "#9a5318"
+        },
+        {
+          "name": "--pk-color-status-warningbg",
+          "type": "color",
+          "value": "#fff0d2"
+        },
+        {
+          "name": "--pk-color-status-danger",
+          "type": "color",
+          "value": "#9e3833"
+        },
+        {
+          "name": "--pk-color-status-dangerbg",
+          "type": "color",
+          "value": "#fbe5e2"
+        },
+        {
+          "name": "--pk-color-status-info",
+          "type": "color",
+          "value": "#2455c4"
+        },
+        {
+          "name": "--pk-color-status-infobg",
+          "type": "color",
+          "value": "#e5ecfa"
+        },
+        {
+          "name": "--pk-color-sidebar-bg",
+          "type": "color",
+          "value": "#12201d"
+        },
+        {
+          "name": "--pk-color-sidebar-text",
+          "type": "color",
+          "value": "#eff4e9"
+        },
+        {
+          "name": "--pk-color-sidebar-muted",
+          "type": "color",
+          "value": "#aebbb2"
+        },
+        {
+          "name": "--pk-font-display",
+          "type": "fontFamily",
+          "value": "\"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif"
+        },
+        {
+          "name": "--pk-font-body",
+          "type": "fontFamily",
+          "value": "\"IBM Plex Sans\", Aptos, \"Helvetica Neue\", sans-serif"
+        },
+        {
+          "name": "--pk-font-mono",
+          "type": "fontFamily",
+          "value": "\"IBM Plex Mono\", \"SFMono-Regular\", Consolas, monospace"
+        },
+        {
+          "name": "--pk-radius-button",
+          "type": "dimension",
+          "value": "0.375rem"
+        },
+        {
+          "name": "--pk-radius-card",
+          "type": "dimension",
+          "value": "0.5rem"
+        },
+        {
+          "name": "--pk-radius-modal",
+          "type": "dimension",
+          "value": "1rem"
+        }
+      ]
+    },
+    {
+      "mode": "dark",
+      "name": "dark",
+      "tokens": [
+        {
+          "name": "--pk-color-surface-canvas",
+          "type": "color",
+          "value": "#0e1614"
+        },
+        {
+          "name": "--pk-color-surface-primary",
+          "type": "color",
+          "value": "#151f1d"
+        },
+        {
+          "name": "--pk-color-surface-muted",
+          "type": "color",
+          "value": "#1e2a27"
+        },
+        {
+          "name": "--pk-color-text-primary",
+          "type": "color",
+          "value": "#eef3ec"
+        },
+        {
+          "name": "--pk-color-text-muted",
+          "type": "color",
+          "value": "#a3b0aa"
+        },
+        {
+          "name": "--pk-color-border-default",
+          "type": "color",
+          "value": "#2c3b37"
+        },
+        {
+          "name": "--pk-color-border-strong",
+          "type": "color",
+          "value": "#5c6d67"
+        },
+        {
+          "name": "--pk-color-accent-default",
+          "type": "color",
+          "value": "#4bbf9c"
+        },
+        {
+          "name": "--pk-color-accent-hover",
+          "type": "color",
+          "value": "#68d3b2"
+        },
+        {
+          "name": "--pk-color-accent-on",
+          "type": "color",
+          "value": "#08201a"
+        },
+        {
+          "name": "--pk-color-focus",
+          "type": "color",
+          "value": "#7aa2ff"
+        },
+        {
+          "name": "--pk-color-status-ok",
+          "type": "color",
+          "value": "#5fd0ac"
+        },
+        {
+          "name": "--pk-color-status-okbg",
+          "type": "color",
+          "value": "#12312a"
+        },
+        {
+          "name": "--pk-color-status-warning",
+          "type": "color",
+          "value": "#e0a955"
+        },
+        {
+          "name": "--pk-color-status-warningbg",
+          "type": "color",
+          "value": "#33240f"
+        },
+        {
+          "name": "--pk-color-status-danger",
+          "type": "color",
+          "value": "#f0918a"
+        },
+        {
+          "name": "--pk-color-status-dangerbg",
+          "type": "color",
+          "value": "#3a1d1b"
+        },
+        {
+          "name": "--pk-color-status-info",
+          "type": "color",
+          "value": "#8fb0f5"
+        },
+        {
+          "name": "--pk-color-status-infobg",
+          "type": "color",
+          "value": "#18244a"
+        },
+        {
+          "name": "--pk-color-sidebar-bg",
+          "type": "color",
+          "value": "#0a1210"
+        },
+        {
+          "name": "--pk-color-sidebar-text",
+          "type": "color",
+          "value": "#eff4e9"
+        },
+        {
+          "name": "--pk-color-sidebar-muted",
+          "type": "color",
+          "value": "#8b9a93"
+        },
+        {
+          "name": "--pk-font-display",
+          "type": "fontFamily",
+          "value": "\"Iowan Old Style\", \"Palatino Linotype\", Palatino, Georgia, serif"
+        },
+        {
+          "name": "--pk-font-body",
+          "type": "fontFamily",
+          "value": "\"IBM Plex Sans\", Aptos, \"Helvetica Neue\", sans-serif"
+        },
+        {
+          "name": "--pk-font-mono",
+          "type": "fontFamily",
+          "value": "\"IBM Plex Mono\", \"SFMono-Regular\", Consolas, monospace"
+        },
+        {
+          "name": "--pk-radius-button",
+          "type": "dimension",
+          "value": "0.375rem"
+        },
+        {
+          "name": "--pk-radius-card",
+          "type": "dimension",
+          "value": "0.5rem"
+        },
+        {
+          "name": "--pk-radius-modal",
+          "type": "dimension",
+          "value": "1rem"
+        }
+      ]
+    }
+  ]
+}
