@@ -2,6 +2,9 @@ package db_test
 
 import (
 	"context"
+	"crypto/sha256"
+	"database/sql"
+	"encoding/hex"
 	"net/url"
 	"strings"
 	"testing"
@@ -48,11 +51,25 @@ func TestOpenAppliesPoolLimitsAndStillRefusesUnrestrictedRoles(t *testing.T) {
 	}
 }
 
-// The two probe roles, named so nothing else in this database can be them.
-const (
-	probeLogin  = "pkit_open_probe"
-	probeBypass = "pkit_open_probe_bypass"
-)
+// probeRoles names the two probe roles for this run of this case.
+//
+// Roles are cluster-wide in Postgres: no schema separates them, and every test
+// process of one `go test ./...` run talks to one cluster. Fixed names here meant
+// two runs of this package against one server — `make check` and `make check-race`
+// side by side on a developer's box — created and dropped each other's roles,
+// and a package that never touched them read `role "pkit_open_probe_bypass" does
+// not exist` out of its own db.Open (kit/health, run 146). db.Over checks reachable
+// roles by OID rather than name for exactly that reason (kit/db/db.go), so the
+// product no longer breaks on it; the fixture still must not write over another
+// run's name. So the name is hashed from the schema this case owns, which dbtest
+// already makes unique to the process and to the test: two runs create two pairs,
+// each drops only its own, and the hash keeps the name inside Postgres's 63 bytes.
+func probeRoles(t *testing.T, admin *sql.DB) (login, bypass string) {
+	t.Helper()
+	sum := sha256.Sum256([]byte(dbtest.DeploymentSchema(t, admin)))
+	id := hex.EncodeToString(sum[:])[:12]
+	return "pkit_open_probe_" + id, "pkit_open_probe_" + id + "_bypass"
+}
 
 // TestOpenRefusesARoleThatCanSetRolePastRowLevelSecurity.
 //
@@ -70,6 +87,7 @@ const (
 func TestOpenRefusesARoleThatCanSetRolePastRowLevelSecurity(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
 	admin := dbtest.Open(t, adminURL)
+	probeLogin, probeBypass := probeRoles(t, admin)
 	ctx := t.Context()
 
 	for _, statement := range []string{
@@ -106,6 +124,7 @@ func TestOpenRefusesARoleThatCanSetRolePastRowLevelSecurity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("probing as %s, which may become %s", probeLogin, probeBypass)
 	probeURL.User = url.UserPassword(probeLogin, "platformkit")
 
 	if _, err := db.OpenWithPool(ctx, probeURL.String(), db.Pool{MaxOpenConns: 1}); err == nil {

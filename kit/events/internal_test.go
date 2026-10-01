@@ -158,8 +158,20 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 		t.Fatalf("Relay: %v", err)
 	}
 
+	// The dead-letter row is what this waits for, and the wait asks the table, not
+	// the clock: every turn of this loop reads state, and it leaves as soon as the
+	// row is there. deadLetterBound then bounds how long the broker may take to give
+	// up — it is not a budget the case spends. The floor under it is the policy's
+	// own: the four rungs above sum to 1.75s, and nothing is dead-lettered before the
+	// last one has expired. The generosity above it is the brief's: 10 × the measured
+	// p99 of this wait, which is 1.996s over six runs of this case at -race on a host
+	// carrying nine other worktrees' databases at the time of writing — 20s. The line
+	// below prints the wait every time, so the next reader prices this number from CI
+	// logs rather than from a developer's machine.
+	const deadLetterBound = 20 * time.Second
 	var got int
-	deadline := time.Now().Add(30 * time.Second)
+	waited := time.Now()
+	deadline := waited.Add(deadLetterBound)
 	for {
 		if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_dead_letters`).Scan(&got); err != nil {
 			t.Fatalf("count the dead letters: %v", err)
@@ -172,6 +184,8 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	t.Logf("the dead letter answered %s after the relay, inside the %s the case allows",
+		time.Since(waited).Truncate(time.Millisecond), deadLetterBound)
 	mu.Lock()
 	defer mu.Unlock()
 	if attempts != delivery.MaxDeliveries {
