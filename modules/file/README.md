@@ -30,9 +30,12 @@ certified away.
 
 Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery,
 Retention, Tenants, RetainEvery}`; `config.example.yaml`'s `files` section
-supplies the directory, the upload ceiling and the per-tenant quota, and
-`Retention` is the composition's table of how long each `kind` lives — a kind
-the table does not name is never deleted, only logged. `Tenants` is required
+supplies the directory, the upload ceiling, the per-tenant quota and
+`files.retention` — the deployment's table of how long each `kind` lives, which
+`kit/config` parses as Go durations and refuses when an entry is keyed on no
+class or is not a positive duration. The reference application ships the table
+empty, so an installation that priced no class runs no sweep at all. A kind the
+table does not name is never deleted, only logged. `Tenants` is required
 with a policy, so a sweep that could not walk the tenants fails at composition
 instead of quietly never removing anything. Consumers import
 [contracts/](contracts/) and its [fake](contracts/filetest/), never `internal/`.
