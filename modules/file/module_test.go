@@ -3,6 +3,8 @@ package file_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -26,6 +28,9 @@ import (
 const (
 	host  = "acme.test"
 	files = "/api/v1/file/files"
+	// otherHost is the second tenant's origin, for the one case that needs two
+	// tenants: what a stranger's session can reach at a door it was not given.
+	otherHost = "globex.test"
 	// The public door is on the public surface: an anonymous visitor's door has no
 	// part of the tenant's workspace in its address. The address this door used to
 	// answer at redirects, for one release, which is asserted below.
@@ -36,18 +41,30 @@ const (
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 
+// globex is the other tenant, and it exists to be the one asking.
+var globex = tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
+
+// outbox is the kernel's delivery table, named here because this package's tests
+// read what a request left behind rather than only what it answered.
+const outbox = "platformkit_outbox"
+
 // png is the eight-byte signature of a real PNG, which is what
 // http.DetectContentType reads and what the upload now checks a declared image
 // against.
 const png = "\x89PNG\r\n\x1a\n"
 
-type caller struct{}
+// caller is the tenant resolver and the authorizer both, in the shape httpx.New
+// takes them. hosts is the map an origin resolves through: one entry for every
+// case that needs one tenant, two for the case that asks what one tenant's session
+// can reach inside another tenant's workspace.
+type caller struct{ hosts map[string]tenancy.Tenant }
 
-func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
-	if h != host {
+func (c caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
+	resolved, ok := c.hosts[h]
+	if !ok {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
-	return acme, nil
+	return resolved, nil
 }
 func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
@@ -55,9 +72,19 @@ func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, err
 // directory, with a limit small enough to go past in a test.
 func mounted(t *testing.T) chi.Router {
 	t.Helper()
-	_, conn := dbtest.Schema(t, file.Migrations)
+	router, _, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme})
+	return router
+}
+
+// mountedOn is that mount with the origins it answers on written down, and it
+// hands back the two connections as well: admin to read what a request left in
+// the tables, app for anything that has to be asked from a tenant's own
+// transaction.
+func mountedOn(t *testing.T, hosts map[string]tenancy.Tenant) (chi.Router, *sql.DB, *db.Conn) {
+	t.Helper()
+	admin, conn := dbtest.Schema(t, file.Migrations)
 	api, router := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
+		PublicHost: host, Tenants: caller{hosts: hosts}, Conn: conn, Authorize: caller{hosts: hosts},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
@@ -68,7 +95,7 @@ func mounted(t *testing.T) chi.Router {
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
-	return router
+	return router, admin, conn
 }
 
 // upload posts one multipart form with one file part in it.
@@ -102,7 +129,14 @@ func upload(t *testing.T, r http.Handler, at, name, contentType, body string) (i
 
 func send(t *testing.T, r http.Handler, method, at string, signedIn bool) (int, string, http.Header) {
 	t.Helper()
-	req := httptest.NewRequest(method, "http://"+host+at, nil)
+	return sendOn(t, r, host, method, at, signedIn)
+}
+
+// sendOn is the same request from another origin, which is the only way in this
+// harness for one tenant's session to be somebody else's.
+func sendOn(t *testing.T, r http.Handler, from, method, at string, signedIn bool) (int, string, http.Header) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+from+at, nil)
 	if signedIn {
 		req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	}
@@ -386,7 +420,14 @@ func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("file") }
 // ask sends one request with a JSON body and returns the answer.
 func ask(t *testing.T, r http.Handler, method, at, body string) (int, string) {
 	t.Helper()
-	req := httptest.NewRequest(method, "http://"+host+at, strings.NewReader(body))
+	return askOn(t, r, host, method, at, body)
+}
+
+// askOn is ask with the origin it came from, for the case that needs a second
+// tenant's session.
+func askOn(t *testing.T, r http.Handler, from, method, at, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+from+at, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	rec := httptest.NewRecorder()
@@ -502,5 +543,96 @@ func TestAnErasureNamesTheSubjectOrIsRefused(t *testing.T) {
 	// And the file that subject did not upload is where it was.
 	if code, _, _ = send(t, router, http.MethodGet, files, true); code != http.StatusOK {
 		t.Errorf("the list after an erasure of nothing = %d", code)
+	}
+}
+
+// TestATenantCannotGrantOrEraseAnothersFile is the isolation claim at the door a
+// stranger actually knocks on. The port's own suite proves one tenant's key opens
+// nothing in the store, and the service tests prove one tenant's transaction reads
+// no other's row; what nothing proved until now is that a second tenant's *HTTP
+// session* gets nothing at a first tenant's file id — the assertion the register
+// asks to be named, and the one a route could get wrong while every test above
+// stayed green (a handler that read the row before it scoped the transaction would
+// have had no case against it).
+//
+// The shape of the answer matters as much as the refusal. A file that exists in
+// another tenant's workspace has to answer exactly as a file that does not exist
+// here at all: the same 404, and a body that names none of it. "That id is
+// somebody else's" is a fact about the other tenant's workspace, and an answer
+// that explains itself leaks what the request never had to know.
+//
+// The erasure is the widest door of the three — it deletes by a subject rather
+// than by an id — so it is asked for acme's own uploader, and the answer has to be
+// a receipt of zero rather than an error, with nothing written in anybody's table.
+func TestATenantCannotGrantOrEraseAnothersFile(t *testing.T) {
+	router, admin, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme, otherHost: globex})
+	code, out := upload(t, router, files, "diary.txt", "text/plain", "something this person wrote")
+	if code != http.StatusCreated {
+		t.Fatalf("acme's upload = %d %s", code, out)
+	}
+	var row struct {
+		ID       uuid.UUID `json:"id"`
+		Uploader uuid.UUID `json:"uploader"`
+	}
+	if err := json.Unmarshal([]byte(out), &row); err != nil {
+		t.Fatalf("the uploaded record is not the shape the route declares: %v (%s)", err, out)
+	}
+	if row.Uploader == uuid.Nil {
+		t.Fatalf("the uploaded record names nobody: %s", out)
+	}
+
+	for _, door := range []struct{ method, at, why string }{
+		{http.MethodGet, files + "/" + row.ID.String() + "/content", "a download"},
+		{http.MethodGet, files + "/" + row.ID.String() + "/grant", "a signed URL"},
+		{http.MethodDelete, files + "/" + row.ID.String(), "a delete"},
+	} {
+		code, out, _ := sendOn(t, router, otherHost, door.method, door.at, true)
+		if code != http.StatusNotFound {
+			t.Errorf("globex asked for %s of acme's file = %d %s, want the 404 an absent file gets",
+				door.why, code, out)
+		}
+		// The refusal is about the request, not about what it found.
+		if strings.Contains(out, "diary.txt") || strings.Contains(out, row.ID.String()) {
+			t.Errorf("the refusal of %s names what it refused: %s", door.why, out)
+		}
+	}
+	// Which is the same answer acme gets for an id nobody ever minted: one status,
+	// one shape, and no arm of the handler that knows the difference.
+	code, absent, _ := sendOn(t, router, otherHost, http.MethodGet,
+		files+"/"+uuid.NewString()+"/content", true)
+	if code != http.StatusNotFound {
+		t.Errorf("an id never minted = %d %s, want 404", code, absent)
+	}
+
+	// The subject erasure, asked by the tenant that holds none of those files.
+	code, out = askOn(t, router, otherHost, http.MethodPost, files+"/erase",
+		`{"subject":"`+row.Uploader.String()+`","reason":"data protection request 2026-0412"}`)
+	if code != http.StatusOK {
+		t.Fatalf("globex erasing acme's subject = %d %s, want the receipt of nothing", code, out)
+	}
+	if !strings.Contains(out, `"files":0`) {
+		t.Errorf("the receipt across the tenant boundary reads %s, want zero files erased", out)
+	}
+
+	// Read at the tables and not at the response: a refusal that wrote a work
+	// order, a proof row or a soft delete would still have answered zero here.
+	var erased, orders int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM file_erasures`).Scan(&erased); err != nil {
+		t.Fatalf("read the proofs: %v", err)
+	}
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM `+outbox+` WHERE name IN ($1, $2)`,
+		contracts.EventDeleted, contracts.EventErased).Scan(&orders); err != nil {
+		t.Fatalf("read the outbox: %v", err)
+	}
+	if erased != 0 || orders != 0 {
+		t.Errorf("the cross-tenant erasure wrote %d proof rows and %d removal events, want neither",
+			erased, orders)
+	}
+
+	// And acme's file is where it was, at the same doors.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+row.ID.String()+"/content", true); code != http.StatusOK ||
+		out != "something this person wrote" {
+		t.Errorf("acme's own download after the other tenant's attempt = %d %s", code, out)
 	}
 }

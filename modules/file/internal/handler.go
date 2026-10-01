@@ -38,7 +38,10 @@ var faults = []int{
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
-// RegisterRoutes mounts the ten routes a file has.
+// RegisterRoutes mounts the twelve operations a file has, over seven paths: the
+// list, one read, the upload, the content door twice (GET and HEAD), the public
+// door twice, the delete, the grant, the hold placed and released, and the
+// subject erasure.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
 // takes a JSON body, and a file arrives as bytes. The list and the read below
