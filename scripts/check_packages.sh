@@ -44,7 +44,7 @@ done
 # would leave the assertion resting on a caller that may stop calling tomorrow.
 parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
-    kit/cache kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
+    kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
@@ -110,6 +110,12 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/cache is the value every replica reads: the standard library, uuid and
         # singleflight. A store it talks to is a provider, not this core.
         check("kit/cache", uuid " golang.org/x/sync/singleflight")
+        # The one store kit/cache speaks to: the port package and one client, and
+        # the four commands the adapter issues are asserted in its own test rather
+        # than here — this line is what the provider may link, which is the only
+        # direction the compiler cannot refuse.
+        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config",
+            uuid " github.com/redis/go-redis/v9 github.com/cespare/xxhash/v2 go.uber.org/atomic golang.org/x/sync golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("modules/task/domain", "")
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
