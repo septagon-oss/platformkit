@@ -13,7 +13,8 @@ func TestLoadRejectsAmbiguousOrUnsafeInputBeforeWriting(t *testing.T) {
 		name, body, other, want string
 	}{
 		{"duplicate YAML mapping", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    fields: {title: One, title: Two}\n", "", "duplicate key"},
-		{"unknown field", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    password: secret\n", "", "unknown field"},
+		{"unknown field", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    mystery: value\n", "", "unknown field"},
+		{"password field", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    fields: {password: secret}\n", "", "passwords must come from the application"},
 		{"duplicate record", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n  - key: home\n", "", "duplicates contents/home"},
 		{"multiple documents", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords: []\n---\nresource: contents\n", "", "multiple documents"},
 		{"unsafe asset", "apiVersion: platformkit.seed/v1\nresource: contents\nrecords:\n  - key: home\n    asset: ../secret\n", "", "unsafe asset"},

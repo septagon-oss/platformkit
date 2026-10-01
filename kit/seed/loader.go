@@ -292,6 +292,9 @@ func mapping(node *yaml.Node, file string, allowed ...string) (map[string]*yaml.
 		if _, exists := out[key.Value]; exists {
 			return nil, fmt.Errorf("seed: %s: duplicate key %q", source(file, key), key.Value)
 		}
+		if strings.Contains(strings.ToLower(key.Value), "password") {
+			return nil, fmt.Errorf("seed: %s: passwords must come from the application, not a seed file", source(file, key))
+		}
 		if allowed != nil && !slices.Contains(allowed, key.Value) {
 			return nil, fmt.Errorf("seed: %s: unknown field %q", source(file, key), key.Value)
 		}
