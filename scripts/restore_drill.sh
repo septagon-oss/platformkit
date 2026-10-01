@@ -127,7 +127,15 @@ with_database() {
 }
 
 if [ -z "$from" ]; then
-	from="$("$root/scripts/backup.sh" --url "$url" --out "$temporary" |
+	# The backup the drill takes for itself is the backup the drill drills, so it has
+	# to carry the half of the installation --files named. backup.sh copies blobs only
+	# when it is told where they live; a drill that forwarded nothing spent its first
+	# counted check refusing a backup of its own making, which fails every default run
+	# on exactly the installations that hold a byte store and blames a backup nobody
+	# asked for. `make restore-drill` names --files whenever the deployment has one.
+	backup_args=(--url "$url" --out "$temporary")
+	[ -z "$files" ] || backup_args+=(--files "$files")
+	from="$("$root/scripts/backup.sh" "${backup_args[@]}" |
 		sed -n 's#^backup: [^ ]*: \(.*\)/[^/]*\.dump,.*#\1#p' | tail -1)"
 	[ -d "$from" ] || die "the backup this drill would have run wrote no directory"
 fi
