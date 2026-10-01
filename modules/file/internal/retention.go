@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
 	"gorm.io/gorm/clause"
@@ -138,7 +140,7 @@ func (s *Service) EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject
 	// believe it holds the file.
 	err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
 		Where("uploader_id = ? AND deleted_at IS NULL", subject).
-		Clauses(lockForUpdate(false)).Order("id").Find(&rows).Error
+		Clauses(lockForUpdate(false, "")).Order("id").Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("file: find what this subject uploaded: %w", err)
 	}
@@ -193,10 +195,14 @@ type SweepConfig struct {
 // own row-level security and this job never writes another tenant's row, even
 // though it runs in one process across all of them.
 //
-// A kind with no configured policy is never deleted. The sweep logs it once per
-// run and moves on: refusing the write that takes the last copy away, never the
-// write that finds none, and a class the deployment forgot to price is a
-// configuration mistake rather than a licence to delete.
+// A kind with no configured policy is never deleted, and never read either: the
+// predicate it is found with is built from the configured classes, so an
+// unpriced class is not in the batch. That is the right half of the bargain —
+// refuse the write that takes the last copy away, never the write that finds
+// none, and a class the deployment forgot to price is a configuration mistake
+// rather than a licence to delete — and the price is that the sweep has nothing
+// to say about a class it never heard of: it reports what it removed, and the
+// classes it was given are the only ones it can see.
 type Sweep struct {
 	storage contracts.Storage
 	cfg     SweepConfig
@@ -224,27 +230,55 @@ func (s *Sweep) Jobs() []jobs.Job {
 // sweepBatch is how many files one tenant's tick will take. A tenant that has
 // been keeping invoices for a decade should not hold a connection while it
 // removes all of them; the next tick takes the rest.
+//
+// For that sentence to be true, the batch has to be a batch of the files the
+// policy covers, and so the cutoff and the hold are in the query and not in the
+// loop. A limit taken before the filter is a window over this tenant's files,
+// and a window only moves when the rows at the front of it leave: order the
+// read by id — a random UUID, drawn identically every tick — keep the rows the
+// class says to keep, and the expired file behind them is never read again.
+// The files that stay are then not in the window at all, so a tick either makes
+// progress or finds nothing, and the ceiling costs latency alone.
 const sweepBatch = 200
 
 func (s *Sweep) run(ctx context.Context, conn *db.Conn) error {
 	return jobs.PerTenant(ctx, conn, s.cfg.Tenants, func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
 		return db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			now := db.Now()
+			expired, priced := s.covered(now)
+			if len(priced) == 0 {
+				// Nothing this deployment priced is nothing this job may delete, and
+				// an empty predicate would read every row in the table to find that
+				// out. Jobs() refuses to schedule this job at all without a policy.
+				return nil
+			}
 			var rows []*contracts.File
+			// One arm per priced class, because a cutoff is a per-class thing: the
+			// one date a deployment of one shape would use is a different date for
+			// every class, and a single min() over the table would delete the short
+			// class's files while reading the long one's.
+			//
+			// The live-hold predicate is a subquery and not a join: a join would put
+			// file_holds rows in the FROM, which is where FOR UPDATE looks for rows
+			// to lock, and the sweep would take a lock on somebody's hold while it
+			// decided not to delete the file beside it. It is in the query for the
+			// same reason the cutoff is — a held file is not a deletion, so it does
+			// not belong in the batch — and held is asked again below, because the
+			// decision has to be true at the moment of the delete, not at the moment
+			// of the read.
 			err := tx.DB().WithContext(ctx).Model(&contracts.File{}).
 				Where("deleted_at IS NULL").
-				Clauses(lockForUpdate(true)).Limit(sweepBatch).Order("id").Find(&rows).Error
+				Where(expired, priced...).Where(liveHold, now).
+				Clauses(lockForUpdate(true, contracts.File{}.TableName())).Order("created_at").Limit(sweepBatch).Find(&rows).Error
 			if err != nil {
 				return fmt.Errorf("file: read this tenant's files for their retention: %w", err)
 			}
 			var removed int
 			for _, f := range rows {
+				// Re-read, not trusted: the query is what made this row worth
+				// looking at, and these two checks are what makes the delete true.
 				cutoff, ok := s.cutoff(f.Kind)
-				if !ok {
-					slog.WarnContext(ctx, "file: a file's retention class has no policy; keeping it",
-						"file", f.ID, "kind", f.Kind, "tenant", t.Slug)
-					continue
-				}
-				if f.CreatedAt.After(cutoff) {
+				if !ok || f.CreatedAt.After(cutoff) {
 					continue
 				}
 				if live, why, err := held(ctx, tx, f.ID); err != nil {
@@ -274,9 +308,48 @@ func (s *Sweep) run(ctx context.Context, conn *db.Conn) error {
 	})
 }
 
+// liveHold is the sweep's other predicate, as SQL: no hold that is in force at
+// the instant the batch is read. It is a NOT EXISTS over file_holds rather than
+// a join so the lock stays on the files table (see run), and it is the same
+// question contracts.Hold.Live asks in Go — no row, or no expiry, or an expiry
+// ahead of now — written the way a row-level security policy can answer it.
+const liveHold = `NOT EXISTS (SELECT 1 FROM file_holds h
+	WHERE h.file_id = files.id AND h.deleted_at IS NULL
+	  AND (h.until IS NULL OR h.until > ?))`
+
+// covered is the deletion predicate as one expression — every arm parenthesised
+// and the whole group parenthesised, so it ANDs against the rest of the WHERE as
+// one condition and not as the last arm of it — with the kinds it covers beside
+// it. A class priced at zero or less is not a policy, and a class the deployment
+// never priced is not read here at all: refuse the write that takes the last one
+// away, never the write that finds none.
+//
+// The kinds are walked in sorted order so the SQL one tenant's tick sends is the
+// same string every tick, which is what lets Postgres plan it once instead of
+// per file.
+func (s *Sweep) covered(now time.Time) (clause.Expression, []any) {
+	kinds := make([]string, 0, len(s.cfg.Retention))
+	for kind, keep := range s.cfg.Retention {
+		if keep > 0 {
+			kinds = append(kinds, kind)
+		}
+	}
+	slices.Sort(kinds)
+	arms := make([]string, 0, len(kinds))
+	vars := make([]any, 0, 2*len(kinds))
+	for _, kind := range kinds {
+		arms = append(arms, "(kind = ? AND created_at <= ?)")
+		vars = append(vars, kind, now.Add(-s.cfg.Retention[kind]))
+	}
+	if len(arms) == 0 {
+		return nil, nil
+	}
+	return clause.Expr{SQL: "(" + strings.Join(arms, " OR ") + ")", Vars: vars}, vars
+}
+
 // cutoff is the newest a file of this kind may have been created at to be swept
 // now, and false for a kind the deployment never gave a duration — which is
-// never a deletion, only ever a log line.
+// never a deletion.
 func (s *Sweep) cutoff(kind string) (time.Time, bool) {
 	keep, ok := s.cfg.Retention[kind]
 	if !ok || keep <= 0 {
@@ -397,9 +470,18 @@ func EraseBlobs(storage contracts.Storage) events.Subscription {
 // each other row by row, and a row another replica is holding is by definition
 // already being removed — the next tick will find it gone. Waiting there would be
 // a job that serialises itself across a fleet for no safety at all.
-func lockForUpdate(skipLocked bool) clause.Locking {
-	if skipLocked {
-		return clause.Locking{Strength: "UPDATE", Options: "SKIP LOCKED"}
+//
+// The sweep names its table in OF as well, because it reads with a subquery: FOR
+// UPDATE locks the rows of the ranges a statement retrieves from, and naming
+// files says which one that is rather than leaving a reader to work out what a
+// statement with a NOT EXISTS over file_holds locks.
+func lockForUpdate(skipLocked bool, of string) clause.Locking {
+	locking := clause.Locking{Strength: "UPDATE"}
+	if of != "" {
+		locking.Table = clause.Table{Name: of}
 	}
-	return clause.Locking{Strength: "UPDATE"}
+	if skipLocked {
+		locking.Options = clause.LockingOptionsSkipLocked
+	}
+	return locking
 }
