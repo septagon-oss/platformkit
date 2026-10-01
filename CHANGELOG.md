@@ -2,6 +2,36 @@
 
 ## Unreleased
 
+**A tenant's brand colour is now measured before it is painted.** Review round 19 found
+the third door a colour comes through. `design.yaml` is refused by `Client.Resolve` and
+a generated palette is repaired by `FromSeed`, both of which are doors a file passes;
+`site_settings.primary_color` is a `char(7)` a tenant edits, and `modules/web` wrote it
+straight into `:root{--pk-color-accent-default:…}` on every page of that tenant's site.
+Unlayered, that declaration outranks the `@layer tokens` block `ui.Compose` emits —
+which is the point of a per-tenant palette — and so paints `fg-link`, `fg-brand`,
+`surface-brand` and the label on it from a value no gate had ever read. Six hex digits
+was the whole of the defence: `#c0ffee`, which this package's own test pinned reaching
+the head, measured 1.10:1 as a link on a light card, and `#0f5d4e` — the accent the
+kernel itself ships in `light`, which a tenant is invited to copy into a dark site —
+measures 2.36:1 as the accent and 2.16:1 as a link on the card beside it. `Pair.LegibleAccent` is the measurement: the colour as it stands when
+the finished theme clears `Theme.Check` and `Theme.CheckRoles` with it, or the nearest
+colour along its own hue when it does not, the same walk `FromSeed` repairs a generated
+accent with, run against the pair the caller holds. An illegible answer is a refusal and
+the page keeps the accent its own stylesheet carries. The site asks once per mode, because
+the one value paints two schemes it cannot both read: a `system` site now declares the
+light answer at `:root`, the dark answer at `[data-theme="dark"]` and in the same
+preference rule `ui/style/theme.go` uses, and a visitor who switches modes sees a colour
+that reads in the one they are in. The shipped default is the measurement that says how
+wide the hole was: `#2563eb`, what the column default and every installation that never
+opened the settings screen paints, reads 4.4981:1 on the light canvas — under the 4.5:1
+floor by two thousandths — and 3.2618:1 as `fg-brand` on a dark card. It is now
+painted as `#4164b0` and `#618ef1`, which read; the column's default and
+`migrations/000018` are left for the product to move, since a repair that runs at the
+paint reaches every row that already exists and a default that moves reaches only the
+ones that follow. `SiteSettings.Validate` still refuses only what is not six hex digits:
+legibility is decided where the colour is painted, because a row saved before this gate
+existed is painted by whichever code answers the page, not by the one that wrote it.
+
 **The site's quotation bar is now gated the way the field's edge is.** `bodyContrast`
 named the boundary of a text field and no other, while `modules/web/internal/style.go`
 paints a second one: `[data-prose] blockquote` carries a 4 px left rule in

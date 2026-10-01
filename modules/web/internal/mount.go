@@ -67,7 +67,7 @@ type Site struct {
 // Mount composes the stylesheet once and serves the two routes through the
 // composition layer. There are no controllers: the site runs no script.
 func Mount(surfaces httpx.Surfaces, s Site) {
-	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
+	sheet := ui.Compose(s.palette(), ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
 	// The root claim. One module answers a tenant's host at "/", and Home says
 	// whether this one took it: a product with a storefront of its own is
 	// composed instead of this module, and a second claimant would be a boot
@@ -177,14 +177,77 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title s
 	}
 	// The tenant's accent is the one style this repository writes outside
 	// ui.Compose: the colour is a row, not a Go sheet, so no layer Compose emits
-	// can carry it. Unlayered is what lets a tenant palette outrank every layer,
-	// which is the point of a per-tenant colour, and the guard is the pattern —
-	// an inline declaration reaches the gate that refuses a consumer sheet a raw
-	// colour and the --pk- namespace. See refuseClientSheet.
-	if colour.MatchString(settings.PrimaryColor) {
-		v.Head = []g.Node{h.StyleEl(g.Raw(":root{--pk-color-accent-default:" + settings.PrimaryColor + "}"))}
+	// can carry it, and refuseClientSheet — the gate that refuses a consumer
+	// sheet a raw colour and the --pk- namespace — never sees it, because it is
+	// not a sheet. Unlayered is what lets a tenant palette outrank every layer,
+	// which is the point of a per-tenant colour, and outranking the layer the
+	// gate reads is why the colour is measured here rather than trusted: four
+	// roles and a badge's tint are painted from accent-default, and the value is
+	// a column a tenant edits.
+	if rules := s.accent(settings); rules != "" {
+		v.Head = []g.Node{h.StyleEl(g.Raw(rules))}
 	}
 	return v
+}
+
+// accent is the tenant's brand colour as the declarations that pin it, in the
+// same three selectors ui/style's ThemeVars uses for the dark theme, narrowed to
+// the modes this page can actually be in. The colour is one value; the pair paints
+// it in two modes, and a colour legible as a link on a light card is not the same
+// colour as the one legible on a dark canvas, so each mode gets its own measured
+// declaration and a visitor who switches modes never sees an unmeasured one.
+//
+// design.Pair.LegibleAccent is the measurement: the colour as it stands when the
+// finished theme clears both halves of the gate with it, or the nearest colour
+// along its own hue when it does not. It answers the same way for the row a tenant
+// saved before any gate existed as for the write that arrives now, which is why
+// the door that paints measures: refusing the write would leave every installation
+// that already saved the colour painting it unmeasured. Where no colour reads — a
+// palette that fails its own gate — nothing is declared, and the page keeps the
+// accent the stylesheet it links already carries.
+func (s Site) accent(settings *sitecontracts.SiteSettings) string {
+	// Characters first, and only this module's own grammar for them: the value
+	// goes into a style element, so anything that is not six hex digits is
+	// dropped rather than interpolated. LegibleAccent parses too; this guard is
+	// the injection defence, not the legibility one.
+	if !colour.MatchString(settings.PrimaryColor) {
+		return ""
+	}
+	pair := s.palette()
+	base, other := "light", "dark"
+	if settings.Theme == "dark" {
+		base, other = "dark", "light"
+	}
+	measured, err := pair.LegibleAccent(base, settings.PrimaryColor)
+	if err != nil {
+		return ""
+	}
+	rules := ":root{--pk-color-accent-default:" + measured + "}"
+	// The mode the page is not pinned to, spelled with the selector that reaches
+	// it: the visitor's stored choice (beforePaint in ui/page moves data-theme)
+	// and, for a site that named no mode, the browser's own preference, which is
+	// the sheet's :root:not([data-theme]) case and outranks the plain :root.
+	alternate, err := pair.LegibleAccent(other, settings.PrimaryColor)
+	if err != nil || alternate == measured {
+		return rules
+	}
+	rules += `[data-theme="` + other + `"]{--pk-color-accent-default:` + alternate + "}"
+	if settings.Theme != "light" && settings.Theme != "dark" && other == "dark" {
+		rules += "@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" + alternate + "}}"
+	}
+	return rules
+}
+
+// palette is the pair this site paints and the pair its tenant's colour is
+// measured against — one pair, so the measurement is of the sheet the page
+// links rather than of a palette nobody renders. An installation that composed
+// no palette paints design.Default(), which is what that function says an
+// application that says nothing about colour gets.
+func (s Site) palette() design.Pair {
+	if s.Theme == (design.Pair{}) {
+		return design.Default()
+	}
+	return s.Theme
 }
 
 func frame(_ context.Context, _ page.Request, body []g.Node) g.Node {
