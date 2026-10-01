@@ -86,7 +86,6 @@ func TestTwoAppsOnOneBrokerNeverShareASubscription(t *testing.T) {
 		if err != nil {
 			t.Fatalf("app %s subscribing to %s: %v", app, event, err)
 		}
-		defer func() { _ = sub.Unsubscribe() }()
 		t.Cleanup(func() { _ = sub.Unsubscribe() })
 	}
 	subscribe(acme, durableA, nameA)
