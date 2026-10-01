@@ -138,16 +138,19 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 
 // List reads a page of them. See contracts.Service.
 func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query) ([]*contracts.Proposal, int64, error) {
+	// The names kit/crud's filters are written in are the entity's JSON names, the
+	// same ones a query parameter carries, so one field has one spelling in every
+	// door that reads it.
 	filter := map[string]any{}
 	for field, value := range map[string]string{
-		"state": q.State, "subject_module": q.SubjectModule, "subject_entity": q.SubjectEntity,
+		"state": q.State, "subjectModule": q.SubjectModule, "subjectEntity": q.SubjectEntity,
 	} {
 		if value != "" {
 			filter[field] = value
 		}
 	}
 	if q.SubjectID != uuid.Nil {
-		filter["subject_id"] = q.SubjectID
+		filter["subjectId"] = q.SubjectID
 	}
 	return crud.List[*contracts.Proposal](tx, crud.Query{
 		Limit: q.Limit, Offset: q.Offset, Filter: filter,
