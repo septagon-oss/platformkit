@@ -11,10 +11,13 @@
 # question about sameness needs a number taken *before* the restore, not after it.
 #
 # The dump is custom format (`pg_dump -Fc`): a directory a later `pg_restore` reads
-# selectively, compressed, and restorable in parallel. Roles are not dumped — a
-# cluster is not this database's role directory, and `platformkit_app` is created
-# from apps/platformkit/postgres-init.sql by whoever owns the cluster (the same
-# promise scripts/rehearse_migrations.sh makes about a rehearsal cluster).
+# selectively, compressed, and restorable in parallel. It carries the privileges on
+# this database's tables, because the restore drill reads the restored database as
+# the application's own role and a restore that lost the grants is a database shut
+# against the installation it is supposed to serve. Roles themselves are not
+# dumped — a cluster is not this database's role directory, and `platformkit_app`
+# is created from apps/platformkit/postgres-init.sql by whoever owns the cluster
+# (the same promise scripts/rehearse_migrations.sh makes about a rehearsal cluster).
 #
 # --files is the object store's directory for a deployment that runs on disk
 # (`file.Local`); a deployment on an object store has its own replication and
@@ -60,7 +63,7 @@ stamped="$out/${prefix}-${dbname}-$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$stamped"
 
 dump="$stamped/${dbname}.dump"
-pg_dump --no-owner --no-privileges --no-tablespaces -Fc -f "$dump" "$url"
+pg_dump --no-owner --no-tablespaces -Fc -f "$dump" "$url"
 
 {
 	echo "# platformkit backup of database $dbname, $(date -u +%FT%TZ)"
