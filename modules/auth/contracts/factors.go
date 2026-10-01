@@ -12,15 +12,15 @@ import (
 
 // The three failures a caller of this capability can act on.
 var (
-	// ErrFactorRequired is Login's answer when the password was right and the
-	// person has a factor enrolled: the first proof arrived and the second did
-	// not. It is not ErrCredentials — the address and the password are correct,
-	// and saying otherwise would send a person with a dead phone battery to the
-	// reset link, which is how a second factor becomes a password reset queue.
-	//
-	// It is an outcome rather than a fault, and Login returns it with no session
-	// and no identity: a caller that reached this point has a right address and a
-	// right password, which is exactly what answering the factor is for.
+	// ErrFactorRequired is Login's and Open's answer when the first proof arrived
+	// and the second did not: this person holds a factor and this request did not
+	// carry its answer. It is not ErrCredentials, and which proof came first is
+	// not fixed — a password that checked out and a provider that confirmed the
+	// address are the same half — and a person told otherwise reaches for the reset
+	// link, which is how a second factor becomes a password reset queue. It is an
+	// outcome rather than a fault: both doors return it with no session and no
+	// identity, because the caller holds one right thing, which is exactly what
+	// answering the factor is for.
 	ErrFactorRequired = errors.New("auth: this account answers with a second factor")
 
 	// ErrLastFactor is WithdrawFactor's refusal to take the last one away.

@@ -319,9 +319,9 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the identity provider did the
-	// verifying, and what is left is the same session this module issues for a
-	// password.
+	// other way. The OIDC callback is its caller: the provider did the verifying,
+	// and what is left is the session this module issues for a password — asked
+	// of the account first, second factor and all, whichever half came through.
 	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role

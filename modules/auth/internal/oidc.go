@@ -261,9 +261,9 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		// relative path, and kit/config refuses the two when they disagree.
 		Path:        "/oidc/callback",
 		Summary:     "Finish single sign-on",
-		Description: "Exchanges the code, verifies the id token, and opens a session for the user whose verified address it names. An address this tenant does not have is refused: nobody is created here.",
+		Description: "Exchanges the code, verifies the id token, and opens a session for the user whose verified address it names. An address this tenant does not have is refused: nobody is created here. A person whose account answers with a second factor is refused here too: the provider proved the first half, and the second is asked for at /challenge/verify.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusForbidden, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn}},
 	}, httpx.Public(), func(ctx context.Context, in *callbackInput) (*redirectOutput, error) {
 		tx, err := transaction(ctx)
@@ -436,6 +436,16 @@ func random() string {
 func refusedAtTheDoor(err error) error {
 	if errors.Is(err, crud.ErrConflict) {
 		return problem.New(http.StatusForbidden, "this account cannot sign in here")
+	}
+	if errors.Is(err, contracts.ErrFactorRequired) {
+		// The status the shared mapping already gives, and not its sentence: "that
+		// password is right" is a claim about a secret this leg never looked at, and
+		// a person who arrived through a provider would be told about a password
+		// they did not type. The provider confirmed the address; the account says
+		// one confirmation is half. Which half is missing, and the address that
+		// finishes it, are both in the sentence.
+		return problem.New(http.StatusUnauthorized,
+			"this account also answers with a second factor, which this sign-in did not carry; answer it at /challenge/verify")
 	}
 	return refusal(err)
 }

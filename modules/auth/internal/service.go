@@ -167,6 +167,26 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 
 // Open creates a session for a user somebody else has already recognised. The
 // OIDC callback is its caller.
+//
+// It asks the account the same question Login asks, and asks it for the same
+// reason. Whether what the caller proved is enough is a fact about the account,
+// not about which door it came to: an identity provider that confirmed a mailbox
+// proved one thing about this person, and the thing it proved is the thing their
+// password also proved. A person who enrolled a second factor is not signed in
+// by the first half of a sign-in, whichever half the first half was, and a leg
+// that opened the session and left the factor for later would be a window in
+// which a session stolen at the provider was a stolen account. Nothing is written or
+// published on this branch, for the reason Login publishes nothing: there is no
+// session, so a trail that said "signed in" would describe a row that does not
+// exist. The person finishes at `/challenge/verify`, which spends the code and
+// opens the session the provider had already earned.
+//
+// The question is asked unconditionally because nothing exists that could answer
+// it otherwise: no column of 000030_tenant_oidc and no field of
+// contracts.OIDCProvider says "this tenant's provider is trusted to have asked",
+// and reading a permission nobody wrote would be inventing it. The declaration
+// the brief's "where the tenant allows" asks for is named as unbuilt in the
+// module's README; until somebody writes it, the account decides at both doors.
 func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
 	user, err := s.users.Get(ctx, tx, id)
 	if err != nil {
@@ -174,6 +194,13 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 	}
 	if user.Status != usercontracts.StatusActive {
 		return nil, nil, contracts.ErrCredentials
+	}
+	required, err := s.factorEnrolled(ctx, tx, user.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if required {
+		return nil, nil, contracts.ErrFactorRequired
 	}
 	return s.open(ctx, tx, user, from, "oidc")
 }

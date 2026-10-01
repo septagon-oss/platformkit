@@ -103,10 +103,22 @@ POST   /api/v1/auth/factors/recovery/rotate SignedIn  retire every unused code, 
 POST   /api/v1/auth/challenge/verify       Public     the second half of a sign-in, and the cookie
 ```
 
-`Login` does the deciding in one branch: the password checked out, and if this
-person holds a factor the answer is `ErrFactorRequired` — no session, no
-`auth.logged_in`, and no `auth.login_failed` either, because the password was
-right and the trail should not record a success as an attack. The challenge route
+The deciding happens in one branch and it happens about the *account*: the first
+proof checked out, and if this person holds a factor the answer is
+`ErrFactorRequired` — no session, no `auth.logged_in`, and no `auth.login_failed`
+either, because the first proof was right and the trail should not record a
+success as an attack. `Login` asks it after the password; `Open`, the single
+sign-on callback's only caller, asks the same question of the person its provider
+just named, because "is what this person proved enough?" has one answer and the
+door they happened to knock on does not decide it. A provider that confirmed an
+address proved the same thing a password proves, so the federated leg answers
+`ErrFactorRequired` as well, as a 401 that says which half was missing and where
+the other half is asked for. Both halves of that rule are pinned by
+`TestASingleSignOnLegDoesNotWalkPastAPersonsOwnSecondFactor`: it enrols a factor,
+shows the password leg opens nothing, shows the provider leg opens nothing, and
+last shows a colleague who enrolled nothing is still signed in by that same leg —
+so the rule cannot be bought by refusing single sign-on, nor by refusing
+everybody. The challenge route
 is `httpx.Public()` authorisation on the workspace surface, the shape
 `/login` and `/password/reset` already use: the caller has no session by design,
 and the answer to a correct code is a session cookie. The anonymous surface sets
@@ -131,6 +143,15 @@ refusal and the record in one statement.
 
 ### Deliberately not here
 
+* **No tenant-level "my identity provider may stand as the first factor".** The
+  brief's "where the tenant allows" is a declaration nobody has written:
+  `000030_tenant_oidc` carries an issuer, a client id, a secret reference, a
+  redirect path, a registration mode and roles, and `contracts.OIDCProvider`
+  mirrors that list and nothing more. So the account decides at both doors, in
+  every tenant, and a tenant that wants its provider treated as proof of two
+  things has no way to say so. Making that sayable is a column, a field on the
+  port, a refusal that reads it and this paragraph rewritten — named here so the
+  next brief owns a shape rather than rediscovering one.
 * **No `factor_challenges` table.** RFC 6238's step *is* the challenge; the only
   state a table would add is "which steps were spent", which is the one column
   above. Attempts are capped per address instead — see the next bullet.
