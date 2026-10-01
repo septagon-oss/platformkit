@@ -442,12 +442,14 @@ func (m *Mail) validate(path string) error {
 	if m.From == "" {
 		return fmt.Errorf("config %s: mail.from is empty; a message with no sender is refused by the far end", path)
 	}
-	// One bare address, because this is the envelope sender the SMTP session
-	// opens with (MAIL FROM) as well as the From header. A display name parses
-	// as an address and is refused by the relay hours later, in somebody else's
-	// log, which is the failure this key exists to avoid.
-	if a, err := mail.ParseAddress(m.From); err != nil || a.Address != m.From {
-		return fmt.Errorf("config %s: mail.from is %q; it is the envelope sender, so it is one bare address", path, m.From)
+	// One mailbox, with or without a display name: "noreply@acme.example.com" or
+	// "Acme <noreply@acme.example.com>". The mailer sends the bare address as the
+	// envelope sender (MAIL FROM) and the whole mailbox as the From header, so a
+	// name is what a person sees and never what a relay refuses. A list or a
+	// malformed address is refused here, at boot, rather than by the relay hours
+	// later in somebody else's log.
+	if _, err := mail.ParseAddress(m.From); err != nil {
+		return fmt.Errorf("config %s: mail.from is %q; it is one address, optionally with a display name", path, m.From)
 	}
 	if m.Port == 0 {
 		m.Port = defaultSMTPPort
