@@ -83,12 +83,25 @@ type Spec[T crud.Entity] struct {
 	// question, never this one's. A module whose writes are commands rather than
 	// CRUD says so by naming the verbs it has: a resource that offers no create
 	// should not advertise one.
+	//
+	// Two shapes are answered differently rather than by the router. A set with no
+	// list has no workspace address, so it mounts no generated page at all and
+	// publishes no screen — such a module writes its own pages, the way
+	// modules/admin writes the ones a Spec cannot describe. A list with no read is
+	// refused at Mount, because the list page links every row's identity to the
+	// record route and a resource that offers no read has no record route to answer
+	// it. Everything else mounts: the doors, the pages and the catalogue are all
+	// written from this one field.
 	Operations []httpx.CRUD
 	// ReadAuth and WriteAuth are the declarations the routes answer to, for the
-	// guard a permission string cannot name: httpx.SignedIn(), or a permission
-	// that also needs a plan feature. Zero means what Read and Write mean now —
-	// the two shorthand fields, read through the two operator flags — and
-	// check() refuses a Spec that spells the same guard both ways.
+	// guard a permission string cannot name: httpx.SignedIn(), or a permission that
+	// also needs a plan feature. Zero means what Read and Write mean now — the two
+	// shorthand fields, read through the two operator flags — and check() refuses a
+	// Spec that spells the same guard both ways. An operator grant keeps the
+	// shorthand (Read and OperatorRead), which is the spelling kit/app cross-checks
+	// against the module manifest; the declaration is for what the shorthand cannot
+	// say, and never for httpx.Public(), which would be a tenant's rows behind no
+	// guard at all.
 	//
 	// SignedIn admits any caller carrying a principal for the resolved tenant and
 	// nothing more (kit/httpx/authorize.go): the rows a signed-in read reaches
@@ -695,6 +708,17 @@ func (s Spec[T]) operationsFault() string {
 	}
 	// An empty Operations means all five, and nil and an empty slice both mean
 	// it: nothing here refuses it, and nothing here reads it as "none".
+	//
+	// A list with no read is the one withheld verb that leaves a lie on a page that
+	// *is* mounted: ui/resource.table makes the identity column the way into the
+	// record, so every row of a list whose read route is not mounted would link to
+	// the 404 of a place nothing is served. That is the sentence the doors were
+	// gated with, and here it is refused rather than drawn without its links: a
+	// table of rows nobody may open is not a screen with one door missing, it is a
+	// screen that does not work.
+	if s.offers(httpx.CRUDList) && !s.offers(httpx.CRUDRead) {
+		return "offers list without read: the list page links every row to the record route, and a resource that offers no read mounts no record route to answer it"
+	}
 	for _, d := range []struct {
 		field, shorthand string
 		auth             httpx.Auth
@@ -716,10 +740,19 @@ func (s Spec[T]) operationsFault() string {
 			// route a module mounts itself has both the surface and the sentence.
 			return fmt.Sprintf("%s is public; a Spec serves a tenant's rows, so a public face is rest.Singleton's Face or a route you mount yourself", d.field)
 		case d.auth.NamesAGrant() && d.auth.Feature() == "":
-			// A plain permission has a shorthand, and two spellings of one guard
-			// is two things to keep honest. With .Needing it is the only spelling
-			// that can say "the grant *and* the plan feature", so it stays.
-			return fmt.Sprintf("%s names a plain permission (%s); say it with %s, and name a plan feature with .Needing when the grant is not the whole question", d.field, d.auth, strings.TrimSuffix(d.field, "Auth"))
+			// A permission has a shorthand, and two spellings of one guard is two
+			// things to keep honest. With .Needing it is the only spelling that can
+			// say "the grant *and* the plan feature", so that one stays. An operator
+			// permission is refused here too, and its sentence has to name *both*
+			// fields: its shorthand is the permission and the operator flag, and the
+			// declaration beside that flag is the doubling R4 refuses above. Naming
+			// only the permission would send an author to the customer's surface with
+			// the operator's grant in hand.
+			shorthand := strings.TrimSuffix(d.field, "Auth")
+			if d.auth.Operator() {
+				return fmt.Sprintf("%s names an operator permission (%s); say it with %s and Operator%s, which is the spelling kit/app checks against the manifest", d.field, d.auth, shorthand, shorthand)
+			}
+			return fmt.Sprintf("%s names a plain permission (%s); say it with %s, and name a plan feature with .Needing when the grant is not the whole question", d.field, d.auth, shorthand)
 		}
 	}
 	// A write whose row the caller names, under a guard that decides nothing but

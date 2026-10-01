@@ -223,13 +223,17 @@ func TestASpecOfferingListAndReadMountsNoWriteRoute(t *testing.T) {
 // TestTheItemAddressOfAResourceThatOffersNoReadIsNotFound is the other half of
 // a withheld verb: when no route is mounted at the address either, the answer is
 // the 404 of a place nothing is served, and not a 405 about a method an address
-// nobody claimed.
+// nobody claimed. The shape is a create with nothing beside it: the collection
+// address answers POST and the item address is an address no verb of this
+// resource claimed. (A list-only Spec would be the tidier fixture, and check()
+// refuses one — TestAListWithNoReadRefusesToMount — because its own list page
+// would link every row to the record route this fixture does not mount.)
 func TestTheItemAddressOfAResourceThatOffersNoReadIsNotFound(t *testing.T) {
-	collectionOnly := spec
-	collectionOnly.Operations = []httpx.CRUD{rest.List}
-	_, router, _ := mount(t, collectionOnly)
+	fileOnly := spec
+	fileOnly.Operations = []httpx.CRUD{rest.Create}
+	_, router, _ := mount(t, fileOnly)
 	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task/"+uuid.New().String(), ""); code != http.StatusNotFound {
-		t.Errorf("GET the item of a list-only resource = %d %s, want 404", code, body)
+		t.Errorf("GET the item of a resource that offers no read = %d %s, want 404", code, body)
 	}
 }
 
@@ -416,6 +420,28 @@ func TestADuplicateVerbRefusesToMount(t *testing.T) {
 	refusesToMount(t, bad, `Operations names "list" twice`)
 }
 
+// TestAListWithNoReadRefusesToMount is the withheld verb that cannot be drawn.
+// Every other withheld verb hides a door; this one leaves a page mounted whose
+// rows all link into a 404, because ui/resource.table makes the identity column
+// the way into the record. The 404 is the router's honest answer and the link is
+// the page's lie, and the mount site is where the two are kept apart.
+func TestAListWithNoReadRefusesToMount(t *testing.T) {
+	dead := spec
+	dead.Operations = []httpx.CRUD{rest.List}
+	refusesToMount(t, dead, "offers list without read")
+
+	// The pair, and the empty set, both mount: the refusal is about the list on
+	// its own, not about the two verbs.
+	for _, offers := range [][]httpx.CRUD{{rest.List, rest.Read}, nil} {
+		both := spec
+		both.Operations = offers
+		_, router, _ := mount(t, both)
+		if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
+			t.Errorf("a resource offering %v answers its list %d %s, want 200", offers, code, body)
+		}
+	}
+}
+
 func TestAGuardSpelledTwiceRefusesToMount(t *testing.T) {
 	both := spec
 	both.ReadAuth = httpx.SignedIn()
@@ -460,6 +486,25 @@ func TestAPlainPermissionInReadAuthRefusesToMountAndOneNeedingAFeatureDoesNot(t 
 	if code, body := call(t, router, http.MethodGet, "/api/v1/tasks/task", ""); code != http.StatusOK {
 		t.Errorf("a caller the grant and the plan both admit read the list at %d %s", code, body)
 	}
+}
+
+// TestAnOperatorPermissionDeclarationNamesBothFields holds R6's other half to its
+// sentence. An operator grant has a shorthand as well — the permission *and* its
+// operator flag, which is the spelling kit/app cross-checks against the module
+// manifest — so the declared spelling is refused like the plain one, beside the
+// flag or without it. What this case guards is the wording: a refusal that named
+// only the permission would send an author to the customer's surface carrying the
+// operator's grant, with the boundary left to a flag beside it.
+func TestAnOperatorPermissionDeclarationNamesBothFields(t *testing.T) {
+	read := spec
+	read.Read = ""
+	read.ReadAuth = httpx.OperatorPermission("task:read")
+	refusesToMount(t, read, "say it with Read and OperatorRead")
+
+	write := spec
+	write.Write = ""
+	write.WriteAuth = httpx.OperatorPermission("task:write")
+	refusesToMount(t, write, "say it with Write and OperatorWrite")
 }
 
 // TestASignedInWriteGuardRefusesTheGenericWrites closes the gap the brief opens:
