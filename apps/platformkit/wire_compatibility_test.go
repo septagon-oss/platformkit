@@ -15,10 +15,13 @@ package main
 //	B3  a schema member the golden reached is removed, renamed or retyped
 //	B4  a request schema or parameter list gained something required an older client never sends
 //	B5  an enum moved the way that strands a reader: a member left a request, or joined a response
-//	B6  a route's authorization declaration changed, read from x-platformkit-auth
+//	B6  a route's authorization declaration moved the way that can refuse a caller it
+//	    used to admit; one strictly-widening change is allowed, named in
+//	    widenableAuthorization below
 //
 // Additive is allowed: a new address, a new operation, a new optional member, a
-// new enum value a request may send, a new x-platformkit-* extension.
+// new enum value a request may send, a new x-platformkit-* extension, a door that
+// admits everything it admitted before and one credential more.
 //
 // Nothing overrides a refusal, including UPDATE_GOLDEN=1. The way a planned
 // breaking change ships is the way /api/v1/admin moved to /api/v1/app: land the
@@ -60,7 +63,7 @@ func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 		case fresh.operationID != old.operationID:
 			problems = append(problems, fmt.Sprintf("B2 (breaking): %s is answered by %q, which used to be %q", old.key, fresh.operationID, old.operationID))
 		}
-		if ok && fresh.auth != old.auth {
+		if ok && fresh.auth != old.auth && !authorizationsWiden(old.auth, fresh.auth) {
 			problems = append(problems, fmt.Sprintf("B6 (breaking): %s (%s) is authorized %s where it was %s", old.key, old.operationID, fresh.auth, old.auth))
 		}
 		if !known[old.operationID] {
@@ -190,6 +193,32 @@ func wireOperations(doc map[string]any) wireRoutes {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out
+}
+
+// widenableAuthorization is the set of changes of x-platformkit-auth that cannot
+// refuse a caller an older document promised: each pair is a door that admits
+// every caller the first kind admitted, and more. The one entry,
+// kind=signed_in -> kind=any_credential, is the one this repository has shipped:
+// the resource catalogue is httpx.AnyCredential (kit/httpx/auth.go), a door that
+// resolves a caller and asks no permission of them, so it answers every holder of a
+// session cookie exactly as signed_in did and additionally answers a bearer key —
+// the credential a client that is not a browser holds, which is why the widening was
+// made. It is a table rather than an order on the five kinds because the five are
+// not ordered: Public admits a stranger, which no client of a signed-in door was
+// promised, and a permission-named door admits a subset. "Could only ever admit
+// more" is a fact about a pair, so the pairs are what is written down.
+//
+// Every other change of the declaration stays breaking, including this pair read
+// backwards: a door that narrows is the case the rule exists for.
+var widenableAuthorization = map[[2]string]bool{
+	{"kind=signed_in", "kind=any_credential"}: true,
+}
+
+// authorizationsWiden says the fresh declaration admits everybody the golden's
+// admitted. The strings are wireAuth's, so a door that also names a permission can
+// never reach the table: only the two credential-only doors are comparable here.
+func authorizationsWiden(from, to string) bool {
+	return widenableAuthorization[[2]string{from, to}]
 }
 
 // wireAuth is the declaration a route carries, in the one form worth comparing.
