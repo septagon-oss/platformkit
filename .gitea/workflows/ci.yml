@@ -77,6 +77,28 @@ jobs:
           PGPASSWORD: platformkit
         run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 
+      # Two questions no other step here answers, and both were steps nobody was
+      # forced to run: what this release's migrations cost against a copy of the
+      # database an installation actually has (ADR 0011), and which exported name
+      # a pinned consumer compiled against the last release. `make check` now
+      # depends on both; they are separate steps so a contributor sees which of
+      # the two broke rather than reading it out of a make line. The rehearsal
+      # writes a receipt on the path where it is true, and it is printed here
+      # because every action in this repository is pinned by commit and an
+      # upload action would need a pin nobody has verified — the job log carries
+      # it, the way .gitea/workflows/public-consumption.yml carries its reports.
+      # A consumer's own CI refuses a pin that cannot name one
+      # (scripts/PIN-REHEARSAL.md).
+      - name: Migration rehearsal (make check-rehearse)
+        env:
+          REHEARSE_RECEIPT: ${{ runner.temp }}/rehearsal.json
+        run: |
+          make check-rehearse
+          cat "$REHEARSE_RECEIPT"
+
+      - name: Exported surface against the supported tag (make check-apidiff)
+        run: make check-apidiff
+
       - name: make check
         run: make check
 
