@@ -47,6 +47,15 @@ type Event struct {
 	// inherit. kit/trace owns the format; nothing here parses it.
 	TraceParent string
 	TraceState  string
+	// RequestID is the id the call was answered with (X-Request-ID), and ClientIP
+	// is the peer address of the connection it arrived on — never a header a
+	// client could write. They arrive with the event because they are readable
+	// only while the request is open: the publisher copies them from kit/request
+	// into its outbox row, and the relay reads them back onto the delivery. Empty
+	// is the normal case, and it means the same thing an empty TraceParent
+	// means: no request caused this, so there is no call to name.
+	RequestID string
+	ClientIP  string
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a

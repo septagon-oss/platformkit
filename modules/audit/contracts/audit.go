@@ -9,9 +9,23 @@
 // already published, and a schema that normalised those is a schema every new
 // module has to be taught. A module is audited by having emitted an event.
 //
-// It is append-only. Nothing updates a row and nothing removes one but the
-// retention job, which is also why there is no rest.Spec: a Spec is five routes
-// and three of them write.
+// It is append-only in the sense the code makes true: nothing in this module
+// updates a row and nothing removes one but the retention job, which is also why
+// there is no rest.Spec — a Spec is five routes and three of them write.
+//
+// Say plainly what that does not include, because the sentence used to claim
+// more than the tree delivered (T-0118, decision 0013's integrity property). The
+// trail carries the request that caused each row — actor, request id, client
+// address, trace context (migrations/000024) — but it is not hash-chained, and
+// the role the application connects as still holds UPDATE and TRUNCATE on the
+// table through the cluster's default privileges. "Append-only" is therefore a
+// statement about this module's code, not a property the database will refuse a
+// rewrite of. The chain that would make it one — a per-tenant sequence and
+// prev_hash/hash pair, a named advisory lock per tenant over the append, a
+// checkpoint row for retention, the two grants revoked and a BEFORE DELETE
+// trigger that admits only the retention transaction — is the next delivery's,
+// and modules/audit/README.md's Limits section is where the shape is written
+// down so a second engineer builds the same thing.
 package contracts
 
 import (
@@ -44,6 +58,20 @@ type Event struct {
 	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
 	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
 	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+	// RequestID is the id the caller of the request that caused this was answered
+	// with (X-Request-ID), and TraceParent the W3C trace context it carried, kept
+	// verbatim as the standard spells it. ClientIP is the peer address of the
+	// connection the request arrived on — never a header a client could write.
+	// All three are absent for work no request caused, and for every row written
+	// before migrations/000024: a fact nobody captured cannot be reconstructed
+	// afterwards, and inventing one would be writing history twice.
+	RequestID string `json:"requestId,omitempty" doc:"The call that caused this, as its caller was told it" example:"0f7c0f1c-2a3e-4a1b-9b4f-2f1d0c9b8a71"`
+	ClientIP  string `json:"clientIp,omitempty" doc:"The address the call arrived from" example:"203.0.113.7"`
+	// Traceparent is spelled as the standard spells its header, in one word, and
+	// that is not a style choice: the runner maps a scanned field by snake_case,
+	// so a Go name of TraceParent reads a column named trace_parent and finds
+	// nothing — the failure kit/events/relay.go warns about, reached here first.
+	Traceparent string `json:"traceparent,omitempty" doc:"The W3C trace context of the call that caused this" example:"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"`
 }
 
 // TableName pins the table, so the struct and migrations/000010 agree.
@@ -62,10 +90,18 @@ func (Event) TableName() string { return "audit_events" }
 // command carries its own argument, where it is "taskId" or "contentId". An
 // event is about a row when the row's id appears anywhere in its payload, which
 // is true of both shapes and of any module that follows either.
+//
+// Request and TraceID are the two questions the row could not answer until
+// migrations/000024: which call wrote this, and which trace that call belonged
+// to. The first matches the stored id exactly; the second matches the trace id,
+// which is the second field of the stored traceparent and what
+// migrations/000026 indexes.
 type Query struct {
 	Name          string
 	Actor         uuid.UUID
 	Record        uuid.UUID
+	Request       string
+	TraceID       string
 	Since, Until  time.Time
 	Limit, Offset int
 }
