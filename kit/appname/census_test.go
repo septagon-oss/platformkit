@@ -36,12 +36,14 @@ type rule struct {
 	// forms; making it call a constructor would replace an assertion with a call
 	// to the code under test, which asserts nothing. The census's planted
 	// counter-example is not a _test.go file, so the widened shape is proven on it.
+	//
+	// A widened literal fires on whatever the line is doing, which is deliberate
+	// and costs something: ui/export spells "platformkit." for a directory of
+	// generated files, and a line that does that would be reported as an event
+	// address. The answer is the entry below with the reason beside it, not a
+	// second pattern that guesses what the line meant — a guard that decides when
+	// a name is a name is the thing this census exists to refuse.
 	literal *regexp.Regexp
-	// context keeps a widened literal from matching a name that merely shares
-	// letters with one: the ui/export package spells "platformkit." for a directory
-	// of generated files, which is not an event address. A literal only counts
-	// where the line also says what kind of name it is forming.
-	context *regexp.Regexp
 	allow   []allowed
 }
 
@@ -144,17 +146,6 @@ var census = []rule{
 // holds kernel code today; a client's own code forms no kernel name, and if it
 // ever wants to, that is the bug this census exists to catch.
 var scannedRoots = []string{"kit", "modules", "apps", "ui", "tools"}
-
-// widens reports whether the rule's literal shape — a whole name in one string,
-// or the namespace spelled in the line rather than named by a constant — fires on
-// a line, which it does outside test files and only where the line also names the
-// kind of name it is forming.
-func (r rule) widens(line string, testFile bool) bool {
-	if testFile || r.literal == nil || !r.literal.MatchString(line) {
-		return false
-	}
-	return r.context == nil || r.context.MatchString(line)
-}
 
 // finding is one line that forms a shared name.
 type finding struct {
