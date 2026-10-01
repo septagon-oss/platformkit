@@ -80,6 +80,21 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// There is no principal-belongs-to-this-tenant check, because there is no
 	// way for it to fail: the principal was built from a row read inside this
 	// tenant's own transaction. See Principal.
+	// A credential that carries its own ceiling is held to it in both branches
+	// below, and this is the first of the two. An operation that names no
+	// permission asks the caller for their whole authority — being the caller is
+	// all it checks, and what sits behind it resolves the holder's roles — so a
+	// key narrowed to a list of permissions may not stand in for it. Read without
+	// this branch, the ceiling would be asked only of operations that name a
+	// permission, and every self-service door (mint a key, replace the recovery
+	// codes, sign out of every browser) would answer at its holder's full
+	// authority to a credential scoped to one read: the narrowed credential
+	// widening itself back to the holder, which is the escalation
+	// tenancy.Principal.Permissions says a non-nil list prevents.
+	if auth.kind == kindSignedIn && p.Permissions != nil {
+		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
+		return
+	}
 	if auth.kind == kindSignedIn {
 		if !a.entitled(ctx, t, auth) {
 			return
@@ -89,14 +104,11 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	}
 
 	grant, _ := auth.grant()
-	// A credential that carries its own authority is held to it before the
-	// Authorizer is asked, and this is the one line that makes a scoped key mean
-	// something: without it, a token narrower than its holder would be checked
-	// against the holder's roles and the scope would be decoration. The check is
-	// an exact name, so a key never inherits a wildcard it was not given, and a
-	// key whose holder has since been stood down from the role arrives here with
-	// an empty list — the roles are rechecked on every request, in the resolution
-	// that built this one.
+	// The second half: a credential that carries its own authority is held to it
+	// before the Authorizer is asked. The check is an exact name, so a key never
+	// inherits a wildcard it was not given, and a key whose holder has since been
+	// stood down from the role arrives here with an empty list — the roles are
+	// rechecked on every request, in the resolution that built this one.
 	if p.Permissions != nil && !slices.Contains(p.Permissions, grant.Permission) {
 		a.deny(ctx, CodeDenied, "this credential does not carry "+grant.Permission)
 		return

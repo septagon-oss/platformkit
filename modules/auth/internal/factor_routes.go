@@ -23,14 +23,18 @@ import (
 // already follow.
 //
 // Five of the six are about the caller themselves and so declare no permission,
-// the rule every session and password route follows. The sixth, the challenge,
-// declares httpx.Public() authorisation and mounts on the workspace surface,
-// which is how /login and /password/reset already work: the caller has no session
-// by design, and the answer to a right code is a session cookie. It cannot live
-// on the anonymous surface, which sets no cookie and is skipped by Authenticate by
-// design — a challenge answered there could sign nobody in.
+// the rule every session and password route follows — and a credential narrowed
+// to a list of scopes is refused them by the kernel, because they exercise their
+// caller's whole authority: see httpx.SignedIn and tenancy.Principal.Permissions.
+// The sixth, the challenge, declares httpx.Public() authorisation and mounts on
+// the workspace surface, which is how /login and /password/reset already work: the
+// caller has no session by design, and the answer to a right code is a session
+// cookie. It cannot live on the anonymous surface, which sets no cookie and is
+// skipped by Authenticate by design — buffer.withholdCookies takes every Set-Cookie
+// off a response on that surface and the kernel answers such a route with a 500 —
+// so a challenge answered there could sign nobody in.
 func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, cookies Cookies) {
-	app, public := surfaces.App, surfaces.Public
+	app := surfaces.App
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-factor-totp-begin",
@@ -89,7 +93,7 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 		}},
 	}, httpx.SignedIn(), handleRotateRecoveryCodes(factors))
 
-	httpx.Register(public, huma.Operation{
+	httpx.Register(app, huma.Operation{
 		OperationID: "auth-challenge-verify",
 		Method:      http.MethodPost,
 		Path:        "/challenge/verify",

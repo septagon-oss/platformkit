@@ -110,7 +110,13 @@ right and the trail should not record a success as an attack. The challenge rout
 is `httpx.Public()` authorisation on the workspace surface, the shape
 `/login` and `/password/reset` already use: the caller has no session by design,
 and the answer to a correct code is a session cookie. The anonymous surface sets
-no cookie, so a challenge answered there could sign nobody in.
+no cookie at all — the writer takes every `Set-Cookie` off a response whose
+surface is public and the kernel answers such a route with a 500 — so a challenge
+answered there could sign nobody in. That is why
+`TestASecondFactorSignsThatPersonInOverItsOwnRoute` reads the address off the
+composition and sends the request, rather than calling `VerifySecondFactor`: the
+leg is the capability, and a service call cannot show that a surface keeps a
+cookie away from it.
 
 TOTP is RFC 6238 in `internal/totp.go` over `crypto/hmac` — the register's own
 rule for this capability (`T-0013`: nothing beyond the standard library and
@@ -143,13 +149,14 @@ refusal and the record in one statement.
 * **Bearer tokens are in** (the brief's item 4) — see the next section, and its
   own list of what is still open there.
 * **No factor page, and the sign-in page has no second step.** `ui` and the
-  admin shell never call `/api/v1/auth/challenge/verify` (nothing outside this
-  module names that path), so a person who enrols a factor through the JSON
-  routes cannot answer the second half from the reference app's sign-in page —
-  the page shows the refusal text and stops. The API path works and is tested;
-  the page work is the shell's, and until it lands, enrolling a factor from a
-  screen that does not know about the challenge route locks a person out of
-  that screen.
+  admin shell never call `/api/v1/auth/challenge/verify` (only this module's
+  routes and its tests name that path), so a person who enrols a factor through
+  the JSON routes cannot answer the second half from the reference app's sign-in
+  page — the page shows the refusal text and stops. The JSON path does work, and
+  is tested at its address: a correct code there is a 200 and a session cookie.
+  The page work is the shell's, and until it lands, enrolling a factor from a
+  screen that does not know about the challenge route locks a person out of that
+  screen.
 
 ## Bearer tokens for a person's own integrations
 
@@ -175,6 +182,20 @@ carries no roles. `Allowed` follows the same rule the declaration does, from the
 same package, with the same `Grants` predicate — which is also why an
 administrator holding the wildcard can mint a narrow key at all.
 
+The narrowing is enforced by the kernel rather than by the module that minted
+the key, and at both declarations: an operation that names a permission is
+refused when the list does not carry it, and an operation that names none —
+every `httpx.SignedIn()` door, the door about the caller themselves — is refused
+outright, because with no permission named the authority such an operation
+spends is its caller's whole authority. So the self-service doors are a
+session's work and never a key's: mint a key, replace the recovery codes,
+withdraw a factor, revoke a session, sign out of every browser. None of them is
+reachable from a bearer credential whatever its scopes, which is the half that
+kept a key scoped to one read from widening itself back to its holder with two
+POSTs. `kit/httpx/scoped_credential_test.go` pins both halves at the kernel, and
+`review_r4_a_scoped_key_is_held_to_its_scope_test.go` drives them at the
+routes.
+
 The intersection is recomputed from the roles on every request, so standing
 somebody down from a role narrows the keys they minted in the same transaction
 that did it; `TestStandingARoleDownNarrowsTheKeysThatPersonMinted` is that claim.
@@ -196,8 +217,9 @@ still answers a cleared cookie, which for such a caller clears nothing.
 
 ### Open here, stated rather than approximated
 
-* `GET /api/v1/auth/me` answers a cookie session and refuses a bearer caller with
-  a 403 that says so. Its body is the person's roles and everything they grant,
+* `GET /api/v1/auth/me` answers a cookie session; a bearer caller is refused it
+  by the kernel's rule above, ahead of the handler, and the 403 says which.
+  Its body is the person's roles and everything they grant,
   which is wider than a scoped key may act as — reporting that to a narrowed
   caller would be a `/me` that lies about the caller's own authority. A
   "who am I, as this key" answer (the brief's `Identity.Token`) is unbuilt.

@@ -86,7 +86,11 @@ func Public() Auth { return Auth{kind: kindPublic} }
 
 // SignedIn admits any caller carrying a principal for the resolved tenant,
 // whatever that principal may do. It is for operations about the caller
-// themselves, where there is no resource to name a permission on.
+// themselves, where there is no resource to name a permission on — and that is
+// why a credential carrying its own ceiling is refused here rather than
+// admitted: with no permission named, the authority the operation spends is the
+// caller's whole authority, so the holder's, and a narrowed key would arrive at
+// it having narrowed nothing. See Authorizer and tenancy.Principal.Permissions.
 func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 
 // MarshalJSON writes the declaration into the OpenAPI document as

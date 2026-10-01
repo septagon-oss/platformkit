@@ -57,6 +57,16 @@ Each surface has its own chain, and the difference is not cosmetic:
   consulted. `app.Installation{Host}` is the deployment's fact, read from
   `server.installation_host`.
 
+A credential that carries its own authority is held to it at **both**
+declarations, and that pair is the whole of what makes a scoped key mean
+something: an operation naming `Permission(k)` is refused unless `k` is on the
+list, and an operation declaring `SignedIn()` — the door about the caller
+themselves, which names no permission and so spends its caller's whole
+authority — is refused outright. A key narrowed to a list therefore never
+reaches the doors that manage the credentials a person holds, and can never
+widen itself back to its holder. `scoped_credential_test.go` is both halves,
+with the session caller as the control.
+
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take
 it. `accepted` is the closed table of which declaration each surface will host; a

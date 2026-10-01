@@ -73,7 +73,7 @@ var wholeSurface = []route{
 	{"app", "GET", "/api/v1/auth/factors", "signed_in"},
 	{"app", "DELETE", "/api/v1/auth/factors/{id}", "signed_in"},
 	{"app", "POST", "/api/v1/auth/factors/recovery/rotate", "signed_in"},
-	{"public", "POST", "/api/v1/public/auth/challenge/verify", "public"},
+	{"app", "POST", "/api/v1/auth/challenge/verify", "public"},
 	// registration.go — the one register door this composition chose.
 	{"public", "POST", "/api/v1/public/auth/register", "public"},
 	// oidc.go — the two legs, mounted because the installation has an issuer.
