@@ -86,11 +86,13 @@ var slugPattern = regexp.MustCompile(slug)
 // Parse validates a slug read from configuration, a manifest or a wire.
 //
 // The refusal names what a valid one looks like rather than only the bad value:
-// the reader is an operator who has to fix a configuration file, and "collect"
-// is the fix a sentence like that makes obvious.
+// the reader is an operator who has to fix a configuration file, and the grammar
+// in the sentence is the fix. No client's own slug is quoted here: this is shared
+// code, and a customer's name in a kernel error is a fact about one deployment in
+// everybody's binary.
 func Parse(value string) (Name, error) {
 	if !slugPattern.MatchString(value) || len(value) > 32 {
-		return "", fmt.Errorf("appname: %q is not an app name: a lower-case slug of at most 32 characters, like \"collect\"", value)
+		return "", fmt.Errorf("appname: %q is not an app name: a lower-case slug of at most 32 characters — letters, digits and single dashes, starting with a letter, like \"your-app-slug\"", value)
 	}
 	return Name(value), nil
 }
@@ -127,6 +129,9 @@ const App = "app"
 // the app exactly and the tenant loosely, and no filter could say "this tenant,
 // any app" — which is right, because a subscription always belongs to one app.
 func Subject(app Name, tenant uuid.UUID, name string) string {
+	if !app.set() {
+		return PreviousSubject(tenant, name)
+	}
 	return Prefix + "." + app.token() + "." + tenant.String() + "." + name
 }
 
@@ -145,6 +150,9 @@ func OldestSubject(name string) string { return Prefix + "." + name }
 // Filter is the wildcard a subscription to one event name uses: that event, in
 // every tenant of this app, and no other app's.
 func Filter(app Name, name string) string {
+	if !app.set() {
+		return PreviousFilter(name)
+	}
 	return Prefix + "." + app.token() + ".*." + name
 }
 
@@ -167,25 +175,73 @@ func PreviousFilter(name string) string { return Prefix + ".*." + name }
 // without them. It is the same window transport's comment describes, moved here
 // where the addresses are written once.
 func Filters(app Name, name string) []string {
+	if !app.set() {
+		return []string{PreviousFilter(name), OldestSubject(name)}
+	}
 	return []string{Filter(app, name), PreviousFilter(name), OldestSubject(name)}
 }
 
-// Durable names one subscription on a transport: <app>-<module>-<event>.
-//
-// The join is a dash and not a dot because a durable consumer name may not hold
-// one (JetStream's own rule), while the subject it filters holds dots. That makes
-// the durable a transliteration of the address rather than the address, which is
-// why renaming an app renames its durables and why the migration that does it
-// copies the handled ledger and rewrites the dead letters with it — otherwise a
-// renamed durable sees every redelivered event as first.
-func Durable(app Name, module, event string) string {
-	return app.token() + "-" + module + "-" + strings.ReplaceAll(event, ".", "-")
+// Space is the address space one app publishes into: the namespace, then the
+// app's own token and the separator, ready for a tenant and an event name — or for
+// a placeholder in a published document, which is what kit/app's AsyncAPI document
+// spells to describe the addresses without inventing an address of its own.
+func Space(app Name) string {
+	if !app.set() {
+		return Prefix + "."
+	}
+	return Prefix + "." + app.token() + "."
 }
+
+// SubjectSpace is the stream's subject space: every address a PlatformKit event
+// travels on, whichever app's it is. One namespace, so one stream carries every
+// app's traffic and an operator's `nats stream report` still means one thing.
+func SubjectSpace() string { return Prefix + ".>" }
+
+// Durable names one subscription on a transport: <app>+<module>+<event>.
+//
+// Two rules shape it. A durable consumer name may not hold a dot (JetStream's
+// own rule) while the subject it filters is made of dots, so the event half is a
+// transliteration of the name and not the name — which is why renaming a durable
+// needs the migration that copies the handled ledger and rewrites the dead
+// letters with it, or a renamed durable sees every redelivered event as first.
+//
+// And the three parts stay separable, because the durable is the one name that
+// says which app owns a consumer: it is the JetStream consumer name on the single
+// PLATFORMKIT stream, the deliver group every replica of that app joins, and half
+// the primary key of platformkit_handled and platformkit_dead_letters. Joining
+// with a dash would not survive the deployment this rule exists for: a dash is
+// legal inside an app slug ("acme-billing" parses), so app "acme" with module
+// "billing" and event "billing.plan.created" would answer to the same consumer as
+// app "acme-billing" with module "billing" and event "plan.created" — one
+// consumer, one queue group, and one app load-balancing another app's tenants'
+// events into its own handlers. The plus sign is the join because it is in none of
+// the three grammars an app name, a module name or an event name is written in
+// (kit/appname's slug is [a-z0-9-], kit/module's moduleName is [a-z0-9_],
+// transport's eventName adds only dots) and JetStream still accepts it in a
+// consumer name. The event's dots become dashes, a character no event name holds,
+// so each half of the name decodes back to exactly one input.
+func Durable(app Name, module, event string) string {
+	if !app.set() {
+		return module + "-" + strings.ReplaceAll(event, ".", "-")
+	}
+	return app.token() + partJoin + module + partJoin + strings.ReplaceAll(event, ".", "-")
+}
+
+// partJoin separates the app, module and event halves of a durable, and
+// durableJoin transliterates an event name's dots. Neither character is in any of
+// the three grammars above, which is the whole separability argument: given a
+// durable, one plus sign ends the app and the next ends the module.
+const partJoin = "+"
 
 // JobLock names the advisory lock one periodic job takes. Two apps each running
 // a job the module named the same way must both run, so the lock name carries the
 // app; without it one app's job silences the other's on every replica.
-func JobLock(app Name, job string) string { return app.token() + "/job:" + job }
+func JobLock(app Name, job string) string {
+	if !app.set() {
+		return "job:" + job
+	}
+	return app.token() + "/job:" + job
+}
 
 // Cookie is the name a first-party cookie is set under.
 //
@@ -196,6 +252,15 @@ func JobLock(app Name, job string) string { return app.token() + "/job:" + job }
 // one __Host-session cookie apart from signing each other out, and over http://
 // one localhost port the two apps share the cookie jar outright.
 func Cookie(app Name, base string, secure bool) string {
+	if !app.set() {
+		// No slug set is the single-app deployment, which is the deployment every
+		// cookie jar in the field already belongs to: it gets the name that jar
+		// already carries rather than a new one nobody asked for.
+		if secure {
+			return "__Host-" + base
+		}
+		return base
+	}
 	if secure {
 		return "__Host-" + app.token() + "-" + base
 	}
@@ -214,6 +279,9 @@ func PreviousCookies(base string) []string {
 // so no caller's key can forge another app's or tenant's prefix, and a bucket an
 // operator reads names both owners rather than one of them.
 func RateLimitKey(app Name, tenant uuid.UUID, key string) string {
+	if !app.set() {
+		return tenant.String() + "/" + key
+	}
 	return app.token() + "/" + tenant.String() + "/" + key
 }
 
@@ -228,7 +296,13 @@ func CacheKey(app Name, tenant uuid.UUID, key string) string {
 // <app>/<tenant>/<key>. The persisted key stays the caller's UUID and the tenant
 // stays the row's — this is one adapter's physical layout, and it names both
 // owners so two apps sharing a volume or a bucket never write one path.
+// With no slug set the layout is the one every volume already holds — the key's
+// own first two characters as a fan-out directory — because moving bytes that are
+// already written is an operator's step and not this function's.
 func StoragePath(app Name, tenant, key uuid.UUID) string {
+	if !app.set() {
+		return key.String()[:2] + "/" + key.String()
+	}
 	return app.token() + "/" + tenant.String() + "/" + key.String()
 }
 
@@ -237,7 +311,12 @@ func StoragePath(app Name, tenant, key uuid.UUID) string {
 // one broker reads this to tell them apart without opening the payload; the
 // subject already said it, and the envelope says it again for a consumer that
 // sees only the document.
-func Source(app Name, module string) string { return "/" + app.token() + "/" + module }
+func Source(app Name, module string) string {
+	if !app.set() {
+		return "/" + module
+	}
+	return "/" + app.token() + "/" + module
+}
 
 // ConnectionName names one process's broker connection the way an operator reads
 // it in connectionz: the process, then every app it hosts. An operator deciding
@@ -252,7 +331,12 @@ func ConnectionName(process string, apps ...Name) string {
 	}
 	tokens := make([]string, 0, len(apps))
 	for _, a := range apps {
-		tokens = append(tokens, a.token())
+		if a.set() {
+			tokens = append(tokens, a.token())
+		}
+	}
+	if len(tokens) == 0 {
+		return process
 	}
 	return process + "/" + strings.Join(tokens, "+")
 }
@@ -263,6 +347,13 @@ func ConnectionName(process string, apps ...Name) string {
 // an address into one, and a dot would let an app name filter another app's
 // subjects. Refusing yields the nil slug, which no address of any app collides
 // with, and every boundary that reads an app back refuses it.
+// set says this Name names an app. The zero Name is the deployment that hosts one
+// app and names no slug: every constructor answers with the name that deployment
+// already uses, so the app segment appears exactly when a second app could share
+// the name. A non-empty Name that is not a slug is the other case — a name that
+// was set and is broken — and token refuses it.
+func (n Name) set() bool { return string(n) != "" }
+
 func (n Name) token() string {
 	if !n.Valid() {
 		return ""

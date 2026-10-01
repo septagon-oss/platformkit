@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/google/uuid"
 	"regexp"
 
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
@@ -22,12 +25,30 @@ import (
 // to escape a directory with, and the check makes that true of a caller this
 // package cannot see. The first two characters are a subdirectory, because a
 // directory with a million entries is slow in every filesystem worth naming.
-type Local struct{ dir string }
+type Local struct {
+	dir string
+
+	// app is the slug whose name every stored object's path carries; with the
+	// tenant it is what keeps two apps sharing one volume or one bucket from
+	// writing one path. Empty is the deployment of one app, whose files sit where
+	// they were written before this segment existed.
+	app appname.Name
+}
 
 // NewLocal returns storage under dir. The directory is created when the first
 // blob is written rather than here, so constructing this in a composition
 // touches no disk.
-func NewLocal(dir string) *Local { return &Local{dir: dir} }
+func NewLocal(dir string) *Local { return NewLocalOf(appname.Name(""), dir) }
+
+// NewLocalOf is NewLocal for a deployment that names its app: a stored object
+// lands under <app>/<tenant>/<key>, so two apps on one mounted volume cannot write
+// one another's bytes and an operator can point a bucket policy at one app. The
+// persisted key is still the caller's UUID and every object still reads at the
+// older path for one release — see Local.path and the window it names in
+// kit/appname/README.md.
+func NewLocalOf(app appname.Name, dir string) *Local {
+	return &Local{dir: dir, app: app}
+}
 
 var _ contracts.Storage = (*Local)(nil)
 
@@ -40,7 +61,11 @@ func (l *Local) path(k string) (string, error) {
 	if !key.MatchString(k) {
 		return "", fmt.Errorf("file: %q is not a storage key; a key is a UUID", k)
 	}
-	return filepath.Join(l.dir, k[:2], k), nil
+	id, err := uuid.Parse(k)
+	if err != nil {
+		return "", fmt.Errorf("file: %q is not a storage key; a key is a UUID", k)
+	}
+	return filepath.Join(l.dir, appname.StoragePath(l.app, uuid.Nil, id)), nil
 }
 
 // Put writes the bytes, refusing a key that already exists: a key is minted per

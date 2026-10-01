@@ -29,6 +29,19 @@ import (
 type rule struct {
 	name    string
 	pattern *regexp.Regexp
+	// literal is the widened shape of the same name — a whole name in one
+	// string, or the namespace spelled in the line rather than named by a
+	// constant — and it is refused outside test files only. A test that states the
+	// name a browser or a broker is expected to present is not a name the runtime
+	// forms; making it call a constructor would replace an assertion with a call
+	// to the code under test, which asserts nothing. The census's planted
+	// counter-example is not a _test.go file, so the widened shape is proven on it.
+	literal *regexp.Regexp
+	// context keeps a widened literal from matching a name that merely shares
+	// letters with one: the ui/export package spells "platformkit." for a directory
+	// of generated files, which is not an event address. A literal only counts
+	// where the line also says what kind of name it is forming.
+	context *regexp.Regexp
 	allow   []allowed
 }
 
@@ -48,58 +61,70 @@ type allowed struct {
 
 var census = []rule{
 	{
+		// The pattern reads a cookie name in either shape: the prefix spelled on
+		// its own to be joined, and a whole name in one literal. A rule that
+		// matched only the first would pass over the spelling a caller naturally
+		// writes — a full cookie name never stops where the prefix ends.
 		name:    "session and first-party cookie names",
 		pattern: regexp.MustCompile(`"__Host-"`),
+		literal: regexp.MustCompile(`"__Host-[a-z0-9]`),
+		allow: []allowed{
+			{"kit/appname/appname.go", 3, "owner"},
+		},
+	},
+	{
+		// "/?job:" reads both spellings: the bare lock of the deployment that
+		// names no app and the app-prefixed one.
+		name:    "job advisory locks",
+		pattern: regexp.MustCompile(`"/?job:"`),
 		allow: []allowed{
 			{"kit/appname/appname.go", 2, "owner"},
-			{"kit/httpx/cookies.go", 1, "pending: CookieName gains the app segment"},
 		},
 	},
 	{
-		name:    "job advisory locks",
-		pattern: regexp.MustCompile(`"job:"`),
-		allow: []allowed{
-			{"kit/jobs/jobs.go", 1, "pending: the lock name becomes appname.JobLock"},
-			{"kit/jobs/jobs_test.go", 1, "pending: the case asserts the lock the scheduler takes"},
-		},
-	},
-	{
+		// Both ways of spelling an address out of the namespace: from the
+		// transport's prefix constant, and from the namespace literal written in
+		// the line itself.
 		name:    "event subjects and filters",
 		pattern: regexp.MustCompile(`SubjectPrefix \+ "`),
+		literal: regexp.MustCompile(`"platformkit\."`),
 		allow: []allowed{
-			{"kit/events/transport/subject.go", 3, "pending: the address becomes appname.Subject/Filter"},
-			{"kit/events/transport/review8_a_manifest_name_can_never_carry_a_broker_wildcard_test.go", 1, "pending: the case builds an address by hand to attack one"},
-			{"kit/app/asyncapi.go", 2, "pending: the document names this app's channels"},
-			{"kit/events/providers/nats/jetstream.go", 1, "pending: the stream's subject space"},
+			{"kit/events/transport/review8_a_manifest_name_can_never_carry_a_broker_wildcard_test.go", 1, "exempt: the decision-0008 pin spells an address by hand to attack one; a reviewer's file is not this census's to migrate"},
 		},
 	},
 	{
 		name:    "the NATS connection name",
 		pattern: regexp.MustCompile(`nats\.Name\(`),
 		allow: []allowed{
-			{"kit/events/providers/nats/jetstream.go", 1, "pending: the name becomes appname.ConnectionName"},
+			{"kit/events/providers/nats/jetstream.go", 1, "owner: the option call hands the name over to appname.ConnectionName, which forms it"},
 		},
 	},
 	{
+		// strings.ReplaceAll is the event name's transliteration, whichever join
+		// it is spelled with: the operands it sits inside are what makes a
+		// consumer name, in kit/events or anywhere else.
+		// The event name's dots turned into dashes is a consumer name, whatever
+		// it is joined with: the operands below are the transliteration itself, so
+		// the rule reads the join spelled through strings.Join as well as the one
+		// kit/events wrote.
 		name:    "durable consumer names",
-		pattern: regexp.MustCompile(`Module \+ "-" \+ strings\.ReplaceAll`),
+		pattern: regexp.MustCompile(`ReplaceAll\([a-z]+, "\.", "-"\)`),
 		allow: []allowed{
-			{"kit/events/events.go", 1, "pending: the durable becomes appname.Durable"},
+			{"kit/appname/appname.go", 2, "owner"},
 		},
 	},
 	{
 		name:    "rate-limit keys",
 		pattern: regexp.MustCompile(`String\(\) \+ "/" \+ key`),
 		allow: []allowed{
-			{"kit/appname/appname.go", 2, "owner"},
-			{"kit/limit/limit.go", 1, "pending: the key becomes appname.RateLimitKey"},
+			{"kit/appname/appname.go", 3, "owner"},
 		},
 	},
 	{
 		name:    "a stored file's physical path",
 		pattern: regexp.MustCompile(`filepath\.Join\(l\.dir`),
 		allow: []allowed{
-			{"modules/file/internal/local.go", 1, "pending: the adapter's path becomes appname.StoragePath"},
+			{"modules/file/internal/local.go", 1, "owner: the segments come from appname.StoragePath; this is the adapter's root"},
 		},
 	},
 	{
@@ -116,6 +141,17 @@ var census = []rule{
 // holds kernel code today; a client's own code forms no kernel name, and if it
 // ever wants to, that is the bug this census exists to catch.
 var scannedRoots = []string{"kit", "modules", "apps", "ui", "tools"}
+
+// widens reports whether the rule's literal shape — a whole name in one string,
+// or the namespace spelled in the line rather than named by a constant — fires on
+// a line, which it does outside test files and only where the line also names the
+// kind of name it is forming.
+func (r rule) widens(line string, testFile bool) bool {
+	if testFile || r.literal == nil || !r.literal.MatchString(line) {
+		return false
+	}
+	return r.context == nil || r.context.MatchString(line)
+}
 
 // finding is one line that forms a shared name.
 type finding struct {
@@ -182,9 +218,11 @@ func scan(t *testing.T, root string) []finding {
 		if err != nil {
 			return err
 		}
+		testFile := strings.HasSuffix(name, "_test.go")
 		for i, line := range strings.Split(string(text), "\n") {
 			for _, r := range census {
-				if r.pattern.MatchString(line) {
+				if r.pattern.MatchString(line) ||
+					(!testFile && r.literal != nil && r.literal.MatchString(line)) {
 					out = append(out, finding{rule: r.name, line: i + 1, path: name})
 				}
 			}

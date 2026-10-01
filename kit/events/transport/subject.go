@@ -14,13 +14,15 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // SubjectPrefix is the one namespace every PlatformKit event is published
 // under. A deployment that wants its own prefix on the broker gets it by
 // renaming the stream, not by editing this: the envelope says which program
 // produced it, and every consumer's filter is derived from here.
-const SubjectPrefix = "platformkit"
+const SubjectPrefix = appname.Prefix
 
 // Subject is the address of one event:
 //
@@ -32,7 +34,21 @@ const SubjectPrefix = "platformkit"
 // rather than by opening the payload. The module and event halves are the
 // event's Name, which is why Subject takes a name and not a second grammar.
 func Subject(tenantID uuid.UUID, name string) string {
-	return SubjectPrefix + "." + tenantID.String() + "." + name
+	return appname.PreviousSubject(tenantID, name)
+}
+
+// AppSubject is the address of one event of one app:
+//
+//	platformkit.<app>.<tenant>.<module>.<event>
+//
+// It is the address a process that names its app publishes at, and the reason the
+// app token sits before the tenant is the two wildcards: a subscription filters
+// its own app exactly and every tenant of it loosely, and no NATS filter can say
+// "this tenant, any app" — which is right, because a subscription always belongs
+// to one app. A process with no slug set publishes Subject instead, the address
+// this kernel formed before decision 0074, which Filters keeps reading.
+func AppSubject(app appname.Name, tenantID uuid.UUID, name string) string {
+	return appname.Subject(app, tenantID, name)
 }
 
 // Filter is the wildcard a subscription to one event name uses: every tenant's
@@ -46,7 +62,13 @@ func Subject(tenantID uuid.UUID, name string) string {
 // than this wildcard, and the address space has held the tenant since this
 // function landed.
 func Filter(name string) string {
-	return SubjectPrefix + ".*." + name
+	return appname.PreviousFilter(name)
+}
+
+// AppFilter is one app's wildcard for one event name: that event, in every tenant
+// of that app, and no other app's. With no slug set it is Filter.
+func AppFilter(app appname.Name, name string) string {
+	return appname.Filter(app, name)
 }
 
 // Filters is every address a subscription to one event name has to answer, in
@@ -70,7 +92,16 @@ func Filter(name string) string {
 // stamped published while nothing consumed it is the loss this whole change set
 // exists to prevent, in a new place.
 func Filters(name string) []string {
-	return []string{Filter(name), legacyAddress(name)}
+	return appname.Filters(appname.Name(""), name)
+}
+
+// AppFilters is Filters for a process that names its app: its own scoped address
+// first, then both older shapes, so a rolling upgrade reads what a previous build
+// published and no app reads another's scoped traffic — the scoped address carries
+// the app token and the older filters carry one more or one fewer token than it,
+// so no previous-shape filter matches a scoped subject.
+func AppFilters(app appname.Name, name string) []string {
+	return appname.Filters(app, name)
 }
 
 // legacyAddress is the address the build before the tenant segment published
@@ -81,7 +112,7 @@ func Filters(name string) []string {
 // What matters about it is what it does not carry: it names no tenant. That is
 // why it is a second address an event can legitimately arrive at rather than a
 // forgery of the first — there is no tenant in it to disagree with the document.
-func legacyAddress(name string) string { return SubjectPrefix + "." + name }
+func legacyAddress(name string) string { return appname.OldestSubject(name) }
 
 // AddressMismatch compares the address a message arrived on with the event the
 // document inside it claims to be, and names the disagreement when the two are

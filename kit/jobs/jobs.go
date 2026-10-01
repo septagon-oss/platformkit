@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"log/slog"
 	"sync"
 	"time"
@@ -105,6 +106,12 @@ type Scheduler struct {
 	log  *slog.Logger
 	jobs []scheduled
 
+	// app is the slug whose name every job lock carries: two apps each running
+	// a job the same module named "purge" must both run, and one advisory lock is
+	// one job. Empty is the deployment of one app, whose locks keep the names the
+	// replicas already take.
+	app appname.Name
+
 	// The clock, so a test can run a year of ticks in a millisecond.
 	now   func() time.Time
 	after func(time.Duration) <-chan time.Time
@@ -119,11 +126,11 @@ type scheduled struct {
 // NewScheduler prepares the jobs. A malformed job panics here, at the
 // construction site, because it is a wiring mistake: kit/module reports the
 // same thing as a composition error before anything is constructed.
-func NewScheduler(conn *db.Conn, log *slog.Logger, js ...Job) *Scheduler {
+func NewScheduler(conn *db.Conn, log *slog.Logger, app appname.Name, js ...Job) *Scheduler {
 	if log == nil {
 		log = slog.Default()
 	}
-	s := &Scheduler{conn: conn, log: log, now: time.Now, after: time.After}
+	s := &Scheduler{conn: conn, log: log, app: app, now: time.Now, after: time.After}
 	for _, j := range js {
 		if err := Valid(j); err != nil {
 			panic(err.Error())
@@ -186,7 +193,7 @@ func (s *Scheduler) Run(ctx context.Context) error {
 // because the next tick is the retry. A Parallel job takes no lock.
 func (s *Scheduler) run(ctx context.Context, j Job) {
 	if !j.Parallel {
-		unlock, ok, err := db.TryLock(ctx, s.conn, "job:"+j.Name)
+		unlock, ok, err := db.TryLock(ctx, s.conn, appname.JobLock(s.app, j.Name))
 		if err != nil {
 			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
 			return

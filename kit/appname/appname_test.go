@@ -108,10 +108,12 @@ func TestTheWindowsAnswerEveryAddressTheRolloutPublishes(t *testing.T) {
 }
 
 // TestADurableCarriesNoDot: a consumer name may not hold a dot, so the durable is
-// a transliteration of the address and not the address.
+// a transliteration of the address and not the address, and the three parts are
+// joined by a plus because that is the character no app slug, module name or event
+// name can hold — see TestADurableNameBelongsToExactlyOneApp.
 func TestADurableCarriesNoDot(t *testing.T) {
 	d := appname.Durable(collect, "cart", "cart.checked_out")
-	if d != "collect-cart-cart-checked_out" {
+	if d != "collect+cart+cart-checked_out" {
 		t.Errorf("the durable is %q", d)
 	}
 	if strings.ContainsAny(d, ".>*/ ") {
@@ -171,8 +173,14 @@ func TestAStoredFileNamesBothOwnersButTheKeyStaysTheCallers(t *testing.T) {
 // TestAnAppNamesThatIsNotASlugReachesNoSubscriber: a Name built by conversion
 // rather than Parse is refused at every boundary that reads an app back, so the
 // address it forms belongs to nobody rather than to a wildcard.
+//
+// The zero Name is not in this list. It is the deployment that hosts one app and
+// names no slug — see TestTheUnsetAppSegmentKeepsTheNamesOneAppAlreadyUses — and a
+// name that was set and is broken is a different thing: it forms an address no
+// subscription of any app answers to, which is the failure mode that keeps a
+// malformed slug from becoming a broker wildcard.
 func TestAnAppNamesThatIsNotASlugReachesNoSubscriber(t *testing.T) {
-	for _, bad := range []appname.Name{"", "Collect", "col-lect-", "col.lect", "col/lect", "collect..", appname.Name(strings.Repeat("a", 33))} {
+	for _, bad := range []appname.Name{"Collect", "col-lect-", "col.lect", "col/lect", "collect..", appname.Name(strings.Repeat("a", 33))} {
 		if bad.Valid() {
 			t.Errorf("%q reports itself valid", string(bad))
 		}
@@ -189,12 +197,55 @@ func TestAnAppNamesThatIsNotASlugReachesNoSubscriber(t *testing.T) {
 	}
 }
 
+// TestTheUnsetAppSegmentKeepsTheNamesOneAppAlreadyUses: the zero Name is the
+// deployment of one app. Every constructor answers with the name that deployment
+// already writes — the subject, the cookie, the job lock, the limit key, the
+// stored path, the broker connection — so the app segment appears exactly when a
+// second app could share the name, and no existing jar, volume or consumer is
+// renamed by a kernel that has not been told it hosts two.
+//
+// This is not a way to skip the rule: a process that hosts two apps has to name
+// both for their names to differ, and kit/app refuses a slug it cannot parse.
+func TestTheUnsetAppSegmentKeepsTheNamesOneAppAlreadyUses(t *testing.T) {
+	var none appname.Name
+	if none.String() != "" {
+		t.Errorf("the zero Name reads %q", none.String())
+	}
+	if got := appname.Subject(none, tenantA, "cart.checked_out"); got != "platformkit."+tenantA.String()+".cart.checked_out" {
+		t.Errorf("the unset app forms subject %q", got)
+	}
+	if got := appname.Filter(none, "cart.checked_out"); got != "platformkit.*.cart.checked_out" {
+		t.Errorf("the unset app forms filter %q", got)
+	}
+	if got := strings.Join(appname.Filters(none, "cart.checked_out"), " "); got != "platformkit.*.cart.checked_out platformkit.cart.checked_out" {
+		t.Errorf("the unset app filters %q", got)
+	}
+	if got := appname.Durable(none, "cart", "cart.checked_out"); got != "cart-cart-checked_out" {
+		t.Errorf("the unset app forms durable %q", got)
+	}
+	if got := appname.JobLock(none, "purge"); got != "job:purge" {
+		t.Errorf("the unset app takes lock %q", got)
+	}
+	if got := appname.Cookie(none, "session", true); got != "__Host-session" {
+		t.Errorf("the unset app names its session cookie %q", got)
+	}
+	if got := appname.RateLimitKey(none, tenantA, "writes"); got != tenantA.String()+"/writes" {
+		t.Errorf("the unset app forms limit key %q", got)
+	}
+	if got := appname.StoragePath(none, tenantA, fileKey); got != fileKey.String()[:2]+"/"+fileKey.String() {
+		t.Errorf("the unset app stores a file at %q", got)
+	}
+	if got := appname.ConnectionName("platformkit-worker", none); got != "platformkit-worker" {
+		t.Errorf("the unset app names its connection %q", got)
+	}
+}
+
 func TestParseRefusesWhatASubjectTokenCookieOrPathSegmentCouldNotHold(t *testing.T) {
 	for _, bad := range []string{"", "Collect", "collect_", "col-lect-", "-collect", "col--lect", "collect.", "col/lect", "col lect", strings.Repeat("a", 33)} {
 		if _, err := appname.Parse(bad); err == nil {
 			t.Errorf("Parse(%q) accepted it", bad)
-		} else if !strings.Contains(err.Error(), "collect") {
-			t.Errorf("Parse(%q) refused with %q, which names no valid example to fix", bad, err)
+		} else if !strings.Contains(err.Error(), "slug") {
+			t.Errorf("Parse(%q) refused with %q, which names no grammar to fix", bad, err)
 		}
 	}
 	for _, good := range []string{"collect", "a", "collect-2", "shelf-ui", strings.Repeat("a", 32)} {

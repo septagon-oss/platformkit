@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"io/fs"
 	"net"
 	"net/mail"
@@ -108,15 +109,26 @@ type Database struct {
 // stream and durable consumer names are shared within an account.
 type NATS struct {
 	Transport string `yaml:"transport"`
-	URL       string `yaml:"url"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	CACert    string `yaml:"ca_cert"`
+	// App is this deployment's own app slug — the name every shared name it forms
+	// carries, and the reason two apps on one broker and one database cannot read
+	// one another's work. Empty is the deployment of one app: it keeps the names
+	// this kernel formed before the app segment existed. kit/appname owns the
+	// grammar; Validate is what refuses a slug that could not be a subject token.
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	CACert   string `yaml:"ca_cert"`
 }
 
 // Validate checks settings without opening files or connecting to the broker.
 // Diagnostics name keys without echoing endpoints or credentials.
 func (n NATS) Validate() error {
+	if n.App != "" {
+		if _, err := appname.Parse(n.App); err != nil {
+			return fmt.Errorf("nats.app: %w", err)
+		}
+	}
 	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
 		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
 	}
