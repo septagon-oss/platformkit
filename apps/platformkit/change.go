@@ -16,12 +16,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/flags"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -81,19 +83,34 @@ type settingsGate struct{ eval flags.Evaluator }
 
 var _ sitecontracts.WriteGate = settingsGate{}
 
+// flagUnreadable is the door's answer when the switch could not be read at all.
+//
+// kit/flags' rule for a failed evaluation is to hand the caller the fallback it
+// passed — false here, meaning "change control is off, write away" — so a provider
+// that is unreachable, unauthorised or misconfigured would read as a switch that is
+// off, and the settings would change hands with no second account in sight. That
+// answer is a silent allow (decision 0010) and, worse, one reachable by anybody who
+// can make the provider fail.
+//
+// Refusing takes nothing from anybody: the proposal door reads no flag, so the
+// write can still be put forward and decided by somebody else while the provider is
+// down. What the caller gets is the status that says try again and the address that
+// works now; what it does not get is the provider's own error, because kit/problem
+// keeps a 5xx's cause on the server's side of that line.
+var flagUnreadable = problem.New(http.StatusServiceUnavailable,
+	"CHANGE_CONTROL_UNAVAILABLE: "+siteSettingsFlag+" did not answer, so this write is refused; "+
+		proposalAddress+" is decided by a second account whether or not that switch is reachable")
+
 func (g settingsGate) Check(ctx context.Context, tx db.Tx[db.Tenant]) error {
 	tenant := db.TenantOf(tx)
 	actor, _ := tenancy.ActorFrom(ctx)
 	decision, err := g.eval.Boolean(ctx, siteSettingsFlag,
 		flags.Subject{TenantID: tenant.ID, TargetingKey: actor.String()}, false)
 	if err != nil {
-		// The fallback this caller passed is false, and kit/flags' rule is that a
-		// failed evaluation returns it with Defaulted set: a flag service that is
-		// unreachable leaves every tenant's settings door open rather than locking
-		// them out of their own site. Refusing a write because a question could not
-		// be answered would be the worse failure, and it would be a way to take the
-		// last one away.
-		return nil
+		// An unreadable switch is not a switch that is off. The fallback belongs to
+		// the answer a provider *gives*, not to the one it fails to give, and the
+		// door refuses rather than borrowing "off" from an outage (flagUnreadable).
+		return flagUnreadable
 	}
 	if !decision.Value {
 		return nil
