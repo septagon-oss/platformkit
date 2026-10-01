@@ -1516,8 +1516,17 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "cause": {
+                "type": "string"
+              },
               "fileId": {
                 "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sha256": {
                 "type": "string"
               },
               "size": {
@@ -1525,12 +1534,18 @@
               },
               "storageKey": {
                 "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
               }
             },
             "required": [
               "fileId",
               "storageKey",
+              "sha256",
               "size",
+              "cause",
               "at"
             ],
             "type": "object"
@@ -1541,6 +1556,137 @@
       },
       "summary": "Every tenant's delivery of file.deleted.",
       "title": "file.deleted"
+    },
+    "file.erased": {
+      "address": "platformkit.*.file.erased",
+      "description": "Published at platformkit.{tenantId}.file.erased; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "file.erased": {
+          "contentType": "application/json",
+          "name": "file.erased",
+          "payload": {
+            "properties": {
+              "actor": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "cause": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "storageKey": {
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "verifiedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "versionsSeen": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "fileId",
+              "storageKey",
+              "sha256",
+              "size",
+              "cause",
+              "versionsSeen"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.erased",
+          "title": "file.erased"
+        }
+      },
+      "summary": "Every tenant's delivery of file.erased.",
+      "title": "file.erased"
+    },
+    "file.released": {
+      "address": "platformkit.*.file.released",
+      "description": "Published at platformkit.{tenantId}.file.released; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "file.released": {
+          "contentType": "application/json",
+          "name": "file.released",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.released",
+          "title": "file.released"
+        }
+      },
+      "summary": "Every tenant's delivery of file.released.",
+      "title": "file.released"
+    },
+    "file.retained": {
+      "address": "platformkit.*.file.retained",
+      "description": "Published at platformkit.{tenantId}.file.retained; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "file.retained": {
+          "contentType": "application/json",
+          "name": "file.retained",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "until": {
+                "format": "date-time",
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "reason",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.retained",
+          "title": "file.retained"
+        }
+      },
+      "summary": "Every tenant's delivery of file.retained.",
+      "title": "file.retained"
     },
     "file.uploaded": {
       "address": "platformkit.*.file.uploaded",
@@ -3560,6 +3706,57 @@
         }
       ],
       "summary": "The file module publishes file.deleted.",
+      "tags": [
+        {
+          "name": "file"
+        }
+      ]
+    },
+    "file.erased": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.erased"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.erased/messages/file.erased"
+        }
+      ],
+      "summary": "The file module publishes file.erased.",
+      "tags": [
+        {
+          "name": "file"
+        }
+      ]
+    },
+    "file.released": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.released"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.released/messages/file.released"
+        }
+      ],
+      "summary": "The file module publishes file.released.",
+      "tags": [
+        {
+          "name": "file"
+        }
+      ]
+    },
+    "file.retained": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.retained"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.retained/messages/file.retained"
+        }
+      ],
+      "summary": "The file module publishes file.retained.",
       "tags": [
         {
           "name": "file"

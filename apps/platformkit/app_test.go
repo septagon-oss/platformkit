@@ -1400,14 +1400,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// CloudEvents envelope carries, 28 became 29 when the kernel added
 	// 000029_tenant_locale, and 29 became 30 when the kernel added
 	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`, which is
-	// numbered past both 29 and the highest file any module ships. The 29 in that
-	// chain is 29 and not the 28 it was written as, for
+	// numbered past both 29 and the highest file any module shipped until then.
+	// The 29 in that chain is 29 and not the 28 it was written as, for
 	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// A new kernel file continues past the highest number anywhere in the
-	// composition.
+	// A new file continues past the highest number anywhere in the composition,
+	// whichever owner ships it: modules/file's retention hold and erasure proof is
+	// 000034 for that reason, and not the 30 it was written as when no owner held
+	// it — the kernel then shipped 000030_tenant_oidc, and this fixture would have
+	// flattened two files at one version into one ledger row.
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so a new migration has to arrive here and
@@ -1424,18 +1427,22 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// fixture flattens every owner's files under one owner, and 000024 is
 	// modules/auth's email_verification.
 	//
+	// The same flattening is why modules/file's retention file is 000040 here and
+	// not the 000034 it was merged as: the kernel's own 000034 moves preSplitTop
+	// to 34, so a second 34 would arrive in this ledger under the same name, and
+	// kit/db refuses a repeated version before the ledger ever sees it
+	// (migration_files.go, "invalid or repeated version"). One version, one row.
+	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l`
-	// at this head prints 39, of which the release this fixture is applied from
+	// at this head prints 40, of which the release this fixture is applied from
 	// shipped 34: fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26,
 	// 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10, 11, 13,
 	// 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct. The
-	// six this branch adds are migrations/000034 — the kernel's own, so it does
-	// belong to the old ledger — and modules/audit's 000035, 000036 and 000037,
-	// modules/change's 000038 and modules/site's 000039, which postdate the split,
-	// are left out of the old ledger and apply under the owner that ships them (see
-	// legacyLayout). Both new module files continue past the highest number
-	// anywhere in the composition, which is the rule this fixture exists to
-	// enforce.
+	// six that postdate the split — modules/audit's 000035, 000036 and 000037,
+	// modules/change's 000038, modules/site's 000039 and modules/file's 000040 —
+	// are left out of the old ledger and apply under the owner that ships them
+	// (see legacyLayout). Each continues past the highest number anywhere in the
+	// composition, which is the rule this fixture exists to enforce.
 	if len(before) != 34 {
 		t.Fatalf("the old layout applied %d files, want 34", len(before))
 	}
@@ -1459,9 +1466,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the two files this branch
-	// adds (modules/auth 31 and 32, above the kernel's 30 and so absent from the
-	// old ledger) have to be accounted for: 32 files in the release, 32 rows.
+	// release ships is in the ledger, which is where the six files above the
+	// kernel's 34 (modules/audit 35, 36 and 37, modules/change 38, modules/site 39
+	// and modules/file 40, all absent from the old ledger) have to be accounted
+	// for: 40 files in the release, 40 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

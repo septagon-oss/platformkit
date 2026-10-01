@@ -6,9 +6,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -39,9 +40,17 @@ var _ contracts.Service = (*Service)(nil)
 // Upload streams the bytes into storage while hashing and counting them, then
 // opens the caller's transaction and writes the row. See contracts.Service.
 func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Upload) (*contracts.File, error) {
+	// The tenant this request resolved. It cannot come from a transaction,
+	// because nothing is open yet and nothing may open while the body arrives
+	// at the client's pace — which is the whole reason Scope exists beside Tx
+	// rather than instead of it.
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
 	// A UUID and nothing else, which is the whole of the path-traversal
 	// argument: there is no caller-supplied component in a key to escape with.
-	key := uuid.NewString()
+	key := contracts.Key(uuid.NewString())
 	digest := sha256.New()
 	// One byte past the deployment's limit, so "exactly the limit" and "more
 	// than it" are distinguishable; the tee hashes exactly what the copy reads.
@@ -53,38 +62,43 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	// is a connection a byte a second can pin.
 	counted := &counter{r: io.LimitReader(io.TeeReader(up.Body, digest), s.max+1)}
 
-	if err := s.storage.Put(ctx, key, counted, up.Declared); err != nil {
+	// The metadata goes with the bytes rather than with the response, because
+	// the response a grant produces has no handler in this process to set one:
+	// whatever the object carries is what the client reading it off the store
+	// is served. Local ignores it and says so in its own comment.
+	meta := contracts.MetaFor(&contracts.File{ContentType: up.ContentType, Visibility: up.Visibility})
+	if err := s.storage.Put(ctx, scope, key, counted, up.Declared, meta); err != nil {
 		return nil, fmt.Errorf("file: store %s: %w", key, err)
 	}
 	if counted.n > s.max {
 		// Refused, so not charged for. The removal is best effort: what is left
 		// behind is disk nobody references, and the answer to the caller is the
 		// one that matters.
-		_ = s.storage.Delete(ctx, key)
+		_ = s.storage.Delete(ctx, scope, key)
 		return nil, fmt.Errorf("%w: %d bytes is past the %d this deployment accepts", contracts.ErrTooLarge, counted.n, s.max)
 	}
 	if err := contracts.Agrees(up.ContentType, counted.head[:min(counted.n, int64(len(counted.head)))]); err != nil {
-		_ = s.storage.Delete(ctx, key)
+		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 	// Every byte is on disk, so there is finally something to open a
 	// transaction for — and the quota is measured inside it, under the lock.
 	tx, err := open(ctx)
 	if err != nil {
-		_ = s.storage.Delete(ctx, key)
+		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 	if err := s.charge(ctx, tx, counted.n); err != nil {
-		_ = s.storage.Delete(ctx, key)
+		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 
 	f := &contracts.File{
-		Name: up.Name, ContentType: up.ContentType, Visibility: up.Visibility,
-		Size: counted.n, SHA256: hex.EncodeToString(digest.Sum(nil)), StorageKey: key,
+		Name: up.Name, ContentType: up.ContentType, Visibility: up.Visibility, Kind: up.Kind,
+		Size: counted.n, SHA256: hex.EncodeToString(digest.Sum(nil)), StorageKey: key.String(),
 	}
 	if err := crud.Create(ctx, tx, f); err != nil {
-		_ = s.storage.Delete(ctx, key)
+		_ = s.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 	return f, events.Publish(ctx, tx, contracts.EventUploaded, contracts.Uploaded{
@@ -104,7 +118,7 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, a
 		// this tenant has, including whether it has this.
 		return nil, nil, crud.ErrNotFound
 	}
-	body, err := s.storage.Get(ctx, f.StorageKey)
+	body, err := s.storage.Get(ctx, contracts.ScopeOfTx(tx), contracts.Key(f.StorageKey))
 	if err != nil {
 		// A row that says there are bytes and a store that has none is the one
 		// inconsistency the split can produce, and it is an outage rather than
@@ -120,14 +134,60 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	if err != nil {
 		return nil, err
 	}
+	// A hold is the reason a removal is refused, and this door asks it before
+	// it writes anything: file:manage says you may delete a file, and a hold is
+	// a promise to somebody else that its bytes outlive the class it was filed
+	// under. Refusing writes nothing.
+	if live, why, err := held(ctx, tx, id); err != nil {
+		return nil, err
+	} else if live {
+		return nil, fmt.Errorf("%w: %s (%s)", contracts.ErrHeld, id, why)
+	}
 	// Hard, not soft. A soft-deleted row is a row that still points at bytes,
 	// and the bytes are about to go: keeping the row would be keeping a lie.
 	if err := crud.Delete[*contracts.File](tx, id, false); err != nil {
 		return nil, err
 	}
 	return f, events.Publish(ctx, tx, contracts.EventDeleted, contracts.Deleted{
-		FileID: f.ID, StorageKey: f.StorageKey, Size: f.Size, At: db.Now(),
+		FileID: f.ID, StorageKey: f.StorageKey, SHA256: f.SHA256, Size: f.Size,
+		Cause: contracts.EraseCaller, At: db.Now(),
 	})
+}
+
+// Grant mints a time-limited door onto one row's bytes. See contracts.Service.
+func (s *Service) Grant(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expiry time.Duration) (*contracts.Grant, error) {
+	switch {
+	case expiry <= 0:
+		expiry = contracts.DefaultGrantExpiry
+	case expiry > contracts.MaxGrantExpiry:
+		// Refused and not clamped, in both directions of the argument: a link
+		// that quietly lives a day is a leak the caller did not ask for, and one
+		// that quietly dies at fifteen minutes breaks a download the caller
+		// designed for a day.
+		return nil, fmt.Errorf("%w: %s is longer than the %s this module signs", contracts.ErrInvalidExpiry, expiry, contracts.MaxGrantExpiry)
+	}
+	f, err := crud.Get[*contracts.File](tx, id)
+	if err != nil {
+		return nil, err
+	}
+	if f.Public() {
+		return nil, fmt.Errorf("%w: %s is public and is served at its public URL", contracts.ErrPublicFile, id)
+	}
+	signer, ok := s.storage.(contracts.Signer)
+	if !ok {
+		return nil, fmt.Errorf("%w: %T was wired as this deployment's store", contracts.ErrNotSignable, s.storage)
+	}
+	grant, err := signer.Sign(ctx, contracts.ScopeOfTx(tx), f, expiry)
+	if err != nil {
+		return nil, err
+	}
+	// Not an audit row: minting a link changes nothing, and a trail of every
+	// link ever minted is noise where the thing worth keeping is a log line that
+	// joins the byte that was fetched back to the request that minted it. trace
+	// rides the context, so it is the same id the rest of the request carries.
+	slog.InfoContext(ctx, "file: granted a private file",
+		"file", f.ID, "tenant", db.TenantOf(tx).Slug, "expiresAt", grant.ExpiresAt)
+	return grant, nil
 }
 
 // counter counts what is read through it, which is how the size on the row is
@@ -184,36 +244,4 @@ func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) erro
 		return fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d", contracts.ErrQuota, n, max(left, 0), s.quota)
 	}
 	return nil
-}
-
-// RemoveBlob is this module's subscription to its own file.deleted, and the
-// reason that event exists.
-//
-// Removing the bytes cannot happen in the transaction that removed the row: a
-// file delete is not something a rollback can undo, so a transaction that failed
-// after it would leave the row back and the bytes gone — a download that fails
-// forever. An event is the only thing in this architecture that is delivered
-// exactly after a commit, so the row's removal publishes where the bytes are and
-// this handler removes them.
-//
-// It is idempotent because kit/events claims each delivery, and idempotent again
-// because a key with nothing at it is not an error: a redelivery after a
-// half-finished attempt finishes it instead of failing forever.
-func RemoveBlob(storage contracts.Storage) events.Subscription {
-	return events.Subscription{
-		Module: "file",
-		Name:   contracts.EventDeleted,
-		Handler: func(ctx context.Context, _ db.Tx[db.Tenant], ev events.Event) error {
-			var deleted contracts.Deleted
-			if err := json.Unmarshal(ev.Payload, &deleted); err != nil {
-				return fmt.Errorf("file: read %s: %w", ev.Name, err)
-			}
-			if deleted.StorageKey == "" {
-				return nil
-			}
-			// An error rolls the handler's transaction back, which releases the
-			// claim, which is what makes the next delivery try again.
-			return storage.Delete(ctx, deleted.StorageKey)
-		},
-	}
 }
