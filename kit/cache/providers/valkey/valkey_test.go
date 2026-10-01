@@ -232,3 +232,25 @@ func commands(t *testing.T, url, name string) int64 {
 	// on a server nobody has deleted anything on.
 	return 0
 }
+
+// TestAnUnreadableAddressNamesNoPassword is the refusal TestAnUnparsableAddressNames-
+// NoPassword cannot reach: that address parses and it is go-redis that rejects it, while
+// this one is rejected by net/url — whose failure names the whole string it was handed,
+// measured rather than assumed:
+//
+//	parse "redis://:hunter2-not-for-logs@127.0.0.1:6379/%zz": invalid URL escape "%zz"
+//
+// So the refusal of it quotes none of it, and the setting's name is all an operator gets.
+func TestAnUnreadableAddressNamesNoPassword(t *testing.T) {
+	const secret = "hunter2-not-for-logs"
+	_, err := valkey.New(config.Cache{App: "pkit", URL: "redis://:" + secret + "@127.0.0.1:6379/%zz"})
+	if err == nil {
+		t.Fatal("New accepted an address with an escape no parser takes")
+	}
+	if strings.Contains(err.Error(), secret) {
+		t.Errorf("the refusal carries the store's password: %v", err)
+	}
+	if !strings.Contains(err.Error(), "cache.url") {
+		t.Errorf("the refusal does not name the setting to fix: %v", err)
+	}
+}
