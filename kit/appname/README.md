@@ -48,7 +48,7 @@ elsewhere claims.
 |---|---|---|
 | Subject, filter | **open, and checked**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` takes the app and accepts only its own scoped address, so the two older shapes are read and then refused — an address that names no app cannot be shown to be this app's. The window is therefore one-directional: a deployment must not start naming an app until no process still publishing at the older addresses is alive, because from that moment its own older traffic is unreadable to it | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
 | Cookie | **not open**: `httpx.CookieName` still writes `__Host-<base>` for the deployment that names no app, and `CookieNameOf` is the constructor a caller with a slug uses; `httpx.SessionCookieOf` reads `__Host-session`, `session` and the `platformkit_session` aliases, which is `PreviousCookies` for those two bases and no app-scoped name | wire the auth module's `Cookies` to a slug, then one release, then delete `PreviousCookies` and the aliases that read it |
-| Durable | **closed by a migration, as the window asks**: `Durable` forms the scoped name from `Subscription.App`, and `migrations/000031_durable_app` moves both ledgers with it — every `platformkit_handled` row rewritten to the scoped durable and every `platformkit_dead_letters.durable` with it, each row to the app of the tenant that owns it, so one pass serves every app of a database that hosts many. The scoped name is the unscoped one with `<app>+` in front of it (`appJoin`, and `TestADurableCarriesNoDot` holds it), which is what lets a stored row be moved without knowing where its module ended | the file is the close: it applies once, and an installation that names no slug has nothing to move, because its durable did not change |
+| Durable | **the name is ready and the move is not**: `Durable` forms `<app>+<module>-<event>` from `Subscription.App`, and because the join behind the app is the dash the name always carried, the scoped durable is the unscoped one with `<app>+` in front of it — the only form a stored row can be moved into, since the ledger holds no module or event name to rebuild from. Nothing moves the rows yet, so an installation that starts naming its app re-runs handled work and strands its dead letters | a drain `kit/events` owns and runs under system access: a `.up.sql` cannot (RLS empties its writes at the migrate role), and a `phase=data` drain cannot (both ledgers are keyed by `(event_id, durable)` and a drain windows over a single-column key) |
 | Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf`, and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
 
 ## Limits
@@ -74,13 +74,26 @@ What this branch does not do, in the order it costs:
   deployment keeps it and an app-scoped one leaves it: `LEFT JOIN` and `coalesce`
   say so, and `FOR UPDATE OF o` keeps the lock on the outbox rows, not the tenant
   table. Untested is a running two-app composition, not the claim.
-- **The durable rename's migration moves rows it can name.**
-  `migrations/000031_durable_app` rewrites both ledgers, and it can only prefix what it
-  reads, so a row whose tenant belongs to an app moves and a row whose tenant names no
-  app stays — which is right for that installation, whose durable did not change, and is
-  the whole of what is left unmoved. It is tested against fixture rows run by the role
-  that owns the tables (`migrations/durable_app_rename_test.go`), and never against a
-  deployment that really went through the window.
+- **The durable rename has no move, and the three obvious doors are each shut by
+  something the repository owns.** `Durable` forms `<app>+<module>-<event>`, and the
+  prefix property that any move needs is in place and tested
+  (`TestADurableCarriesNoDot`). What is missing is the write. A schema `.up.sql` that
+  rewrites the two ledgers across tenants is accepted and writes nothing at a migrate
+  role that owns the tables and is no superuser, because `platformkit_handled`,
+  `platformkit_dead_letters` and `tenants` are RLS-protected and the runner sets no
+  system access around a schema file — `migrations/README.md` "A file that writes rows"
+  and this package's own `review_r8_locale_backfill_role_test.go` are that measurement,
+  and 000029 declines its own back-fill for the same reason. A `phase=data` drain, the
+  one door the runner does open for a migration write, refuses both tables by name:
+  `kit/db/backfill.go`'s `primaryKey` windows over a single-column primary key and these
+  two are keyed by `(event_id, durable)`. And a file that raises the runner's own
+  system-access marker itself — the cure that test names in the abstract — is refused by
+  `scripts/check_gucs.sh`, which lets no file outside `kit/db` write a `platformkit.*`
+  setting in Go or in SQL and exempts only `_test.go`. What is left is what that refusal
+  points at: "a drain its owner owns, in a job" — a step `kit/events` runs under
+  `db.RunSystem` at boot, renaming `durable` for the tenants whose `tenants.app` is this
+  app's slug, which needs `tenants.app` (it exists) and a decision about where a boot may
+  rewrite domain rows outside a migration.
 - **One boundary reads the app back; two more need a join.** Delivery
   refuses a message whose *address* names another app, or names no app at all
   (`transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls

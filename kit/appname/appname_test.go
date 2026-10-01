@@ -116,11 +116,11 @@ func TestADurableCarriesNoDot(t *testing.T) {
 	if d != "collect+cart-cart-checked_out" {
 		t.Errorf("the durable is %q", d)
 	}
-	// The app is a prefix and nothing else: 000031 moves the handled ledger and
-	// the dead letters by prefixing the stored name, because a durable row holds
-	// no module and no event name to rebuild from, so the scoped name has to be
-	// the unscoped one with "<app>+" in front of it. A second '+' behind the app
-	// would break that and the migration with it.
+	// The app is a prefix and nothing else. A durable row of platformkit_handled
+	// holds no module and no event name to rebuild from, so whatever moves the
+	// ledgers to the scoped names can only prefix them — which means the scoped
+	// name has to be the unscoped one with "<app>+" in front of it, and a second
+	// '+' behind the app would put the move out of reach entirely.
 	for _, name := range []struct{ module, event string }{
 		{"cart", "cart.checked_out"},
 		{"task", "task.updated"},
