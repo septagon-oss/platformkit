@@ -16,27 +16,27 @@ operations were sensitive would be a capability with a product in it.
 ## Composition
 
 The reference application composes it in `apps/platformkit/modules.go`, over the
-one subject it applies proposals for. The literal that builds (and that
-`readme_composition_test.go` builds in a test, because a README's composition is
-worth exactly as much as the file that checks it):
+one subject it applies proposals for. The literal below builds:
+`readme_composition_test.go` compiles its field names, its `Resolve` signature and
+the `change.Deps` and `change.Module` around them, with a subject stubbed out.
 
 ```go
 // contracts is github.com/septagon-oss/platformkit/modules/change/contracts
 change.Module(change.Deps{Subjects: []contracts.SubjectBinding{{
 	Module: "site", Entity: "settings",
 	Resolve: func(ctx context.Context, tx db.Tx[db.Tenant], subjectID uuid.UUID) (contracts.Subject, error) {
-		return siteSubject{sites: sites}, nil
+		return siteSubject{sites: sites, locked: locked}, nil
 	},
 }}})
 ```
 
-`apps/platformkit/change.go` holds `siteSubject` (the two methods over
-`sitecontracts.Service`), `settingsGate` (the site module's `WriteGate` question
-answered by one flag, wired into `site.Module(site.Deps{Gate: …})`) and
-`configFlags` (the `kit/flags.Evaluator` over `kit/config`'s flags block). One
-`SubjectBinding` per subject, written out by one author, checked by the compiler;
-`change.Deps.Subjects` empty means no subject exists and every proposal for one is
-`contracts.ErrUnsupportedSubject`.
+`apps/platformkit/change.go` holds `siteSubject` (its two methods over
+`sitecontracts.Service` and `sitecontracts.LockedReader`), `settingsGate` (the site
+module's `WriteGate` question answered by one flag, wired into
+`site.Module(site.Deps{Gate: …})`) and `configFlags` (the `kit/flags.Evaluator`
+over `kit/config`'s flags block). One `SubjectBinding` per subject, written out by
+one author, checked by the compiler; `change.Deps.Subjects` empty means no subject
+exists and every proposal for one is `contracts.ErrUnsupportedSubject`.
 
 **Reused** — `kit/crud.GetForUpdate` for the row lock and `kit/db.Tx[db.Tenant]`
 for the caller's transaction; `kit/events.Publish` for the one event per
@@ -169,9 +169,9 @@ loser can roll half of it back, read the winner's row and answer with it. Withou
 the savepoint the recovery read would be a statement in a transaction that refuses
 statements, and the person who clicked twice would get a conflict and no proposal
 id. ENABLE / FORCE ROW LEVEL SECURITY plus `platformkit_tenant_match(tenant_id)` on
-both sides; the version is 34 and not 30 because apps/platformkit's legacy-layout
-fixture flattens every owner's files under one owner and refuses a repeated
-version — see `modules/audit/migrations.go`.
+both sides; the version is 38 and adopted by nobody, because it sits above the
+highest file the foundation itself shipped, so the legacy-layout fixture never
+claims it and there is no row for an adoption to re-own (see `migrations.go`).
 
 `diff` is `text` and not `jsonb`, with a CHECK on `jsonb_typeof(diff::jsonb) =
 'object'`. jsonb stores a number as a numeric: it rewrites `1e2` as `100` on the

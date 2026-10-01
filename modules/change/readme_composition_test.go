@@ -30,14 +30,13 @@ func (stubSubject) Save(context.Context, db.Tx[db.Tenant], json.RawMessage) (int
 // TestTheCompositionSnippetIsTheContract is the two halves of the promise a module
 // README exists for, checked rather than asserted in prose.
 //
-// The first half is the literal in README.md's Composition section, written here
-// verbatim: a reader who types five lines out of a document and gets
-// `unknown field New in struct literal` is not composing anything, and the field
-// names and the Resolve signature are exactly the things a binding author cannot
-// guess from the sentence above them. That the file compiles at all is the
-// assertion, and the call to NewService is what stops a reader calling the
-// declaration unused — a binding nobody could resolve is a boot panic, so the
-// constructor has to accept this one.
+// The first half is README.md's Composition literal, transcribed with the
+// application's subject replaced by a stub: a reader who types five lines out of a
+// document and gets `unknown field New in struct literal` is not composing
+// anything, and the field names and the Resolve signature are exactly the things a
+// binding author cannot guess from the sentence above them. That this compiles is
+// the assertion, and Module and NewService are what stop a reader finding out at
+// boot that the snippet composes neither a manifest nor a usable service.
 //
 // The second half is contracts.Refusal, the answer a gated door gives: the
 // composition in apps/platformkit wraps it in crud.ErrConflict and hands it to
@@ -45,14 +44,15 @@ func (stubSubject) Save(context.Context, db.Tx[db.Tenant], json.RawMessage) (int
 // sentence stopped naming the door and the grant, the refusal would be a wall —
 // the thing change control exists not to be.
 func TestTheCompositionSnippetIsTheContract(t *testing.T) {
-	subjects := []contracts.SubjectBinding{{
+	deps := change.Deps{Subjects: []contracts.SubjectBinding{{
 		Module: "site", Entity: "settings",
 		Resolve: func(ctx context.Context, tx db.Tx[db.Tenant], subjectID uuid.UUID) (contracts.Subject, error) {
 			return stubSubject{}, nil
 		},
-	}}
-	if svc := change.NewService(subjects); svc == nil {
-		t.Fatal("the binding in README.md builds no service")
+	}}}
+	svc := change.NewService(deps.Subjects)
+	if m := change.Module(deps); svc == nil || m.Name != "change" || len(m.Permissions) != 3 {
+		t.Fatal("the composition in README.md builds no service, or no manifest carrying the three keys it declares")
 	}
 
 	refusal := (&contracts.Refusal{
