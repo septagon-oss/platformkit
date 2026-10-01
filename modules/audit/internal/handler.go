@@ -45,7 +45,8 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, feature string) {
 		Path:        path,
 		Summary:     "List the audit trail",
 		Description: "Every event this tenant's modules published, newest first. " +
-			"Filterable by name, by the user who caused it, by the row it is about, and by when it happened.",
+			"Filterable by name, by the user who caused it, by the row it is about, by when it happened, " +
+			"and by the request or the trace that caused it.",
 		Tags:   []string{"audit"},
 		Errors: faults,
 	}, read,
@@ -56,6 +57,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, feature string) {
 			}
 			items, total, err := svc.List(ctx, tx, contracts.Query{
 				Name: in.Name, Actor: in.Actor, Record: in.Record,
+				Request: in.Request, TraceID: in.Trace,
 				Since: in.Since, Until: in.Until,
 				Limit: in.Limit, Offset: in.Offset,
 			})
@@ -90,15 +92,20 @@ type idInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The trail row's id"`
 }
 
-// listInput is the page and the three filters. They are separate query
+// listInput is the page and the five filters. They are separate query
 // parameters rather than kit/rest's repeated field:value because two of them
 // are ranges, which that syntax has no operator for.
 type listInput struct {
 	Name   string    `query:"name" doc:"Only events with this name" example:"task.task.created"`
 	Actor  uuid.UUID `query:"actor" format:"uuid" doc:"Only events this user caused"`
 	Record uuid.UUID `query:"record" format:"uuid" doc:"Only events about this row, whatever its payload calls it"`
-	Since  time.Time `query:"since" doc:"Only events at or after this instant"`
-	Until  time.Time `query:"until" doc:"Only events before this instant"`
-	Limit  int       `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
-	Offset int       `query:"offset" minimum:"0" doc:"Rows to skip"`
+	// The two the row could not answer until migrations/000024. Both are the
+	// values the caller already has: X-Request-ID from their own response, and
+	// the 32-hex trace id from their own traceparent.
+	Request string    `query:"request" doc:"Only events this request caused (the X-Request-ID value)"`
+	Trace   string    `query:"trace" doc:"Only events this trace id touched"`
+	Since   time.Time `query:"since" doc:"Only events at or after this instant"`
+	Until   time.Time `query:"until" doc:"Only events before this instant"`
+	Limit   int       `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
+	Offset  int       `query:"offset" minimum:"0" doc:"Rows to skip"`
 }
