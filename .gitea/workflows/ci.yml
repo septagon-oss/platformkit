@@ -13,9 +13,13 @@
 # arithmetic beside every number below are from the 13 `ci.yml` runs on main at
 # number ≥ 180, step spans read from each step's own `::group::` marker.
 #
-# The fixture the jobs share — the database client, Postgres, NATS, the app role —
-# is one script, `scripts/ci_setup.sh`, which each job calls with the units its
-# suite dials. A fixture written four times is a fixture that drifts.
+# The fixture the jobs share — the database client, the broker, the app role — is one
+# script, `scripts/ci_setup.sh`, which each job calls with the units its suite dials.
+# A fixture written four times is a fixture that drifts. Postgres itself stays a per-job
+# `services:` block, because that is the shape the runner probes and owns (mobile.yml has
+# used it since its first green run), and the object store stays with the one job that
+# runs `make check`; scripts/ci_setup_test.sh refuses a job that calls the script without
+# a database of its own.
 name: ci
 
 on:
@@ -54,6 +58,25 @@ jobs:
       # halves of that arrangement out of this file.
       PLATFORMKIT_TEST_S3_ENDPOINT: s3:8333
       GOFLAGS: -p=4
+    services:
+      # The database is the runner's own service, in this shape and no other: the
+      # runner brings it up, probes it, and puts it on the network every step of this
+      # job shares — which is what the `postgres:` host in the URLs above means. It is
+      # written per job because a service map cannot be shared without a composite
+      # action these runners' support for is not something a checkout can check; what
+      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
+      # scripts/ci_setup_test.sh refuses a job that calls that script without a
+      # database of its own to point at.
+      postgres:
+        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -65,11 +88,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Start the database and the message bus
+      - name: Start the message bus and the application role
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
-        run: bash scripts/ci_setup.sh postgres nats
+        run: bash scripts/ci_setup.sh nats app-role
 
       # The S3-compatible object store modules/file's S3 adapter is tested against,
       # on this job's network under the name the endpoint above names. Image,
@@ -108,10 +131,9 @@ jobs:
       - name: Remove this job's manually created resources
         if: always()
         env:
-          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
           S3_CONTAINER: ${{ steps.s3.outputs.container }}
-        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER" "$S3_CONTAINER"
+        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER" "$S3_CONTAINER"
 
   # Second, and load-bearing: the outbox, the request transaction, the advisory
   # locks over a tenant's administration, the limit counters and the router under
@@ -128,13 +150,32 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
     # 2 × the measured p95: `make check-race` p95 420s (min 219, p50 294, max 433)
-    # plus govulncheck p95 20s plus about 55s of setup — 960s.
-    timeout-minutes: 16
+    # plus govulncheck p95 20s plus about 55s of setup is 495s, doubled 990s.
+    timeout-minutes: 17
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
       GOFLAGS: -p=4
+    services:
+      # The database is the runner's own service, in this shape and no other: the
+      # runner brings it up, probes it, and puts it on the network every step of this
+      # job shares — which is what the `postgres:` host in the URLs above means. It is
+      # written per job because a service map cannot be shared without a composite
+      # action these runners' support for is not something a checkout can check; what
+      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
+      # scripts/ci_setup_test.sh refuses a job that calls that script without a
+      # database of its own to point at.
+      postgres:
+        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -146,11 +187,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Start the database and the message bus
+      - name: Start the message bus and the application role
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
-        run: bash scripts/ci_setup.sh postgres nats
+        run: bash scripts/ci_setup.sh nats app-role
 
       - name: make check-race
         run: make check-race
@@ -161,9 +202,8 @@ jobs:
       - name: Remove this job's manually created resources
         if: always()
         env:
-          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER"
+        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER"
 
   # The design tooling and its browsers. Every one of its steps that launches a
   # Chromium used to sit between `make check-race` and `make e2e`, which is the
@@ -342,6 +382,25 @@ jobs:
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
       GOFLAGS: -p=4
+    services:
+      # The database is the runner's own service, in this shape and no other: the
+      # runner brings it up, probes it, and puts it on the network every step of this
+      # job shares — which is what the `postgres:` host in the URLs above means. It is
+      # written per job because a service map cannot be shared without a composite
+      # action these runners' support for is not something a checkout can check; what
+      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
+      # scripts/ci_setup_test.sh refuses a job that calls that script without a
+      # database of its own to point at.
+      postgres:
+        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -353,11 +412,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Start the database and the message bus
+      - name: Start the message bus and the application role
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
-        run: bash scripts/ci_setup.sh postgres nats
+        run: bash scripts/ci_setup.sh nats app-role
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -380,6 +439,5 @@ jobs:
       - name: Remove this job's manually created resources
         if: always()
         env:
-          POSTGRES_CONTAINER: ${{ steps.setup.outputs.postgres }}
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-        run: bash scripts/ci_cleanup.sh "$POSTGRES_CONTAINER" "$NATS_CONTAINER"
+        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER"
