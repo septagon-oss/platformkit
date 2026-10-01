@@ -49,7 +49,7 @@ type Config struct {
 }
 
 // App is the composition's own declaration, read at the migrating boot and put on
-// that session by kit/db (db.MigrateDeclaring) for migrations/000030_tenant_app
+// that session by kit/db (db.MigrateDeclaring) for migrations/000034_tenant_app
 // to place tenants with. It is a declaration and not a request: nothing at run
 // time consults it, and a deployment that names no slug and no hosts is the
 // single-app deployment migrating a database that has no tenants to place.

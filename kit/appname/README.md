@@ -57,7 +57,7 @@ elsewhere claims.
 What this branch does not do, in the order it costs:
 
 - **The tenant control plane is scoped to the app.** `tenants.app` exists
-  (`migrations/000030_tenant_app`), is stamped at the create from the composition's
+  (`migrations/000034_tenant_app`), is stamped at the create from the composition's
   own slug, is never rewritten, and every control-plane read — `Get`, `List`,
   `ByHost` and the operator routes above them — filters on it. The back-fill proves
   its input: a tenant already in the table joins this app when every host it holds
