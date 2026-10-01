@@ -324,20 +324,27 @@ func StatusRolePairs() []RolePair { return slices.Clone(statusRolePairs) }
 // asked for and less than a sentence, so the floor is MinContrastGraphic: the one
 // this layer already holds the focus ring to.
 //
-// The grounds are the ones ui/components actually paints the line on, read out of
-// classlists.go rather than guessed: the card (surface-primary) and the page
-// canvas (surface-secondary) a field stands on (clInput/clInputNormal, clCardFrame
-// — round 14); the muted panel (surface-tertiary) a neutral alert and a refused
-// media panel draw their border on (clAlertVariant["neutral"], clMediaRefused); and
-// the control's own hovered fill (surface-hover), because clButtonVariant["secondary"]
-// and clModalCancel keep painting BorderColor(style.BorderPrimary) while
-// hoverBg(style.SurfaceHover) moves the fill underneath it — a ground the layer
-// mixes at HoverTintPercent of text-primary over surface-primary rather than a
-// token a client files, which is why the pair belongs to this list and not to the
-// token half in contrast.go. surface-active is mixed the same way and joins no
+// The grounds here are the page's own: the surfaces a card raises itself onto, read
+// out of the shipped rules rather than guessed — and a case re-runs that claim, for
+// review 16 found it false twice. review_round16_edge_ground_coverage_test.go reads
+// the rule declarations back against this list in both directions, so a ground named
+// here that nothing paints and a ground painted here that nothing names both fail
+// that case. They are the card (surface-primary) and the page canvas
+// (surface-secondary) a field stands on (clInput/clInputNormal, clCardFrame — round
+// 14); the muted panel (surface-tertiary) a neutral alert and a refused media panel
+// draw their border on (clAlertVariant["neutral"], clMediaRefused); and the control's
+// own hovered fill (surface-hover), because clButtonVariant["secondary"] and
+// clModalCancel keep painting BorderColor(style.BorderPrimary) while
+// hoverBg(style.SurfaceHover) moves the fill underneath it — a ground the layer mixes
+// at HoverTintPercent of text-primary over surface-primary rather than a token a
+// client files, which is why that pair belongs to this list and not to the token half
+// in contrast.go. surface-active is mixed the same way as surface-hover and joins no
 // list: no shipped rule draws a line on it (grep style.SurfaceActive over ui/,
-// modules/ and apps/ answers only a test), and an unpainted pair has no business
-// in the list a client's file is refused by.
+// modules/ and apps/ answers only a test), and an unpainted pair has no business in
+// the list a client's file is refused by. A line drawn across a panel the theme fills
+// with a colour of its own is measured too, and belongs to PanelEdgeRolePairs: the
+// two grounds give way to a line in opposite directions, and the sentence saying so is
+// written there.
 //
 // What stays exempt is the decoration, not the boundary: a divider drawn between
 // two rows the reader has already found, and a tint, whose copy the body and
@@ -358,15 +365,57 @@ var edgeRolePairs = []RolePair{
 // typed into certifies a page whose inputs have no visible edges.
 func EdgeRolePairs() []RolePair { return slices.Clone(edgeRolePairs) }
 
+// panelEdgeRolePairs names the boundary a component draws across a panel the theme
+// fills with a colour of its own, rather than on a surface a card raises itself onto.
+// One pair ships today: the rule under a sidebar section label.
+// clSidebarSectionHeader (ui/components/classlists.go) draws BorderColor(style.BorderPrimary)
+// and declares no fill of its own, and clSidebarColumnAdmin fills the column it sits
+// inside with Bg(style.SurfaceInverse) — the sidebar-bg token, which a seed decides
+// and a client may file. ui/components/sidebar.go applies that pair to every sidebar
+// that carries a labelled section and is not the content flavour, the storybook's own
+// sidebar example included, and round 21 measured a palette the generator issues at
+// 2.65:1 there. The line is what says where the labelled section ends, so it is a
+// boundary and not a divider, and SC 1.4.11 asks 3:1 of it.
+//
+// This is a separate list from edgeRolePairs because the two grounds give way to a
+// line in opposite directions, and because merging them would state something false.
+// The page grounds are light in a light theme, so the line is repaired dark against
+// them and the surfaces — literals a client files — stay where they were filed. The
+// panel ground is dark in a light theme, because it carries the theme's own light
+// copy: that is what a sidebar is. A line dark enough for the page disappears on it,
+// so the panel is the half with room, and generatedTheme darkens the panel under the
+// line for that reason. Merged into edgeRolePairs, the pair would also be read as a
+// claim about every rule that declares no fill of its own — the reading review 16's
+// coverage case runs — and that claim is both false and unsatisfiable here:
+// clInputError, clInputTone and clTabsUnderlineActive draw a status tone or the brand
+// colour with no fill of their own on the page's surfaces and never inside a sidebar,
+// and a status tone held to MinContrast on a light card (luminance at most .17)
+// cannot reach 3:1 on a panel darker than luminance .60. Naming that pair in the
+// shared list would ask for a danger red that reads on both, which is a colour that
+// does not exist.
+var panelEdgeRolePairs = []RolePair{
+	{Foreground: "border-primary", Background: "surface-inverse", Min: MinContrastGraphic},
+}
+
+// PanelEdgeRolePairs returns the boundaries drawn on a panel the theme fills with its
+// own colour, at MinContrastGraphic. Whoever gates a palette hands these over beside
+// EdgeRolePairs, as it does TintedRolePairs beside BodyRolePairs: one gate, and the
+// two lists because the two grounds give way in opposite directions.
+func PanelEdgeRolePairs() []RolePair { return slices.Clone(panelEdgeRolePairs) }
+
 // GatedRolePairs returns the whole gated set: every body pair the semantic layer
 // composes, on a theme's own surfaces, on the surfaces it derives by mixing, on
-// the status tints, and the edge a component draws itself with. One gate belongs
-// to one list, so the door that accepts a client's design and the seam that turns
-// a pair into a stylesheet read theirs from here rather than each assembling its
-// own copy — which is what made the two halves disagree.
+// the status tints, the edge a component draws itself with, and the boundary it
+// draws across a panel the theme fills with its own colour. One gate belongs to one
+// list, so the door that accepts a client's design and the seam that turns a pair
+// into a stylesheet read theirs from here rather than each assembling its own copy —
+// which is what made the two halves disagree. The list is a union of five because
+// each kind of ground gives way to its pair in its own direction; the seams that read
+// one kind alone (review 16's coverage case, for one) read the smaller list.
 func GatedRolePairs() []RolePair {
 	pairs := BodyRolePairs()
 	pairs = append(pairs, TintedRolePairs()...)
 	pairs = append(pairs, StatusRolePairs()...)
-	return append(pairs, EdgeRolePairs()...)
+	pairs = append(pairs, EdgeRolePairs()...)
+	return append(pairs, PanelEdgeRolePairs()...)
 }

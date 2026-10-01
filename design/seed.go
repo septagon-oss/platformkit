@@ -157,7 +157,7 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.AccentHover = enforceTinted(hsv(hue, accentSat*0.70, 0.86), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#0a0a0a", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.60, 0.72), theme.SurfaceCanvas)
-		theme.SidebarBg = surface(surfaceSat*1.8, 0.07)
+		theme.SidebarBg = panelUnderTheEdge(surface(surfaceSat*1.8, 0.07), theme.BorderDefault)
 		theme.SidebarText = enforce("#f4f7f2", theme.SidebarBg)
 		theme.SidebarMute = enforce(hsv(hue, 0.12, 0.72), theme.SidebarBg)
 	} else {
@@ -175,7 +175,7 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		theme.AccentHover = enforceTinted(hsv(hue, min(1, accentSat*1.1), 0.30), theme.SurfacePrimary, theme.SurfaceCanvas, theme.SurfacePrimary, theme.SurfaceMuted)
 		theme.AccentOn = enforce("#fbfffb", theme.AccentDefault, theme.AccentHover)
 		theme.Focus = enforce(hsv(complement(hue), 0.68, 0.85), theme.SurfaceCanvas)
-		theme.SidebarBg = hsv(hue, 0.38, 0.13)
+		theme.SidebarBg = panelUnderTheEdge(hsv(hue, 0.38, 0.13), theme.BorderDefault)
 		theme.SidebarText = enforce("#f6faf3", theme.SidebarBg)
 		theme.SidebarMute = enforce(hsv(hue, 0.14, 0.74), theme.SidebarBg)
 	}
@@ -200,6 +200,23 @@ func generatedTheme(name string, hue, surfaceSat, accentSat float64) Theme {
 		status.set(&theme, fg, bg)
 	}
 	return theme
+}
+
+// panelUnderTheEdge darkens the sidebar panel until the line the sidebar draws
+// across it reads: clSidebarSectionHeader (ui/components/classlists.go) draws
+// BorderColor(style.BorderPrimary) and declares no fill, and clSidebarColumnAdmin
+// fills the column it sits inside with Bg(style.SurfaceInverse) — the panel. The
+// edge is repaired against the surfaces a field stands on first, at the lightest
+// colour that reaches generatedEdgeFloor on all four, and a line that dark cannot
+// be lightened without losing one of them, so the panel is the half with room and
+// the half that gives: it moves down toward black, the direction a sidebar is
+// already going, and every foreground the same theme paints on it (sidebar-text,
+// sidebar-muted, and the ring a disclosure button wears) reads better for it.
+// Repaired at generatedEdgeFloor rather than the gate's 3.0 for the same reason the
+// field's edge is: the panel a client files in design.yaml is not the panel the
+// generator drew.
+func panelUnderTheEdge(panel, edge string) string {
+	return settleDarker(panel, []ground{{Base: mustParse(edge)}}, generatedEdgeFloor)
 }
 
 // statusRole binds a semantic status to the hue that always means it and the two
@@ -365,29 +382,64 @@ func settle(candidate string, grounds []ground, min float64) string {
 	if reaches(raw, grounds, min) {
 		return candidate
 	}
-	hue, saturation, value := rgbToHSV(raw)
+	hue, _, _ := rgbToHSV(raw)
 	var backgrounds []SRGBA
 	for _, g := range grounds {
 		backgrounds = append(backgrounds, g.under(raw))
 	}
 	towardLight := Contrast(hsvRGB(hue, 0, 1), backgrounds[0]) >= Contrast(hsvRGB(hue, 0, 0), backgrounds[0])
+	if lit, ok := walkTowardPole(raw, grounds, min, towardLight); ok {
+		return lit
+	}
+	if towardLight {
+		return "#ffffff"
+	}
+	return "#000000"
+}
+
+// settleDarker is settle with the pole fixed to black. settle picks its pole from
+// the first ground, which is the right choice for a foreground and the wrong one
+// for a ground the caller has already decided is dark: repairing the sidebar panel
+// under a line drawn across it by picking the pole that reads best would swing the
+// panel through the line and out the other side, and hand back a light panel that
+// no longer carries the white copy the same theme paints on it. A panel gives way
+// downward or not at all, which is what this reports: the first step down that
+// clears the floor, or black as the far answer when no step does.
+func settleDarker(candidate string, grounds []ground, min float64) string {
+	raw := mustParse(candidate)
+	if reaches(raw, grounds, min) {
+		return candidate
+	}
+	if lit, ok := walkTowardPole(raw, grounds, min, false); ok {
+		return lit
+	}
+	return "#000000"
+}
+
+// walkTowardPole is the shared loop of both settles: the candidate's own hue kept,
+// the saturation lost as it moves toward white (towardLight) or black, and the
+// first step at which every ground reaches min reported. ok is false when no step
+// did, which leaves the caller to name the pole it walked toward rather than
+// pretending a colour outside the walk was found.
+func walkTowardPole(raw SRGBA, grounds []ground, min float64, towardLight bool) (string, bool) {
+	hue, saturation, value := rgbToHSV(raw)
 	step := 1.0 / 255
 	if towardLight {
 		for t := step; t <= 1; t += step {
 			lit := hsv(hue, saturation*(1-t), value+(1-value)*t)
 			if reaches(mustParse(lit), grounds, min) {
-				return lit
+				return lit, true
 			}
 		}
-		return "#ffffff"
+		return "", false
 	}
 	for t := step; t <= 1; t += step {
 		lit := hsv(hue, saturation*(1-t), value*(1-t))
 		if reaches(mustParse(lit), grounds, min) {
-			return lit
+			return lit, true
 		}
 	}
-	return "#000000"
+	return "", false
 }
 
 // reaches reports one colour against every ground it will be painted on, each

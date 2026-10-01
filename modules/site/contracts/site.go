@@ -37,9 +37,25 @@ const (
 
 var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 
-// DefaultPrimaryColor is the colour a site that has chosen none is rendered in.
-// It is here rather than in a theme because a theme may be replaced and this is
-// what a tenant's settings say when they say nothing.
+// DefaultPrimaryColor is the colour a site that has chosen none holds. It is here
+// rather than in a theme because a theme may be replaced and this is what a
+// tenant's settings say when they say nothing.
+//
+// It is not the colour such a site is *rendered* in, and cannot be one for both
+// modes: the paint measures the stored value through design.Pair.LegibleAccent for
+// each mode it declares (modules/web/internal/mount.go), because the accent is body
+// copy — fg-link, fg-brand — on a light card in the light theme and on a dark canvas
+// in the dark one, so the two modes need colours at opposite ends of the luminance
+// scale and no single #rrggbb clears both gates. Measured over the colours a
+// #rrggbb can name, the ones design.Default() issues unchanged in light have
+// relative luminance at most 0.134 and the ones it issues unchanged in dark at least
+// 0.269: the bands do not meet. The value below is refused by the gate in both modes
+// (#2563eb measures 4.50:1 against the light canvas, where the floor is 4.5), so a
+// site that never opened the settings screen is painted the nearest colour that reads
+// — #4164b0 in light, #618ef1 in dark — and the row, the form and the page agree only
+// about what the tenant stored. Narrowing that gap is a colour decision (file the
+// measured colour where the stored one is shown, or let the column say "none"), and
+// review 21's case in modules/web/internal names it.
 const DefaultPrimaryColor = "#2563eb"
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
