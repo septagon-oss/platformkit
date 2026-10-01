@@ -133,7 +133,7 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace \
+for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
     kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
@@ -181,6 +181,15 @@ boundary_rejects kit/fault "$foundation/kit/db"
 # would make the carrier a tracer and put a driver behind every value type.
 boundary_rejects kit/trace "$foundation/kit/db"
 boundary_rejects kit/trace "$foundation/kit/events/transport"
+# kit/request is the call an event was caused by: its id, its peer address, its
+# trace context. Its allowance is kit/trace and nothing else, so the two edges
+# that would make it something else are refused here — a database behind a value
+# type, and net/http, which would put a server in the closure of every worker
+# that publishes an event and is how the package would end up parsing a request
+# it was told not to parse.
+boundary_rejects kit/request "$foundation/kit/db"
+boundary_rejects kit/request net/http
+boundary_rejects kit/request "$foundation/kit/httpx"
 # The runner selects a transport by name and builds none.
 boundary_rejects kit/app "$foundation/kit/events/providers/nats"
 fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
