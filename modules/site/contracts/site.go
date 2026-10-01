@@ -127,6 +127,30 @@ type SiteSettings struct {
 	// on an item for the same reason module.NavEntry has none: the order is the
 	// order somebody wrote them in.
 	Nav Nav `json:"nav,omitempty" gorm:"type:jsonb;not null;default:'[]'" required:"false" doc:"The site's navigation, in order"`
+
+	// Revision counts this row's own writes, from 1 (migrations/000039). Nothing
+	// in this module reads it. It exists because somebody diffing these settings
+	// needs a number to say "I made this against revision 3", and the only honest
+	// answer to "has it moved" is the row counting its own writes — see
+	// WriteGate and the subject binding apps/platformkit writes for it.
+	// readOnly because the count belongs to the row: a body that sent one would be
+	// a caller choosing how many times it had been saved.
+	Revision int64 `json:"revision" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
+}
+
+// WriteGate is the question a deployment asks about a direct write of a tenant's
+// settings: write them now, or not until somebody else has said yes.
+//
+// The question is asked here, in the module that owns the row, and answered
+// somewhere else, because which writes are sensitive enough to need a second
+// account is a fact about the installation and not about a site. The
+// composition answers it — a flag read for the tenant, and a refusal naming the
+// door to go through instead — and a module that read the flag itself would be a
+// module with a product in it.
+type WriteGate interface {
+	// Check returns nil when the write may go ahead, or an error that names what
+	// the caller has to do instead. A non-nil error writes nothing.
+	Check(ctx context.Context, tx db.Tx[db.Tenant]) error
 }
 
 // TableName pins the table, so the entity and migrations/000018 agree.
@@ -202,8 +226,17 @@ type Service interface {
 	// site, whether or not anybody has saved anything about it.
 	Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
 
+	// SettingsForUpdate is Settings with the tenant's row locked FOR UPDATE, for a
+	// caller about to compare what it read against what it is about to write. A
+	// tenant with no row gets the defaults, whose revision is 0.
+	SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
+
 	// Save writes the settings and publishes site.settings_updated. Saving what
 	// is already stored changes nothing and says nothing, so a screen that
 	// submits its form twice does not invalidate a cache twice.
+	//
+	// It is the door an approved proposal comes through, and it is not gated: the
+	// gate in Deps stands on the route a person types into, not here. Refusing the
+	// apply as well would make a proposal impossible to apply.
 	Save(ctx context.Context, tx db.Tx[db.Tenant], in *SiteSettings) (*SiteSettings, error)
 }

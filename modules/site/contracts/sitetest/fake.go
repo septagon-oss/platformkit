@@ -50,6 +50,14 @@ func (f *Fake) Settings(ctx context.Context, _ db.Tx[db.Tenant]) (*contracts.Sit
 	return &out, nil
 }
 
+// SettingsForUpdate mirrors internal.Service.SettingsForUpdate. Whether the row is
+// locked is a fact about a database, and there is none here: the fake answers the
+// same value Settings answers, so a consumer's test sees the same defaults and the
+// same revision either way.
+func (f *Fake) SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
+	return f.Settings(ctx, tx)
+}
+
 // Save mirrors internal.Service.Save.
 func (f *Fake) Save(ctx context.Context, _ db.Tx[db.Tenant], in *contracts.SiteSettings) (*contracts.SiteSettings, error) {
 	f.mu.Lock()
@@ -59,6 +67,7 @@ func (f *Fake) Save(ctx context.Context, _ db.Tx[db.Tenant], in *contracts.SiteS
 	}
 	if f.stored == nil {
 		in.ID, in.CreatedAt, in.UpdatedAt = uuid.New(), db.Now(), db.Now()
+		in.Revision = 1
 		return f.commit(in), nil
 	}
 	in.Base = f.stored.Base
@@ -66,6 +75,7 @@ func (f *Fake) Save(ctx context.Context, _ db.Tx[db.Tenant], in *contracts.SiteS
 		out := *f.stored
 		return &out, nil
 	}
+	in.Revision = f.stored.Revision + 1
 	in.UpdatedAt = db.Now()
 	return f.commit(in), nil
 }

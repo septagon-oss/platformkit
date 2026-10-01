@@ -40,6 +40,21 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Flags are this installation's feature flags, by key. They are configuration
+	// rather than a flag service because that is the honest size of what the
+	// reference application needs: one boolean somebody can throw without a
+	// deployment, read the way every other value here is read.
+	//
+	// A flag never grants a permission, narrows a tenant's scope or replaces a
+	// subscription's entitlement (kit/flags says so of the contract this satisfies);
+	// it decides only whether an optional product behaviour runs. Which key means
+	// what is the consumer's fact, written beside the consumer —
+	// apps/platformkit/change.go names the one this application reads.
+	//
+	// An absent key is not false-by-invisibility: the consumer passes an explicit
+	// fallback, and a key nobody reads is a line in the loader's own refusal
+	// (dec.KnownFields) rather than a dormant setting.
+	Flags map[string]bool `yaml:"flags"`
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
