@@ -64,9 +64,17 @@ jobs:
         id: nats
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          # Each container this job starts by hand is named after the run that started it, from the same
+          # run id the image tag below is built from. The cleanup step at the end of the job needs a
+          # handle that outlives the step which made the container: a step the job's own deadline cuts off
+          # never finishes writing $GITHUB_OUTPUT, so the id it recorded is lost, and a container still
+          # running is what makes `docker image rm` refuse below and the job's network unremovable. The
+          # run id is known to every step without any output, so a name is a handle the job cannot lose.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias nats \
             nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
             --jetstream --http_port 8222)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -163,9 +171,11 @@ jobs:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
           PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
             --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -202,6 +212,7 @@ jobs:
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}
         run: |
           test -n "$JOB_NETWORK"
           for profile in latin complete; do
@@ -210,7 +221,8 @@ jobs:
               complete) target=complete-preview; test_file=complete-fonts.test.mjs ;;
             esac
             export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
-            container=$(docker run -d --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+            docker rm -f "$CONTAINER_NAME-$profile" >/dev/null 2>&1 || true
+            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
               --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -243,12 +255,28 @@ jobs:
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+          NATS_NAME: platformkit-${{ github.run_id }}-nats
+          EDITOR_NAME: platformkit-${{ github.run_id }}-editor
+          PREVIEW_NAME: platformkit-${{ github.run_id }}
         run: |
           status=0
-          if [ -n "$EDITOR_CONTAINER" ]; then docker rm -f "$EDITOR_CONTAINER" || status=1; fi
-          if [ -n "$PREVIEW_CONTAINER" ]; then docker rm -f "$PREVIEW_CONTAINER" || status=1; fi
-          if [ -n "$COMPLETE_PREVIEW_CONTAINER" ]; then docker rm -f "$COMPLETE_PREVIEW_CONTAINER" || status=1; fi
-          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          # Each container is dropped by the id its own step recorded, when that step finished, and by the
+          # run's name always. Both handles reach the same container, and the name is the one a step cut
+          # off mid-flight still leaves behind: run 245 lost the editor's id that way and its container
+          # held the run's image against the three removals below, which are deliberately not forced.
+          # A handle that names nothing is not a failure — the step that would have made that container
+          # may never have run.
+          drop() {
+            for handle in "$@"; do
+              [ -n "$handle" ] || continue
+              docker inspect "$handle" >/dev/null 2>&1 || continue
+              docker rm -f "$handle" || status=1
+            done
+          }
+          drop "$NATS_CONTAINER" "$NATS_NAME"
+          drop "$EDITOR_CONTAINER" "$EDITOR_NAME"
+          drop "$PREVIEW_CONTAINER" "$PREVIEW_NAME-latin"
+          drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi
