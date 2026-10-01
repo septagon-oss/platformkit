@@ -7,8 +7,8 @@
 // its service back to main as well as its manifest: main holds the value,
 // because three other things need it.
 //
-// It imports no other module, and the modules above it reach it through hooks
-// (contracts.Hook) rather than the other way round.
+// Its one cross-module import is modules/user/contracts, for the invite route's
+// Inviter; otherwise it is reached through hooks (contracts.Hook), not the reverse.
 package tenant
 
 import (

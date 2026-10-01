@@ -28,10 +28,10 @@ import (
 // in an ordinary roles table, and every tenant's admin role holds the wildcard
 // by construction — which used to mean any customer's administrator could list,
 // create and suspend the tenants beside them, at their own host, with the
-// credentials they were legitimately given. What keeps it safe is that these
-// five routes declare httpx.OperatorPermission: the kernel refuses the request
-// at any tenant but the operator's own before it asks the roles table anything,
-// and no wildcard satisfies the grant even there.
+// credentials they were legitimately given. What keeps it safe is that each of
+// these eleven routes declares httpx.OperatorPermission: the kernel refuses
+// the request at any tenant but the operator's own before it asks the roles
+// table anything, and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
 // RegisterRoutes mounts the control-plane routes.
@@ -39,7 +39,7 @@ const path = "/tenants"
 // They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
 // repository — which stamps one from the transaction — has nothing to stamp.
-// That is the whole cost of the exception, and it is five short handlers.
+// That is the whole cost of the exception, and it is eleven short handlers.
 //
 // Every one of them opens a transaction of its own. The request already holds a
 // tenant transaction, because recognising the caller was a query in it, and a

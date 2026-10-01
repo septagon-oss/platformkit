@@ -23,7 +23,7 @@ copy (`tenant.locale_set` says so, and the host cache is invalidated for that
 tenant because the languages of a page changed): `OnCreate` hooks —
 `auth.SeedRoles` today — run inside the creating transaction, and `Invite`
 gives a tenant its first administrator (without one the route is not mounted).
-It imports no other module; the modules above reach it through
+Its one cross-module import is `modules/user/contracts`, for `invite`'s `Inviter`; the modules above reach it through
 `contracts.Hook`. Consumers import [contracts/](contracts/) and its
 [fake](contracts/tenanttest/), never `internal/`. See
 [ADR 0006](../../docs/adr/0006-system-access-is-a-token.md) for the system token.
