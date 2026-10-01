@@ -19,7 +19,10 @@ jobs:
     # This self-hosted capacity accepts trusted same-repository changes only.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    timeout-minutes: 45
+    # 45 cut off runs 192, 193, 204, 210, 237 and 243 after every test that ran had passed: the job runs
+    # make check, race, govulncheck, the design editor's browser verification and e2e in sequence. Task
+    # T-0219 splits it across the two kernel runners; until then the limit leaves room.
+    timeout-minutes: 75
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
