@@ -146,7 +146,7 @@ func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	if entry == nil {
 		t.Fatal("the catalog document's resources are not an array of objects")
 	}
-	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton"} {
+	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton", "operations"} {
 		if _, ok := wireMap(entry["properties"])[name]; !ok {
 			t.Errorf("a catalog entry in the published document has no %q: a generated screen would read a field the contract never mentions", name)
 		}

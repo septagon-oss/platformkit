@@ -62,6 +62,17 @@ type Entry struct {
 	// lifecycle routes the resource carries. A command the caller may not call
 	// is absent for the same reason an unreadable resource is.
 	Commands []Command `json:"commands,omitempty"`
+	// Operations names the routes this resource offers, in list/read/create/
+	// update/delete order, printed by the same rule as write_path and a command's
+	// path: only when a shell could no longer derive the answer. An entry that
+	// offers all five prints nothing, exactly as it did before this key existed.
+	//
+	// A shell that has not read this key reads an entry that hides a verb as if it
+	// did not — which is why CatalogVersion moves with the first *shipped* resource
+	// that hides one, and why apps/platformkit's ratchet case refuses to let that
+	// move be a memory. An absent key means all five, so it is the shell's next
+	// build that has to require it, reading this field.
+	Operations []string `json:"operations,omitempty"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -109,7 +120,8 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable,
+		Singleton: r.Singleton, Operations: r.OperationWords()}
 	if writable {
 		e.WritePath = r.WritePath
 	}
