@@ -20,7 +20,11 @@ var (
 	// link, which is how a second factor becomes a password reset queue. It is an
 	// outcome rather than a fault: both doors return it with no session and no
 	// identity, because the caller holds one right thing, which is exactly what
-	// answering the factor is for.
+	// answering the factor is for. Both doors mark that right thing as proved,
+	// for FirstFactorProofWindow, and that mark is the only thing that makes the
+	// code below answerable: an answer with no refused door behind it is refused
+	// itself, so a code — which is a thing a person may have written down
+	// somewhere — is never on its own the account.
 	ErrFactorRequired = errors.New("auth: this account answers with a second factor")
 
 	// ErrLastFactor is WithdrawFactor's refusal to take the last one away.
@@ -63,6 +67,19 @@ const (
 	// Ten is the number that survives a week of travelling without letting a
 	// pocket full of spares become the ordinary way in.
 	RecoveryCodes = 10
+
+	// FirstFactorProofWindow is how long the second half stays answerable after
+	// a door refused to finish the sign-in without it. It is a window and not a
+	// standing door: the only way to get another is to offer the first factor
+	// again, and the challenge spends the one it answers, so a person who walks
+	// away mid-sign-in leaves nothing behind that outlives five minutes.
+	//
+	// It lives here rather than in configuration for the reason the window and
+	// the skew above do — a deployment that lengthened it had weakened the thing
+	// it turned on — and five minutes is the shortest span that covers a person
+	// on somebody else's keyboard unlocking a phone, opening an authenticator
+	// and typing six digits, which is the errand the wait is for.
+	FirstFactorProofWindow = 5 * time.Minute
 )
 
 // Factor is one second factor a person holds. It names no secret and carries no
@@ -137,11 +154,37 @@ type Factors interface {
 	// they would be a second password.
 	RotateRecoveryCodes(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]string, error)
 
-	// VerifySecondFactor opens the session the password earned: given the
-	// address, the code (a TOTP or a recovery code) and where the answer came
-	// from, it checks the factor is still there, that the code has not been
-	// spent, and that the step has not been used, then opens a session exactly
-	// as Login would.
+	// RequireFirstFactorProof spends the proof that this address's first factor
+	// checked out a moment ago, so that the code below is answering a sign-in
+	// rather than being one.
+	//
+	// It exists because a code is not a first factor. Login and Open refuse with
+	// ErrFactorRequired and mint the window (000033_first_factor_proofs.up.sql);
+	// the challenge leg calls this before it looks at a code, and the refusal
+	// that comes back here spends no code, opens no session and publishes no
+	// sign-in — which is the difference between a recovery code that stands in
+	// for a second factor and one that has quietly become a password. A code is
+	// text a person keeps: the module that lets one be spent by whoever presents
+	// it has handed out ten sign-ins per enrolment and asked nobody whether they
+	// were also holding the address.
+	//
+	// Absent, spent or expired is ErrCredentials — the answer a wrong code gets,
+	// at its cost, because "sign in with your password first" and "that code is
+	// wrong" would tell a stranger which half they were missing.
+	RequireFirstFactorProof(ctx context.Context, tx db.Tx[db.Tenant], email string, from Client) error
+
+	// VerifySecondFactor spends a second factor and opens the session its
+	// account earned: given the address, the code (a TOTP or a recovery code)
+	// and where the answer came from, it checks the factor is still there, that
+	// the code has not been spent, and that the step has not been used, then
+	// opens a session exactly as Login would.
+	//
+	// It is the second half and not a sign-in. The half that came before it is
+	// the caller's own, and this method cannot see it, which is why nothing
+	// mounts it on its own: the challenge leg spends RequireFirstFactorProof
+	// first, in the same transaction, so a code is only ever spent by a caller
+	// who was refused for the other half a moment earlier. A composition that
+	// called this one alone would be handing out sessions to whoever held a code.
 	//
 	// A wrong code, a replayed step, a spent recovery code, an address with no
 	// factor and an address nobody has are one answer at one cost — ErrCredentials

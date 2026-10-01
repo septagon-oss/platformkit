@@ -100,7 +100,7 @@ POST   /api/v1/auth/factors/totp/finish    SignedIn   enrols it, and hands out t
 GET    /api/v1/auth/factors                SignedIn   what this account proves beside its password
 DELETE /api/v1/auth/factors/{id}           SignedIn   withdraw one; the last is refused
 POST   /api/v1/auth/factors/recovery/rotate SignedIn  retire every unused code, issue a fresh set
-POST   /api/v1/auth/challenge/verify       Public     the second half of a sign-in, and the cookie
+POST   /api/v1/auth/challenge/verify       Public     the second half only — and the cookie
 ```
 
 The deciding happens in one branch and it happens about the *account*: the first
@@ -129,6 +129,30 @@ answered there could sign nobody in. That is why
 composition and sends the request, rather than calling `VerifySecondFactor`: the
 leg is the capability, and a service call cannot show that a surface keeps a
 cookie away from it.
+
+`Public` on that door means no session is needed to *ask*, not that nothing need
+be *proved*. What it authenticates is the half that came before it: `Login` and
+`Open`, when they answer `ErrFactorRequired`, mark this account's first factor as
+proved — one live row per person in `first_factor_proofs`
+(`000033_first_factor_proofs.up.sql`), written outside the refused request because
+a 401 rolls its own transaction back, and open for
+`contracts.FirstFactorProofWindow` — and `handleVerifyFactor` spends that row (a
+`DELETE`, so "once" is the row being gone) *before* it looks at the code. A code
+presented with no refused sign-in behind it gets the answer a wrong code gets, at
+its cost, having read no factor, spent nothing and published nothing.
+That row is the difference between a recovery code that stands in for a second
+factor and one that has become a password. Codes are text a person keeps — a
+password manager, a file, a printed card in a drawer — so a door that spent one on
+presentation would hand out ten sign-ins per enrolment, each usable once, from any
+machine, to whoever held the file; and a TOTP is the same door with a 30-second
+timer, which is the "read out what your authenticator shows" call a second factor
+exists to make worthless. `VerifySecondFactor` still cannot see the first half —
+no argument carries it — so it is the pair with `RequireFirstFactorProof`, spent in
+the same transaction, that is a sign-in, and the interface says so on both of them
+rather than in one comment nobody has to read. The case is
+`TestACredentialAnsweredWithoutItsFirstHalfSignsNobodyIn`: one cookie-less POST of
+a person's own recovery code, and the ledger read around it — no session row, no
+code spent, no `auth.logged_in`, no `auth.recovery_code_used`.
 
 TOTP is RFC 6238 in `internal/totp.go` over `crypto/hmac` — the register's own
 rule for this capability (`T-0013`: nothing beyond the standard library and

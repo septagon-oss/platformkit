@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -58,6 +60,17 @@ type recoveryCodeRow struct {
 }
 
 func (recoveryCodeRow) TableName() string { return "recovery_codes" }
+
+// firstFactorProofRow is one account whose first factor checked out and whose
+// second half has not been answered yet. One row per person, no secret in it,
+// and no proved_at beside the expiry: see the migration for who reads what.
+type firstFactorProofRow struct {
+	UserID    uuid.UUID `gorm:"primaryKey"`
+	TenantID  uuid.UUID
+	ExpiresAt time.Time
+}
+
+func (firstFactorProofRow) TableName() string { return "first_factor_proofs" }
 
 var _ contracts.Factors = (*Service)(nil)
 
@@ -222,6 +235,11 @@ func (s *Service) RotateRecoveryCodes(ctx context.Context, tx db.Tx[db.Tenant], 
 // point: a person who proves both things is signed in, and nothing about their
 // session says they arrived the long way round except how it was opened.
 //
+// The half before it is spent by RequireFirstFactorProof, which the challenge
+// route asks first, in this same transaction: what is spent there is the fact
+// that a door refused this address a moment ago, and without that fact no code
+// this method would accept is anybody's sign-in. See the interface note.
+//
 // An unknown address, a person with no factor, a wrong code, a spent step and a
 // spent recovery code are ErrCredentials at one cost, including the equal work
 // Login pays for an address nobody has. Whether a wrong answer came from a wrong
@@ -259,6 +277,120 @@ func (s *Service) VerifySecondFactor(ctx context.Context, tx db.Tx[db.Tenant], e
 	}
 	session, identity, err := s.open(ctx, tx, user, from, method)
 	return session, identity, err
+}
+
+// RequireFirstFactorProof spends the window one of this address's refused
+// sign-ins opened, so that a code is spent by a caller who was asked for one
+// rather than by whoever turns up holding one.
+//
+// The refusal is the same ErrCredentials a wrong code costs, because the two
+// answers must not be distinguishable: "sign in with your password first" and
+// "that code is wrong" would tell a stranger which half of a sign-in they were
+// missing, and the module's discipline at this door is that a stranger learns
+// nothing it can act on. It is not 403 and it is not a new status: the caller is
+// not signed in and everything else a 401 says is true.
+//
+// Which door refused is the account's answer, not the caller's: Login and Open
+// mint the window when they refuse for the second half (markFirstFactorProved),
+// and nothing else writes it. A caller who never offered the first proof has no
+// row, so this refuses before a factor is read, before a recovery code is
+// looked at, and before anything is spent — the three things a refusal is not
+// allowed to do, and what an answer that reaches them would cost the account
+// whose codes were in the drawer.
+//
+// The consumption is a DELETE rather than a flag, for the password_tokens
+// reason: the row being gone is what "once" means, and two concurrent answers
+// cannot both read an unset flag. The delete is in the caller's transaction, so
+// an answer refused *after* it — a wrong code, a replayed step — rolls it back
+// along with the rest of a response that kit/httpx will not commit, and the
+// person who mistyped one digit has not also lost the window the refusal gave
+// them. It costs the account a row lock for the length of one sign-in, which is
+// what the same person's own concurrent tabs of one half-finished sign-in are
+// worth: two of them answering one code is one session and one refusal, and this
+// is the statement that makes it so.
+func (s *Service) RequireFirstFactorProof(ctx context.Context, tx db.Tx[db.Tenant], email string, from contracts.Client) error {
+	// The lockout Login enforces is enforced here too, and by the same counter:
+	// every refusal below records a failure against this account, so a script at
+	// the challenge leg is the same account under attack as a script at /login,
+	// and it reaches the same ten-in-a-quarter-hour before it is refused. A
+	// second counter for this door would be two knobs for one policy and a
+	// stranger who only has to switch doors.
+	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+		if s.limiter.Noted(ctx, email, from.IP) {
+			s.recordFailure(ctx, email, from, true)
+		}
+		return contracts.ErrTooManyAttempts
+	}
+	user, err := s.users.ByEmail(ctx, tx, email)
+	switch {
+	case errors.Is(err, crud.ErrNotFound):
+		// The same argon2id an unknown address pays at /login and at the code
+		// check, so the three doors cannot be told apart by a stopwatch.
+		usercontracts.EqualWork(email)
+		return s.fail(ctx, email, from)
+	case err != nil:
+		return err
+	}
+	spent := tx.DB().Exec("DELETE FROM first_factor_proofs WHERE user_id = ? AND expires_at > now()", user.ID)
+	if spent.Error != nil {
+		return fmt.Errorf("auth: spend the first-factor proof of %s: %w", user.ID, spent.Error)
+	}
+	if spent.RowsAffected != 1 {
+		return s.fail(ctx, email, from)
+	}
+	return nil
+}
+
+// markFirstFactorProved records that this account's first factor checked out,
+// in a transaction of its own.
+//
+// Its own, because the response that earns it is a 401 and kit/httpx rolls the
+// request's transaction back at 400 and above: written in the caller's
+// transaction, the row would be undone by the very refusal that wrote it, which
+// is Service.forget's discovery with the sign reversed, and the reason both
+// detached writes already in this file exist.
+//
+// It is a marker and not a credential, and the difference is the point. No
+// token, no cookie, nothing handed to the caller that they could hand back: the
+// row records a fact the server established by checking a secret, and the only
+// statement that can read it is the one that decides whether a code is spendable
+// (rule 7). A copy of this table is a list of people who are about to type a
+// code and nothing else, which is why no hash sits in it next to code_hash and
+// token_hash.
+//
+// Refreshing rather than adding keeps one live window per person, so the person
+// refused four times has one window ending five minutes after the last refusal,
+// not four — and it bounds what a scripted attack against this table can grow:
+// one row per account, always. It publishes no event. auth.login_failed is the
+// trail's record of an attempt that did not get in with what it had, and this
+// attempt did get in with the half it had; what it is waiting for is not a sign-in
+// and is recorded as no event at all.
+//
+// A failure is logged and changes the answer not at all: the person is still
+// refused until they offer the first factor again, and what they lose is one
+// tries' worth of typing. A marker that could not be *refused* would be the
+// account.
+func (s *Service) markFirstFactorProved(ctx context.Context, userID uuid.UUID) {
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return
+	}
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	at := db.Now()
+	err := db.Run(detached, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return tx.DB().Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "user_id"}},
+			DoUpdates: clause.AssignmentColumns([]string{"expires_at"}),
+		}).Create(&firstFactorProofRow{
+			UserID: userID, TenantID: db.TenantOf(tx).ID,
+			ExpiresAt: at.Add(contracts.FirstFactorProofWindow),
+		}).Error
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: could not record that the first factor was proved",
+			"user", userID, "error", err)
+	}
 }
 
 // spendFactor checks an answer against what this person holds and, if it is

@@ -156,6 +156,12 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 		return nil, nil, err
 	}
 	if required {
+		// The half that arrived is written down, and it is what makes the other
+		// half answerable: the challenge leg spends this before it reads a code.
+		// Nothing here could be called a sign-in — no session, no identity, no
+		// event — and a person who gives up now leaves a row that stops being
+		// anything at all five minutes after this password was typed.
+		s.markFirstFactorProved(ctx, user.ID)
 		return nil, nil, contracts.ErrFactorRequired
 	}
 	session, identity, err := s.open(ctx, tx, user, from, "password")
@@ -200,6 +206,12 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 		return nil, nil, err
 	}
 	if required {
+		// The provider confirmed the address, which is the half a password also
+		// proves, so the same window is marked here as at /login: the person is
+		// sent on to /challenge/verify with something to spend there, and a leg
+		// that refused without leaving one would be a door that cannot be opened
+		// from the outside at all.
+		s.markFirstFactorProved(ctx, user.ID)
 		return nil, nil, contracts.ErrFactorRequired
 	}
 	return s.open(ctx, tx, user, from, "oidc")
@@ -393,8 +405,18 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if keys.Error != nil {
 		return 0, fmt.Errorf("auth: purge the retired api tokens: %w", keys.Error)
 	}
+	// A first-factor proof that has aged out is a row that can no longer be
+	// spent: the challenge checks expires_at against the clock, so this is table
+	// hygiene, and the five-minute window means a tenant's whole row count is
+	// the number of people mid-sign-in.
+	proofs := tx.DB().Exec(
+		"DELETE FROM first_factor_proofs WHERE user_id IN ("+
+			"SELECT user_id FROM first_factor_proofs WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if proofs.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent first-factor proofs: %w", proofs.Error)
+	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
-		codes.RowsAffected + keys.RowsAffected, nil
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason

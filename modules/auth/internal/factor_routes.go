@@ -27,10 +27,15 @@ import (
 // to a list of scopes is refused them by the kernel, because they exercise their
 // caller's whole authority: see httpx.SignedIn and tenancy.Principal.Permissions.
 // The sixth, the challenge, declares httpx.Public() authorisation and mounts on
-// the workspace surface, which is how /login and /password/reset already work: the
-// caller has no session by design, and the answer to a right code is a session
-// cookie. It cannot live on the anonymous surface, which sets no cookie and is
-// skipped by Authenticate by design — buffer.withholdCookies takes every Set-Cookie
+// the workspace surface, which is how /login and /password/reset already work:
+// the caller has no session by design, and the answer to a right code is a
+// session cookie. Public on this door means "no session is needed to ask", not
+// "nothing need be proved": what it authenticates is the refusal behind the
+// request — the window /login or the provider leg minted when it refused to
+// finish the sign-in — and a code that arrives with no such refusal behind it is
+// refused as flatly as a wrong one, having spent nothing. It cannot live on the
+// anonymous surface, which sets no cookie and is skipped by Authenticate by
+// design — buffer.withholdCookies takes every Set-Cookie
 // off a response on that surface and the kernel answers such a route with a 500 —
 // so a challenge answered there could sign nobody in.
 func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, cookies Cookies) {
@@ -98,7 +103,7 @@ func RegisterFactorRoutes(surfaces httpx.Surfaces, factors contracts.Factors, co
 		Method:      http.MethodPost,
 		Path:        "/challenge/verify",
 		Summary:     "Answer a second factor",
-		Description: "The second half of a sign-in Login refused to finish. Takes the address and the code, or the address and a recovery code, and opens the session the password had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
+		Description: "The second half of a sign-in, and only ever of one. The caller is somebody /login or the provider leg just refused to finish without a code, and that refusal is what makes this answer spendable; a code presented by itself - a recovery code from a leaked file, a TOTP read out to whoever phished it - is refused as one answer and at one cost with a wrong code, and spends nothing. For an address that was just refused, this takes the address and the code, or the address and a recovery code, and opens the session the first half had already earned. A wrong code, a replayed step, a spent recovery code, an address with no factor and an address nobody has are one answer at one cost.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
@@ -257,6 +262,16 @@ func handleVerifyFactor(factors contracts.Factors, cookies Cookies) func(context
 		tx, err := transaction(ctx)
 		if err != nil {
 			return nil, err
+		}
+		// The first half, spent before the second is looked at. This is the line
+		// that makes the door the second half of a sign-in rather than a sign-in:
+		// the window it consumes is minted only by /login or the provider leg
+		// refusing to finish without a code, so a caller who never offered the
+		// first proof is refused here, having read no factor, spent no code and
+		// published no sign-in. It is asked before the transaction is used for
+		// anything else because there is nothing else in this handler to undo.
+		if err := factors.RequireFirstFactorProof(ctx, tx, in.Body.Email, ClientOf(r)); err != nil {
+			return nil, refusal(err)
 		}
 		session, identity, err := factors.VerifySecondFactor(ctx, tx, in.Body.Email, in.Body.Code, ClientOf(r))
 		if err != nil {
