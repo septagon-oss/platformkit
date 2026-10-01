@@ -98,8 +98,11 @@ type Proposal struct {
 
 	// Diff is the change, and DiffDigest is the digest of its canonical bytes. Both
 	// are stored because the diff is what an apply runs and the digest is what a
-	// verdict was about.
-	Diff       Diff   `json:"diff" gorm:"type:jsonb;not null" required:"true" doc:"The change, as an RFC 7386 merge patch"`
+	// verdict was about — and the pair is only evidence if the bytes in this column
+	// still digest to the column beside it, which is why the column is text: jsonb
+	// stores a number as a numeric and would answer "100" where the reviewed bytes
+	// said "1e2". See migrations/000034 and Diff.Value.
+	Diff       Diff   `json:"diff" gorm:"type:text;not null" required:"true" doc:"The change, as an RFC 7386 merge patch"`
 	DiffDigest string `json:"diffDigest" readOnly:"true" doc:"sha256 of the canonical diff, which is what a verdict is about"`
 	Summary    string `json:"summary" maxLength:"200" required:"true" doc:"One line on what the change is"`
 
@@ -165,10 +168,14 @@ func (p *Proposal) Open() bool { return p.State == StateProposed || p.State == S
 // line about it. It carries no proposer and no base revision, and a request body
 // that sends either is refused by the door rather than silently dropped — see
 // Proposer on the entity.
+//
+// SubjectID is present and nil for an entity with one row per tenant: the field is
+// required and its value is nothing, because a body that could leave it out and a
+// body that could name somebody else's row are the same field with two meanings.
 type NewProposal struct {
 	SubjectModule string    `json:"subjectModule" required:"true" example:"site"`
 	SubjectEntity string    `json:"subjectEntity" required:"true" example:"settings"`
-	SubjectID     uuid.UUID `json:"subjectId" format:"uuid" doc:"The row, omitted for an entity with one per tenant"`
+	SubjectID     uuid.UUID `json:"subjectId" format:"uuid" doc:"The row; the nil uuid for an entity with one per tenant"`
 	Diff          Diff      `json:"diff" required:"true"`
 	Summary       string    `json:"summary" required:"true" maxLength:"200"`
 }

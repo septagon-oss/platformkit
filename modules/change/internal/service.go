@@ -114,12 +114,17 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 		State:         contracts.StateProposed,
 		Revision:      1,
 	}
-	if err := crud.Create(ctx, tx, row); err != nil {
+	if err := s.insert(ctx, tx, row); err != nil {
 		// The unique index over an open proposal is the answer to the race the
-		// duplicate check above cannot see: two inserts at once. The loser reads the
-		// winner's row and reports it, which is the same answer the sequential case
-		// gives.
-		if existing, err := s.openDuplicate(tx, in.SubjectModule, in.SubjectEntity, in.SubjectID, digest); err == nil && existing != nil {
+		// duplicate check above cannot see: two inserts at once. Postgres reports the
+		// loser only after the winner has committed, so the row is visible now, and
+		// the loser reports it — the same answer the sequential case gives. A caller
+		// who clicked twice is told which proposal exists rather than that something
+		// conflicted, because "conflict, no id" does not say whether the change is
+		// queued at all.
+		if existing, dupErr := s.openDuplicate(tx, in.SubjectModule, in.SubjectEntity, in.SubjectID, digest); dupErr != nil {
+			return nil, dupErr
+		} else if existing != nil {
 			return existing, nil
 		}
 		return nil, err
@@ -129,6 +134,39 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 		SubjectID: row.SubjectID, BaseRevision: row.BaseRevision, DiffDigest: row.DiffDigest,
 		Diff: row.Diff, Summary: row.Summary, Proposer: row.Proposer, At: at,
 	})
+}
+
+// insert writes the new row inside a savepoint, which is what makes Propose's
+// collision recoverable at all.
+//
+// Postgres answers a conflicting insert with 23505 and puts the *whole*
+// transaction into the aborted state, where every later statement is refused
+// until it rolls back. So the recovery read Propose does after a lost race —
+// and the event the winner of that race still has to publish — cannot run in the
+// transaction the failed insert left behind: the caller gets the insert error and
+// no row, which is Finding "the second submit of the same diff gets a conflict and
+// no proposal" stated as a mechanism. The savepoint is the half-rollback that
+// keeps the transaction usable: on the way out it is either still open and about
+// to commit, or the insert is unwound and the transaction answers again.
+//
+// The name is a literal and the savepoint is never released: Postgres discards
+// what is still open at commit, and a second propose in one request transaction
+// nests a savepoint of the same name, which ROLLBACK TO resolves to the inner one.
+func (s *Service) insert(ctx context.Context, tx db.Tx[db.Tenant], row *contracts.Proposal) error {
+	if err := tx.DB().SavePoint("change_propose").Error; err != nil {
+		return err
+	}
+	created := crud.Create(ctx, tx, row)
+	if created == nil {
+		return nil
+	}
+	if back := tx.DB().RollbackTo("change_propose").Error; back != nil {
+		// The insert failed and the unwind failed with it; the transaction is aborted
+		// and nothing above it can commit, so the unwind's error is the one worth
+		// naming and the insert's is the reason it happened.
+		return fmt.Errorf("%w (the failed insert: %v)", back, created)
+	}
+	return created
 }
 
 // Get reads one proposal of this tenant. See contracts.Service.

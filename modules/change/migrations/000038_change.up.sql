@@ -26,7 +26,15 @@ CREATE TABLE change_proposals (
 	base_revision    bigint       NOT NULL,
 	-- The change (RFC 7386) and the digest of its canonical bytes. Both, because
 	-- apply runs the first and a verdict is about the second.
-	diff             jsonb        NOT NULL,
+	--
+	-- text and not jsonb, deliberately: jsonb stores a number as a numeric, so it
+	-- rewrites 1e2 as 100 on the way in, and the bytes that come back no longer
+	-- digest to the digest stored beside them. A verdict is about the exact bytes,
+	-- so the column has to be the kind that gives back the bytes it was handed.
+	-- The CHECK is what jsonb's own typing used to provide: a diff is a merge-patch
+	-- object, and nothing that is not one is stored.
+	diff             text         NOT NULL
+		CONSTRAINT change_proposals_diff_is_object CHECK (jsonb_typeof(diff::jsonb) = 'object'),
 	diff_digest      text         NOT NULL,
 	summary          varchar(200) NOT NULL,
 	-- Who put it forward, from their own credentials, and who decided. The reviewer
