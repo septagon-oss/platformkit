@@ -1425,14 +1425,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// modules/auth's email_verification.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l`
-	// at this head prints 38, of which the release this fixture is applied from
+	// at this head prints 39, of which the release this fixture is applied from
 	// shipped 34: fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26,
 	// 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10, 11, 13,
 	// 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct. The
-	// four this branch adds above them — migrations/000034 is the kernel's own and
-	// so belongs to the old ledger, while modules/audit's 000035, 000036 and
-	// 000037 postdate the split and are left out of it, see legacyLayout — are the
-	// files that make this assertion move.
+	// six this branch adds are migrations/000034 — the kernel's own, so it does
+	// belong to the old ledger — and modules/audit's 000035, 000036 and 000037,
+	// modules/change's 000038 and modules/site's 000039, which postdate the split,
+	// are left out of the old ledger and apply under the owner that ships them (see
+	// legacyLayout). Both new module files continue past the highest number
+	// anywhere in the composition, which is the rule this fixture exists to
+	// enforce.
 	if len(before) != 34 {
 		t.Fatalf("the old layout applied %d files, want 34", len(before))
 	}
