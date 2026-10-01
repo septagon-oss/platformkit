@@ -13,12 +13,12 @@
 -- be reconstructed, and inventing them for old rows would be writing history a
 -- second time in a table whose whole shape exists to refuse that. A NULL in
 -- these three columns means "recorded before the trail could answer this", and
--- it says so the same way the unchained rows of 000026 do.
+-- it says so the same way the unchained rows of 000033 do.
 --
 -- traceparent is stored verbatim, as W3C Trace Context spells it
 -- (`00-<32 hex>-<16 hex>-<flags>`), and the trace *id* is not given a column of
 -- its own: one string in two columns is two strings that can disagree. The
--- expression index in 000025 is what makes "every row this trace touched" an
+-- expression index in 000032 is what makes "every row this trace touched" an
 -- index lookup rather than a scan.
 --
 -- client_ip is `inet` for the reason migrations/000030 gives: the type refuses a

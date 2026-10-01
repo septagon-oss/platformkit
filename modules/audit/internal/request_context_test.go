@@ -145,8 +145,8 @@ func TestATrailRowAnswersFromWhere(t *testing.T) {
 		}
 	}
 	// By the call, and by the trace id — which is not a column of its own, only
-	// the second field of the stored traceparent (migrations/000024) and the
-	// expression migrations/000026 indexes.
+	// the second field of the stored traceparent (migrations/000035) and the
+	// expression migrations/000037 indexes.
 	check("filtered by request", contracts.Query{Request: callID})
 	check("filtered by trace", contracts.Query{TraceID: tc.TraceID})
 
@@ -166,7 +166,7 @@ func TestATrailRowAnswersFromWhere(t *testing.T) {
 
 // TestATrailRowWithoutACallStoresAnAbsence: a job's event has no request to
 // name, and the trail records that as nothing rather than as the zero of a
-// string — the same absence migrations/000024 says an absence is.
+// string — the same absence migrations/000035 says an absence is.
 func TestATrailRowWithoutACallStoresAnAbsence(t *testing.T) {
 	_, conn := dbtest.Schema(t, audit.Migrations)
 	svc := internal.NewService()

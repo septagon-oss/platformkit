@@ -116,7 +116,7 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	// the same reason: they are readable only while the call is open, and the
 	// row outlives it. Together the four columns are what lets the audit trail
 	// answer who, what, when, which call and from where — see kit/request and
-	// migrations/000030.
+	// migrations/000034.
 	parent, state := "", ""
 	if tc, ok := trace.From(ctx); ok {
 		parent, state = tc.Parent(), tc.TraceState

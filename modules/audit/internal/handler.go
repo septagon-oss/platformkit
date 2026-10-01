@@ -99,7 +99,7 @@ type listInput struct {
 	Name   string    `query:"name" doc:"Only events with this name" example:"task.task.created"`
 	Actor  uuid.UUID `query:"actor" format:"uuid" doc:"Only events this user caused"`
 	Record uuid.UUID `query:"record" format:"uuid" doc:"Only events about this row, whatever its payload calls it"`
-	// The two the row could not answer until migrations/000024. Both are the
+	// The two the row could not answer until migrations/000035. Both are the
 	// values the caller already has: X-Request-ID from their own response, and
 	// the 32-hex trace id from their own traceparent.
 	Request string    `query:"request" doc:"Only events this request caused (the X-Request-ID value)"`

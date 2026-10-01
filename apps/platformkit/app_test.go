@@ -1301,9 +1301,13 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// applied — there would be no row to re-own and kit/db would be right to call
 	// an applied file that no release ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
-	// lets a module ship a version above the kernel's highest without rewriting
-	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
-	// normally in the upgrade, and are checked as new rows below.
+	// This is what lets a module ship a version above the kernel's highest
+	// without rewriting this fixture every time it does: a file that postdates
+	// the split lands here as a new row, applies normally in the upgrade, and is
+	// checked as new below. The direction the rule cuts is the reason a kernel
+	// file above somebody else's is not free: migrations/000034_outbox_request
+	// moves preSplitTop to 34, and modules/auth's 31, 32 and 33 fall back inside
+	// the old ledger and have to be adopted by name.
 	var preSplitTop int64
 	for _, source := range sources {
 		if source.Owner != "platformkit" {
@@ -1409,19 +1413,28 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// past a file it should have applied, so a new migration has to arrive here and
 	// say so.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 32, of which the release this fixture is applied from
-	// shipped 30: thirteen under migrations/ and the seventeen module files at or
-	// below the kernel's own highest. The two this branch adds,
-	// modules/auth/000031_auth_factors and modules/auth/000032_api_tokens, are
-	// numbered above the kernel's 30 because every version from 1 to 30 is taken,
-	// and a release that postdates the split is not in the old installation's
-	// ledger — legacyLayout therefore leaves them out, see the comment there.
-	// The 30 that remain are thirteen under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/ (4, 7, 8,
-	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
-	if len(before) != 30 {
-		t.Fatalf("the old layout applied %d files, want 30", len(before))
+	// 29 became 34 when the kernel added migrations/000034_outbox_request, which
+	// gives the outbox the request id and the client address the audit trail keeps.
+	// It is 34 rather than the 30 the file was written as because every number to
+	// 33 was taken while this branch was still open — 000030 is migrations/
+	// 000030_tenant_oidc and 000031 to 000033 are modules/auth's factors, API
+	// tokens and first-factor proofs — and modules/audit's three files, the columns
+	// behind those two questions and the two indexes that answer them, continue at
+	// 35 for the same reason and not at the 24 its own sequence had reached: this
+	// fixture flattens every owner's files under one owner, and 000024 is
+	// modules/auth's email_verification.
+	//
+	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l`
+	// at this head prints 38, of which the release this fixture is applied from
+	// shipped 34: fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26,
+	// 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10, 11, 13,
+	// 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct. The
+	// four this branch adds above them — migrations/000034 is the kernel's own and
+	// so belongs to the old ledger, while modules/audit's 000035, 000036 and
+	// 000037 postdate the split and are left out of it, see legacyLayout — are the
+	// files that make this assertion move.
+	if len(before) != 34 {
+		t.Fatalf("the old layout applied %d files, want 34", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with

@@ -16,7 +16,7 @@
 // Say plainly what that does not include, because the sentence used to claim
 // more than the tree delivered (T-0118, decision 0013's integrity property). The
 // trail carries the request that caused each row — actor, request id, client
-// address, trace context (migrations/000024) — but it is not hash-chained, and
+// address, trace context (migrations/000035) — but it is not hash-chained, and
 // the role the application connects as still holds UPDATE and TRUNCATE on the
 // table through the cluster's default privileges. "Append-only" is therefore a
 // statement about this module's code, not a property the database will refuse a
@@ -63,7 +63,7 @@ type Event struct {
 	// verbatim as the standard spells it. ClientIP is the peer address of the
 	// connection the request arrived on — never a header a client could write.
 	// All three are absent for work no request caused, and for every row written
-	// before migrations/000024: a fact nobody captured cannot be reconstructed
+	// before migrations/000035: a fact nobody captured cannot be reconstructed
 	// afterwards, and inventing one would be writing history twice.
 	RequestID string `json:"requestId,omitempty" doc:"The call that caused this, as its caller was told it" example:"0f7c0f1c-2a3e-4a1b-9b4f-2f1d0c9b8a71"`
 	ClientIP  string `json:"clientIp,omitempty" doc:"The address the call arrived from" example:"203.0.113.7"`
@@ -92,10 +92,10 @@ func (Event) TableName() string { return "audit_events" }
 // is true of both shapes and of any module that follows either.
 //
 // Request and TraceID are the two questions the row could not answer until
-// migrations/000024: which call wrote this, and which trace that call belonged
+// migrations/000035: which call wrote this, and which trace that call belonged
 // to. The first matches the stored id exactly; the second matches the trace id,
 // which is the second field of the stored traceparent and what
-// migrations/000026 indexes.
+// migrations/000037 indexes.
 type Query struct {
 	Name          string
 	Actor         uuid.UUID

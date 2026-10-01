@@ -34,7 +34,7 @@ run() {
 	fi
 }
 
-receipt() { jq -n --arg c "$1" --arg b "$2" '{base_ref:$b, candidate_commit:$c, files:[{owner:"audit",version:"24",name:"000024_audit_context.up.sql",phase:"expand",seconds:0.002}], max_lock_ms:0, exit:0}' >"$work/$3"; }
+receipt() { jq -n --arg c "$1" --arg b "$2" '{base_ref:$b, candidate_commit:$c, files:[{owner:"audit",version:"35",name:"000035_audit_context.up.sql",phase:"expand",seconds:0.002}], max_lock_ms:0, exit:0}' >"$work/$3"; }
 receipt aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa v1.1.0 good.json
 receipt bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb v1.1.0 other.json
 receipt aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa HEAD wrongbase.json
