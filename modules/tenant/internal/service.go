@@ -9,8 +9,10 @@ import (
 	"slices"
 
 	"github.com/google/uuid"
+
 	"gorm.io/gorm"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -30,12 +32,21 @@ type Service struct {
 	// speak. Empty means the composition named none, and then nothing is checked
 	// against it. See module.Deps.
 	langs []string
+	// app is the composition this control plane serves, and every read below is
+	// scoped to it. A server hosts many apps over one database (decision 0074 §6),
+	// so tenants of two compositions sit in one table and the tenant id says nothing
+	// about which is whose — lookup by host, the active-tenant list and a get by id
+	// all have to answer "which app is this happening in" first, or one app's
+	// operator lists another's customers. The empty Name is the deployment of one
+	// app, whose tenants the migration placed under the empty slug.
+	app appname.Name
 }
 
 // NewService returns the control plane. module.go constructs it, passing the
-// languages the composition's catalogues answer in.
-func NewService(hooks []contracts.Hook, langs []string) *Service {
-	return &Service{hooks: hooks, langs: langs}
+// languages the composition's catalogues answer in and the slug the composition
+// boots as.
+func NewService(hooks []contracts.Hook, langs []string, app appname.Name) *Service {
+	return &Service{hooks: hooks, langs: langs, app: app}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -57,6 +68,11 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	at := db.Now()
 	t := &contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
+		// This composition, and no other: the row is written under the app that
+		// created it and never rewritten, which is what makes every read below a
+		// boundary rather than a filter. A tenant whose host the boot does not
+		// declare is somebody else's tenant, and this create cannot make it ours.
+		App: s.app.String(),
 		// Never from a request body: NewTenant.Operator is json:"-", so the
 		// only caller that can set it is Bootstrap.
 		Operator:  in.Operator,
@@ -245,7 +261,7 @@ func (s *Service) validLocales(in contracts.SetLocale) ([]string, error) {
 // Get is one tenant with its hosts.
 func (s *Service) Get(_ context.Context, tx db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	var t contracts.Tenant
-	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+	if err := tx.DB().Where("id = ? AND app = ? AND deleted_at IS NULL", id, s.app.String()).Take(&t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	hosts, err := s.hostsOf(tx, t.ID)
@@ -259,13 +275,14 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.System], id uuid.UUID) (*co
 	return &t, nil
 }
 
-// List is every tenant that is not deleted, with its hosts. The hosts come back
+// List is every tenant of this app that is not deleted, with its hosts. The hosts
+// come back
 // in one query rather than one per tenant, because the control plane's list is
 // read by a screen and a screen that costs a query per row is a screen nobody
 // keeps.
 func (s *Service) List(_ context.Context, tx db.Tx[db.System]) ([]*contracts.Tenant, error) {
 	var out []*contracts.Tenant
-	if err := tx.DB().Where("deleted_at IS NULL").Order("created_at, id").Find(&out).Error; err != nil {
+	if err := tx.DB().Where("deleted_at IS NULL AND app = ?", s.app.String()).Order("created_at, id").Find(&out).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	if len(out) == 0 {
@@ -308,8 +325,8 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	var t contracts.Tenant
 	err := tx.DB().Table("tenants").Select("tenants.*").
 		Joins("JOIN tenant_hosts ON tenant_hosts.tenant_id = tenants.id").
-		Where("tenant_hosts.host = ? AND tenants.status = ? AND tenants.deleted_at IS NULL",
-			httpx.HostOnly(host), contracts.StatusActive).
+		Where("tenant_hosts.host = ? AND tenants.status = ? AND tenants.app = ? AND tenants.deleted_at IS NULL",
+			httpx.HostOnly(host), contracts.StatusActive, s.app.String()).
 		Take(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost

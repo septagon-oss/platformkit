@@ -41,6 +41,28 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// App is what this composition declares about itself to the things that run
+	// before a request does. The slug lives in nats.app, where kit/appname's
+	// grammar guards it and every name is already formed from it; what is here is
+	// the two facts a migration needs and the database cannot supply.
+	App App `yaml:"app"`
+}
+
+// App is the composition's own declaration, read at the migrating boot and put on
+// that session by kit/db (db.MigrateDeclaring) for migrations/000030_tenant_app
+// to place tenants with. It is a declaration and not a request: nothing at run
+// time consults it, and a deployment that names no slug and no hosts is the
+// single-app deployment migrating a database that has no tenants to place.
+type App struct {
+	// Hosts are the hosts this app serves its tenants at. An existing tenant
+	// joins this app only when every host it holds is one of these; a tenant with
+	// a host outside the list belongs to another composition sharing the database.
+	Hosts []string `yaml:"hosts"`
+	// TenantApps is the operator's explicit placement, tenant slug to app slug,
+	// for the tenants no host can place. Its values go through the same grammar as
+	// nats.app, and a mapping that does not cover every tenant is refused by the
+	// migration rather than completed by a guess.
+	TenantApps map[string]string `yaml:"tenant_apps"`
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first

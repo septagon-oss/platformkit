@@ -31,7 +31,7 @@ func TestServiceConforms(t *testing.T) {
 		// Built with the dependency the reference application passes, not with nil:
 		// a suite run against a service missing it tests a service nobody composes,
 		// and the cases below that read the installation's languages would be silent.
-		svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+		svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
@@ -76,7 +76,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 			return tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, '{}')",
 				created.ID, "seeded").Error
 		},
-	}, nil)
+	}, nil, "")
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := svc.Create(ctx, tx, contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"})
 		return err
@@ -96,7 +96,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 	// A hook that fails leaves no tenant behind.
 	failing := internal.NewService([]contracts.Hook{
 		func(context.Context, db.Tx[db.System], *contracts.Tenant) error { return boom },
-	}, nil)
+	}, nil, "")
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := failing.Create(ctx, tx, contracts.NewTenant{Slug: "globex", Name: "Globex", Host: "globex.example.com"})
 		return err
@@ -120,7 +120,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 // instead of a column on it.
 func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 
 	var acme, globex *contracts.Tenant
 	// acme is served in pt-PT and globex in the language it was created with, which
@@ -219,7 +219,7 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 // authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesASecondInstallation(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	first := contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"}
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
