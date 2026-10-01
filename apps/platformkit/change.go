@@ -97,9 +97,17 @@ var _ sitecontracts.WriteGate = settingsGate{}
 // down. What the caller gets is the status that says try again and the address that
 // works now; what it does not get is the provider's own error, because kit/problem
 // keeps a 5xx's cause on the server's side of that line.
-var flagUnreadable = problem.New(http.StatusServiceUnavailable,
-	"CHANGE_CONTROL_UNAVAILABLE: "+siteSettingsFlag+" did not answer, so this write is refused; "+
-		proposalAddress+" is decided by a second account whether or not that switch is reachable")
+//
+// It builds a fresh Problem per call rather than being one Problem at package scope,
+// because kit/httpx's response transformer writes the request id into the Problem a
+// handler returns (stampRequestID, kit/httpx/request_id.go:94): one shared value
+// would be two requests writing one field at once, and the second body would carry
+// the first request's id.
+func flagUnreadable() error {
+	return problem.New(http.StatusServiceUnavailable,
+		"CHANGE_CONTROL_UNAVAILABLE: "+siteSettingsFlag+" did not answer, so this write is refused; "+
+			proposalAddress+" is decided by a second account whether or not that switch is reachable")
+}
 
 func (g settingsGate) Check(ctx context.Context, tx db.Tx[db.Tenant]) error {
 	tenant := db.TenantOf(tx)
@@ -110,7 +118,7 @@ func (g settingsGate) Check(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		// An unreadable switch is not a switch that is off. The fallback belongs to
 		// the answer a provider *gives*, not to the one it fails to give, and the
 		// door refuses rather than borrowing "off" from an outage (flagUnreadable).
-		return flagUnreadable
+		return flagUnreadable()
 	}
 	if !decision.Value {
 		return nil

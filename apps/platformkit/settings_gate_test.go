@@ -59,9 +59,17 @@ func TestTheSettingsDoorAnswersForWhatItCannotAsk(t *testing.T) {
 		t.Fatalf("a switch that could not be read answered %v; the write is refused with a status, "+
 			"not allowed because the question went unanswered", unreadable)
 	}
-	if !errors.Is(unreadable, flagUnreadable) || !strings.Contains(unreadable.Error(), proposalAddress) {
-		t.Errorf("the refusal for an unreadable switch is %v; it names %s as the door that answers "+
-			"while the provider is down", unreadable, proposalAddress)
+	if !strings.Contains(outage.Detail, proposalAddress) || !strings.Contains(outage.Detail, siteSettingsFlag) {
+		t.Errorf("the refusal for an unreadable switch says %q; it names %s as the door that answers "+
+			"while the provider is down, and %s as the switch that did not answer", outage.Detail,
+			proposalAddress, siteSettingsFlag)
+	}
+	// A fresh Problem per refusal: kit/httpx's transformer stamps the one a handler
+	// returns with that request's id (kit/httpx/request_id.go), so a refusal shared
+	// between two requests is one field two requests write at once, and a body that
+	// quotes somebody else's request id.
+	if other := ask(offlineFlags{}); other == unreadable {
+		t.Error("two refusals answered with the same *problem.Problem")
 	}
 
 	// The two answers a switch can actually give are what they were before this:
