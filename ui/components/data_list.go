@@ -31,6 +31,12 @@ func (p DataListProps) Validate() error {
 	if !p.State.ready() && (len(p.Groups) != 0 || len(p.SelectedIDs) != 0) {
 		return fmt.Errorf("DataList: absent content must not retain groups or selection")
 	}
+	if p.State.Status == MediaRefused && (len(p.Columns) != 0 || len(p.Filters) != 0 || len(p.SortChoices) != 0 || len(p.Views) != 0 ||
+		p.ResultKey != "" || p.SelectionName != "" || p.FormID != "" || p.SelectAllLabel != "" || p.ClearSelectionLabel != "" ||
+		len(p.SelectionCountLabels) != 0 || p.ResultCountText != "" || p.Pagination != nil || p.LoadingLayout != nil ||
+		p.HTMXProps != (HTMXProps{})) {
+		return fmt.Errorf("DataList: refused content must clear result data and controls")
+	}
 	for _, choices := range [][]ChoiceLink{p.Filters, p.SortChoices, p.Views} {
 		if err := validateChoices(choices); err != nil {
 			return err
@@ -116,6 +122,9 @@ func DataList(p DataListProps) g.Node { return DataListWithSlots(p, DataListSlot
 func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 	if err := p.Validate(); err != nil {
 		return g.NodeFunc(func(io.Writer) error { return err })
+	}
+	if p.State.Status == MediaRefused && dataListRetainsSlots(slots) {
+		return invalidComponent(fmt.Errorf("DataList: refused content must clear slots"))
 	}
 	nodes := append(baseAttrs(p.ComponentProps), classes(clDataList.Compile(), p.Class),
 		g.Attr("data-component", "data-list"), g.Attr("aria-label", p.Label), g.Attr("data-result-key", p.ResultKey))
@@ -221,6 +230,18 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 		nodes = append(nodes, Pagination(*p.Pagination))
 	}
 	return h.Section(nodes...)
+}
+
+// A refused result may be captured as typed input, so hidden slots must be
+// cleared even when this renderer would not place them in the HTML.
+func dataListRetainsSlots(slots DataListSlots) bool {
+	table := slots.TableSlots
+	return len(slots.Toolbar) != 0 || len(slots.BulkActions) != 0 || len(slots.EmptyAction) != 0 ||
+		len(slots.RetryAction) != 0 || len(slots.Footer) != 0 || slots.RowActions != nil ||
+		len(table.Empty) != 0 || table.Cell != nil || table.CellAttrs != nil || table.RowAttrs != nil ||
+		table.SortURL != nil || table.SortState != nil || table.SortButtonAttrs != nil ||
+		table.SelectAllLabel != "" || table.SelectRowLabel != nil || table.SelectRowChecked != nil ||
+		table.SelectionName != "" || table.SelectionFormID != "" || table.SelectRowDisabled != nil
 }
 
 // The caller names the expected public geometry; no previous rows or slots are
