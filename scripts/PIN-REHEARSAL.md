@@ -21,7 +21,7 @@ a rehearsal that failed, refused, or could not sample its own lock waits.
 ```json
 {"base_ref":"v1.1.0","base_commit":"893cf2ae…","candidate_commit":"594deab…",
  "seed":"scripts/testdata/rehearse/seed.sql",
- "files":[{"owner":"audit","version":"24","name":"000024_audit_context.up.sql",
+ "files":[{"owner":"audit","version":"35","name":"000035_audit_context.up.sql",
            "phase":"expand","seconds":0.002}],
  "max_lock_ms":0,"lock_samples":9,"tool":"scripts/rehearse_migrations.sh","exit":0}
 ```

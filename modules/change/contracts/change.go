@@ -129,7 +129,7 @@ type Proposal struct {
 	Revision int64 `json:"revision" readOnly:"true" doc:"This row's own revision, which every command rechecks"`
 }
 
-// TableName pins the table, so the entity and migrations/000030 agree.
+// TableName pins the table, so the entity and migrations/000038 agree.
 func (Proposal) TableName() string { return "change_proposals" }
 
 // Validate is the entity's own check, run by kit/crud on every write whichever

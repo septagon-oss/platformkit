@@ -71,7 +71,7 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 }
 
 // nilIfEmpty is the absence the column stores: a request that never happened
-// leaves NULL, which is what migrations/000024 says an absence means, and not a
+// leaves NULL, which is what migrations/000035 says an absence means, and not a
 // second word for the same fact.
 func nilIfEmpty(s string) any {
 	if s == "" {
@@ -105,8 +105,8 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 			g = g.Where("records @> ?", pq.Array([]uuid.UUID{q.Record}))
 		}
 		// Which call, and which trace. The trace id is the second field of the
-		// stored traceparent, which is the only place it exists — see 000024 and
-		// the expression index 000026 builds over that same split_part.
+		// stored traceparent, which is the only place it exists — see 000035 and
+		// the expression index 000037 builds over that same split_part.
 		if q.Request != "" {
 			g = g.Where("request_id = ?", q.Request)
 		}
