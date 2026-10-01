@@ -122,6 +122,11 @@ func (s Spec[T]) resource() httpx.Resource {
 		},
 	}
 	if !s.offers(httpx.CRUDList) {
+		// Count goes with the list, not with the read. Its one caller outside this
+		// package is the dashboard card (modules/admin/internal/pages.go), and the
+		// whole card links to r.Screen — the address of the list page this Spec did
+		// not mount. A refused count produces no card, which is the truth; a number
+		// on a card that leads nowhere is the lie.
 		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
 		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
 			return nil, 0, refused("list")
