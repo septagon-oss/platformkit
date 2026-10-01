@@ -24,6 +24,27 @@ package internal_test
 // a cookie, the other refused, one session row, one logged_in — and it reaches the
 // refusal through the status a working refusal carries (401) and the row it
 // leaves, never through any sentence the refusal prints.
+//
+// Re-recorded for 000033 (review 8's HIGH, decision 0008). What both cases send at
+// the challenge route changed; what they assert did not. Review 8 found that the
+// leg answered a code offered by *nobody* — a leaked recovery-code file was a
+// password — and cured it by making the answer spendable only by a caller a door
+// had just refused (first_factor_proofs). Two concurrent POSTs of `{"email",
+// "code"}` with no first half behind them are, under that cure, two refusals, which
+// is the request review 8's own `second_factor_requires_its_first_half_test.go`
+// requires to be refused; the two files cannot both be green at any HEAD, and the
+// review named the resolution: "the two files are re-recorded with their first
+// half added (the concurrency shape survives: two tabs that each hold the marker,
+// one code, one session)". So each case below offers the password once and takes
+// the 401 that mints the window, exactly as `review_r4_the_second_factor_leg_
+// signs_a_person_in_test.go:111` already does, and then sends the same two requests
+// at the same instant. Every assertion below is unchanged: one 200 with a cookie,
+// one 401 without, one session row, one logged_in, one spent code. One claim is
+// weaker and is stated rather than glossed: with one window per person the tab that
+// loses is refused at the DELETE of the window and never reaches `UPDATE … WHERE
+// last_step < ?`, so this case no longer isolates that guard — `first_half_test.go`
+// holds it at the level where the row is the only guard left standing
+// (`TestTwoCallersSpendingOneStepOpenOneSession`).
 
 import (
 	"context"
@@ -66,6 +87,23 @@ func TestTwoTabsAnsweringOneCodeOpenOneSession(t *testing.T) {
 	if finish := call(t, router, http.MethodPost, "/api/v1/auth/factors/totp/finish",
 		`{"secret":"`+enrolment.Secret+`","code":"`+code+`"}`, withSession(cookie)); finish.Code != http.StatusCreated {
 		t.Fatalf("finishing the enrolment = %d %s, want 201", finish.Code, finish.Body.String())
+	}
+
+	// The first half, offered, exactly as review 4's leg case does it. The door now
+	// answers only a sign-in it refused a moment ago, so a case about two
+	// concurrent answers has to arrive through that refusal: the password alone is
+	// held at 401 with no session, and that holding is what makes the step below
+	// spendable by this caller rather than by whoever turns up holding a code. One
+	// window per person means the two tabs compete for it, and the loser is refused
+	// — which is the one shape of the refusal this re-record changes, and the shape
+	// the paragraph above says so that the guarded UPDATE is proved elsewhere.
+	halted := call(t, router, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"`+email+`","password":"`+authtest.Password+`"}`)
+	if halted.Code != http.StatusUnauthorized {
+		t.Fatalf("the password alone after enrolling a factor = %d %s, want 401", halted.Code, halted.Body.String())
+	}
+	if sessionCookie(halted) != "" {
+		t.Fatal("the password alone opened a session after a factor was enrolled")
 	}
 
 	// One live step, two requests, no gap for a replay window to open in: both
@@ -167,6 +205,18 @@ func TestTwoTabsSpendingOneRecoveryCodeSpendItOnce(t *testing.T) {
 		t.Fatalf("the enrolment issued no recovery codes: %d %v %s", finish.Code, err, finish.Body.String())
 	}
 	one := codes.Codes[0]
+
+	// The first half, offered, for the same reason and with the same effect as in
+	// the case above: without the refused password there is no window, and a code
+	// with no window behind it is now refused rather than spent.
+	halted := call(t, router, http.MethodPost, "/api/v1/auth/login",
+		`{"email":"`+email+`","password":"`+authtest.Password+`"}`)
+	if halted.Code != http.StatusUnauthorized {
+		t.Fatalf("the password alone after enrolling a factor = %d %s, want 401", halted.Code, halted.Body.String())
+	}
+	if sessionCookie(halted) != "" {
+		t.Fatal("the password alone opened a session after a factor was enrolled")
+	}
 
 	var spentBefore int64
 	ctx := tenancy.WithTenant(t.Context(), acme)
