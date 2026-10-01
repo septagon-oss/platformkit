@@ -564,7 +564,7 @@ func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
 // TestEveryOperationDeclaresExactlyOneAuthorization is gate 7, read off the
 // recording rather than trusted: kit/app runs it at boot, and this says what it
 // is checking — every route the whole composition mounts, the new ones
-// included, carries one declaration from the closed set of three.
+// included, carries one declaration from the closed set of five.
 func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	_, cfg := configure(t)
 	_, conn := dbtest.Schema(t)
@@ -604,17 +604,23 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in":
+		case "public", "signed_in", "any_credential":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the four", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
-	// Every kind is used, which is what makes the closed set worth having.
+	// Every kind is used, which is what makes the closed set worth having. The
+	// fifth, any_credential, is not in this list because it is the composition's
+	// own declaration — kit/app mounts the one operation that carries it, at the
+	// catalog address, and this gate builds the API from module routes without
+	// going through kit/app's boot. What the fifth door is for is pinned where the
+	// rule lives, by kit/httpx's scoped-credential cases, and at the live
+	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
 	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)

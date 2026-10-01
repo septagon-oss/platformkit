@@ -183,18 +183,29 @@ same package, with the same `Grants` predicate — which is also why an
 administrator holding the wildcard can mint a narrow key at all.
 
 The narrowing is enforced by the kernel rather than by the module that minted
-the key, and at both declarations: an operation that names a permission is
-refused when the list does not carry it, and an operation that names none —
-every `httpx.SignedIn()` door, the door about the caller themselves — is refused
-outright, because with no permission named the authority such an operation
-spends is its caller's whole authority. So the self-service doors are a
-session's work and never a key's: mint a key, replace the recovery codes,
-withdraw a factor, revoke a session, sign out of every browser. None of them is
-reachable from a bearer credential whatever its scopes, which is the half that
-kept a key scoped to one read from widening itself back to its holder with two
-POSTs. `kit/httpx/scoped_credential_test.go` pins both halves at the kernel, and
-`review_r4_a_scoped_key_is_held_to_its_scope_test.go` drives them at the
-routes.
+the key, and at both declarations that spend authority: an operation that names a
+permission is refused when the list does not carry it, and an operation that names
+none *and spends the caller's authority anyway* — every `httpx.SignedIn()` door,
+the door about the caller themselves — is refused outright, because with no
+permission named the authority such an operation spends is its caller's whole
+authority. So the self-service doors are a session's work and never a key's: mint
+a key, replace the recovery codes, withdraw a factor, revoke a session, sign out of
+every browser. None of them is reachable from a bearer credential whatever its
+scopes, which is the half that kept a key scoped to one read from widening itself
+back to its holder with two POSTs. `kit/httpx/scoped_credential_test.go` pins both
+halves at the kernel, and `review_r4_a_scoped_key_is_held_to_its_scope_test.go`
+drives them at the routes.
+
+The rule stops there, at the operations that spend it, and one operation in this
+installation names no permission because there is none to name: `GET
+/api/v1/app/resources`, mounted by `kit/app`, declares `httpx.AnyCredential()` and
+answers a key as readily as a cookie — because it spends nothing on anybody's
+credentials. All it does is ask the authorizer, for this caller, which resources
+are readable and writable, so the document a narrowed key receives names the
+resources its scopes open and no others, where the session that minted it is shown
+every resource its roles open.
+`TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom` pins both halves: the key reads
+the catalog, and sees less of it than the person who made the key.
 
 The intersection is recomputed from the roles on every request, so standing
 somebody down from a role narrows the keys they minted in the same transaction
@@ -212,8 +223,15 @@ a bearer, and an ambiguity check that answers such a request as **anonymous** �
 a caller who presented a cookie *and* a key is not more signed in, and which one
 they meant is not the kernel's to guess. `csrf.go` is unchanged and that is the
 point: its gate is the session cookie, and a bearer carries its own proof of
-intent. A token request never sets or rotates a session cookie; `POST /logout`
-still answers a cleared cookie, which for such a caller clears nothing.
+intent. A token request never sets or rotates a session cookie, at any door a
+bearer caller reaches — `TestAKeyRequestMintsNoSessionAnywhere` counts the live
+cookies at every one of them. `POST /logout` is not such a door: ending a session
+is `httpx.SignedIn()` work on the caller's own credentials, so the kernel refuses
+it to a bearer caller ahead of the handler, and no cleared cookie is ever on offer
+— which is the same verdict as before, stated as it is now reached. A key is
+stopped with `POST /tokens/{id}/revoke`, which is a session's work for the same
+reason: a credential that could revoke itself would be a credential that could
+revoke its holder's other keys.
 
 ### Open here, stated rather than approximated
 
@@ -223,6 +241,11 @@ still answers a cleared cookie, which for such a caller clears nothing.
   which is wider than a scoped key may act as — reporting that to a narrowed
   caller would be a `/me` that lies about the caller's own authority. A
   "who am I, as this key" answer (the brief's `Identity.Token`) is unbuilt.
+* Every route in this module is a session's work, and the one door a bearer key
+  reaches in this installation is the kernel's: the resource catalog, which names
+  the resources the key's own scopes open. A key therefore finds its work by
+  reading `/api/v1/app/resources`, and finds nothing here to manage itself with —
+  no self-revocation, no `GET /api/v1/auth/tokens` to see what a holder minted.
 * No page: keys are managed through the JSON routes.
 * Uses are not audited, and `last_used_at` is the record a person reads; the
   trail keeps the two facts that mean something about a key, that it was made and

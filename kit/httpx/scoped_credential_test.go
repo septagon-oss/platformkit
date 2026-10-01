@@ -37,9 +37,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// scopedAPI mounts three probes over one fixture: a door about the caller
-// themselves, which names no permission; a door this key's own scope names; and
-// a door it does not. reached counts the handler bodies that ran.
+// scopedAPI mounts four probes over one fixture: a door about the caller
+// themselves, which names no permission; a door this key's own scope names; a
+// door it does not; and a door that names no permission and spends none of the
+// caller's authority either — the one an AnyCredential declaration is for.
+// reached counts the handler bodies that ran.
 func scopedAPI(t *testing.T, reached *atomic.Int32) (*httpx.API, http.Handler, *fixture) {
 	t.Helper()
 	api, router, f := setup(t)
@@ -54,6 +56,7 @@ func scopedAPI(t *testing.T, reached *atomic.Int32) (*httpx.API, http.Handler, *
 	ask("scoped-self", "/self", httpx.SignedIn())
 	ask("scoped-read", "/reads", httpx.Permission("billing:read"))
 	ask("scoped-write", "/writes", httpx.Permission("billing:write"))
+	ask("scoped-describe", "/describes", httpx.AnyCredential())
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -117,5 +120,64 @@ func TestASessionCallerReachesAnOperationThatNamesNoPermission(t *testing.T) {
 	}
 	if reached.Load() == 0 {
 		t.Error("the whole-authority caller never reached the handler either")
+	}
+}
+
+// TestAScopedCredentialReachesAnOperationThatSpendsNoAuthorityOnItsHolder is the
+// half the ceiling needs to be an argument rather than a reflex. Refusing every
+// operation that names no permission would be safe and would end the bearer
+// credential: the resource catalog names none — there is no permission to name —
+// and it is the first request of a client that is not a browser, whose only
+// credential is a key. It is admitted because it spends nothing: it answers what
+// the caller may already reach, and the document is built by asking the
+// authorizer about this caller, so the narrowed credential receives the narrowed
+// document. The ceiling is about authority spent, not about the absence of a
+// permission name.
+//
+// The three callers are the whole table. The key that carries its own scope is
+// served, because the operation asks nothing it narrows. The session caller who
+// decides by role is served, which is the control that says the refusal above is
+// about the credential. And an anonymous caller is refused — this declaration
+// admits any *credential*, which is not the same sentence as any caller, and a
+// route that could be read that way would be Public() with an extra step.
+func TestAScopedCredentialReachesAnOperationThatSpendsNoAuthorityOnItsHolder(t *testing.T) {
+	var reached atomic.Int32
+	api, router, f := scopedAPI(t, &reached)
+	f.allow = true
+	f.principal = &tenancy.Principal{
+		UserID: uuid.New(), Permissions: []string{"billing:read"},
+	}
+
+	res := get(t, router, at(api, "/describes"))
+	if res.Code != http.StatusOK {
+		t.Errorf("a key scoped to billing:read at an operation declaring AnyCredential = %d %s, want 200: "+
+			"the operation names no permission and spends none of its caller's authority, so there is "+
+			"nothing here for the scope to be refused for — and this is the door a shell that is not a "+
+			"browser opens at, so refusing it costs a working credential the address that names its work",
+			res.Code, res.Body.String())
+	}
+	if got := reached.Load(); got != 1 {
+		t.Errorf("the served request reached the handler %d times, want once", got)
+	}
+
+	// The session caller, and the handler runs for them too.
+	reached.Store(0)
+	f.signedIn()
+	if res := get(t, router, at(api, "/describes")); res.Code != http.StatusOK || reached.Load() != 1 {
+		t.Errorf("the same door to a caller whose roles decide = %d %s after %d handler runs, want 200 after one",
+			res.Code, res.Body.String(), reached.Load())
+	}
+
+	// Nobody at all, which is the door this is not.
+	reached.Store(0)
+	f.principal = nil
+	anon := get(t, router, at(api, "/describes"))
+	if anon.Code == http.StatusOK || !strings.Contains(anon.Body.String(), httpx.CodeAnonymous) {
+		t.Errorf("an anonymous caller at an operation declaring AnyCredential = %d %s, want a refusal that "+
+			"names %s: any credential is not every caller, and an operation that admitted nobody would be "+
+			"Public()", anon.Code, anon.Body.String(), httpx.CodeAnonymous)
+	}
+	if got := reached.Load(); got != 0 {
+		t.Errorf("the anonymous refusal reached the handler %d times, want never", got)
 	}
 }

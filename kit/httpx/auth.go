@@ -17,7 +17,7 @@ import (
 const AuthExtension = "x-platformkit-auth"
 
 // authKind is the closed set of things an operation can say about who may call
-// it. There are four, and Auth has one constructor for each.
+// it. There are five, and Auth has one constructor for each.
 type authKind string
 
 const (
@@ -30,6 +30,14 @@ const (
 	kindOperator authKind = "operator_permission"
 	kindPublic   authKind = "public"
 	kindSignedIn authKind = "signed_in"
+	// kindAnyCredential is the fifth because the four before it conflated two
+	// questions: *is the caller recognised* and *whose authority does this
+	// operation spend*. Every operation that named no permission was one kind,
+	// and the set holds two kinds of that — the door about the caller's own
+	// credentials, and the door that only ever describes what the caller may
+	// already reach. They need opposite answers from a credential that carries
+	// its own ceiling, which is what AnyCredential says.
+	kindAnyCredential authKind = "any_credential"
 )
 
 // permissionToken is the grammar of a permission: "<resource>:<action>", both
@@ -84,18 +92,47 @@ func OperatorPermission(token string) Auth {
 // to be justified in review.
 func Public() Auth { return Auth{kind: kindPublic} }
 
-// SignedIn admits any caller carrying a principal for the resolved tenant,
-// whatever that principal may do. It is for operations about the caller
-// themselves, where there is no resource to name a permission on — and that is
-// why a credential carrying its own ceiling is refused here rather than
-// admitted: with no permission named, the authority the operation spends is the
+// SignedIn admits a caller carrying a principal for the resolved tenant, whatever
+// that principal may do — and refuses a credential carrying its own ceiling.
+//
+// It is for operations about the caller themselves, where there is no resource to
+// name a permission on — and that is why the ceiling is refused rather than
+// honoured: with no permission named, the authority the operation spends is the
 // caller's whole authority, so the holder's, and a narrowed key would arrive at
 // it having narrowed nothing. See Authorizer and tenancy.Principal.Permissions.
+//
+// An operation that names no permission and spends none of the caller's authority
+// either — because all it does is answer what the caller may already reach — is
+// not this declaration. It declares AnyCredential.
 func SignedIn() Auth { return Auth{kind: kindSignedIn} }
 
+// AnyCredential admits any caller the installation recognised, whether that caller
+// arrived with a session cookie or with a credential carrying its own ceiling.
+//
+// It exists for the one operation that names no permission because there is no
+// permission to name, and spends no authority on the caller's account because it
+// only describes what the caller may already reach: the resource catalogue at
+// GET /api/v1/app/resources, whose body is built by asking the authorizer, for
+// this caller, which resources are readable and writable — so the document a
+// narrowed credential receives is already narrowed by that same credential. It is
+// the kernel's own mount, in kit/app, and it is the first request a client that is
+// not a browser makes; the credential such a client holds is a bearer key, so a
+// key that may call every permission-named route and no route that names them is
+// a credential that cannot find its own work.
+//
+// This is a kind of its own rather than a flag on SignedIn for the reason the
+// operator permission is one too: the declaration has to say, where a reviewer
+// reads it, which of the two doors a route is. The mistake this enables is the
+// wide one — a self-service door about the caller's own credentials mounted here
+// is the escalation SignedIn exists to refuse — so the test at a mount is that the
+// operation reads grants and never spends them, and nothing in a module's routes
+// belongs here.
+func AnyCredential() Auth { return Auth{kind: kindAnyCredential} }
+
 // MarshalJSON writes the declaration into the OpenAPI document as
-// {"kind":"permission|public|signed_in","permission":"..."}. huma renders the
-// YAML spec by converting the JSON one, so this is the only encoder needed.
+// {"kind":"permission|operator_permission|public|signed_in|any_credential",
+// "permission":"..."}. huma renders the YAML spec by converting the JSON one,
+// so this is the only encoder needed.
 func (a Auth) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
 		Kind       authKind `json:"kind"`
@@ -139,7 +176,7 @@ func (a Auth) Feature() string { return a.feature }
 // package asks before it mounts anything.
 func (a Auth) Declared() bool {
 	switch a.kind {
-	case kindPublic, kindSignedIn:
+	case kindPublic, kindSignedIn, kindAnyCredential:
 		return true
 	case kindPermission, kindOperator:
 		return ValidPermission(a.permission)
@@ -149,7 +186,9 @@ func (a Auth) Declared() bool {
 }
 
 // grant is the permission question this declaration asks, and whether it asks
-// one at all. Public and SignedIn ask none.
+// one at all. Public, SignedIn and AnyCredential ask none — which is why the
+// middleware, not this function, is where a credential carrying its own ceiling
+// is held to it at those three.
 func (a Auth) grant() (tenancy.Grant, bool) {
 	switch a.kind {
 	case kindPermission:
@@ -207,6 +246,8 @@ func (a Auth) String() string {
 		return "public"
 	case kindSignedIn:
 		return "signed_in"
+	case kindAnyCredential:
+		return "any_credential"
 	}
 	return "undeclared"
 }

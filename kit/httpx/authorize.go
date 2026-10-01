@@ -81,21 +81,31 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// way for it to fail: the principal was built from a row read inside this
 	// tenant's own transaction. See Principal.
 	// A credential that carries its own ceiling is held to it in both branches
-	// below, and this is the first of the two. An operation that names no
-	// permission asks the caller for their whole authority — being the caller is
-	// all it checks, and what sits behind it resolves the holder's roles — so a
-	// key narrowed to a list of permissions may not stand in for it. Read without
-	// this branch, the ceiling would be asked only of operations that name a
-	// permission, and every self-service door (mint a key, replace the recovery
-	// codes, sign out of every browser) would answer at its holder's full
-	// authority to a credential scoped to one read: the narrowed credential
-	// widening itself back to the holder, which is the escalation
-	// tenancy.Principal.Permissions says a non-nil list prevents.
+	// below, and this is the first of the two — a rule about the operation, not
+	// about the credential. An operation that names no permission asks the caller
+	// for their whole authority — being the caller is all it checks, and what sits
+	// behind it resolves the holder's roles — so a key narrowed to a list of
+	// permissions may not stand in for it. Read without this branch, the ceiling
+	// would be asked only of operations that name a permission, and every
+	// self-service door (mint a key, replace the recovery codes, sign out of every
+	// browser) would answer at its holder's full authority to a credential scoped
+	// to one read: the narrowed credential widening itself back to the holder,
+	// which is the escalation tenancy.Principal.Permissions says a non-nil list
+	// prevents.
+	//
+	// SignedIn is the declaration that spends that authority, and it is the only
+	// one that does. AnyCredential names no permission either and spends none: it
+	// is the door for the operation that answers what the caller may already reach
+	// and narrows its own answer by the caller's grants — the resource catalogue,
+	// which is the first request of a client that is not a browser and whose only
+	// credential is a key. Refusing it would leave a scoped credential able to do
+	// its work and unable to find it, and would buy nothing, because that document
+	// is filtered by this credential's own scopes on the way out. See AnyCredential.
 	if auth.kind == kindSignedIn && p.Permissions != nil {
 		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
 		return
 	}
-	if auth.kind == kindSignedIn {
+	if auth.kind == kindSignedIn || auth.kind == kindAnyCredential {
 		if !a.entitled(ctx, t, auth) {
 			return
 		}
