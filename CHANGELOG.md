@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+**A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
+the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
+key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
+apps over one database and one broker (decision 0074 §6), and inside one app the tenant is the boundary — between
+two apps a tenant id is only a label, because both sides name their modules with the same vocabulary. The name is
+a validated slug rather than a string, and a census test scans the tree for any shared name spelled inline, so the
+door cannot be bypassed by a caller who found it slower than writing the string. T-0228; the sites still spelling
+a name inline are listed in that census as `pending`, and it refuses a new one.
+
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two
 companies with two directories were one deployment, and one of them was wrong. The fact moves to the
