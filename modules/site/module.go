@@ -31,7 +31,7 @@ type Deps struct{}
 // permissions is what the manifest declares. kit/app checks every route's
 // declaration against it at boot, so a route guarded by a permission that is
 // not here fails startup instead of denying everyone forever.
-var permissions = []module.Permission{{Key: contracts.PermissionSiteManage}}
+var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Label: "manage the site"}}
 
 // Module is the manifest, and the service it is built on.
 //

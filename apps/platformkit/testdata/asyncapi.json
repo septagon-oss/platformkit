@@ -1228,6 +1228,53 @@
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
     },
+    "security.access_requested": {
+      "address": "platformkit.*.security.access_requested",
+      "description": "Published at platformkit.{tenantId}.security.access_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "security.access_requested": {
+          "contentType": "application/json",
+          "name": "security.access_requested",
+          "payload": {
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "notified": {
+                "type": "integer"
+              },
+              "path": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "label",
+              "userId",
+              "notified"
+            ],
+            "type": "object"
+          },
+          "summary": "security — security.access_requested",
+          "title": "security.access_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of security.access_requested.",
+      "title": "security.access_requested"
+    },
     "security.denied": {
       "address": "platformkit.*.security.denied",
       "description": "Published at platformkit.{tenantId}.security.denied; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -1243,6 +1290,9 @@
               "detail": {
                 "type": "string"
               },
+              "label": {
+                "type": "string"
+              },
               "method": {
                 "type": "string"
               },
@@ -1250,6 +1300,9 @@
                 "type": "string"
               },
               "path": {
+                "type": "string"
+              },
+              "permission": {
                 "type": "string"
               },
               "requestId": {
@@ -2791,6 +2844,23 @@
       "tags": [
         {
           "name": "platformkit"
+        }
+      ]
+    },
+    "security.access_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/security.access_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/security.access_requested/messages/security.access_requested"
+        }
+      ],
+      "summary": "The security module publishes security.access_requested.",
+      "tags": [
+        {
+          "name": "security"
         }
       ]
     },

@@ -24,7 +24,7 @@ import (
 // where a customer's administrator holds the wildcard, and a wildcard does not
 // satisfy an operator grant. kit/app checks this against what the routes
 // declare, so the two cannot drift.
-var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true}}
+var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true, Label: "manage tenants"}}
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
