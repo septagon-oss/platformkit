@@ -314,6 +314,62 @@ func Validate(d *Document) []Issue {
 	return issues
 }
 
+// codeRun is one indented code block: the source lines it occupies and the
+// lines of code the parser read out of them, indentation already removed.
+type codeRun struct {
+	first, last int // zero-based source lines the block spans
+	code        []string
+}
+
+// indentedRun reads a code block's own lines from the source ranges the parser
+// recorded for it. It reports false when those ranges do not stand one per
+// source line: the shape it does not recognise is left written as it was, which
+// is the only alternative to guessing at what the data held.
+func (d *Document) indentedRun(v *ast.CodeBlock, lineAt func(offset int) int) (codeRun, bool) {
+	segments := v.Lines()
+	if segments.Len() == 0 {
+		return codeRun{}, false
+	}
+	last := segments.At(segments.Len() - 1)
+	stop := last.Start
+	if last.Stop > last.Start {
+		stop = last.Stop - 1
+	}
+	run := codeRun{first: lineAt(segments.At(0).Start), last: lineAt(stop)}
+	if run.last-run.first+1 != segments.Len() {
+		return codeRun{}, false
+	}
+	for i := 0; i < segments.Len(); i++ {
+		segment := segments.At(i)
+		if segment.Start > len(d.source) || segment.Stop > len(d.source) {
+			return codeRun{}, false
+		}
+		run.code = append(run.code, strings.TrimSuffix(string(d.source[segment.Start:segment.Stop]), "\n"))
+	}
+	return run, true
+}
+
+// fenceWidth is the fence that holds these lines and nothing closes it: one
+// longer than the longest run of backticks the code contains, never under three,
+// because a closing fence is only a fence at the opening one's width.
+func fenceWidth(code []string) int {
+	width := 3
+	for _, line := range code {
+		run := 0
+		for i := 0; i < len(line); i++ {
+			if line[i] != '`' {
+				run = 0
+				continue
+			}
+			run++
+			if run+1 > width {
+				width = run + 1
+			}
+		}
+	}
+	return width
+}
+
 // Normalise validates a value and returns LF-terminated canonical Markdown.
 func Normalise(source string) (string, error) {
 	d, err := Parse(source)
@@ -355,6 +411,19 @@ func Normalise(source string) (string, error) {
 	// heading rewrite below may touch them.
 	protected := map[int]bool{}
 	bullets := map[int]bool{}
+	var runs []codeRun
+	protect := func(n ast.Node) {
+		for i := 0; i < n.Lines().Len(); i++ {
+			segment := n.Lines().At(i)
+			last := segment.Start
+			if segment.Stop > segment.Start {
+				last = segment.Stop - 1
+			}
+			for line := lineAt(segment.Start); line <= lineAt(last); line++ {
+				protected[line] = true
+			}
+		}
+	}
 	_ = ast.Walk(d.root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
 			return ast.WalkContinue, nil
@@ -364,7 +433,16 @@ func Normalise(source string) (string, error) {
 			// `*`, `+` and `-` open the same list. Store one spelling of it, so
 			// two documents with one syntax tree have one hash. Ordered markers
 			// keep their number: that number is the list's start, not a style.
+			// And two lists that CommonMark keeps apart because their markers
+			// differ — `* a` then `- b` — become one the moment the markers
+			// agree, so a list with a list beside it keeps its own spelling.
 			if v.IsOrdered() || v.Marker == '-' {
+				return ast.WalkContinue, nil
+			}
+			if _, beside := v.PreviousSibling().(*ast.List); beside {
+				return ast.WalkContinue, nil
+			}
+			if _, beside := v.NextSibling().(*ast.List); beside {
 				return ast.WalkContinue, nil
 			}
 			for item := v.FirstChild(); item != nil; item = item.NextSibling() {
@@ -374,49 +452,83 @@ func Normalise(source string) (string, error) {
 					bullets[lineAt(child.Lines().At(0).Start)] = true
 				}
 			}
-		case *ast.CodeBlock, *ast.FencedCodeBlock:
-			for i := 0; i < n.Lines().Len(); i++ {
-				segment := n.Lines().At(i)
-				last := segment.Start
-				if segment.Stop > segment.Start {
-					last = segment.Stop - 1
-				}
-				for line := lineAt(segment.Start); line <= lineAt(last); line++ {
-					protected[line] = true
-				}
+		case *ast.CodeBlock:
+			protect(n)
+			// Only a block of the document's own indented code moves into a
+			// fence: inside a list item or a quotation the code is indented
+			// relative to that container, and a fence at column zero would end
+			// the container the code belongs to.
+			if run, ok := d.indentedRun(v, lineAt); ok && v.Parent() == d.root {
+				runs = append(runs, run)
 			}
+		case *ast.FencedCodeBlock:
+			protect(n)
 		}
 		return ast.WalkContinue, nil
 	})
 
+	// Each line carries the source line it came from, so the decisions the
+	// parser made line by line keep pointing at their own lines after a run of
+	// indented code is replaced by a fence, which is not a line of the source.
 	type stored struct {
 		text    string
 		literal bool // copied out of a code block, unchanged
+		source  int  // line of the submitted source, -1 for a line written here
 	}
-	var out []stored
 	lines := strings.Split(string(d.source), "\n")
-	for i := 0; i < len(lines); i++ {
-		line, literal := lines[i], protected[i]
-		if !literal {
-			line = strings.TrimRight(line, " \t")
-			if hardBreak[i] && strings.HasSuffix(lines[i], "  ") {
-				line += "  "
+	entries := make([]stored, 0, len(lines)+len(runs))
+	for i, line := range lines {
+		entries = append(entries, stored{text: line, literal: protected[i], source: i})
+	}
+	// Indented code is accepted input but stored as fenced code — the parser's
+	// indented code blocks and nothing else. Four leading spaces are also how a
+	// nested list and a step's second paragraph are written, and those lines are
+	// prose, so the question is asked of the syntax tree, not of the text.
+	if len(runs) > 0 {
+		fenced := make([]stored, 0, len(entries))
+		next := 0
+		for _, run := range runs {
+			if run.first < next || run.last >= len(entries) {
+				continue
 			}
-			if bullets[i] {
-				lead := strings.TrimLeft(line, " \t")
-				if len(lead) > 0 && strings.IndexByte("*+-", lead[0]) >= 0 {
-					line = line[:len(line)-len(lead)] + "-" + lead[1:]
-				}
+			fenced = append(fenced, entries[next:run.first]...)
+			marker := strings.Repeat("`", fenceWidth(run.code))
+			fenced = append(fenced, stored{text: marker, source: -1})
+			for _, line := range run.code {
+				fenced = append(fenced, stored{text: line, literal: true, source: -1})
 			}
-			// A Setext heading and its ATX spelling are the same parsed heading.
-			// Store one spelling, leaving the following block adjacent as before.
-			if level := setext[i]; level >= 2 && level <= 4 && i+1 < len(lines) &&
-				!atxStart.MatchString(lines[i]) && setextRule.MatchString(lines[i+1]) {
-				line = strings.Repeat("#", level) + " " + strings.TrimSpace(line)
-				i++
+			fenced = append(fenced, stored{text: marker, source: -1})
+			next = run.last + 1
+		}
+		entries = append(fenced, entries[next:]...)
+	}
+	out := make([]stored, 0, len(entries))
+	for i := 0; i < len(entries); i++ {
+		entry := entries[i]
+		if entry.literal {
+			out = append(out, entry)
+			continue
+		}
+		line := strings.TrimRight(entry.text, " \t")
+		if hardBreak[entry.source] && strings.HasSuffix(entry.text, "  ") {
+			line += "  "
+		}
+		if bullets[entry.source] {
+			lead := strings.TrimLeft(line, " \t")
+			if len(lead) > 0 && strings.IndexByte("*+-", lead[0]) >= 0 {
+				line = line[:len(line)-len(lead)] + "-" + lead[1:]
 			}
 		}
-		out = append(out, stored{line, literal})
+		// A Setext heading and its ATX spelling are the same parsed heading.
+		// Store one spelling and drop the underline, leaving the block after it
+		// as adjacent to the heading as it was written.
+		if level := setext[entry.source]; level >= 2 && level <= 4 && i+1 < len(entries) &&
+			!atxStart.MatchString(entry.text) && setextRule.MatchString(entries[i+1].text) {
+			line = strings.Repeat("#", level) + " " + strings.TrimSpace(line)
+			i++
+		}
+		entry.text = line
+		out = append(out, entry)
 	}
 	for len(out) > 0 && out[0].text == "" && !out[0].literal {
 		out = out[1:]
@@ -426,23 +538,6 @@ func Normalise(source string) (string, error) {
 	}
 	if len(out) == 0 {
 		return "", nil
-	}
-	// Indented code is accepted input but stored as fenced code.
-	for i := 0; i < len(out); i++ {
-		if !strings.HasPrefix(out[i].text, "    ") || (i > 0 && out[i-1].text != "") {
-			continue
-		}
-		end := i
-		for end < len(out) && strings.HasPrefix(out[end].text, "    ") {
-			end++
-		}
-		code := []stored{{text: "```"}}
-		for _, line := range out[i:end] {
-			code = append(code, stored{strings.TrimPrefix(line.text, "    "), true})
-		}
-		code = append(code, stored{text: "```"})
-		out = append(append(out[:i:i], code...), out[end:]...)
-		i += len(code) - 1
 	}
 	// Empty runs are one block separator. Preserving line indentation retains
 	// list and table structure, and a line of literal code keeps the blanks it
