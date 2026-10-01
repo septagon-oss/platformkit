@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace modules/task/domain design ui/forms
+parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
@@ -80,7 +80,14 @@ printf '%s\n' "$metadata" | awk -F '|' '
         p = "github.com/septagon-oss/platformkit/"
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
-        delivery = p "kit/events/transport " p "kit/events/internal/delivery"
+        # kit/appname is a value package beside kit/trace: its closure is the
+        # standard library and the UUID type a tenant id already is. It is in the
+        # delivery group because that is where an address is formed — subject,
+        # filter, durable — and every other name two apps could share (cookie,
+        # job lock, limit bucket, stored path) is formed by the same grammar. A
+        # package that reaches it reaches only values; nothing reaches back.
+        appname = p "kit/appname"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         # kit/trace is in the outbox bound and the kernel one because the trace
         # context of a request is stored with the event the request caused, and
@@ -107,6 +114,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The W3C trace context is a value: the standard library and nothing
         # else. It is a carrier, not a tracer, and its closure is the proof.
         check("kit/trace", "")
+        # The one door for shared names: stdlib and UUID, or the package that is
+        # supposed to name nothing but a slug would be holding a runner.
+        check("kit/appname", uuid)
         check("modules/task/domain", "")
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)
@@ -125,7 +135,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
         check("kit/app", kernel " " p "kit/health " p "kit/limit " p "migrations", web, "web")
-        check("kit/events/transport", uuid)
+        check("kit/events/transport", uuid " " appname)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")
         check("kit/events/providers/nats", p "kit/config " delivery,
