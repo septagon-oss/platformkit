@@ -8,8 +8,12 @@ key, a stored file's physical path, the CloudEvents `source` and the broker conn
 apps over one database and one broker (decision 0074 §6), and inside one app the tenant is the boundary — between
 two apps a tenant id is only a label, because both sides name their modules with the same vocabulary. The name is
 a validated slug rather than a string, and a census test scans the tree for any shared name spelled inline, so the
-door cannot be bypassed by a caller who found it slower than writing the string. T-0228; the sites still spelling
-a name inline are listed in that census as `pending`, and it refuses a new one.
+door cannot be bypassed by a caller who found it slower than writing the string. Every site the census named is now
+behind a constructor: the transport, the relay's address, the scheduler's lock, the cookie, the limiter, the local
+file store and the AsyncAPI document each take the app rather than forming a name. The slug arrives as one
+configuration key, `nats.app`, and an unset one is the single-app deployment, which keeps every name it already
+has. T-0228; what is not yet wired — the tenant row's `app`, the boundaries that read it, the durable rename
+migration — is listed under *Limits* in `kit/appname/README.md`.
 
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two
