@@ -122,4 +122,4 @@ fails forever.
 | A removal is certified only when the store says nothing is left | the same case, plus the certificate read at the end of `TestTheRetentionSweepRemovesWhatItsPolicyCovers` |
 | A redelivery writes one certificate and commits | `TestARedeliveryCertifiesOneRemovalOnce` |
 | The sweep is bounded by RLS and not by a `WHERE` | `TestTheRetentionSweepRemovesWhatItsPolicyCovers`: the tenant it was not listed keeps an expired file |
-| An object store is still ahead of this | the S3 adapter is not in this tree; its `Prove` must count versions, delete markers and abandoned parts |
+| An object store is in this tree, and what it still does not prove | `TestTheS3AdapterKeepsTheStorageContract` runs the same `filetest.RunStorage` suite over `internal.S3` against a live store; the adapter implements `Storage` and `Signer` and not `Prover`, so an S3 erasure's `verified_at` stays NULL and the versions, delete markers and abandoned parts under a prefix are a bucket lifecycle rule's and a future `Prove`'s |
