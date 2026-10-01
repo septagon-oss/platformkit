@@ -100,7 +100,7 @@
       "suffixes": [
         "_test.go"
       ],
-      "max": 80861
+      "max": 80966
     },
     {
       "name": "js",
