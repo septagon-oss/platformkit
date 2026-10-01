@@ -96,7 +96,14 @@ var kernelHooks = func() map[string]string {
 // touches. See classNames.
 var kernelClasses = sync.OnceValue(func() map[string]string {
 	classes := emitted(components.ClassLists())
-	out := make(map[string]string, len(classes))
+	// Optional engines render these parts outside the Go class lists; the
+	// shared component sheet styles them in the same protected layer.
+	out := map[string]string{
+		"leaflet-bar":       "ui/assets/js/leaflet-1.9.4.min.js",
+		"pk-calendar-event": "ui/assets/js/specialists.js",
+		"pk-map-marker":     "ui/assets/js/specialists.js",
+		"pk-map-pin":        "ui/assets/js/specialists.js",
+	}
 	for _, name := range classes {
 		out[name] = "ui/components"
 	}
