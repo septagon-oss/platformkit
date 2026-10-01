@@ -5,9 +5,10 @@
 # the file that decides whether a gate has a database is now load-bearing and had
 # better be runnable without a runner. Nothing here talks to Docker, Postgres or
 # NATS: a fake `docker` on PATH answers what the containers were called, and the
-# script's own CI_SETUP_PROBE branch stands in for the health waits. What is under
-# test is the part a runner cannot forgive — which units got started, under which
-# alias, from which pinned image, and which ids got handed to the cleanup step.
+# script's own CI_SETUP_PROBE branch stands in for the health waits — and the probe
+# branch fakes only the waits: every docker, pg_isready and psql call still happens and
+# is logged, which is the part a runner cannot forgive: which units got started, under
+# which alias, from which pinned image, and which ids got handed to the cleanup step.
 #
 # `make check` runs this file beside the architecture and budget rehearsals.
 set -Eeuo pipefail
@@ -56,7 +57,7 @@ say_ok "no units is refused with the usage, before a container is run"
 
 start=$failed
 # case 2 — no output file means no way to hand the ids to the cleanup step.
-out="$(env -u GITHUB_OUTPUT -u CI_RESOURCES_FILE JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" postgres 2>&1)" \
+out="$(env -u GITHUB_OUTPUT -u CI_RESOURCES_FILE JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" nats 2>&1)" \
 	&& code=0 || code=$?
 [ "$code" = 2 ] || fail "no output file: exit $code, want 2"
 grep -q 'GITHUB_OUTPUT is unset' <<<"$out" || fail "no output file: $out"
@@ -64,7 +65,7 @@ say_ok "a job with nowhere to record its containers refuses instead of leaking t
 
 start=$failed
 # case 3 — an empty network is the runner not having given one.
-out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK= bash "$setup" postgres 2>&1)" && code=0 || code=$?
+out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK= bash "$setup" nats 2>&1)" && code=0 || code=$?
 [ "$code" = 2 ] || fail "empty network: exit $code, want 2"
 grep -q 'JOB_NETWORK is empty' <<<"$out" || fail "empty network: $out"
 say_ok "an empty JOB_NETWORK is named, not worked around"
@@ -72,59 +73,67 @@ say_ok "an empty JOB_NETWORK is named, not worked around"
 start=$failed
 # case 4 — an unknown unit is a typo in a workflow, and a typo that started nothing
 # is a red gate three minutes later.
-out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" postgres kafka 2>&1)" \
+out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" nats kafka 2>&1)" \
 	&& code=0 || code=$?
 [ "$code" = 2 ] || fail "unknown unit: exit $code, want 2"
 grep -q "unknown unit 'kafka'" <<<"$out" || fail "unknown unit: $out"
 say_ok "a unit this file does not start is refused by name"
 
 start=$failed
-# case 5 — the object store belongs to the job that runs `make check`, where
-# modules/file's own case reads it out of the workflow text. Starting it from here
-# would move it out of that case's reach.
-out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" s3 2>&1)" \
-	&& code=0 || code=$?
-[ "$code" = 2 ] || fail "s3: exit $code, want 2"
-grep -q 'ci.yml' <<<"$out" || fail "s3: the answer does not say where the store is started: $out"
-say_ok "the object store is not this script's, and says who owns it"
-
-start=$failed
-# case 6 — the two units a suite dials: one line each in the output file, each under
-# the alias the job's endpoint names, each from the pinned image.
+# case 5 — the two units a job dials: the broker's id in the output file under the
+# alias the job's endpoint names, from the pinned image, with JetStream on; and the app
+# role applied from the file the deployment ships, after the database answered.
 : >"$fixture/tools.log"
 : >"$DOCKER_LOG"
 : >"$fixture/res"
-CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" postgres nats >/dev/null
+export TOOL_LOG="$fixture/tools.log"
+CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" nats app-role >/dev/null
 res="$(cat "$fixture/res")"
-[ "$(wc -l <"$fixture/res")" = 2 ] || fail "two units: $(wc -l <"$fixture/res") lines, want 2"
-grep -q '^postgres=fake-postgres-1$' <<<"$res" || fail "no postgres output line: $res"
+[ "$(wc -l <"$fixture/res")" = 1 ] || fail "nats app-role: $(wc -l <"$fixture/res") output lines, want the broker's one: $res"
 grep -q '^nats=fake-nats-1$' <<<"$res" || fail "no nats output line: $res"
-grep -q -- '--network-alias postgres' "$DOCKER_LOG" || fail "postgres started under no alias"
 grep -q -- '--network-alias nats' "$DOCKER_LOG" || fail "nats started under no alias"
-grep -q 'postgres:16@sha256:' "$DOCKER_LOG" || fail "postgres started from no pinned image"
 grep -q 'nats:2-alpine@sha256:' "$DOCKER_LOG" || fail "nats started from no pinned image"
 grep -q -- '--jetstream' "$DOCKER_LOG" || fail "nats started without JetStream, which every event case needs"
-# The ids handed out are the ids docker answered with — cleanup can only remove what
-# it was told about, and the fake prints the alias it was given.
-grep -q -- '--network-alias postgres' "$DOCKER_LOG" && grep -q 'postgres=fake-postgres-1' "$fixture/res" \
-	|| fail "the id in the output file is not the one docker printed"
-say_ok "two units, two aliases, two pinned images, and the printed ids in the output file"
+grep -q 'psql -h postgres' "$fixture/tools.log" || fail "the app role was never created: $(cat "$fixture/tools.log")"
+grep -q 'postgres-init.sql' "$fixture/tools.log" || fail "psql ran with no init file"
+say_ok "the broker's id, alias and pin, and the role applied from the deployment's own file"
 
-start=$failed
-# case 7 — with the health answers real (the fake tools exit 0), the app role is
-# created from the file the deployment ships.
+# case 6 — with the health answers not faked, both units ask the server first: the
+# role step waits for the service rather than racing it.
 export TOOL_LOG="$fixture/tools2.log"
 : >"$fixture/tools2.log"
 : >"$DOCKER_LOG"
 : >"$fixture/res"
-CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net bash "$setup" postgres nats >/dev/null
-grep -q 'psql -h postgres' "$fixture/tools2.log" || fail "the app role was never created: $(cat "$fixture/tools2.log")"
-grep -q 'postgres-init.sql' "$fixture/tools2.log" || fail "psql ran with no init file"
-grep -q 'pg_isready -h postgres' "$fixture/tools2.log" || fail "postgres was never asked whether it was ready"
-say_ok "the role comes from apps/platformkit/postgres-init.sql, after the readiness probe"
+CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net bash "$setup" nats app-role >/dev/null
+grep -q 'curl -fsS http://nats:8222/healthz' "$fixture/tools2.log" || fail "nats was never asked whether it was up"
+grep -q 'pg_isready -h postgres' "$fixture/tools2.log" || fail "the role step never probed the database"
+say_ok "each unit asks the server the question, instead of sleeping and hoping"
 
-start=$failed
-# case 8 — cleanup removes the ids it was handed, says nothing about the ones a
+# case 7 — Postgres is the job's service and the object store is another job's step.
+# Both are units a workflow author could name by mistake, and each mistake would leave a
+# job with two databases or no store, three minutes from now.
+out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" postgres 2>&1)" \
+	&& code=0 || code=$?
+[ "$code" = 2 ] || fail "postgres as a unit: exit $code, want 2"
+grep -q 'the job.s own service' <<<"$out" || fail "postgres as a unit: $out"
+out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" s3 2>&1)" \
+	&& code=0 || code=$?
+[ "$code" = 2 ] || fail "s3 as a unit: exit $code, want 2"
+grep -q 'ci.yml' <<<"$out" || fail "s3 as a unit: the answer does not say where the store is started: $out"
+say_ok "the database and the object store name the job that owns each"
+
+# case 8 — the workflow and this script in step: every job that calls it declares a
+# database of its own, and no job calls it for a unit this file refuses. Three calls,
+# three service blocks, one workflow file.
+workflow="$root/.gitea/workflows/ci.yml"
+calls=$(grep -c 'bash scripts/ci_setup.sh' "$workflow")
+services=$(grep -cE '^      postgres:$' "$workflow")
+[ "$calls" = "$services" ] || fail "$calls jobs call scripts/ci_setup.sh but $services declare a postgres service"
+grep -E 'bash scripts/ci_setup.sh' "$workflow" | grep -vE 'scripts/ci_setup\.sh (nats )?(nats )?app-role$|scripts/ci_setup.sh nats app-role$' \
+	&& fail "a job calls this script with a unit it does not start"
+say_ok "every job that calls the script declares the database it points at"
+
+# case 9 — cleanup removes the ids it was handed, says nothing about the ones a
 # failed setup never produced, and fails when one is still there.
 export TOOL_LOG="$fixture/clean.log"
 : >"$TOOL_LOG"
