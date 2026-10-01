@@ -126,6 +126,37 @@ jobs:
       # The editor images are built and driven here rather than in `design` for one
       # reason: this block runs its containers on `${{ job.container.network }}`, and
       # this is the job whose container provably has one.
+      #
+      # And the driver needs this install. The two verify steps below run Node in
+      # tools/designexport/openpencil, and every module they load comes from that
+      # directory's node_modules: register.mjs throws unless @open-pencil/core, /fig
+      # and /scene-graph resolve at the pinned version; all five test files under
+      # editor/ and preview/ import playwright and @open-pencil/scene-graph, several
+      # more reach for @open-pencil/core/canvas, core/layout and the core fig and
+      # raster format modules; editor/replacement.test.mjs imports opentype.js and
+      # axe-core; and the preview files, through browser/fixtures.test.mjs, read woff
+      # bytes out of the devDependency @fontsource/ibm-plex-sans — which is why the
+      # install is plain `npm ci` and not `--omit=dev`. Moving the design suites
+      # to the job at the foot of this file moved the `npm ci` that produced those
+      # modules with them and left these two steps without them: at 8045158a the
+      # first node command died on `Cannot find module '@open-pencil/core'` raised at
+      # register.mjs:8, before it had asked the container for anything, and CI
+      # refused the head on that step's exit 1. These are the same two lines the
+      # pre-split `check` job ran in this directory, inside the two steps the split
+      # moved (40s and 884s of the run 43926 deadline, measured at that run); what
+      # stays in `design` is the suites, not what the steps here need in order to run
+      # at all. Before the image builds,
+      # so a broken install costs no build time; with --with-deps, as it ran before
+      # the split, because e2e/ pins @playwright/test ^1.63 and this job pins
+      # playwright 1.62.1 — two pins, two chromium builds, one shared cache, and
+      # e2e/'s step cannot fetch what this one names (measured locally: 1.62.1 starts
+      # chromium-1234, 1.63.0 its own chromium-1243).
+      - name: Install the editor tests' dependencies
+        working-directory: tools/designexport/openpencil
+        run: |
+          npm ci --ignore-scripts
+          npx playwright install --with-deps chromium
+
       - name: Corrected editor image builds without publishing
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
