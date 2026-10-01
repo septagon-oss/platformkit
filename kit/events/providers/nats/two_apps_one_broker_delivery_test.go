@@ -23,24 +23,34 @@ const sharedStream = "PLATFORM" + "KIT"
 // the transport this kernel ships: two apps on one broker, one stream, the same
 // module composed in both, and the pair whose durable names collide if the app
 // segment is not separable — app "acme" with module "billing" and event
-// "billing.plan.created" against app "acme-billing" with module "billing" and event
-// "plan.created".
+// "billing.quote.issued" against app "acme-billing" with the same module and the
+// event "quote.issued", which is the same event as seen from that app. Joined the
+// way Durable joined them before this task both names come out
+// "acme-billing-billing-quote-issued": one consumer, one queue group, one
+// handled-ledger key for two apps.
 //
-// Review 1 pinned the same property in two_apps_one_broker_test.go. That case cannot
-// report anything about delivery: its subscribe helper defers sub.Unsubscribe()
-// inside the helper, so the subscription is closed before the first publish and no
-// event can reach any handler whatever the names are (measured: 0 of 3 published
-// after that helper returns, 3 of 3 published while the same subscription is held).
-// This case holds each subscription for the whole test, which is the only shape in
-// which "one app received another's work" can be observed at all — and it asserts
-// the half the pinned case could not, that an event reaches its own app and never
-// the other one, counted per app rather than in the aggregate.
+// Review 1 pinned the same property in two_apps_one_broker_test.go, and root adopted
+// that file with its one broken line removed (decision 0008). What this case adds
+// over it is the shape of the count: an event reaching its own app and never the
+// other, counted per app rather than in the aggregate, with every message tagged by
+// the run that published it. The pinned case counts everything its consumers are
+// owed, which on a stream that outlives a run is also everything a previous run left
+// at those addresses — the reason TestMain clears them below.
 //
 // DeliverAll over a stream this deployment reuses means a previous run's messages
 // are replayed to the consumer created here. Every message published by this run
 // carries run as its payload id, and only those are counted; a stale message is
 // still acknowledged, because leaving it unacknowledged would make the next run
 // slower rather than this one honest.
+//
+// The event names are this case's own. A case that counts deliveries cannot share an
+// address with another case that counts deliveries, because both subscribe with
+// DeliverAll: with the two cases on billing.plan.created, this case's own four
+// events were replayed to the pinned case's handler, and it reported them as that
+// app receiving another app's work — a fixture collision, not a delivery. TestMain
+// clears each app's whole space before the package runs, and distinct event names
+// keep the two cases' messages out of each other's filters whatever order they run
+// in.
 func TestEachAppOfTwoReceivesOnlyItsOwnEvents(t *testing.T) {
 	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
 	if url == "" {
@@ -50,8 +60,8 @@ func TestEachAppOfTwoReceivesOnlyItsOwnEvents(t *testing.T) {
 	acme := appname.MustParse("acme")
 	acmeBilling := appname.MustParse("acme-billing")
 	const module = "billing"
-	const eventOfAcme = "billing.plan.created"
-	const eventOfBilling = "plan.created"
+	const eventOfAcme = "billing.quote.issued"
+	const eventOfBilling = "quote.issued"
 	durableAcme := appname.Durable(acme, module, eventOfAcme)
 	durableBilling := appname.Durable(acmeBilling, module, eventOfBilling)
 	if durableAcme == durableBilling {
