@@ -844,11 +844,29 @@ func whoami(t *testing.T, cfg config.Config, client *http.Client) string {
 	return body
 }
 
-// waitForAudit is the first trail row with this event name, once the worker has
-// got to it. The relay runs once a second, so this is a wait and not a read:
-// what it proves is that the row arrives, not how soon.
+// waitForAudit is the trail's newest row with this event name, once the worker has
+// carried the envelope the caller just wrote. The relay runs once a second, so this
+// is a wait and not a read: what it proves is that the row arrives, not how soon.
+//
+// It waits on the queue rather than on the trail, and that distinction is the whole
+// shape of this helper. `GET /api/v1/audit/events?name=` answers as soon as *any*
+// row of that name is there, and a lifecycle verb's mirror row shares its name with
+// every other verb's: the case that found this creates a customer before it suspends
+// it, and both verbs mirror into this one installation trail under
+// `tenant.lifecycle_recorded`, one carrying verb:create and one verb:suspend. A
+// predicate on the name is therefore satisfied by the older act whenever the create
+// reaches the trail more than one relay tick before the suspend does, and the
+// assertions that follow read a row the request did not cause. The queue holds the
+// fact the wait actually needs: relayBatch stamps `published_at` only after
+// Transport.Publish returns (kit/events/relay.go), and the memory transport returns
+// only once every subscriber has answered for that envelope
+// (kit/events/providers/memory). So once nothing under this name is pending, the
+// audit row the caller caused is committed, and the newest row of that name — which
+// is what the trail's own read returns first, `occurred_at DESC, id`,
+// modules/audit/internal/service.go — is that row.
 func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name string) map[string]any {
 	t.Helper()
+	waitForPublication(t, cfg, name)
 	var row map[string]any
 	eventually(t, "the trail to record "+name, func() bool {
 		code, body := do(t, cfg, client, http.MethodGet, acmeHost, auditPath+"?name="+name, "")
@@ -868,6 +886,33 @@ func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name str
 		return true
 	})
 	return row
+}
+
+// waitForPublication waits until the outbox holds no unpublished envelope with this
+// name. A command's envelope commits with the column that caused it, so by the time
+// a caller waits, its own row is in that count and stays there until the relay has
+// carried it — which is the moment after which the trail cannot answer with an older
+// act. The name is the queue's own column, so this is the same fact the trail read is
+// about to ask for, taken from the table that cannot be satisfied by a stale row.
+func waitForPublication(t *testing.T, cfg config.Config, name string) {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open the queue: %v", err)
+	}
+	defer conn.Close()
+
+	eventually(t, "the relay to carry "+name, func() bool {
+		var pending int64
+		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			return tx.DB().Table("platformkit_outbox").
+				Where("published_at IS NULL AND name = ?", name).Count(&pending).Error
+		})
+		if err != nil {
+			t.Fatalf("read the queue for %s: %v", name, err)
+		}
+		return pending == 0
+	})
 }
 
 // notify raises one notification the way another module will: through the
