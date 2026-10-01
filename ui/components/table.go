@@ -32,15 +32,19 @@ func width(value string) string {
 // server-driven sorting. Portable table data remains in TableProps; callers
 // only opt into these callbacks when a cell needs real markup.
 type TableSlots struct {
-	Cell             func(TableRow, TableColumn) g.Node
-	CellAttrs        func(TableRow, TableColumn) []g.Node
-	RowAttrs         func(TableRow) []g.Node
-	SortURL          func(TableColumn) string
-	SortState        func(TableColumn) string
-	SortButtonAttrs  func(TableColumn) []g.Node
-	SelectAllLabel   string
-	SelectRowLabel   func(TableRow) string
-	SelectRowChecked func(TableRow) bool
+	Empty             []g.Node
+	Cell              func(TableRow, TableColumn) g.Node
+	CellAttrs         func(TableRow, TableColumn) []g.Node
+	RowAttrs          func(TableRow) []g.Node
+	SortURL           func(TableColumn) string
+	SortState         func(TableColumn) string
+	SortButtonAttrs   func(TableColumn) []g.Node
+	SelectAllLabel    string
+	SelectRowLabel    func(TableRow) string
+	SelectRowChecked  func(TableRow) bool
+	SelectionName     string
+	SelectionFormID   string
+	SelectRowDisabled func(TableRow) bool
 }
 
 // Table renders TableProps. Cell values render via fmt.Sprint;
@@ -61,8 +65,9 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		label := fallbackText(slots.SelectAllLabel, "Select all rows")
 		headCells = append(headCells, h.Th(
 			h.Class(clTableTh.Compile()), g.Attr("scope", "col"),
-			h.Input(h.Class(clCheckbox.Compile()), h.Type("checkbox"),
-				g.Attr("data-pk-select", "all"), g.Attr("aria-label", label)),
+			h.Label(h.Class(clTableSelection.Compile()), g.Attr("data-component", "selection-control"), h.Hidden(""),
+				h.Input(h.Class(clCheckbox.Compile()), h.Type("checkbox"),
+					g.Attr("data-pk-select", "all"), g.Attr("aria-label", label))),
 		))
 	}
 	for _, c := range p.Columns {
@@ -149,11 +154,20 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 				label = fallbackText(slots.SelectRowLabel(r), label)
 			}
 			input := []g.Node{h.Class(clCheckbox.Compile()), h.Type("checkbox"),
-				g.Attr("data-pk-select", r.ID), g.Attr("aria-label", label)}
+				g.Attr("data-pk-select", r.ID), g.Attr("data-pk-select-row", ""), g.Attr("aria-label", label), h.Value(r.ID)}
+			if slots.SelectionName != "" {
+				input = append(input, h.Name(slots.SelectionName))
+			}
+			if slots.SelectionFormID != "" {
+				input = append(input, g.Attr("form", slots.SelectionFormID))
+			}
+			if p.Disabled || slots.SelectRowDisabled != nil && slots.SelectRowDisabled(r) {
+				input = append(input, h.Disabled())
+			}
 			if slots.SelectRowChecked != nil && slots.SelectRowChecked(r) {
 				input = append(input, h.Checked())
 			}
-			cells = append(cells, h.Td(h.Class(tdClass.Compile()), h.Input(input...)))
+			cells = append(cells, h.Td(h.Class(tdClass.Compile()), h.Label(h.Class(clTableSelection.Compile()), h.Input(input...))))
 		}
 		for _, c := range p.Columns {
 			v := ""
@@ -181,6 +195,9 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 				}
 			}
 			bodyCell := h.Td(append(td, content)...)
+			if c.RowHeader {
+				bodyCell = h.Th(append(td, g.Attr("scope", "row"), content)...)
+			}
 			cells = append(cells, bodyCell)
 		}
 		bodyRows = append(bodyRows, h.Tr(cells...))
@@ -194,9 +211,13 @@ func TableWithSlots(p TableProps, slots TableSlots) g.Node {
 		if p.Selectable {
 			span++
 		}
+		content := g.Node(g.Text(empty))
+		if len(slots.Empty) != 0 {
+			content = g.Group(slots.Empty)
+		}
 		bodyRows = append(bodyRows, h.Tr(h.Td(
 			h.Class(clTableTd.Compile()), h.ColSpan(itoa(span)),
-			h.Class(clHelp.Compile()), g.Text(empty),
+			h.Class(clHelp.Compile()), content,
 		)))
 	}
 

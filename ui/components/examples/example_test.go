@@ -671,6 +671,16 @@ func TestExampleChildrenAndUnsupportedSlots(t *testing.T) {
 	}
 	table := examples.ExampleWithSlots(exampleInfo, c.TableProps{}, c.TableSlots{}, c.TableWithSlots)
 	for _, slot := range describeExample(t, table).Slots {
+		if slot.Name == "Empty" {
+			if !slot.Supported || !slot.Multiple || !slot.TrustedOnly || slot.GoType != "[]gomponents.Node" {
+				t.Fatalf("inaccurate empty-content contract: %+v", slot)
+			}
+			changed, err := table.WithSlot(slot.Name, g.Text("No matching records"))
+			if err != nil || !strings.Contains(describeExample(t, changed).HTML, "No matching records") {
+				t.Fatal("empty slot did not compose through the canonical table")
+			}
+			continue
+		}
 		if slot.Supported {
 			t.Errorf("callback/config slot advertised replaceable: %+v", slot)
 		}

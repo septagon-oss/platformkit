@@ -109,6 +109,22 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
+	// Rich states add 42 English/Portuguese captures and optional EmptyState
+	// Text/Action and Alert.Live properties. Seven Alert, two EmptyState and
+	// Media's empty example change; all 127 old IDs remain. The measured export
+	// diff changes only examples and this digest: CSS, tokens and icons agree.
+	// DataList adds 44 captures. Four Table examples gain native selection
+	// targets/sorting height, and two Pagination examples gain wrapping 44px
+	// controls. Seventeen existing empty/media examples align their text blocks.
+	// Only examples, CSS and the digest change; no old ID is removed.
+	// Detail panels add 50 captures and Modal.Placement. The existing modal
+	// examples gain 44px controls and wrapping chrome; only examples/CSS/digest
+	// change. All prior IDs, tokens and icons remain.
+	// Timeline adds 30 typed captures with standard time codecs. Review fixes add
+	// loading geometry/schema; only examples/CSS/digest change, retaining all IDs and tokens.
+	// Remaining shared families add typed examples, row-header/Hero schema and exact
+	// int64 string codecs. Only examples/CSS/notices/digest change; all prior IDs,
+	// design tokens, themes and icons remain. NOTICE pins the engines; Leaflet CSS uses LF.
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
@@ -120,10 +136,10 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// was rebased onto, a leaf-by-leaf diff of the v1 export before and after the
 	// layers change 2 of the 6,406 leaves above, /css and /sha256: no token, icon,
 	// example or schema moves, measured by exporting both revisions and walking
-	// the JSON. The digest below is that measurement on this merged tree, not a
-	// number inherited from either side — neither revision above exports a sheet
-	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
+	// the JSON. The digest below is remeasured with `go run ./tools/designexport`
+	// on the merged shared-components tree: all 811 examples and both sides'
+	// styles are present, with the reduced-motion floor in the base layer.
+	if legacy.SHA256 != "d766adb29c834c848c0348d5ebe66373112946484339e2b8ad29f45a8dd09370" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
