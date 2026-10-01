@@ -636,3 +636,134 @@ func TestATenantCannotGrantOrEraseAnothersFile(t *testing.T) {
 		t.Errorf("acme's own download after the other tenant's attempt = %d %s", code, out)
 	}
 }
+
+// TestAnErasureAtTheDoorFilesItsReasonAndRefusesOneThatDoesNotFit is the sentence
+// a person typed travelling from the request body to the record — and the ceiling
+// on it, tested where a caller would hit it.
+//
+// The service tests prove the command files a reason; nothing proved that the
+// reason arrives at the command. `POST /files/erase` is the only way one can reach
+// `EraseSubject` with a sentence in it, and this route is the one this module has
+// already gotten wrong once: eraseBody's fields were flat on the input struct
+// beside a path tag, which kit/rest reads as no body at all, so every erasure ran
+// as though the caller had sent nothing and answered a receipt of zero. A body
+// that arrives is half of "the reason is kept"; the other half is that it is kept
+// somewhere a person can be asked for it, so the case reads the outbox row the
+// command committed rather than only the receipt it answered with. The bytes go
+// after this transaction, which is exactly why the work order is the record a
+// door-level case can read.
+//
+// The over-long reason is the second half and the reason the first half is not
+// enough on its own. Both tables cap the sentence — contracts.MaxErasureReason on
+// the service side, maxLength on the schema — and a cap nobody sends a request
+// past is a comment. What has to be true is that the ceiling refuses rather than
+// truncates: a record with the first 500 characters of a data-protection sentence
+// is a record of a conversation nobody had, and it is unfalsifiable from the
+// receipt, which would read files:1 either way. 422 is what every other refusal
+// on this door answers, and the refusal has to write nothing, which is read at the
+// file and at the outbox rather than assumed.
+//
+// The hold is the last leg because it is the same decision pointed the other way:
+// file_holds.reason is the column this module cites when it argues that a removal
+// is a decision somebody said a reason for. Both doors now state the column's two
+// bounds in their schemas — not empty, at most 500 — and both refuse a request
+// past either without leaving a row, so the argument holds for both.
+func TestAnErasureAtTheDoorFilesItsReasonAndRefusesOneThatDoesNotFit(t *testing.T) {
+	router, admin, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme})
+
+	// Whoever this upload answers for is the subject: the harness gives every
+	// request its own principal, and the record names it back.
+	code, out := upload(t, router, files, "diary.txt", "text/plain", "something this person wrote")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	diary, subject := field(t, out, "id"), field(t, out, "uploader")
+
+	const reason = "data protection request 2026-0412"
+	if code, out = ask(t, router, http.MethodPost, files+"/erase",
+		`{"subject":"`+subject+`","reason":"`+reason+`"}`); code != http.StatusOK {
+		t.Fatalf("POST the erasure = %d %s", code, out)
+	} else if !strings.Contains(out, `"files":1`) {
+		t.Fatalf("the receipt reads %s, want the one file this subject uploaded", out)
+	}
+
+	var filed, cause string
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT coalesce(payload->>'reason', ''), coalesce(payload->>'cause', '') FROM `+outbox+` WHERE name = $1`,
+		contracts.EventDeleted).Scan(&filed, &cause); err != nil {
+		t.Fatalf("read the removal order this erasure left: %v", err)
+	}
+	if filed != reason {
+		t.Errorf("the work order carries reason %q, want the sentence sent at the door (%q)", filed, reason)
+	}
+	if cause != contracts.EraseSubject {
+		t.Errorf("the work order names cause %q, want %q: the reason is a sentence, the cause is which kind of removal this was",
+			cause, contracts.EraseSubject)
+	}
+	// The file it removed is gone from the list the same session reads.
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+diary, true); code != http.StatusNotFound {
+		t.Errorf("the erased file reads %d, want 404", code)
+	}
+
+	// Past the ceiling: refused, and nothing written anywhere.
+	code, out = upload(t, router, files, "second.txt", "text/plain", "a second subject")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	second, other := field(t, out, "id"), field(t, out, "uploader")
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+other+
+		`","reason":"`+strings.Repeat("x", contracts.MaxErasureReason+1)+`"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("an erasure whose reason is %d characters = %d %s, want 422",
+			contracts.MaxErasureReason+1, code, out)
+	}
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+second, true); code != http.StatusOK {
+		t.Errorf("the file the refused erasure would have taken reads %d, want it still there", code)
+	}
+	var orders int
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM `+outbox+` WHERE name IN ($1, $2)`,
+		contracts.EventDeleted, contracts.EventErased).Scan(&orders); err != nil {
+		t.Fatalf("count the removal orders: %v", err)
+	}
+	if orders != 1 {
+		t.Errorf("the refused erasure published %d removal orders alongside the accepted one, want none", orders)
+	}
+
+	// The ceiling is the ceiling, and not one character short of it: a reason of
+	// exactly MaxErasureReason is a request this module accepts and files, so what
+	// refused above is the width and not an off-by-one.
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+other+
+		`","reason":"`+strings.Repeat("y", contracts.MaxErasureReason)+`"}`); code != http.StatusOK {
+		t.Errorf("an erasure whose reason is exactly %d characters = %d %s, want it accepted and filed",
+			contracts.MaxErasureReason, code, out)
+	}
+
+	// The same ceiling on the decision pointed the other way.
+	code, out = upload(t, router, files, "keep.txt", "text/plain", "held")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	heldFile := field(t, out, "id")
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold",
+		`{"reason":"`+strings.Repeat("z", contracts.MaxHoldReason+1)+`"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("a hold whose reason is %d characters = %d %s, want 422",
+			contracts.MaxHoldReason+1, code, out)
+	}
+	// The other half of the column's own CHECK: a hold with no reason is not a
+	// hold at all, and the door says so rather than placing an unjustified one.
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold", `{"reason":""}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("a hold placed for no reason = %d %s, want 422", code, out)
+	}
+	var holds int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM file_holds`).Scan(&holds); err != nil {
+		t.Fatalf("count the holds: %v", err)
+	}
+	if holds != 0 {
+		t.Errorf("the two refused holds wrote %d rows, want none", holds)
+	}
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold",
+		`{"reason":"`+strings.Repeat("w", contracts.MaxHoldReason)+`"}`); code != http.StatusOK {
+		t.Errorf("a hold whose reason is exactly %d characters = %d %s, want it placed",
+			contracts.MaxHoldReason, code, out)
+	}
+}
