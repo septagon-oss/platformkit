@@ -797,6 +797,14 @@ func TestAHoldStopsEveryDoorThatRemovesAFile(t *testing.T) {
 		if _, err := svc.EraseSubject(ctx, tx, uuid.Nil, "nobody"); !errors.Is(err, crud.ErrInvalid) {
 			t.Errorf("an erasure naming no subject = %v, want crud.ErrInvalid", err)
 		}
+		// A reason is filed, so a reason past the column's width is refused the
+		// way the command refuses everything it cannot do: before a row goes, not
+		// after the file is gone and the sentence is truncated on the way in.
+		if _, err := svc.EraseSubject(ctx, tx, uuid.New(),
+			strings.Repeat("why ", contracts.MaxErasureReason)); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("an erasure's reason past %d characters = %v, want crud.ErrInvalid",
+				contracts.MaxErasureReason, err)
+		}
 		return nil
 	})
 	if err != nil {

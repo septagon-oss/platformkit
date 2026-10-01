@@ -15,6 +15,13 @@ import (
 // MaxHoldReason is the column's width for why a file is being kept.
 const MaxHoldReason = 500
 
+// MaxErasureReason is the same width for why a file is being removed. The two
+// decisions are one sentence apiece and the limit is the same number, but they
+// are checked by different commands against different columns, so they are named
+// apart: a hold's reason is validated by the entity and an erasure's by the
+// service, and a shared constant would let one command's limit move the other's.
+const MaxErasureReason = 500
+
 // The three causes an erasure row names. A closed set and not free text,
 // because the thing a person reads a proof table for is "which of these were the
 // law, which were a person, and which were the clock running out".
@@ -94,6 +101,11 @@ type Erasure struct {
 	SHA256     string    `json:"sha256" gorm:"type:char(64);not null" doc:"Digest of what was removed" readOnly:"true"`
 	Size       int64     `json:"size" gorm:"not null" doc:"Bytes removed" readOnly:"true"`
 	Cause      string    `json:"cause" gorm:"type:varchar(16);not null" enum:"expired,subject,caller" doc:"Why" readOnly:"true"`
+	// Reason is the sentence that came with the request, when one did — the
+	// subject's erasure route takes it, the sweep has a class and a date instead,
+	// and a plain delete may have had nothing. '' is nobody said why, which is a
+	// fact about the request and not a missing value.
+	Reason string `json:"reason,omitempty" gorm:"type:text;not null;default:''" doc:"The reason the removal was asked for" readOnly:"true" maxLength:"500"`
 
 	// Subject is set for a subject-data erasure and NULL otherwise, so that the
 	// one question a data-protection officer asks — "what did you remove for

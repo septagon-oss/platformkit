@@ -80,6 +80,13 @@ CREATE TABLE file_erasures (
 	sha256        char(64)    NOT NULL,
 	size          bigint      NOT NULL,
 	cause         varchar(16) NOT NULL,
+	-- Why a person asked for this one. The hold table CHECKs its reason is not
+	-- empty, because a hold with no reason is nothing; this row is written for the
+	-- sweep too, whose reason is a class and a date and not a sentence, so '' is
+	-- an answer here — nobody said why — and not a missing value. The width is
+	-- contracts.MaxErasureReason, checked by the command that takes it: a text
+	-- column because the sentence is the longest part of the record.
+	reason        text        NOT NULL DEFAULT '',
 	-- Set for a subject-data erasure and NULL otherwise, so "what did you remove
 	-- for this person?" is a WHERE and not a guess. No foreign key: the subject
 	-- may itself be deleted from the users table one day, and the proof outlives
