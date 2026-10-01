@@ -181,9 +181,9 @@ batch has not reached the state the question is about. Without that correction t
 number would answer "how far behind is this tenant's queue now" with the wait of a row
 that went out yesterday, for as long as nobody published that name again. The ledger
 that owes the correction is per process, which is the scope the instrument has: a
-restart starts its collections from nothing. 81 of the 82
+restart starts its collections from nothing. 82 of the 83
 boundaries the reference application registers as operations and module declarations —
-70 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
+71 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
 of those that does not is `file-reconcile`, a sweep whose question crosses every tenant
 by construction. Both terms are counted over this composition rather than remembered:
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
@@ -201,8 +201,8 @@ by a case that reads a span back and asks whose tenant it names: an operation in
 run in `kit/jobs`. The denominator moves when a route or a manifest moves, and the merge that
 regenerates that contract owes the count in the same change; the numerator is a construction and a
 case per kind, because every operation the count names is served behind the one chain that resolves
-the tenant before it routes (`a.api.UseMiddleware(a.tenant, a.traced, …)` at
-`kit/httpx/httpx.go:439`), which stamps both tenant keys as it resolves them. A Public operation
+the tenant before it routes (the one `a.api.UseMiddleware(a.tenant, a.traced, …)` in `kit/httpx/httpx.go`,
+named by what it calls rather than by a line a merge moves) which stamps both tenant keys as it resolves them. A Public operation
 answered at a host the loader knows nothing about goes on with neither key — no tenant to name, so
 none invented — and the tally counts a boundary by what it can name, not by one request: that
 answer is this boundary with no tenant, not a second boundary without one. With no endpoint

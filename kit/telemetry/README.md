@@ -100,7 +100,7 @@ claims: on `main` the merge is its own base, so both commands print 8 there and 
 `# and 0 there` reads 8. The branch's own `build(deps)` commit is the change that adds the
 dependency, and the tool reads that same boolean off `origin/main`, so its reading turns true.
 
-The ratio this delivery reports beside it — 81 of the 82 operation and module-declared
+The ratio this delivery reports beside it — 82 of the 83 operation and module-declared
 boundaries, the composition's own four jobs (its relay, its two purges and its migration drain)
 excluded and named as excluded in `CHANGELOG.md` — is counted over that composition, which is the
 product's share: its operation term is the `operationId` entries of the contract the composition
