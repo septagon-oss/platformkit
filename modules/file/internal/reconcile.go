@@ -122,8 +122,11 @@ func (r *Reconcile) run(ctx context.Context, conn *db.Conn) error {
 
 // Keys is contracts.Lister on the filesystem: every blob written before before.
 //
-// It walks the two-character directories Put creates and reads each entry's
-// modification time, which is when the upload finished writing it.
+// It walks whatever sits under the root and reads each entry's modification
+// time, which is when the upload finished writing it. Walking rather than
+// reading one fixed fan-out directory is what lets one sweep see both layouts:
+// the deployment that names no app holds `<key[:2]>/<key>`, an app that names
+// itself holds `<app>/<tenant>/<key>`, and the key is the leaf either way.
 func (l *Local) Keys(_ context.Context, before time.Time) ([]string, error) {
 	var out []string
 	err := filepath.WalkDir(l.dir, func(at string, e fs.DirEntry, err error) error {

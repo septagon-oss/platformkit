@@ -324,6 +324,23 @@ func StoragePath(app Name, tenant, key uuid.UUID) string {
 	return app.token() + "/" + tenant.String() + "/" + key.String()
 }
 
+// StorageRoot is the one app's half of that layout: the directory inside an
+// adapter's root that holds its stored bytes, and the empty string for the
+// deployment that names no app, whose blobs sit in the root itself.
+//
+// StoragePath names one object's position; this names the prefix a caller has to
+// walk when no object can be named — the reconciliation sweep looking for the blob
+// no row references, which is exactly the blob whose tenant no row can state
+// (modules/file's Reconcile). Without it that caller would spell the app segment as
+// a path component by hand, which is the inline spelling this package exists to be
+// the only source of.
+func StorageRoot(app Name) string {
+	if !app.Named() {
+		return ""
+	}
+	return app.token() + "/"
+}
+
 // Source is the CloudEvents `source` of an event: the app and the module that
 // emitted it, as a path. A bridge that receives documents from several apps on
 // one broker reads this to tell them apart without opening the payload; the
