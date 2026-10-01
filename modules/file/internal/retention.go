@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -355,14 +354,29 @@ func EraseBlobs(storage contracts.Storage) events.Subscription {
 			if actor, ok := tenancy.ActorFrom(ctx); ok {
 				proof.Actor = actor
 			}
-			if err := crud.Create(ctx, tx, proof); err != nil {
-				var dup *crud.UniqueConflict
-				if errors.As(err, &dup) {
-					// A redelivery of a removal already proved: the certificate
-					// exists, which is the whole point of the retry.
-					return nil
-				}
-				return err
+			proof.TenantID = db.TenantOf(tx).ID
+			// The unique index answers "already certified", not the error.
+			//
+			// Postgres aborts the whole transaction at its first failing statement,
+			// so a duplicate-key error this handler caught would still be a
+			// transaction that can do nothing else: the commit fails where the
+			// insert did, the claim is released, and the delivery is retried forever
+			// on a removal that is already proved. kit/crud says the same thing about
+			// Update. Asking the index with ON CONFLICT DO NOTHING is what makes a
+			// redelivery a no-op that commits — the same reason the registration
+			// write in modules/user/internal/registration.go spells a duplicate the
+			// same way. Zero rows is the answer "this removal already has its
+			// certificate, so this event is its second delivery", and no second
+			// file.erased goes out for one removal.
+			written := tx.DB().WithContext(ctx).Clauses(clause.OnConflict{
+				Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "file_id"}, {Name: "cause"}},
+				DoNothing: true,
+			}).Create(proof)
+			if written.Error != nil {
+				return fmt.Errorf("file: record the erasure of %s: %w", deleted.FileID, crud.Classify(written.Error))
+			}
+			if written.RowsAffected == 0 {
+				return nil
 			}
 			return events.Publish(ctx, tx, contracts.EventErased, contracts.Erased{
 				FileID: proof.FileID, StorageKey: proof.StorageKey, SHA256: proof.SHA256,
