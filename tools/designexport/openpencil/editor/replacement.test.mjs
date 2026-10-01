@@ -1693,9 +1693,7 @@ test('descendant rotation retains placement, inherited links and authored overri
 
 test('browser file-input replacement survives public editing, history and two downloaded FIG saves', { timeout: 120000 }, async () => {
   await verifyBuild()
-  const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
-  }))
+  const source = exportCore()
   const graph = buildFoundation(source).graph, pageNode = graph.addPage('Editor replacement')
   const plus = masterOf(graph, 'plus')
   const role = [...graph.variables.values()].find(variable => variable.name === '--pk-color-accent-on')
@@ -1787,9 +1785,7 @@ test('browser file-input replacement survives public editing, history and two do
 
 for (const depth of [1, 2]) test(`nested property picker retains native ownership, history and two worker saves: depth=${depth}`, { timeout: 120000 }, async () => {
   await verifyBuild()
-  const source = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-    cwd: new URL('../../../../', import.meta.url), encoding: 'utf8',
-  }))
+  const source = exportCore()
   const graph = buildFoundation(source).graph, pageNode = graph.addPage('Nested replacement')
   const plus = masterOf(graph, 'plus')
   const master = graph.createNode('COMPONENT', pageNode.id, { name: 'Replacement owner', width: 64, height: 32,
