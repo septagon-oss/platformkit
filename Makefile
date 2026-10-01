@@ -284,12 +284,17 @@ check-race: ## Run the concurrency kernel under -race
 # head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
+# The third rehearsal script is a gate over the gates beside the two above: the CI
+# fixture the four jobs of .gitea/workflows/ci.yml stand up through scripts/ci_setup.sh.
+# A job that cannot start its database is a red tick that says nothing about the
+# change, so the file that starts it is checked here.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
+	bash scripts/ci_setup_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
