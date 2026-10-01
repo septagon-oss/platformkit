@@ -196,10 +196,11 @@ device, because no device-facing surface asks for one.
 ## Limits
 
 `modules/site`'s settings row is the only subject composed, in the reference
-application. A subject nobody binds is `ErrUnsupportedSubject` — the list in
-`apps/platformkit` is what makes a subject exist — and the gate that refuses a
-direct settings write is one flag (`change.control.site-settings`), off by default
-in `config.example.yaml` and one boolean for the installation, not one per tenant.
+application, which makes `PUT /api/v1/site/settings` the only write change
+control routes there. A subject nobody binds is `ErrUnsupportedSubject` — the
+list in `apps/platformkit` is what makes a subject exist, and the one gate is
+one flag (`change.control.site-settings`), off by default, one boolean for the
+installation rather than per tenant; unreadable, it refuses the write.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
