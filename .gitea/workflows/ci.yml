@@ -145,7 +145,25 @@ jobs:
             sleep 1
           done
           curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
-          node --import ./register.mjs --test editor/*.test.mjs
+          # One editor suite at a time. Each file under editor/ launches its own Chromium, and
+          # node's default test concurrency is one file per core, so this step handed the runner
+          # three browsers at the moment its Go suites had just stopped asking for memory. What
+          # comes back from that is not an assertion: the browser dies and the case reports
+          # `locator.click: Target crashed` against a five-second wait. The step has refused two
+          # of main's own pushes that way (`e32fb81a`, `063b6535`, job logs read by task T-0110
+          # round 26). Root reports it refused this branch's head `2be69fa1` too; that run's log
+          # was unreadable from here — the forge API answers 403 to an unauthenticated checkout.
+          # The directory already states the bound for its other browser suite —
+          # `npm run test:browser` passes `--test-concurrency=2` — and this is the step that
+          # never named one.
+          # Measured here at this head against this image and the step's own docker flags, on a
+          # box at load 18-31 with 38 GB free: unbound, 31 tests in 413.2 s of wall over 475.6 s
+          # of test time (ratio 1.15, so at least two files overlap); bound, 31 tests in 441.3 s
+          # over 438.6 s (ratio 0.99, and the process tree held one Chromium). Both forms pass
+          # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
+          # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
+          # 15m24s serial, inside the job's 45 minutes. No assertion, skip, retry or reordering.
+          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
