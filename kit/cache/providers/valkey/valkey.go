@@ -20,8 +20,10 @@ package valkey
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,12 +79,14 @@ func Connect(ctx context.Context, cfg config.Cache) (cache.Cache, error) {
 	defer cancel()
 	if err := client.Ping(probe).Err(); err != nil {
 		_ = client.Close()
-		return nil, fmt.Errorf("cache: the store at %s did not answer within %s: %w", cfg.URL, connectBudget, err)
+		return nil, fmt.Errorf("cache: the store at %s did not answer within %s: %w", describe(cfg.URL), connectBudget, scrub(cfg.URL, err))
 	}
 	return cache.New(cfg.App, &backend{client: client})
 }
 
-// parseURL is the one place an address becomes a client configuration.
+// parseURL is the one place an address becomes a client configuration — and, for
+// the reason describe and scrub give, the one place it is refused without being
+// repeated in full.
 func parseURL(cfg config.Cache) (*redis.Options, error) {
 	raw := cfg.URL
 	// valkey:// is the scheme an operator reaches for when naming a Valkey, and
@@ -95,13 +99,89 @@ func parseURL(cfg config.Cache) (*redis.Options, error) {
 	}
 	parsed, err := redis.ParseURL(raw)
 	if err != nil {
-		return nil, fmt.Errorf("cache: cache.url %q: %w", cfg.URL, err)
+		// net/url's own failure repeats the address it was handed, userinfo and all,
+		// and this package cannot pick a credential out of a string it could not read:
+		// the refusal of an unparsable address names the setting and nothing else.
+		// Every other parse failure comes from an address this package did read, so it
+		// is quoted after scrub, which leaves the host and the part that is wrong.
+		if _, perr := url.Parse(raw); perr != nil {
+			return nil, errors.New("cache: cache.url is not an address this package can read; it must be redis://, rediss://, valkey:// or unix://")
+		}
+		return nil, fmt.Errorf("cache: cache.url %s: %w", describe(raw), scrub(raw, err))
 	}
 	if cfg.Password != "" {
 		parsed.Password = cfg.Password
 	}
 	return parsed, nil
 }
+
+// describe is an address as this package may write it into a sentence: scheme,
+// host, port and path — and no userinfo, no query and no fragment.
+//
+// kit/config refuses credentials in cache.url, but New and Connect are exported
+// constructors a composition may call with a config.Cache it assembled itself, and
+// the form go-redis itself documents for a password is the userinfo of
+// redis://:secret@host. An address about which nothing can be established is not
+// echoed at all: the setting's name is the actionable half of that refusal.
+func describe(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || (u.Host == "" && u.Path == "") {
+		return "(an address this package cannot read)"
+	}
+	u.User, u.RawQuery, u.RawPath, u.Fragment, u.RawFragment = nil, "", "", "", ""
+	return u.String()
+}
+
+// secrets is every credential the address itself carries: the userinfo password and
+// any password-shaped query value. config.Cache.Password never reaches a sentence
+// this package writes, so it needs no taking out.
+func secrets(raw string) []string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	if pass, has := u.User.Password(); has {
+		out = append(out, pass)
+	}
+	for _, key := range []string{"password", "pass", "pwd"} {
+		if v := u.Query().Get(key); v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// scrub takes those credentials out of an error assembled by the client library,
+// which builds some of its messages out of the address it was handed: net/url
+// repeats the whole URL, and go-redis names an option it did not recognise in full.
+// That is how a store's password reaches a boot log, and then a log shipper.
+//
+// It is a no-op for an address carrying nothing, which is every address kit/config
+// accepted, so the wrapping stays and errors.Is still reaches the server's refusal.
+func scrub(raw string, err error) error {
+	list := secrets(raw)
+	if len(list) == 0 {
+		return err
+	}
+	msg := err.Error()
+	for _, secret := range list {
+		if secret != "" {
+			msg = strings.ReplaceAll(msg, secret, "<redacted>")
+		}
+	}
+	return &scrubbed{msg: msg, err: err}
+}
+
+// scrubbed is a sentence with no credential in it and its cause still attached, so
+// scrubbing costs a caller nothing: errors.Is and errors.As reach what it reworded.
+type scrubbed struct {
+	msg string
+	err error
+}
+
+func (s *scrubbed) Error() string { return s.msg }
+func (s *scrubbed) Unwrap() error { return s.err }
 
 // backend is the four commands. It holds no rule about what the bytes mean: it
 // has never seen a generation, and it does not need to.
