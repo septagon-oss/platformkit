@@ -185,7 +185,31 @@ jobs:
             sleep 1
           done
           curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
-          node --import ./register.mjs --test editor/*.test.mjs
+          # One suite at a time, and the runner's memory in the log while it runs.
+          # The three files under editor/ each drive a Chromium of their own, and
+          # left unstated the runner gives this step one per core: at run 44838
+          # (job 45285) they spent 924.0s of test time inside 767.0s of step wall —
+          # 1.20x from three processes, the pace of a box with nothing left to give
+          # — and one of those three browsers died partway (`locator.click: Target
+          # crashed` waiting for the File menu: replacement.test.mjs:52, called from
+          # the test at :952) and the step refused the head on that one test. The
+          # same step refused main's own e32fb81a and 063b6535 on a 5s locator wait
+          # in a different test: starvation, named differently depending on which
+          # browser was in the way. `npm run test:browser` below already names its
+          # bound (2) in package.json; this step named none. Serialised, the step
+          # pays the 157s the overlap never delivered: its own 924.0s of test time
+          # is the serialised wall clock, ≈15m24s where the overlap managed 12m49s,
+          # of a 45m job whose other steps took 16m06s at that head. The sampler is
+          # here because a Chromium that crashes leaves the log with no way to tell
+          # starvation from a broken build, and /proc/meminfo in a job container is
+          # the host's, which is the number the next refusal will need.
+          ( while :; do
+              awk '/MemAvailable/{printf "runner MemAvailable %d MB\n", $2/1024}' /proc/meminfo
+              cut -d' ' -f1-3 /proc/loadavg | sed 's/^/runner load average /'
+              sleep 30
+            done ) & sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
