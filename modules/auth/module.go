@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -21,6 +22,30 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// OIDCFromConfig converts the application's own configuration block into this
+// module's struct, so that main writes one line and the module depends on a
+// struct of its own rather than on the configuration surface. The registration
+// mode is not in it: the mode is a tenant's fact now, and the installation's own
+// default provider has never had one to declare.
+func OIDCFromConfig(c config.OIDC) OIDC {
+	return OIDC{Issuer: c.Issuer, ClientID: c.ClientID, ClientSecret: c.ClientSecret,
+		RedirectPath: c.RedirectPath}
+}
+
+// EnvironmentSecrets is the Secrets this installation ships with: a reference is
+// an environment variable's name, which is the only secret store this repository
+// has (kit/config reads secrets from the environment and nowhere else). It is a
+// method on an empty struct rather than a function value because a composition
+// should be able to name the whole of what it wires.
+type EnvironmentSecrets struct{}
+
+// Lookup reads the variable the reference names. An unset name is false, and the
+// sign-in answers 503 for that tenant rather than exchanging a code with an empty
+// client secret.
+func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
+	return os.LookupEnv(ref)
+}
 
 // OIDC is one OpenID Connect provider. It has the same shape as config.OIDC, so
 // main converts one to the other in a line, and this module depends on a struct
@@ -76,9 +101,42 @@ type Deps struct {
 	// sessions and tokens that have expired.
 	Tenants jobs.TenantLister
 
-	// OIDC is the optional identity provider. An empty issuer means there is
-	// none, and then the two OIDC routes are not registered at all.
+	// OIDC is the installation's own identity provider, and the fallback for a
+	// tenant that names none. An empty issuer means there is no default, and
+	// then the two OIDC routes are mounted only when OIDCProviders is wired —
+	// which is the case that lets two tenants sign in at two issuers in one
+	// process, each answering for its own host.
 	OIDC OIDC
+
+	// OIDCProviders answers "which provider does the tenant this request
+	// resolved to sign in against?", per request, from the transaction the Host
+	// header chose. A composition wires it over the tenant module's OIDCOf; a
+	// composition that wires nothing leaves the installation's own issuer as the
+	// only one there is, which is exactly how every deployment that exists today
+	// behaves.
+	OIDCProviders contracts.OIDCProviders
+
+	// FactorKey is the deployment's key for sealing a second factor's shared
+	// secret at rest. Empty — which is the default — means the factor routes are
+	// not mounted at all: without a key the only secret this module could write
+	// is a plaintext one, and a table of those is a backup an attacker can use,
+	// which is the thing this capability exists not to do. A deployment that sets
+	// no key signs people in exactly as it did before the table existed.
+	FactorKey string
+
+	// Secrets resolves the reference a tenant's row holds into the client secret
+	// it names. The reference is what is in the database, the outbox and the
+	// audit trail; the secret is in the environment and in no row. A composition
+	// that wires none can sign nobody in through a tenant's own provider, and
+	// answers 503 rather than inventing an empty secret.
+	Secrets contracts.Secrets
+
+	// Provisioner makes the person a verified id token names when the tenant's
+	// registration mode is `provision`. Wiring it is the composition's answer to
+	// "may this installation create people from an IdP claim", because who may
+	// exist is the user module's decision and not this one's; with no
+	// Provisioner, `provision` refuses as `existing` does.
+	Provisioner contracts.Provisioner
 
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
@@ -126,6 +184,15 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 		// rather than by an id, so no generated screen could answer this path
 		// and modules/admin writes the page. The two routes below are what it
 		// is a face for. See modules/admin/internal/roles.go.
+		// One nav entry, and deliberately only one. The session list is the
+		// caller's own — the routes reach it through the credential and no
+		// permission — and kit/module.Validate refuses an entry that names no
+		// permission, because a link everybody sees is still a decision somebody
+		// has to own. Borrowing role:manage would be the wrong decision twice
+		// over: it hides the screen from the members it is for and it would put
+		// an administrator's own list under a permission they hold for other
+		// people's rows. So the manifest says nothing here, and the product whose
+		// navigation this is names the entry beside the permission it seeds.
 		Nav: []module.NavEntry{
 			{Label: "Roles", Screen: "auth/roles", Permission: contracts.PermissionRoleManage},
 		},
@@ -165,6 +232,25 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
 			internal.RegisterRoutes(s, svc, cookies)
+			// A person's own keys, mounted always: unlike the factor routes
+			// there is no secret this needs from the deployment — the token is
+			// the secret, and it is hashed rather than sealed because it is
+			// never read back.
+			internal.RegisterTokenRoutes(s, svc)
+			// The factor key is the gate, and it is a deployment's setting
+			// rather than a fact about which other modules were composed: a
+			// composition with the key mounts the routes, one without it does
+			// not, and nothing here looks at a module list to decide.
+			// The factor routes are mounted whether or not the deployment set a
+			// key, and with none they answer 503 — the refusal the spec names,
+			// and the reason they are not mounted conditionally: an operation
+			// that exists only sometimes leaves its four events declared and
+			// unreachable, which the application's own catalogue check (every
+			// declared event has a channel) is right to call a lie. A deployment
+			// without a key is told the door is shut rather than being handed a
+			// 404 that says nothing about why.
+			svc.EnableFactors([]byte(deps.FactorKey))
+			internal.RegisterFactorRoutes(s, svc, cookies)
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
@@ -174,9 +260,13 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			if deps.EmailRegistration != nil {
 				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
 			}
-			if deps.OIDC.Issuer != "" {
-				internal.RegisterOIDCRoutes(s, svc, deps.Users,
-					internal.NewProvider(deps.OIDC, cookies, secure))
+			// The gate is "can any tenant here reach a provider", which is the
+			// installation's issuer or the port that resolves one per tenant —
+			// not the installation's issuer alone, which would refuse to mount
+			// the two legs for a deployment whose providers are all per-tenant.
+			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
+				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
 			}
 		},
 	}

@@ -581,7 +581,15 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 		Summary:     "The resources this caller may reach, with their schemas",
 		Description: "The same document the generated screens are built from, for a shell that is not a browser.",
 		Tags:        []string{"kernel"},
-	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*workspaceDocument[T], error) {
+		// AnyCredential, not SignedIn, and the difference is the whole point of
+		// the declaration: this route spends no authority on the caller's own
+		// credentials — it describes what the caller may already reach, and the
+		// document is filtered by the caller's grants as it is built — so the
+		// caller may arrive with whichever credential they hold. The credential a
+		// client that is not a browser holds is a bearer key, and this is that
+		// client's first request: a key refused here could call every route its
+		// scopes name and no route that says what those are.
+	}, httpx.AnyCredential(), func(ctx context.Context, _ *struct{}) (*workspaceDocument[T], error) {
 		body, err := describe(ctx, api.Resources())
 		if err != nil {
 			return nil, err

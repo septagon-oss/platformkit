@@ -409,9 +409,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
 	// installation host fixed and changes only the tenant.
 	//
-	// Which languages a tenant is served in is in this list because it is the newest
-	// of these routes and the one a tenant would most like to write for itself: the
-	// tenant's own host is exactly where its absence has to show.
+	// Which languages a tenant is served in, and which identity provider its people
+	// sign in against, are in this list because they are the newest of these routes
+	// and the two a tenant would most like to write for itself: the tenant's own
+	// host is exactly where their absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -419,6 +420,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc", `{"issuer":"https://idp.globex.example","clientId":"platformkit","secretRef":"GLOBEX_OIDC_SECRET"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc/clear", ""},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
@@ -560,7 +563,7 @@ func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
 // TestEveryOperationDeclaresExactlyOneAuthorization is gate 7, read off the
 // recording rather than trusted: kit/app runs it at boot, and this says what it
 // is checking — every route the whole composition mounts, the new ones
-// included, carries one declaration from the closed set of three.
+// included, carries one declaration from the closed set of five.
 func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	_, cfg := configure(t)
 	_, conn := dbtest.Schema(t)
@@ -600,17 +603,23 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in":
+		case "public", "signed_in", "any_credential":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the four", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
-	// Every kind is used, which is what makes the closed set worth having.
+	// Every kind is used, which is what makes the closed set worth having. The
+	// fifth, any_credential, is not in this list because it is the composition's
+	// own declaration — kit/app mounts the one operation that carries it, at the
+	// catalog address, and this gate builds the API from module routes without
+	// going through kit/app's boot. What the fifth door is for is pinned where the
+	// rule lives, by kit/httpx's scoped-credential cases, and at the live
+	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
 	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
@@ -1285,6 +1294,32 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	var top int64
 	t.Helper()
 	all := fstest.MapFS{}
+	// An installation from before the split applied the files that existed then,
+	// which is everything up to the highest file the foundation itself shipped:
+	// the split moved those files to their modules, it did not add any. A file
+	// above that number postdates the release, so the ledger must not claim it was
+	// applied — there would be no row to re-own and kit/db would be right to call
+	// an applied file that no release ships a contradiction
+	// (migrate.go, "was applied but is missing from this release"). This is what
+	// lets a module ship a version above the kernel's highest without rewriting
+	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
+	// normally in the upgrade, and are checked as new rows below.
+	var preSplitTop int64
+	for _, source := range sources {
+		if source.Owner != "platformkit" {
+			continue
+		}
+		entries, err := fs.ReadDir(source.Files, ".")
+		if err != nil {
+			t.Fatalf("read %s: %v", source.Owner, err)
+		}
+		for _, entry := range entries {
+			digits, _, _ := strings.Cut(entry.Name(), "_")
+			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > preSplitTop {
+				preSplitTop = version
+			}
+		}
+	}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -1299,7 +1334,11 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 				t.Fatalf("two owners ship %s; the old layout had one of each", entry.Name())
 			}
 			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > top {
+			version, err := strconv.ParseInt(digits, 10, 64)
+			if err != nil || version > preSplitTop {
+				continue
+			}
+			if version > top {
 				top = version
 			}
 			all[entry.Name()] = &fstest.MapFile{Data: body}
@@ -1354,8 +1393,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// when the kernel added 000026_module_schema, 26 became 27 when
 	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
 	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
-	// CloudEvents envelope carries, and 28 became 29 when the kernel added
-	// 000029_tenant_locale. That file is 29 and not the 28 it was written as, for
+	// CloudEvents envelope carries, 28 became 29 when the kernel added
+	// 000029_tenant_locale, and 29 became 30 when the kernel added
+	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`, which is
+	// numbered past both 29 and the highest file any module ships. The 29 in that
+	// chain is 29 and not the 28 it was written as, for
 	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
@@ -1368,11 +1410,18 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 29 — twelve files under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29) and seventeen under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
-	if len(before) != 29 {
-		t.Fatalf("the old layout applied %d files, want 29", len(before))
+	// this head prints 32, of which the release this fixture is applied from
+	// shipped 30: thirteen under migrations/ and the seventeen module files at or
+	// below the kernel's own highest. The two this branch adds,
+	// modules/auth/000031_auth_factors and modules/auth/000032_api_tokens, are
+	// numbered above the kernel's 30 because every version from 1 to 30 is taken,
+	// and a release that postdates the split is not in the old installation's
+	// ledger — legacyLayout therefore leaves them out, see the comment there.
+	// The 30 that remain are thirteen under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/ (4, 7, 8,
+	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
+	if len(before) != 30 {
+		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
@@ -1383,15 +1432,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
 	after := map[int64]string{}
 	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
-	if len(owners) != len(before) {
-		t.Fatalf("the upgrade left %d applied files, want the same %d", len(owners), len(before))
-	}
+	// The upgrade re-owns the old rows and applies the files that postdate them,
+	// so the ledger grows by exactly the new files and by nothing else: a fixture
+	// that re-ran an old file would be caught below by applied_at, and one that
+	// lost a row would be caught here.
+
 	for version, when := range before {
 		if after[version] != when {
 			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
 		}
 	}
-	// Each file now reads under the owner that ships it.
+	// Each file now reads under the owner that ships it — and every file this
+	// release ships is in the ledger, which is where the two files this branch
+	// adds (modules/auth 31 and 32, above the kernel's 30 and so absent from the
+	// old ledger) have to be accounted for: 32 files in the release, 32 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
@@ -1405,6 +1459,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			}
 			want[version] = source.Owner
 		}
+	}
+	if len(owners) != len(want) {
+		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
 	for version, owner := range want {
 		if owners[version] != owner {

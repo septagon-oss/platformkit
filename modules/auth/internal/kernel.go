@@ -30,6 +30,9 @@ import (
 // make signing out of a deleted account look like a broken deployment. A
 // database that cannot be read is an error, and kit/httpx answers 500.
 func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http.Request) (tenancy.Principal, bool, error) {
+	if token, ok := httpx.BearerOf(r); ok {
+		return s.bearerPrincipal(ctx, tx, token)
+	}
 	cookie, ok := httpx.SessionCookieOf(r)
 	if !ok {
 		return tenancy.Principal{}, false, nil
@@ -48,6 +51,24 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 	return tenancy.Principal{UserID: identity.UserID, Roles: identity.Roles}, true, nil
 }
 
+// bearerPrincipal is the same recognition arrived at the other way: not what the
+// browser was given, but what the caller was handed. It carries the intersection
+// of the key's scopes and what its holder's roles still grant, and it carries no
+// roles at all — see tenancy.Principal.Permissions for why a scoped credential
+// with a role list beside it would be a key that ignores its own scope.
+//
+// A key that is revoked, expired, belongs to a person who is no longer active, or
+// was never issued here is one answer: not recognised, no error, nothing written.
+// A revoked key that answered "revoked" would be a probe that told its holder the
+// revocation had landed.
+func (s *Service) bearerPrincipal(ctx context.Context, tx db.Tx[db.Tenant], token string) (tenancy.Principal, bool, error) {
+	user, scopes, ok, err := s.bearerCaller(ctx, tx, token)
+	if err != nil || !ok {
+		return tenancy.Principal{}, false, err
+	}
+	return tenancy.Principal{UserID: user.ID, Permissions: scopes}, true, nil
+}
+
 // Allowed is kit/httpx's authorizer: one query per request that asks a
 // permission question, in the request's own transaction, with no cache.
 //
@@ -63,7 +84,20 @@ func (s *Service) Authenticate(ctx context.Context, tx db.Tx[db.Tenant], r *http
 // be a check that cannot fail.
 func (s *Service) Allowed(ctx context.Context, _ tenancy.Tenant, grant tenancy.Grant) (bool, error) {
 	principal, ok := tenancy.PrincipalFrom(ctx)
-	if !ok || len(principal.Roles) == 0 {
+	if !ok {
+		return false, nil
+	}
+	if principal.Permissions != nil {
+		// The credential carries its own authority, so the credential is what is
+		// asked about and the roles are not consulted. They belong to the person
+		// the key acts as; the key was minted narrower than that on purpose, and
+		// resolving the roles here would answer a question about the holder rather
+		// than about the caller — which is the thing a scope exists to prevent.
+		// What is on this list is already the intersection of the two, recomputed
+		// when this request resolved the key.
+		return contracts.Grants(contracts.Permissions(principal.Permissions), grant), nil
+	}
+	if len(principal.Roles) == 0 {
 		return false, nil
 	}
 	tx, ok := httpx.TxFrom(ctx)

@@ -219,6 +219,16 @@ type Users interface {
 	ByEmail(ctx context.Context, tx db.Tx[db.Tenant], email string) (*usercontracts.User, error)
 	Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error)
 	SetPassword(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, password string) error
+	// ConfirmAddress records that an authority outside this application — the
+	// tenant's own identity provider, in the single sign-on leg — confirmed this
+	// mailbox. It is here because an address arriving from a provider is often a
+	// person this tenant has already invited and who has no password to set:
+	// without this command the callback can find them and still have nothing to
+	// open a session for, and the answer they get blames them for a secret they
+	// never had. Whether confirmation makes a person able to sign in is the user
+	// module's decision, and it refuses an account this tenant closed or has not
+	// yet approved.
+	ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) (*usercontracts.User, error)
 }
 
 // Notifier is what this module needs of the notification module to tell
@@ -309,9 +319,9 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the identity provider did the
-	// verifying, and what is left is the same session this module issues for a
-	// password.
+	// other way. The OIDC callback is its caller: the provider did the verifying,
+	// and what is left is the session this module issues for a password — asked
+	// of the account first, second factor and all, whichever half came through.
 	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role
@@ -319,15 +329,46 @@ type Service interface {
 	// that was deleted is a user with less authority, not a broken request.
 	Permissions(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]string, error)
 
-	// RevokeSessions ends every session this user has, except the one named.
-	// The nil UUID keeps none, which is "sign me out everywhere".
+	// RevokeSessions ends every session this user has, except the one named, and
+	// publishes one auth.session_revoked per row it removed.
 	//
 	// It takes the caller's transaction because it never happens on its own:
-	// every caller is changing the credential those sessions were opened with,
-	// and a revocation that committed apart from the change it belongs to is a
-	// window in which the old password is gone and the sessions it opened are
-	// not.
+	// every caller is either changing the credential those sessions were opened
+	// with, or a person deciding on their own screen which machines stop working;
+	// in both cases a revocation that committed apart from the change it belongs to
+	// is a window in which the old password is gone and the sessions it opened are
+	// not. The nil UUID keeps none, which is RevokeAllSessions.
 	RevokeSessions(ctx context.Context, tx db.Tx[db.Tenant], userID, except uuid.UUID) error
+
+	// Sessions lists this person's own live sessions, most recently seen first,
+	// for the page that lets them say "that was not me". It answers with
+	// SessionListing rather than Session, and that is the whole of the design:
+	// the row is a credential and the list is not (see SessionListing).
+	//
+	// current is the session the request is being made with, flagged as such and
+	// nothing more. Rows past either lifetime are left out rather than listed as
+	// dead: Identify refuses them, so showing one would be showing a row that is
+	// already gone and waiting for the sweep to agree.
+	Sessions(ctx context.Context, tx db.Tx[db.Tenant], userID, current uuid.UUID) ([]*SessionListing, error)
+
+	// RevokeSession ends one of this person's own sessions, named by its ref,
+	// and publishes auth.session_revoked for it.
+	//
+	// An unknown ref is crud.ErrNotFound and it is the same answer when the ref
+	// belongs to somebody else's session in this tenant and to another tenant
+	// altogether — RLS returns no row either way, so the refusal does not leak
+	// which one it was. It writes nothing and publishes nothing.
+	RevokeSession(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, ref string) error
+
+	// RevokeAllSessions ends every session this person has, including the one
+	// they are asking from, and publishes one auth.session_revoked per row it
+	// removed. It returns how many went, which is what the route reports.
+	//
+	// It is RevokeSessions keeping the nil UUID — one statement, one count, one
+	// event per machine — and it differs from it only in having no exception:
+	// "everywhere" includes the machine asking, which is what the route then makes
+	// obvious by clearing the cookie and sending the person to the sign-in page.
+	RevokeAllSessions(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (int, error)
 
 	// ChangePassword sets a new password for somebody who is signed in, having
 	// checked the one they have. It ends their other sessions and keeps the one
@@ -389,8 +430,11 @@ type Service interface {
 	// a grant that looks like authority and is not.
 	SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string, permissions []string, declared []tenancy.Grant) (*Role, error)
 
-	// Purge deletes this tenant's expired sessions and spent tokens, in batches,
-	// and reports how many rows went. The hourly job calls it once per tenant.
+	// Purge deletes this tenant's expired sessions, spent tokens, spent recovery
+	// codes and API keys that have been expired or revoked for APITokenRetention,
+	// in batches, and reports how many rows went. The hourly job calls it once per
+	// tenant. It is the sweep that makes "revoked" mean the row is gone eventually
+	// as well as the key not working now.
 	Purge(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 }
 

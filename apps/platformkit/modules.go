@@ -158,8 +158,25 @@ func compose(cfg config.Config) composition {
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
 		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
-		OIDC:              auth.OIDC(cfg.Auth.OIDC),
-		PublicHost:        cfg.Server.PublicHost,
+		// The installation's own provider is the fallback; the tenant's row wins
+		// where it names one, which is what lets two tenants on this one process
+		// send their people to two issuers. The secret is resolved from the
+		// environment by reference, per request, so it is in no row, no outbox
+		// payload and no audit record.
+		FactorKey:     cfg.Auth.FactorKey,
+		OIDC:          auth.OIDCFromConfig(cfg.Auth.OIDC),
+		OIDCProviders: tenantProviders{tenants: tenants},
+		Secrets:       auth.EnvironmentSecrets{},
+		// A tenant that sets `provision` has said, at its own control-plane route,
+		// that an address its provider verified is an account here. This
+		// application honours that: the person is made over the user module — the
+		// adapter is in oidc.go, beside the other one — with the roles the tenant's
+		// row names and no others, and the address confirmation the callback
+		// records is what makes them able to sign in. A deployment that would
+		// rather not admit anyone leaves this field unwired, and auth then answers
+		// every tenant as `existing`: a refusal, and not a half-made person.
+		Provisioner: provisioner{users: users},
+		PublicHost:  cfg.Server.PublicHost,
 	})
 
 	// The file service is returned beside its manifest, as user's and
@@ -242,7 +259,8 @@ func compose(cfg config.Config) composition {
 	// that changes when they do: everything above the tokens is written in
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
-		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
+		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Sessions: auths,
+		Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))

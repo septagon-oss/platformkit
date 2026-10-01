@@ -150,9 +150,16 @@ type Log struct {
 // Auth is what the auth module cannot decide for itself. Passwords and sessions
 // need no configuration — the parameters are constants in the module, because a
 // deployment that lowers them is a deployment that has weakened itself — so this
-// is one optional identity provider and nothing else.
+// is one optional identity provider and the key that seals a second factor.
 type Auth struct {
 	OIDC OIDC `yaml:"oidc"`
+	// FactorKey seals a second factor's shared secret at rest. Empty means no
+	// second factor is offered at all — the enrolment routes are not mounted, so
+	// there is no door that can only answer "unavailable". Like the two other
+	// secrets in this file it belongs in the environment and not in a committed
+	// file, and it is not required: a deployment that has not decided to offer a
+	// second factor is not broken, it is one that has not decided.
+	FactorKey string `yaml:"factor_key"`
 }
 
 // OIDC is one OpenID Connect provider. An empty issuer means there is none, and
@@ -264,6 +271,9 @@ var keys = []key{
 	// file somebody will commit.
 	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
 	// The second secret, for the same reason as the first.
+	// The factor key, for the same reason as the other three: it seals a
+	// credential, and config.yaml is a file somebody will commit.
+	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
