@@ -3,6 +3,7 @@ package internal_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -268,4 +269,74 @@ func deliverEach(ctx context.Context, conn *db.Conn, tenant tenancy.Tenant, sub 
 		}
 	}
 	return nil
+}
+
+// TestTheRetentionSweepTakesOneBatchATick is the limit the job's own comment
+// promises: one tenant's tick removes sweepBatch files and no more, and the next
+// tick takes the rest.
+//
+// A sweep with no ceiling holds a database connection across the whole of a
+// tenant's history — a decade of invoices, one tick, one lock the operator can
+// watch — and the retry that a long tick risks is a job that never finishes
+// before the next one starts. The cost of the ceiling is that a policy that
+// changes shape empties gradually rather than at once, and this case pins both
+// halves: two hundred go on the first tick, the two-hundred-and-first on the
+// second, and nothing between them is left half-done.
+func TestTheRetentionSweepTakesOneBatchATick(t *testing.T) {
+	admin, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	svc := internal.NewService(store, filetest.Limit, 0)
+
+	const files = 201
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		for n := range files {
+			f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+				Name: fmt.Sprintf("invoice-%03d.txt", n), ContentType: "text/plain", Declared: -1,
+				Kind: "invoice", Body: strings.NewReader("body"),
+			})
+			if err != nil {
+				return fmt.Errorf("upload %d: %w", n, err)
+			}
+			_ = f
+		}
+		// One statement, because the age is the seed and not the point: every
+		// file here is past its class's window before the job starts.
+		return tx.DB().Exec(`UPDATE files SET created_at = created_at - INTERVAL '40 days'`).Error
+	})
+	if err != nil {
+		t.Fatalf("seed %d files: %v", files, err)
+	}
+
+	sweep := internal.NewSweep(store, internal.SweepConfig{
+		Retention: map[string]time.Duration{"invoice": keepInvoices},
+		Tenants:   sweepWalk{[]tenancy.Tenant{acme}},
+	})
+	scheduled := sweep.Jobs()
+	if len(scheduled) != 1 {
+		t.Fatalf("the module schedules %v", scheduled)
+	}
+
+	present := func() int {
+		t.Helper()
+		var rows int
+		if err := admin.QueryRowContext(t.Context(),
+			`SELECT count(*) FROM files WHERE deleted_at IS NULL`).Scan(&rows); err != nil {
+			t.Fatalf("count what is left: %v", err)
+		}
+		return rows
+	}
+
+	if err := scheduled[0].Run(t.Context(), conn); err != nil {
+		t.Fatalf("the first tick: %v", err)
+	}
+	if got := present(); got != files-200 {
+		t.Errorf("the first tick left %d files, want the %d over its batch", got, files-200)
+	}
+	if err := scheduled[0].Run(t.Context(), conn); err != nil {
+		t.Fatalf("the second tick: %v", err)
+	}
+	if got := present(); got != 0 {
+		t.Errorf("the second tick left %d files, want none", got)
+	}
 }
