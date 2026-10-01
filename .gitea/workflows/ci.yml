@@ -218,7 +218,13 @@ jobs:
 
       - name: Native browser observations
         working-directory: tools/designexport/openpencil
-        run: npm run test:browser
+        # The suite's exit code is the verdict; the report beside it says whether the
+        # browser that was supposed to answer was still alive. See scripts/ci_browser_report.sh.
+        run: |
+          if ! npm run test:browser; then
+            bash "$GITHUB_WORKSPACE/scripts/ci_browser_report.sh" "observations"
+            exit 1
+          fi
 
       - name: Corrected editor image builds without publishing
         env:
@@ -266,7 +272,16 @@ jobs:
           # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
           # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
           # 15m24s serial, inside this job's own limit. No assertion, skip, retry or reordering.
-          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
+          #
+          # And when it fails, the host speaks first. A Chromium the runner reclaimed and a
+          # control that never rendered both reach the case as a failed wait; runs 219, 225,
+          # 235, 239 and 271 were the first and were read as the second. The report names the
+          # OOM lines, the browser processes and the job's own memory ceiling. It changes no
+          # verdict — the suite's exit code still decides the job.
+          if ! node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs; then
+            bash "$GITHUB_WORKSPACE/scripts/ci_browser_report.sh" "editor"
+            exit 1
+          fi
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
