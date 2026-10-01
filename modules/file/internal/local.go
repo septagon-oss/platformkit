@@ -44,6 +44,7 @@ type Local struct{ dir string }
 func NewLocal(dir string) *Local { return &Local{dir: dir} }
 
 var _ contracts.Storage = (*Local)(nil)
+var _ contracts.Prover = (*Local)(nil)
 
 // at is where the bytes for a scope and key live, or an error for either this
 // package could not have minted.
@@ -133,6 +134,39 @@ func (l *Local) Delete(_ context.Context, s contracts.Scope, k contracts.Key) er
 		return fmt.Errorf("file: remove %s: %w", l.legacy(k), err)
 	}
 	return nil
+}
+
+// Prove is contracts.Prover on the filesystem, and the filesystem can answer it:
+// a bucket with versioning switched on can hold copies a delete cannot reach, and
+// a directory holds one file under one name or it holds nothing. The answer is
+// therefore the honest one rather than the store's silence — and the difference
+// matters, because a store that does not implement Prover leaves every erasure's
+// verified_at NULL, so an installation running on disk would have no certified
+// erasure ever, whatever the README promised about the certificate.
+//
+// Both names are counted, because Delete writes to both: a key whose bytes are
+// still lying in the pre-scope flat directory is a copy that is still here, and a
+// certificate stamped over a delete that missed it would be a record that lied.
+// Anything that is neither present nor absent — a broken volume, a directory in
+// the place of a blob — is an error, because "cannot tell" answered as "gone" is
+// the same lie in a different coat.
+func (l *Local) Prove(_ context.Context, s contracts.Scope, k contracts.Key) (int, error) {
+	at, err := l.at(s, k)
+	if err != nil {
+		return 0, err
+	}
+	seen := 0
+	for _, candidate := range []string{at, l.legacy(k)} {
+		switch _, err := os.Stat(candidate); {
+		case err == nil:
+			seen++
+		case errors.Is(err, fs.ErrNotExist):
+			// Nothing at this name, which is the answer the certificate wants.
+		case err != nil:
+			return 0, fmt.Errorf("file: prove %s is gone: %w", candidate, err)
+		}
+	}
+	return seen, nil
 }
 
 // remove is Delete for a tenant the caller names directly, which is the one
