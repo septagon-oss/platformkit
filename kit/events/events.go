@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -44,6 +45,12 @@ const (
 // transaction and not the event's own tenant transaction because the reason a
 // delivery failed may be that the tenant transaction could not be opened.
 var deadLetterToken = syscap.NewSystemToken("record an event no subscription could handle")
+
+// tenantToken is the capability the delivery's app check reads with. Which app
+// holds a tenant is a fact about the deployment rather than about any tenant's
+// rows, and the one read that answers it is over the tenant table, which no
+// tenant's own transaction is entitled to ask about another tenant's row.
+var tenantToken = syscap.NewSystemToken("say which app holds an event's tenant")
 
 // Event is the portable envelope shared by the outbox and its transports.
 type Event = transport.Event
@@ -171,21 +178,38 @@ func (s Subscription) durable() string {
 // the same way a request handler does and can publish events of its own into
 // the same transaction.
 //
-// "The event's own tenant" is the tenant the event names *and* the tenant its
-// delivery's address names, which is why a transport that routes by an address
-// checks the two agree before this sink runs (transport.AddressMismatch, and the
-// check its Subscribe contract asks for). Both sentences are one rule: a handler
-// runs in the tenant the event names, and a message stored on one tenant's
-// address while stamped as another's is not this kernel's event at all — its
-// body is the only thing that says otherwise, and a body is not the address the
-// broker routed by.
+// "The event's own tenant" is a tenant this app holds, and three checks say so
+// before a handler runs. The transport compares the *address* it routed by with
+// the document (transport.AddressMismatch, and the check its Subscribe contract
+// asks for): that refuses the message whose routing belongs to another app, or
+// names no app at all. The subscription's durable carries the app, which is what
+// makes the second check expressible at all: the tenant named inside the document
+// is compared with tenants.app (holdsTenant), because an address can say that a
+// publisher *claims* the delivery is for this app and that tenant, and nothing
+// about a tenant id says which app holds it. Both come before the third: the
+// transaction, which opens *as* that tenant, so past this point row-level security
+// is the tenant's own and would show this app's handler code another app's rows.
+// A message stored on one tenant's address while stamped as another's is not this
+// kernel's event at all, and neither is one that names a tenant this app does not
+// hold; a refusal runs no handler and writes no claim, so the event stays
+// replayable for the app that does hold its tenant. See claim.
 //
-// Each delivery is claimed before the handler runs, so a handler sees each
-// event once however many times the transport delivers it. See claim.
+// A subscription whose App is set but is not a slug is refused here, at boot:
+// its durable would be the unscoped one (appname.Durable refuses the broken
+// token), which is some other app's consumer, and no delivery of its own could
+// ever be shown to belong to it.
 func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {
 	for _, s := range subs {
 		if s.Handler == nil {
 			return fmt.Errorf("events: subscription %s to %s has no handler", s.Module, s.Name)
+		}
+		if s.App.Named() {
+			// The type is not the check: a Name built by conversion bypasses Parse,
+			// and a slug a subject token cannot hold forms an unscoped durable —
+			// somebody else's consumer (appname.token refuses the segment).
+			if _, err := appname.Parse(string(s.App)); err != nil {
+				return fmt.Errorf("events: subscription %s to %s names app %q: %w", s.Module, s.Name, string(s.App), err)
+			}
 		}
 		h, durable := s.Handler, s.durable()
 		sink := Sink{
@@ -199,6 +223,25 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// bounds that wait. See claim, and providers/nats/jetstream.go's ackWait.
 				ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 				defer cancel()
+				holds, err := holdsTenant(ctx, conn, s.App, ev.TenantID)
+				if err != nil {
+					// Nothing is known about the delivery, so nothing runs and the
+					// transport retries: the outbox row stays pending and the event
+					// is not lost to a database that is merely unreadable.
+					return err
+				}
+				if !holds {
+					// The same shape as a message at an address its document does
+					// not claim: this copy is undeliverable, the outbox still holds
+					// the row for the app that does hold the tenant, and the copy
+					// that app's own relay publishes is a different message. A claim
+					// row here would mark another app's event handled under this
+					// durable, which is a refusal that takes the last copy away.
+					slog.ErrorContext(ctx, "events: delivery names a tenant this app does not hold",
+						"app", s.App.String(), "durable", durable, "event", ev.Name,
+						"id", ev.ID, "tenant", ev.TenantID)
+					return nil
+				}
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
@@ -219,6 +262,42 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 		}
 	}
 	return nil
+}
+
+// holdsTenant reports whether the tenant an event names is one `app` holds, read
+// from tenants.app — the same column, compared the same way, as the relay's claim
+// on the rows of its own app (RelayApp), because the two halves of one rule
+// written twice drift, and drift here is one app's handler running inside another
+// app's rows.
+//
+// Why this is a read and not something cheaper: nothing the message carries says
+// which app a tenant belongs to. The address says what its publisher claimed, the
+// envelope repeats the claim (it carries no app of its own), and the tenant id is
+// the same vocabulary on both sides of the boundary. tenants.app is the fact, the
+// relay already reads it to decide what to publish, and this is the same question
+// asked of the same column at the moment it decides what to run. It costs one
+// indexed read of one row per delivery, and the alternative is a delivery that
+// trusts the document.
+//
+// A tenant row that is gone names no app, so coalesce answers `”` and the
+// deployment that names no app keeps it: LEFT JOIN and coalesce are RelayApp's
+// shape for the same reason, and an app that names itself reads nothing of an app
+// nothing declared.
+func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID uuid.UUID) (bool, error) {
+	var holds bool
+	err := db.RunSystem(ctx, conn, tenantToken, func(_ context.Context, tx db.Tx[db.System]) error {
+		var whose string
+		// max() so the read answers '' for a tenant with no row rather than no
+		// rows: an aggregate is one row whatever the WHERE did, and a delivery
+		// whose tenant is gone has an answer (nobody's) rather than an error.
+		row := tx.DB().Raw(`SELECT coalesce(max(tn.app), '') FROM tenants tn WHERE tn.id = ?`, tenantID).Row()
+		if err := row.Scan(&whose); err != nil {
+			return fmt.Errorf("events: say which app holds tenant %s: %w", tenantID, err)
+		}
+		holds = whose == app.String()
+		return nil
+	})
+	return holds, err
 }
 
 // claim writes this subscription's mark against the event and reports whether
