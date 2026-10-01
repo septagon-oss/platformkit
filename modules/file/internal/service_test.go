@@ -160,7 +160,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	if rows != 1 {
 		t.Errorf("the rolled-back delete left %d rows, want the file back", rows)
 	}
-	if body, err := internal.NewLocal(dir).Get(t.Context(), kept); err != nil {
+	if body, err := internal.NewLocal(dir).Get(t.Context(), filetest.TenantScope(t, acme.ID), contracts.Key(kept)); err != nil {
 		t.Errorf("the rolled-back delete took the bytes with it: %v", err)
 	} else {
 		body.Close()
@@ -176,7 +176,7 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
 	svc := internal.NewService(store, filetest.Limit, 0)
-	sub := internal.RemoveBlob(store)
+	sub := internal.EraseBlobs(store)
 
 	if sub.Module != "file" || sub.Name != contracts.EventDeleted {
 		t.Fatalf("the subscription is %s to %s", sub.Module, sub.Name)
@@ -227,33 +227,42 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
+	scope := filetest.TenantScope(t, acme.ID)
 	for _, key := range []string{
 		"../escape", "..", "/etc/passwd", "", "not-a-uuid",
 		"../../" + uuid.NewString(), strings.ToUpper(uuid.NewString()),
 	} {
-		if err := store.Put(t.Context(), key, strings.NewReader("x"), -1); err == nil {
-			t.Errorf("Put(%q) was allowed", key)
+		k := contracts.Key(key)
+		if err := store.Put(t.Context(), scope, k, strings.NewReader("x"), -1, contracts.Meta{}); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Put(%q) = %v, want ErrInvalidKey", key, err)
 		}
-		if _, err := store.Get(t.Context(), key); err == nil {
-			t.Errorf("Get(%q) was allowed", key)
+		if _, err := store.Get(t.Context(), scope, k); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Get(%q) = %v, want ErrInvalidKey", key, err)
 		}
-		if err := store.Delete(t.Context(), key); err == nil {
-			t.Errorf("Delete(%q) was allowed", key)
+		if err := store.Delete(t.Context(), scope, k); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Delete(%q) = %v, want ErrInvalidKey", key, err)
 		}
+	}
+	// The zero scope is refused the same way the port refuses a request that
+	// resolved no tenant: not "nothing found", which a caller could mistake for
+	// an empty store, but a refusal naming the missing scope.
+	ghost := contracts.Key(uuid.NewString())
+	if err := store.Put(t.Context(), contracts.Scope{}, ghost, strings.NewReader("x"), -1, contracts.Meta{}); !errors.Is(err, db.ErrNoTenant) {
+		t.Errorf("Put with no tenant = %v, want db.ErrNoTenant", err)
 	}
 	if got := keysUnder(t, dir); len(got) != 0 {
 		t.Errorf("something reached the disk: %v", got)
 	}
 
 	// And the one it does mint works, once.
-	key := uuid.NewString()
-	if err := store.Put(t.Context(), key, strings.NewReader("x"), -1); err != nil {
+	key := contracts.Key(uuid.NewString())
+	if err := store.Put(t.Context(), scope, key, strings.NewReader("x"), -1, contracts.Meta{}); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := store.Put(t.Context(), key, strings.NewReader("y"), -1); err == nil {
+	if err := store.Put(t.Context(), scope, key, strings.NewReader("y"), -1, contracts.Meta{}); err == nil {
 		t.Error("a key that already exists was overwritten; a key is minted per upload")
 	}
-	body, err := store.Get(t.Context(), key)
+	body, err := store.Get(t.Context(), scope, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -261,11 +270,50 @@ func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 	if out, _ := io.ReadAll(body); string(out) != "x" {
 		t.Errorf("the bytes read back as %q", out)
 	}
-	if _, err := store.Get(t.Context(), uuid.NewString()); !errors.Is(err, contracts.ErrNoBlob) {
+	if _, err := store.Get(t.Context(), scope, contracts.Key(uuid.NewString())); !errors.Is(err, contracts.ErrNoBlob) {
 		t.Errorf("a key with nothing at it = %v, want ErrNoBlob", err)
 	}
-	if err := store.Delete(t.Context(), uuid.NewString()); err != nil {
+	if err := store.Delete(t.Context(), scope, contracts.Key(uuid.NewString())); err != nil {
 		t.Errorf("deleting nothing = %v, want it to be no error at all", err)
+	}
+}
+
+// TestAKeyOneTenantWroteOpensNothingForAnother is the tenant-isolation case on
+// the store that ships to a laptop. Two tenants, one directory, one key: the
+// second asks for the first's key and is told there is no such thing, and the
+// first's bytes are what the first reads back.
+func TestAKeyOneTenantWroteOpensNothingForAnother(t *testing.T) {
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	acmeScope := filetest.TenantScope(t, acme.ID)
+	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
+	globexScope := filetest.TenantScope(t, globex.ID)
+	key := contracts.Key(uuid.NewString())
+
+	if err := store.Put(t.Context(), acmeScope, key, strings.NewReader("acme's own"), -1, contracts.Meta{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if _, err := store.Get(t.Context(), globexScope, key); !errors.Is(err, contracts.ErrNoBlob) {
+		t.Fatalf("another tenant read these bytes: %v", err)
+	}
+	if err := store.Delete(t.Context(), globexScope, key); err != nil {
+		t.Fatalf("another tenant's delete: %v", err)
+	}
+	body, err := store.Get(t.Context(), acmeScope, key)
+	if err != nil {
+		t.Fatalf("the owner's own read: %v", err)
+	}
+	defer body.Close()
+	if out, _ := io.ReadAll(body); string(out) != "acme's own" {
+		t.Errorf("the bytes are %q", out)
+	}
+	// The same key under the second tenant's prefix is a different object, and
+	// writing it must not disturb the first.
+	if err := store.Put(t.Context(), globexScope, key, strings.NewReader("globex's own"), -1, contracts.Meta{}); err != nil {
+		t.Fatalf("the second tenant could not write the same key: %v", err)
+	}
+	if got := keysUnder(t, dir); len(got) != 2 {
+		t.Errorf("two tenants wrote one key and the store holds %v; want two objects", keysUnder(t, dir))
 	}
 }
 
@@ -313,7 +361,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := store.Delete(ctx, f.StorageKey); err != nil {
+		if err := store.Delete(ctx, contracts.ScopeOfTx(tx), contracts.Key(f.StorageKey)); err != nil {
 			return err
 		}
 		_, _, err = svc.Open(ctx, tx, f.ID, false)
@@ -503,11 +551,13 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 
 	// Age both past the hour and run it again.
 	old := time.Now().Add(-2 * time.Hour)
-	for _, key := range keysUnder(t, dir) {
-		at := filepath.Join(dir, key[:2], key)
-		if err := os.Chtimes(at, old, old); err != nil {
-			t.Fatalf("age %s: %v", at, err)
+	if err := filepath.WalkDir(dir, func(at string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
 		}
+		return os.Chtimes(at, old, old)
+	}); err != nil {
+		t.Fatalf("age what the store holds: %v", err)
 	}
 	if err := jobs[0].Run(t.Context(), conn); err != nil {
 		t.Fatalf("the sweep: %v", err)

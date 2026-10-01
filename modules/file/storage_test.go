@@ -1,6 +1,7 @@
 package file_test
 
 import (
+	"cmp"
 	"errors"
 	"os"
 	"path/filepath"
@@ -9,6 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/db"
+
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/contracts/filetest"
@@ -16,16 +21,30 @@ import (
 
 func TestLocalStorageConforms(t *testing.T) {
 	filetest.RunStorage(t, func(t *testing.T) filetest.StorageFixture {
-		return filetest.StorageFixture{Storage: file.Local(t.TempDir())}
+		tenant := uuid.New()
+		return filetest.StorageFixture{
+			Storage: file.Local(t.TempDir()), TenantID: tenant,
+			Scope: filetest.TenantScope(t, tenant),
+		}
 	})
 }
 
 func TestLocalStorageDoesNotHideReadFailuresAsMissingBlobs(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "ab"), []byte("broken shard"), 0o600); err != nil {
+	tenant := uuid.New()
+	store := file.Local(root)
+	scope := filetest.TenantScope(t, tenant)
+	// The directory a blob would live in is a file instead, so opening it is an
+	// outage and not an absent object: a store that answered ErrNoBlob here
+	// would turn a broken volume into a tenant's missing files.
+	at := filepath.Join(root, tenant.String(), "ab")
+	if err := os.MkdirAll(filepath.Dir(at), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body, err := file.Local(root).Get(t.Context(), "ab000000-0000-4000-8000-000000000001")
+	if err := os.WriteFile(at, []byte("broken shard"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	body, err := store.Get(t.Context(), scope, contracts.Key("ab000000-0000-4000-8000-000000000001"))
 	if body != nil {
 		_ = body.Close()
 	}
@@ -34,44 +53,60 @@ func TestLocalStorageDoesNotHideReadFailuresAsMissingBlobs(t *testing.T) {
 	}
 }
 
+// TestLocalStorageListingExcludesCutoffAndOtherDirectories is the orphan sweep's
+// own safety argument at the store: a listing with a cutoff must not name a blob
+// written after it, must not name anything in a directory this store was not
+// pointed at, and must not name a file that is not a key. The sweep deletes what
+// a listing reports, so every one of those is a file it would have removed.
 func TestLocalStorageListingExcludesCutoffAndOtherDirectories(t *testing.T) {
 	root := t.TempDir()
+	tenant := uuid.New()
 	store := file.Local(filepath.Join(root, "owned"))
 	other := file.Local(filepath.Join(root, "other"))
+	scope, otherScope := filetest.TenantScope(t, tenant), filetest.TenantScope(t, tenant)
 	cutoff := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
-	keys := []string{
+	keys := []contracts.Key{
 		"00000000-0000-4000-8000-000000000001",
 		"00000000-0000-4000-8000-000000000002",
 		"00000000-0000-4000-8000-000000000003",
 	}
 	for i, key := range keys {
-		if err := store.Put(t.Context(), key, strings.NewReader("body"), 4); err != nil {
+		if err := store.Put(t.Context(), scope, key, strings.NewReader("body"), 4, contracts.Meta{}); err != nil {
 			t.Fatal(err)
 		}
 		at := cutoff.Add(time.Duration(i-1) * time.Second)
-		if err := os.Chtimes(filepath.Join(root, "owned", key[:2], key), at, at); err != nil {
+		if err := os.Chtimes(filepath.Join(root, "owned", tenant.String(), key.String()[:2], key.String()), at, at); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := other.Put(t.Context(), keys[1], strings.NewReader("other"), 5); err != nil {
+	if err := other.Put(t.Context(), otherScope, keys[1], strings.NewReader("other"), 5, contracts.Meta{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chtimes(filepath.Join(root, "other", keys[1][:2], keys[1]), cutoff.Add(-time.Hour), cutoff.Add(-time.Hour)); err != nil {
+	if err := os.Chtimes(filepath.Join(root, "other", tenant.String(), keys[1].String()[:2], keys[1].String()), cutoff.Add(-time.Hour), cutoff.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(root, "owned", "unowned-note.txt"), []byte("not a blob"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "owned", tenant.String(), "unowned-note.txt"), []byte("not a blob"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := store.Keys(t.Context(), cutoff)
-	if err != nil || !slices.Equal(got, keys[:1]) {
-		t.Fatalf("Keys(cutoff) = %v, %v; want only %s", got, err, keys[0])
+	want := []contracts.Blob{{TenantID: tenant, Key: keys[0]}}
+	if got, err := store.Blobs(t.Context(), db.Tx[db.System]{}, cutoff); err != nil || !slices.Equal(got, want) {
+		t.Fatalf("Blobs(cutoff) = %v, %v; want only %v", got, err, want)
 	}
-	got, err = store.Keys(t.Context(), cutoff.Add(2*time.Second))
+	got, err := store.Blobs(t.Context(), db.Tx[db.System]{}, cutoff.Add(2*time.Second))
 	if err != nil {
 		t.Fatal(err)
 	}
-	slices.Sort(got)
-	if !slices.Equal(got, keys) {
-		t.Fatalf("Keys(after) = %v; want owned UUID blobs %v", got, keys)
+	slices.SortFunc(got, func(a, b contracts.Blob) int { return cmp.Compare(a.Key, b.Key) })
+	all := []contracts.Blob{{TenantID: tenant, Key: keys[0]}, {TenantID: tenant, Key: keys[1]}, {TenantID: tenant, Key: keys[2]}}
+	if !slices.Equal(got, all) {
+		t.Fatalf("Blobs(after) = %v; want the three blobs this store holds: %v", got, all)
+	}
+	// And the removal the sweep would make: one blob out, the other two still
+	// listed, and the sibling store untouched.
+	if err := store.RemoveBlob(t.Context(), db.Tx[db.System]{}, got[0]); err != nil {
+		t.Fatalf("RemoveBlob: %v", err)
+	}
+	if again, err := store.Blobs(t.Context(), db.Tx[db.System]{}, cutoff.Add(2*time.Second)); err != nil || len(again) != 2 {
+		t.Fatalf("after one removal the store lists %v, %v; want two", again, err)
 	}
 }
