@@ -140,7 +140,8 @@ func TestTheTenantAppColumnIsPlacedOnProofAndRefusedWithoutIt(t *testing.T) {
 	withAdmin(t, ctx, adminURL, func(admin *sql.DB) {
 		if err := admin.QueryRowContext(ctx,
 			`SELECT is_nullable FROM information_schema.columns
-			  WHERE table_name = 'tenants' AND column_name = 'app'`).Scan(&nullable); err != nil {
+			  WHERE table_schema = current_schema()
+				AND table_name = 'tenants' AND column_name = 'app'`).Scan(&nullable); err != nil {
 			t.Fatalf("the column's nullability: %v", err)
 		}
 	})
@@ -170,6 +171,11 @@ const noColumn = "\x00"
 // the migration left no column at all. Reading the catalog first is what keeps the
 // two answers apart: an empty string would be the same word for "no rows" and "no
 // column", and the difference is the whole claim of the refusal cases.
+//
+// Every catalog read names current_schema() because dbtest gives each test a schema
+// of its own inside one database: unqualified, information_schema answers about
+// whichever other test's tenants table it likes, and the case that passes alone and
+// fails under a full `make test` is the shape of that mistake.
 func placed(t *testing.T, ctx context.Context, url string) string {
 	t.Helper()
 	var state string
@@ -194,7 +200,8 @@ func columnState(t *testing.T, ctx context.Context, admin *sql.DB) string {
 	var columns int
 	if err := admin.QueryRowContext(ctx,
 		`SELECT count(*) FROM information_schema.columns
-		  WHERE table_name = 'tenants' AND column_name = 'app'`).Scan(&columns); err != nil {
+		  WHERE table_schema = current_schema()
+			AND table_name = 'tenants' AND column_name = 'app'`).Scan(&columns); err != nil {
 		t.Fatalf("asked the catalog for tenants.app: %v", err)
 	}
 	if columns == 0 {
