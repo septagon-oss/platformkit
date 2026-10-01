@@ -36,7 +36,9 @@ type Catalog struct {
 
 // Entry is one resource as a shell sees it. There is no Readable field because
 // an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists.
+// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// this resource's operation set: an entry that names no write and still says
+// `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
 	// Screen is the workspace address of the generated screen — /app/task/tasks
@@ -119,7 +121,13 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // Describe1 is one entry, from a resource and the answer to "may this caller
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
+//
+// The flag is the caller's guard narrowed by the operation set: the guard says who
+// is asking, the set says whether anything here answers a write at all, and
+// `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
+	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
+		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
 	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable,
 		Singleton: r.Singleton, Operations: r.OperationWords()}
 	if writable {

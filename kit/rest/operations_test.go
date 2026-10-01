@@ -95,15 +95,15 @@ func mountPlain(t *testing.T, s rest.Spec[*Task], authorize httpx.Authorizer) (*
 	return api, router, admin
 }
 
-// refusesToMount mounts a Spec that must not mount, and reads the sentence the
-// mount site panicked with. The panic is how every wiring rule in check() is
-// refused — where the mistake was written, and before any route exists.
 // probeOperation is a probe route: a handler that runs inside one request, in
 // which a case can call a resource closure or answer about the caller.
 func probeOperation(id, path string) huma.Operation {
 	return huma.Operation{OperationID: id, Method: http.MethodPost, Path: path, DefaultStatus: http.StatusNoContent}
 }
 
+// refusesToMount mounts a Spec that must not mount, and reads the sentence the
+// mount site panicked with. The panic is how every wiring rule in check() is
+// refused — where the mistake was written, and before any route exists.
 func refusesToMount(t *testing.T, s rest.Spec[*Task], want string) {
 	t.Helper()
 	defer func() {
