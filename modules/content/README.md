@@ -58,10 +58,17 @@ JavaScript editor or native rich-text controls. Products choose which other
 fields use `widget:richtext`, their own copy and rules, and which audiences may
 see a published item. File variants and record-bound file visibility are a
 separate capability. The normalizer standardizes line endings, block spacing,
-Setext headings, bullet markers and indented code, and copies the lines inside a
-code fence unchanged; other equivalent Markdown spellings — an ordered list
-written `1)` rather than `1.`, or `__bold__` rather than `**bold**` — can still
-yield distinct source hashes, so complete AST serialization remains open.
+Setext headings and bullet markers, and stores as a code fence only the indented
+runs the parser reads as code — a fence one backtick longer than the longest
+backtick run inside it, so a line of ``` held in the code stays data.
+Indentation a list item or a blockquote owns is left as the author wrote it: a
+step's second paragraph and a nested list keep their four spaces, and a bullet
+marker is rewritten only inside the single list the parser sees, so `* a` then
+`- b` stay two lists. `Normalise` is idempotent, so a body is stored once; an
+unterminated fence gains its closing line. Other equivalent Markdown spellings —
+an ordered list written `1)` rather than `1.`, or `__bold__` rather than
+`**bold**` — can still yield distinct source hashes, so complete AST
+serialization remains open.
 
 ## Authorization
 
