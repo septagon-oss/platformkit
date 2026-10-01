@@ -121,23 +121,17 @@ func TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Somebody else's migration is running. Take the same lock it would take, with
-	// a bounded wait of our own: this database is shared with every other package's
-	// tests, and a case that failed because it lost a race for the lock would say
-	// nothing about the behaviour under test.
-	deadline := time.Now().Add(60 * time.Second)
-	for {
-		var got bool
-		if err := conn.QueryRowContext(t.Context(), "SELECT pg_try_advisory_lock($1)", compositionLockKey).Scan(&got); err != nil {
-			t.Fatal(err)
-		}
-		if got {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the composition advisory lock stayed held for 60s; no run of this case can say anything about waiting for it")
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Somebody else's migration is running. Take the same lock it would take. This
+	// database is shared with every other package's tests, whose migrations queue
+	// on the lock with a blocking pg_advisory_lock, so this case queues too:
+	// polling pg_try_advisory_lock never wins while that queue is non-empty, and
+	// under CI's parallel packages it starved for 60s (runs 136, 221, 227 and 229).
+	// The bound is generous because losing a fair race here says nothing about
+	// the behaviour under test.
+	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
+	defer cancelAcquire()
+	if _, err := conn.ExecContext(acquire, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+		t.Fatalf("the composition advisory lock was not granted within 5 minutes: %v", err)
 	}
 	defer func() {
 		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()), "SELECT pg_advisory_unlock($1)", compositionLockKey)
