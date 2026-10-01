@@ -53,7 +53,7 @@ var acmePeople = contracts.OIDCSettings{
 // one tenant not seeing the other's door.
 func twoTenants(t *testing.T, conn *db.Conn) (*contracts.Tenant, *contracts.Tenant) {
 	t.Helper()
-	svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+	svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 	var acme, globex *contracts.Tenant
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
@@ -80,7 +80,7 @@ func twoTenants(t *testing.T, conn *db.Conn) (*contracts.Tenant, *contracts.Tena
 func TestTwoTenantsReadTwoProvidersFromTheirOwnTransactions(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	acme, globex := twoTenants(t, conn)
-	svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+	svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 
 	for _, want := range []struct {
 		who    *contracts.Tenant
@@ -214,7 +214,7 @@ func TestHalfAProviderCannotBeStored(t *testing.T) {
 func TestTheTrailCarriesTheProviderAndOnlyTheNameOfTheSecret(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	acme, _ := twoTenants(t, conn)
-	svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+	svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		in := acmePeople
