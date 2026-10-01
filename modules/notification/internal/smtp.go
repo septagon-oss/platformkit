@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"net/mail"
 	"net/smtp"
 	"strconv"
 	"strings"
@@ -112,8 +113,14 @@ func (s *SMTP) Send(ctx context.Context, m contracts.Message) error {
 			return fmt.Errorf("notification: authenticate to %s: %w", s.cfg.Host, err)
 		}
 	}
-	if err := c.Mail(s.cfg.From); err != nil {
-		return fmt.Errorf("notification: sender %s refused: %w", s.cfg.From, err)
+	// The configured sender may carry a display name ("Acme <noreply@acme.example.com>"). That name belongs
+	// in the From header; the envelope (MAIL FROM) is the bare address, which every relay demands.
+	sender, err := mail.ParseAddress(s.cfg.From)
+	if err != nil {
+		return fmt.Errorf("notification: sender %q is not an address: %w", s.cfg.From, err)
+	}
+	if err := c.Mail(sender.Address); err != nil {
+		return fmt.Errorf("notification: sender %s refused: %w", sender.Address, err)
 	}
 	if err := c.Rcpt(m.To); err != nil {
 		return fmt.Errorf("notification: recipient refused: %w", err)
@@ -122,7 +129,7 @@ func (s *SMTP) Send(ctx context.Context, m contracts.Message) error {
 	if err != nil {
 		return fmt.Errorf("notification: send the body: %w", err)
 	}
-	if _, err := w.Write([]byte(wire(s.cfg.From, m))); err != nil {
+	if _, err := w.Write([]byte(wire(sender.String(), m))); err != nil {
 		return fmt.Errorf("notification: write the body: %w", err)
 	}
 	if err := w.Close(); err != nil {
