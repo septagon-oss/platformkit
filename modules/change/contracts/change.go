@@ -101,7 +101,7 @@ type Proposal struct {
 	// verdict was about — and the pair is only evidence if the bytes in this column
 	// still digest to the column beside it, which is why the column is text: jsonb
 	// stores a number as a numeric and would answer "100" where the reviewed bytes
-	// said "1e2". See migrations/000034 and Diff.Value.
+	// said "1e2". See migrations/000038 and Diff.Value.
 	Diff       Diff   `json:"diff" gorm:"type:text;not null" required:"true" doc:"The change, as an RFC 7386 merge patch"`
 	DiffDigest string `json:"diffDigest" readOnly:"true" doc:"sha256 of the canonical diff, which is what a verdict is about"`
 	Summary    string `json:"summary" maxLength:"200" required:"true" doc:"One line on what the change is"`

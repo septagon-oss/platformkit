@@ -47,8 +47,8 @@ retention transaction — is owed by decision 0013 and is not delivered here;
 
 What every row does answer now is who (`actor`), what (`name`, `payload`,
 `records`), when (`occurred_at`), from where (`client_ip`), and which call
-(`request_id`, `traceparent`) — migrations 000031 to 000033, carried in
-`migrations/000030` and `kit/request`. Nothing is backfilled: a request id, an
+(`request_id`, `traceparent`) — migrations 000035 to 000037, carried in
+`migrations/000034` and `kit/request`. Nothing is backfilled: a request id, an
 address and a trace that were never captured cannot be reconstructed, and inventing
 them for old rows would be writing history a second time.
 

@@ -154,10 +154,12 @@ served in Portuguese.
 
 ## The table
 
-`modules/change/migrations/000034_change.up.sql`, owner `change`, with no `Adopts`
-(nothing ever applied these bytes under another owner) and no `RulesFrom` (every
-file is guarded). Subject is `(subject_module, subject_entity, subject_id)` with no
-foreign key — the reason `modules/task` already gives for `Source` — and the
+`modules/change/migrations/000038_change.up.sql`, owner `change`, with no `Adopts`
+(nothing ever applied these bytes under another owner, and the upgrade fixture only
+claims the files that predate modules owning their SQL — see
+`modules/change/migrations.go`) and no `RulesFrom` (every file is guarded). Subject
+is `(subject_module, subject_entity, subject_id)` with no foreign key — the reason
+`modules/task` already gives for `Source` — and the
 partial unique index over `(tenant, subject, diff_digest) WHERE state IN
 ('proposed','approved')` is what makes a second submit of the same diff the same
 proposal rather than a race. That index is enforced by Postgres, which means the

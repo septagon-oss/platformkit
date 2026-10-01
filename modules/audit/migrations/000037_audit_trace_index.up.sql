@@ -7,6 +7,6 @@
 -- this expression index makes the id searchable, which is what makes the
 -- decision to store one string the cheap one rather than the lazy one.
 --
--- CONCURRENTLY and alone for the same reason as 000032.
+-- CONCURRENTLY and alone for the same reason as 000036.
 CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_events_tenant_trace
 	ON audit_events ((split_part(traceparent, '-', 2))) WHERE traceparent IS NOT NULL;
