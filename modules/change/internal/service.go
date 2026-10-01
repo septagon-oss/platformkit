@@ -342,11 +342,11 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 }
 
 // open locks the row and rechecks the two things a mutation may not be decided
-// without: that the row is this tenant's — which row-level security already narrowed
-// the read to, and crud.RecheckTenant says out loud — and that it is still the
-// revision the caller saw. The lock is what makes the revision check mean anything:
-// without it, the row could move between the read and the write, and two reviewers
-// would both get an answer of "yes".
+// without: that the row is this tenant's — row-level security narrowed the locked
+// read to it, and crud.Update, which each mutation here finishes with, says so out
+// loud again (its call to RecheckTenant) — and that it is still the revision the
+// caller saw. The lock is what makes that second check mean anything: without it
+// the row could move between the read and the write, and two reviewers both get yes.
 func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expectedRevision int64) (*contracts.Proposal, error) {
 	row, err := crud.GetForUpdate[*contracts.Proposal](tx, id)
 	if err != nil {

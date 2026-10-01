@@ -189,8 +189,8 @@ func compose(cfg config.Config) composition {
 
 	contents, contentModule := content.Module(content.Deps{})
 	// The installation's flags, read by kit/config out of the flags block and
-	// evaluated per tenant. One evaluator is built here and handed to the one door
-	// that asks a question of it — see configFlags and siteSettingsFlag.
+	// answered once for the whole process: configFlags targets nobody, not even by
+	// tenant. One evaluator is built here, for the one door that asks it a question.
 	var flagEval configFlags
 	if cfg.Flags != nil {
 		flagEval = cfg.Flags.Values
