@@ -170,7 +170,7 @@ func (c Cache) Validate() error {
 	}
 	if c.Adapter != "valkey" {
 		return nil
-		}
+	}
 	if c.App == "" {
 		return errors.New("cache.app is required with cache.adapter valkey: every shared key begins with the application that wrote it")
 	}
