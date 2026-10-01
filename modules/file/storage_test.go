@@ -53,6 +53,55 @@ func TestLocalStorageDoesNotHideReadFailuresAsMissingBlobs(t *testing.T) {
 	}
 }
 
+// TestLocalStorageProvesWhatIsAtOneName is the certificate's other half. The
+// erasure subscription stamps verified_at only when the store reports that it
+// holds nothing at the name it was asked about, so a disk store with no answer
+// would leave every erasure of an installation running on disk uncertified — and
+// a disk store that answered "gone" without looking would certify one that left
+// bytes behind.
+//
+// Two names are in scope, because Delete writes to both: the tenant's own
+// directory and the flat layout an installation had before the port carried a
+// scope. A leftover there is a copy that is still here.
+func TestLocalStorageProvesWhatIsAtOneName(t *testing.T) {
+	root := t.TempDir()
+	tenant := uuid.New()
+	store := file.Local(root)
+	scope := filetest.TenantScope(t, tenant)
+	key := contracts.Key("7c1f2f3e-1f4c-4a55-8f0a-2b3c4d5e6f70")
+	if err := store.Put(t.Context(), scope, key, strings.NewReader("body"), 4, contracts.Meta{}); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.Prove(t.Context(), scope, key); err != nil || seen != 1 {
+		t.Fatalf("Prove over bytes still here = %d, %v; want one copy", seen, err)
+	}
+	if err := store.Delete(t.Context(), scope, key); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.Prove(t.Context(), scope, key); err != nil || seen != 0 {
+		t.Fatalf("Prove after the delete = %d, %v; want nothing left to certify", seen, err)
+	}
+
+	legacy := filepath.Join(root, key.String()[:2], key.String())
+	if err := os.MkdirAll(filepath.Dir(legacy), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(legacy, []byte("written before the scope"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.Prove(t.Context(), scope, key); err != nil || seen != 1 {
+		t.Fatalf("Prove with the pre-scope copy still on the disk = %d, %v; want the one copy that is still here", seen, err)
+	}
+	// And the delete that clears both names is what turns that count back to
+	// zero, which is the half that makes the retry safe rather than pointless.
+	if err := store.Delete(t.Context(), scope, key); err != nil {
+		t.Fatal(err)
+	}
+	if seen, err := store.Prove(t.Context(), scope, key); err != nil || seen != 0 {
+		t.Errorf("Prove after the delete that clears both layouts = %d, %v; want zero", seen, err)
+	}
+}
+
 // TestLocalStorageListingExcludesCutoffAndOtherDirectories is the orphan sweep's
 // own safety argument at the store: a listing with a cutoff must not name a blob
 // written after it, must not name anything in a directory this store was not

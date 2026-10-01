@@ -21,7 +21,12 @@ case UUID and nothing else (`contracts.ParseKey`). `Local` keeps bytes at
 is wired by the composition, because `Deps.Storage` is a dependency and not a
 constant. A deployment with `Local` gets no signed URLs: `Grant` answers
 `contracts.ErrNotSignable`, which the route renders as 501, and that is the
-honest answer for a disk store rather than a bug.
+honest answer for a disk store rather than a bug. The same store does answer
+`Prover`, though: a directory holds one file under one name or none, so an
+installation on disk gets a `verified_at` stamp on its erasure certificates
+rather than one left open forever — and it counts both names `Delete` writes to,
+so bytes still lying in the pre-scope flat directory keep a copy from being
+certified away.
 
 Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery,
 Retention, Tenants, RetainEvery}`; `config.example.yaml`'s `files` section
