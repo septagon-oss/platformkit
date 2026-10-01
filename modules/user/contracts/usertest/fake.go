@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -32,7 +33,10 @@ type Fake struct {
 	// may hand out an administering role at all. It defaults to yes, so the
 	// suite's existing cases keep meaning what they meant before the door
 	// existed; AllowGranting(false) is how a case closes it.
-	mayGrant  bool
+	mayGrant bool
+	// languages is what ServeLanguages declared this tenant served in; empty means
+	// nothing is on offer, which leaves only clearing a choice writable.
+	languages tenancy.Languages
 	users     map[uuid.UUID]contracts.User
 	published []string
 }
@@ -227,6 +231,42 @@ func (f *Fake) ByEmail(_ context.Context, _ db.Tx[db.Tenant], email string) (*co
 		}
 	}
 	return nil, crud.ErrNotFound
+}
+
+// ServeLanguages says which languages this fake's tenants are served in, which is
+// the set SetPreferredLocale accepts a choice from. The fake asks no tenant
+// module: the composition that cares gives it an answer, and one that does not is
+// left with the empty set, where only taking a choice back is a write.
+func (f *Fake) ServeLanguages(l tenancy.Languages) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.languages = l
+}
+
+// SetPreferredLocale mirrors internal.Service.SetPreferredLocale: the person is
+// the principal of ctx and never an argument, a tag outside the tenant's set is
+// refused, and the choice already held is not a change.
+func (f *Fake) SetPreferredLocale(ctx context.Context, _ db.Tx[db.Tenant], tag string) (*contracts.User, error) {
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn || principal.UserID == uuid.Nil {
+		return nil, contracts.ErrNoSignIn
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if tag != "" && !slices.Contains(f.languages.Preferred(), tag) {
+		return nil, fmt.Errorf("%w: %s is not a language this tenant is served in", crud.ErrInvalid, tag)
+	}
+	u, err := f.get(principal.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if u.PreferredLocale == tag {
+		return u, nil
+	}
+	u.PreferredLocale, u.UpdatedAt = tag, db.Now()
+	f.users[principal.UserID] = *u
+	f.published = append(f.published, contracts.EventLanguageSet)
+	return u, nil
 }
 
 func (f *Fake) SetHandle(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, handle string) (*contracts.User, error) {

@@ -82,6 +82,7 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 	users, userModule := user.Module(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
+		LocalePolicy:   &usercontracts.LocalePolicyFunc{Ask: speaksEnglish},
 	})
 	var registrar contracts.RegistrationUsers
 	if registration {

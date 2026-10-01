@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -113,6 +114,29 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
 			return svc.Deactivate(ctx, tx, id)
 		}, rest.CommandOptions{})
+
+	// The person's own language, on the collection and not on a row: the caller is
+	// the subject, so an {id} in the path would be asking somebody to name
+	// themselves, and a door that takes an id is a door that can be pointed at a
+	// colleague. It is guarded by "signed in" rather than by a permission because
+	// there is no tenant role that should have to be granted for a person to read
+	// their own page in their own language — the same reason a basket command is
+	// httpx.SignedIn(). See internal.Service.SetPreferredLocale for what the
+	// command itself rechecks inside the authoritative transaction.
+	rest.Command(surfaces, spec, "language",
+		"Choose which language this person is answered in",
+		"Writes the signed-in person's own language, which beats browser negotiation on every page they are shown and survives signing out and back in. An empty locale takes the choice back and leaves it to the browser and the tenant's default. A tag this tenant is not served in is refused: the set is the tenant's declaration and a choice outside it would be a preference that silently means nothing.",
+		[]string{contracts.EventLanguageSet},
+		func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in languageBody) (*contracts.User, error) {
+			u, err := svc.SetPreferredLocale(ctx, tx, in.Locale)
+			if errors.Is(err, contracts.ErrNoSignIn) {
+				return nil, problem.New(http.StatusUnauthorized, "sign in to choose a language")
+			}
+			return u, err
+		}, rest.CommandOptions{
+			Auth:       httpx.SignedIn(),
+			Collection: true,
+		})
 }
 
 // passwordBody and rolesBody are the arguments of the two commands that take
@@ -124,6 +148,13 @@ type passwordBody struct {
 
 type handleBody struct {
 	Handle string `json:"handle" minLength:"3" maxLength:"32" doc:"Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform" example:"ada"`
+}
+
+// languageBody is the account language command's argument. It is one field and it
+// is not a pointer: "" is the caller saying "stop asking me", which a nil and an
+// empty string would have to be distinguished for.
+type languageBody struct {
+	Locale string `json:"locale" maxLength:"35" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
 }
 
 type rolesBody struct {

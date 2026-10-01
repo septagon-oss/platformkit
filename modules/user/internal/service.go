@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -25,6 +26,10 @@ import (
 // job and an event handler at once; the one field is the question this module
 // cannot answer for itself.
 type Service struct {
+	// locales answers which languages the tenant of the transaction is served in.
+	// That set is the tenant module's fact and this module reads no table it does
+	// not own, so composition supplies the answer. See contracts.LocalePolicy.
+	locales contracts.LocalePolicy
 	// administering answers which of this tenant's roles can change a role
 	// again. That answer is the auth module's table and this module must not
 	// read it, so the application supplies it. See contracts.Administration
@@ -37,13 +42,66 @@ type Service struct {
 }
 
 // NewService returns the lifecycle commands. module.go constructs it, and
-// module.go is where a composition with no Administration or no Granting is
-// refused.
-func NewService(administering contracts.Administration, granting contracts.Granting) *Service {
-	return &Service{administering: administering, granting: granting}
+// module.go is where a composition with no Administration, no Granting or no
+// LocalePolicy is refused.
+func NewService(administering contracts.Administration, granting contracts.Granting, locales contracts.LocalePolicy) *Service {
+	return &Service{administering: administering, granting: granting, locales: locales}
 }
 
 var _ contracts.Service = (*Service)(nil)
+
+// SetPreferredLocale is one person saying which language their pages are written
+// in; an empty tag takes that back and leaves the answer to the browser and the
+// tenant's default.
+//
+// Three things make it a command rather than a field on a PATCH. It publishes
+// user.language_set, so "when did they ask for Portuguese, and what did they ask
+// for before" is answerable from the trail. Its argument is checked against the
+// set the tenant is served in at the moment the write lands — a form's select box
+// is a picture of that set as the page was drawn, and an operator can narrow it
+// while the page sits open, so the alternative is storing a language nobody serves
+// and letting the person wonder. And nothing in its arguments names a person: the
+// row is the principal's own, which is the difference between a preference and a
+// way to edit a colleague. That is enforced by construction rather than by a
+// comparison — the command reads who is asking from the transaction, so there is
+// no id here to lie about, and the tenant scope comes from the same transaction
+// row-level security already enforces.
+//
+// The tenant's row is locked before the person's, the order every write that
+// touches both takes: SetLocale changes the set this tag has to be found in, and
+// two writers who take the two rows in the opposite order deadlock rather than
+// decide. Holding it is also what makes the read below and the write below one
+// decision — no other transaction can move the row between them.
+func (s *Service) SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*contracts.User, error) {
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn || principal.UserID == uuid.Nil {
+		return nil, contracts.ErrNoSignIn
+	}
+	languages, err := s.locales.CurrentLanguages(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if tag != "" && !slices.Contains(languages.Preferred(), tag) {
+		return nil, fmt.Errorf("%w: %s is not a language this tenant is served in", crud.ErrInvalid, tag)
+	}
+	u, err := crud.GetForUpdate[*contracts.User](tx, principal.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if u.PreferredLocale == tag {
+		// The choice they already hold is not a change: no write, no event, and no
+		// revision anybody has to read again.
+		return u, nil
+	}
+	was := u.PreferredLocale
+	u.PreferredLocale = tag
+	if err := crud.Update(ctx, tx, u, "preferred_locale", "updated_at"); err != nil {
+		return nil, err
+	}
+	return u, events.Publish(ctx, tx, contracts.EventLanguageSet, contracts.LanguageSet{
+		UserID: u.ID, Was: was, Now: tag, At: db.Now(),
+	})
+}
 
 // Invite creates a user with no password and publishes the invitation. Auth's
 // subscriber sends the link through the delivery capability the app supplies;

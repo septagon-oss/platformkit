@@ -52,6 +52,20 @@ func NewFake() *Fake {
 
 var _ contracts.Service = (*Fake)(nil)
 
+func (f *Fake) CurrentLanguages(ctx context.Context, _ db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	chosen, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return tenancy.Languages{}, crud.ErrNotFound
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	current, found := f.tenants[chosen.ID]
+	if !found {
+		return tenancy.Languages{}, crud.ErrNotFound
+	}
+	return tenancy.Languages{Default: current.DefaultLocale, Others: slices.Clone(current.Locales)}, nil
+}
+
 // Published is the names of the events the fake would have emitted, in order.
 func (f *Fake) Published() []string {
 	f.mu.Lock()

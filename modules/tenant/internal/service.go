@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -39,6 +40,23 @@ func NewService(hooks []contracts.Hook, langs []string) *Service {
 }
 
 var _ contracts.Service = (*Service)(nil)
+
+// CurrentLanguages serializes a personal preference choice with changes to
+// the tenant's offered set. RLS and the explicit id both restrict the read.
+func (s *Service) CurrentLanguages(_ context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	id := db.TenantOf(tx).ID
+	var tenant contracts.Tenant
+	if err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", id).Take(&tenant).Error; err != nil {
+		return tenancy.Languages{}, crud.Classify(err)
+	}
+	var others []string
+	if err := tx.DB().Table("tenant_locales").Where("tenant_id = ? AND locale <> ?", id, tenant.DefaultLocale).
+		Order("locale").Pluck("locale", &others).Error; err != nil {
+		return tenancy.Languages{}, crud.Classify(err)
+	}
+	return tenancy.Languages{Default: tenant.DefaultLocale, Others: others}, nil
+}
 
 // Create writes the tenant, its first host and whatever the hooks add, all in
 // the caller's transaction, so an installation is either whole or absent.
