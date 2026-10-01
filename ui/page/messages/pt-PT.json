@@ -9,6 +9,11 @@
     "translation": "Não pode fazer isto.",
     "plural": { "": "Não pode fazer isto." }
   },
+  "fault.AUTH_DENIED.permission": {
+    "references": ["ui/page/fault.go"],
+    "translation": "Não pode fazer isto. Precisa da permissão %s para isso. Quem gere as funções aqui pode concedê-la: peça ao seu administrador.",
+    "plural": { "": "Não pode fazer isto. Precisa da permissão %s para isso. Quem gere as funções aqui pode concedê-la: peça ao seu administrador." }
+  },
   "fault.AUTH_NOT_OPERATOR": {
     "references": ["kit/httpx/authorize.go", "ui/page/fault.go"],
     "translation": "Esta operação pertence à instalação, não ao seu tenant.",

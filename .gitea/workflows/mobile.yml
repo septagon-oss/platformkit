@@ -1,0 +1,192 @@
+# One device journey, run by the repository that owns the contract the journey
+# reads. `make check` proves the catalog address answers and that the published
+# document describes it; this job proves a signed-in device can use what it read,
+# which nothing else here can.
+#
+# Why this runner and not a hosted farm: the label's host was measured to carry
+# /dev/kvm world-readable, an x86_64 system image and an AVD, while GitHub's
+# ubuntu-24.04 image lists command-line tools and platform-tools and no emulator
+# package and no system image at all. A hosted farm needs an account, a secret and a
+# queue outside this loop, to prove one flow. Both facts are recorded in the task's
+# specify note with the command that found each.
+#
+# Nothing here continues on error. A journey that quietly skipped would leave
+# mobile_flow_pass_rate reading like a number nobody earned, which is the failure the
+# Makefile names for a suite that skips the transport it ships.
+name: mobile
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  # One journey per runner: adb reverse and the emulator are host-level, so a second
+  # flow on the same machine would drive the first one's device.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  journey:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    timeout-minutes: 40
+    env:
+      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
+      # The service name, not localhost, and for the reason ci.yml already uses it
+      # there: scripts/mobile_e2e.sh puts this URL in the configuration file of the
+      # binary it starts, and that process reaches the database over this job's
+      # Docker network, where the container answers at `postgres`. The owner URL is
+      # already the service name — the divergence was in this line alone, and a
+      # journey whose application cannot connect is a red job nobody would be able
+      # to read as anything else.
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      PLATFORMKIT_MOBILE_PORT: '8098'
+      # Which shell build the kernel tests against, and how often that pin moves, is
+      # the mobile owner's: both values are set on the repository, and the harness
+      # refuses to run when either is missing rather than downloading something it
+      # cannot name. The digest is checked before anything is installed.
+      PK_MOBILE_APK: ${{ vars.PK_MOBILE_APK }}
+      PK_MOBILE_APK_SHA256: ${{ vars.PK_MOBILE_APK_SHA256 }}
+      PK_MOBILE_AVD: ${{ vars.PK_MOBILE_AVD }}
+      # Where the harness leaves the report so this job can print it: the journey's own
+      # work directory is removed whichever step failed, and the report outlives it.
+      PK_MOBILE_REPORT: maestro.xml
+    services:
+      postgres:
+        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
+        env:
+          POSTGRES_PASSWORD: platformkit
+          POSTGRES_DB: platformkit
+        options: >-
+          --health-cmd "pg_isready -U postgres -d platformkit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Name what this host owes a device journey
+        # First, and it is the step that decides whether the rest can mean anything.
+        # An emulator, adb and Maestro come with the runner image or with the runner
+        # label; saying which one is missing is worth more than a red test two minutes
+        # later, and more than a green job that ran nothing.
+        run: |
+          for dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk"; do
+            [ -n "$dir" ] || continue
+            for part in platform-tools emulator; do
+              [ -x "$dir/$part" ] && PATH="$dir/$part:$PATH"
+            done
+          done
+          # The same prefixes scripts/mobile_e2e.sh searches, and for the same
+          # reason: Maestro is a launch script plus a lib directory, so a host that
+          # has it keeps it under a tools prefix of its own with nothing exported on
+          # PATH. A probe narrower than the harness's own search would refuse this
+          # job for a tool the journey would have found.
+          for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_HOME:-$HOME/.local/share}/platformkit-tools/maestro/bin"; do
+            [ -n "$dir" ] || continue
+            [ -x "$dir/maestro" ] && PATH="$dir:$PATH"
+          done
+          export PATH
+          missing=()
+          for tool in adb emulator maestro psql python3; do
+            command -v "$tool" >/dev/null || missing+=("$tool")
+          done
+          [ -r /dev/kvm ] || missing+=("/dev/kvm (readable)")
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "This runner cannot run the device journey; missing: ${missing[*]}" >&2
+            echo "Label: pkit-ci-linux-amd64. Either the image gains them or the flow" >&2
+            echo "moves to a runner that has them; it does not get skipped." >&2
+            exit 1
+          fi
+          # The path, not just the name: "found" is a claim about a search scope,
+          # and the next reader needs to see which scope this one had.
+          for tool in adb emulator maestro; do
+            echo "$tool: $(command -v "$tool")"
+          done
+          adb version
+          emulator -version | head -3
+
+      - name: Install the database client and prepare the role
+        env:
+          PGPASSWORD: platformkit
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends postgresql-client
+          psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      - name: Start NATS with JetStream on this job's network
+        id: nats
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+            nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
+            --jetstream --http_port 8222)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://nats:8222/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      - name: Boot the emulator headless
+        id: emulator
+        run: |
+          if [ -z "$PK_MOBILE_AVD" ]; then
+            echo "PK_MOBILE_AVD names no Android Virtual Device on this image." >&2
+            exit 1
+          fi
+          emulator -avd "$PK_MOBILE_AVD" -no-window -no-audio -no-boot-anim -no-snapshot \
+            -gpu swiftshader_indirect >emulator.log 2>&1 &
+          echo "pid=$!" >> "$GITHUB_OUTPUT"
+          adb wait-for-device
+          for i in $(seq 1 120); do
+            if [ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+              adb devices
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "the emulator did not finish booting:" >&2
+          tail -40 emulator.log >&2
+          exit 1
+
+      - name: make mobile-e2e
+        run: make mobile-e2e
+
+      - name: The report, in the job's own log
+        if: always()
+        run: |
+          if [ -s "$PK_MOBILE_REPORT" ]; then
+            cat "$PK_MOBILE_REPORT"
+          else
+            echo "no Maestro report at $PK_MOBILE_REPORT: the journey did not reach its report." >&2
+            exit 1
+          fi
+
+      - name: Remove this job's emulator and NATS container
+        if: always()
+        env:
+          EMULATOR_PID: ${{ steps.emulator.outputs.pid }}
+          NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+        run: |
+          status=0
+          if [ -n "$EMULATOR_PID" ]; then kill "$EMULATOR_PID" 2>/dev/null || true; fi
+          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          pkill -f 'emulator -avd' 2>/dev/null || true
+          exit "$status"
