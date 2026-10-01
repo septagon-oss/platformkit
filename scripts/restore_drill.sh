@@ -24,7 +24,11 @@
 #   rows      every public table is read in both databases as one value — its row
 #             count and an md5 over the rows' text in a fixed order — and the two
 #             values compared. This is the half a byte check cannot see: the rows
-#             that name the files, the holds, the erasure proofs.
+#             that name the files, the holds, the erasure proofs. The first counted
+#             check of this half is the set of tables itself, named in both
+#             directions: reading table by table without it turned "the restore does
+#             not have that table" into a SELECT that errors, which the exit codes
+#             call a drill that could not run (2) rather than a restore that failed (1).
 #   dump      the restored database is dumped twice and the dumps compared byte for
 #             byte, so the artefact is a complete rendering of the restore rather
 #             than of whatever the server had loaded when the first one ran.
@@ -154,10 +158,38 @@ digest() { # database name
 	psql "$url" -qtAX -v ON_ERROR_STOP=1 -c \
 		"SELECT count(*), coalesce(md5(string_agg(t::text, E'\n' ORDER BY t::text)),'') FROM \"public\".$1 t"
 }
-tables="$(psql "$url" -qtAX -c "
-	SELECT quote_ident(tablename) FROM pg_tables
-	 WHERE schemaname = 'public' AND tablename NOT LIKE 'pg\_%' ORDER BY 1")" ||
-	die "cannot list the tables of $source_db"
+list_tables() { # connection
+	psql "$1" -qtAX -c "
+		SELECT quote_ident(tablename) FROM pg_tables
+		 WHERE schemaname = 'public' AND tablename NOT LIKE 'pg\_%'" | LC_ALL=C sort
+}
+tables="$(list_tables "$url")" || die "cannot list the tables of $source_db"
+tables_restored="$(list_tables "$scratch_url")" || die "cannot list the tables of $scratch"
+
+# The two sets compared before any table is read, because a restore that lost a whole
+# table has to arrive as a failed restore and not as a drill that could not run. Read
+# table by table alone, a missing one is a SELECT that errors and `die` calls it exit 2
+# — the code the header reserves for "no tool, no connection, no backup" — which is the
+# one failure an operator most needs told apart from a bad cluster, and a pipeline that
+# treats exit 2 as "retry the infrastructure" retries forever on a backup that is
+# missing a table. The set is therefore its own counted check, and only the tables both
+# sides have are then read row by row: what is missing has been said, and a digest of a
+# table that is not there answers nothing.
+checked=$((checked + 1))
+if [ "$tables" = "$tables_restored" ]; then
+	matched=$((matched + 1))
+else
+	# The two directions named apart, because the header's whole contract is that a
+	# byte that came back different and a row set that moved are different sentences.
+	# What the drill cannot tell — for the rows or the table set — is whether the table
+	# was lost by the restore or moved in the source after the backup was taken; what it
+	# can say is that the restore is not a copy of this database, which is a failed
+	# drill (exit 1) and not a tool that broke (exit 2, "could not run").
+	lost="$(comm -23 <(printf '%s\n' "$tables") <(printf '%s\n' "$tables_restored") | tr '\n' ' ')"
+	gained="$(comm -13 <(printf '%s\n' "$tables") <(printf '%s\n' "$tables_restored") | tr '\n' ' ')"
+	fail "$scratch holds a different set of tables from $source_db: [${lost:-none}] named by the source and not restored, [${gained:-none}] restored and not named by the source — one backup is one instant, so either list says the restore is not a copy of this database, whether the table was lost coming back or moved in the source after the backup was taken"
+fi
+both="$(comm -12 <(printf '%s\n' "$tables") <(printf '%s\n' "$tables_restored"))"
 while IFS= read -r table; do
 	[ -n "$table" ] || continue
 	checked=$((checked + 1))
@@ -171,7 +203,7 @@ while IFS= read -r table; do
 		fail "$table reads [$from_source] in $source_db and [$from_scratch] after the restore"
 		rows_failed=1
 	fi
-done <<< "$tables"
+done <<< "$both"
 
 # --- dump --------------------------------------------------------------------
 # Both dumps drop the restoring client's own \restrict / \unrestrict lines: pg_dump
