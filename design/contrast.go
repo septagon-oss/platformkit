@@ -152,12 +152,19 @@ var bodyContrast = []contrastPair{
 	// clAlertVariant["neutral"] and clMediaRefused draw the same line on surface-muted.
 	// The graphic's floor, not the text's: 3:1, the ratio SC 1.4.11 asks of it and
 	// the same one this list already holds the focus ring to. edgeRolePairs spells
-	// these three grounds and the fourth — surface-hover, the mix a hovered control
-	// moves its own fill onto, which is no token and so belongs only to the role
-	// half — in the layer a browser paints.
+	// these grounds, and one more — surface-hover, the mix a hovered control moves
+	// its own fill onto, which is no token and so belongs only to the role half — in
+	// the layer a browser paints.
 	{"border-default", "surface-primary", MinContrastGraphic},
 	{"border-default", "surface-canvas", MinContrastGraphic},
 	{"border-default", "surface-muted", MinContrastGraphic},
+	// The same line on the fourth literal ground a shipped rule paints it on: the sidebar
+	// panel, which clSidebarSectionHeader draws its section rule across (the role
+	// layer spells this pair border-primary on surface-inverse, and
+	// PanelEdgeRolePairs holds it at the same floor — the two halves name it because a
+	// client files the token and a stylesheet paints the role, and both have to refuse
+	// the same file).
+	{"border-default", "sidebar-bg", MinContrastGraphic},
 	// A boundary is gated because a rule paints it, not because its token sounds
 	// important: border-strong is drawn by exactly one shipped rule, the 4 px
 	// quotation bar modules/web/internal/style.go gives every [data-prose]
