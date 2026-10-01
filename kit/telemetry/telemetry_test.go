@@ -2,9 +2,11 @@ package telemetry_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
@@ -175,6 +177,50 @@ func TestScopeNamesThisRepository(t *testing.T) {
 		if len(k) < 6 || k[:5] != "pkit." {
 			t.Errorf("attribute key %q is not namespaced under pkit.", k)
 		}
+	}
+}
+
+// The bag a context leaves WithRequestID with is the one this kernel built. That
+// is not a detail of the function's style: Baggage is a *request* header, the
+// propagator in Propagators reads it, so the context a router middleware hands
+// over already holds the bag its caller sent. Whatever RequestID finds there is
+// what every span below the router stamps and what kit/events injects onto the
+// outbox row, so a member left standing there is read back as this request's
+// cause — and it is a value whoever wrote the header chose, not an answer this
+// process gave.
+func TestTheBagWithRequestIDWritesIsNeverTheOneThatArrived(t *testing.T) {
+	// The bag as Extract leaves it on a request: the kernel's own key, filled in
+	// by the caller, beside a tenant-shaped one.
+	carried, err := baggage.Parse("pkit.request.id=the-id-the-caller-invented,pkit.tenant=globex")
+	if err != nil {
+		t.Fatalf("the caller's bag does not parse: %v", err)
+	}
+	ctx := baggage.ContextWithBaggage(context.Background(), carried)
+
+	// An id W3C will not carry — "," is outside the baggage-octet set, and
+	// kit/httpx answers any printable ASCII a client sends — is not carried.
+	for _, id := range []string{"", "carried,id,here"} {
+		got := telemetry.WithRequestID(ctx, id)
+		if v := telemetry.RequestID(got); v != "" {
+			t.Errorf("RequestID = %q for the request answered under %q, want nothing carried: a "+
+				"caller's value is standing where this kernel's answer belongs", v, id)
+		}
+		if all := baggage.FromContext(got).String(); strings.Contains(all, "the-id-the-caller-invented") ||
+			strings.Contains(all, "globex") {
+			t.Errorf("WithRequestID(%q) leaves %q on the bag, which carries a member the caller "+
+				"sent: every span below the router would name it, and kit/events would store it", id, all)
+		}
+	}
+
+	// And a carried id replaces the bag rather than joining it, which is the same
+	// rule one line up: a number or a span this kernel writes names this kernel's
+	// request, and a caller's own correlation members do not ride along on it.
+	answered := telemetry.WithRequestID(ctx, "answered-id")
+	if v := telemetry.RequestID(answered); v != "answered-id" {
+		t.Errorf("RequestID = %q, want the id this kernel answered under", v)
+	}
+	if all := baggage.FromContext(answered).String(); all != "pkit.request.id=answered-id" {
+		t.Errorf("the bag below the router is %q, want only the member this kernel minted", all)
 	}
 }
 

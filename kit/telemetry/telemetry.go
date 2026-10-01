@@ -113,22 +113,38 @@ func Propagators() propagation.TextMapPropagator {
 // opened anywhere below — in kit/db, in a job, in a delivery — can name the
 // request that caused it without the id being an argument.
 //
-// An id W3C will not carry (baggage forbids "=" and "," in a value, and
-// kit/httpx accepts any printable ASCII a client sends) is left out rather than
-// escaped: the response header and the request's own span still name it, and a
-// correlation value silently rewritten in transit would name a request nobody
-// asked about.
+// It writes a bag, not a member into whatever bag was already there, and every
+// answer it gives is a bag: the one member this kernel minted, or an empty one.
+// That is the point of the shape rather than its accident. Baggage is a *request*
+// header, and the propagator this package installs propagates it, so by the time
+// a router middleware calls this, ctx already holds the bag the caller sent — and
+// `baggage.New(m)` replaces that bag rather than adding to it. A version of this
+// function that handed back `ctx` unchanged when it had nothing to write left the
+// caller's own pkit.request.id as the only one below the router: every span
+// `RequestID` then stamped named a request nobody was answered for, and
+// kit/events injected the same value into the member migrations/000031 stores on
+// the outbox row and reads back onto the delivery span in another process.
+//
+// An id W3C will not carry is left uncarried rather than escaped — the value set
+// excludes ",", ";" and DQUOTE, and kit/httpx answers any printable ASCII a client
+// sends, so the two sets disagree for exactly those characters and for `\`. The
+// response header and the request's own span still name it; a correlation value
+// silently rewritten in transit would name a request nobody asked about, and a
+// caller's value standing in its place is the same lie with the sign reversed.
+// Nothing on the row is the ordinary case there, which is what
+// migrations/000031's "NULL is the ordinary case" is for.
 func WithRequestID(ctx context.Context, id string) context.Context {
+	empty := baggage.Baggage{}
 	if id == "" {
-		return ctx
+		return baggage.ContextWithBaggage(ctx, empty)
 	}
 	m, err := baggage.NewMember(AttrRequestID, id)
 	if err != nil {
-		return ctx
+		return baggage.ContextWithBaggage(ctx, empty)
 	}
 	b, err := baggage.New(m)
 	if err != nil {
-		return ctx
+		return baggage.ContextWithBaggage(ctx, empty)
 	}
 	return baggage.ContextWithBaggage(ctx, b)
 }
