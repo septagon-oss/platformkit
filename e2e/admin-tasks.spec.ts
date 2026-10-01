@@ -80,6 +80,36 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
+test('review: an empty generated list keeps its message within the visible page', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 900 });
+  const response = await page.goto('/app/content/contents');
+  expect(response?.status()).toBe(200);
+  const message = page.getByText('No contents yet.', { exact: true });
+  await expect(message).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const text = await message.evaluate(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const box = range.getBoundingClientRect();
+    return { left: box.left, right: box.right, viewport: innerWidth };
+  });
+  expect(text.left).toBeGreaterThanOrEqual(0);
+  expect(text.right, 'the empty-state message should not require horizontal table scrolling').toBeLessThanOrEqual(text.viewport);
+});
+
+test('review: the served Notice gallery keeps a readable text measure', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const response = await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.notice/long-copy-en&theme=light');
+  expect(response?.status()).toBe(200);
+  const paragraph = page.locator('[data-component="alert"] p').first();
+  await expect(paragraph).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  // Use the same paragraph-width measure as the brief's design_gate.py.
+  const measure = await paragraph.evaluate(element =>
+    element.getBoundingClientRect().width / (parseFloat(getComputedStyle(element).fontSize) * 0.5));
+  expect(measure, 'the actual Gallery page must pass the 75-character design floor').toBeLessThanOrEqual(75);
+});
+
 test('a refused generated edit retains command-owned values for the retry', async ({ page }) => {
   const created = await page.request.post('/api/v1/task/tasks', {
     data: { title: 'Keep the assigned technician during a refused edit' },

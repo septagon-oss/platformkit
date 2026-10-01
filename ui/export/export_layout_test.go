@@ -109,6 +109,22 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sidebar examples' schemas (six leaves: its type and default). Measured as a
 	// leaf-by-leaf diff of the v1 export before and after: 6,400 leaves become 6,406,
 	// /css and /sha256 change, nothing else moves.
+	// Rich states add 42 English/Portuguese captures and optional EmptyState
+	// Text/Action and Alert.Live properties. Seven Alert, two EmptyState and
+	// Media's empty example change; all 127 old IDs remain. The measured export
+	// diff changes only examples and this digest: CSS, tokens and icons agree.
+	// DataList adds 44 captures. Four Table examples gain native selection
+	// targets/sorting height, and two Pagination examples gain wrapping 44px
+	// controls. Seventeen existing empty/media examples align their text blocks.
+	// Only examples, CSS and the digest change; no old ID is removed.
+	// Detail panels add 50 captures and Modal.Placement. The existing modal
+	// examples gain 44px controls and wrapping chrome; only examples/CSS/digest
+	// change. All prior IDs, tokens and icons remain.
+	// Timeline adds 30 typed captures with standard time codecs. Review fixes add
+	// loading geometry/schema; only examples/CSS/digest change, retaining all IDs and tokens.
+	// Remaining shared families add typed examples, row-header/Hero schema and exact
+	// int64 string codecs. Only examples/CSS/notices/digest change; all prior IDs,
+	// design tokens, themes and icons remain. NOTICE pins the engines; Leaflet CSS uses LF.
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
@@ -143,7 +159,10 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Both deltas above are one side's own before-and-after. The digest is neither side's number: it is
 	// this merged tree's export, printed by the refusal below and copied once the merge was in place.
-	if legacy.SHA256 != "7354088a4a87fafc8a324c2541d0f578337a040c07908204e488effe6a6b0356" {
+	// The shared component families add 811 typed examples with both sides'
+	// styles present, and the reduced-motion floor sits in the base layer. The digest
+	// below is that tree's export, remeasured with `go run ./tools/designexport`.
+	if legacy.SHA256 != "d766adb29c834c848c0348d5ebe66373112946484339e2b8ad29f45a8dd09370" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

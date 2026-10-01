@@ -76,7 +76,7 @@ test('gallery construction coverage is explicit under the supplied-font comparis
       observation = await captureExample(browser, snapshot, example.id, { fonts })
     } catch (error) {
       assert.equal(error.message.split('\n')[0], 'page.evaluate: Error: Capture does not support executable or externally composed example content',
-        'unexpected capture failures are not support refusals')
+        `unexpected capture failure for ${example.id} is not a support refusal`)
       assert.equal(browser.contexts().length, 0, `refused capture closes its context: ${example.id}`)
       captureRefused.push(example.id)
       continue
@@ -101,9 +101,13 @@ test('gallery construction coverage is explicit under the supplied-font comparis
   // text, which is what this loop and the adapter's own gates verify. No built fill,
   // stroke or radius is compared with the browser's computed style here; only
   // browser/media.test.mjs makes that claim today, for Media's two error states.
+  // Remeasured across the complete shared-component catalog. The dismissible
+  // Alert now contains a dormant, uncaptured close-control boundary; its exact
+  // refusal is pinned below rather than flattening that source-owned content.
+  assert.equal(snapshot.examples.length, 811)
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
-    'pk-ui.component.alert/dismissible', 'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
+    'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
     'pk-ui.component.avatar/initials', 'pk-ui.component.avatar/linked', 'pk-ui.component.avatar/sizes',
     'pk-ui.component.avatar/unknown', 'pk-ui.component.button/as-link', 'pk-ui.component.button/danger',
     'pk-ui.component.button/disabled-link', 'pk-ui.component.button/ghost', 'pk-ui.component.button/info',
@@ -111,12 +115,18 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
     'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
     'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
-    'pk-ui.component.media/failed', 'pk-ui.component.media/refused', 'pk-ui.component.select/default',
+    'pk-ui.component.media/failed', 'pk-ui.component.media/refused',
+    'pk-ui.component.notice/offline-en', 'pk-ui.component.notice/offline-pt-PT',
+    'pk-ui.component.notice/passive-en', 'pk-ui.component.notice/passive-pt-PT',
+    'pk-ui.component.notice/refused-en', 'pk-ui.component.notice/refused-pt-PT',
+    'pk-ui.component.notice/success-en', 'pk-ui.component.notice/success-pt-PT',
+    'pk-ui.component.notice/urgent-en', 'pk-ui.component.notice/urgent-pt-PT', 'pk-ui.component.select/default',
     'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 92)
+  assert.equal(refused.length, 766)
   const namedRefusals = {
+    'pk-ui.component.alert/dismissible': 'Native component: composition cannot flatten an uncaptured component boundary',
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
     'pk-ui.component.hero/default': 'Native component: typed, nonopaque source composition required',
