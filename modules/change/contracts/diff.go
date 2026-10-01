@@ -53,18 +53,25 @@ func decodeNumber(data []byte) (any, error) {
 	return v, nil
 }
 
-// Value and Scan store the diff as one jsonb column, the way modules/site spells
-// its navigation: the codec is written once, on the named type. An absent diff is
-// stored as an empty object, which is the patch that changes nothing.
+// Value and Scan store the diff as one text column holding its canonical bytes.
+// The codec is written once, on the named type, the way modules/site spells its
+// navigation; the column type is the one thing that differs, and it is not
+// incidental. jsonb stores a number as a numeric, so it rewrites `1e2` as `100`
+// and the bytes that come back no longer digest to the digest stored next to
+// them — the row would carry two spellings of the change and disagree with the
+// verdict it was made about. text gives back the bytes it was handed. The value
+// is a string rather than a []byte so the driver sends it as text and not as
+// bytea. An absent diff is stored as an empty object, which is the patch that
+// changes nothing.
 func (d Diff) Value() (driver.Value, error) {
 	if d == nil {
-		return []byte("{}"), nil
+		return "{}", nil
 	}
 	canonical, err := d.canonical()
 	if err != nil {
 		return nil, err
 	}
-	return canonical, nil
+	return string(canonical), nil
 }
 
 func (d *Diff) Scan(src any) error {
@@ -78,7 +85,7 @@ func (d *Diff) Scan(src any) error {
 	case string:
 		raw = []byte(v)
 	default:
-		return fmt.Errorf("change: a diff is jsonb and this is %T", src)
+		return fmt.Errorf("change: a diff is canonical JSON text and this is %T", src)
 	}
 	return d.UnmarshalJSON(raw)
 }
