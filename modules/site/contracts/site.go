@@ -138,6 +138,22 @@ type SiteSettings struct {
 	Revision int64 `json:"revision" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
 }
 
+// LockedReader is the one read a caller about to write needs: the settings with
+// the row locked, so the revision it is comparing against cannot move underneath
+// it between the read and the write.
+//
+// It is a separate interface rather than a fourth method on Service because adding
+// a method to an exported interface is a break to anything outside this repository
+// that implements Service, and the exported-API gate refuses that break rather than
+// treating it as a detail. The implementation is the same object either way —
+// site.Module hands out the Service, site.NewLockedReader hands out this — so the
+// split costs a constructor and buys an unchanged contract.
+type LockedReader interface {
+	// SettingsForUpdate is Settings with the tenant's row locked FOR UPDATE. A
+	// tenant with no row yet gets the defaults, whose revision is 0.
+	SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
+}
+
 // WriteGate is the question a deployment asks about a direct write of a tenant's
 // settings: write them now, or not until somebody else has said yes.
 //
@@ -225,11 +241,6 @@ type Service interface {
 	// configured nothing. It never reports "not found": every tenant has a
 	// site, whether or not anybody has saved anything about it.
 	Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
-
-	// SettingsForUpdate is Settings with the tenant's row locked FOR UPDATE, for a
-	// caller about to compare what it read against what it is about to write. A
-	// tenant with no row gets the defaults, whose revision is 0.
-	SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
 
 	// Save writes the settings and publishes site.settings_updated. Saving what
 	// is already stored changes nothing and says nothing, so a screen that

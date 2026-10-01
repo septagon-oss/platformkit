@@ -51,7 +51,8 @@ const siteSettingsFlag = "change.control.site-settings"
 
 // configFlags is kit/flags' Evaluator over what kit/config read out of the flags
 // block: one installation, one process, one boolean per key, no targeting beyond
-// the tenant the request already resolved.
+// the tenant the request already resolved. nil — an installation that named no
+// flag at all — is an empty map to a lookup, which is the answer "off".
 //
 // It is here rather than in kit/flags/providers because it is not a provider worth
 // installing: there is no SDK, no wire format and no service behind it, and a
@@ -111,7 +112,10 @@ func (g settingsGate) Check(ctx context.Context, tx db.Tx[db.Tenant]) error {
 // of the module that owns the row. Nothing here opens site_settings — the site
 // service reads and writes its own table, and this is the adapter that says which
 // of its doors a proposal comes through.
-type siteSubject struct{ sites sitecontracts.Service }
+type siteSubject struct {
+	sites  sitecontracts.Service
+	locked sitecontracts.LockedReader
+}
 
 var _ changecontracts.Subject = siteSubject{}
 
@@ -121,7 +125,7 @@ var _ changecontracts.Subject = siteSubject{}
 // 0 with the defaults, which is a real base revision: the first write to this
 // tenant's settings is as reviewable as the tenth.
 func (s siteSubject) Lock(ctx context.Context, tx db.Tx[db.Tenant]) (json.RawMessage, int64, error) {
-	current, err := s.sites.SettingsForUpdate(ctx, tx)
+	current, err := s.locked.SettingsForUpdate(ctx, tx)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -156,7 +160,7 @@ func (s siteSubject) Save(ctx context.Context, tx db.Tx[db.Tenant], merged json.
 // proposals for. One element, named by its module and entity the way the
 // manifest's Nav entries name their screens; a subject missing from this list does
 // not exist, which is contracts.ErrUnsupportedSubject's whole meaning.
-func changeSubjects(sites sitecontracts.Service) []changecontracts.SubjectBinding {
+func changeSubjects(sites sitecontracts.Service, locked sitecontracts.LockedReader) []changecontracts.SubjectBinding {
 	return []changecontracts.SubjectBinding{
 		{
 			Module: "site", Entity: "settings",
@@ -169,7 +173,7 @@ func changeSubjects(sites sitecontracts.Service) []changecontracts.SubjectBindin
 					return nil, fmt.Errorf("%w: a tenant has one site, and %s names no second one",
 						crud.ErrInvalid, subjectID)
 				}
-				return siteSubject{sites: sites}, nil
+				return siteSubject{sites: sites, locked: locked}, nil
 			},
 		},
 	}
