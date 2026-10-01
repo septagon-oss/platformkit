@@ -14,8 +14,11 @@ and `web.Deps.Theme`. The utility alphabet, the class lists and the roles they
 paint with are declared once and read by everyone, so nothing else changes; the
 hand-written rules are the exception and are named for what they are — `base()`
 and `componentState()` in [ui.go](../ui/ui.go), and a module's own sheet, reach
-for tokens — and `bodyContrast` below measures every colour they paint, so no
-hand-written rule can paint a boundary no gate measures. `Theme.Typography`
+for tokens, and `bodyContrast` measures every colour those sheets paint — and
+one colour is neither a theme nor a sheet: the tenant's brand colour, which the
+site's own page writes over the tokens layer, is asked of `LegibleAccent` before
+it is painted. A font stack and a radius are the two paints no contrast list can
+read, named in [CHANGELOG](../CHANGELOG.md). `Theme.Typography`
 selects the display, body and mono stacks and `Theme.Shape` the button, card and
 modal radii; `Theme.Tokens()` is the ordered projection the stylesheet and the
 exports share.
@@ -64,6 +67,21 @@ tokens, its own font stacks and its radii in the spelling the tags give them
 `Pair.Check` over the 22 tokens, then `Pair.CheckRoles` over the role layer below.
 Start there for a new client; `design.Default()` stays what an installation that
 says nothing about colour gets.
+
+A colour can also arrive as a row. `site_settings.primary_color` is the one colour
+a person types into this application, and `modules/web` pins it on the document as
+an unlayered `--pk-color-accent-default`, which outranks the `@layer tokens` block
+`ui.Compose` emits and so reaches four gated roles and a badge's tint at paint time.
+The write is not the only door that has to hold: a row saved before this gate existed
+would still be painted, so the door that paints asks. `Pair.LegibleAccent` takes that
+colour and the theme it is going to be painted in and returns the colour the pair can
+carry — the one it was given when the finished theme clears both halves of the gate,
+otherwise the nearest colour along its own hue that does, measured by the same
+`Theme.Check` and `Theme.CheckRoles` a client's file passes through. Where no colour
+reads, it answers with an error and the page paints the accent its own stylesheet
+carries. Each mode is asked separately, because a colour that reads as a link on a
+light card does not read on a dark canvas, and the site declares one measured colour
+per mode the page can be in.
 
 ## The layer a browser paints
 
