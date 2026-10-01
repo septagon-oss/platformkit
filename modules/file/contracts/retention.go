@@ -6,21 +6,26 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 )
 
-// MaxHoldReason is the column's width for why a file is being kept.
-const MaxHoldReason = 500
-
-// MaxErasureReason is the same width for why a file is being removed. The two
-// decisions are one sentence apiece and the limit is the same number, but they
-// are checked by different commands against different columns, so they are named
-// apart: a hold's reason is validated by the entity and an erasure's by the
-// service, and a shared constant would let one command's limit move the other's.
-const MaxErasureReason = 500
+// MaxHoldReason and MaxErasureReason are how long each sentence may be, counted
+// in characters — which is what the route's declared maxLength enforces (huma
+// measures a string's characters, not its bytes), what the error a person gets
+// says, and what the person typing the sentence counts. Both columns are text.
+//
+// The two decisions are one sentence apiece and the limit is the same number, but
+// they are checked by different commands — a hold's reason by the entity, an
+// erasure's by the service — so they are named apart, and a shared constant would
+// let one command's limit move the other's.
+const (
+	MaxHoldReason    = 500
+	MaxErasureReason = 500
+)
 
 // The three causes an erasure row names. A closed set and not free text,
 // because the thing a person reads a proof table for is "which of these were the
@@ -74,7 +79,7 @@ func (h *Hold) Validate(_ context.Context) error {
 	switch {
 	case h.Reason == "":
 		return fmt.Errorf("a hold is placed for a reason")
-	case len(h.Reason) > MaxHoldReason:
+	case utf8.RuneCountInString(h.Reason) > MaxHoldReason:
 		return fmt.Errorf("a hold's reason is at most %d characters", MaxHoldReason)
 	case h.FileID == uuid.Nil:
 		return fmt.Errorf("a hold names the file it holds")
