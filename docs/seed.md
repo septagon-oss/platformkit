@@ -16,8 +16,9 @@ The source paths above are the durable evidence in this repository.
 ## Ownership and reuse
 
 Each proposed deliverable has one reuse decision. `kit/seed` imports no module;
-the application will name every resource writer in a Go slice. The table
-describes intended work, including the loader and graph now implemented.
+the application names every resource writer in a Go slice. The loader, graph,
+date resolver, comparator, run service, `seed_keys` and the `kit/db` bridge are
+built; the writers, hook, command and fixtures below are not.
 
 | Deliverable | Reuse decision |
 | --- | --- |
@@ -262,8 +263,14 @@ records:
 
 ## Public Go API and writer port
 
-The intended exported surface is below. `Source`, `Record`, `Command`,
-`Reference` and `Decide` exist; other names remain design targets.
+The surface is below, marked. `Source`, `Record`, `Command`, `Reference`,
+`Decide`, `Clock`, `Deps`, `New`, `Writer`, `Authorizer`, `Key`, `Resource`,
+`Selection`, `Item`, `Plan`, `Service.Plan` and `Service.Apply` exist, with the
+shapes `kit/seed` compiles: `Apply` answers with a `Plan` rather than a `Result`
+and takes no `Permit`, and `Resource` carries `Prunable` and `Commands` but no
+`OperatorWrite` or `RichTextFields`, nor does `Deps` hold `DemoPassword`.
+`GeneratePassword`, `ApplyCreated`, `RunCommand`, `Result`, `Permit` and
+`ReferenceField` are design targets and no Go code names them.
 `New` copies its input slice, rejects nil writers and duplicate
 aliases or `(module,entity)` pairs, and never discovers modules. `Clock.Now`
 is read once per invocation and
@@ -586,7 +593,8 @@ Postgres lock before entering the same engine. The fake does **not** claim to
 prove RLS, a database commit, or file-storage rollback. The executable cases
 below are to be placed under `kit/seed` in the implementation phase and run
 against the fake; the SQL adapter runs the same decision cases plus the
-database cases. No executable fake exists in this specification-only phase.
+database cases. No executable fake exists yet; `TestSeedKeysAreIsolatedByDatabaseRLS`
+in `kit/seed/keys_test.go` is the one case that reaches Postgres today.
 
 | Case name | Fake setup and action | Required result |
 | --- | --- | --- |
