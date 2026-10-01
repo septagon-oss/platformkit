@@ -160,7 +160,7 @@ func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	if rows != 1 {
 		t.Errorf("the rolled-back delete left %d rows, want the file back", rows)
 	}
-	if body, err := internal.NewLocal(dir).Get(t.Context(), kept); err != nil {
+	if body, err := internal.NewLocal(dir).Get(t.Context(), filetest.TenantScope(t, acme.ID), contracts.Key(kept)); err != nil {
 		t.Errorf("the rolled-back delete took the bytes with it: %v", err)
 	} else {
 		body.Close()
@@ -176,7 +176,7 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
 	svc := internal.NewService(store, filetest.Limit, 0)
-	sub := internal.RemoveBlob(store)
+	sub := internal.EraseBlobs(store)
 
 	if sub.Module != "file" || sub.Name != contracts.EventDeleted {
 		t.Fatalf("the subscription is %s to %s", sub.Module, sub.Name)
@@ -221,39 +221,176 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	}
 }
 
+// TestARedeliveryCertifiesOneRemovalOnce is the other half of the promise the
+// case above makes: converging means one proof row and one file.erased for one
+// removal, because a certificate written twice is a record that says the bytes
+// went twice.
+//
+// It also pins the shape of the write. Postgres aborts a transaction at its
+// first failing statement, so a handler that caught the duplicate-key error
+// would still be holding a transaction whose commit fails: the claim is
+// released, the next delivery meets the same duplicate, and the event is retried
+// forever on a removal that is already proved. The write asks the unique index
+// instead of meeting it as an error.
+func TestARedeliveryCertifiesOneRemovalOnce(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	svc := internal.NewService(store, filetest.Limit, 0)
+	sub := internal.EraseBlobs(store)
+
+	var payload []byte
+	var gone uuid.UUID
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "invoice.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "invoice", Body: strings.NewReader("%PDF-1.4"),
+		})
+		if err != nil {
+			return err
+		}
+		removed, err := svc.Delete(ctx, tx, f.ID)
+		if err != nil {
+			return err
+		}
+		gone = removed.ID
+		payload, err = json.Marshal(contracts.Deleted{
+			FileID: removed.ID, StorageKey: removed.StorageKey,
+			SHA256: removed.SHA256, Size: removed.Size, Cause: contracts.EraseCaller,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("upload and delete: %v", err)
+	}
+
+	// Three deliveries of one removal: the first writes the certificate, the
+	// two after it converge on it. None of them may fail — a delivery that
+	// fails forever is a queue that fills with work it has already done.
+	for pass := range 3 {
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return sub.Handler(ctx, tx, events.Event{
+				Name: contracts.EventDeleted, TenantID: acme.ID, Payload: payload,
+			})
+		})
+		if err != nil {
+			t.Fatalf("delivery %d: %v", pass, err)
+		}
+	}
+
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var proofs int
+		if err := tx.DB().Raw(`SELECT count(*) FROM file_erasures WHERE file_id = ?`, gone).
+			Scan(&proofs).Error; err != nil {
+			return err
+		}
+		if proofs != 1 {
+			t.Errorf("one removal wrote %d proof rows, want one", proofs)
+		}
+		var certified int
+		if err := tx.DB().Raw(`SELECT count(*) FROM `+outbox+` WHERE name = ?`, contracts.EventErased).
+			Scan(&certified).Error; err != nil {
+			return err
+		}
+		if certified != 1 {
+			t.Errorf("one removal published %d %s events, want one", certified, contracts.EventErased)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read the proof: %v", err)
+	}
+}
+
+// TestARetentionClassIsAToken is the shape files_kind CHECKs, refused by the
+// entity before the database sees the row.
+//
+// A class is an opaque token this module matches against the deployment's table
+// and never interprets, so a token it cannot spell is the only thing it can
+// refuse — and refusing it is a 422 that names the token rather than a 500 from
+// a constraint. The bytes the upload had already written are taken back, so a
+// refusal leaves nothing behind either way.
+func TestARetentionClassIsAToken(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "q4.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "Annual Reports", Body: strings.NewReader("%PDF-1.4"),
+		})
+		return err
+	})
+	if !errors.Is(err, crud.ErrInvalid) {
+		t.Fatalf("a class that is not a token = %v, want crud.ErrInvalid", err)
+	}
+	if got := keysUnder(t, dir); len(got) != 0 {
+		t.Errorf("the refused upload left %v on disk", got)
+	}
+
+	// The class that is a token arrives, and the row carries it: this module
+	// stores the token, it never reads a meaning into it.
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "q4.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "annual_report", Body: strings.NewReader("%PDF-1.4"),
+		})
+		if err != nil {
+			return err
+		}
+		if f.Kind != "annual_report" {
+			t.Errorf("the row carries kind %q, want the token the upload said", f.Kind)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("a class that is a token: %v", err)
+	}
+}
+
 // TestAStorageKeyIsAUUIDAndNothingElse is the path-traversal argument, checked
 // rather than asserted: the disk store refuses a key it did not mint, so a
 // caller who found a way to choose one still cannot leave the directory.
 func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
+	scope := filetest.TenantScope(t, acme.ID)
 	for _, key := range []string{
 		"../escape", "..", "/etc/passwd", "", "not-a-uuid",
 		"../../" + uuid.NewString(), strings.ToUpper(uuid.NewString()),
 	} {
-		if err := store.Put(t.Context(), key, strings.NewReader("x"), -1); err == nil {
-			t.Errorf("Put(%q) was allowed", key)
+		k := contracts.Key(key)
+		if err := store.Put(t.Context(), scope, k, strings.NewReader("x"), -1, contracts.Meta{}); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Put(%q) = %v, want ErrInvalidKey", key, err)
 		}
-		if _, err := store.Get(t.Context(), key); err == nil {
-			t.Errorf("Get(%q) was allowed", key)
+		if _, err := store.Get(t.Context(), scope, k); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Get(%q) = %v, want ErrInvalidKey", key, err)
 		}
-		if err := store.Delete(t.Context(), key); err == nil {
-			t.Errorf("Delete(%q) was allowed", key)
+		if err := store.Delete(t.Context(), scope, k); !errors.Is(err, contracts.ErrInvalidKey) {
+			t.Errorf("Delete(%q) = %v, want ErrInvalidKey", key, err)
 		}
+	}
+	// The zero scope is refused the same way the port refuses a request that
+	// resolved no tenant: not "nothing found", which a caller could mistake for
+	// an empty store, but a refusal naming the missing scope.
+	ghost := contracts.Key(uuid.NewString())
+	if err := store.Put(t.Context(), contracts.Scope{}, ghost, strings.NewReader("x"), -1, contracts.Meta{}); !errors.Is(err, db.ErrNoTenant) {
+		t.Errorf("Put with no tenant = %v, want db.ErrNoTenant", err)
 	}
 	if got := keysUnder(t, dir); len(got) != 0 {
 		t.Errorf("something reached the disk: %v", got)
 	}
 
 	// And the one it does mint works, once.
-	key := uuid.NewString()
-	if err := store.Put(t.Context(), key, strings.NewReader("x"), -1); err != nil {
+	key := contracts.Key(uuid.NewString())
+	if err := store.Put(t.Context(), scope, key, strings.NewReader("x"), -1, contracts.Meta{}); err != nil {
 		t.Fatalf("Put: %v", err)
 	}
-	if err := store.Put(t.Context(), key, strings.NewReader("y"), -1); err == nil {
+	if err := store.Put(t.Context(), scope, key, strings.NewReader("y"), -1, contracts.Meta{}); err == nil {
 		t.Error("a key that already exists was overwritten; a key is minted per upload")
 	}
-	body, err := store.Get(t.Context(), key)
+	body, err := store.Get(t.Context(), scope, key)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -261,11 +398,50 @@ func TestAStorageKeyIsAUUIDAndNothingElse(t *testing.T) {
 	if out, _ := io.ReadAll(body); string(out) != "x" {
 		t.Errorf("the bytes read back as %q", out)
 	}
-	if _, err := store.Get(t.Context(), uuid.NewString()); !errors.Is(err, contracts.ErrNoBlob) {
+	if _, err := store.Get(t.Context(), scope, contracts.Key(uuid.NewString())); !errors.Is(err, contracts.ErrNoBlob) {
 		t.Errorf("a key with nothing at it = %v, want ErrNoBlob", err)
 	}
-	if err := store.Delete(t.Context(), uuid.NewString()); err != nil {
+	if err := store.Delete(t.Context(), scope, contracts.Key(uuid.NewString())); err != nil {
 		t.Errorf("deleting nothing = %v, want it to be no error at all", err)
+	}
+}
+
+// TestAKeyOneTenantWroteOpensNothingForAnother is the tenant-isolation case on
+// the store that ships to a laptop. Two tenants, one directory, one key: the
+// second asks for the first's key and is told there is no such thing, and the
+// first's bytes are what the first reads back.
+func TestAKeyOneTenantWroteOpensNothingForAnother(t *testing.T) {
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	acmeScope := filetest.TenantScope(t, acme.ID)
+	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
+	globexScope := filetest.TenantScope(t, globex.ID)
+	key := contracts.Key(uuid.NewString())
+
+	if err := store.Put(t.Context(), acmeScope, key, strings.NewReader("acme's own"), -1, contracts.Meta{}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+	if _, err := store.Get(t.Context(), globexScope, key); !errors.Is(err, contracts.ErrNoBlob) {
+		t.Fatalf("another tenant read these bytes: %v", err)
+	}
+	if err := store.Delete(t.Context(), globexScope, key); err != nil {
+		t.Fatalf("another tenant's delete: %v", err)
+	}
+	body, err := store.Get(t.Context(), acmeScope, key)
+	if err != nil {
+		t.Fatalf("the owner's own read: %v", err)
+	}
+	defer body.Close()
+	if out, _ := io.ReadAll(body); string(out) != "acme's own" {
+		t.Errorf("the bytes are %q", out)
+	}
+	// The same key under the second tenant's prefix is a different object, and
+	// writing it must not disturb the first.
+	if err := store.Put(t.Context(), globexScope, key, strings.NewReader("globex's own"), -1, contracts.Meta{}); err != nil {
+		t.Fatalf("the second tenant could not write the same key: %v", err)
+	}
+	if got := keysUnder(t, dir); len(got) != 2 {
+		t.Errorf("two tenants wrote one key and the store holds %v; want two objects", keysUnder(t, dir))
 	}
 }
 
@@ -313,7 +489,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := store.Delete(ctx, f.StorageKey); err != nil {
+		if err := store.Delete(ctx, contracts.ScopeOfTx(tx), contracts.Key(f.StorageKey)); err != nil {
 			return err
 		}
 		_, _, err = svc.Open(ctx, tx, f.ID, false)
@@ -503,11 +679,13 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 
 	// Age both past the hour and run it again.
 	old := time.Now().Add(-2 * time.Hour)
-	for _, key := range keysUnder(t, dir) {
-		at := filepath.Join(dir, key[:2], key)
-		if err := os.Chtimes(at, old, old); err != nil {
-			t.Fatalf("age %s: %v", at, err)
+	if err := filepath.WalkDir(dir, func(at string, d os.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
 		}
+		return os.Chtimes(at, old, old)
+	}); err != nil {
+		t.Fatalf("age what the store holds: %v", err)
 	}
 	if err := jobs[0].Run(t.Context(), conn); err != nil {
 		t.Fatalf("the sweep: %v", err)
@@ -515,5 +693,121 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 	left := keysUnder(t, dir)
 	if len(left) != 1 || left[0] != kept {
 		t.Errorf("the sweep left %v, want only the blob a row names", left)
+	}
+}
+
+// TestAHoldStopsEveryDoorThatRemovesAFile is the promise a hold is bought for,
+// read against the rows rather than the fake.
+//
+// A hold is not a flag on the file, and this is the case that shows why: three
+// different commands reach for the same removal — a person's delete, a subject
+// erasure, the sweep — and each has to ask the same question and get the same
+// answer. The one answer this module gives for "the clock is still stopped" is
+// ErrHeld, and a refusal writes nothing, so everything the caller could act on
+// is still there afterwards.
+func TestAHoldStopsEveryDoorThatRemovesAFile(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+	subject := uuid.New()
+	ctx := tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), subject)
+
+	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "evidence.txt", ContentType: "text/plain", Declared: -1,
+			Body: strings.NewReader("keep"),
+		})
+		if err != nil {
+			return err
+		}
+		// A hold that has already expired holds nothing, and says so rather
+		// than writing a row that looks like a promise and keeps no clock.
+		past := db.Now().Add(-time.Hour)
+		if _, err := svc.Retain(ctx, tx, f.ID, &past, "stale"); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("a hold expiring in the past = %v, want crud.ErrInvalid", err)
+		}
+		hold, err := svc.Retain(ctx, tx, f.ID, nil, "court order 2026-0412")
+		if err != nil {
+			return err
+		}
+		if hold.Until != nil || hold.Reason != "court order 2026-0412" {
+			t.Errorf("the hold is %v %q, want one that stops when a person says so, with its reason", hold.Until, hold.Reason)
+		}
+		// A second hold replaces the first: "until when" is one question, and
+		// two rows would be two answers a query could pick between.
+		later := db.Now().Add(time.Hour)
+		if _, err := svc.Retain(ctx, tx, f.ID, &later, "appeal"); err != nil {
+			return err
+		}
+		var holds int
+		if err := tx.DB().Raw(`SELECT count(*) FROM file_holds WHERE file_id = ?`, f.ID).
+			Scan(&holds).Error; err != nil {
+			return err
+		}
+		if holds != 1 {
+			t.Errorf("placing a hold twice wrote %d rows, want one replaced", holds)
+		}
+		if _, err := svc.Delete(ctx, tx, f.ID); !errors.Is(err, contracts.ErrHeld) {
+			t.Errorf("a delete under a hold = %v, want ErrHeld", err)
+		}
+		if _, err := svc.EraseSubject(ctx, tx, subject, "data protection request"); !errors.Is(err, contracts.ErrHeld) {
+			t.Errorf("a subject erasure over a held file = %v, want ErrHeld naming it", err)
+		}
+		// A refusal wrote nothing at all: the row, its hold and the trail are
+		// all still here, which is what makes the caller's next step possible.
+		var rows int
+		if err := tx.DB().Raw(`SELECT count(*) FROM files WHERE id = ?`, f.ID).Scan(&rows).Error; err != nil {
+			return err
+		}
+		if rows != 1 {
+			t.Fatalf("the refused erasure left %d rows, want the file where it was", rows)
+		}
+
+		if err := svc.Release(ctx, tx, f.ID); err != nil {
+			return err
+		}
+		// Releasing a file with no hold is the success it is: refusing it would
+		// be refusing a write that found nothing.
+		if err := svc.Release(ctx, tx, f.ID); err != nil {
+			t.Errorf("releasing a file with no hold = %v, want the answer that it is already free", err)
+		}
+		receipt, err := svc.EraseSubject(ctx, tx, subject, "data protection request")
+		if err != nil {
+			return err
+		}
+		if receipt.Files != 1 || receipt.Bytes != 4 || receipt.Subject != subject {
+			t.Errorf("the erasure receipt is %+v, want this subject's one file and its four bytes", receipt)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("a hold, a refusal and a release: %v", err)
+	}
+
+	// An erasure of a subject with nothing here is an answer and not a failure:
+	// zero in every count, no row, no event.
+	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		receipt, err := svc.EraseSubject(ctx, tx, uuid.New(), "nobody")
+		if err != nil {
+			return err
+		}
+		if receipt.Files != 0 || receipt.Bytes != 0 {
+			t.Errorf("a subject with no files erased %+v, want the receipt of nothing", receipt)
+		}
+		if _, err := svc.EraseSubject(ctx, tx, uuid.Nil, "nobody"); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("an erasure naming no subject = %v, want crud.ErrInvalid", err)
+		}
+		// A reason is filed, so a reason past the column's width is refused the
+		// way the command refuses everything it cannot do: before a row goes, not
+		// after the file is gone and the sentence is truncated on the way in.
+		if _, err := svc.EraseSubject(ctx, tx, uuid.New(),
+			strings.Repeat("why ", contracts.MaxErasureReason)); !errors.Is(err, crud.ErrInvalid) {
+			t.Errorf("an erasure's reason past %d characters = %v, want crud.ErrInvalid",
+				contracts.MaxErasureReason, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("erasing a subject with nothing here: %v", err)
 	}
 }
