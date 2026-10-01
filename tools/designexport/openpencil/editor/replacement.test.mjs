@@ -1902,6 +1902,25 @@ async function localFontFaces(page) {
   return faces.map(bytes => hash(Uint8Array.from(bytes))).sort()
 }
 
+
+// The wait for the panel's Local-fonts toggle to change state, named.
+//
+// Playwright's default expect timeout is 5 s, one number handed to every control in
+// a suite whose own measured duration on the CI runner is p50 92.7 s and p99 96.3 s
+// (the 285 samples of `Core and schema-generated forms inherit native … local fonts`
+// in the job logs task T-0219 read over 72 runs). A control of a 90-second test
+// should not be waited for with a 5-second guess, and run 251 is what that guess
+// costs: the toggle came back "not visible within 5s" on a runner at load, the case
+// was refused, and run 237 — same file, same step, same profile — passed it.
+//
+// The bound is a third of the measured p99 of the test that holds it (96.3 s / 3 ≈
+// 32 s, rounded down to a round 30 s), which is six times the default it replaces.
+// Nothing legitimate is refused by it: a boolean flip that needs a third of its own
+// test's slowest observed run is not slow, it is absent — and "absent" is the thing
+// this file cannot tell apart from "the runner reclaimed the browser" without the
+// death report the step that runs it prints.
+const localFontsToggle = 30_000
+
 async function enableLocalFonts(page, fonts) {
   const expected = fonts.map(face => face.sha256).sort()
   assert.deepEqual(await page.evaluate(() => [window.isSecureContext, typeof window.queryLocalFonts]), [true, 'function'])
@@ -1910,16 +1929,19 @@ async function enableLocalFonts(page, fonts) {
   await page.keyboard.type('Font access')
   await page.keyboard.press('Escape')
   assert.deepEqual(await localFontFaces(page), expected, 'the cold enumeration carries the fixture faces')
-  await page.getByRole('button', { name: 'Font settings', exact: true }).click()
+  await page.getByRole('button', { name: 'Font settings', exact: true }).click({ timeout: localFontsToggle })
   const panel = page.locator('[data-test-id="font-settings-panel"]')
   // Online and local access are separate permissions, never interchangeable.
   const localFonts = panel.getByText('Local fonts', { exact: true }).locator('..')
   const onlineFonts = panel.getByText('Online fonts', { exact: true }).locator('..')
-  await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible()
+  await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle })
   await expect(localFonts.getByText('Enabled', { exact: true })).toHaveCount(0)
-  await panel.getByRole('button', { name: 'Allow', exact: true }).click()
-  await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible()
-  await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
+  await panel.getByRole('button', { name: 'Allow', exact: true }).click({ timeout: localFontsToggle })
+  // The state the case reads is the panel's own: this waits on the row flipping from
+  // its absent answer to "Enabled", not on a paint, and the bound above is the only
+  // clock in it.
+  await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle })
+  await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled({ timeout: localFontsToggle })
   await page.keyboard.press('Escape')
   assert.deepEqual(await localFontFaces(page), expected, 'the enabled toggle exposes the same faces')
 }
