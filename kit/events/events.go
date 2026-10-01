@@ -195,9 +195,9 @@ func (s Subscription) durable() string {
 // replayable for the app that does hold its tenant. See claim.
 //
 // A subscription whose App is set but is not a slug is refused here, at boot:
-// its durable would be the unscoped one (appname.Durable refuses the broken
-// token), which is some other app's consumer, and no delivery of its own could
-// ever be shown to belong to it.
+// an app segment that a subject token cannot hold forms nothing, so its durable
+// would be the unscoped one — some other app's consumer — and no delivery of its
+// own could ever be shown to belong to it.
 func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscription) error {
 	for _, s := range subs {
 		if s.Handler == nil {
@@ -206,7 +206,7 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 		if s.App.Named() {
 			// The type is not the check: a Name built by conversion bypasses Parse,
 			// and a slug a subject token cannot hold forms an unscoped durable —
-			// somebody else's consumer (appname.token refuses the segment).
+			// somebody else's consumer.
 			if _, err := appname.Parse(string(s.App)); err != nil {
 				return fmt.Errorf("events: subscription %s to %s names app %q: %w", s.Module, s.Name, string(s.App), err)
 			}

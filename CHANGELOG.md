@@ -12,10 +12,19 @@ door cannot be bypassed by a caller who found it slower than writing the string.
 behind a constructor: the transport, the relay's address, the scheduler's lock, the cookie, the limiter, the local
 file store and the AsyncAPI document each take the app rather than forming a name. The slug arrives as one
 configuration key, `nats.app`, and an unset one is the single-app deployment, which keeps every name it already
-has. The delivery boundary reads the app back: `transport.AddressMismatch` takes the app, and an app that names
-itself now answers only at its own scoped address — a message routed at the previous build's address names no
-app, so it cannot be shown to be this app's, and is terminated rather than opened. The rollout filter stays
-wide on purpose and the check is what decides. An unset slug keeps both older addresses, as it always did.
+has. The delivery boundary reads the app back twice. `transport.AddressMismatch` takes the app, and an app that
+names itself now answers only at its own scoped address — a message routed at the previous build's address names
+no app, so it cannot be shown to be this app's, and is terminated rather than opened — and `events.Consume` then
+reads `tenants.app` for the tenant the document names and refuses a delivery whose tenant another app holds,
+before the handler's transaction opens: an address says only what its publisher claimed, and past that
+transaction row-level security is the other app's. A refusal runs no handler and writes no claim, so the event
+stays replayable for the app that does hold the tenant. The composition names every consumer it starts:
+`kit/app` stamps `Subscription.App` with `Options.App`, so two compositions of one module do not bind one
+JetStream consumer, one queue group and one handled-ledger key. And a stored file sits under the tenant whose
+request wrote it — `modules/file`'s local store writes `<app>/<tenant>/<key>` and refuses a write whose call
+names no tenant, because the key is a UUID and the path is the only thing that says whose bytes they are. The
+rollout filter stays wide on purpose and the check is what decides. An unset slug keeps both older addresses, as
+it always did.
 **A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
 non-null `app` column (`migrations/000030_tenant_app`), stamped when the composition creates a tenant and
 never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
@@ -44,9 +53,8 @@ set; the kernel's door for a migration write is a `phase=data` drain, which `ten
 have and neither ledger can, because a drain windows over the table's single-column primary
 key and both are keyed by `(event_id, durable)`; and `scripts/check_gucs.sh` refuses the
 shortcut a reader might reach for — the file raising the runner's own system-access marker.
-T-0228; that move, the envelope's `app` field, delivery's check that the event's tenant is one
-this app holds, and the reference composition's own slug are listed under *Limits* in
-`kit/appname/README.md`.
+T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
+reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
 
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two

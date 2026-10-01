@@ -18,6 +18,7 @@ appname.JobLock(app, "purge")                        // collect/job:purge
 appname.Cookie(app, "session", true)                 // __Host-collect-session
 appname.RateLimitKey(app, tenantID, "writes")        // collect/<tenant>/writes
 appname.StoragePath(app, tenantID, fileID)           // collect/<tenant>/<fileID>
+appname.StorageRoot(app)                             // collect/ — the half a sweep walks
 appname.Source(app, "cart")                          // /collect/cart
 appname.ConnectionName("platformkit-worker", app)    // platformkit-worker/collect
 ```
@@ -48,8 +49,8 @@ elsewhere claims.
 |---|---|---|
 | Subject, filter | **open, and checked**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` takes the app and accepts only its own scoped address, so the two older shapes are read and then refused — an address that names no app cannot be shown to be this app's. The window is therefore one-directional: a deployment must not start naming an app until no process still publishing at the older addresses is alive, because from that moment its own older traffic is unreadable to it | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
 | Cookie | **not open**: `httpx.CookieName` still writes `__Host-<base>` for the deployment that names no app, and `CookieNameOf` is the constructor a caller with a slug uses; `httpx.SessionCookieOf` reads `__Host-session`, `session` and the `platformkit_session` aliases, which is `PreviousCookies` for those two bases and no app-scoped name | wire the auth module's `Cookies` to a slug, then one release, then delete `PreviousCookies` and the aliases that read it |
-| Durable | **the name is ready and the move is not**: `Durable` forms `<app>+<module>-<event>` from `Subscription.App`, and because the join behind the app is the dash the name always carried, the scoped durable is the unscoped one with `<app>+` in front of it — the only form a stored row can be moved into, since the ledger holds no module or event name to rebuild from. Nothing moves the rows yet, so an installation that starts naming its app re-runs handled work and strands its dead letters | a drain `kit/events` owns and runs under system access: a `.up.sql` cannot (RLS empties its writes at the migrate role), and a `phase=data` drain cannot (both ledgers are keyed by `(event_id, durable)` and a drain windows over a single-column key) |
-| Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf`, and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
+| Durable | **the name is ready and the move is not**: `Durable` forms `<app>+<module>-<event>` from `Subscription.App`, which the composition stamps into every subscription it hands the transport (`kit/app`'s worker, from `Options.App` — the same line that names the job lock and the relay's claim), and because the join behind the app is the dash the name always carried, the scoped durable is the unscoped one with `<app>+` in front of it — the only form a stored row can be moved into, since the ledger holds no module or event name to rebuild from. Nothing moves the rows yet, so an installation that starts naming its app re-runs handled work and strands its dead letters | a drain `kit/events` owns and runs under system access: a `.up.sql` cannot (RLS empties its writes at the migrate role), and a `phase=data` drain cannot (both ledgers are keyed by `(event_id, durable)` and a drain windows over a single-column key) |
+| Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf` — the tenant is the one of the request or transaction that wrote the key, and a call that names none is refused rather than filed under the nil UUID — and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
 
 ## Limits
 
@@ -94,13 +95,21 @@ What this branch does not do, in the order it costs:
   `db.RunSystem` at boot, renaming `durable` for the tenants whose `tenants.app` is this
   app's slug, which needs `tenants.app` (it exists) and a decision about where a boot may
   rewrite domain rows outside a migration.
-- **One boundary reads the app back; two more need a join.** Delivery
-  refuses a message whose *address* names another app, or names no app at all
-  (`transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls
-  before its sink runs): that check needs only the address the broker routed by,
-  and it is what makes the wide `Filters` window safe to read at all. What still
-  needs `tenants.app`, which now exists, is the check behind it: that the tenant the
-  event names is one this app holds, which an address cannot say on its own.
+- **Delivery reads the app back twice, and neither check is the other.**
+  `transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls
+  before its sink runs, refuses a message whose *address* names another app, or
+  names no app at all: it needs only the address the broker routed by, and it is
+  what makes the wide `Filters` window safe to read at all. Behind it,
+  `events.Consume` reads `tenants.app` for the tenant the document names
+  (`holdsTenant`) and refuses a delivery whose tenant another app holds — before
+  the handler's transaction opens, because that transaction opens *as* that
+  tenant, and past it row-level security is the other app's and this app's handler
+  code is inside. An address can say only that a publisher *claims* the delivery
+  is this app's and this tenant's; a tenant id is the same vocabulary on both
+  sides, so the claim is not the fact. A refusal runs no handler and writes no
+  `platformkit_handled` row, so the event stays replayable for the app that does
+  hold the tenant. What that read costs is one indexed row per delivery, and what
+  it still does not close is the envelope's missing `app` field below.
 - **The reference composition names no app.** `nats.app` (kit/config) is the slug's
   one configuration key and the reference application leaves it empty, which is the
   single-app deployment: every name it forms is the name it formed before this
