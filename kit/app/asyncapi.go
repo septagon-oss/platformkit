@@ -112,7 +112,7 @@ func AsyncAPIFor(app appname.Name, mods []module.Module) ([]byte, error) {
 			"description": "The events this application emits, rendered from the module manifests it was composed from. " +
 				"Every event is a CloudEvents " + transport.SpecVersion + " envelope with `tenantid` as a required extension attribute and " +
 				"`traceparent`/`tracestate` as the distributed tracing extension; the subject is " +
-				appAddress(app, "<tenantId>.<module>.<event>"),
+				appAddress(app, "<tenantId>.<module>.<event>") + ".",
 		},
 		"defaultContentType": "application/cloudevents+json",
 		"channels":           channels,
