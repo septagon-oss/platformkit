@@ -39,6 +39,22 @@ import (
 // application — the same way the mailer and the payment provider are.
 var Local = internal.NewLocal
 
+// S3 is contracts.Storage and contracts.Signer on any store that speaks the S3
+// API — AWS S3, Garage, SeaweedFS, Ceph RGW — through minio-go. Wiring it is the
+// same call made in the same place Local is wired.
+//
+// What it buys over Local is the shape a shared-instance deployment (decision
+// 0028) needs — one bucket holding every tenant's bytes, with the tenant in every
+// object's name rather than in a directory on one volume — and a working grant
+// route, because it implements the Signer Local cannot: a private byte is then
+// served by a presigned URL with no request of this process in the path. What it
+// costs is stated on internal.S3: no orphan sweep (a bucket lifecycle rule's) and
+// no counted erasure proof (verified_at stays NULL).
+var S3 = internal.NewS3
+
+// S3Config is where such a store is and how to reach it.
+type S3Config = internal.S3Config
+
 // DefaultQuotaBytes is the disk one tenant may fill when a deployment says
 // nothing. A gigabyte is a number a person can reason about — a thousand
 // documents, or a hundred photographs — and config.Files is where a deployment
@@ -53,8 +69,9 @@ const DefaultQuotaBytes = 1 << 30
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
-	// Storage is where the bytes go. There is one implementation here, Local;
-	// the ones that speak to an object store live outside this repository.
+	// Storage is where the bytes go. This module ships two: Local, the one on
+	// disk, and S3, the one that speaks S3 to an object store and can sign a
+	// grant. A deployment writes the one it has into this field.
 	Storage contracts.Storage
 
 	// MaxBytes is the largest upload accepted; zero means the kernel's

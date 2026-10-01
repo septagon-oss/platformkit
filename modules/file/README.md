@@ -21,8 +21,8 @@ explicitly does not buy — it is not the boundary, not one bucket per tenant, n
 a secret — is [ADR 0019](../../docs/adr/0019-the-tenant-is-in-the-object-name.md).
 `Local` keeps bytes at
 `<dir>/<tenant uuid>/<2 hex>/<key>`; the store that speaks to an object service
-is wired by the composition, because `Deps.Storage` is a dependency and not a
-constant. A deployment with `Local` gets no signed URLs: `Grant` answers
+is `S3`, and `Deps.Storage` is the composition's choice between them. A deployment
+with `Local` gets no signed URLs: `Grant` answers
 `contracts.ErrNotSignable`, which the route renders as 501, and that is the
 honest answer for a disk store rather than a bug. The same store does answer
 `Prover`, though: a directory holds one file under one name or none, so an
@@ -30,6 +30,28 @@ installation on disk gets a `verified_at` stamp on its erasure certificates
 rather than one left open forever — and it counts both names `Delete` writes to,
 so bytes still lying in the pre-scope flat directory keep a copy from being
 certified away.
+
+`S3` is the same port on any store that speaks S3 — AWS S3, Garage, SeaweedFS,
+Ceph RGW — through minio-go, and it is the answer for an installation whose bytes
+cannot live on one volume. Its object names come from
+`contracts.Scope.ObjectName` and nowhere else, so one bucket shared by the whole
+installation (decision 0028) still holds `<tenant uuid>/<key>`, and a UUID copied
+out of one tenant's row names nothing in another tenant's prefix. That refusal is
+inherited rather than re-written: `filetest.RunStorage` asks those questions of
+every implementation, and `modules/file/s3_test.go` runs that suite against a live
+object store. It is also the store that answers `Signer`, so
+`GET /files/{id}/grant` returns a presigned read whose Content-Type,
+Cache-Control and Content-Disposition are the object's own, written at `Put` by
+`contracts.MetaFor` — the byte is served by the store, with no request of this
+process in the path. Two doors it does not answer, both declared on the type
+rather than discovered: it implements no `Reconciler`, so an installation on it
+gets no orphan sweep and leaves an upload's abandoned bytes to a bucket lifecycle
+rule, and it implements no `Prover`, so an erasure certificate's `verified_at`
+stays NULL. The test stack starts SeaweedFS (`make up`, published on 8333) and the
+adapter's cases fail rather than skip without it, as the NATS transport's do. The
+reference application still composes `Local`: `make run` and `make e2e` are meant
+to work on a machine with no object store, and which store a deployment has is a
+line its composition writes.
 
 Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery,
 Retention, Tenants, RetainEvery}`; `config.example.yaml`'s `files` section
