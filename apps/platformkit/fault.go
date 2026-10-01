@@ -75,19 +75,68 @@ const (
 	// and the case named at web.Deps.PublicFileURL in modules.go asks a real
 	// uploaded file whether the address answers, on the running server.
 	pinnedPublicFile = "/api/v1/public/file/files"
+	// pinnedHome is the way on a refusal offers: the workspace root, which the
+	// admin shell claims as its own home and serves behind httpx.SignedIn() — a
+	// guard that asks no permission, so it cannot refuse the person this page is
+	// for.
+	//
+	// The address was "/app/dashboard", which is where the same shell puts its
+	// dashboard when a product's home claimed the root first. This composition
+	// claims the root, so that fallback answered 404 and the one link on a refusal
+	// page led a person out of the application — the dead end the walkthroughs met,
+	// drawn in different ink. TestPinnedAddresses asks the running server that every
+	// pin here answers; the journey case follows the link the page itself emits.
+	pinnedHome = pinnedWorkspace
+	// pinnedUsers is the generated person screen's address, which is what an
+	// access notice links to: the page where a person's roles are ticked.
+	pinnedUsers = "/app/user/users"
+	// pinnedAsk is the browser's ask door, mounted by page.MountAccess below.
+	pinnedAsk = "/app/access-request"
 )
 
-func faultPage(messages page.Messages) httpx.Fault {
+// faultChrome is the look every page this file composes shares: the refusal and
+// the two pages of an ask are the same application's chrome, drawn by the same
+// four lines.
+func faultChrome() page.Chrome {
+	return page.Chrome{
+		Brand:      "PlatformKit",
+		Assets:     pinnedAssets,
+		Stylesheet: ui.Compose(design.Default()),
+		SignIn:     pinnedSignIn,
+	}
+}
+
+// faultFrame is the column these pages are read in: the foundation's frame with
+// no navigation, the same narrow centred column the sign-in page already uses.
+//
+// It used to be `g.Group(body)` — no container at all — because this chrome has
+// no sidebar and no account menu to draw (see this file's header). A frame is
+// not only the navigation, though: it is what bounds the text. With no container
+// every sentence of a refusal, and of the confirmation page that follows an ask,
+// ran the whole viewport — 194 characters on a line at 1440px, which is over
+// twice the 75-character measure the design floor refuses. The pages a shell
+// with a frame renders were never measured by that floor either, because the
+// repository's eye (`e2e/design-audit.spec.ts`) looks inside `main`, which a
+// frameless page has no way to have; the fault pages are outside it either way.
+func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
+	return page.Bare(body)
+}
+
+func faultPage(c composition) httpx.Fault {
+	messages := c.messages
 	return page.FaultHandler(page.Shell{
-		Chrome: page.Chrome{
-			Brand:      "PlatformKit",
-			Assets:     pinnedAssets,
-			Stylesheet: ui.Compose(design.Default()),
-			SignIn:     pinnedSignIn,
-		},
-		Frame:     func(_ context.Context, _ page.Request, body []g.Node) g.Node { return g.Group(body) },
-		Back:      pinnedWorkspace,
+		Chrome:    faultChrome(),
+		Frame:     faultFrame,
+		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
+		// Who may hand out what the page refused, as a role and never as a name:
+		// the grant that gates role management is the auth module's fact, and its
+		// label is that module's words, read off the manifest that defines it.
+		Granter: c.granter,
+		// The ask door exists in this composition, so the refusal page may offer
+		// it. A product that wired no AskForAccess leaves this empty and the page
+		// draws no button — the kernel never offers a door it has not mounted.
+		Ask: pinnedAsk,
 		// The catalogues this application already composed. Without them the shell
 		// is what ui/page/fault.go documents as "a shell that ships no catalog":
 		// refusalLocale negotiates from nothing, the guard's English line is shown,
@@ -134,8 +183,28 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 		Authorize:        c.auth,
 		Entitle:          c.plans,
 		Authenticate:     c.auth.Authenticate,
-		Fault:            faultPage(c.messages),
-		Role:             role,
-		Transports:       transports(),
+		Fault:            faultPage(c),
+		// Asking for access: the reach is this product's, the page is ui's, and
+		// the command behind both doors is the kernel's.
+		Access:     c.access,
+		AccessPage: func(router *httpx.Router) { page.MountAccess(router, faultShell(c)) },
+		Role:       role,
+		Transports: transports(),
+	}
+}
+
+// faultShell is the chrome the two ask pages are drawn with: the same frame, the
+// same catalogue and the same way on as the refusal page they follow, built once
+// per composition. One page per shell, and the shell is this file's to build —
+// the admin module builds its own, for the screens it mounts.
+func faultShell(c composition) page.Shell {
+	return page.Shell{
+		Chrome:    faultChrome(),
+		Frame:     faultFrame,
+		Back:      pinnedHome,
+		BackLabel: "Back to the workspace",
+		Granter:   c.granter,
+		Ask:       pinnedAsk,
+		Messages:  c.messages,
 	}
 }

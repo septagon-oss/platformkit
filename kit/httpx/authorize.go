@@ -158,6 +158,14 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		return
 	}
 	if !allowed {
+		// The fact before the sentence. The page and the audit row read what is
+		// recorded here; the words below stay for the log line and the problem
+		// document. A person refused here is now told which grant they lack in the
+		// words of the module that defines it, which is a different page.
+		noteRefused(ctx.Context(), Refusal{
+			Code: CodeDenied, Permission: grant.Permission, Label: a.grantLabel(grant.Permission),
+			Method: ctx.Method(), Path: ctx.URL().Path,
+		})
 		a.deny(ctx, CodeDenied, "this operation requires "+grant.Permission)
 		return
 	}
@@ -172,6 +180,11 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// through tenancy.RequirePolicy after this middleware is done. Its refusal is
 	// audited here, where the request is known, whatever response the module maps it to.
 	refused := func(_ context.Context, r tenancy.PolicyRequest, d tenancy.PolicyDecision) {
+		noteRefused(ctx.Context(), Refusal{
+			Code: CodePolicyDenied, Action: r.Action, ResourceKind: r.Resource.Kind,
+			ResourceID: r.Resource.ID, Reason: d.Reason, Revision: d.Revision,
+			Method: ctx.Method(), Path: ctx.URL().Path,
+		})
 		a.denied(ctx, http.StatusForbidden, CodePolicyDenied,
 			fmt.Sprintf("%s on %s %s: %s (policy %s)", r.Action, r.Resource.Kind, r.Resource.ID, d.Reason, d.Revision))
 	}
@@ -318,8 +331,13 @@ func (a *API) denied(ctx huma.Context, status int, code, detail string) {
 	if op := ctx.Operation(); op != nil {
 		operation = op.OperationID
 	}
+	permission, label := "", ""
+	if r, ok := Refused(ctx.Context()); ok {
+		permission, label = r.Permission, r.Label
+	}
 	a.opts.Denied(ctx.Context(), Denial{
 		Status: status, Code: code, Detail: detail, Method: ctx.Method(), Path: ctx.URL().Path,
+		Permission: permission, Label: label,
 		Operation: operation, RequestID: requestIDFrom(ctx.Context()), Tenant: t, Principal: p,
 	})
 }

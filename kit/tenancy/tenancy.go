@@ -86,7 +86,13 @@ func (l *Languages) Preferred() []string {
 // first. It lives beside Tenant because both halves of the answer are here.
 type Grant struct {
 	Permission string
-	Operator   bool
+	// Label is the grant in words, carried from the manifest that defines it
+	// (module.Permission.Label) so the layer that renders a refusal can name
+	// what is missing without importing the module that owns the token. It
+	// travels with the whole struct — httpx.Declare and Permissions move it to
+	// every consumer without a further conversion.
+	Label    string
+	Operator bool
 }
 
 // contextKey is unexported so only this package can put a tenant on a context.

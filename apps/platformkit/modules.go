@@ -41,6 +41,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/web"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // composition is the application: every module it is made of, and the values
@@ -60,6 +61,11 @@ type composition struct {
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
+	// access is the reach an ask for access has in this product: the people who
+	// hold role management, and the notice each of them gets.
+	access httpx.AskForAccess
+	// granter is who a refusal says may hand out what it refused.
+	granter page.Granter
 	// messages is this application's one catalogue — the same value the shells
 	// below are given — carried here so the failure page the kernel renders is
 	// worded from it rather than from a second read of the same files.
@@ -86,7 +92,18 @@ func compose(cfg config.Config) composition {
 	// a role, the auth module owns what a role grants, and neither reads the
 	// other's rows. This is where the two meet, and the only line in this
 	// application that decides administration is made of roles.
-	users, userModule := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles}})
+	// roles is the late-bound half: the user module is built before auth, because
+	// auth looks people up, and the two questions below are about roles. The
+	// fields are filled a few lines further down, before anything listens.
+	roles := &roleGranter{}
+
+	users, userModule := user.Module(user.Deps{
+		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
+		// Granting somebody an administering role is a promotion, and this is the
+		// one line that decides who may promote: the same authorizer the kernel
+		// enforces every route with, asked about the auth module's own permission.
+		Granting: roles,
+	})
 
 	installed := catalogues()
 	tenants, tenantModule := tenant.Module(tenant.Deps{
@@ -248,9 +265,16 @@ func compose(cfg config.Config) composition {
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
+	roles.auth = auths
 	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
-		notify: notify, mail: mail, plans: plans, messages: installed}
+		notify: notify, mail: mail, plans: plans, messages: installed,
+		access: accessReach{users: users, notify: notify, may: roles.May},
+		// The words a refusal is allowed to use: the label of the grant that gates
+		// role management, read off the manifest that defines it rather than
+		// written again here.
+		granter: page.Granter{Permission: authcontracts.PermissionRoleManage,
+			Label: permissionLabel(mods, authcontracts.PermissionRoleManage)}}
 }
 
 // transports is the one place this application names an event provider. The
@@ -383,4 +407,86 @@ func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tena
 		tenantcontracts.PermissionTenantManage,
 		billingcontracts.PermissionBillingCatalog,
 	}, personas)
+}
+
+// roleGranter is Deps.Granting: may the caller of this write hand out a role that
+// administers the tenant?
+//
+// The answer is the authorizer's, asked of the auth module's own permission, in
+// the request's own tenant transaction — the same question every route is asked,
+// one line earlier and about a different act. It is late-bound because the user
+// module is built before the authentication service is; filling the field happens
+// in compose, in the same order that makes the graph a list somebody wrote down
+// rather than a discovery mechanism.
+type roleGranter struct{ auth authcontracts.Auth }
+
+func (g *roleGranter) May(ctx context.Context, _ db.Tx[db.Tenant]) (bool, error) {
+	if g.auth == nil {
+		// Compose has not finished: nothing can be serving requests yet, and a
+		// promotion could not have reached a door. Refused rather than assumed.
+		return false, nil
+	}
+	p, hasPrincipal := tenancy.PrincipalFrom(ctx)
+	t, hasTenant := tenancy.FromContext(ctx)
+	if !hasPrincipal || p.UserID == uuid.Nil || !hasTenant {
+		return false, nil
+	}
+	return g.auth.Allowed(ctx, t, tenancy.Grant{Permission: authcontracts.PermissionRoleManage})
+}
+
+// accessReach is httpx.AskForAccess for this product.
+//
+// Recipients joins the two modules that each own half the answer: auth knows
+// which of this tenant's roles manage roles, user knows who holds them. The join
+// is here, in the composition, and in neither module. Tell writes one notice
+// through the notification module — the bell in the application, with no mail:
+// a message to every administrator for every refusal would make the notice
+// worthless and put this ask in the queue beside a real set-password link.
+//
+// The link is the person's own generated screen: /app/user/users/<id>, the
+// address the kernel composed for the user resource. It carries the person, not a
+// token, so forwarding the notice grants nothing — the form behind it is guarded
+// by the same door the API is.
+type accessReach struct {
+	users  usercontracts.Service
+	notify notificationcontracts.Service
+	// may is the composition's own way of asking the same question the kernel
+	// asks a request: may this caller manage roles. A request carries a principal
+	// and asks the authorizer; a caller with no principal on its context is not a
+	// person and gets a no.
+	may func(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error)
+}
+
+func (a accessReach) Recipients(ctx context.Context, tx db.Tx[db.Tenant]) ([]uuid.UUID, error) {
+	roles, err := auth.AdministeringRoles(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	return a.users.Holders(ctx, tx, roles)
+}
+
+func (a accessReach) Tell(ctx context.Context, tx db.Tx[db.Tenant], n httpx.AccessNotice) error {
+	_, err := a.notify.Notify(ctx, tx, notificationcontracts.Notice{
+		Recipient: n.To,
+		Title:     "Access requested",
+		Body: fmt.Sprintf("%s asked for %s, at %s. Their roles are on the person's page.",
+			n.Requester, n.Permission, n.RefusedPath),
+		Link:  pinnedUsers + "/" + n.Requester.String(),
+		Email: false,
+	})
+	return err
+}
+
+// permissionLabel is the words the defining module chose for one permission, read
+// off the manifest that declares it. The refusal page is allowed to name a grant
+// and not a person; what it may not do is invent the grant's name.
+func permissionLabel(mods []module.Module, key string) string {
+	for _, m := range mods {
+		for _, p := range m.Permissions {
+			if p.Key == key {
+				return p.Label
+			}
+		}
+	}
+	return ""
 }

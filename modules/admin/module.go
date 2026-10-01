@@ -115,7 +115,7 @@ const PermissionGalleryRead = "gallery:read"
 func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
-		Permissions:   []module.Permission{{Key: PermissionGalleryRead}},
+		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},
 		Declared:      nil,
 		Nav:           nil,
 		Jobs:          nil,

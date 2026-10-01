@@ -1,0 +1,11 @@
+{
+  "permission.audit:read": {
+    "references": [
+      "modules/audit/module.go"
+    ],
+    "translation": "ler o registo de auditoria",
+    "plural": {
+      "": "ler o registo de auditoria"
+    }
+  }
+}

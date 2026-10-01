@@ -108,15 +108,20 @@ type Entitler interface {
 // word of the refusal's detail, the same machine-readable reason the response and
 // the log line carry, and RequestID joins it to both.
 type Denial struct {
-	Status    int
-	Code      string
-	Detail    string
-	Method    string
-	Path      string
-	Operation string
-	RequestID string
-	Tenant    tenancy.Tenant
-	Principal tenancy.Principal
+	Status int
+	Code   string
+	Detail string
+	Method string
+	Path   string
+	// Permission and Label are the grant that was missing, when the refusal was
+	// about a grant: the trail has to answer "which permission did they lack"
+	// without the request id and a log line.
+	Permission string
+	Label      string
+	Operation  string
+	RequestID  string
+	Tenant     tenancy.Tenant
+	Principal  tenancy.Principal
 }
 
 type Options struct {
@@ -220,6 +225,19 @@ type Options struct {
 	// survive the refusal that followed it. That is the same argument the auth
 	// module makes for its lockout.
 	WriteLimiter WriteLimiter
+
+	// Access is the sequel to a refusal: who to tell when a person asks for the
+	// grant they were refused, and how. Nil draws no ask control on the refusal
+	// page and mounts no ask route — the reach is another module's rows, so a
+	// composition that wires none offers no door rather than one that 404s.
+	Access AskForAccess
+
+	// Accessed is the kernel's record of one ask, in the request's own transaction
+	// beside the notices it wrote: kit/app publishes the event, which is where the
+	// payload types and the module catalogue live. Its failure is the ask's failure —
+	// an event that did not commit rolls the notices back with it — so a composition
+	// that cannot write the trail refuses the ask rather than answering 202.
+	Accessed func(context.Context, AccessRecord) error
 }
 
 // WriteLimiter is the counting this kernel asks for and nothing more: it is the
@@ -291,6 +309,10 @@ type API struct {
 	// cold cache under load is one round trip and not one per request.
 	resolving singleflight.Group
 
+	// access is the ask-for-access door, built once from Options and put on every
+	// request's context by carry. Nil means this composition offers no way to ask.
+	access *accessDoor
+
 	mu       sync.Mutex
 	ops      []*huma.Operation
 	declared []tenancy.Grant
@@ -359,6 +381,15 @@ func New(cfg Options) (*API, *chi.Mux) {
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	if cfg.Access != nil {
+		// One door, read per request off the context: the catalogue and the
+		// limiter belong to the API, the reach belongs to the composition, and the
+		// two page and JSON routes call the same command (docs/adr/0007).
+		a.access = &accessDoor{
+			ask: cfg.Access, limiter: cfg.WriteLimiter, record: cfg.Accessed,
+			catalogue: a.Permissions,
+		}
 	}
 	if a.log == nil {
 		a.log = slog.Default()

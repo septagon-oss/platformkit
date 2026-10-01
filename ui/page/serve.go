@@ -34,7 +34,23 @@ type Shell struct {
 	// unsupported values fall back to Accept-Language and the catalog default.
 	// The application owns preference persistence and locale-preserving links.
 	Locale func(context.Context, Request) string
+
+	// Granter names who may hand out a missing permission, in the only terms a
+	// refusal may name: a role, never a person. The permission is the auth
+	// module's fact (which grant gates role management) and the Label its words;
+	// ui/page renders both and decides neither. The zero value names no gate and
+	// the refusal page says nothing about who could grant it.
+	Granter Granter
+
+	// Ask is the address an "Ask for access" form posts to, as the composition
+	// mounted it (ui/page.MountAccess mounts the two page routes at this one
+	// address and its confirmation). Empty leaves no ask control on a refusal: a
+	// button whose action nobody mounted is a lie about a door.
+	Ask string
 }
+
+// Granter is the shell's answer to "who can give me this".
+type Granter struct{ Permission, Label string }
 
 // Route is what one page is: its operation id, method, path, summary, and the
 // statuses it may answer with beyond the kernel's defaults.
