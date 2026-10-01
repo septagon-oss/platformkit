@@ -125,3 +125,30 @@ What an operator does instead of a route is two steps beside `make rehearse`: `m
 The code names no role. A composition grants `file:read` to people who may browse, download and mint a grant, `file:manage` to people who may upload and delete, `file:retain` to whoever may keep a file past its class, and `file:erase` to whoever answers a data-protection request — the last two are the ones a broad support role should not hold by default.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
+**Reused:** `kit/jobs.PerTenant`, wired as `modules/auth/internal/sweep.go` and
+`modules/billing/internal/renew.go` wire it and with the same
+`modules/tenant` `Active` as the lister; `contracts/filetest.RunStorage`, whose
+signature changed once so that every implementation that runs it inherited the new
+case — including both directions of the declared-length collision; `crud.GetForUpdate`,
+`platformkit_tenant_match` and the `ENABLE`+`FORCE` shape `000019_file.up.sql`
+already kept; `modules/audit`'s `SubscribeAll`, which is why an erasure needed an
+event and not a new sink; `contracts/response.go`'s header set and
+`contracts.MetaFor`, so an object served from a bucket carries the `docs/cache.md`
+policy with no handler here; and the custom-format `pg_dump -Fc` artifact
+`scripts/rehearse_migrations.sh` already reads. **Added:** `contracts.Scope` and
+`contracts.Key` — the only scope-carrying value in the kernel is `db.Tx[db.Tenant]`,
+which pins a connection for as long as a body arrives, and `Upload` writes bytes
+before it opens anything; `Signer` and the presigned grant, because read, write and
+delete was all the port had; `files.kind`, `file_holds`, `file_erasures`, the sweep
+that reads them and the `files.retention` table that prices them; `internal.S3`; and
+`make backup` with `make restore-drill`. **Made reusable:** `Scope.ObjectName` as the
+one place a prefix and a key are joined, so no adapter is ever handed a bare key and
+left to ask whose it is; `filetest.RunStorage` itself, which is the door any later
+store walks through and where a two-implementation disagreement stops being an
+argument; `Reconciler` and `Prover` as ports an implementation declines by name
+rather than by silence; and `Deps.Storage`, which is still the composition's choice —
+`file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
