@@ -27,6 +27,11 @@ jobs:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      # The Valkey conformance suite runs here rather than skipping: the Makefile
+      # points this variable at whatever `make up` publishes when a caller does not
+      # set it, and the job sets it, so the one production adapter of kit/cache is
+      # exercised by the gate that ships it and not only by hand.
+      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
       GOFLAGS: -p=4
     services:
       postgres:
@@ -76,6 +81,26 @@ jobs:
         env:
           PGPASSWORD: platformkit
         run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      # noeviction, as compose.yaml names it: the generation counter a Move raises is
+      # written with no TTL, and a store that evicts it reads back as generation 0,
+      # which believes again the entries the first Move closed. docs/cache.md.
+      - name: Start Valkey on this job's network
+        id: valkey
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias valkey \
+            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
+            --maxmemory-policy noeviction)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
 
       - name: make check
         run: make check
@@ -211,6 +236,7 @@ jobs:
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
@@ -221,6 +247,7 @@ jobs:
           if [ -n "$PREVIEW_CONTAINER" ]; then docker rm -f "$PREVIEW_CONTAINER" || status=1; fi
           if [ -n "$COMPLETE_PREVIEW_CONTAINER" ]; then docker rm -f "$COMPLETE_PREVIEW_CONTAINER" || status=1; fi
           if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          if [ -n "$VALKEY_CONTAINER" ]; then docker rm -f "$VALKEY_CONTAINER" || status=1; fi
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi

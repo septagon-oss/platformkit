@@ -29,8 +29,10 @@ const unreachable = "redis://127.0.0.1:1"
 // TestTheSharedStoreIsACache runs the one harness every adapter of cache.Cache
 // runs against a real Valkey.
 //
-// It reads PLATFORMKIT_TEST_VALKEY_URL — `make up` starts the `valkey` service the
-// Makefile points that variable at. With no address set the case skips, and the
+// It reads PLATFORMKIT_TEST_VALKEY_URL. `make up` starts the `valkey` service, and
+// the Makefile points that variable at it whenever something answers on the port
+// compose publishes — TestMakeUpStartsTheStoreThisSuiteReads holds those two lines
+// down. With no address set the case skips, and the
 // sentence says why that departs from `make test`'s stance on NATS: the worker
 // transport every journey exercises has to be there, while a cache server is
 // optional infrastructure this kernel boots without, because the in-process store
@@ -142,7 +144,7 @@ func address(t *testing.T) string {
 	t.Helper()
 	url := os.Getenv("PLATFORMKIT_TEST_VALKEY_URL")
 	if url == "" {
-		t.Skip("PLATFORMKIT_TEST_VALKEY_URL is unset; `make up` starts the valkey service this case reads (see the skip sentence on TestTheSharedStoreIsACache)")
+		t.Skip("PLATFORMKIT_TEST_VALKEY_URL is unset, so nothing answered the port `make up` publishes valkey on; `make up` starts it (see the note on TestTheSharedStoreIsACache)")
 	}
 	return url
 }

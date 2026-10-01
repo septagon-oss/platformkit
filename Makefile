@@ -32,6 +32,21 @@ export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
 
+# The shared store kit/cache's Valkey adapter speaks. `make up` starts it on this
+# port, and the suite reads the address below.
+#
+# Unlike PLATFORMKIT_TEST_NATS_URL, this one is exported only when something answers
+# there. The difference is the two kernels' own, not a weaker standard: the worker
+# transport every journey exercises has to be present for its suite to mean anything,
+# while kit/cache boots without a store at all — the in-process adapter is a complete
+# deployment for one process — so a checkout with no cache server runs every case in
+# this repository but the three that name one, and its skip line says which. Whoever
+# exports this variable at a store that is not answering gets those three cases as
+# failures rather than a skip: an address you set yourself is a promise.
+PLATFORMKIT_VALKEY_PORT ?= 6379
+PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
+export PLATFORMKIT_TEST_VALKEY_URL
+
 # Local feedback uses Go's package/dependency cache. The full check below always
 # runs fresh, independently of these local selectors or an earlier test goal.
 TEST_PACKAGES ?= ./...
@@ -171,8 +186,8 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres and NATS, and wait for both to be healthy
+up: ## Start Postgres, NATS and Valkey, and wait for all three to be healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres and NATS and drop their volumes
+down: ## Stop Postgres, NATS and Valkey and drop their volumes
 	docker compose down -v

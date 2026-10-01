@@ -1,7 +1,7 @@
-# Local dependencies for `make run` and `make test`. Both published ports are
-# overridable so this stack can run beside another Postgres or NATS:
-# PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT. `make test` reads the same
-# variables, so overriding them once is enough.
+# Local dependencies for `make run` and `make test`. Every published port is
+# overridable so this stack can run beside another Postgres, NATS or Valkey:
+# PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT and PLATFORMKIT_VALKEY_PORT. `make test`
+# and `make check` read the same variables, so overriding them once is enough.
 services:
   postgres:
     image: postgres:16
@@ -29,6 +29,26 @@ services:
       - "${PLATFORMKIT_NATS_PORT:-4222}:4222"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O- http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  valkey:
+    # The shared store kit/cache/providers/valkey answers to, and the store whose
+    # conformance run `make check` takes when this is up. Nothing is stored here that
+    # a replica may not recompute: sessions, grants and entitlements never are, so a
+    # suspension is the worst thing an entry can be wrong about and it is wrong for
+    # hostTTL at most.
+    #
+    # noeviction is not politeness, it is the requirement kit/cache states: the
+    # counter a Move raises carries no TTL, an evicted counter reads back as
+    # generation 0, and the entries the first Move closed are believed again.
+    image: valkey/valkey:8-alpine
+    command: ["--maxmemory-policy", "noeviction"]
+    ports:
+      - "${PLATFORMKIT_VALKEY_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli ping"]
       interval: 5s
       timeout: 5s
       retries: 10
