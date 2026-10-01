@@ -47,7 +47,7 @@ func mountDeleteCatalog(t *testing.T, soft bool) (http.Handler, *sql.DB) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	rest.Spec[*Plan]{
+	rest.Spec[*Plan]{Name: rest.Name{One: "Plan", Other: "Plans"},
 		Module: "billing", Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog", SoftDelete: soft,
 	}.Mount(api.Surfaces("billing"))

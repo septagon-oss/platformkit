@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -50,13 +51,13 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
-		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return p.dashboard(ctx), nil
+		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return p.dashboard(ctx, r.Locale), nil
 		})
 
 	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
-		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return healthPage(checks(ctx)), nil
+		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return healthPage(checks(ctx), r.Locale), nil
 		})
 
 	p.mountGallery(app)
@@ -128,7 +129,13 @@ func login(ctx context.Context, locale *page.Locale, next, action string) page.V
 //
 // The guarded count makes one authorization decision and loads no entity rows.
 // A refused or unavailable count produces no card, including its resource name.
-func (p pages) dashboard(ctx context.Context) page.View {
+func (p pages) dashboard(ctx context.Context, selected *page.Locale) page.View {
+	text := func(key, fallback string, args ...any) string {
+		if selected == nil {
+			return fmt.Sprintf(fallback, args...)
+		}
+		return selected.Text("admin.dashboard."+key, fallback, args...)
+	}
 	cards := make([]g.Node, 0, len(p.resources))
 	for _, r := range p.resources {
 		if r.Count == nil {
@@ -138,9 +145,16 @@ func (p pages) dashboard(ctx context.Context) page.View {
 		if err != nil {
 			continue
 		}
+		name := r.Name.Other
+		if total == 1 {
+			name = r.Name.One
+		}
+		if selected != nil {
+			name = selected.Plural("resource."+r.Module+"."+r.Entity, total, r.Name.One, r.Name.Other)
+		}
 		count := strconv.FormatInt(total, 10)
 		cards = append(cards, components.Card(components.CardProps{
-			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
+			Title: count + " " + name, Description: text("open", "Open %s", name),
 			Clickable: true, Href: r.Screen,
 		}))
 	}
@@ -150,9 +164,9 @@ func (p pages) dashboard(ctx context.Context) page.View {
 			failed = append(failed, c.name)
 		}
 	}
-	tone, message := "success", "Every check passes."
+	tone, message := "success", text("healthy", "Every check passes.")
 	if len(failed) > 0 {
-		tone, message = "danger", "Not ready: "+strings.Join(failed, ", ")
+		tone, message = "danger", text("not_ready", "Not ready: %s", strings.Join(failed, ", "))
 	}
 	// Language says what this page's words are written in, which is not the
 	// request's language: every word on this page — the title, the subtitle, the
@@ -163,9 +177,9 @@ func (p pages) dashboard(ctx context.Context) page.View {
 	// translation tool are told the truth: this one is English, whichever language
 	// the tenant is served in. The day any of this copy goes into a catalogue, this
 	// line goes with it.
-	return page.View{Title: "Dashboard", Language: writtenHere, Body: []g.Node{
+	return page.View{Title: text("title", "Dashboard"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
+			Title: text("title", "Dashboard"), Subtitle: text("subtitle", "What this tenant has, and whether the instance is well.")}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
 		components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...),
 	}}
@@ -174,24 +188,30 @@ func (p pages) dashboard(ctx context.Context) page.View {
 // healthPage is the readiness probe with names on it. /ready answers 200 or 503
 // and names what failed; this shows the same checks one at a time, which is
 // what somebody looking at a broken deployment needs.
-func healthPage(results []result) page.View {
+func healthPage(results []result, selected *page.Locale) page.View {
+	text := func(key, fallback string) string {
+		if selected == nil {
+			return fallback
+		}
+		return selected.Text("admin.health."+key, fallback)
+	}
 	rows := make([]components.TableRow, 0, len(results))
 	for _, c := range results {
-		state, tone := "ok", "success"
+		state, tone := text("ok", "OK"), "success"
 		if c.err != nil {
-			state, tone = "failing", "danger"
+			state, tone = text("failing", "Failing"), "danger"
 		}
 		rows = append(rows, components.TableRow{ID: c.name, Cells: map[string]any{
 			"check": c.name, "state": state, "tone": tone,
 		}})
 	}
-	return page.View{Title: "Health", Language: writtenHere, Body: []g.Node{
+	return page.View{Title: text("title", "Health"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Health", Subtitle: "The checks behind /ready, one at a time."}),
+			Title: text("title", "Health"), Subtitle: text("subtitle", "The checks behind /ready, one at a time.")}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
-				{Key: "check", Label: "Check", Primary: true},
-				{Key: "state", Label: "State"},
+				{Key: "check", Label: text("check", "Check"), Primary: true},
+				{Key: "state", Label: text("state", "State")},
 			},
 			Rows: rows,
 		}, components.TableSlots{

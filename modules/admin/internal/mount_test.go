@@ -212,13 +212,13 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 // as a badge rather than a colour alone.
 func TestTheHealthPageNamesEachCheckAndItsState(t *testing.T) {
 	t.Parallel()
-	body := render(t, g.Group(healthPage([]result{{name: "database", err: nil}, {name: "cache", err: errors.New("refused")}}).Body))
-	for _, want := range []string{">database<", ">cache<", ">ok<", ">failing<", `data-tone="success"`, `data-tone="danger"`} {
+	body := render(t, g.Group(healthPage([]result{{name: "database", err: nil}, {name: "cache", err: errors.New("refused")}}, nil).Body))
+	for _, want := range []string{">database<", ">cache<", ">OK<", ">Failing<", `data-tone="success"`, `data-tone="danger"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("health page lacks %q:\n%s", want, body)
 		}
 	}
-	if !strings.Contains(render(t, g.Group(healthPage(nil).Body)), "Health") {
+	if !strings.Contains(render(t, g.Group(healthPage(nil, nil).Body)), "Health") {
 		t.Error("an unreachable database renders no health page at all")
 	}
 }

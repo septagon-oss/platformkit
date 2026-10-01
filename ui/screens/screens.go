@@ -87,7 +87,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
 		func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
 			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), nil, nil, "", true), nil
+			return Form(res, o, at, o.Text("screens.new", "New %s", o.Noun(res.Module, res.Entity, res.Name, 1)), nil, nil, "", true), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
@@ -104,7 +104,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			}
 			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
+			return Form(res, o, at, o.Text("screens.new", "New %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, true), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
@@ -123,7 +123,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
+			return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), row, nil, "", false), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
@@ -137,7 +137,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			}
 			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
+			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, false), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
@@ -272,7 +272,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 				return page.View{}, err
 			}
 			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), row, nil, "", false), nil
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel, Summary: "Update the " + res.Entity}, write,
@@ -285,7 +285,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			}
 			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
+			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, false), nil
 		})
 }
 

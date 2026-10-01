@@ -36,6 +36,7 @@ import (
 // hands the renderers this half.
 type Resource struct {
 	Schema    entity.Schema
+	Name      entity.Name
 	Immutable []string
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
@@ -99,12 +100,31 @@ func (o Options) Text(key, fallback string, args ...any) string {
 // count is the list's subtitle. The English fallback is already pluralized
 // so a shell without a catalog reads exactly as before; a catalog receives
 // the number and the noun and applies its own plural rules.
-func (o Options) count(total int64, noun string) string {
-	noun = strings.ToLower(noun)
-	if total != 1 {
-		noun += "s"
+func (o Options) plural(key string, count int64, one, other string, args ...any) string {
+	if o.Locale != nil {
+		return o.Locale.Plural(key, count, one, other, args...)
 	}
-	return o.Text("screens.count", "%d %s", total, noun)
+	return (locale.Locale{}).Plural(key, count, one, other, args...)
+}
+
+func (o Options) noun(r Resource, count int64) string {
+	return o.Noun(r.Schema.Module, r.Schema.Entity, r.Name, count)
+}
+
+// Noun selects the declared resource name through the request's catalogue.
+func (o Options) Noun(module, entityName string, name entity.Name, count int64) string {
+	if name.One == "" {
+		name.One = display.Humanize(entityName)
+	}
+	if name.Other == "" {
+		name.Other = name.One
+	}
+	return o.plural("resource."+module+"."+entityName, count, name.One, name.Other)
+}
+
+func (o Options) count(total int64, r Resource) string {
+	noun := strings.ToLower(o.noun(r, total))
+	return o.plural("screens.count", total, "%d %s", "%d %s", noun)
 }
 
 // List is the list screen: a toolbar with the count, the rows, the pager. The
@@ -118,14 +138,14 @@ func (o Options) count(total int64, noun string) string {
 // have to be the adapter is a second answer to one question, and only one of the
 // two is checked by anyone.
 func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int, sort string, writable bool) document.View {
-	at, one := r.Screen, display.Humanize(r.Schema.Entity)
-	title := listName(one)
+	at := r.Screen
+	one, title := o.noun(r, 1), o.noun(r, 2)
 	var actions []g.Node
 	if writable {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
+		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", one), Href: at + "/new"})}
 	}
 	body := []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, one)}, actions...),
+		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, r)}, actions...),
 		table(o, r, at, title, rows, sort),
 	}
 	// A command over the whole collection posts beside the list it acts on, and
@@ -165,11 +185,11 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
 		if !r.Singleton {
-			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
+			actions = append(actions, deleteForm(o, item, o.noun(r, 1)))
 		}
 	}
 	body := []g.Node{
-		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
+		breadcrumb(o, o.noun(r, 2), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
 		details(r, row),
 	}
@@ -192,7 +212,7 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 		status = statusUnprocessableEntity
 	}
 	return document.View{Title: title, Status: status, Body: []g.Node{
-		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
+		breadcrumb(o, o.noun(r, 2), at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
@@ -247,11 +267,6 @@ func formField(f entity.Field) forms.Field {
 	return forms.Field{Definition: f, Label: display.FieldLabel(f), Options: options}
 }
 
-// listName is the heading a list screen wears. It is also the accessible name of
-// that screen's scrolling table region, in the same words: the region is the
-// list, so giving the two different names would be two names for one thing.
-func listName(one string) string { return one + "s" }
-
 // table is the list screen's rows: the field a row is known by first, as the
 // link into it, then every other field the schema does not hide.
 //
@@ -284,7 +299,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		Sortable:  true, Columns: columns, Rows: out,
 		Label:     title,
-		EmptyText: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity),
+		EmptyText: o.Text("screens.empty", "No %s yet.", strings.ToLower(o.noun(r, 2))),
 	}, components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what
 		// is on the page: page two of a table sorted in the browser is page two

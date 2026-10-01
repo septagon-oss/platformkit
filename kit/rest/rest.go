@@ -48,6 +48,8 @@ type Spec[T crud.Entity] struct {
 	// Entity is this resource's name, lower-case: "task". It is the middle of
 	// the event name and the noun in the operation ids.
 	Entity string
+	// Name declares the human nouns. Entity remains the stable machine name.
+	Name Name
 	// Path is the collection's path relative to the module: "/tasks". The item
 	// is Path + "/{id}".
 	//
@@ -181,7 +183,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
 
 	httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
-		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
+		"List "+s.Name.Other, "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
 		s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -201,7 +203,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		})
 
 	httpx.Register(write, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
-		"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
+		"Create "+s.Name.One, "The tenant, the id and the timestamps are set by the server."),
 		s.writeAuth(), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -223,7 +225,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		})
 
 	httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
-		"Read a "+s.Entity, ""),
+		"Read "+s.Name.One, ""),
 		s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -237,7 +239,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		})
 
 	httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
-		"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
+		"Update "+s.Name.One, "Only the fields present in the body change; read-only fields are refused."),
 		s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -251,7 +253,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		})
 
 	httpx.Register(write, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
-		"Delete a "+s.Entity, ""),
+		"Delete "+s.Name.One, ""),
 		s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
 			tx, err := transaction(ctx)
 			if err != nil {
@@ -554,6 +556,8 @@ func (s Spec[T]) writeAuth() httpx.Auth {
 func (s Spec[T]) check() {
 	var bad string
 	switch {
+	case nameFault(s.Name) != "":
+		bad = nameFault(s.Name)
 	case !strings.HasPrefix(s.Path, "/"):
 		bad = fmt.Sprintf("Path %q does not start with /", s.Path)
 	case s.Path == "/"+s.Module || strings.HasPrefix(s.Path, "/"+s.Module+"/") ||

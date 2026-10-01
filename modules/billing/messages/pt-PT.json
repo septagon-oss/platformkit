@@ -25,5 +25,19 @@
     "plural": {
       "": "gerir o catálogo de planos"
     }
+  },
+  "resource.billing.plan": {
+    "translation": "Plano",
+    "plural": {
+      "one": "Plano",
+      "other": "Planos"
+    }
+  },
+  "resource.billing.subscription": {
+    "translation": "Subscrição",
+    "plural": {
+      "one": "Subscrição",
+      "other": "Subscrições"
+    }
   }
 }

@@ -1,0 +1,9 @@
+{
+  "resource.site.settings": {
+    "translation": "Setting",
+    "plural": {
+      "one": "Setting",
+      "other": "Settings"
+    }
+  }
+}

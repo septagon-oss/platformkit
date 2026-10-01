@@ -47,7 +47,7 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
 	return httpx.Resource{
-		Module: s.Module, Entity: s.Entity, Path: s.Path,
+		Module: s.Module, Entity: s.Entity, Name: s.Name, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		Immutable: s.Immutable, Schema: schema,
 

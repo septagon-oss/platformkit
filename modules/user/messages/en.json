@@ -1,0 +1,9 @@
+{
+  "resource.user.user": {
+    "translation": "User",
+    "plural": {
+      "one": "User",
+      "other": "Users"
+    }
+  }
+}

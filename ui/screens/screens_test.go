@@ -7,6 +7,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	core "github.com/septagon-oss/platformkit/ui/resource"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -31,6 +32,7 @@ func (Note) TableName() string { return "notes" }
 // renderers read beside the permissions and closures they never see.
 func resource() httpx.Resource {
 	return httpx.Resource{
+		Name:   entity.Name{One: "Note", Other: "Notes"},
 		Module: "note", Entity: "note", Path: "/notes", Screen: "/app/note/notes",
 		Read: "note:read", Write: "note:write", Immutable: []string{"status"},
 		Schema: crud.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: crud.Fields[*Note]()},
@@ -68,7 +70,7 @@ func TestTheAdapterRendersWhatTheRegisteredResourceDescribes(t *testing.T) {
 	r := resource()
 	rows := []map[string]any{{"id": "1", "title": "Buy milk", "status": "open", "rank": 2.0, "pinned": true}}
 	adapted := screens.List(r, opts, rows, 1, 1, "", true)
-	pure := core.List(core.Resource{Schema: r.Schema, Immutable: r.Immutable, Screen: r.Screen}, opts, rows, 1, 1, "", true)
+	pure := core.List(core.Resource{Schema: r.Schema, Name: r.Name, Immutable: r.Immutable, Screen: r.Screen}, opts, rows, 1, 1, "", true)
 	if adapted.Title != pure.Title || render(t, adapted.Body) != render(t, pure.Body) {
 		t.Fatal("the adapter and the renderer disagree about the list")
 	}

@@ -46,6 +46,7 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",
+		Name:   rest.Name{One: "Setting", Other: "Settings"},
 		Read:   contracts.PermissionSiteManage,
 		Write:  contracts.PermissionSiteManage,
 		Event:  contracts.EventSettingsUpdated,

@@ -27,6 +27,7 @@ func (Note) TableName() string { return "notes" }
 
 func note() resource.Resource {
 	return resource.Resource{
+		Name:   entity.Name{One: "Note", Other: "Notes"},
 		Schema: entity.Schema{Module: "note", Entity: "note", Path: "/api/v1/note/notes", Fields: entity.Fields[*Note]()},
 		// Where this resource's screens are, as the kernel composed it. Every
 		// link the renderer draws is built from it.

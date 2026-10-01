@@ -28,7 +28,7 @@ type Settings = Task
 // settings is the singleton under test: a read, a PUT, and a public face that
 // is smaller than the row.
 func singleton(save bool, public bool) rest.Singleton[*Settings] {
-	s := rest.Singleton[*Settings]{
+	s := rest.Singleton[*Settings]{Name: rest.Name{One: "Setting", Other: "Settings"},
 		Module: "site", Entity: "settings", Path: "/settings",
 		Read:  "task:read",
 		Event: "site.settings_updated",
@@ -180,11 +180,12 @@ func TestAReadOnlySingletonHasNoWriteAndNoScreen(t *testing.T) {
 // broken routes fail where they are written.
 func TestASingletonRefusesAWiringMistake(t *testing.T) {
 	for what, s := range map[string]rest.Singleton[*Settings]{
-		"no Load":          {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read"},
-		"a path with no /": {Module: "site", Entity: "settings", Path: "api/v1", Read: "task:read", Load: singleton(false, false).Load},
-		"public with no Face": {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read",
+		"no name":          {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read", Load: singleton(false, false).Load},
+		"no Load":          {Module: "site", Entity: "settings", Name: rest.Name{One: "Setting", Other: "Settings"}, Path: "/settings", Read: "task:read"},
+		"a path with no /": {Module: "site", Entity: "settings", Name: rest.Name{One: "Setting", Other: "Settings"}, Path: "api/v1", Read: "task:read", Load: singleton(false, false).Load},
+		"public with no Face": {Module: "site", Entity: "settings", Name: rest.Name{One: "Setting", Other: "Settings"}, Path: "/settings", Read: "task:read",
 			Load: singleton(false, false).Load, Public: true},
-		"a write with no Save": {Module: "site", Entity: "settings", Path: "/settings", Read: "task:read",
+		"a write with no Save": {Module: "site", Entity: "settings", Name: rest.Name{One: "Setting", Other: "Settings"}, Path: "/settings", Read: "task:read",
 			Load: singleton(false, false).Load, Write: "task:write"},
 	} {
 		t.Run(what, func(t *testing.T) {

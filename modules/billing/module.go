@@ -82,6 +82,7 @@ type Deps struct {
 var spec = rest.Spec[*contracts.Plan]{
 	Module:        "billing",
 	Entity:        "plan",
+	Name:          rest.Name{One: "Plan", Other: "Plans"},
 	Path:          "/plans",
 	Read:          contracts.PermissionBillingRead,
 	Write:         contracts.PermissionBillingCatalog,
@@ -132,6 +133,7 @@ func Module(deps Deps) (httpx.Entitler, module.Module) {
 			// writing its own period and its own stamped price.
 			rest.Singleton[*contracts.Subscription]{
 				Module: "billing", Entity: "subscription",
+				Name: rest.Name{One: "Subscription", Other: "Subscriptions"},
 				Path: "/subscription",
 				Read: contracts.PermissionBillingRead,
 				Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Subscription, error) {

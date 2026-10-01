@@ -1,0 +1,9 @@
+{
+  "resource.task.task": {
+    "translation": "Task",
+    "plural": {
+      "one": "Task",
+      "other": "Tasks"
+    }
+  }
+}

@@ -112,7 +112,7 @@ func TestATenantServedInPortugueseIsAnsweredInPortuguese(t *testing.T) {
 	// the empty state. The row actions (Editar, Eliminar) need a row, and creating
 	// one through the API to translate a screen would be this file testing
 	// ui/resource's CRUD rather than the language of a screen.
-	for _, want := range []string{`lang="pt-PT"`, ">Nova", "Ainda sem"} {
+	for _, want := range []string{`lang="pt-PT"`, ">Criar:", "Ainda sem"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the task screen carries no %q, so the tenant's language stopped at the sign-in page: %s",
 				want, short(body))

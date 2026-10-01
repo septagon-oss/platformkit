@@ -42,6 +42,7 @@ type Singleton[T crud.Entity] struct {
 	// Module and Entity name it, as they do on a Spec: the operation ids, the
 	// tag and the generated screen's path come from them.
 	Module, Entity string
+	Name           Name
 	// Path is the resource, relative to the module: "/settings". There is no
 	// item path. It is relative for the reason Spec.Path is: the address a route
 	// answers at is composed by the kernel from the module and the surface, and
@@ -102,7 +103,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 		surfaces.RegisterResource(res)
 	}
 
-	Operation(read, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Entity, "", nil),
+	Operation(read, s.op("read", http.MethodGet, s.Path, "Read this tenant's "+s.Name.Other, "", nil),
 		auth.ReadAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, _ *struct{}) (T, error) {
 			return s.Load(ctx, tx)
 		}, OperationOptions{})
@@ -112,7 +113,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 		if s.Event != "" {
 			events = []string{s.Event}
 		}
-		Operation(write, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Entity,
+		Operation(write, s.op("save", http.MethodPut, s.Path, "Save this tenant's "+s.Name.Other,
 			"The whole of it: a PUT replaces what is there. Saving what is already stored publishes nothing.", events),
 			auth.WriteAuth(), func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *bodyInput[T]) (T, error) {
 				crud.Reset(in.Body) // the four fields the server owns, whatever a body said
@@ -131,7 +132,7 @@ func (s Singleton[T]) Mount(surfaces httpx.Surfaces) {
 		OperationID: s.Module + "-" + s.Entity + "-public",
 		Method:      http.MethodGet,
 		Path:        s.Path,
-		Summary:     "Read this " + s.Entity + " as a visitor sees it",
+		Summary:     "Read this " + s.Name.One + " as a visitor sees it",
 		Description: "What a public site may show. Everything else a tenant configures is nobody else's business.",
 		Tags:        []string{s.Module},
 		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
@@ -190,7 +191,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 		return problem.Conflict("a tenant has one " + s.Entity + ", and it is neither created nor removed")
 	}
 	return httpx.Resource{
-		Module: s.Module, Entity: s.Entity, Path: s.Path, Singleton: true,
+		Module: s.Module, Entity: s.Entity, Name: s.Name, Path: s.Path, Singleton: true,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		Schema: crud.Schema{
 			Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T](),
@@ -231,6 +232,8 @@ func (s Singleton[T]) resource() httpx.Resource {
 func (s Singleton[T]) check() {
 	var bad string
 	switch {
+	case nameFault(s.Name) != "":
+		bad = nameFault(s.Name)
 	case !strings.HasPrefix(s.Path, "/"):
 		bad = fmt.Sprintf("Path %q does not start with /", s.Path)
 	case s.Load == nil:

@@ -139,7 +139,7 @@ CREATE POLICY admin_plans_scope ON admin_plans
 	USING (true)
 	WITH CHECK (platformkit_tenant_match(tenant_id));`
 
-var plans = rest.Spec[*Plan]{
+var plans = rest.Spec[*Plan]{Name: rest.Name{One: "Plan", Other: "Plans"},
 	Module: "plan", Entity: "plan", Path: "/plans",
 	Read: "plan:read", Write: "plan:write", OperatorWrite: true,
 }
@@ -149,7 +149,7 @@ type publishBody struct {
 	At string `json:"at,omitempty" doc:"When it goes out"`
 }
 
-var spec = rest.Spec[*Note]{
+var spec = rest.Spec[*Note]{Name: rest.Name{One: "Note", Other: "Notes"},
 	Module: "note", Entity: "note", Path: "/notes",
 	Read: "note:read", Write: "note:write", SoftDelete: true,
 	Immutable: []string{"rank"},
@@ -592,7 +592,7 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "In note") || !strings.Contains(body, "0 Notes") {
+	if !strings.Contains(body, "Open Notes") || !strings.Contains(body, "0 Notes") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -801,7 +801,7 @@ func TestAnOperatorsResourceOffersNoWriteToACustomer(t *testing.T) {
 	} {
 		t.Run(tt.who, func(t *testing.T) {
 			_, list, _ := callAt(t, router, tt.host, http.MethodGet, "/app/plan/plans", "")
-			if got := strings.Contains(list, ">New plan<"); got != tt.wants {
+			if got := strings.Contains(list, ">New Plan<"); got != tt.wants {
 				t.Errorf("the list offers New plan = %v, want %v", got, tt.wants)
 			}
 			// The row itself is visible either way: the catalogue is read by

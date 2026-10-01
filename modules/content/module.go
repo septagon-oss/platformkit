@@ -36,6 +36,7 @@ type Deps struct{}
 var spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
+	Name:       rest.Name{One: "Content item", Other: "Content items"},
 	Path:       "/contents",
 	Read:       contracts.PermissionContentRead,
 	Write:      contracts.PermissionContentManage,

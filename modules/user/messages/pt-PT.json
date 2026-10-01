@@ -25,5 +25,12 @@
     "plural": {
       "": "aprovar novas contas"
     }
+  },
+  "resource.user.user": {
+    "translation": "Utilizador",
+    "plural": {
+      "one": "Utilizador",
+      "other": "Utilizadores"
+    }
   }
 }

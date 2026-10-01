@@ -7,11 +7,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 )
 
-// catalogues is the sign-in page's copy as files, one per locale. Four keys, and
-// only the translation: the English of this page is the sentence each control
-// passes as its readable fallback in internal/pages.go, so putting it in a second
-// place would give the page two sources of the same words and a translator one
-// more file to keep in step.
+// catalogues is the admin-authored copy as files, one per locale. English
+// entries let the pseudo-locale transform the same keys the pages render.
 //
 // This replaced a Go builder of the same four keys in both languages, which is how
 // every catalogue in the product started and is exactly what decision 0012 rule 2
@@ -20,10 +17,7 @@ import (
 //go:embed messages
 var catalogues embed.FS
 
-// Catalogue is this module's copy, ready for the application's one xtext.Load. The
-// sign-in page is the only screen that speaks another language today, and the
-// module composes nothing: an application that has more copy of its own passes it
-// as a later source and the merge order decides, not this file.
+// Catalogue is this module's copy, ready for the application's one xtext.Load.
 func Catalogue() xtext.Source {
 	files, err := fs.Sub(catalogues, "messages")
 	if err != nil {

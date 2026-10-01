@@ -57,6 +57,7 @@ type Deps struct {
 var spec = rest.Spec[*contracts.User]{
 	Module:     "user",
 	Entity:     "user",
+	Name:       rest.Name{One: "User", Other: "Users"},
 	Path:       "/users",
 	Read:       contracts.PermissionUserRead,
 	Write:      contracts.PermissionUserManage,

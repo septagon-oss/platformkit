@@ -1,5 +1,15 @@
 # Tenant component galleries
 
+## Composition (T-0196)
+
+**Reused** — `rest.Spec`, `rest.Singleton`, `httpx.Resource`, `ui/screens`, `ui/resource`, and the composed x/text catalogue provide the named resource screens and dashboard counts.
+**Added** — declared singular and plural resource names and a source plural check because the old machine entity names could not express “Settings” or Portuguese plurals.
+**Made reusable** — the `rest.Name` declaration, `resource.<module>.<entity>` catalogue pattern, and `tools/checkplurals` check are available to the next module.
+
+The dashboard takes the request's catalogue selection, as do generated resource
+names. A module owns its English and Portuguese name forms; applications may
+compose further locale files through the existing x/text source list.
+
 The admin module serves the interactive gallery at `/app/admin/_gallery`. Sign in
 with `gallery:read` (included by the administrator's wildcard). The default
 composition shows Core examples only on the operator tenant. Customer tenants

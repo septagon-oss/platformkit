@@ -54,6 +54,7 @@ const sweepEvery = time.Minute
 var spec = rest.Spec[*contracts.Task]{
 	Module:     "task",
 	Entity:     "task",
+	Name:       rest.Name{One: "Task", Other: "Tasks"},
 	Path:       "/tasks",
 	Read:       contracts.PermissionTaskRead,
 	Write:      contracts.PermissionTaskUpdate,

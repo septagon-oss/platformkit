@@ -71,7 +71,7 @@ func sharedCatalogue(t *testing.T, soft bool) (*httpx.API, http.Handler, *sql.DB
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	rest.Spec[*Plan]{
+	rest.Spec[*Plan]{Name: rest.Name{One: "Plan", Other: "Plans"},
 		Module: review6Module, Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog", SoftDelete: soft,
 	}.Mount(api.Surfaces(review6Module))

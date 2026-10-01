@@ -31,7 +31,7 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 	t.Parallel()
 	rows := []map[string]any{{"id": "1", "title": "Buy milk", "status": "open", "rank": 2.0, "pinned": true}}
 	english := render(t, screens.List(resource(), opts, rows, 1, 1, "", true).Body)
-	for _, want := range []string{"1 note", ">New note<"} {
+	for _, want := range []string{"1 note", ">New Note<"} {
 		if !strings.Contains(english, want) {
 			t.Fatalf("english list lacks %q:\n%s", want, english)
 		}
@@ -45,11 +45,11 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 	pt := opts
 	pt.Locale = &page.Locale{Language: "pt-PT", Formatter: translations{
 		"screens.count": "%d %s registados", "screens.new": "Nova %s", "screens.edit": "Editar",
-		"screens.delete": "Eliminar", "screens.delete_this": "Eliminar esta %s", "screens.empty": "Ainda sem %ss.",
+		"screens.delete": "Eliminar", "screens.delete_this": "Eliminar: %s", "screens.empty": "Ainda sem %s.",
 		"screens.pagination": "Paginação", "screens.breadcrumb": "Caminho",
 	}}
 	list := render(t, screens.List(resource(), pt, rows, 3*perPage, 1, "", true).Body)
-	for _, want := range []string{fmt.Sprintf("%d notes registados", 3*perPage), ">Nova note<", `aria-label="Paginação"`} {
+	for _, want := range []string{fmt.Sprintf("%d notes registados", 3*perPage), ">Nova Note<", `aria-label="Paginação"`} {
 		if !strings.Contains(list, want) {
 			t.Errorf("localized list lacks %q:\n%s", want, list)
 		}
@@ -58,13 +58,13 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 		t.Error("the empty state kept its English")
 	}
 	detail := render(t, screens.Detail(resource(), pt, rows[0], true).Body)
-	for _, want := range []string{">Editar<", ">Eliminar<", `data-confirm-label="Eliminar"`, `aria-label="Eliminar esta note"`, `aria-label="Caminho"`} {
+	for _, want := range []string{">Editar<", ">Eliminar<", `data-confirm-label="Eliminar"`, `aria-label="Eliminar: Note"`, `aria-label="Caminho"`} {
 		if !strings.Contains(detail, want) {
 			t.Errorf("localized detail lacks %q:\n%s", want, detail)
 		}
 	}
 	// A key the catalog lacks keeps its readable English.
-	if !strings.Contains(detail, "This deletes the note. It cannot be undone.") {
+	if !strings.Contains(detail, "This deletes the Note. It cannot be undone.") {
 		t.Error("a missing key did not fall back to the authored text")
 	}
 	if strings.Contains(detail, ">Edit<") || strings.Contains(detail, ">Delete<") {
