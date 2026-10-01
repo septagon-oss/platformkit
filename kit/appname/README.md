@@ -13,7 +13,7 @@ app := appname.MustParse("collect")
 
 appname.Subject(app, tenantID, "cart.checked_out")   // platformkit.collect.<tenant>.cart.checked_out
 appname.Filter(app, "cart.checked_out")              // platformkit.collect.*.cart.checked_out
-appname.Durable(app, "cart", "cart.checked_out")     // collect+cart+cart-checked_out
+appname.Durable(app, "cart", "cart.checked_out")     // collect+cart-cart-checked_out
 appname.JobLock(app, "purge")                        // collect/job:purge
 appname.Cookie(app, "session", true)                 // __Host-collect-session
 appname.RateLimitKey(app, tenantID, "writes")        // collect/<tenant>/writes
@@ -48,7 +48,7 @@ elsewhere claims.
 |---|---|---|
 | Subject, filter | **open, and checked**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` takes the app and accepts only its own scoped address, so the two older shapes are read and then refused — an address that names no app cannot be shown to be this app's. The window is therefore one-directional: a deployment must not start naming an app until no process still publishing at the older addresses is alive, because from that moment its own older traffic is unreadable to it | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
 | Cookie | **not open**: `httpx.CookieName` still writes `__Host-<base>` for the deployment that names no app, and `CookieNameOf` is the constructor a caller with a slug uses; `httpx.SessionCookieOf` reads `__Host-session`, `session` and the `platformkit_session` aliases, which is `PreviousCookies` for those two bases and no app-scoped name | wire the auth module's `Cookies` to a slug, then one release, then delete `PreviousCookies` and the aliases that read it |
-| Durable | **not open**: `Durable` forms the scoped name, `kit/events` forms it from `Subscription.App`, and no migration copies `platformkit_handled` or rewrites `platformkit_dead_letters` from the old names, so a deployment that starts naming its app re-runs handled work and strands its dead letters | the migration is the close: the next `0000*` data file copies every handled row under the new durable and rewrites every dead letter's `durable` with it |
+| Durable | **closed by a migration, as the window asks**: `Durable` forms the scoped name from `Subscription.App`, and `migrations/000031_durable_app` moves both ledgers with it — every `platformkit_handled` row rewritten to the scoped durable and every `platformkit_dead_letters.durable` with it, each row to the app of the tenant that owns it, so one pass serves every app of a database that hosts many. The scoped name is the unscoped one with `<app>+` in front of it (`appJoin`, and `TestADurableCarriesNoDot` holds it), which is what lets a stored row be moved without knowing where its module ended | the file is the close: it applies once, and an installation that names no slug has nothing to move, because its durable did not change |
 | Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf`, and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
 
 ## Limits
@@ -74,11 +74,13 @@ What this branch does not do, in the order it costs:
   deployment keeps it and an app-scoped one leaves it: `LEFT JOIN` and `coalesce`
   say so, and `FOR UPDATE OF o` keeps the lock on the outbox rows, not the tenant
   table. Untested is a running two-app composition, not the claim.
-- **The durable rename has no migration.** `Durable` forms `<app>+<module>+<event>`,
-  and no file copies `platformkit_handled` or rewrites `platformkit_dead_letters`
-  from the old names, so a deployment that starts naming its app re-runs handled
-  work and strands its dead letters. The row-placement door this branch adds
-  (`db.MigrateDeclaring`) is the door that file reads its slug from; the file is not here.
+- **The durable rename's migration moves rows it can name.**
+  `migrations/000031_durable_app` rewrites both ledgers, and it can only prefix what it
+  reads, so a row whose tenant belongs to an app moves and a row whose tenant names no
+  app stays — which is right for that installation, whose durable did not change, and is
+  the whole of what is left unmoved. It is tested against fixture rows run by the role
+  that owns the tables (`migrations/durable_app_rename_test.go`), and never against a
+  deployment that really went through the window.
 - **One boundary reads the app back; two more need a join.** Delivery
   refuses a message whose *address* names another app, or names no app at all
   (`transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls

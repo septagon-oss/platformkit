@@ -26,8 +26,26 @@ by slug and the migration writes nothing. `db.MigrateDeclaring` is the one door 
 database does not hold, checked before a connection opens. A deployment that says nothing about itself
 may still migrate a database with nothing to place — which is every fresh installation — and may not
 migrate one with something to place and nothing to say about it.
-T-0228; what is not yet wired — the relay's claim, the durable rename migration — is listed under *Limits*
-in `kit/appname/README.md`.
+**Both delivery ledgers move with the durables that renamed them.** A durable is half of
+the primary key of `platformkit_handled` and `platformkit_dead_letters`, so a deployment
+that starts naming its app leaves every row it wrote under a key its own subscription will
+never ask for again: `DeliverAll` redelivers what the transport holds, the claim misses,
+and a handler that already ran runs again — and a targeted replay deletes by the exact
+durable, so the dead letters go invisible to the one command that reads them.
+`migrations/000031_durable_app` rewrites both tables in one transaction, each row to the
+app of the tenant that owns it, so one pass serves every app of a database that hosts many
+rather than only the one whose boot happened to migrate; a tenant whose app is the empty
+slug is left alone, because its durable did not change, and the rolling window's collision
+(one event claimed under both spellings) resolves to the one row that says what happened.
+Both this file and `000030` say in their own text that their writes are the control plane's
+(`set_config('platformkit.system_access', …)`, the way a data drain does): without it the
+row-level-security policies that protect `tenants` and both ledgers answer a schema file
+with an empty set, the statement is accepted, the version is recorded, and nothing moved —
+which at the migrate role a real deployment names, the owner and no superuser, is a release
+that silently writes no back-fill at all.
+T-0228; what is not yet wired — the envelope's `app` field, delivery's check that the event's
+tenant is one this app holds, and the reference composition's own slug — is listed under
+*Limits* in `kit/appname/README.md`.
 
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two

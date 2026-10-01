@@ -198,7 +198,7 @@ func Space(app Name) string {
 // app's traffic and an operator's `nats stream report` still means one thing.
 func SubjectSpace() string { return Prefix + ".>" }
 
-// Durable names one subscription on a transport: <app>+<module>+<event>.
+// Durable names one subscription on a transport: <app>+<module>-<event>.
 //
 // Two rules shape it. A durable consumer name may not hold a dot (JetStream's
 // own rule) while the subject it filters is made of dots, so the event half is a
@@ -206,7 +206,7 @@ func SubjectSpace() string { return Prefix + ".>" }
 // needs the migration that copies the handled ledger and rewrites the dead
 // letters with it, or a renamed durable sees every redelivered event as first.
 //
-// And the three parts stay separable, because the durable is the one name that
+// And the app half stays separable, because the durable is the one name that
 // says which app owns a consumer: it is the JetStream consumer name on the single
 // PLATFORMKIT stream, the deliver group every replica of that app joins, and half
 // the primary key of platformkit_handled and platformkit_dead_letters. Joining
@@ -215,24 +215,37 @@ func SubjectSpace() string { return Prefix + ".>" }
 // "billing" and event "billing.plan.created" would answer to the same consumer as
 // app "acme-billing" with module "billing" and event "plan.created" — one
 // consumer, one queue group, and one app load-balancing another app's tenants'
-// events into its own handlers. The plus sign is the join because it is in none of
-// the three grammars an app name, a module name or an event name is written in
-// (kit/appname's slug is [a-z0-9-], kit/module's moduleName is [a-z0-9_],
-// transport's eventName adds only dots) and JetStream still accepts it in a
-// consumer name. The event's dots become dashes, a character no event name holds,
-// so each half of the name decodes back to exactly one input.
+// events into its own handlers. The plus sign is the app's join because it is in
+// none of the three grammars an app name, a module name or an event name is written
+// in (kit/appname's slug is [a-z0-9-], kit/module's moduleName is [a-z0-9_],
+// transport's eventName adds only dots) and JetStream still accepts it in a consumer
+// name. One plus sign therefore ends the app, and the first dash after it ends the
+// module — a module name holds no dash either, so the two halves behind the app stay
+// as separable as they always were.
+//
+// The join behind the app is a dash rather than a second plus for one reason beyond
+// looks: it is the join this name carried before the app segment existed, so the
+// scoped durable is the unscoped one with the app prefixed. 000031 can therefore
+// move the two ledgers by prefixing, without knowing where a stored name's module
+// ended and its event began — and a rename that could not be derived from the row
+// alone could only be done while the event itself was still in the outbox to ask.
 func Durable(app Name, module, event string) string {
 	if !app.Named() {
-		return module + "-" + strings.ReplaceAll(event, ".", "-")
+		return module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
 	}
-	return app.token() + partJoin + module + partJoin + strings.ReplaceAll(event, ".", "-")
+	return app.token() + appJoin + module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
 }
 
-// partJoin separates the app, module and event halves of a durable, and
-// durableJoin transliterates an event name's dots. Neither character is in any of
-// the three grammars above, which is the whole separability argument: given a
-// durable, one plus sign ends the app and the next ends the module.
-const partJoin = "+"
+// appJoin separates the app from the rest of a durable, and eventJoin
+// transliterates the dots of an event name. '+' is in none of the three grammars
+// above, which is the whole separability argument for the app half; '-' is what no
+// module name holds, which keeps the module and the event apart and makes the
+// scoped name the unscoped one with a prefix on it. 000031 relies on that last
+// fact, and migrations/durable_app_rename_test.go is the case that holds it.
+const (
+	appJoin   = "+"
+	eventJoin = "-"
+)
 
 // JobLock names the advisory lock one periodic job takes. Two apps each running
 // a job the module named the same way must both run, so the lock name carries the
