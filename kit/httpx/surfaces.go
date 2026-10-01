@@ -437,9 +437,10 @@ func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() 
 // new language declaration takes effect now rather than within the cache's own
 // lifetime. The tenant module calls it; nothing else has a host to forget.
 //
-// The whole call is one Delete however many hosts it names, and it returns the
-// store's error: an invalidation that could not be sent is worth a log line, and it
-// is not worth unwinding the write that is already committed.
+// However many hosts it names, the call is one Move of the host namespace, because
+// an invalidation that only deletes what is there loses the load that raced it. It
+// returns the store's error: an invalidation that could not be sent is worth a log
+// line, and it is not worth unwinding the write that is already committed.
 func (r *Router) InvalidateHost(hosts ...string) error { return r.api.InvalidateHost(hosts...) }
 
 // The two prefixes of the table. A surface with no document prefix refuses

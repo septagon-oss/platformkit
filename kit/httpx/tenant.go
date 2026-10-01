@@ -26,8 +26,6 @@ import (
 // coffee rather than a deploy.
 const hostTTL = 30 * time.Second
 
-type hostEntry = struct{}
-
 // hostScope is the namespace of host resolutions, and it is Shared rather than
 // Of(tenant): a host resolution is the thing that *decides* a tenant, so it belongs
 // to the installation and to no customer. It is a package constant and not caller
@@ -63,25 +61,38 @@ func newCachedTenant(t tenancy.Tenant) cachedTenant {
 // holds every arriving request open on the client's patience rather than ours.
 const resolveTimeout = 2 * time.Second
 
-// InvalidateHost forgets a cached resolution, so a rename, a suspension or a new
-// language declaration takes effect now rather than within hostTTL. The tenant
-// module calls it when it changes a host; nothing else has any reason to.
+// InvalidateHost closes the namespace of host resolutions, so a rename, a
+// suspension or a new language declaration takes effect now rather than within
+// hostTTL. The tenant module calls it when it changes a host; nothing else has any
+// reason to.
 //
-// It returns the store's error, because the delete now crosses a network: the
+// It is a Move and not a Delete of the hosts named, and the race is the reason for
+// the whole of kit/cache. A delete forgets what is in the store at the moment it
+// runs and nothing else: replica A has missed, is already in its loader, and the
+// operator's replica commits a suspension and deletes the key; replica A writes the
+// tenant it loaded a moment later, and every replica that reads this store serves a
+// suspended host for the rest of hostTTL. A move forbids what arrives afterwards as
+// well as what is there — TestAnInvalidationDuringALoadLeavesNoResolutionBehind is
+// that interleaving run through this function rather than through the port. The
+// names are therefore not the keys being forgotten, and nothing here normalises
+// them: the namespace is what closes.
+//
+// What the names decide is whether anything is closed at all: a change that touched
+// no host changes no resolution, and a tenant with no hosts costs no command.
+// The cost of the coarser invalidation is that one suspension costs every other host
+// one loader query on its next request — for a handful of operator actions a day
+// over an indexed query, the trade kit/cache names on Move.
+//
+// It returns the store's error, because the invalidation now crosses a network: the
 // caller logs it and leaves its committed write alone. A resolution that nobody
 // forgot expires by itself within hostTTL, and unwinding a committed suspension
 // because a cache stopped answering would be a worse outage than the one it
-// prevents. Callers that pass no host at all — a tenant with no hosts — get no
-// call to the store at all.
+// prevents.
 func (a *API) InvalidateHost(hosts ...string) error {
 	if len(hosts) == 0 {
 		return nil
 	}
-	keys := make([]cache.Key, 0, len(hosts))
-	for _, h := range hosts {
-		keys = append(keys, hostScope.Entry(HostOnly(h)))
-	}
-	return a.opts.Cache.Delete(context.Background(), keys...)
+	return a.opts.Cache.Move(context.Background(), hostScope)
 }
 
 // resolve maps a host to a tenant, through the shared store and, on a miss, the
