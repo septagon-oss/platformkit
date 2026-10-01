@@ -46,7 +46,7 @@ elsewhere claims.
 
 | Name | Status | Command that closes it |
 |---|---|---|
-| Subject, filter | **open where it is read**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` still compares the routed subject against the tenant-only address, so the scoped address is not yet one it accepts | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
+| Subject, filter | **open, and checked**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` takes the app and accepts only its own scoped address, so the two older shapes are read and then refused — an address that names no app cannot be shown to be this app's. The window is therefore one-directional: a deployment must not start naming an app until no process still publishing at the older addresses is alive, because from that moment its own older traffic is unreadable to it | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
 | Cookie | **not open**: `httpx.CookieName` still writes `__Host-<base>` for the deployment that names no app, and `CookieNameOf` is the constructor a caller with a slug uses; `httpx.SessionCookieOf` reads `__Host-session`, `session` and the `platformkit_session` aliases, which is `PreviousCookies` for those two bases and no app-scoped name | wire the auth module's `Cookies` to a slug, then one release, then delete `PreviousCookies` and the aliases that read it |
 | Durable | **not open**: `Durable` forms the scoped name, `kit/events` forms it from `Subscription.App`, and no migration copies `platformkit_handled` or rewrites `platformkit_dead_letters` from the old names, so a deployment that starts naming its app re-runs handled work and strands its dead letters | the migration is the close: `000030_*` copies every handled row under the new durable and rewrites every dead letter's `durable` with it |
 | Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf`, and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
@@ -62,19 +62,24 @@ What this branch does not do, in the order it costs:
   database rather than per app. This is the brief's item 5 and the review's third
   HIGH; it needs a migration, RLS, the tenant module's Deps and its own tests, and
   it is the next piece of work here, not a window.
-- **No boundary reads an app back yet.** Delivery opens its transaction in whatever
-  tenant the envelope names and the relay claims every unpublished outbox row,
-  because both checks need `tenants.app` above. The names this branch formed are
-  what makes those checks expressible; they are not themselves the checks. The
-  `Filters` window is therefore wider than any app until delivery checks — nothing
-  calls the wider filter except a consumer that also refuses what it admits.
+- **One boundary reads the app back; two more need the tenant row.** Delivery
+  refuses a message whose *address* names another app, or names no app at all
+  (`transport.AddressMismatch(app, subject, ev)`, which the NATS provider calls
+  before its sink runs): that check needs only the address the broker routed by,
+  and it is what makes the wide `Filters` window safe to read at all. What still
+  needs `tenants.app` is the check behind it — that the tenant the event names is
+  one this app holds, which an address cannot say — and the relay's claim, which
+  has no app to join on until that column exists.
 - **The reference composition names no app.** `nats.app` (kit/config) is the slug's
   one configuration key and the reference application leaves it empty, which is the
   single-app deployment: every name it forms is the name it formed before this
   branch. Choosing the slug for `apps/platformkit`, and the browser test that signs
   in to two apps on two hosts of one deployment, are the product's share.
-- **The envelope carries no app field** and `transport.Event` is unchanged, so
-  `AddressMismatch` cannot yet refuse an event that names the wrong app.
+- **The envelope carries no app field**, so `AddressMismatch` reads the app out of
+  the address the broker routed by and not out of the document. A body that names
+  an app is a second fact to check against the first, and it is a field the kernel
+  does not write yet; what is refused today is the message whose *routing* belongs
+  to another app, which is the half the broker can witness.
 - The cache key (`CacheKey`) has no caller yet — T-0119 owns the cache.
 - The census exempts one reviewer-owned pin (`kit/events/transport/review8_…`)
   rather than scheduling its edit, and it counts a name spelled as a whole literal

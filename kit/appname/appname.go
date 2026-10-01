@@ -129,7 +129,7 @@ const App = "app"
 // the app exactly and the tenant loosely, and no filter could say "this tenant,
 // any app" — which is right, because a subscription always belongs to one app.
 func Subject(app Name, tenant uuid.UUID, name string) string {
-	if !app.set() {
+	if !app.Named() {
 		return PreviousSubject(tenant, name)
 	}
 	return Prefix + "." + app.token() + "." + tenant.String() + "." + name
@@ -150,7 +150,7 @@ func OldestSubject(name string) string { return Prefix + "." + name }
 // Filter is the wildcard a subscription to one event name uses: that event, in
 // every tenant of this app, and no other app's.
 func Filter(app Name, name string) string {
-	if !app.set() {
+	if !app.Named() {
 		return PreviousFilter(name)
 	}
 	return Prefix + "." + app.token() + ".*." + name
@@ -159,8 +159,9 @@ func Filter(app Name, name string) string {
 // PreviousFilter is the wildcard the build before the app token filtered:
 // platformkit.*.<module>.<event>, which matches every app's delivery of that
 // event. It is in Filters for one rollout and no longer than that, and what makes
-// it safe to read at all is delivery's tenant check: a message on this address is
-// accepted only when its tenant belongs to the reading app, so the filter's reach
+// it safe to read at all is transport.AddressMismatch: a message on this address
+// names no app, so an app that names itself refuses it and only the deployment of
+// one app — which has no app token to agree with — answers it. The filter's reach
 // is wider than the app and the boundary is not.
 func PreviousFilter(name string) string { return Prefix + ".*." + name }
 
@@ -175,7 +176,7 @@ func PreviousFilter(name string) string { return Prefix + ".*." + name }
 // without them. It is the same window transport's comment describes, moved here
 // where the addresses are written once.
 func Filters(app Name, name string) []string {
-	if !app.set() {
+	if !app.Named() {
 		return []string{PreviousFilter(name), OldestSubject(name)}
 	}
 	return []string{Filter(app, name), PreviousFilter(name), OldestSubject(name)}
@@ -186,7 +187,7 @@ func Filters(app Name, name string) []string {
 // a placeholder in a published document, which is what kit/app's AsyncAPI document
 // spells to describe the addresses without inventing an address of its own.
 func Space(app Name) string {
-	if !app.set() {
+	if !app.Named() {
 		return Prefix + "."
 	}
 	return Prefix + "." + app.token() + "."
@@ -221,7 +222,7 @@ func SubjectSpace() string { return Prefix + ".>" }
 // consumer name. The event's dots become dashes, a character no event name holds,
 // so each half of the name decodes back to exactly one input.
 func Durable(app Name, module, event string) string {
-	if !app.set() {
+	if !app.Named() {
 		return module + "-" + strings.ReplaceAll(event, ".", "-")
 	}
 	return app.token() + partJoin + module + partJoin + strings.ReplaceAll(event, ".", "-")
@@ -237,7 +238,7 @@ const partJoin = "+"
 // a job the module named the same way must both run, so the lock name carries the
 // app; without it one app's job silences the other's on every replica.
 func JobLock(app Name, job string) string {
-	if !app.set() {
+	if !app.Named() {
 		return "job:" + job
 	}
 	return app.token() + "/job:" + job
@@ -252,7 +253,7 @@ func JobLock(app Name, job string) string {
 // one __Host-session cookie apart from signing each other out, and over http://
 // one localhost port the two apps share the cookie jar outright.
 func Cookie(app Name, base string, secure bool) string {
-	if !app.set() {
+	if !app.Named() {
 		// No slug set is the single-app deployment, which is the deployment every
 		// cookie jar in the field already belongs to: it gets the name that jar
 		// already carries rather than a new one nobody asked for.
@@ -279,7 +280,7 @@ func PreviousCookies(base string) []string {
 // so no caller's key can forge another app's or tenant's prefix, and a bucket an
 // operator reads names both owners rather than one of them.
 func RateLimitKey(app Name, tenant uuid.UUID, key string) string {
-	if !app.set() {
+	if !app.Named() {
 		return tenant.String() + "/" + key
 	}
 	return app.token() + "/" + tenant.String() + "/" + key
@@ -300,7 +301,7 @@ func CacheKey(app Name, tenant uuid.UUID, key string) string {
 // own first two characters as a fan-out directory — because moving bytes that are
 // already written is an operator's step and not this function's.
 func StoragePath(app Name, tenant, key uuid.UUID) string {
-	if !app.set() {
+	if !app.Named() {
 		return key.String()[:2] + "/" + key.String()
 	}
 	return app.token() + "/" + tenant.String() + "/" + key.String()
@@ -312,7 +313,7 @@ func StoragePath(app Name, tenant, key uuid.UUID) string {
 // subject already said it, and the envelope says it again for a consumer that
 // sees only the document.
 func Source(app Name, module string) string {
-	if !app.set() {
+	if !app.Named() {
 		return "/" + module
 	}
 	return "/" + app.token() + "/" + module
@@ -331,7 +332,7 @@ func ConnectionName(process string, apps ...Name) string {
 	}
 	tokens := make([]string, 0, len(apps))
 	for _, a := range apps {
-		if a.set() {
+		if a.Named() {
 			tokens = append(tokens, a.token())
 		}
 	}
@@ -347,16 +348,21 @@ func ConnectionName(process string, apps ...Name) string {
 // an address into one, and a dot would let an app name filter another app's
 // subjects. Refusing yields the nil slug, which no address of any app collides
 // with, and every boundary that reads an app back refuses it.
-// set says this Name names an app. The zero Name is the deployment that hosts one
-// app and names no slug: every constructor answers with the name that deployment
-// already uses, so the app segment appears exactly when a second app could share
-// the name. A non-empty Name that is not a slug is the other case — a name that
-// was set and is broken — and token refuses it.
-func (n Name) set() bool { return string(n) != "" }
-
 func (n Name) token() string {
 	if !n.Valid() {
 		return ""
 	}
 	return string(n)
 }
+
+// Named says this Name names an app. The zero Name is the deployment that hosts
+// one app and names no slug: every constructor answers with the name that
+// deployment already uses, so the app segment appears exactly when a second app
+// could share the name. A non-empty Name that is not a slug is the other case — a
+// name that was set and is broken — and token refuses it.
+//
+// A boundary that reads the app back asks this before it compares, because the
+// two answers are different rules and not one rule with an empty side: an app
+// that names itself has an address to be compared with, and one that names
+// nothing has only the addresses this kernel formed before decision 0074.
+func (n Name) Named() bool { return string(n) != "" }

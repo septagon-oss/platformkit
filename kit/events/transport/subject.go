@@ -114,9 +114,10 @@ func AppFilters(app appname.Name, name string) []string {
 // forgery of the first — there is no tenant in it to disagree with the document.
 func legacyAddress(name string) string { return appname.OldestSubject(name) }
 
-// AddressMismatch compares the address a message arrived on with the event the
-// document inside it claims to be, and names the disagreement when the two are
-// not the same event in the same tenant. It returns nil when a delivery may run.
+// AddressMismatch compares the address a message arrived on with the app that
+// reads it and the event the document inside it claims to be, and names the
+// disagreement when the three are not one delivery. It returns nil when a
+// delivery may run.
 //
 // Why a delivery needs this at all: a consumer's filter fixes the module and
 // event halves of the subject, because it spells them out and a NATS `*` matches
@@ -131,15 +132,38 @@ func legacyAddress(name string) string { return appname.OldestSubject(name) }
 // broker actually routed by is a fact the delivery reads, and the two tenants
 // have to be one tenant.
 //
-// Both of Filters' addresses pass. The one that names a tenant has to name this
-// event's; the previous build's names none, so it contradicts nothing — refusing
-// it would terminate the rollout window's events, which is the loss this file's
-// own second filter exists to prevent.
-func AddressMismatch(subject string, ev Event) error {
-	switch subject {
-	case Subject(ev.TenantID, ev.Name), legacyAddress(ev.Name):
+// Which of Filters' addresses pass depends on whether the reading app names
+// itself, and the two cases are the same rule read twice.
+//
+// An app that names itself passes only its own scoped address. The older two
+// name no app, and an address that names no app cannot be shown to be this
+// app's: it is the address every other app's previous build published at too.
+// That is decision 0074 rule 7's "delivery's app check applied to both" — the
+// filter stays wide for the length of a rollout precisely so that the boundary,
+// and not the filter, is what decides. It costs a real deployment something,
+// and the cost is named in kit/appname's Limits: a process must not start
+// naming an app until no process still publishing at the older addresses is
+// alive, because from that moment its own older traffic is unreadable to it.
+//
+// An app that names nothing (the deployment of one app, which is every
+// composition that sets no slug) passes both addresses it could have been
+// published at before decision 0074, as it always has, and refuses any address
+// carrying an app token: it has no app to agree with, so scoped traffic is
+// somebody else's.
+func AddressMismatch(app appname.Name, subject string, ev Event) error {
+	// A Name that was set but is not a slug has no token: the address built from
+	// it holds an empty segment, and both sides of a comparison built the same way
+	// would agree. Refuse on the name instead — a process that names itself with
+	// something a subject token cannot hold receives nothing.
+	if app.Named() && !app.Valid() {
+		return fmt.Errorf("events: app %q is not an app name, so no address can be shown to be its %s in tenant %s", string(app), ev.Name, ev.TenantID)
+	}
+	if subject == appname.Subject(app, ev.TenantID, ev.Name) {
 		return nil
 	}
-	return fmt.Errorf("events: message stored at %q is not %s in tenant %s, whose address is %q",
-		subject, ev.Name, ev.TenantID, Subject(ev.TenantID, ev.Name))
+	if !app.Named() && subject == legacyAddress(ev.Name) {
+		return nil
+	}
+	return fmt.Errorf("events: message stored at %q is not app %s's %s in tenant %s, whose address is %q",
+		subject, app, ev.Name, ev.TenantID, appname.Subject(app, ev.TenantID, ev.Name))
 }
