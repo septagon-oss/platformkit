@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"log/slog"
 	"net/http"
 	"os"
@@ -81,6 +82,14 @@ type Options struct {
 
 	// Role defaults to All.
 	Role Role
+
+	// App is this composition's own app slug: the name every shared name it
+	// forms carries, so two compositions over one database and one broker cannot
+	// read one another's work (kit/appname, decision 0074). Empty is the deployment
+	// of one app, which keeps the names this kernel formed before the app segment.
+	// It is a slug and not a display name: it reaches a broker subject, a consumer
+	// name, a job lock and a cookie name.
+	App appname.Name
 
 	// Installation names the host the installation itself is reached at — the
 	// one address that serves the control plane (the Ops surface) and the only
@@ -657,7 +666,7 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 	}
 	a.log.InfoContext(ctx, "app: working", "jobs", len(scheduled), "subscriptions", len(subs))
 
-	scheduler := jobs.NewScheduler(conn, a.log, scheduled...)
+	scheduler := jobs.NewScheduler(conn, a.log, a.opts.App, scheduled...)
 	if probes == nil {
 		return scheduler.Run(ctx)
 	}

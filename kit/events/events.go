@@ -20,12 +20,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
@@ -149,6 +149,12 @@ type Sink = transport.Sink
 // subscriptions in its manifest; kit/app refuses to start when one names an
 // event no module publishes.
 type Subscription struct {
+	// App is the slug of the app this subscription belongs to. It goes into the
+	// durable name, which is the JetStream consumer name, the deliver group and
+	// half the key of the handled ledger and the dead-letter row — the one name
+	// that says which app owns a delivery. Left empty, the subscription is the
+	// deployment of one app and keeps the durable every consumer already has.
+	App     appname.Name
 	Module  string
 	Name    string
 	Handler Handler
@@ -157,7 +163,7 @@ type Subscription struct {
 // durable is the subscription's name on the transport. Dots separate a subject,
 // so they cannot appear in a consumer name: the two halves join with a dash.
 func (s Subscription) durable() string {
-	return s.Module + "-" + strings.ReplaceAll(s.Name, ".", "-")
+	return appname.Durable(s.App, s.Module, s.Name)
 }
 
 // Consume subscribes every handler in subs to its event. Each delivery opens a

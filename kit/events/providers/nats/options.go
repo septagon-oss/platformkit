@@ -2,6 +2,7 @@ package nats
 
 import (
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 
 	"github.com/nats-io/nats.go"
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -22,5 +23,9 @@ func Connect(settings config.NATS) (transport.Transport, error) {
 	if settings.CACert != "" {
 		options = append(options, nats.RootCAs(settings.CACert))
 	}
-	return JetStream(settings.URL, options...)
+	app, err := appname.Parse(settings.App)
+	if err != nil {
+		return nil, fmt.Errorf("events: %w", err)
+	}
+	return JetStream(app, settings.URL, options...)
 }
