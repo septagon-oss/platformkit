@@ -81,6 +81,21 @@ nats:
   # Optional PEM trust roots for tls://; empty uses system trust roots.
   ca_cert: ""
 
+# Where a value that every replica must read is kept. An empty adapter is this
+# process's own memory: a complete deployment for one process, which kit/app says
+# once in a boot line, because forgetting a value there reaches only that process.
+cache:
+  # "" (the in-process store) | memory | valkey. The application supplies the
+  # constructor for the shared name (app.Caches), as it does for each transport.
+  adapter: ""
+  # The first segment of every key this installation writes. Required with
+  # valkey: two products behind one address have one keyspace.
+  app: ""
+  # redis://, rediss://, valkey:// or unix://, no path, no query. URL credentials
+  # are refused: put the secret in PLATFORMKIT_CACHE_PASSWORD.
+  url: ""
+  password: ""
+
 log:
   # debug | info | warn | error
   level: "info"

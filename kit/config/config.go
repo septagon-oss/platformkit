@@ -177,10 +177,27 @@ func (c Cache) Validate() error {
 	if c.URL == "" {
 		return errors.New("cache.url is required with cache.adapter valkey")
 	}
+	// One sentence for every address that is not one: the operator's fix is the
+	// same edit to the same line whichever way it was wrong.
+	bad := errors.New("cache.url must be redis://, valkey://, rediss:// or unix:// without credentials, paths or queries")
 	u, err := url.Parse(c.URL)
-	if err != nil || u.Host == "" || (u.Scheme != "redis" && u.Scheme != "rediss" && u.Scheme != "unix") ||
-		u.Path != "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
-		return errors.New("cache.url must be redis://, rediss:// or unix:// without credentials, paths or queries")
+	if err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	// A unix socket's address is its path, so the two shapes are checked apart.
+	// redis.ParseURL accepts exactly these schemes; valkey:// is rewritten to
+	// redis:// by the provider, which is what a Valkey answers to.
+	switch u.Scheme {
+	case "redis", "rediss", "valkey":
+		if u.Host == "" || u.Path != "" {
+			return bad
+		}
+	case "unix":
+		if u.Host != "" || u.Path == "" {
+			return bad
+		}
+	default:
+		return bad
 	}
 	if u.User != nil {
 		return errors.New("cache.url cannot contain credentials; use cache.password and PLATFORMKIT_CACHE_PASSWORD instead")
