@@ -90,8 +90,10 @@ func TestThePinnedRouteCountNamesEveryOperationTheModuleRegisters(t *testing.T) 
 
 	named, found := pinnedRouteCount(t, fset)
 	if !found {
-		t.Fatalf("%s no longer compares `registrations` against an integer this case can read, so the "+
-			"number this pin guards has moved and the guard belongs beside it", routePinFile)
+		// Root adopts (decision 0008, 2026-10-01): round 5 names no count any more, because the module's
+		// whole surface is surface_test.go's mount-record table. With no count pinned, no count can name
+		// less than the surface, which is this case's whole question.
+		return
 	}
 	if named == total {
 		return
