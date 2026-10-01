@@ -123,13 +123,13 @@ func TestTheS3AdapterKeepsTheStorageContract(t *testing.T) {
 			// the isolation under test sits between two prefixes in one bucket,
 			// not between two buckets.
 			TenantID: scope.TenantID(),
-			// No RequiresSize: the adapter takes the length a stream does not
-			// declare, because that is the only answer this module's upload
-			// route ever gives, and declaring otherwise is declaring the write
-			// route unusable over this store. What the no-clobber promise costs
-			// on that path — a claim of the name before the fill — is in
-			// internal/s3.go, and the collisions and concurrency arms of this
-			// suite are what says it was paid.
+			// The adapter takes the length a stream does not declare, because
+			// that is the only answer this module's upload route ever gives.
+			// What the no-clobber promise then costs — claiming the object's
+			// name with a conditional write of nothing before the fill — is
+			// in internal/s3.go, and this suite's collision arm, which asks
+			// an undeclared write onto bytes already there, is what says it
+			// was paid and not assumed. Nothing declares a refusal any more.
 		}
 	})
 }
