@@ -181,6 +181,12 @@ func (f *File) Validate(ctx context.Context) error {
 		return fmt.Errorf("%q is not a media type", f.ContentType)
 	case f.Visibility != VisibilityPrivate && f.Visibility != VisibilityPublic:
 		return fmt.Errorf("visibility %q is not %s or %s", f.Visibility, VisibilityPrivate, VisibilityPublic)
+	// The same shape files_kind CHECKs, so a mistake is a 422 that names the
+	// token and not a 500 from the database. This module reads no meaning into
+	// a kind — it matches the token against the deployment's table and deletes
+	// nothing it does not find there — so syntax is all it can refuse.
+	case !ValidKind(f.Kind):
+		return fmt.Errorf("%q is not a retention class", f.Kind)
 	case f.Size < 0:
 		return fmt.Errorf("a file is not a negative number of bytes")
 	case len(f.SHA256) != 64:

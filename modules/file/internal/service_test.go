@@ -221,6 +221,134 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	}
 }
 
+// TestARedeliveryCertifiesOneRemovalOnce is the other half of the promise the
+// case above makes: converging means one proof row and one file.erased for one
+// removal, because a certificate written twice is a record that says the bytes
+// went twice.
+//
+// It also pins the shape of the write. Postgres aborts a transaction at its
+// first failing statement, so a handler that caught the duplicate-key error
+// would still be holding a transaction whose commit fails: the claim is
+// released, the next delivery meets the same duplicate, and the event is retried
+// forever on a removal that is already proved. The write asks the unique index
+// instead of meeting it as an error.
+func TestARedeliveryCertifiesOneRemovalOnce(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	store := internal.NewLocal(dir)
+	svc := internal.NewService(store, filetest.Limit, 0)
+	sub := internal.EraseBlobs(store)
+
+	var payload []byte
+	var gone uuid.UUID
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "invoice.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "invoice", Body: strings.NewReader("%PDF-1.4"),
+		})
+		if err != nil {
+			return err
+		}
+		removed, err := svc.Delete(ctx, tx, f.ID)
+		if err != nil {
+			return err
+		}
+		gone = removed.ID
+		payload, err = json.Marshal(contracts.Deleted{
+			FileID: removed.ID, StorageKey: removed.StorageKey,
+			SHA256: removed.SHA256, Size: removed.Size, Cause: contracts.EraseCaller,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("upload and delete: %v", err)
+	}
+
+	// Three deliveries of one removal: the first writes the certificate, the
+	// two after it converge on it. None of them may fail — a delivery that
+	// fails forever is a queue that fills with work it has already done.
+	for pass := range 3 {
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return sub.Handler(ctx, tx, events.Event{
+				Name: contracts.EventDeleted, TenantID: acme.ID, Payload: payload,
+			})
+		})
+		if err != nil {
+			t.Fatalf("delivery %d: %v", pass, err)
+		}
+	}
+
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var proofs int
+		if err := tx.DB().Raw(`SELECT count(*) FROM file_erasures WHERE file_id = ?`, gone).
+			Scan(&proofs).Error; err != nil {
+			return err
+		}
+		if proofs != 1 {
+			t.Errorf("one removal wrote %d proof rows, want one", proofs)
+		}
+		var certified int
+		if err := tx.DB().Raw(`SELECT count(*) FROM `+outbox+` WHERE name = ?`, contracts.EventErased).
+			Scan(&certified).Error; err != nil {
+			return err
+		}
+		if certified != 1 {
+			t.Errorf("one removal published %d %s events, want one", certified, contracts.EventErased)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("read the proof: %v", err)
+	}
+}
+
+// TestARetentionClassIsAToken is the shape files_kind CHECKs, refused by the
+// entity before the database sees the row.
+//
+// A class is an opaque token this module matches against the deployment's table
+// and never interprets, so a token it cannot spell is the only thing it can
+// refuse — and refusing it is a 422 that names the token rather than a 500 from
+// a constraint. The bytes the upload had already written are taken back, so a
+// refusal leaves nothing behind either way.
+func TestARetentionClassIsAToken(t *testing.T) {
+	_, conn := dbtest.Schema(t, file.Migrations)
+	dir := t.TempDir()
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		_, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "q4.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "Annual Reports", Body: strings.NewReader("%PDF-1.4"),
+		})
+		return err
+	})
+	if !errors.Is(err, crud.ErrInvalid) {
+		t.Fatalf("a class that is not a token = %v, want crud.ErrInvalid", err)
+	}
+	if got := keysUnder(t, dir); len(got) != 0 {
+		t.Errorf("the refused upload left %v on disk", got)
+	}
+
+	// The class that is a token arrives, and the row carries it: this module
+	// stores the token, it never reads a meaning into it.
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
+			Name: "q4.pdf", ContentType: "application/pdf", Declared: -1,
+			Kind: "annual_report", Body: strings.NewReader("%PDF-1.4"),
+		})
+		if err != nil {
+			return err
+		}
+		if f.Kind != "annual_report" {
+			t.Errorf("the row carries kind %q, want the token the upload said", f.Kind)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("a class that is a token: %v", err)
+	}
+}
+
 // TestAStorageKeyIsAUUIDAndNothingElse is the path-traversal argument, checked
 // rather than asserted: the disk store refuses a key it did not mint, so a
 // caller who found a way to choose one still cannot leave the directory.
