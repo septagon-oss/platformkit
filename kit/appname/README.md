@@ -48,7 +48,7 @@ elsewhere claims.
 |---|---|---|
 | Subject, filter | **open, and checked**: `appname.Filters` answers the app-scoped address and the two older shapes, and `transport.AppFilters` hands all three to the consumer, so a build that names its app reads what a build that does not published. `transport.AddressMismatch` takes the app and accepts only its own scoped address, so the two older shapes are read and then refused — an address that names no app cannot be shown to be this app's. The window is therefore one-directional: a deployment must not start naming an app until no process still publishing at the older addresses is alive, because from that moment its own older traffic is unreadable to it | once no process on an older build publishes, drop the entries after `Filter` and remake every consumer |
 | Cookie | **not open**: `httpx.CookieName` still writes `__Host-<base>` for the deployment that names no app, and `CookieNameOf` is the constructor a caller with a slug uses; `httpx.SessionCookieOf` reads `__Host-session`, `session` and the `platformkit_session` aliases, which is `PreviousCookies` for those two bases and no app-scoped name | wire the auth module's `Cookies` to a slug, then one release, then delete `PreviousCookies` and the aliases that read it |
-| Durable | **not open**: `Durable` forms the scoped name, `kit/events` forms it from `Subscription.App`, and no migration copies `platformkit_handled` or rewrites `platformkit_dead_letters` from the old names, so a deployment that starts naming its app re-runs handled work and strands its dead letters | the migration is the close: `000030_*` copies every handled row under the new durable and rewrites every dead letter's `durable` with it |
+| Durable | **not open**: `Durable` forms the scoped name, `kit/events` forms it from `Subscription.App`, and no migration copies `platformkit_handled` or rewrites `platformkit_dead_letters` from the old names, so a deployment that starts naming its app re-runs handled work and strands its dead letters | the migration is the close: the next `0000*` data file copies every handled row under the new durable and rewrites every dead letter's `durable` with it |
 | Stored files | **not open**: `Local` writes `<app>/<tenant>/<key>` only when it was built with `NewLocalOf`, and it never reads the older `<dir>/<key[:2]>/<key>` position | one-off move of `<dir>/<key[:2]>/<key>` under `<app>/<tenant>/`, or a second read path in the adapter |
 
 ## Limits
@@ -68,12 +68,12 @@ What this branch does not do, in the order it costs:
   this is not it — an operator reaches an app's control plane inside that app), and
   any placement of a tenant whose hosts and mapping both stay silent, which is a
   refusal by design and stays one.
-- **The relay still claims every unpublished outbox row.** Its claim needs
-  `tenants.app` (which now exists) and a join that locks only the outbox rows,
-  `FOR UPDATE OF o SKIP LOCKED`; neither is written here. Until it is, two apps
-  sharing a database relay one another's rows — they land in the right subjects
-  because the address carries the app, and are then refused by delivery, so the
-  cost is a relay doing work it will refuse rather than a wrong handler running.
+- **The relay claims the rows of its own app** (`events.RelayApp`; `kit/app` runs
+  it with `Options.App`, and `events.Relay` is the same pass for a deployment that
+  names no app). A row whose tenant row is gone names no app, so the app-less
+  deployment keeps it and an app-scoped one leaves it: `LEFT JOIN` and `coalesce`
+  say so, and `FOR UPDATE OF o` keeps the lock on the outbox rows, not the tenant
+  table. Untested is a running two-app composition, not the claim.
 - **The durable rename has no migration.** `Durable` forms `<app>+<module>+<event>`,
   and no file copies `platformkit_handled` or rewrites `platformkit_dead_letters`
   from the old names, so a deployment that starts naming its app re-runs handled
