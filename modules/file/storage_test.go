@@ -159,3 +159,39 @@ func TestLocalStorageListingExcludesCutoffAndOtherDirectories(t *testing.T) {
 		t.Fatalf("after one removal the store lists %v, %v; want two", again, err)
 	}
 }
+
+// TestAScopeNamesOneTenantsBytesAndNothingsAnothers is the register's name for
+// this module's isolation case: the one selector a reviewer or a pillar audit
+// runs to find out whether a second tenant's bytes are reachable. The assertions
+// live in filetest.RunStorage, beside the port every adapter implements, so an
+// adapter that gets the prefix wrong fails a test it was never told about; this
+// is the same suite run under the name the documentation cites, over both stores
+// this repository ships, so the selector finds the case rather than a summary of
+// it. A future file.S3 joins the list here, which is where the one case all three
+// stores have to answer the same way lives.
+func TestAScopeNamesOneTenantsBytesAndNothingsAnothers(t *testing.T) {
+	stores := []struct {
+		name  string
+		fresh func(*testing.T) filetest.StorageFixture
+	}{
+		{"Local", func(t *testing.T) filetest.StorageFixture {
+			tenant := uuid.New()
+			return filetest.StorageFixture{
+				Storage: file.Local(t.TempDir()), TenantID: tenant,
+				Scope: filetest.TenantScope(t, tenant),
+			}
+		}},
+		{"Memory", func(t *testing.T) filetest.StorageFixture {
+			tenant := uuid.New()
+			return filetest.StorageFixture{
+				Storage: filetest.NewMemory(), TenantID: tenant,
+				Scope: filetest.TenantScope(t, tenant),
+			}
+		}},
+	}
+	for _, store := range stores {
+		t.Run(store.name, func(t *testing.T) {
+			filetest.RunStorage(t, store.fresh)
+		})
+	}
+}

@@ -3,8 +3,8 @@
 //
 // It is the shape every module follows, with the one asymmetry a module about
 // bytes has: there is no rest.Spec, because a Spec's create route takes a JSON
-// body and a file arrives as a stream. The six routes are written out in
-// internal/handler.go.
+// body and a file arrives as a stream. The twelve operations over seven paths are
+// written out in internal/handler.go.
 //
 // The thing to read before the rest is where a blob write sits relative to a
 // commit, because it is the only interesting problem here and it has two
