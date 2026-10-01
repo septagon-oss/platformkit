@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"gorm.io/gorm/clause"
 
@@ -145,7 +146,10 @@ func (s *Service) EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject
 		return nil, fmt.Errorf("%w: an erasure names the subject it erases", crud.ErrInvalid)
 	}
 	reason = strings.TrimSpace(reason)
-	if len(reason) > contracts.MaxErasureReason {
+	// Counted in characters, as the message and the route's maxLength count them:
+	// a 500-character sentence spelled with two-byte letters is not a 500-byte
+	// sentence, and refusing it would lose a data-protection record over a len().
+	if utf8.RuneCountInString(reason) > contracts.MaxErasureReason {
 		return nil, fmt.Errorf("%w: an erasure's reason is at most %d characters", crud.ErrInvalid, contracts.MaxErasureReason)
 	}
 	var rows []*contracts.File
