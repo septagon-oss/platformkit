@@ -67,7 +67,13 @@ type Deleted struct {
 	// travels with it or it is lost, and the proof row needs it.
 	Cause   string    `json:"cause"`
 	Subject uuid.UUID `json:"subject,omitempty"`
-	At      time.Time `json:"at"`
+	// Reason is the sentence a person gave when they asked for this removal, and
+	// it travels for the same reason the storage key does: the row is gone by the
+	// time anybody reads this, and the worker that removes the bytes is the one
+	// that writes the proof. Empty for the sweep, whose reason is a class and a
+	// date, and for a delete nobody explained.
+	Reason string    `json:"reason,omitempty"`
+	At     time.Time `json:"at"`
 }
 
 // Retained is the payload of EventRetained: a clock somebody stopped, and the
@@ -101,4 +107,8 @@ type Erased struct {
 	Actor        uuid.UUID  `json:"actor,omitempty"`
 	VersionsSeen int        `json:"versionsSeen"`
 	VerifiedAt   *time.Time `json:"verifiedAt,omitempty" format:"date-time"`
+	// Reason is why a person asked, copied through from the removal this proof
+	// certifies: the question "why was this person's file removed" is asked of a
+	// proof table and not of a row that no longer exists.
+	Reason string `json:"reason,omitempty"`
 }

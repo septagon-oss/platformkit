@@ -131,9 +131,22 @@ func held(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) (bool, str
 // one file under a live hold refuses the whole erasure with ErrHeld and names
 // it, rather than removing the other nine and leaving a receipt nobody can act
 // on. The bytes then go in the worker that handles each row's event.
+//
+// The reason is why a person asked, and it is kept: it goes into every work
+// order this command publishes, and the worker files it beside the digest in the
+// proof row, which is the record that outlives the row it proofs. A hold is a
+// decision somebody made and said a reason for and this module says so about the
+// hold table; a subject erasure is the same decision with a stronger claim on the
+// record, so the sentence a caller typed is read back rather than thrown away.
+// Empty is allowed — an erasure can be asked for by a schedule — and one over
+// contracts.MaxErasureReason is refused before anything is removed.
 func (s *Service) EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID, reason string) (*contracts.ErasureReceipt, error) {
 	if subject == uuid.Nil {
 		return nil, fmt.Errorf("%w: an erasure names the subject it erases", crud.ErrInvalid)
+	}
+	reason = strings.TrimSpace(reason)
+	if len(reason) > contracts.MaxErasureReason {
+		return nil, fmt.Errorf("%w: an erasure's reason is at most %d characters", crud.ErrInvalid, contracts.MaxErasureReason)
 	}
 	var rows []*contracts.File
 	// FOR UPDATE, so a delete and a hold cannot both read this set and each
@@ -163,7 +176,7 @@ func (s *Service) EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject
 		}
 		if err := events.Publish(ctx, tx, contracts.EventDeleted, contracts.Deleted{
 			FileID: f.ID, StorageKey: f.StorageKey, SHA256: f.SHA256, Size: f.Size,
-			Cause: contracts.EraseSubject, Subject: subject, At: receipt.At,
+			Cause: contracts.EraseSubject, Subject: subject, Reason: reason, At: receipt.At,
 		}); err != nil {
 			return nil, err
 		}
@@ -421,7 +434,7 @@ func EraseBlobs(storage contracts.Storage) events.Subscription {
 			}
 			proof := &contracts.Erasure{
 				FileID: deleted.FileID, StorageKey: deleted.StorageKey, SHA256: deleted.SHA256,
-				Size: deleted.Size, Cause: cause, SubjectID: deleted.Subject,
+				Size: deleted.Size, Cause: cause, SubjectID: deleted.Subject, Reason: deleted.Reason,
 				RemovedAt: db.Now(), VerifiedAt: verified, VersionsSeen: seen,
 			}
 			if actor, ok := tenancy.ActorFrom(ctx); ok {
@@ -453,7 +466,7 @@ func EraseBlobs(storage contracts.Storage) events.Subscription {
 			}
 			return events.Publish(ctx, tx, contracts.EventErased, contracts.Erased{
 				FileID: proof.FileID, StorageKey: proof.StorageKey, SHA256: proof.SHA256,
-				Size: proof.Size, Cause: proof.Cause, Subject: proof.SubjectID,
+				Size: proof.Size, Cause: proof.Cause, Subject: proof.SubjectID, Reason: proof.Reason,
 				Actor: proof.Actor, VersionsSeen: proof.VersionsSeen, VerifiedAt: proof.VerifiedAt,
 			})
 		},

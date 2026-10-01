@@ -272,7 +272,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 		Method:      http.MethodPost,
 		Path:        path + "/erase",
 		Summary:     "Erase a subject's files",
-		Description: "Removes every file this subject uploaded and the bytes beside each one, and leaves one proof row per blob with the digest that is gone. One held file refuses the whole erasure with 409 and names it; a subject with no files answers a receipt of zero and writes nothing.",
+		Description: "Removes every file this subject uploaded and the bytes beside each one, and leaves one proof row per blob with the digest that is gone and the reason it was asked for. One held file refuses the whole erasure with 409 and names it; a subject with no files answers a receipt of zero and writes nothing.",
 		Tags:        []string{"file"},
 		Errors:      append(slices.Clone(faults), http.StatusConflict),
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventDeleted, contracts.EventErased}},
@@ -448,7 +448,7 @@ type eraseInput struct {
 
 type eraseBody struct {
 	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The subject whose files are being erased"`
-	Reason  string    `json:"reason" doc:"Why, for the audit trail"`
+	Reason  string    `json:"reason" maxLength:"500" doc:"Why, for the audit trail: kept with every removal this erasure makes, in the work order and in the proof row beside the digest"`
 }
 
 type listInput struct {

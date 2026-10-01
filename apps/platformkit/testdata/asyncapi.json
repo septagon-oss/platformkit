@@ -1300,6 +1300,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "reason": {
+                "type": "string"
+              },
               "sha256": {
                 "type": "string"
               },
@@ -1349,6 +1352,9 @@
               },
               "fileId": {
                 "format": "uuid",
+                "type": "string"
+              },
+              "reason": {
                 "type": "string"
               },
               "sha256": {

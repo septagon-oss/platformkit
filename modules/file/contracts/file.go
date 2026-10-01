@@ -464,6 +464,11 @@ type Service interface {
 	// A subject with no rows is not an error. It answers a receipt with zero
 	// counts, publishes nothing and writes nothing, because an erasure of
 	// nothing is an answer rather than a thing done.
+	//
+	// The reason is why the person asked. It is filed, not accepted and dropped:
+	// it travels with each removal and lands in the proof row beside the digest,
+	// which is the record a data-protection question is answered from. Empty is
+	// allowed; past MaxErasureReason is refused before anything is removed.
 	EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID, reason string) (*ErasureReceipt, error)
 }
 
