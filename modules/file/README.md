@@ -16,7 +16,10 @@ minted at two doors only — `ScopeOf(ctx)` for a request whose tenant was
 resolved at the middleware, `ScopeOfTx(db.Tx[db.Tenant])` for a command that is
 already in a transaction — and `Storage` takes a `Scope` before every `Key`, so
 an adapter is never handed a key and left to ask whose it is. A key is a lower
-case UUID and nothing else (`contracts.ParseKey`). `Local` keeps bytes at
+case UUID and nothing else (`contracts.ParseKey`). What the prefix buys, what it
+explicitly does not buy — it is not the boundary, not one bucket per tenant, not
+a secret — is [ADR 0019](../../docs/adr/0019-the-tenant-is-in-the-object-name.md).
+`Local` keeps bytes at
 `<dir>/<tenant uuid>/<2 hex>/<key>`; the store that speaks to an object service
 is wired by the composition, because `Deps.Storage` is a dependency and not a
 constant. A deployment with `Local` gets no signed URLs: `Grant` answers
