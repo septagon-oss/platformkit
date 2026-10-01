@@ -94,17 +94,21 @@ type Options struct {
 	// decision, and a silent one is a surprise during the incident it was for.
 	Installation Installation
 
-	// WorkspaceCatalog is the body of the catalog route the kernel mounts at
+	// WorkspaceCatalog mounts the catalog route the kernel owns the address of,
 	// /api/v1/app/resources: the resources this caller may reach, as a document.
+	// Build it with WorkspaceCatalogRoute; the composition writes one line.
 	//
-	// It is a function and not a route because the two owners are different: only
-	// the kernel can compose the address (no module composes /api/v1/app/…, and
-	// the address is a native shell's contract, not a capability's), and only ui
-	// can render the answer — and kit may not import ui (scripts/check_packages.sh
-	// is that line). The composition wires ui/screens' renderer here, one literal,
-	// and a composition with resources and no renderer is refused: a native shell
-	// would have nothing to read.
-	WorkspaceCatalog func(ctx context.Context, resources []httpx.Resource) (any, error)
+	// It is a mount and not a function returning the body because the body's type
+	// has to reach the OpenAPI document, and a func returning `any` erases it
+	// before anything can read it. It stays a field rather than a call the
+	// composition makes because the two owners are still different: only the kernel
+	// can compose the address (no module composes /api/v1/app/…, and the address is
+	// a native shell's contract, not a capability's), and only ui can render the
+	// answer — and kit may not import ui (scripts/check_packages.sh is that line).
+	// The composition names its renderer here, one literal, and a composition with
+	// resources and no renderer is refused: a native shell would have nothing to
+	// read.
+	WorkspaceCatalog func(api *httpx.API)
 
 	// Transport carries events between the relay and the handlers. An explicit
 	// value overrides nats.transport and Transports. Otherwise All defaults to
@@ -563,7 +567,7 @@ func (a *App) composeGates(api *httpx.API) error {
 	// composition's, because kit may not import ui.
 	resources := api.Resources()
 	if a.opts.WorkspaceCatalog != nil {
-		mountWorkspaceCatalog(api, a.opts.WorkspaceCatalog)
+		a.opts.WorkspaceCatalog(api)
 	} else if len(resources) > 0 && a.opts.Role != Worker {
 		// Same exemption: the document is read by a shell, and a worker process
 		// runs none. A web role that registered resources and wired no renderer
@@ -578,16 +582,37 @@ func (a *App) composeGates(api *httpx.API) error {
 	return errors.New("app: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
 
-// workspaceDocument is the catalog route's envelope: whatever the composition's
-// function returned, as the body.
-type workspaceDocument struct {
-	Body any
+// WorkspaceCatalogRoute is the composition's catalog renderer, lifted into the
+// mount for the address this kernel owns. See Options.WorkspaceCatalog for why
+// the two owners make that a mount and not a route.
+//
+// The body is a type parameter and not an `any` because of who reads the OpenAPI
+// document: a native shell is written against /api/v1/app/resources, and while
+// the response was `any` the document the installation published about that
+// address named none of the fields that shell parses. The type arrives by
+// inference at the call site the composition wrote — the reference app names
+// ui/screens.Catalog there — so no registry, no init() and no generator is
+// involved (decision 0034), and kit still never imports ui: the concrete type is
+// the caller's, and this package sees a type parameter.
+func WorkspaceCatalogRoute[T any](describe func(ctx context.Context, resources []httpx.Resource) (*T, error)) func(api *httpx.API) {
+	return func(api *httpx.API) { mountWorkspaceCatalog(api, describe) }
 }
 
-// mountWorkspaceMounts the catalog route. It is the composition's own route:
-// the address belongs to the kernel, which is why the mount is here, and the
-// document belongs to ui, which is why the body is a function.
-func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, resources []httpx.Resource) (any, error)) {
+// mountWorkspaceCatalog mounts the catalog route. It is the composition's own
+// route: the address belongs to the kernel, which is why the mount is here, and
+// the document belongs to ui, which is why the body is a function — and why that
+// function's result type is carried through to huma's schema instead of being
+// handed over as `any`.
+// workspaceDocument is the catalog route's envelope: whatever the composition's
+// function returned, as the body. It is generic for the same reason the mount is:
+// the type has to survive to huma's schema. It is not simply dropped, because a
+// response struct whose fields are not inside a Body is read by huma as a set of
+// headers — the document would have left the OpenAPI description and then the wire.
+type workspaceDocument[T any] struct {
+	Body *T
+}
+
+func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Context, resources []httpx.Resource) (*T, error)) {
 	kernel := api.Surfaces("")
 	httpx.Register(kernel.App, huma.Operation{
 		OperationID: "app-resources",
@@ -596,12 +621,12 @@ func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, re
 		Summary:     "The resources this caller may reach, with their schemas",
 		Description: "The same document the generated screens are built from, for a shell that is not a browser.",
 		Tags:        []string{"kernel"},
-	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*workspaceDocument, error) {
+	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*workspaceDocument[T], error) {
 		body, err := describe(ctx, api.Resources())
 		if err != nil {
 			return nil, err
 		}
-		return &workspaceDocument{Body: body}, nil
+		return &workspaceDocument[T]{Body: body}, nil
 	})
 }
 

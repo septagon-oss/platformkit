@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
+.PHONY: help build test vet run e2e mobile-e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -82,6 +82,14 @@ config.yaml:
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
+
+# The device journey is its own goal, and its own CI job, because it needs an
+# emulator the check job's container does not have: the host the pkit-ci runners use
+# has one (/dev/kvm, an x86_64 system image and an AVD are measured there), and a
+# journey that silently skipped would leave the rate in e2e/maestro/flows.json
+# looking like a number nobody earned. See .gitea/workflows/mobile.yml.
+mobile-e2e: ## Boot the app on a database of its own and drive it with one device flow
+	./scripts/mobile_e2e.sh
 
 # A release step, not a pull-request gate: it needs psql, pg_dump and pg_restore, a
 # database it may create and drop, and the previous release's revision to copy from.

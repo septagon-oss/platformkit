@@ -107,6 +107,28 @@ can race the final check; this is not filesystem compare-and-swap. Other platfor
 can prepare reviews but cannot apply. Slots still accept trusted Go nodes;
 insertion, replacement persistence, authentication and deployment remain separate.
 
+## Carry the palette a device builds from
+
+`testdata/design-tokens.json` is the checked-in projection a native shell consumes:
+the `schema` and `themes` of a plain export and nothing else — the two keys
+`go run ./tools/designexport | jq '{schema, themes}'` yields, byte for byte. The
+Go projection in [native_token_projection_test.go](native_token_projection_test.go)
+is what writes it, so the file cannot drift from this binary's output the way a
+hand-run pipeline drifted before anything gated it:
+
+```sh
+go test ./tools/designexport -run NativeTokenProjection   # refuses a stale copy
+UPDATE_GOLDEN=1 go test ./tools/designexport -run NativeTokenProjection
+```
+
+`make check` runs it: the gate is a test of this package, not a schedule someone
+forgets to run. A refreshed projection and its provenance record
+(`testdata/design-tokens.source.json`, whose `sha256` is the hash of the bytes
+beside it) change in one commit — a record that disagrees with the file fails
+even under `UPDATE_GOLDEN=1`. A record naming a commit or a tag of this
+repository is refused: the producer cannot pin a revision it has not tagged, and
+the copy's own refresh step adds those two keys at the moment it takes the file.
+
 ## Keep a design fixture compiling
 
 The fidelity checks under [openpencil](openpencil/README.md) embed a Go program in
