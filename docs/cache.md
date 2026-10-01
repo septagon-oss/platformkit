@@ -31,8 +31,34 @@ stylesheet's URL already names its content (`app.css?v=<fingerprint>`), so at th
 year; the controllers do not carry a fingerprint in their URL yet, so they are revalidated and a `304` costs a
 round trip and no body.
 
+## Why the value cache is one copy
+
+The rows above are what a browser may keep. The table below is what **this process and its replicas** may keep,
+and it is held by the same argument one level in: a belief that lives in one process's map is a different belief
+in each of three pods, and an invalidation that reaches one leaves the other two serving what the installation
+just stopped believing. `kit/cache` is the port for those values, `kit/cache/providers/valkey` the one store, and
+every row here is held by a case in `kit/cache/cachetest` — which both adapters run, so the in-process store is
+not allowed to be a different cache.
+
+| Value | Where it may live | Lifetime | Invalidation | Forbidden |
+| --- | --- | --- | --- | ---|
+| host → tenant resolution (`kit/httpx`) | the shared store, one copy, no second copy in the process | 30 s (`hostTTL`) | `Move` of the `host` namespace — a generation close, not a delete | caching a failure or an unknown host; caching the zero tenant; a second local copy, which would need a second invalidation |
+| a composed value, per key | this process's memory, bounded at 16, LRU; its *marker* in the shared store | the entry's own TTL, and the marker expires with it | `Delete` of that entry's key, plus the TTL | composing eagerly for a host nobody asked for; caching a failed composition; a value that owns a resource needing release |
+| a session, a permission grant, an entitlement | **nowhere** — not on this port, not in a process map, not in the store | — | — | every form of caching. `modules/auth/internal/kernel.go` says why: *"A permission cache is a window in which a revoked grant still works."* The read path is the transaction under RLS |
+| anything a tenant owns | only through `cache.Of(tenant, …)`, the tenant from `tenancy.FromContext` or a `db.Tx[db.Tenant]` | the caller's own TTL | `Delete` of the key, `Move` of the namespace | a key without the tenant in it. `cache.Shared` is a greppable declaration that the entry belongs to the installation, and it is the only way to say so |
+
+A `Move` and not a `Delete` is what makes an invalidation survive the racing load: two replicas miss the same
+host, both call the loader, one finishes a suspension and deletes, and the other writes back the tenant it loaded
+before the suspension began. Every entry carries the generation it was written under, so a move closes what was
+already written and not only what happens to be there. Its cost is coarseness — one suspension costs every host
+one loader query on its next request — which for a handful of operator actions a day over an indexed query is the
+right trade, named in `kit/cache`'s own comment on `Move`.
+
+An installation with one process may leave `cache.adapter` empty and get the in-process store, which is a complete
+deployment for one process; `kit/app` says so once at boot, because a claim nobody reads is not a warning. An
+installation with more than one names `valkey`, and a store it cannot reach at boot refuses the start rather than
+serving private answers from a cache its invalidations will never reach.
+
 ## Not yet in this policy
 
-- A shared cache port with the tenant in the key type, and host-resolution and client-composition caches on it so
-  an invalidation reaches every replica (brief T-0119, part 3).
 - Fingerprinted script URLs, which would move the controllers to the immutable row.
