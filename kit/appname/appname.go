@@ -225,10 +225,14 @@ func SubjectSpace() string { return Prefix + ".>" }
 //
 // The join behind the app is a dash rather than a second plus for one reason beyond
 // looks: it is the join this name carried before the app segment existed, so the
-// scoped durable is the unscoped one with the app prefixed. 000031 can therefore
-// move the two ledgers by prefixing, without knowing where a stored name's module
-// ended and its event began — and a rename that could not be derived from the row
-// alone could only be done while the event itself was still in the outbox to ask.
+// scoped durable is the unscoped one with "<app>+" in front of it. That is what
+// makes the move of the two ledgers expressible at all, because a row of
+// platformkit_handled holds a durable and nothing else — no module, no event name,
+// and for an event the purge has taken no outbox row left to ask — so the only
+// rename that can be written against the table is a prefix. It is not the reason the
+// move is absent: kit/appname/README.md, *Limits*, names that, and
+// TestADurableCarriesNoDot is the case that holds the prefix property whatever
+// eventually performs the move has to be able to rely on.
 func Durable(app Name, module, event string) string {
 	if !app.Named() {
 		return module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
@@ -240,8 +244,8 @@ func Durable(app Name, module, event string) string {
 // transliterates the dots of an event name. '+' is in none of the three grammars
 // above, which is the whole separability argument for the app half; '-' is what no
 // module name holds, which keeps the module and the event apart and makes the
-// scoped name the unscoped one with a prefix on it. 000031 relies on that last
-// fact, and migrations/durable_app_rename_test.go is the case that holds it.
+// scoped name the unscoped one with a prefix on it — the fact any move of the two
+// ledgers has to be built on, and the one TestADurableCarriesNoDot checks.
 const (
 	appJoin   = "+"
 	eventJoin = "-"

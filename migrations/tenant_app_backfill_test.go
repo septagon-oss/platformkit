@@ -36,14 +36,6 @@ import (
 // appFile is the file under test, by the name the ledger carries.
 const appFile = "000030_tenant_app.up.sql"
 
-// withheldNames is the release this file belongs to, taken out of the source: this
-// file's own subject and the one ledger migration that reads its column
-// (000031_durable_app.up.sql, whose UPDATEs join tenants.app and so cannot run
-// against a schema that predates the column — which is exactly what the state
-// before this release is). Both files arrive in one release, so the installation
-// "before" is the state before both.
-var withheldNames = map[string]bool{appFile: true, durableAppFile: true}
-
 // beforeApp is the kernel's own history with that one file taken out: the state of
 // an installation on the day the release that carries it boots.
 type beforeApp struct{ inner fs.FS }
@@ -57,7 +49,7 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	out := rows[:0:0]
 	for _, row := range rows {
-		if !withheldNames[row.Name()] {
+		if row.Name() != appFile {
 			out = append(out, row)
 		}
 	}

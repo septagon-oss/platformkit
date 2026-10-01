@@ -18,29 +18,6 @@
 -- composition boot declares.
 ALTER TABLE tenants ADD COLUMN app text;
 
--- Everything below reads and writes across every tenant, and none of it would reach a
--- row if this file did not say it was the control plane: the runner sets
--- `platformkit.system_access` on a RunSystem transaction and on a `phase=data` drain and
--- around a schema file never, and the policy 000006 puts over `tenants` —
--- `USING (platformkit_is_system() OR id = platformkit_current_tenant_id())`, with FORCE —
--- answers a role that is in neither with an empty table. At the migrate role a real
--- deployment names (config.example.yaml: "the owner, which holds the DDL rights", no
--- superuser and no BYPASSRLS) the two UPDATEs below would therefore find no tenants, the
--- refusal further down would find no unplaced rows and stay silent, and the release would
--- reach `SET NOT NULL` and abort on rows this file could not see — which is fail-closed
--- and still not a back-fill. migrations/README.md, "A file that writes rows", and this
--- package's own review_r8_locale_backfill_role_test.go are the measurement; 000029 is the
--- file that could decline and did.
---
--- This one cannot decline, cannot be a data half for the mapping (a data file is one
--- statement and this file is a schema change around its writes), and the marker is not a
--- privilege: kit/db/tx.go records that these GUCs are placeholder USERSET settings any
--- role can set, so the statement grants nothing the role holding the migrate door does
--- not already hold. It states, in the ledger a reader of this file looks at, that the
--- writes are the control plane's. `is_local` is true: the marker lives for this file's
--- transaction and no longer.
-SELECT set_config('platformkit.system_access', 'true', true);
-
 -- The operator's explicit mapping, tenant slug to app slug, for the tenants the
 -- hosts cannot place. Read as `slug=app` pairs because a migration takes a value
 -- and not a file: kit/app reads the operator's file and declares what it holds
