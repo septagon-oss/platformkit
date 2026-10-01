@@ -181,38 +181,44 @@ batch has not reached the state the question is about. Without that correction t
 number would answer "how far behind is this tenant's queue now" with the wait of a row
 that went out yesterday, for as long as nobody published that name again. The ledger
 that owes the correction is per process, which is the scope the instrument has: a
-restart starts its collections from nothing. 80 of the 81
-boundaries the reference application registers as operations and module
-declarations — 69 operations, 5 module jobs, 7 subscriptions — carry a tenant on
-their span; the one of those that does not is `file-reconcile`, a sweep whose
-question crosses every tenant by construction. That tally does not count the
-four jobs this package registers for itself — `outbox-relay`, `outbox-purge`,
-`limit-purge` and `schema-backfill` — and the run span of each carries no tenant
-either, for the same reason `file-reconcile`'s does: each is one pass over every
-tenant's rows, so the one tenant it could name would name none of them.
+restart starts its collections from nothing. 81 of the 82
+boundaries the reference application registers as operations and module declarations —
+70 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
+of those that does not is `file-reconcile`, a sweep whose question crosses every tenant
+by construction. Both terms are counted over this composition rather than remembered:
+an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
+the document the composition serves and which a committed case refuses to let drift
+from that file, and the two module terms are the jobs and subscriptions the
+composition's manifests register. That tally expressly does not count the four jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
+`schema-backfill` — and the run span of each carries no tenant either, for the same
+reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
+tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only
 boundary that does not. Each kind the tally counts is pinned
 by a case that reads a span back and asks whose tenant it names: an operation in
 `kit/httpx`, a transaction and a subscription in `kit/events`, a tenant's share of a
-run in `kit/jobs`. It was measured, not computed: no committed tool recomputes the 81, whose
-denominator is this application's own operation count, so the cases are the claim and the
-ratio is a note about one composition. With no
-endpoint configured nothing is installed at all, which is cheaper than a no-op, and an
-unreachable collector fails no boot, moves no health verdict and does not decide an
-exit code: `kit/health` reports its last success as a reading an operator sees, not as
-a check, and the last flush of a process that is leaving is a log line. A bare
-`host:port` is accepted as the unencrypted endpoint it names, which is the form the
-example file prints. A composition notices one change: `health.Register` and
-`health.Mux` now take the checks as one slice and the reports as a trailing variadic,
-so the call that passed `Check` values passes `[]health.Check{…}`; each report then
-runs on the readiness request's own context — the one the checks run on — so a probe
-that hangs up or times out bounds the reading instead of leaving it running past the
-request it answered. Left open on purpose:
-no dashboard, which the brief refused, and no collector in a Helm chart, which is a
-deployment's stanza rather than this repository's. `make trace` starts a collector for
-the machine in front of you — `deploy/otel-collector.yaml`, printing every span and
-datapoint it receives to the container log — so the claim that the kernel is traced is
-checkable without an account at a trace backend.
+run in `kit/jobs`. The denominator moves when a route or a manifest moves, and the merge that
+regenerates that contract owes the count in the same change; the numerator is a construction and a
+case per kind, because every operation the count names is served behind the one chain that resolves
+the tenant before it routes (`a.api.UseMiddleware(a.tenant, a.traced, …)` at
+`kit/httpx/httpx.go:439`), which stamps both tenant keys as it resolves them. A Public operation
+answered at a host the loader knows nothing about goes on with neither key — no tenant to name, so
+none invented — and the tally counts a boundary by what it can name, not by one request: that
+answer is this boundary with no tenant, not a second boundary without one. With no endpoint
+configured nothing is installed at all, which is cheaper than a no-op, and an unreachable collector
+fails no boot, moves no health verdict and does not decide an exit code: `kit/health` reports its
+last success as a reading an operator sees, not as a check, and the last flush of a process that is
+leaving is a log line. A bare `host:port` is accepted as the unencrypted endpoint it names, which
+is the form the example file prints. A composition notices one change: `health.Register` and
+`health.Mux` now take the checks as one slice and the reports as a trailing variadic, so the call
+that passed `Check` values passes `[]health.Check{…}`; each report then runs on the readiness
+request's own context — the one the checks run on — so a probe that hangs up or times out bounds
+the reading instead of leaving it running past the request it answered. Left open on purpose: no
+dashboard, which the brief refused, and no collector in a Helm chart, which is a deployment's
+stanza rather than this repository's. `make trace` starts a collector for the machine in front of
+you — `deploy/otel-collector.yaml`, printing every span and datapoint it receives to the container
+log — so the claim that the kernel is traced is checkable without an account at a trace backend.
 
 *Reused:* the existing `X-Request-ID` mechanism, `log/slog`, `kit/problem`'s one
 error shape, `health.Check` (a sibling type, not a fork), the T-0018 migration

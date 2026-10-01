@@ -100,12 +100,15 @@ claims: on `main` the merge is its own base, so both commands print 8 there and 
 `# and 0 there` reads 8. The branch's own `build(deps)` commit is the change that adds the
 dependency, and the tool reads that same boolean off `origin/main`, so its reading turns true.
 
-The ratio this delivery reports beside it — 80 of the 81 operation and module-declared
+The ratio this delivery reports beside it — 81 of the 82 operation and module-declared
 boundaries, the composition's own four jobs (its relay, its two purges and its migration drain)
-excluded and named as excluded in `CHANGELOG.md` — was measured against that composition and is
-not recomputable from this tree: no committed symbol or tool counts the 81, which is the product's
-share. What is committed is the numerator's evidence, one case per kind of boundary that reads the
-tenant dimension back off the span, metric or row the boundary emits.
+excluded and named as excluded in `CHANGELOG.md` — is counted over that composition, which is the
+product's share: its operation term is the `operationId` entries of the contract the composition
+publishes (`apps/platformkit/testdata/openapi.json`, which a committed case refuses to let drift
+from the document that is served), and its two module terms are the jobs and subscriptions the
+composition's manifests register. What is not a count is the numerator: what is committed is its
+evidence, one case per kind of boundary that reads the tenant dimension back off the span, metric or
+row the boundary emits, beside the one middleware chain every operation is served behind.
 
 The sampler is OpenTelemetry's default shape, `ParentBased(TraceIDRatioBased(…))`, so on the
 public surface a caller that sends a sampled `traceparent` decides how much of its own traffic
