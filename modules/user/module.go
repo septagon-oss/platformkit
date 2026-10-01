@@ -29,6 +29,11 @@ import (
 // role grants is the auth module's table. This module reads no other module's
 // rows, so the application answers instead.
 type Deps struct {
+	// LocalePolicy answers which languages the tenant of a request is served in,
+	// which is the set a personal language choice has to be found in. The tenant
+	// module owns that fact; modules/tenant's contracts.Service answers this
+	// interface as it stands, and wiring one to the other is the composition's.
+	LocalePolicy contracts.LocalePolicy
 	// Administration answers which of a tenant's roles grant the permission
 	// that can grant every other one back. Wire
 	// &contracts.AdministrationFunc{Ask: auth.AdministeringRoles}, or the
@@ -72,7 +77,7 @@ var spec = rest.Spec[*contracts.User]{
 	// so the field did not exist as far as a patch was concerned. It exists
 	// now, it renders, and it is refused by name — which is also what tells the
 	// caller which door to use.
-	Immutable: []string{"status", "roles", "handle"},
+	Immutable: []string{"status", "roles", "handle", "preferredLocale"},
 }
 
 // Why the generated create screen does not offer roles, since the review asked.
@@ -131,7 +136,13 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
 		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
 	}
-	svc := internal.NewService(deps.Administration, deps.Granting)
+	if asked, ok := deps.LocalePolicy.(*contracts.LocalePolicyFunc); ok && (asked == nil || asked.Ask == nil) {
+		panic("user.Module: Deps.LocalePolicy is an adapter with no Ask; wire the tenant module's service, do not hand the language door an empty adapter")
+	}
+	if deps.LocalePolicy == nil {
+		panic("user.Module: Deps.LocalePolicy is nil; wire the tenant module's service, do not hand the language command a set it cannot ask about")
+	}
+	svc := internal.NewService(deps.Administration, deps.Granting, deps.LocalePolicy)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
 	// The third door, and the one that is not a lifecycle command: DELETE
@@ -159,6 +170,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
 			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
+			events.Declare[contracts.LanguageSet](contracts.EventLanguageSet),
 			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),
 			events.Declare[contracts.RegistrationApproved](contracts.EventRegistrationApproved),
 			events.Declare[contracts.RegistrationUnverified](contracts.EventRegistrationUnverified),

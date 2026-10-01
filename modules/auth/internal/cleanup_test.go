@@ -124,6 +124,9 @@ func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.C
 	users, _ := user.Module(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: AdministeringRoles},
 		Granting:       &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }},
+		LocalePolicy: &usercontracts.LocalePolicyFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+			return tenancy.Languages{Default: "en"}, nil
+		}},
 	})
 	err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		person, err := users.Invite(ctx, tx, "ada@example.com", "Ada")

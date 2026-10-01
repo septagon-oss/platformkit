@@ -112,6 +112,13 @@ type User struct {
 	// name outside the vocabulary refuses to mount instead of quietly meaning
 	// nothing.
 	Handle string `json:"handle,omitempty" gorm:"type:text" maxLength:"32" ui:"present:person" doc:"Lower-case name this person answers to in this tenant, empty until claimed" example:"ada"`
+	// PreferredLocale is the language this person asked to be answered in, or
+	// empty for "nobody chose: negotiate". Empty is a value and not an absence —
+	// it is how a choice is taken back, and it is the state most people are in
+	// forever. It is refused by name in module.go's Immutable list for the reason
+	// Handle is: it arrives by command, publishes user.language_set, and is only
+	// ever about the person signed in, which a PATCH that names any id cannot be.
+	PreferredLocale string `json:"preferredLocale,omitempty" gorm:"type:text;not null;default:''" maxLength:"35" doc:"Language this person chose, empty while the browser and the tenant decide" example:"pt-PT"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
@@ -245,6 +252,13 @@ func ValidHandle(handle string) bool {
 // no event; verification replay conflicts rather than asserting fresh proof.
 type Service interface {
 	Registrations
+	// SetPreferredLocale changes the language the person signed in as is answered
+	// in. No argument names a person: the row is the principal's own, which is the
+	// half that keeps a preference from being a way to edit a colleague. A tag this
+	// tenant no longer serves is refused rather than stored, an empty tag clears
+	// the choice, and a choice that is already the one held changes nothing and
+	// publishes nothing.
+	SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*User, error)
 	// Invite creates a user with no password, in status invited, and publishes
 	// user.invited. Inviting an address that is already here is a conflict.
 	Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*User, error)

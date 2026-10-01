@@ -20,6 +20,7 @@ const (
 	EventPasswordSet = "user.password_set"
 	EventRolesSet    = "user.roles_set"
 	EventHandleSet   = "user.handle_set"
+	EventLanguageSet = "user.language_set"
 	EventDeactivated = "user.deactivated"
 )
 
@@ -56,6 +57,17 @@ type RolesSet struct {
 // moved. Both names are carried, because the question a rename raises is who held
 // it before — that is the whole reason the command exists as a command.
 type HandleSet struct {
+	UserID uuid.UUID `json:"userId"`
+	Was    string    `json:"was"`
+	Now    string    `json:"now"`
+	At     time.Time `json:"at"`
+}
+
+// LanguageSet is the payload of EventLanguageSet: this person asked to be
+// answered in another language, or asked to stop asking. Both directions of the
+// write are in the trail, because "when did they switch back" is the same question
+// as "when did they switch" and only the empty string tells them apart.
+type LanguageSet struct {
 	UserID uuid.UUID `json:"userId"`
 	Was    string    `json:"was"`
 	Now    string    `json:"now"`

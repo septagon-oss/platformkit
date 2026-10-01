@@ -38,7 +38,8 @@ func administering(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 // because a test against a service with no floor would not be a test of the
 // service the application composes.
 func newService() *internal.Service {
-	return internal.NewService(&contracts.AdministrationFunc{Ask: administering}, allowGranting)
+	return internal.NewService(&contracts.AdministrationFunc{Ask: administering}, allowGranting,
+		speaksEnglishAndPortuguese)
 }
 
 // grantSwitch is the Postgres harness's Granting: one answer a case flips. It is

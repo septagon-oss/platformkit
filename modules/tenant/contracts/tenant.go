@@ -235,6 +235,9 @@ type Inviter interface {
 // The errors are kit/crud's, so one mapping answers for these routes and the
 // generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
 type Service interface {
+	// CurrentLanguages locks this tenant's row and reads its current language
+	// set. A preference command calls it before locking its user row.
+	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
 	// Create writes the tenant, its first host and whatever the hooks add, in
 	// one transaction. A slug or a host already taken is a conflict.
 	Create(ctx context.Context, tx db.Tx[db.System], in NewTenant) (*Tenant, error)

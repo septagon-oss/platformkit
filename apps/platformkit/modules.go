@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -96,6 +97,11 @@ func compose(cfg config.Config) composition {
 	// auth looks people up, and the two questions below are about roles. The
 	// fields are filled a few lines further down, before anything listens.
 	roles := &roleGranter{}
+	// locales is the same shape of late binding for the same reason: the set a
+	// person's language choice has to be found in is the tenant module's fact, and
+	// the tenant module needs the user service to invite its first administrator.
+	// The field is filled where the tenant is composed, a few lines below.
+	locales := &tenantLocales{}
 
 	users, userModule := user.Module(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
@@ -103,6 +109,9 @@ func compose(cfg config.Config) composition {
 		// one line that decides who may promote: the same authorizer the kernel
 		// enforces every route with, asked about the auth module's own permission.
 		Granting: roles,
+		// Which languages a person may ask to be answered in is not the user
+		// module's fact to know; this is where the tenant module's answer arrives.
+		LocalePolicy: locales,
 	})
 
 	installed := catalogues()
@@ -115,6 +124,7 @@ func compose(cfg config.Config) composition {
 		// the language its text was authored in on the day the tenant appears.
 		Languages: installed.Languages(),
 	})
+	locales.tenants = tenants
 	active := tenantcontracts.Active{Service: tenants}
 	hosts := tenantHosts{tenants: tenants}
 	mail := mailer(cfg)
@@ -243,7 +253,7 @@ func compose(cfg config.Config) composition {
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: installed, Locale: loginLocale,
+		Messages: installed, Locale: accountLocale{users: users}.Locale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
@@ -400,6 +410,20 @@ func seedRoles(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tena
 // module is built before the authentication service is; filling the field happens
 // in compose, in the same order that makes the graph a list somebody wrote down
 // rather than a discovery mechanism.
+// tenantLocales is user.Deps.LocalePolicy: which languages the tenant of the
+// running transaction is served in, read where that fact lives. The tenant
+// module's own Service answers the interface as it stands — the port and the
+// method are the same question — so this type only carries the value and refuses
+// to answer before compose has finished, rather than inventing a set.
+type tenantLocales struct{ tenants tenantcontracts.Service }
+
+func (l *tenantLocales) CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	if l.tenants == nil {
+		return tenancy.Languages{}, errors.New("the tenant module is not composed yet, so no language set can be read")
+	}
+	return l.tenants.CurrentLanguages(ctx, tx)
+}
+
 type roleGranter struct{ auth authcontracts.Auth }
 
 func (g *roleGranter) May(ctx context.Context, _ db.Tx[db.Tenant]) (bool, error) {

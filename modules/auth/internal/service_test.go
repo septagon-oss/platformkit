@@ -47,8 +47,17 @@ func realUsers() usercontracts.Service {
 	svc, _ := user.Module(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
+		LocalePolicy:   &usercontracts.LocalePolicyFunc{Ask: speaksEnglish},
 	})
 	return svc
+}
+
+// speaksEnglish is these tests' whole tenant module: the one language a person
+// could ask for. Nothing mounted here offers the language door — Deps requires the
+// answer, and a test invents the shortest honest one rather than a tenant table it
+// does not have.
+func speaksEnglish(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	return tenancy.Languages{Default: "en"}, nil
 }
 
 var (

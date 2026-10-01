@@ -63,7 +63,8 @@ func mount(t *testing.T) chi.Router {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	_, m := user.Module(user.Deps{Administration: &usercontracts.AdministrationFunc{Ask: administering},
-		Granting: &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }}})
+		Granting:     &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }},
+		LocalePolicy: &usercontracts.LocalePolicyFunc{Ask: speaks}})
 	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -332,3 +333,10 @@ func TestAModuleWithNoRoleSystemIsRefusedAtComposition(t *testing.T) {
 // separately, because validating the composition is the composition's job and
 // holding a *Router would be holding one door of three.
 func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("user") }
+
+// speaks is this package's tenant module: the set a language choice is checked
+// against. The real answer is the tenant module's row; the routes mounted here
+// never reach it, and the command's own rules are modules/user/internal's cases.
+func speaks(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	return tenancy.Languages{Default: "en", Others: []string{"pt-PT"}}, nil
+}
