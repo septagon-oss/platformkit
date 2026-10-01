@@ -37,9 +37,9 @@ row-level security. [docs/cache.md](../../docs/cache.md) holds the table.
 ## Limits
 
 - **The store may never evict a generation counter.** A counter is written with no TTL
-  and an absent counter reads as generation 0, so an evicted counter reopens every entry
-  written under the generation a `Move` closed. `maxmemory-policy noeviction` (or no
-  `maxmemory` at all) is the requirement; `compose.yaml` states it, and
+  and an absent one reads as generation 0, so an evicted counter loses the record of
+  every `Move` and reopens what the first one closed. `maxmemory-policy noeviction` (or
+  no `maxmemory` at all) is the requirement; `compose.yaml` states it and
   [docs/cache.md](../../docs/cache.md) says why. A `volatile-*` policy is safe — the
   counter has no TTL for it to take.
 - **`Group[V]` has no in-tree consumer.** It ships, it runs the same conformance suite as

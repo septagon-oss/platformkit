@@ -47,8 +47,8 @@ not allowed to be a different cache.
 | a session, a permission grant, an entitlement | **nowhere** — not on this port, not in a process map, not in the store | — | — | every form of caching. `modules/auth/internal/kernel.go` says why: *"A permission cache is a window in which a revoked grant still works."* The read path is the transaction under RLS |
 | anything a tenant owns | only through `cache.Of(tenant, …)`, the tenant from `tenancy.FromContext` or a `db.Tx[db.Tenant]` | the caller's own TTL | `Delete` of the key, `Move` of the namespace | a key without the tenant in it. `cache.Shared` is a greppable declaration that the entry belongs to the installation, and it is the only way to say so |
 
-A `Move` and not a `Delete` is what makes an invalidation survive the racing load, and the host row is that
-argument's only consumer in this repository: two replicas miss the same host, both call the loader, one finishes a
+A `Move` and not a `Delete` is what makes an invalidation survive the racing load, and the host row above is the
+place this repository depends on it: two replicas miss the same host, both call the loader, one finishes a
 suspension and **deletes** the key, and the other writes back the tenant it loaded before the suspension began — so
 every replica reads a suspended tenant for the rest of the TTL, which is the failure the row above refuses. Every
 entry carries the generation it was written under, and `Get` answers the generation its own read found open so that
@@ -60,10 +60,10 @@ next request — which for a handful of operator actions a day over an indexed q
 suspension route's own call in that interleaving.
 
 The generation counter is written with no TTL and is read as generation 0 when it is absent, so the store must never
-evict it: under `allkeys-lru` or any other `allkeys-*` policy an idle counter is evicted, and the entries written
-under the closed generation read as believed again. `maxmemory-policy noeviction` — or a store with no `maxmemory`
-at all, which is what `make up` starts and what `compose.yaml` states — is the requirement; `volatile-*` policies
-leave a counter alone, since it holds no TTL to take.
+evict it: under `allkeys-lru` or any other `allkeys-*` policy an idle counter is taken, and with it the record of
+every move. Entries written before the first `Move` are believed again. `maxmemory-policy noeviction` — or a store
+with no `maxmemory` at all, which is what `make up` starts and what `compose.yaml` states — is the requirement;
+`volatile-*` policies leave a counter alone, since it holds no TTL to take.
 
 An installation with one process may leave `cache.adapter` empty and get the in-process store, which is a complete
 deployment for one process; `kit/app` says so once at boot, because a claim nobody reads is not a warning. An
