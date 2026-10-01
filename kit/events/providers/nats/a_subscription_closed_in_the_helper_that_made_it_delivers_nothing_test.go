@@ -14,15 +14,14 @@ import (
 )
 
 // TestADurableConsumerClosedWithItsSubscriptionDeliversNothing is the measurement
-// behind the one case in this package that no change to a name can make green —
-// TestTwoAppsOnOneBrokerNeverShareASubscription, review 1's pin.
-//
-// That case builds each app's subscription inside a helper which carries
-// `defer sub.Unsubscribe()` in its own body, so both subscriptions are closed before
-// its first publish, and it then waits for handlers with nothing standing behind
-// them. What nats.go does on that Unsubscribe is a fact about the transport, and it
-// belongs in the tree as a running case rather than as a claim in a report. Measured
-// here in the shipped shape — the same `wanted` consumer, the same `group(durable)`
+// behind TestTwoAppsOnOneBrokerNeverShareASubscription, review 1's pin, which was
+// red because its subscribe helper carried `defer sub.Unsubscribe()` in its own body:
+// both subscriptions were closed before its first publish, and it then waited on
+// handlers with nothing standing behind them. Root adopted that file with the one
+// line removed (decision 0008); this case stays because what nats.go does on that
+// Unsubscribe is a fact about the transport that nothing else in the tree states, and
+// because it is the case that says why a fixture of this package must not leave a
+// consumer — or a backlog — for the next one. Measured here in the shipped shape — the same `wanted` consumer, the same `group(durable)`
 // deliver group, the same filter set transport.AppFilters hands appname.Filters:
 //
 //   - with the subscription closed where it was made, no event published at the
