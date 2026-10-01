@@ -23,7 +23,7 @@ test('a fresh site says nothing is published, and the home page appears once one
   await expect(page).toHaveURL(/\/app$/);
 
   const created = await page.request.post('/api/v1/content/contents', {
-    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `# Hello\n\nThis is **home** number ${stamp}.` },
+    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `## Hello\n\nThis is **home** number ${stamp}.` },
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = await created.json();

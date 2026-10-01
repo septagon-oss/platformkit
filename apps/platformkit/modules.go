@@ -186,9 +186,7 @@ func compose(cfg config.Config) composition {
 	// it for every operation that declares a feature. See app.Options.Entitle.
 	plans, billingModule := billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()})
 
-	contents, contentModule := content.Module(content.Deps{})
-	sites, siteModule := site.Module(site.Deps{})
-	_, fileModule := file.Module(file.Deps{
+	files, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
 		// Which class lives how long is the deployment's table (files.retention
@@ -199,6 +197,9 @@ func compose(cfg config.Config) composition {
 		// whatever this product's uploads name them, and nothing here invents one.
 		Retention: cfg.Files.Retention, Tenants: active,
 	})
+	contentFiles := file.RichTextFiles{Opener: files}
+	contents, contentModule := content.Module(content.Deps{Files: contentFiles})
+	sites, siteModule := site.Module(site.Deps{})
 
 	mods := []module.Module{
 		userModule,
@@ -219,7 +220,7 @@ func compose(cfg config.Config) composition {
 		// The public site reads what the two above publish and claims the root.
 		// A product with a storefront of its own composes that instead.
 		web.Module(web.Deps{
-			Site: sites, Content: contents, Theme: design.Default(),
+			Site: sites, Content: contents, Files: contentFiles, Theme: design.Default(),
 			// The two addresses the public site links and does not serve. They
 			// are written here because they are this product's facts: which
 			// shell it composed, and which door of which module answers for a

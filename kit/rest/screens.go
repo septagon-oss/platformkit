@@ -49,7 +49,7 @@ func (s Spec[T]) resource() httpx.Resource {
 	return httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
-		Immutable: s.Immutable, Schema: schema,
+		Immutable: s.Immutable, Schema: schema, RichTextFiles: s.RichTextFiles,
 
 		Count: func(ctx context.Context) (int64, error) {
 			tx, err := transaction(ctx)
@@ -308,7 +308,10 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	for _, e := range p.Errors {
 		if name, message, found := strings.Cut(e, ": "); found {
 			if _, known := crud.FieldNamed(fields, name); known {
-				out[name] = message
+				if out[name] != "" {
+					out[name] += "; "
+				}
+				out[name] += message
 			}
 		}
 	}

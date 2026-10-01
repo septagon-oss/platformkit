@@ -9,7 +9,21 @@ Markdown renderer `contracts.Render` the [web module](../web/README.md) uses.
 `/app/content/contents`. There are no versions by design; see
 [module.go](module.go).
 
-Compose it with `content.Deps{}`; it needs nothing from other modules.
+## Composition
+
+**Reused** — `kit/rest`, `kit/entity`, `kit/richtext`, `ui/forms`,
+`ui/components.Prose`, and `modules/file.RichTextFiles` compose the rich text
+field, with the file resolver passed as `content.Deps.Files` per request.
+**Added** — `kit/richtext` owns the validated Markdown subset and tenant-scoped
+image resolution because no earlier kernel package could validate, normalize,
+extract, and render one stored format for both generated screens and public pages.
+**Made reusable** — the `widget:richtext` tag, `richtext.Files` port and fake,
+and `Prose` component let another `rest.Spec` entity use the same field path.
+
+When `Deps.Files` is absent, image references are refused on write; text-only
+Markdown still works. `Body` is limited to 262,144 Markdown code points and
+1,048,576 stored UTF-8 bytes. Public rendering uses the same rich-text renderer
+as the admin view and resolves images for the public audience.
 Consumers import [contracts/](contracts/) and its [fake](contracts/contenttest/),
 never `internal/`. `make test TEST_PACKAGES=./modules/content/...` needs the
 development database.

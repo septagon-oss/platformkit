@@ -123,8 +123,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
-		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
+	// Prose is now a shared component: the v1 gallery adds its specimen and
+	// the common sheet gains its token-only rules. The link uses the primary
+	// text token so its underlined text meets contrast in light and dark.
+	if legacy.SHA256 != "baf7f5d301bd88a930fba965188f5d3de875bbfc007e7f43d505ee99f72c1192" {
+		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration: got %s", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
 	first := layoutExport(t, captures)

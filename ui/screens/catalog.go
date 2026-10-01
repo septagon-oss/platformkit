@@ -22,7 +22,7 @@ import (
 // that actually protects it is the one beside this constant: additive, optional,
 // and never a change of meaning. A consumer that must refuse is the *next* build,
 // reading this field, and that is who the field is written for.
-const CatalogVersion = 1
+const CatalogVersion = 2
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell

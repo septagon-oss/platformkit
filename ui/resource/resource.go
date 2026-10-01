@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
@@ -146,6 +147,11 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
+	return DetailRichText(r, o, row, writable, nil)
+}
+
+// DetailRichText renders prose prepared by the request adapter in its tenant transaction.
+func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string) document.View {
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -171,7 +177,7 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
-		details(r, row),
+		details(r, row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
@@ -325,12 +331,21 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 // list. There is no hiding here — hide:list is about a table being readable,
 // not about a field being secret, and a field a caller may not see is a field
 // the entity's JSON does not carry.
-func details(r Resource, row map[string]any) g.Node {
+func details(r Resource, row map[string]any, rendered map[string]string) g.Node {
 	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
+	var prose []g.Node
 	for _, f := range r.Schema.Fields {
+		if f.Widget == "richtext" {
+			if html, ok := rendered[f.Name]; ok {
+				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
+			} else {
+				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), h.P(g.Text(display.Text(row[f.Name])))))
+			}
+			continue
+		}
 		items = append(items, components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])})
 	}
-	return components.DetailList(components.DetailListProps{Items: items})
+	return g.Group{components.DetailList(components.DetailListProps{Items: items}), g.Group(prose)}
 }
 
 // deleteForm is the destructive action: a real form, so it works without

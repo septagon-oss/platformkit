@@ -16,12 +16,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
-	"github.com/septagon-oss/platformkit/ui/css"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -54,6 +54,7 @@ var colour = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 type Site struct {
 	Settings sitecontracts.Service
 	Content  contentcontracts.Service
+	Files    richtext.Files
 	Theme    design.Pair
 	// SignIn and File are addresses this site links and does not own: the
 	// composition supplies both, for the reason Deps names them.
@@ -67,7 +68,7 @@ type Site struct {
 // Mount composes the stylesheet once and serves the two routes through the
 // composition layer. There are no controllers: the site runs no script.
 func Mount(surfaces httpx.Surfaces, s Site) {
-	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists(), Sheets: []*css.Sheet{prose()}})
+	sheet := ui.Compose(s.Theme, ui.Extra{Lists: lists()})
 	// The root claim. One module answers a tenant's host at "/", and Home says
 	// whether this one took it: a product with a storefront of its own is
 	// composed instead of this module, and a second claimant would be a boot
@@ -109,7 +110,7 @@ func (s Site) home(ctx context.Context, r page.Request, _ *page.Empty) (page.Vie
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.article(settings, r, c)
+	return s.article(ctx, tx, settings, r, c)
 }
 
 // page is one published page by slug. A draft, an archived page and a slug
@@ -129,7 +130,7 @@ func (s Site) page(ctx context.Context, r page.Request, in *slugInput) (page.Vie
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.article(settings, r, c)
+	return s.article(ctx, tx, settings, r, c)
 }
 
 // settings reads the tenant's settings for this request. A host that resolves
@@ -150,14 +151,25 @@ func (s Site) settings(ctx context.Context) (*sitecontracts.SiteSettings, db.Tx[
 	return settings, tx, nil
 }
 
-func (s Site) article(settings *sitecontracts.SiteSettings, r page.Request, c *contentcontracts.Content) (page.View, error) {
-	html, err := contentcontracts.Render(c.Body)
+func (s Site) article(ctx context.Context, tx db.Tx[db.Tenant], settings *sitecontracts.SiteSettings, r page.Request, c *contentcontracts.Content) (page.View, error) {
+	doc, err := richtext.Parse(c.Body)
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.view(settings, r, c.Title, []g.Node{h.Article(g.Attr("data-prose", ""),
+	html, err := richtext.Render(ctx, tx, doc, s.Files, richtext.Public)
+	if err != nil {
+		return page.View{}, err
+	}
+	v := s.view(settings, r, c.Title, []g.Node{h.Article(
 		components.Heading(components.HeadingProps{Text: c.Title, Level: 1}),
-		g.Raw(html))}), nil
+		components.Prose(components.ProseProps{HTML: html}))})
+	v.Head = append(v.Head, h.Meta(h.Name("description"), h.Content(richtext.MetaDescription(doc, 160))))
+	if first, ok := richtext.FirstImage(doc); ok && s.Files != nil {
+		if image, err := s.Files.Resolve(ctx, tx, first.ID, richtext.Public); err == nil {
+			v.Head = append(v.Head, h.Meta(g.Attr("property", "og:image"), h.Content(image.Src)))
+		}
+	}
+	return v, nil
 }
 
 // view is every page of the site: the bar, the column, the footer, and the
@@ -223,7 +235,8 @@ func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request) g.Nod
 
 func footer(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
 	return h.Footer(h.Class(clFooter.Compile()),
-		components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"}))
+		h.Div(h.Class(clFooterCopy.Compile()),
+			components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"})))
 }
 
 func (s Site) nothingYet() []g.Node {

@@ -123,10 +123,10 @@ type Content struct {
 	Slug string `json:"slug" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"URL name, unique within the tenant" example:"about-us"`
 	// Title is what a list and a heading show.
 	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"Headline" example:"About us"`
-	// Body is Markdown. It is stored as it was written and rendered on read, so
+	// Body is canonical Markdown. It is normalized on write and rendered on read, so
 	// a change to what the renderer allows applies to everything ever written
 	// rather than to whatever happens to be saved next.
-	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:textarea;hide:list" doc:"The content itself, in Markdown"`
+	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" doc:"The content itself, in Markdown"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.
@@ -175,11 +175,8 @@ func (c *Content) Validate(ctx context.Context) error {
 	// handed 200 characters that did not fit.
 	case utf8.RuneCountInString(c.Title) > MaxTitle:
 		return fmt.Errorf("a title is at most %d characters", MaxTitle)
-	// Bytes here, and deliberately: this one is a bound on what is stored and
-	// on what the public route renders per anonymous request, and both are
-	// measured in bytes. The column carries the same check.
-	case len(c.Body) > MaxBody:
-		return fmt.Errorf("a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page", MaxBody, len(c.Body))
+	case utf8.RuneCountInString(c.Body) > MaxBody:
+		return fmt.Errorf("a body is at most %d Markdown characters", MaxBody)
 	case !slices.Contains(kinds, c.Kind):
 		return fmt.Errorf("kind %q is not %s or %s", c.Kind, KindPage, KindPost)
 	case !slices.Contains(statuses, c.Status):

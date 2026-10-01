@@ -698,6 +698,7 @@ func base() *css.Sheet {
 // component's markup asks for is still the last word about that class.
 func componentState() *css.Sheet {
 	s := css.NewSheet()
+	s.Merge(components.ProseStyle())
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped
 	// so consumer HTML can reveal its own hidden content in print styles.

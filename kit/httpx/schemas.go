@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -78,6 +79,8 @@ type Resource struct {
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
 	Schema    entity.Schema
+	// RichTextFiles is the request-scoped image port for generated detail views.
+	RichTextFiles richtext.Files `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command

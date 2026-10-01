@@ -22,6 +22,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -91,8 +92,28 @@ func listView(r httpx.Resource, ctx context.Context, o Options, at string, rows 
 	return resource.List(view(r, ctx, at), o, rows, total, pageNo, sort, writable)
 }
 
-func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any, writable bool) page.View {
-	return resource.Detail(view(r, ctx, at), o, row, writable)
+func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any, writable bool) (page.View, error) {
+	rendered := map[string]string{}
+	for _, field := range r.Schema.Fields {
+		if field.Widget != "richtext" {
+			continue
+		}
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return page.View{}, richtext.ErrMissing
+		}
+		source, _ := row[field.Name].(string)
+		doc, err := richtext.Parse(source)
+		if err != nil {
+			return page.View{}, err
+		}
+		html, err := richtext.Render(ctx, tx, doc, r.RichTextFiles, richtext.Workspace)
+		if err != nil {
+			return page.View{}, err
+		}
+		rendered[field.Name] = html
+	}
+	return resource.DetailRichText(view(r, ctx, at), o, row, writable, rendered), nil
 }
 
 // List is the list screen of a registered resource. See resource.List.

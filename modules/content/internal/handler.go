@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
@@ -93,7 +94,11 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.Content],
 			// 304, and nothing else: net/http does not send a body with one.
 			return &published{Status: http.StatusNotModified, ETag: tag}, nil
 		}
-		html, err := contracts.Render(c.Body)
+		doc, err := richtext.Parse(c.Body)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		html, err := richtext.Render(ctx, tx, doc, spec.RichTextFiles, richtext.Public)
 		if err != nil {
 			return nil, rest.Fault(err)
 		}

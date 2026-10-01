@@ -113,7 +113,7 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 			if err != nil {
 				return page.View{}, err
 			}
-			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx)), nil
+			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
@@ -262,7 +262,7 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 			if err != nil {
 				return page.View{}, err
 			}
-			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx)), nil
+			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
 		})
 
 	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/edit", Summary: "The edit-" + res.Entity + " form"}, write,

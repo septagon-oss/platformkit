@@ -1413,13 +1413,14 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 34 — thirteen under migrations/ and twenty-one under
+	// this head prints 35 — thirteen under migrations/ and twenty-two under
 	// modules/*/migrations/, with distinct names and distinct versions throughout.
 	// The release this fixture is applied from shipped 30 of them: the thirteen
 	// under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the
 	// seventeen module files at or below the kernel's own highest (4, 7, 8, 10, 11,
-	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The four above the kernel's
-	// 30 — modules/auth's 31, 32 and 33 and modules/file's 34 — postdate the split,
+	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The five above the kernel's
+	// 30 — modules/auth's 31, 32 and 33, modules/file's 34 and modules/content's
+	// 35 — postdate the split,
 	// are not in the old installation's ledger, and legacyLayout leaves them out;
 	// the upgrade below applies them and counts them as new rows.
 	if len(before) != 30 {
@@ -1445,9 +1446,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the four files above the
-	// kernel's 30 (modules/auth 31, 32 and 33 and modules/file 34, all absent from
-	// the old ledger) have to be accounted for: 34 files in the release, 34 rows.
+	// release ships is in the ledger, which is where the five files above the
+	// kernel's 30 (modules/auth 31, 32 and 33, modules/file 34 and modules/content
+	// 35, all absent from
+	// the old ledger) have to be accounted for: 35 files in the release, 35 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
