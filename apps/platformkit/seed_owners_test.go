@@ -195,3 +195,31 @@ func TestTheSeedRefusesARecordItsOwnerWouldRefuse(t *testing.T) {
 		t.Errorf("the refused page reads back as %q; a refused run writes nothing", sentences["read"])
 	}
 }
+
+// TestTheSeedCommandRunsAgainstItsTenant exercises the subcommand itself, not the
+// service behind it: the flags, the configuration, the cross-tenant transaction the
+// command opens for itself and the tenant view it takes from that. A dry run of the
+// starter answers without error and writes nothing it would not write for real, and
+// the same command asked for demo records at a tenant whose row says false comes
+// back with the refusal — which is the brief's "even when asked", answered at the
+// door an operator stands at rather than at the service.
+func TestTheSeedCommandRunsAgainstItsTenant(t *testing.T) {
+	path, _ := configure(t)
+	install(t, path)
+	args := []string{"--config", path, "--tenant", "acme", "--as", adminEmail}
+	if err := seedCommand(append([]string{}, append(args, "--dry-run")...)); err != nil {
+		t.Errorf("seed --dry-run: %v", err)
+	}
+	err := seedCommand(append([]string{}, append(args, "--demo")...))
+	if err == nil || !strings.Contains(err.Error(), "non-demo tenant") {
+		t.Errorf("seed --demo at a tenant whose row says false: %v", err)
+	}
+	if err := seedCommand([]string{"--config", path, "--tenant", "nosuch", "--as", adminEmail}); err == nil ||
+		!strings.Contains(err.Error(), "no tenant nosuch") {
+		t.Errorf("seed --tenant nosuch: %v", err)
+	}
+	if err := seedCommand([]string{"--config", path}); err == nil ||
+		!strings.Contains(err.Error(), "--tenant is required") {
+		t.Errorf("seed with nothing named: %v", err)
+	}
+}
