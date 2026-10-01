@@ -16,14 +16,14 @@ import (
 )
 
 // StorageFixture is a fresh, empty storage scope: one store, one tenant, and the
-// scope that tenant's bytes live under. RequiresSize records a provider
-// capability for tests only: Storage permits providers to refuse an unknown
-// length. It adds no runtime interface.
+// scope that tenant's bytes live under. It carries no capability flags: an
+// implementation that could refuse the length a stream does not declare would be
+// refusing this module's own upload route, which declares none, so the question
+// has no second answer left to record.
 type StorageFixture struct {
-	Storage      contracts.Storage
-	Scope        contracts.Scope
-	TenantID     uuid.UUID
-	RequiresSize bool
+	Storage  contracts.Storage
+	Scope    contracts.Scope
+	TenantID uuid.UUID
 }
 
 // RunStorage checks the byte-storage contract without a database or service.
@@ -106,23 +106,40 @@ func RunStorage(t *testing.T, fresh func(*testing.T) StorageFixture) {
 			}
 		}
 	})
-	t.Run("unknown length follows the declared capability", func(t *testing.T) {
+	t.Run("a body that declares no length arrives, and collides", func(t *testing.T) {
+		// The honest length of a stream is -1, which is what this module's upload
+		// route hands every implementation there is. Asking it here rather than
+		// beside one adapter is the point: an implementation that writes these
+		// bytes and one that refuses them both pass a suite that never asks.
 		fixture := fresh(t)
 		key, body := contracts.Key(uuid.NewString()), "first chunk\nsecond chunk\n"
 		stream := io.MultiReader(strings.NewReader("first chunk\n"), strings.NewReader("second chunk\n"))
-		err := fixture.Storage.Put(t.Context(), fixture.Scope, key, stream, -1, contracts.Meta{})
-		if fixture.RequiresSize {
-			if err == nil {
-				t.Fatal("provider declared that it requires a length but accepted -1")
-			}
-			storageMissing(t, fixture.Storage, fixture.Scope, key)
-			return
-		}
-		if err != nil {
+		if err := fixture.Storage.Put(t.Context(), fixture.Scope, key, stream, -1, contracts.Meta{}); err != nil {
 			t.Fatalf("Put with unknown length: %v", err)
 		}
 		if got := storageRead(t, fixture.Storage, fixture.Scope, key); got != body {
 			t.Fatal("unknown-length upload changed the bytes")
+		}
+		// And the promise an undeclared length must not quietly cost. The key is
+		// still this module's to mint once, so either direction of collision is a
+		// bug rather than a replacement: a declared write onto bytes that arrived
+		// undeclared, and — the one an object store cannot cover with its own
+		// conditional create header, because a multipart create is not a create —
+		// an undeclared write onto bytes already there.
+		declared := contracts.Key(uuid.NewString())
+		storagePut(t, fixture.Storage, fixture.Scope, declared, "written by a request that counted them")
+		second := io.MultiReader(strings.NewReader("a second stream\n"), strings.NewReader("that declared nothing\n"))
+		if err := fixture.Storage.Put(t.Context(), fixture.Scope, declared, second, -1, contracts.Meta{}); err == nil {
+			t.Fatal("a body arriving with no length replaced a key that already held bytes")
+		}
+		if got := storageRead(t, fixture.Storage, fixture.Scope, declared); got != "written by a request that counted them" {
+			t.Fatalf("an undeclared write changed the bytes at a key it should have refused: %q", got)
+		}
+		if err := fixture.Storage.Put(t.Context(), fixture.Scope, key, strings.NewReader("replacement"), 11, contracts.Meta{}); err == nil {
+			t.Fatal("a declared write replaced a key whose bytes arrived undeclared")
+		}
+		if got := storageRead(t, fixture.Storage, fixture.Scope, key); got != body {
+			t.Fatal("a declared write replaced the bytes of an undeclared one")
 		}
 	})
 	t.Run("collisions preserve the original bytes", func(t *testing.T) {

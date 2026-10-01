@@ -263,10 +263,19 @@ func validMediaType(s string) bool {
 // stream a body for as long as the client likes without holding a connection.
 type Storage interface {
 	// Put writes the bytes at key under scope, with meta beside them. size is
-	// what the caller declared, or -1 when nothing did; an implementation that
-	// has to know a length up front may refuse -1, and the one on disk ignores
-	// it. Writing a key that already exists is an error, because a key is
-	// minted per upload and a collision is a bug rather than a replacement.
+	// what the caller declared, or -1 when nothing did, and every implementation
+	// has to write the bytes it was handed either way: this module's own door
+	// streams the request and so declares no length at all
+	// (internal/handler.go's arriving), which means an implementation that
+	// refused -1 would be refusing the upload route. The one on disk ignores the
+	// number outright. What a store may do with a length it was given is answer
+	// the request as one write rather than several.
+	//
+	// Writing a key that already exists is an error whatever the length was,
+	// because a key is minted per upload and a collision is a bug rather than a
+	// replacement — including over a stream that declared none, which an object
+	// store cannot cover with its own conditional create header and so has to
+	// claim before it fills (internal/s3.go).
 	Put(ctx context.Context, scope Scope, key Key, r io.Reader, size int64, meta Meta) error
 
 	// Get opens the bytes at key, or ErrNoBlob when there are none. The caller
@@ -369,11 +378,13 @@ type Upload struct {
 	// deployment's, and the only thing the module knows is that a kind with no
 	// configured policy is never deleted.
 	Kind string
-	// Declared is the length the request declared, or -1. It is a hint for a
-	// Storage that has to know one up front, and nothing else: the size that is
-	// stored and the limit that is enforced both come from counting the bytes
-	// as they go past, because a request that declares a length can be wrong
-	// about it either by accident or on purpose.
+	// Declared is the length the request declared, or -1, which is what a
+	// streamed part honestly declares. It is a hint a Storage may use to ask
+	// the store for one write instead of several, and nothing else: the size
+	// that is stored and the limit that is enforced both come from counting the
+	// bytes as they go past, because a request that declares a length can be
+	// wrong about it either by accident or on purpose. No implementation may
+	// refuse -1, because this module never declares anything else here.
 	Declared int64
 	Body     io.Reader
 }

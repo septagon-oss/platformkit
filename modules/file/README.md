@@ -47,11 +47,18 @@ process in the path. Two doors it does not answer, both declared on the type
 rather than discovered: it implements no `Reconciler`, so an installation on it
 gets no orphan sweep and leaves an upload's abandoned bytes to a bucket lifecycle
 rule, and it implements no `Prover`, so an erasure certificate's `verified_at`
-stays NULL. The test stack starts SeaweedFS (`make up`, published on 8333) and the
-adapter's cases fail rather than skip without it, as the NATS transport's do. The
-reference application still composes `Local`: `make run` and `make e2e` are meant
-to work on a machine with no object store, and which store a deployment has is a
-line its composition writes.
+stays NULL. It takes the length a stream does not declare, because that is the
+only answer its own upload route gives: a body that arrives without one is
+written, and the no-clobber promise is kept by claiming the object's name with a
+conditional write of nothing before filling it, which is what a store's own
+conditional create header cannot do across a multipart upload. The test stack
+starts SeaweedFS (`make up`, published on 8333) and the adapter's cases fail
+rather than skip without it, as the NATS transport's do — so every job that runs
+`make check` starts that store as a step of its own, which is what
+`modules/file/store_gate_test.go` holds the three workflow files to. The reference
+application still composes `Local`: `make run` and `make e2e` are meant to work on
+a machine with no object store, and which store a deployment has is a line its
+composition writes.
 
 Compose it with `file.Deps{Storage, MaxBytes, QuotaBytes, ReconcileEvery,
 Retention, Tenants, RetainEvery}`; `config.example.yaml`'s `files` section
@@ -111,7 +118,7 @@ Both public routes are reads; the module has no public write, so `kit/limit` is 
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
 
-What an operator does instead of a route is two steps beside `make rehearse`: `make backup` writes one dump of the database — with the grants on its tables, because a restore the application cannot open is not a restore of it — plus a copy of the on-disk byte store and a `manifest.sha256` of every artefact, and `make restore-drill` puts a backup back into a scratch database and compares four things. The objects the installation's own store holds against the objects the backup carries, in both directions, and the installation's current bytes against the digests the manifest recorded (`--files`, which `make` passes for `PLATFORMKIT_FILES_DIR` when the directory exists, and which an object-store deployment omits because it has no directory here to name). Every restored object against the digest taken before the backup. The set of tables, and every table's row set, in both databases — a table either side names that the other does not is a restore that failed, not a drill that could not run. And the set of tables the application's *own role* can read in the source against the set it can read in the restore (`--app-url`, default `PLATFORMKIT_TEST_DATABASE_URL`): the owner connection every other check runs on holds every table by construction, so it cannot see a restore that came back shut against the installation. The drill prints `restore_drill_pass_ratio=N/M` (`scripts/backup.sh`, `scripts/restore_drill.sh`). The rows and the bytes live in two places, so a promise that the installation can be put back is only answerable by restoring it and then reading what came back as the thing that will use it. One backup is one database, never one tenant, so `make backup TENANT=acme` is refused rather than silently dropped. With no `--files` the byte half can only ask whether the backup still reads like itself, and the closing line says that instead of claiming the installation was opened.
+What an operator does instead of a route is two steps beside `make rehearse`: `make backup` writes one dump of the database — with the grants on its tables, because a restore the application cannot open is not a restore of it — plus a copy of the on-disk byte store and a `manifest.sha256` of every artefact, and `make restore-drill` puts a backup back into a scratch database and compares four things. The objects the installation's own store holds against the objects the backup carries, in both directions, and the installation's current bytes against the digests the manifest recorded (`--files`, which `make` passes for `PLATFORMKIT_FILES_DIR` when the directory exists, and which an object-store deployment omits because it has no directory here to name; given no `--from`, the drill forwards that same directory to the backup it takes for itself, because a drill that drilled a backup of its own making which never held those objects would refuse every clean installation that has one). Every restored object against the digest taken before the backup. The set of tables, and every table's row set, in both databases — a table either side names that the other does not is a restore that failed, not a drill that could not run. And the set of tables the application's *own role* can read in the source against the set it can read in the restore (`--app-url`, default `PLATFORMKIT_TEST_DATABASE_URL`): the owner connection every other check runs on holds every table by construction, so it cannot see a restore that came back shut against the installation. The drill prints `restore_drill_pass_ratio=N/M` (`scripts/backup.sh`, `scripts/restore_drill.sh`). The rows and the bytes live in two places, so a promise that the installation can be put back is only answerable by restoring it and then reading what came back as the thing that will use it. One backup is one database, never one tenant, so `make backup TENANT=acme` is refused rather than silently dropped. With no `--files` the byte half can only ask whether the backup still reads like itself, and the closing line says that instead of claiming the installation was opened.
 
 ### Provisioning
 
