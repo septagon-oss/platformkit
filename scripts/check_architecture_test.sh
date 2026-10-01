@@ -138,7 +138,7 @@ for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault 
     kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config modules/auth/contracts; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -172,6 +172,12 @@ boundary_rejects kit/entity/display "$foundation/kit/crud"
 # imports kit/fault and the Go compiler refuses the cycle before any gate sees
 # it. What protects the package either way is the empty allowance below,
 # check("kit/fault", ""), which refuses this closure on its first non-standard line.
+# The value cache is a port over a store, not a second path to the database: the
+# one edge that would make it a second read path is the one into kit/db.
+boundary_rejects kit/cache "$foundation/kit/db"
+# The one store it speaks to reaches the port and the configuration and nothing
+# else — no router, no transaction, and no other provider.
+boundary_rejects kit/cache/providers/valkey "$foundation/kit/db"
 boundary_rejects kit/fault "$foundation/kit/db"
 # kit/trace carries a W3C trace context and nothing else: the two values, their
 # parsing and the standard library. It is in the outbox and kernel allowances
