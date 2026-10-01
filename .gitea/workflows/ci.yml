@@ -19,15 +19,18 @@ jobs:
     # This self-hosted capacity accepts trusted same-repository changes only.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # The ceiling this job has carried since the gates moved onto this runner, and
-    # the number this change does not touch. Run 43926 (job 44369) reached it at
-    # 45m09s, 46 seconds into `make e2e` — a step whose own measured cost on this
-    # runner is 103s, and whose whole chain came back green in 43m16s at 0c3a040
-    # (job 44137). What had spent the budget in front of those 103 seconds was the
-    # design tool's own suite, which shares no database, no runtime and no binary
-    # with gate 10; two of its steps now stand in a job of their own below, and
-    # both jobs keep this same number. See that job for the seam and its reason.
-    timeout-minutes: 45
+    # 45 cut off runs 192, 193, 204, 210, 237 and 243 after every test that ran had passed: the job runs
+    # make check, race, govulncheck, the design editor's browser verification and e2e in sequence. Task
+    # T-0219 splits it across the two kernel runners; until then the limit leaves room.
+    #
+    # The split T-0219 asks for has begun below: two of the design tool's steps stand in a job of their
+    # own there, and 45m09s of run 43926 (job 44369) reached the old ceiling 46 seconds into `make e2e` —
+    # a step whose own measured cost on this runner is 103s, and whose whole chain came back green in
+    # 43m16s at 0c3a040 (job 44137). What had spent the budget in front of those 103 seconds was that
+    # same suite, which shares no database, no runtime and no binary with gate 10. The two raises are
+    # independent: this number came from six runs that needed it, the job below keeps its own 45 because
+    # its steps were measured at 16 minutes and nothing has cut it off. See that job for the seam.
+    timeout-minutes: 75
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -199,7 +202,7 @@ jobs:
           # bound (2) in package.json; this step named none. Serialised, the step
           # pays the 157s the overlap never delivered: its own 924.0s of test time
           # is the serialised wall clock, ≈15m24s where the overlap managed 12m49s,
-          # of a 45m job whose other steps took 16m06s at that head. The sampler is
+          # inside a job whose ceiling was 45m at that run and whose other steps took 16m06s. The sampler is
           # here because a Chromium that crashes leaves the log with no way to tell
           # starvation from a broken build, and /proc/meminfo in a job container is
           # the host's, which is the number the next refusal will need.
@@ -282,7 +285,8 @@ jobs:
   # given one is a question the forge answers and this repository cannot — the
   # runner guide states the context exists, not when it is populated. Measured at
   # 0c3a040's pace, `check` is now 28 minutes of steps (31 at the refused head's)
-  # and this job 16, each against its own copy of the same 45 that was never raised.
+  # and this job 16. Each carries its own ceiling: this job keeps the 45 it was written against, and
+  # `check` above carries the 75 main gave it for the runs 45 cut off there.
   design:
     # The same trusted-repository rule as `check`: same forge, same self-hosted
     # capacity, same token.
