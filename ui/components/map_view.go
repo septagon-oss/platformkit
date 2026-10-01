@@ -103,6 +103,9 @@ func (p MapViewProps) Validate() error {
 		}
 		ids[point.ID] = true
 	}
+	if p.SelectedID != "" && !ids[p.SelectedID] {
+		return fmt.Errorf("MapView: selection must match a supplied point")
+	}
 	if p.Tiles != nil {
 		tile := p.Tiles
 		parsed, err := url.Parse(tile.URLTemplate)

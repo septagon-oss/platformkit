@@ -82,11 +82,19 @@ func TestDataListRefusesMalformedAndStalePayloads(t *testing.T) {
 func TestDataListClearedStatesDoNotInvokeDataSlots(t *testing.T) {
 	for _, status := range []c.MediaStatus{c.MediaLoading, c.MediaEmpty, c.MediaFailed, c.MediaRefused} {
 		p := c.DataListProps{Label: "Items", State: c.ContentState{Status: status, Title: "State", Text: "State details", LoadingLabel: "Loading"}}
-		out := html(t, c.DataListWithSlots(p, c.DataListSlots{
+		slots := c.DataListSlots{
 			TableSlots:  c.TableSlots{Cell: func(c.TableRow, c.TableColumn) g.Node { t.Fatal("P2: data slot invoked in absent state"); return nil }},
 			EmptyAction: []g.Node{g.Text("create")}, RetryAction: []g.Node{g.Text("retry")},
 			BulkActions: []g.Node{g.Text("protected actions")},
-		}))
+		}
+		if status == c.MediaRefused {
+			var rejected strings.Builder
+			if err := c.DataListWithSlots(p, slots).Render(&rejected); err == nil || rejected.Len() != 0 {
+				t.Fatalf("P2: refused state retained stale slots: %q, %v", rejected.String(), err)
+			}
+			slots = c.DataListSlots{}
+		}
+		out := html(t, c.DataListWithSlots(p, slots))
 		if strings.Contains(out, "protected actions") || (status == c.MediaRefused && strings.Contains(out, "retry")) {
 			t.Fatalf("P2: absent state retained controls: %s", out)
 		}
