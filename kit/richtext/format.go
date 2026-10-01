@@ -37,11 +37,12 @@ const (
 	Immutable   Class = "immutable"
 )
 
-// Issue identifies an unsupported construct at a one-based source line.
+// Issue identifies an unsupported construct at a one-based source line, says
+// what the author can do about it, and says whether that is this request's
+// business at all.
 type Issue struct {
 	Construct string
 	Line      int
-	Message   string
 	Remedy    string
 	Class     Class
 }
@@ -90,16 +91,16 @@ var constructKeys = map[string]string{
 	"missing image":    "missing-image",
 }
 
-// Localize returns the issue with its message and remedy in the language text
-// supplies, falling back to the English an application has not translated. The
-// construct, line and class are untouched, because they are the machine-readable
-// half of the refusal.
+// Localize returns the issue with its construct and its remedy in the language
+// text supplies, falling back to the English where an application has not
+// translated. The line and class are untouched: they are the machine-readable
+// half of the refusal, and a form marks the control by them.
 func (i Issue) Localize(text func(key, fallback string) string) Issue {
 	key := i.Key()
 	if key == "" || text == nil {
 		return i
 	}
-	i.Message = text("richtext."+key+".message", i.Message)
+	i.Construct = text("richtext."+key+".construct", i.Construct)
 	i.Remedy = text("richtext."+key+".remedy", i.Remedy)
 	return i
 }
@@ -118,7 +119,7 @@ func Parse(source string) (*Document, error) {
 			}
 			i += size
 		}
-		return nil, &Refused{Issues: []Issue{{"invalid UTF-8", line, "Invalid text encoding", "Use UTF-8 text.", Correctable}}}
+		return nil, &Refused{Issues: []Issue{{Construct: "invalid UTF-8", Line: line, Remedy: "Use UTF-8 text.", Class: Correctable}}}
 	}
 	source = strings.ReplaceAll(strings.ReplaceAll(source, "\r\n", "\n"), "\r", "\n")
 	// CommonMark replaces NUL with U+FFFD. Keep the parsed source and the
@@ -205,11 +206,11 @@ func validLink(raw string) bool {
 // Validate returns every disallowed construct without changing the document.
 func Validate(d *Document) []Issue {
 	if d == nil {
-		return []Issue{{"document", 1, "No document", "Supply a document.", Immutable}}
+		return []Issue{{Construct: "document", Line: 1, Remedy: "Supply a document.", Class: Immutable}}
 	}
 	var issues []Issue
 	add := func(n ast.Node, name, remedy string) {
-		issues = append(issues, Issue{name, d.line(n), "Unsupported " + name, remedy, Correctable})
+		issues = append(issues, Issue{Construct: name, Line: d.line(n), Remedy: remedy, Class: Correctable})
 	}
 	_ = ast.Walk(d.root, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -302,7 +303,10 @@ func Validate(d *Document) []Issue {
 	for i, line := range strings.Split(string(prose), "\n") {
 		for _, rule := range unsupported {
 			if rule.re.MatchString(line) {
-				issues = append(issues, Issue{rule.name, i + 1, "Unsupported " + rule.name, "Use the supported Markdown constructs.", Correctable})
+				issues = append(issues, Issue{
+					Construct: rule.name, Line: i + 1,
+					Remedy: "Use the supported Markdown constructs.", Class: Correctable,
+				})
 			}
 		}
 	}

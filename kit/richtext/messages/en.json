@@ -1,9 +1,9 @@
 {
-  "richtext.invalid-utf8.message": {
+  "richtext.invalid-utf8.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Invalid text encoding"
+    "translation": "invalid UTF-8"
   },
   "richtext.invalid-utf8.remedy": {
     "references": [
@@ -11,11 +11,11 @@
     ],
     "translation": "Use UTF-8 text."
   },
-  "richtext.raw-html.message": {
+  "richtext.raw-html.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported raw HTML"
+    "translation": "raw HTML"
   },
   "richtext.raw-html.remedy": {
     "references": [
@@ -23,11 +23,11 @@
     ],
     "translation": "Write Markdown instead of HTML."
   },
-  "richtext.heading-level.message": {
+  "richtext.heading-level.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported heading level"
+    "translation": "heading level"
   },
   "richtext.heading-level.remedy": {
     "references": [
@@ -35,11 +35,11 @@
     ],
     "translation": "Use headings ## through ####; the page title is the top heading."
   },
-  "richtext.link-destination.message": {
+  "richtext.link-destination.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported link destination"
+    "translation": "link destination"
   },
   "richtext.link-destination.remedy": {
     "references": [
@@ -47,11 +47,11 @@
     ],
     "translation": "Use https:, http:, mailto:, tel:, a site path or an anchor."
   },
-  "richtext.image-source.message": {
+  "richtext.image-source.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported image source"
+    "translation": "image source"
   },
   "richtext.image-source.remedy": {
     "references": [
@@ -59,11 +59,11 @@
     ],
     "translation": "Upload the image so it is stored with this site."
   },
-  "richtext.inline-image.message": {
+  "richtext.inline-image.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported inline image"
+    "translation": "inline image"
   },
   "richtext.inline-image.remedy": {
     "references": [
@@ -71,11 +71,11 @@
     ],
     "translation": "Put the image alone on its own line."
   },
-  "richtext.image-in-table.message": {
+  "richtext.image-in-table.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported image in table"
+    "translation": "image in table"
   },
   "richtext.image-in-table.remedy": {
     "references": [
@@ -83,11 +83,11 @@
     ],
     "translation": "Put the image outside the table."
   },
-  "richtext.list-nesting.message": {
+  "richtext.list-nesting.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported list nesting"
+    "translation": "list nesting"
   },
   "richtext.list-nesting.remedy": {
     "references": [
@@ -95,11 +95,11 @@
     ],
     "translation": "Use at most three list levels."
   },
-  "richtext.footnote.message": {
+  "richtext.footnote.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported footnote"
+    "translation": "footnote"
   },
   "richtext.footnote.remedy": {
     "references": [
@@ -107,11 +107,11 @@
     ],
     "translation": "Use the supported Markdown constructs."
   },
-  "richtext.definition-list.message": {
+  "richtext.definition-list.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported definition list"
+    "translation": "definition list"
   },
   "richtext.definition-list.remedy": {
     "references": [
@@ -119,11 +119,11 @@
     ],
     "translation": "Use the supported Markdown constructs."
   },
-  "richtext.math.message": {
+  "richtext.math.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported math"
+    "translation": "math"
   },
   "richtext.math.remedy": {
     "references": [
@@ -131,11 +131,11 @@
     ],
     "translation": "Use the supported Markdown constructs."
   },
-  "richtext.emoji-shortcode.message": {
+  "richtext.emoji-shortcode.construct": {
     "references": [
       "kit/richtext/format.go"
     ],
-    "translation": "Unsupported emoji shortcode"
+    "translation": "emoji shortcode"
   },
   "richtext.emoji-shortcode.remedy": {
     "references": [
@@ -143,11 +143,11 @@
     ],
     "translation": "Use the supported Markdown constructs."
   },
-  "richtext.missing-image.message": {
+  "richtext.missing-image.construct": {
     "references": [
       "kit/richtext/render.go"
     ],
-    "translation": "Image is unavailable"
+    "translation": "missing image"
   },
   "richtext.missing-image.remedy": {
     "references": [

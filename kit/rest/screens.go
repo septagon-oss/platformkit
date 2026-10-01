@@ -304,7 +304,7 @@ func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback strin
 	out, lines := map[string]string{}, make([]string, 0, len(refused.issues))
 	for _, issue := range refused.issues {
 		issue = issue.Localize(text)
-		line := fmt.Sprintf("%s %d: %s: %s", text("richtext.line", "line"), issue.Line, issue.Message, issue.Remedy)
+		line := fmt.Sprintf("%s %d: %s: %s", text("richtext.line", "line"), issue.Line, issue.Construct, issue.Remedy)
 		lines = append(lines, line)
 		if known {
 			out[refused.field] = strings.TrimPrefix(out[refused.field]+"; "+line, "; ")

@@ -182,7 +182,10 @@ func Prepare(ctx context.Context, tx db.Tx[db.Tenant], source string, files File
 		return "", err
 	}
 	if maxChars > 0 && utf8.RuneCountInString(normal) > maxChars {
-		return "", &Refused{Issues: []Issue{{"length", 1, "Markdown is too long", fmt.Sprintf("Use at most %d Markdown characters.", maxChars), Correctable}}}
+		return "", &Refused{Issues: []Issue{{
+			Construct: "length", Line: 1,
+			Remedy: fmt.Sprintf("Use at most %d Markdown characters.", maxChars), Class: Correctable,
+		}}}
 	}
 	d, _ := Parse(normal)
 	for _, ref := range References(d) {
@@ -191,7 +194,10 @@ func Prepare(ctx context.Context, tx db.Tx[db.Tenant], source string, files File
 		}
 		image, err := files.Resolve(ctx, tx, ref.ID, Workspace)
 		if errors.Is(err, ErrMissing) {
-			return "", &Refused{Issues: []Issue{{"missing image", ref.Line, "Image is unavailable", "Upload the image so it is stored with this site.", Correctable}}}
+			return "", &Refused{Issues: []Issue{{
+				Construct: "missing image", Line: ref.Line,
+				Remedy: "Upload the image so it is stored with this site.", Class: Correctable,
+			}}}
 		}
 		if err != nil {
 			return "", fmt.Errorf("richtext: resolve image: %w", err)

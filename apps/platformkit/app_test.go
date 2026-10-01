@@ -300,7 +300,16 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", ""); code != http.StatusNotFound {
 		t.Errorf("an unpublished page = %d %s, want 404", code, body)
 	}
-	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
+	// The author is not the publisher: the module refuses the person who wrote the
+	// page, by name, and the page goes live when a second holder of the permission
+	// asks for it. The installation invites that person here for the same reason it
+	// invites everybody else later.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusConflict ||
+		!strings.Contains(body, "author") {
+		t.Fatalf("self-publication = %d %s, want a 409 naming authorship", code, body)
+	}
+	publisher := signIn(t, cfg, acmeHost, publisherIn(t, cfg, admin, "publisher@acme.localhost"), publisherPass)
+	if code, body = do(t, cfg, publisher, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
 		t.Fatalf("publish = %d %s, want 200", code, body)
 	}
 	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", "")
