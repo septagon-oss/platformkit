@@ -52,7 +52,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-"max": 1578    },
+"max": 1595    },
     {
       "name": "tools",
       "paths": [
@@ -77,7 +77,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-"max": 64969    },
+"max": 64986    },
     {
       "name": "go_testsupport",
       "suffixes": [
@@ -95,7 +95,7 @@
       "suffixes": [
         "_test.go"
       ],
-"max": 89998    },
+"max": 90077    },
     {
       "name": "js",
       "paths": [
