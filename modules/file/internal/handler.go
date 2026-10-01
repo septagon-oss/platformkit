@@ -441,8 +441,14 @@ type retainInput struct {
 }
 
 type retainBody struct {
+	// The two bounds are the column's own: file_holds.reason is CHECKed not empty
+	// and contracts.MaxHoldReason is the width the entity refuses to go past. They
+	// are written here in the schema's literals because a struct tag cannot name a
+	// constant — the same reason eraseBody carries its 500 — and they are written
+	// at all because a schema that promises no width tells a caller a 4 kB sentence
+	// is a request, and the answer they get is a 422 about somebody else's column.
 	Until  *time.Time `json:"until,omitempty" format:"date-time" doc:"When the hold expires; omit to hold until released" required:"false"`
-	Reason string     `json:"reason" doc:"Why it is held" example:"court order 2026-0412"`
+	Reason string     `json:"reason" minLength:"1" maxLength:"500" doc:"Why it is held" example:"court order 2026-0412"`
 }
 
 type eraseInput struct {
