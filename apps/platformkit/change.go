@@ -41,18 +41,18 @@ const proposalAddress = "/api/v1/change/proposals"
 // a different write picks its own key and its own subject.
 const siteSettingsFlag = "change.control.site-settings"
 
-// changeModule is wired in compose, beside the module whose settings it gates:
-// change.Module over changeSubjects(sites) and site.Module over settingsGate. The
-// proposals answer whether or not the flag is on: the switch decides which door a
-// settings write comes through, not whether the object exists, and a person who
-// wants a second pair of eyes on a change can propose one today in an installation
-// with the switch off. All three parts are typed by the two contracts they
-// satisfy, so the compiler checks the graph and no reader has to run a generator.
+// changeModule is wired in compose, beside the module whose settings it
+// gates: change.Module over changeSubjects(sites, locked) and site.Module
+// over settingsGate. The proposals answer whether or not the flag is on: the
+// switch decides which door a settings write comes through, not whether the
+// object exists — with the switch off a person can still get a second pair of
+// eyes by proposing one. All three are typed by the contracts they satisfy,
+// so the compiler checks the graph and no reader has to run a generator.
 
 // configFlags is kit/flags' Evaluator over what kit/config read out of the flags
-// block: one installation, one process, one boolean per key, no targeting beyond
-// the tenant the request already resolved. nil — an installation that named no
-// flag at all — is an empty map to a lookup, which is the answer "off".
+// block: one installation, one process, one boolean per key, and the subject a
+// caller passes is accepted and unused — there is no targeting here, not even by
+// tenant. An installation that named no flag at all is an empty map: "off".
 //
 // It is here rather than in kit/flags/providers because it is not a provider worth
 // installing: there is no SDK, no wire format and no service behind it, and a

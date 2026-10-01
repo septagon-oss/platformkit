@@ -199,7 +199,7 @@ device, because no device-facing surface asks for one.
 application. A subject nobody binds is `ErrUnsupportedSubject` — the list in
 `apps/platformkit` is what makes a subject exist — and the gate that refuses a
 direct settings write is one flag (`change.control.site-settings`), off by default
-in `config.example.yaml`, read for the tenant the request resolved to.
+in `config.example.yaml` and one boolean for the installation, not one per tenant.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
