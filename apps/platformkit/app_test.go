@@ -1295,31 +1295,30 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	t.Helper()
 	all := fstest.MapFS{}
 	// An installation from before the split applied the files that existed then,
-	// which is everything up to the highest file the foundation itself shipped:
-	// the split moved those files to their modules, it did not add any. A file
-	// above that number postdates the release, so the ledger must not claim it was
-	// applied — there would be no row to re-own and kit/db would be right to call
-	// an applied file that no release ships a contradiction
+	// which is every version up to the one the foundation held when each module
+	// took its own SQL: 000026_module_schema is that move and 000030_tenant_oidc
+	// the last file numbered up to it. The split moved those files to their
+	// modules, it did not add any. A file above the boundary postdates the release,
+	// so the ledger must not claim it was applied — there would be no row to
+	// re-own and kit/db would be right to call an applied file that no release
+	// ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
-	// lets a module ship a version above the kernel's highest without rewriting
-	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
-	// normally in the upgrade, and are checked as new rows below.
-	var preSplitTop int64
-	for _, source := range sources {
-		if source.Owner != "platformkit" {
-			continue
-		}
-		entries, err := fs.ReadDir(source.Files, ".")
-		if err != nil {
-			t.Fatalf("read %s: %v", source.Owner, err)
-		}
-		for _, entry := range entries {
-			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > preSplitTop {
-				preSplitTop = version
-			}
-		}
-	}
+	// lets anyone ship a version above the boundary without rewriting this fixture
+	// every time they do: modules/auth's 31, 32 and 33 and the kernel's own 34 all
+	// skip the old ledger, apply normally in the upgrade, and are checked as new
+	// rows below.
+	//
+	// The boundary is a stated number rather than a measurement, and it used to be
+	// one. It read the highest file the foundation shipped, which held only while
+	// the kernel's own numbering was the top of the range; once modules/auth took
+	// 31, 32 and 33, a new kernel file at the top began dragging those three into
+	// the simulated past, where the old ledger claims the foundation applied SQL
+	// this release ships under modules/auth — and the upgrade dies on exactly the
+	// contradiction the rule exists to avoid (`platformkit/000031_auth_factors.up.sql
+	// was applied but is missing from this release`, measured with the derivation
+	// still in place). Which version a file predates is history this tree does not
+	// hold, so the number says it instead.
+	const preSplitVersion = 30
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -1335,7 +1334,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 			}
 			digits, _, _ := strings.Cut(entry.Name(), "_")
 			version, err := strconv.ParseInt(digits, 10, 64)
-			if err != nil || version > preSplitTop {
+			if err != nil || version > preSplitVersion {
 				continue
 			}
 			if version > top {
@@ -1389,37 +1388,42 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	// The number is the point of the assertion: an upgrade fixture that silently
+	// stopped counting a migration would pass while upgrading a real installation
+	// past a file it should have applied, so the files the release holds have to
+	// arrive here and say so.
+	//
 	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
 	// when the kernel added 000026_module_schema, 26 became 27 when
 	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
 	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
 	// CloudEvents envelope carries, 28 became 29 when the kernel added
 	// 000029_tenant_locale, and 29 became 30 when the kernel added
-	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`, which is
-	// numbered past both 29 and the highest file any module ships. The 29 in that
+	// 000030_tenant_oidc, the per-tenant issuer columns on `tenants`. The 29 in that
 	// chain is 29 and not the 28 it was written as, for
 	// the same reason 27 moved to 28 above it: this fixture flattens every owner's
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// A new kernel file continues past the highest number anywhere in the
-	// composition.
-	// The number is the point of the assertion: an upgrade fixture that silently
-	// stopped counting a migration would pass while upgrading a real installation
-	// past a file it should have applied, so a new migration has to arrive here and
-	// say so.
+	// Every version is one file across the composition, kernel and modules alike:
+	// this branch's 000034_tenant_app numbered itself past 31, 32 and 33, which
+	// modules/auth took while it was in review, rather than onto a taken version.
+	//
+	// 30 stays 30 for that file, and for modules/auth's three above the boundary,
+	// because preSplitVersion is now stated rather than read off the kernel's own
+	// highest — see the comment there for why the derivation stopped working once
+	// the modules numbered past it. A file above the boundary is not absent from
+	// this test: it is the new row the upgrade below has to produce, and the two
+	// counts below compare the ledger against every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 32, of which the release this fixture is applied from
-	// shipped 30: thirteen under migrations/ and the seventeen module files at or
-	// below the kernel's own highest. The two this branch adds,
-	// modules/auth/000031_auth_factors and modules/auth/000032_api_tokens, are
-	// numbered above the kernel's 30 because every version from 1 to 30 is taken,
-	// and a release that postdates the split is not in the old installation's
-	// ledger — legacyLayout therefore leaves them out, see the comment there.
-	// The 30 that remain are thirteen under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/ (4, 7, 8,
-	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27), all distinct.
+	// this head prints 34 — fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20,
+	// 21, 26, 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10,
+	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct.
+	// The 30 at or below preSplitVersion are thirteen under migrations/ (1, 2, 3, 5,
+	// 6, 9, 12, 20, 21, 26, 28, 29, 30) and seventeen under modules/*/migrations/
+	// (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27); the four
+	// above it are 31, 32, 33 and 34.
 	if len(before) != 30 {
 		t.Fatalf("the old layout applied %d files, want 30", len(before))
 	}
@@ -1443,9 +1447,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the two files this branch
-	// adds (modules/auth 31 and 32, above the kernel's 30 and so absent from the
-	// old ledger) have to be accounted for: 32 files in the release, 32 rows.
+	// release ships is in the ledger, which is where the four that postdate the
+	// boundary (modules/auth's 31, 32 and 33 and this branch's 34) have to be
+	// accounted for: 34 files in the release, 34 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
