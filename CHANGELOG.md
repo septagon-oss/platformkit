@@ -2,6 +2,40 @@
 
 ## Unreleased
 
+**A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
+one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two
+companies with two directories were one deployment, and one of them was wrong. The fact moves to the
+tenant — six columns on `tenants` (`000030`), resolved per request inside the transaction the request's
+own `Host` already resolved — and the mechanism stays in `modules/auth`, which asks its composition for
+a provider through `contracts.OIDCProviders` and never learns that `modules/tenant` exists. Two
+operator routes name a tenant's provider (`POST /api/v1/ops/tenant/tenants/{id}/oidc`, `…/oidc/clear`),
+and the registration mode is the tenant's own column — `disabled`, `existing`, `provision` — not a
+process-wide flag. The row holds `oidc_secret_ref`, the *name* of where the secret is and never the
+secret, because a row is copied into the outbox and from there into the audit trail. See
+[modules/auth](modules/auth/README.md) and [modules/tenant](modules/tenant/README.md).
+
+**A second factor gates every door that opens a session, and a person's sessions and keys are theirs
+to read and revoke.** TOTP enrols with the secret shown once and is proved before it is trusted; a
+recovery code spends once and rotation replaces the set; the password leg now halts with a 401 that
+says the password was right (`ErrFactorRequired`), and the door a tenant's own provider walks a person
+through asks the same question of the same account, so a provider that proved only the first half opens
+nothing — the refused person finishes at `POST /api/v1/auth/challenge/verify` with their own code, and
+the one withdrawal that is refused is a person's last factor.
+`GET /api/v1/auth/sessions` lists what a person has and revokes one or all, one `auth.session_revoked`
+per row its own statement removed, at `/app/auth/sessions` in the shell. `POST /api/v1/auth/tokens`
+mints a bearer key scoped to permissions its holder already has, which dies at its expiry, is not a
+credential at another tenant, and cannot widen itself back to its holder — and `httpx.AnyCredential()`
+is the fifth authorization declaration for the one operation that names no permission and spends none,
+because the catalogue is the first request a client that is not a browser makes and the only credential
+it holds is a key. `000031` and `000032` are the two tables; `modules/auth/internal/surface_test.go`
+pins the module's whole surface against the record the kernel's own mounts write. **No passkey**: the brief asked for one, it is not in this change, and the module README
+says so under *Open here*.
+
+Re-recording follows in the same branch: `apps/platformkit/testdata/openapi.json` gains these sixteen
+operations, and rule B6 of its wire gate refuses a change of a door's authorization that could refuse a
+caller it used to admit — the one widening it allows, `signed_in` to `any_credential`, is named in the
+table beside it.
+
 **A denial names the permission and who can grant it.** The page a signed-in person sees when a guard refuses
 them used to say only "Não pode fazer isto." / "You can't do this", although the guard's detail carried the
 permission it asked for. It now keeps that verdict and adds "You need the <permission> permission for it. Anyone
