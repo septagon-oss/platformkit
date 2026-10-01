@@ -139,7 +139,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is remeasured with `go run ./tools/designexport`
 	// on the merged shared-components tree: all 811 examples and both sides'
 	// styles are present, with the reduced-motion floor in the base layer.
-	if legacy.SHA256 != "d766adb29c834c848c0348d5ebe66373112946484339e2b8ad29f45a8dd09370" {
+	// Refusal and selection validation clears four Gallery examples: the two
+	// refused DataLists lose retained result props/slots, and the two removed-map
+	// selections retain only the remaining point. All 811 IDs, CSS, notices,
+	// themes and icons are unchanged in the before/after export comparison.
+	if legacy.SHA256 != "1ae5c204f9c267f8bfe9042d5a6b4936d2e072f655427298a0e4dd2eff82a95b" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

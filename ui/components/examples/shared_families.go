@@ -459,7 +459,8 @@ func mapExamples() []Example {
 				case "selected":
 					p.SelectedID = "one"
 				case "removed-selection":
-					p.SelectedID = "removed"
+					// The former selection is absent, so the refreshed set has no selection.
+					p.Points = p.Points[1:]
 				case "many-points":
 					for i := 0; i < 20; i++ {
 						point := p.Points[0]
