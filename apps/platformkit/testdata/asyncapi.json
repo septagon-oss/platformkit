@@ -2031,6 +2031,45 @@
       "summary": "Every tenant's delivery of user.invited.",
       "title": "user.invited"
     },
+    "user.language_set": {
+      "address": "platformkit.*.user.language_set",
+      "description": "Published at platformkit.{tenantId}.user.language_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "user.language_set": {
+          "contentType": "application/json",
+          "name": "user.language_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "was": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.language_set",
+          "title": "user.language_set"
+        }
+      },
+      "summary": "Every tenant's delivery of user.language_set.",
+      "title": "user.language_set"
+    },
     "user.password_set": {
       "address": "platformkit.*.user.password_set",
       "description": "Published at platformkit.{tenantId}.user.password_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -2235,6 +2274,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "preferredLocale": {
+                "type": "string"
+              },
               "roles": {
                 "items": {
                   "type": "string"
@@ -2292,6 +2334,9 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "preferredLocale": {
+                "type": "string"
+              },
               "roles": {
                 "items": {
                   "type": "string"
@@ -2347,6 +2392,9 @@
               },
               "id": {
                 "format": "uuid",
+                "type": "string"
+              },
+              "preferredLocale": {
                 "type": "string"
               },
               "roles": {
@@ -3130,6 +3178,23 @@
         }
       ],
       "summary": "The user module publishes user.invited.",
+      "tags": [
+        {
+          "name": "user"
+        }
+      ]
+    },
+    "user.language_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.language_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.language_set/messages/user.language_set"
+        }
+      ],
+      "summary": "The user module publishes user.language_set.",
       "tags": [
         {
           "name": "user"
