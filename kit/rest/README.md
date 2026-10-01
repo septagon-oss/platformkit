@@ -2,9 +2,25 @@
 
 `kit/rest` is an entity's projection onto HTTP. A module declares one `Spec[T]`
 per entity in its manifest — module, entity, path, permissions and hooks — and
-`Spec.Mount` registers list, create, read, update and delete on the
-`httpx.API`, each with its declaration, emitting the events `Spec.Events()`
-names and registering the `httpx.Resource` the admin generates screens from.
+`Spec.Mount` registers the operations it offers on the `httpx.API`: all five, or
+the ones `Operations` names, each with its declaration, emitting the events
+`Spec.Events()` names and registering the `httpx.Resource` the admin generates
+screens from. `Operations` is one field answering one question — which routes
+does this resource actually have — and the route table, a generated page's doors,
+the catalogue's `operations` key and what a boot gate is told about are all read
+off that answer, so a New button over an address that mounts no POST is not
+composable. A verb left out mounts nothing: the router answers 405 where the
+address serves another verb and 404 where it serves none, never a refusal naming
+a permission nobody asked for. A set with no list has no workspace address, so
+such a resource mounts no generated page and publishes no screen; it writes its
+own pages, the way this module writes the ones a Spec cannot describe.
+
+`ReadAuth` and `WriteAuth` are the same honesty about the guard: a route answered
+by something that is not a permission — `httpx.SignedIn()`, an operator's own
+tenant — is declared there rather than in the `Read`/`Write` shorthand, which
+refuses to mount beside it. A `WriteAuth` that asks no grant may not carry
+`Update` or `Delete`: the generic routes check whose tenant a row is in and never
+whose row it is, so a write about one row the caller names is a `rest.Command`.
 `Singleton[T]` is the same for a tenant's one row: a read and a PUT, no list
 and no id in the path. Read [rest.go](rest.go) first;
 [modules/task](../../modules/task/README.md) is the reference Spec.
