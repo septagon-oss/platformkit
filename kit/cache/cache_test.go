@@ -24,8 +24,8 @@ func TestTheInProcessStoreConforms(t *testing.T) {
 	cachetest.Conformance(t, memory(t), broken(t))
 }
 
-// TestThePortClosesWhatItMoved is C11's racing half: the write that read the
-// generation before the invalidation and landed after it. It runs against the port
+// TestThePortClosesWhatItMoved is C11's racing half: the write stamped by the read
+// that came before the invalidation and landed after it. It runs against the port
 // itself, which is the code both adapters share.
 func TestThePortClosesWhatItMoved(t *testing.T) {
 	cachetest.Generations(t)
