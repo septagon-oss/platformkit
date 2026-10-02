@@ -224,6 +224,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_setup_test.sh
+	bash scripts/ci_browser_report_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
