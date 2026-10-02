@@ -24,6 +24,9 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err := json.Unmarshal(event.Payload, &registered); err != nil {
 				return fmt.Errorf("auth: read unverified registration: %w", err)
 			}
+			// The confirmation link is built here, in the worker, and the sign-up request
+			// that asked for it is gone: the port it was answered at rides the event.
+			ctx = WithServed(ctx, registered.Served)
 			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
 		},
 	}, {

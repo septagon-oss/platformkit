@@ -97,6 +97,13 @@ type RegistrationUnverified struct {
 	UserID uuid.UUID `json:"userId"`
 	Email  string    `json:"email"`
 	At     time.Time `json:"at"`
+	// Served is the address the sign-up was answered at, port included, and "" when no
+	// request registered this account. The subscriber that mails the confirmation link
+	// builds it from this, for the reason Invited.Served gives: a link built from the
+	// tenant's name alone opens port 80 on an installation that serves its tenants behind
+	// a port, and only the call knew the port it arrived on. Not a credential, and the
+	// name in it is one tenancy already resolved to this tenant.
+	Served string `json:"served,omitempty"`
 }
 
 type EmailVerified struct {

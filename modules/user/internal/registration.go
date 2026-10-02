@@ -9,6 +9,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"gorm.io/gorm/clause"
 )
@@ -26,7 +27,13 @@ func (s *Service) RegisterUnverified(ctx context.Context, tx db.Tx[db.Tenant], i
 	if err != nil {
 		return nil, err
 	}
-	return u, events.Publish(ctx, tx, contracts.EventRegistrationUnverified, contracts.RegistrationUnverified{UserID: u.ID, Email: u.Email, At: db.Now()})
+	// The address this sign-up was answered at travels with the fact, because the
+	// confirmation link is built in the worker, long after the request is gone, and
+	// only the request knew the port it arrived on.
+	askedAt, _ := httpx.RequestFrom(ctx)
+	return u, events.Publish(ctx, tx, contracts.EventRegistrationUnverified, contracts.RegistrationUnverified{
+		UserID: u.ID, Email: u.Email, At: db.Now(), Served: httpx.ServedAuthority(askedAt),
+	})
 }
 
 func (s *Service) registerPassword(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PasswordRegistration, status string) (*contracts.User, error) {
