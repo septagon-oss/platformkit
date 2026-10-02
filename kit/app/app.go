@@ -90,6 +90,14 @@ type Options struct {
 	// of one app, which keeps the names this kernel formed before the app segment.
 	// It is a slug and not a display name: it reaches a broker subject, a consumer
 	// name, a job lock and a cookie name.
+	//
+	// It is the same fact as the configuration key `nats.app`, and New reconciles the
+	// two before anything reads either: an empty App takes the configured slug, which
+	// is what places this app's tenants (migrations/000041) and addresses its subjects,
+	// so a composition naming itself nowhere else would otherwise check its own events
+	// against no contract at all (kit/events/catalog.go). Two spellings are refused; an
+	// App named while the key stays empty is not, and no tenant's row will point at its
+	// contract — the stamp comes from the key, so that one is wiring's left to fix.
 	App appname.Name
 
 	// Installation names the host the installation itself is reached at — the
@@ -271,6 +279,27 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == "" {
 		opts.Role = All
 	}
+	// Which app this is has one answer, and it reaches the composition by two
+	// routes: nats.app, the setting every shared name is formed from (migration
+	// 000041 places tenants by it, the transport addresses events with it, the
+	// reference application stamps new tenants with it), and Options.App, the same
+	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
+	// nothing below re-reads either input: the payload catalog, the relay's claim,
+	// every subscription's durable and the job lock are named from the value this
+	// block leaves in opts.App. Left to agree by themselves they do not: a
+	// deployment that named itself in configuration alone stamped its tenants
+	// "collect", addressed its events as collect and installed its catalog under
+	// nobody's slug, so checkPayload — which asks which app holds the tenant the row
+	// belongs to — found no schema for its own tenants and a malformed event that
+	// used to be refused at the INSERT began to commit and to reach the relay.
+	// Rule 9 on an authoritative write, lost by a setting.
+	configured, err := cfg.NATS.AppName()
+	if err != nil {
+		// A slug that is present and broken is refused here as everywhere else; this
+		// is the door the composition boots through, including for the memory
+		// transport, which never asks NATS.Validate.
+		return nil, fmt.Errorf("app: %w", err)
+	}
 	if opts.App.Named() {
 		// The type is not the check: a Name built by conversion bypasses Parse, and
 		// from here the slug is a label and nothing else. Every name kit/appname
@@ -283,6 +312,20 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		if _, err := appname.Parse(string(opts.App)); err != nil {
 			return nil, fmt.Errorf("app: Options.App %q: %w", string(opts.App), err)
 		}
+		if configured.Named() && configured != opts.App {
+			// Not a tie to break: the setting is what the tenants in the database are
+			// stamped with, so the option would name an app no tenant belongs to, and
+			// the composition's own declared contract would check nobody while its
+			// events carried the other name. Which one to keep is the deployment's
+			// decision, and a boot cannot make it; the error names both spellings.
+			return nil, fmt.Errorf("app: Options.App %q and nats.app %q are two answers to which app this composition is", string(opts.App), cfg.NATS.App)
+		}
+	} else {
+		// The composition said nothing about itself, so the deployment speaks: nats.app
+		// is the slug's one configuration key (kit/appname/README.md) and a
+		// composition that does not name itself is not a different app from the one
+		// its configuration names.
+		opts.App = configured
 	}
 	switch opts.Role {
 	case Web, Worker, All:

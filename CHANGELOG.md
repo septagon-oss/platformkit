@@ -19,8 +19,9 @@ reads `tenants.app` for the tenant the document names and refuses a delivery who
 before the handler's transaction opens: an address says only what its publisher claimed, and past that
 transaction row-level security is the other app's. A refusal runs no handler and writes no claim, so the event
 stays replayable for the app that does hold the tenant. The composition names every consumer it starts:
-`kit/app` stamps `Subscription.App` with `Options.App`, so two compositions of one module do not bind one
-JetStream consumer, one queue group and one handled-ledger key. And a stored file sits under the tenant whose
+`kit/app` stamps `Subscription.App` with the composition's own app — `Options.App`, or the `nats.app` slug
+when it names itself no other way — so two compositions of one module do not bind one JetStream consumer,
+one queue group and one handled-ledger key. And a stored file sits under the tenant whose
 request wrote it — `modules/file`'s local store writes `<app>/<tenant>/<key>` and refuses a write whose call
 names no tenant, because the key is a UUID and the path is the only thing that says whose bytes they are. The
 rollout filter stays wide on purpose and the check is what decides. An unset slug keeps both older addresses, as
