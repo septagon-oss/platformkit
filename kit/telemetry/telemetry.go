@@ -45,7 +45,7 @@
 //
 // One boundary has a request span to sit under and no way to inherit from it: a
 // delivery happens in another process, so the member is stored on the outbox row
-// beside the two W3C trace members (migrations/000028 and 000031) and read back
+// beside the two W3C trace members (migrations/000028 and 000036) and read back
 // where the delivery's span is opened. A delivery span with a parent and no request
 // id on it is the half-measure this comment used to be.
 package telemetry
