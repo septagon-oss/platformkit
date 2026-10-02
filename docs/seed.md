@@ -533,6 +533,22 @@ its own typed refusal, which is preserved with the same source wrapper.
    by `tenancy.Tenant`; only creation sets it. Starter applies for every
    tenant, demo only when that flag is true.
 
+   **Delivered (T-0194), differently and deliberately.** No provisioning permit
+   exists, and the tenant `Hook` signature and create result are unchanged. The
+   creation hook (`seedProvisioner` in `apps/platformkit/seed.go`) calls
+   `seed.Service.ApplyProvisioned`, whose authority is state rechecked in the
+   create transaction rather than a minted token: the tenant holds no `seed_keys`
+   row, every record the selected files declare is absent, and — checked by the
+   hook, about the table the seed does not own — the tenant holds no person. That
+   answers the objection this section was written to answer (an operator holding
+   `tenant:manage` and not `content:manage` must still be able to create a tenant)
+   without changing who may create one: the run is not authorised as a person's,
+   it is confined to a tenant that came into being in the same transaction and can
+   only create. The demo password is config's `demo.password`
+   (`PLATFORMKIT_DEMO_PASSWORD`), not a value the hook returns to its caller; no
+   generated secret travels through a create result, and a deployment that names
+   none leaves the demo people invited rather than signed in.
+
 ## Time, audit and external effects
 
 The injected clock supplies one UTC instant per run. `+3d` and `-2y` use
@@ -575,7 +591,19 @@ that copy's duration. Email triggered by
 invitation event to deliver. Provider credentials, delivery behavior and asset
 licensing are product decisions.
 
-The schema changes for attribution are a transactional kernel
+**Delivered (T-0194).** The outbox and the envelope carry the attribution; the
+audit table does not yet. `kit/events.WithAttribution` puts an `Attribution`
+(`ActorKind`, `SourceFile`, `SourceLine`, `InitiatorID`) on the run's context,
+`Apply` puts it around each owner write, `migrations/000032_outbox_attribution.up.sql`
+stores the four beside `actor`, and the relay carries them onto the CloudEvents
+envelope (`actorkind`, `sourcefile`, `sourceline`, `initiator`). A
+`platformkit seed` run mints one W3C trace, so `traceparent` names the run for
+every row it caused. What is **not** built is `modules/audit/migrations/000024_…`:
+the audit subscriber still records only `actor`, so its page cannot yet show the
+seed source, and its label for a seeded write is the absence of an actor rather
+than the word `seed`. That is a follow-up brief, named in this task's report.
+
+The schema changes this design proposed, verbatim, were a transactional kernel
 `000032_outbox_seed_attribution.up.sql` (nullable actor kind, source file/line
 and initiator UUID on `platformkit_outbox`) and a transactional audit-owned
 `modules/audit/migrations/000024_seed_attribution.up.sql` (those read fields

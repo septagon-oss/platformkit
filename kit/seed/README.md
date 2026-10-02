@@ -27,7 +27,7 @@ internal to the kernel, so a composition cannot mint one for itself.
 **Made reusable:** `Writer`, `Authorizer`, `Plan` and `Apply` let another app
 declare its own resources and embedded files without copying the loader or the
 reconciliation logic. The reference application composes them in
-`apps/platformkit/seed.go` — a page writer and a person writer — and runs them with
+`apps/platformkit/seed.go` — a page writer, a site writer and a person writer — and runs them with
 `platformkit seed --tenant <slug> --as <email> [--demo] [--dry-run]`, which
 `make seed` wraps.
 
@@ -40,18 +40,30 @@ is already gone costs its mapping and the run continues: the write that finds no
 is never refused, and a file with `prune: true` does not fail every later run once
 somebody has deleted the row through the product.
 
-A seed run carries a person. `seedGrants` refuses one that carries nobody, and the
-command resolves `--as` to a user of the target tenant inside that tenant's own
-transaction before any grant is asked; the roles it checks are the rows the tenant
-holds, not a credential a caller asserts. Provisioning a brand-new tenant has no
-such person yet, so **nothing seeds on tenant create**: that needs the permit
-`docs/seed.md` specifies (`ApplyCreated`, `MaySeed`), and a hook composed without it
-would make creating a tenant depend on a content grant its operator may not hold.
+A command's seed run carries a person. `seedGrants` refuses one that carries
+nobody, and the command resolves `--as` to a user of the target tenant inside that
+tenant's own transaction before any grant is asked; the roles it checks are the
+rows the tenant holds, not a credential a caller asserts.
+
+A tenant's own creation is the one run with nobody to ask, and it arrives through
+`Service.ApplyProvisioned` rather than through a hole in `Apply`. Its proof is
+state, checked in the authoritative transaction, not a token: the tenant holds no
+`seed_keys` row at all, and every record the selected files declare is still
+absent, so the run can only create. The reference composition adds the third
+condition its own hook can check about a table the seed does not own — the tenant
+holds no person — and composes that hook second in the literal `OnCreate` list,
+after `auth.SeedRoles`, because the people a demo seed invites hold the roles those
+lines just created. What `ApplyProvisioned` can therefore write is the records
+every tenant of the application is created with, through the same owners and the
+same events; anything else names a person.
 
 The seed publishes nothing of its own. Every write goes through its owner, so the
-owner's event, its outbox row and the audit record the worker writes for it carry
-the actor the run named; `Plan.String()` names `file:line` for every record it
-decided, and the audit trail names the person, because that is what an event can
-carry. T-0190 translations have no owner path in this checkout, so `i18n` is
+owner publishes the event; what the seed adds is the attribution carried beside it.
+`Apply` and `ApplyProvisioned` put `events.WithAttribution` around each owner write,
+and the outbox row (migrations/000032) and the CloudEvents envelope the relay
+publishes record `actor_kind=seed`, the record's own `source_file` and `source_line`
+and the `initiator` the run named — with `actor` left NULL, because no session wrote
+a seeded row and a command line is not a login. `Plan.String()` names `file:line`
+for every record it decided. T-0190 translations have no owner path in this checkout, so `i18n` is
 reported as skipped. A caller must not claim a successful apply before its
 enclosing transaction commits.
