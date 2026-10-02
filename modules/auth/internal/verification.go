@@ -95,7 +95,7 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	err = s.mail.Mailer.Send(ctx, notification.Message{
 		To: current.Email, Subject: "Verify your email address",
 		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-			base + contracts.VerifyEmailPath + "?token=" + token +
+			base + VerifyEmailPath + "?token=" + token +
 			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
 	})
 	if err != nil {
