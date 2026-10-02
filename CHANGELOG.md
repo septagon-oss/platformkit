@@ -694,6 +694,31 @@ nothing here is a gate that now passes. What moves is adoption: the
 alias has a value package wrapping the owner rather than only a name, and a
 downstream consumer's value package does the same when its pin moves.
 
+**The development stack runs a mail catcher, and the browser journeys read the link they
+were sent.** An empty `mail.host` — the default, and what an installation without a relay
+has — records every notification and sends none of the ones marked for email. That is safe,
+and it leaves a development machine unable to finish the one journey that needs a link: an
+invitation nobody can open is the walkthrough the front door was written against. So
+[compose.yaml](compose.yaml) composes `mailpit` (SMTP on 1025, its API on 8025, both
+overridable the way the stack's other ports are), [scripts/e2e.sh](scripts/e2e.sh) writes the
+`mail:` block of the configuration it generates and refuses a run whose catcher is not
+answering before it builds anything, and the CI job starts the same image on its own network
+for `make e2e`. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
+catcher by recipient for each of the four account links this application mails — an
+invitation, a sign-up confirmation, a resent confirmation and a forgotten-password reset —
+and assert what the delivered message says: that its link carries the address and port the
+tenant is served at, and that the person it was addressed to can open it and be signed in by
+choosing a password there. Two defects came out of writing it. The sign-up's event carried
+no served address, so its confirmation link was built from the tenant's name alone and
+opened port 80 rather than the port the sign-up was answered on — `user.registration_unverified`
+now carries `served`, the way `user.invited` and the two password events already did. And the
+forgot page, the confirmation page and the reset page are mounted on two different surfaces,
+because that is where auth mounts the three doors: asking the workspace router for a public
+door names an alias row that answers 307, which `ui/assets/js/session.js` refuses to follow
+by design, so the button told the person the outcome was unknown and sent nothing —
+`TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
+the running application what it says.
+
 ## [1.1.1] - 2026-09-18
 
 A tooling patch. No exported API moved and no shipped behaviour moved: the diff from
