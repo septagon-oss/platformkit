@@ -276,9 +276,12 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 func formField(f entity.Field, o Options) forms.Field {
 	options := make([]components.SelectOption, 0, len(f.Enum))
 	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: display.Humanize(value), Value: value})
+		options = append(options, components.SelectOption{Label: o.Label("enum."+value, display.Humanize(value)), Value: value})
 	}
-	return forms.Field{Definition: f, Label: o.Label("field."+f.Name, display.FieldLabel(f)), Options: options}
+	return forms.Field{Definition: f, Label: o.Label("field."+f.Name, display.FieldLabel(f)),
+		// A field's own note is the sentence its owner wrote beside it, and a
+		// person reading the form in another language reads that note too.
+		Help: o.Label("field."+f.Name+".help", f.Doc), Options: options}
 }
 
 // table is the list screen's rows: the field a row is known by first, as the
@@ -305,7 +308,14 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = display.Display(f, row[f.Name])
+			shown := display.Display(f, row[f.Name])
+			if len(f.Enum) > 0 {
+				// The value is data; the *word* for it is vocabulary. A task whose
+				// state is "resolved" is data nobody wrote as copy, and the screen
+				// that prints "Resolved" wrote that word, so the screen is asked.
+				shown = o.Label("enum."+display.Text(row[f.Name]), shown)
+			}
+			cells[f.Name] = shown
 		}
 		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
 	}
@@ -380,7 +390,10 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 	return components.Breadcrumb(components.BreadcrumbProps{
 		NavigationLabel: o.Text("screens.breadcrumb", "Breadcrumb"),
 		Items: []components.BreadcrumbItem{
-			{Label: o.Home, Href: o.Workspace}, {Label: collection, Href: at}, {Label: here},
+			// The way home is a word of the screen's, not the address: the
+			// composition names where home is and the catalogue says what it is called.
+			{Label: o.Label("screens.home", o.Home), Href: o.Workspace},
+			{Label: collection, Href: at}, {Label: here},
 		}})
 }
 
@@ -393,12 +406,21 @@ func direction(sort string) string {
 	return "asc"
 }
 
-// known is the field a row is recognised by: the first writable string the
-// entity declares. A schema has no "this is the title" flag, and inventing one
-// would be a tag every entity would have to remember; the field an entity leads
-// with is the one it leads with.
+// known is the field a row is recognised by: the first writable string the entity
+// declares other than its id. A schema has no "this is the title" flag, and
+// inventing one would be a tag every entity would have to remember; the field an
+// entity leads with is the one it leads with.
+//
+// The id is excluded because table() refuses to print it as a column: the id is
+// what the row link already carries, and a register whose first column is a UUID is
+// a register a person cannot read across. The two rules are one rule, so they are
+// written once here rather than in the one place a column list happens to be built —
+// a row's label is read off the same field the row leads with.
 func known(fields []entity.Field) entity.Field {
 	for _, f := range fields {
+		if f.Name == "id" {
+			continue
+		}
 		if !f.ReadOnly && f.Type == entity.TypeString {
 			return f
 		}

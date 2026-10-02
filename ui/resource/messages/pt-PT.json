@@ -122,5 +122,14 @@
     "plural": {
       "": "Guardar"
     }
+  },
+  "screens.home": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Painel",
+    "plural": {
+      "": "Painel"
+    }
   }
 }
