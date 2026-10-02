@@ -3,7 +3,7 @@
 // says nothing across two of them — both compositions mint uuids the same way and
 // name their modules with the same vocabulary — so the control plane has to know
 // which app it is answering for before it answers. The column is
-// migrations/000035_tenant_app; the reads that scope on it are here.
+// migrations/000041_tenant_app; the reads that scope on it are here.
 package internal_test
 
 import (
@@ -114,7 +114,7 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 
 // TestATenantWrittenWithoutAnAppIsNotReadByOne is the floor under a row the service
 // did not write. The column's default takes the app the session declares and the
-// empty slug when it declares none (migrations/000035), so a raw insert lands on
+// empty slug when it declares none (migrations/000041), so a raw insert lands on
 // the app-less deployment — and an app that names itself must not read it, because
 // nothing stamped it as its own.
 func TestATenantWrittenWithoutAnAppIsNotReadByOne(t *testing.T) {

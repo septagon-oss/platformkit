@@ -36,6 +36,8 @@ type row struct {
 	Actor       *uuid.UUID
 	TraceParent *string
 	TraceState  *string
+	RequestID   *string
+	ClientIP    *string
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -98,7 +100,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 		// tenant table tomorrow — and locking the tenant table from a relay would put
 		// every host resolution in the country behind a batch of events.
 		const q = `SELECT o.id, o.tenant_id, o.name, o.payload, o.created_at, o.actor,
-			o.traceparent AS trace_parent, o.tracestate AS trace_state FROM ` + table + ` o
+			o.traceparent AS trace_parent, o.tracestate AS trace_state,
+			o.request_id, host(o.client_ip) AS client_ip FROM ` + table + ` o
 			LEFT JOIN tenants tn ON tn.id = o.tenant_id
 			WHERE o.published_at IS NULL AND coalesce(tn.app, '') = ?
 			ORDER BY o.created_at, o.id LIMIT ? FOR UPDATE OF o SKIP LOCKED`
@@ -123,6 +126,15 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 			}
 			if r.TraceState != nil {
 				ev.TraceState = *r.TraceState
+			}
+			// The call itself, from the same row and for the same reason: the
+			// trail row a handler writes has to name the request that caused it,
+			// and this transaction is not that request.
+			if r.RequestID != nil {
+				ev.RequestID = *r.RequestID
+			}
+			if r.ClientIP != nil {
+				ev.ClientIP = *r.ClientIP
 			}
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go

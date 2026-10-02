@@ -50,7 +50,7 @@ func migrationDeclaration(cfg config.Config) (db.Declaration, error) {
 	}
 	// Always declared: this is the composition's own boot, so it knows what it is
 	// even when what it is has no slug. The empty string says "the deployment of one
-	// app", which migrations/000035 reads as an app and places against; the nil
+	// app", which migrations/000041 reads as an app and places against; the nil
 	// that db.MigrateDeclaring's default carries says "a boot that named itself
 	// nothing", which is what a caller that is not a composition's boot declares.
 	own := slug.String()

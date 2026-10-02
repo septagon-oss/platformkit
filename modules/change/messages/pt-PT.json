@@ -1,0 +1,29 @@
+{
+  "permission.change:read": {
+    "references": [
+      "modules/change/module.go"
+    ],
+    "translation": "ler propostas de alteração",
+    "plural": {
+      "": "ler propostas de alteração"
+    }
+  },
+  "permission.change:propose": {
+    "references": [
+      "modules/change/module.go"
+    ],
+    "translation": "propor uma alteração",
+    "plural": {
+      "": "propor uma alteração"
+    }
+  },
+  "permission.change:decide": {
+    "references": [
+      "modules/change/module.go"
+    ],
+    "translation": "decidir e aplicar uma alteração proposta",
+    "plural": {
+      "": "decidir e aplicar uma alteração proposta"
+    }
+  }
+}

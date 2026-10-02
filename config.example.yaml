@@ -183,7 +183,7 @@ files:
   retention: {}
 
 # What this composition declares about itself, read at the migrating boot and put
-# on that session for migrations/000030_tenant_app to place tenants with. The slug
+# on that session for migrations/000041_tenant_app to place tenants with. The slug
 # itself is nats.app, where kit/appname's grammar guards it and every shared name
 # is already formed from it; what is here is the two facts a migration needs and
 # the database cannot supply. Nothing at run time consults them.
@@ -201,3 +201,21 @@ app:
   # host can place. Every value goes through the slug's grammar, and the mapping
   # has to cover every tenant left over or the migration refuses the run.
   tenant_apps: {}
+
+# Feature flags, under `values:` because the block is a pointer to the map and an
+# installation with no flags writes no `flags:` section at all. One boolean per
+# key, read the way every other value here is read: through kit/config, with an
+# environment override, and refused at load if
+# the key is spelled wrong. A flag never grants a permission, narrows a tenant's
+# scope or replaces a plan's entitlement (kit/flags/README.md); it switches an
+# optional product behaviour on or off for this installation.
+#
+# change.control.site-settings is the one this application reads. Off, the site
+# form writes the tenant's settings, which is what it has always done. On, that
+# door answers 409 and names the proposal address instead: the write goes in as a
+# proposal, and an account that did not put it forward applies it. The key is
+# named in apps/platformkit/change.go, beside the consumer that reads it, and an
+# absent key means off rather than whatever the loader's zero value happened to be.
+flags:
+  values:
+    change.control.site-settings: false

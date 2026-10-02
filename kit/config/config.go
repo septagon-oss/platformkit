@@ -48,10 +48,27 @@ type Config struct {
 	// grammar guards it and every name is already formed from it; what is here is
 	// the two facts a migration needs and the database cannot supply.
 	App App `yaml:"app"`
+	// Flags are this installation's feature flags, by key. They are configuration
+	// rather than a flag service because that is the honest size of what the
+	// reference application needs: one boolean somebody can throw without a
+	// deployment, read the way every other value here is read.
+	//
+	// A flag never grants a permission, narrows a tenant's scope or replaces a
+	// subscription's entitlement (kit/flags says so of the contract this satisfies);
+	// it decides only whether an optional product behaviour runs. Which key means
+	// what is the consumer's fact, written beside the consumer —
+	// apps/platformkit/change.go names the one this application reads — and a key
+	// spelled wrong is refused at load rather than ignored (dec.KnownFields).
+	//
+	// A pointer, so that Config stays comparable: a map field would make the whole
+	// configuration incomparable, and the exported API gate refuses that as the
+	// break it is (`old is comparable, new is not`). An installation that says
+	// nothing about flags has none, which is a nil pointer and not an empty map.
+	Flags *Flags `yaml:"flags"`
 }
 
 // App is the composition's own declaration, read at the migrating boot and put on
-// that session by kit/db (db.MigrateDeclaring) for migrations/000035_tenant_app
+// that session by kit/db (db.MigrateDeclaring) for migrations/000041_tenant_app
 // to place tenants with. It is a declaration and not a request: nothing at run
 // time consults it, and a deployment that names no slug and no hosts is the
 // single-app deployment migrating a database that has no tenants to place.
@@ -65,6 +82,14 @@ type App struct {
 	// nats.app, and a mapping that does not cover every tenant is refused by the
 	// migration rather than completed by a guess.
 	TenantApps map[string]string `yaml:"tenant_apps"`
+}
+
+// Flags is the flags block: one boolean per key. See Config.Flags for why the
+// block is a pointer and what a flag may and may not decide.
+type Flags struct {
+	// Values is the map itself, one level down so a deployment that names no flag
+	// writes no `flags:` block at all rather than an empty nested one.
+	Values map[string]bool `yaml:"values"`
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first

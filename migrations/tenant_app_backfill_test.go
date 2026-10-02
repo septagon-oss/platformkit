@@ -1,4 +1,4 @@
-// migrations/000035_tenant_app.up.sql places the tenants that already exist under
+// migrations/000041_tenant_app.up.sql places the tenants that already exist under
 // the app the boot declares — and the placing is the part that has to be proved. A
 // file that wrote the boot's slug into every row would be a guess dressed as a
 // migration: it would decide, from one process's configuration, that every tenant
@@ -34,7 +34,7 @@ import (
 )
 
 // appFile is the file under test, by the name the ledger carries.
-const appFile = "000035_tenant_app.up.sql"
+const appFile = "000041_tenant_app.up.sql"
 
 // beforeApp is the kernel's own history with that one file taken out: the state of
 // an installation on the day the release that carries it boots.

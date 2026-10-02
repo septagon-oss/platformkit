@@ -27,7 +27,30 @@ None. The code searched shows no use of `tenancy.Policy`, `Check` or `Resource` 
 
 ### Duties the module enforces itself
 
-The trail is append-only: the module mounts only two read routes and no create, update or delete route (see the comment on `RegisterRoutes`). `Service.Record` in `modules/audit/internal/service.go` inserts with `ON CONFLICT (tenant_id, event_id) DO NOTHING`, so a redelivered event does not write twice. There are no ownership or separation-of-duties refusals. The only deletion is the retention job (`Retention` in `modules/audit/internal/retention.go`), which runs per tenant.
+The trail is append-only in the sense the code makes true: the module mounts only
+two read routes and no create, update or delete route (see the comment on
+`RegisterRoutes`), and `Service.Record` in `modules/audit/internal/service.go`
+inserts with `ON CONFLICT (tenant_id, event_id) DO NOTHING`, so a redelivered event
+does not write twice. There are no ownership or separation-of-duties refusals. The
+only deletion is the retention job (`Retention` in
+`modules/audit/internal/retention.go`), which runs per tenant.
+
+Say what that does not include. The trail is not hash-chained and the role the
+application connects as still holds `UPDATE` and `TRUNCATE` on `audit_events`
+through the cluster's default privileges, so "append-only" is a statement about
+this module's code, not a property the database will refuse a rewrite of. The
+chain that would make it one — a per-tenant `seq` with a `prev_hash`/`hash` pair, a
+named advisory transaction lock over the append, a checkpoint row per retention
+batch, both grants revoked and a `BEFORE DELETE` trigger that admits only the
+retention transaction — is owed by decision 0013 and is not delivered here;
+`modules/audit/contracts/audit.go` carries the same sentence for the next author.
+
+What every row does answer now is who (`actor`), what (`name`, `payload`,
+`records`), when (`occurred_at`), from where (`client_ip`), and which call
+(`request_id`, `traceparent`) — migrations 000035 to 000037, carried in
+`migrations/000034` and `kit/request`. Nothing is backfilled: a request id, an
+address and a trace that were never captured cannot be reconstructed, and inventing
+them for old rows would be writing history a second time.
 
 ### Public faces
 
