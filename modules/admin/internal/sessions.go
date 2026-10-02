@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -130,9 +129,7 @@ func (p pages) sessionsView(ctx context.Context, r page.Request) (page.View, err
 	if err != nil {
 		return page.View{}, rest.Fault(err)
 	}
-	return sessionsPage(p.at.sessions.at, p.at.sessionRevoke.at, p.at.sessionsRest.at,
-		strings.TrimSuffix(p.SignIn, "/login")+"/factors/passkey/begin",
-		strings.TrimSuffix(p.SignIn, "/login")+"/factors/passkey/finish", items), nil
+	return sessionsPage(p.at.sessions.at, p.at.sessionRevoke.at, p.at.sessionsRest.at, items), nil
 }
 
 // currentSession is the session answering this request, or uuid.Nil.
@@ -161,9 +158,8 @@ func currentSession(ctx context.Context) uuid.UUID {
 }
 
 // sessionsPage is the screen as a function of values: what is there, and the
-// three addresses the forms post to, with the two ceremony legs a person who
-// wants a passkey rather than an authenticator app posts to.
-func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish string, items []*authcontracts.SessionListing) page.View {
+// three addresses the forms post to.
+func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.SessionListing) page.View {
 	body := []g.Node{components.Toolbar(components.ToolbarProps{
 		Title:    "Sessions",
 		Subtitle: "Every place you are signed in, most recently seen first. Ending one signs that device out; it does not change your password.",
@@ -176,7 +172,6 @@ func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish stri
 			Description: "This request opened no session, so there is nothing here to end.",
 			Bordered:    true,
 		}))
-		body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish)...)
 		return page.View{Title: "Sessions", Language: writtenHere, Body: body}
 	}
 	body = append(body, sessionsTable(revokeOne, items))
@@ -200,41 +195,7 @@ func sessionsPage(where, revokeOne, revokeRest, passkeyBegin, passkeyFinish stri
 					components.Button(components.ButtonProps{
 						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"}))))
 	}
-	body = append(body, passkeyEnrolment(passkeyBegin, passkeyFinish)...)
 	return page.View{Title: "Sessions", Language: writtenHere, Body: body}
-}
-
-// passkeyEnrolment is the person's own half of the ceremony: a label for the
-// device and the two legs, so that "add a passkey" is one click and one prompt
-// rather than a ticket. It writes no secret and shows none: a public key never
-// appears on this page, and nothing here can be copy-pasted into another
-// device. A tab closed mid-enrolment enrolled nothing — the auth module's
-// begin leg writes a nonce and no factor.
-func passkeyEnrolment(begin, finish string) []g.Node {
-	return []g.Node{
-		components.Divider(components.DividerProps{Text: "Passkeys"}),
-		components.Form(components.FormProps{
-			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-passkey-enrol": "", "data-begin": begin, "data-finish": finish}},
-			Label: "Add a passkey",
-		},
-			components.Alert(components.AlertProps{
-				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
-				Tone: "danger", Message: "", Bordered: true,
-			}),
-			components.Alert(components.AlertProps{
-				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-auth-message": "", "lang": "en"}},
-				Tone: "success", Message: "That passkey is enrolled.", Bordered: true,
-			}),
-			components.Input(components.InputProps{
-				Name: "name", Label: "What this device is called", MaxLength: 40,
-				Placeholder: "Office laptop", FullWidth: true}),
-			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{Label: "Add a passkey", Type: "submit", Variant: "outline"})),
-		),
-	}
 }
 
 // sessionsTable is the answer as one table: the device, when it was opened, when
