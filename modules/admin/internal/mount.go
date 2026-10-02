@@ -325,7 +325,8 @@ func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, ma
 	// colour that is legible on it is one the component owns.
 	return components.SidebarProps{
 		Current: r.Path, NavigationLabel: chrome(r, "nav.label", "Admin navigation"), Items: items,
-		BrandLabel: fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
+		DisclosureLabel: chrome(r, "nav.menu", "Menu"),
+		BrandLabel:      fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
 	}
 }
 

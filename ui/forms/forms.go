@@ -22,7 +22,12 @@ import (
 type Field struct {
 	Definition entity.Field
 	Label      string
-	Options    []components.SelectOption
+	// Help is the note under the control. Empty says "use the field's own Doc",
+	// which is what a form rendered without a catalog writes; a screen that
+	// negotiates a language passes the same sentence in that language, because a
+	// person reading a form in Portuguese reads its notes in Portuguese too.
+	Help    string
+	Options []components.SelectOption
 }
 
 // Model contains a form's already-read values and already-decided field errors.

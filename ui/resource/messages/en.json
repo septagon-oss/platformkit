@@ -122,5 +122,14 @@
     "plural": {
       "": "Save"
     }
+  },
+  "screens.home": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Dashboard",
+    "plural": {
+      "": "Dashboard"
+    }
   }
 }
