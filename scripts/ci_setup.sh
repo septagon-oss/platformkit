@@ -22,8 +22,19 @@
 # every job a fresh one) under the alias the endpoint in the job's env names, which
 # is what the `nats:` hostname in PLATFORMKIT_TEST_NATS_URL already means. Each
 # container's id is appended to $GITHUB_OUTPUT as `<unit>=<id>` so the job's
-# always() cleanup step can remove what this one started — never by name, which on
-# a shared runner would reach whoever holds that name.
+# always() cleanup step can remove what this one started.
+#
+# NATS_CONTAINER_NAME, when the job sets it, names the broker as well: main learned
+# on run 245 that an id is no handle at all once the step that wrote it is cut off
+# mid-flight — a step the job's deadline takes down never finishes writing
+# $GITHUB_OUTPUT, and the container outlives the id. A name is only safe when it
+# cannot reach anyone but this job, so the workflow builds it from the run id *and*
+# the job's own name (`platformkit-<run>-<job>-nats`): three jobs of one run start a
+# broker each, so the run id alone would name two containers at once, and a name a
+# second job pre-cleared would be the first job's broker, killed mid-suite. The name
+# is the job's to build — the run id is a template the workflow expands, and a name
+# this file invented from an environment variable it cannot check would be a broker
+# that never starts.
 #
 # CI_RESOURCES_FILE names the same output file for a rehearsal run outside a job
 # (scripts/ci_setup_test.sh); CI_SETUP_PROBE=fake answers the readiness waits without
@@ -85,7 +96,16 @@ fi
 for unit in "$@"; do
 	case "$unit" in
 	nats)
-		container=$(docker run -d --network "$network" --network-alias nats \
+		# Named when the job handed this file a name, and dropped by that name first:
+		# a container this run started under this name before its step was cut off is
+		# still on this job's network, and a second `docker run` under a held name
+		# fails on the spot rather than later, as a suite that cannot reach a broker.
+		named=()
+		if [ -n "${NATS_CONTAINER_NAME:-}" ]; then
+			docker rm -f "$NATS_CONTAINER_NAME" >/dev/null 2>&1 || true
+			named=(--name "$NATS_CONTAINER_NAME")
+		fi
+		container=$(docker run -d "${named[@]}" --network "$network" --network-alias nats \
 			"$nats_image" --jetstream --http_port 8222)
 		printf 'nats=%s\n' "$container" >>"$resources"
 		ready nats curl -fsS http://nats:8222/healthz

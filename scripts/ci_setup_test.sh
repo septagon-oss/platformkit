@@ -96,7 +96,24 @@ grep -q 'nats:2-alpine@sha256:' "$DOCKER_LOG" || fail "nats started from no pinn
 grep -q -- '--jetstream' "$DOCKER_LOG" || fail "nats started without JetStream, which every event case needs"
 grep -q 'psql -h postgres' "$fixture/tools.log" || fail "the app role was never created: $(cat "$fixture/tools.log")"
 grep -q 'postgres-init.sql' "$fixture/tools.log" || fail "psql ran with no init file"
+! grep -q -- '--name ' "$DOCKER_LOG" || fail "a broker was named when the job named nothing"
 say_ok "the broker's id, alias and pin, and the role applied from the deployment's own file"
+
+start=$failed
+# case 5b — the name a job gave its broker. An id is a handle a step the job's own
+# deadline cuts off never finishes writing (main learned that on run 245, and its
+# container held the run's image for the rest of the job), so the workflow names the
+# container from values its cleanup step can rebuild. This case is that the name
+# reaches the container, and that whatever held the name is dropped first, so a
+# second `docker run` says so on the spot instead of leaving the suite without a broker.
+: >"$DOCKER_LOG"
+: >"$fixture/res"
+NATS_CONTAINER_NAME=platformkit-77-go-checks-nats CI_RESOURCES_FILE="$fixture/res" \
+	JOB_NETWORK=net CI_SETUP_PROBE=fake bash "$setup" nats >/dev/null
+grep -q -- '--name platformkit-77-go-checks-nats' "$DOCKER_LOG" || fail "the broker ran unnamed: $(cat "$DOCKER_LOG")"
+grep -q '^rm -f platformkit-77-go-checks-nats$' "$DOCKER_LOG" || fail "nothing dropped the name before the run: $(cat "$DOCKER_LOG")"
+grep -q '^nats=fake-nats-1$' "$fixture/res" || fail "the named broker left the cleanup step no id either: $(cat "$fixture/res")"
+say_ok "a broker the job named is named on the container, and the name is cleared first"
 
 # case 6 — with the health answers not faked, both units ask the server first: the
 # role step waits for the service rather than racing it.
@@ -131,6 +148,15 @@ services=$(grep -cE '^      postgres:$' "$workflow")
 [ "$calls" = "$services" ] || fail "$calls jobs call scripts/ci_setup.sh but $services declare a postgres service"
 grep -E 'bash scripts/ci_setup.sh' "$workflow" | grep -vE 'scripts/ci_setup\.sh (nats )?(nats )?app-role$|scripts/ci_setup.sh nats app-role$' \
 	&& fail "a job calls this script with a unit it does not start"
+# A broker a job starts by hand has to be a container that job can still point at
+# after a step it does not finish: the name is the handle, and it has to carry both
+# the run and the job, because three jobs of one run each start a broker and a name
+# one of them pre-cleared would be another one's server.
+for job in go-checks race-and-vuln e2e; do
+	name="platformkit-\${{ github.run_id }}-$job-nats"
+	grep -qF "NATS_CONTAINER_NAME: $name" "$workflow" \
+		|| fail "$job starts a broker under no name its cleanup step could rebuild"
+done
 # A valid URL still fails the suite if the role step is moved below the gate.
 for pair in 'go-checks|make check' 'race-and-vuln|make check-race' 'e2e|make e2e'; do
 	job="${pair%%|*}"
@@ -147,11 +173,13 @@ for pair in 'go-checks|make check' 'race-and-vuln|make check-race' 'e2e|make e2e
 done
 say_ok "every job that calls the script declares the database it points at"
 
-# case 9 — cleanup removes the ids it was handed, says nothing about the ones a
-# failed setup never produced, and fails when one is still there.
+# case 9 — cleanup removes the handles it was handed, says nothing about the ones a
+# failed setup never produced, reports the one it could not remove, and skips a handle
+# that names no container on this daemon (the step that would have made it may never
+# have run, and a handle for a container that is already gone is not a failure).
 export TOOL_LOG="$fixture/clean.log"
 : >"$TOOL_LOG"
-printf '#!/usr/bin/env bash\necho "$*" >>"$TOOL_LOG"\nif [ "$*" = "rm -f gone" ]; then exit 1; fi\nexit 0\n' \
+printf '#!/usr/bin/env bash\necho "$*" >>"$TOOL_LOG"\nif [ "$1" = inspect ]; then [ "$2" = ghost ] && exit 1; exit 0; fi\nif [ "$*" = "rm -f gone" ]; then exit 1; fi\nexit 0\n' \
 	>"$fixture/bin/docker"
 chmod +x "$fixture/bin/docker"
 : >"$TOOL_LOG"
@@ -161,9 +189,36 @@ grep -q 'rm -f one' "$TOOL_LOG" || fail "cleanup did not remove the id it was ha
 grep -q 'rm -f three' "$TOOL_LOG" || fail "cleanup did not remove the second id"
 [ "$(grep -c 'rm ' "$TOOL_LOG")" = 2 ] || fail "cleanup removed an id nobody handed it: $(cat "$TOOL_LOG")"
 : >"$TOOL_LOG"
+bash "$cleanup" ghost >/dev/null && code=0 || code=$?
+[ "$code" = 0 ] || fail "a handle naming no container exited $code, want 0"
+[ "$(grep -c 'rm ' "$TOOL_LOG")" = 0 ] || fail "cleanup tried to remove a container it was told is not there: $(cat "$TOOL_LOG")"
+: >"$TOOL_LOG"
 bash "$cleanup" gone >/dev/null && code=0 || code=$?
 [ "$code" = 1 ] || fail "a container that would not go away exited $code, want 1"
-say_ok "cleanup takes ids, skips the empty ones, and reports the one it could not remove"
+say_ok "cleanup takes ids and names, skips the empty ones and the ones naming nothing, and reports the one it could not remove"
+
+# case 10 — the shared store arrives with the suite that dials it. kit/cache's
+# conformance case, kit/httpx's host-invalidation connections and apps/platformkit's
+# suspension across a second process all fail rather than skip once
+# PLATFORMKIT_TEST_VALKEY_URL is set — an address a job sets for itself is a promise.
+# One job on main carried both halves; four jobs is where a suite quietly gets back
+# the skip it was written not to need, so the job that runs the goal owes both the
+# address in its env and the container that answers it.
+for pair in 'go-checks|make check' 'race-and-vuln|make check-race'; do
+	job="${pair%%|*}"
+	goal="${pair#*|}"
+	if ! awk -v job="$job" -v goal="$goal" '
+		$0 == "  " job ":" { found = 1; inside = 1; next }
+		inside && /^  [a-z0-9-]+:/ { exit }
+		inside && /PLATFORMKIT_TEST_VALKEY_URL: redis:\/\/valkey:6379/ { url = 1 }
+		inside && /--network-alias valkey/ { store = 1 }
+		inside && $0 ~ ("run: " goal "$") { ran = 1 }
+		END { if (!found || !ran || !url || !store) exit 1 }
+	' "$workflow"; then
+		fail "$job runs $goal without the shared store its cases dial"
+	fi
+done
+say_ok "each Go job that dials the shared store starts it and names its address"
 
 if [ "$failed" = 0 ]; then
 	echo "ci setup: every case holds"
