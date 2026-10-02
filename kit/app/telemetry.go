@@ -47,33 +47,81 @@ import (
 	"github.com/septagon-oss/platformkit/kit/telemetry"
 )
 
+// signal is one of the process's two exports and what the collector last said
+// about it. They are kept apart because they are two calls, to two services, on
+// two schedules: spans leave in batches as they fill and numbers leave on the
+// reader's tick, so one may arrive while the other is refused. The record that
+// did not keep them apart is review 27's HIGH: one `err` for both halves meant a
+// metric tick that arrived overwrote the failed span batch, and an operator
+// asking "/ready" about the trace pipeline was answered with the metric
+// pipeline's delivery.
+//
+// A signal is named by the field of `exported` it sits in, not by a field of its
+// own, so the zero value of the record — the one a test builds and the one
+// installTelemetry builds — is a record of two halves that have never been asked.
+type signal struct {
+	attempts int
+	last     time.Time
+	err      error
+}
+
+// note records one attempt of this signal. A success clears only this signal's
+// own failure, which is the whole reason the failure lives here and not above.
+func (s *signal) note(err error) {
+	s.attempts++
+	if err == nil {
+		s.last = db.Now()
+	}
+	s.err = err
+}
+
 // exported is the record of what the collector last took. kit/health reports it:
 // an operator asking "is my trace pipeline alive" is asking about the exporter's
 // last success, and nothing else in the process knows the answer.
 //
-// It is a mutex and three fields rather than an atomic because the three move
-// together, and a report that pairs a success timestamp with a different
-// attempt's failure would be a worse answer than a stale one.
+// It is a mutex and two signals rather than an atomic because the pair is read
+// as one verdict, and a report that paired one half's failure with the other
+// half's timestamp would be a worse answer than a stale one.
 type exported struct {
-	mu       sync.Mutex
-	last     time.Time
-	attempts int
-	err      error
+	mu      sync.Mutex
+	traces  signal
+	metrics signal
 }
 
+// noteTraces and noteMetrics record one attempt of one export. The wrapper names
+// which signal it is asking about; the record cannot tell the two exporters
+// apart, and answering for a signal it was not told about is the defect above.
+func (e *exported) noteTraces(err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.traces.note(err)
+}
+
+func (e *exported) noteMetrics(err error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.metrics.note(err)
+}
+
+// note records an attempt nobody attributed to either half. The two wrappers
+// above always name theirs, so the kernel writes no attempt here; what lives
+// here is the record read as one pipeline, which is how two reviewers pinned it
+// (review_round3_resource_never_names_a_tenant_test.go and
+// review_round10_an_export_failure_names_no_address_test.go both build an
+// `exported`, hand it the collector's refusal and read /ready's answer). An
+// attempt nobody can place is held against both halves, because the honest
+// reading of a delivery nobody can attribute is that neither half can claim it.
 func (e *exported) note(err error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	e.attempts++
-	if err == nil {
-		e.last = db.Now()
-	}
-	e.err = err
+	e.traces.note(err)
+	e.metrics.note(err)
 }
 
 // traceExporter wraps the OTLP span exporter to record what it answered. The
 // error is returned unchanged: whether a batch arrived is the collector's
-// business and the SDK's retry policy, and this only writes down the answer.
+// business and the SDK's retry policy, and this only writes down the answer — of
+// the trace half, which is the only thing this wrapper knows.
 type traceExporter struct {
 	sdktrace.SpanExporter
 	rec *exported
@@ -81,11 +129,12 @@ type traceExporter struct {
 
 func (t traceExporter) ExportSpans(ctx context.Context, spans []sdktrace.ReadOnlySpan) error {
 	err := t.SpanExporter.ExportSpans(ctx, spans)
-	t.rec.note(err)
+	t.rec.noteTraces(err)
 	return err
 }
 
-// metricExporter wraps the OTLP metric exporter for the same reason.
+// metricExporter wraps the OTLP metric exporter for the same reason, and for the
+// metric half alone: its tick arriving says nothing about a span batch.
 type metricExporter struct {
 	sdkmetric.Exporter
 	rec *exported
@@ -93,7 +142,7 @@ type metricExporter struct {
 
 func (m metricExporter) Export(ctx context.Context, data *metricdata.ResourceMetrics) error {
 	err := m.Exporter.Export(ctx, data)
-	m.rec.note(err)
+	m.rec.noteMetrics(err)
 	return err
 }
 
@@ -114,16 +163,40 @@ var errExportDown = errors.New("the collector is not taking this process's data"
 // replica that is serving its tenants perfectly, which makes tracing the reason an
 // application stopped answering — the one failure this file exists to refuse. So
 // the exporter's last success is reported beside the verdict and never decides it.
+//
+// The verdict is the worst of the two halves, and the message names the half that
+// failed: a reading that said only "the last export failed" would leave an
+// operator debugging the wrong pipeline, and one that named the half which is
+// still arriving would read as a delivery the other half refused. "no export
+// attempted yet" is the one reading with no failure to attribute, and an
+// unattempted half is silent rather than assumed down.
 func (e *exported) Report(context.Context) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.attempts == 0 {
-		return "no export attempted yet", e.err
+	total := e.traces.attempts + e.metrics.attempts
+	if total == 0 {
+		return "no export attempted yet", nil
 	}
-	if e.err != nil {
-		return fmt.Sprintf("%d exports attempted, last one failed", e.attempts), errExportDown
+	var down []string
+	for _, half := range []struct {
+		name string
+		s    *signal
+	}{
+		{"trace", &e.traces},
+		{"metric", &e.metrics},
+	} {
+		if half.s.attempts > 0 && half.s.err != nil {
+			down = append(down, "the last "+half.name+" export failed")
+		}
 	}
-	return fmt.Sprintf("exported %s ago", db.Now().Sub(e.last).Truncate(time.Second)), nil
+	if len(down) > 0 {
+		return fmt.Sprintf("%d exports attempted, %s", total, strings.Join(down, " and ")), errExportDown
+	}
+	last := e.traces.last
+	if e.metrics.last.After(last) {
+		last = e.metrics.last
+	}
+	return fmt.Sprintf("exported %s ago", db.Now().Sub(last).Truncate(time.Second)), nil
 }
 
 // Name is the report's own, so /ready names the pipeline it is talking about.
@@ -131,9 +204,13 @@ func (*exported) Name() string { return "telemetry" }
 
 var _ health.Report = (*exported)(nil)
 
-// metricExporter is a metric.Exporter by construction, and saying so here turns a
-// change to that contract into a compile error in this file rather than a report
-// that quietly stopped being written.
+// Both wrappers are the exporter contracts they wrap, by construction, and saying
+// so here turns a change to either SDK contract into a compile error in this file
+// rather than a report that quietly stopped being written.
+var (
+	_ sdktrace.SpanExporter = traceExporter{}
+	_ sdkmetric.Exporter    = metricExporter{}
+)
 
 // installTelemetry chooses the providers and installs them. It returns the
 // shutdown that flushes both, and the health.Report that names the exporter's
