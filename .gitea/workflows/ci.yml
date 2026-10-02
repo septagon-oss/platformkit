@@ -1,5 +1,16 @@
 # Verification only. The runner supplies a dedicated Docker daemon and a fresh
 # job network; no workstation services or deployment credentials are required.
+#
+# How to read a red tick from this job. A job whose runner lost *this* job reports every step,
+# `actions/checkout` included, as failure, and uploads no log at all, so whatever reads the verdict
+# for a merge finds no failing line to quote. A job that fails a check written here reports the steps
+# before the failure as success and leaves a log to read. 2026-10-02 measured the first shape three
+# times in one day, each on runner `stitch-core`, each over fourteen to eighteen minutes: job 46966
+# (run 46512) on one pull request, job 47128 (run 46674) on a push to main, job 47205 (run 46750) on
+# another. That runner stayed online through all three — the journey job it took the same minute as
+# the last of them (47206) has a log and per-step conclusions — so what was lost is that job's own
+# execution and log upload, not the host. A head refused that way holds no line to fix: what answers
+# it is a fresh run of the same head, and no edit to this repository does.
 name: ci
 
 on:
