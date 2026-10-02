@@ -644,11 +644,16 @@ func (r *runner) apply(ctx context.Context, migration migration) (drainReport, e
 	case migration.autocommit:
 		// The composition's lock goes down for this one statement and comes back
 		// afterwards, because a nontransactional statement waits for the transactions
-		// already in the database — that is what CONCURRENTLY is for, and no
-		// lock_timeout bounds that wait — while the lock it would otherwise be held
-		// under is the one every other replica's boot queues behind. Measured, holding
-		// both at once deadlocks the queue; ADR 0011 carries the deadlock DETAIL. What
-		// two replicas may then both reach is a statement the rule table already
+		// already in the database — that is what CONCURRENTLY is for — while the lock it
+		// would otherwise be held under is the one every other replica's boot queues
+		// behind. Measured, holding both at once deadlocks the queue; ADR 0011 carries
+		// the deadlock DETAIL. The wait for the transactions in the database is bounded:
+		// the budgets went on the session above this branch, so the run's own lock budget
+		// is what a concurrent build gets, and a build that runs out of it is cancelled
+		// with its half-built index left behind under the name it was building. That is
+		// why success is not the end of this branch: certifyConcurrentIndex reads the
+		// object back and refuses to record a file whose object does not hold. What two
+		// replicas may reach besides all this is a statement the rule table already
 		// demands be re-runnable, and recordRerunnableHistory turns a lost race into a
 		// file that applied rather than a boot that failed.
 		if err := r.releaseCompositionLock(ctx); err != nil {
@@ -660,6 +665,9 @@ func (r *runner) apply(ctx context.Context, migration migration) (drainReport, e
 		}
 		if execErr != nil {
 			return drainReport{}, execErr
+		}
+		if err := r.certifyConcurrentIndex(ctx, migration); err != nil {
+			return drainReport{}, err
 		}
 		return drainReport{}, recordRerunnableHistory(ctx, r.conn, migration)
 	}

@@ -115,9 +115,8 @@ step after it that a crash can skip. The application role is revoked from both.
 
 An autocommit statement is also the one statement a migration run must not hold the
 composition's advisory lock across. Such a statement waits for the transactions already
-in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds the
-wait — while that lock is what every other replica's boot queues behind. Holding both
-was measured, and it deadlocks the queue:
+in the database — that is what `CONCURRENTLY` is for — while that lock is what every
+other replica's boot queues behind. Holding both was measured, and it deadlocks the queue:
 
 ```
 Process 30201 waits for ShareLock on virtual transaction 10/17350; blocked by process 30222.
@@ -129,6 +128,14 @@ row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reac
 statement the rule table already requires to be re-runnable, and the one that loses the
 race learns the file applied rather than failing its boot for a benign race. A statement
 that failed writes no row either way.
+
+What the budgets bound is the statement itself, and a `CONCURRENTLY` build that runs out
+of `lock_timeout` mid-way leaves the half-built object behind under the name it was
+building — which the next send of `IF NOT EXISTS` reports as done. Success is therefore
+not the end of an autocommit file: the runner reads the object it named out of the
+catalog, drops and rebuilds one that is not valid, and refuses the file rather than
+recording a constraint the database does not enforce
+(`kit/db/certify.go`, `kit/db/migrate_certify_concurrently_test.go`).
 
 The order of a release is now a rule rather than a review comment. A `contract` file
 refuses while the `expand=` version it names is not already in that installation's
