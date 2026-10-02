@@ -73,7 +73,7 @@ func Control(p ControlProps) g.Node {
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, Error: p.Error,
 			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText,
+			HelpText: base.HelpText, FullWidth: true,
 		}, components.Select).Node
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
