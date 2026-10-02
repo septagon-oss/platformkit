@@ -14,8 +14,10 @@ module wires itself and `apps/platformkit/app.go` only names it.
 reads that one section, and `pkit.Server.Explain` prints that it did), zero means
 a year, and the trail sits behind a plan feature when a composition provides an
 `auditcontracts.Plan` and in front of everybody when it does not — which features
-a product sells is never this module's decision. `audit.Deps{}` stays for a
-client that hands the three values over by hand. Consumers import
+a product sells is never this module's decision. The provider reads
+`config.Database` too, for `retain_url`: the one connection the expiry trigger
+admits. `audit.Deps{}` stays for a client that hands the four values over by hand.
+Consumers import
 [contracts/](contracts/) for the record, events and permission, never
 `internal/`. `make test TEST_PACKAGES=./modules/audit/...` needs the
 development database.
@@ -133,3 +135,32 @@ delete-only role stands. **Made reusable** — `dbtest.Role`, a generic "create 
 this boundary needs and hand me its DSN" door for the next module that fences a table
 by capability, and the trigger pair plus the mark table as the pattern for any other
 append-only table this kernel takes over.
+
+## Limits
+
+Four things this delivery leaves open, named where the reviewer will look.
+
+* **The application role still holds `DELETE`** on `audit_events`, and
+  `has_table_privilege` answers true. Revoking it would leave the retention job — the
+  application's own role — with no expiry door at all, and the door the trigger admits
+  is a *shape* (may delete, may not append, past the floor) precisely so that no
+  setting the fenced role can write opens it. What the privilege cannot buy is the
+  delete: `TestExpiryRoleIsTheOnlyDoor` is the behaviour, and a role that can
+  `DROP TRIGGER` is the DDL role, outside this boundary by definition.
+* **No hash chain.** Decision 0013's per-tenant `seq` with a `prev_hash`/`hash` pair,
+  an advisory lock over the append and a checkpoint row are still owed. What is
+  delivered proves that nothing inside the application's reach rewrote or expired a
+  row, and records every expiry; it does not prove that a row was ever really inserted,
+  and a chain bolted onto a table whose writer could `UPDATE` it would have proved that
+  anyway, which is why it comes after this boundary rather than with it.
+* **Who may expire the trail is the product's.** `database.retain_url` names the role;
+  `apps/platformkit/postgres-init.sql`, `deploy/` and the boot's grant are the
+  product's files. The kernel's share is the grant shape (above, Provisioning), the
+  refusal of a `BYPASSRLS` DSN, and the 365-day floor.
+* **A reader cannot yet ask the trail whether it is complete.** The publication door
+  (`kit/events/catalog.go` `checkDeclared`) makes an undeclared event impossible to
+  lose silently, and `TestReviewPublishedEventsAllReachAudit` compares stamped outbox
+  rows to trail rows. A `GET /api/v1/audit/coverage` that answers that question for a
+  bounded window, names the missing event ids and reports the last trim is the next
+  delivery's; it needs the outbox purge window to be readable by the module that owns
+  the trail, and a proof that says nothing outside the evidence it still holds.
