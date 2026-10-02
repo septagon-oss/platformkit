@@ -23,6 +23,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -81,6 +82,7 @@ func mountPlain(t *testing.T, s rest.Spec[*Task], authorize httpx.Authorizer) (*
 		loader = l
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: loader, Conn: app, Authorize: authorize, Entitle: everyPlan{},
 		Installation: host,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
@@ -366,6 +368,7 @@ func TestASignedInListSeesExactlyTheRowsItsTenantMayRead(t *testing.T) {
 		}
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: acmeHost, Installation: acmeHost,
 		Tenants:   hosts{byHost: map[string]tenancy.Tenant{acmeHost: acme, globexHost: globex}},
 		Conn:      app,

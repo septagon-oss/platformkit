@@ -433,10 +433,15 @@ func (r *Router) staticFault(rel string) string {
 // Routes receives is now the only thing it holds.
 func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() }
 
-// InvalidateHost forgets a cached host resolution, so a rename or a suspension
-// takes effect now rather than within the cache's own TTL. The tenant module
-// calls it; nothing else has a host to forget.
-func (r *Router) InvalidateHost(host string) { r.api.InvalidateHost(host) }
+// InvalidateHost forgets cached host resolutions, so a rename, a suspension or a
+// new language declaration takes effect now rather than within the cache's own
+// lifetime. The tenant module calls it; nothing else has a host to forget.
+//
+// However many hosts it names, the call is one Move of the host namespace, because
+// an invalidation that only deletes what is there loses the load that raced it. It
+// returns the store's error: unwinding the committed write that precedes it is the
+// worse outage, and so is answering as though every replica had already forgotten.
+func (r *Router) InvalidateHost(hosts ...string) error { return r.api.InvalidateHost(hosts...) }
 
 // The two prefixes of the table. A surface with no document prefix refuses
 // HTML at the door (R6), which is why the table has a hole in it rather than a
