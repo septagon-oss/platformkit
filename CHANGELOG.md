@@ -188,8 +188,8 @@ members and the baggage member that carries the request id — is written on the
 row in the transaction that wrote the event, so the request that moved a
 state and the handler that reacted to it are one trace and not two that happen to sit
 next to each other, an operator reading a worker's span can quote the id the response
-header carried, and `audit_events.trace_id` makes a row of the trail name the
-request that caused it. Three numbers, each with a tenant dimension where one is
+header carried, and the trail's own `traceparent` column (migrations/000035)
+makes a row of the trail name the request and the trace that caused it. Three numbers, each with a tenant dimension where one is
 known: `pkit.http.operation.duration`, `pkit.outbox.lag`, `pkit.http.refusals` by
 class — the last counted once per request, from the status the client was finally
 answered with, so the refusals the router writes for itself (a query value that is
@@ -267,7 +267,7 @@ log — so the claim that the kernel is traced is checkable without an account a
 error shape, `health.Check` (a sibling type, not a fork), the T-0018 migration
 runner, `otelhttp` as the inbound span, and the SDK's own span recorder and manual
 reader as the test doubles. *Added:* `kit/telemetry`, the baggage column beside the
-envelope's two trace columns, `audit_events.trace_id`, the four boundary spans and the
+envelope's two trace columns, the trail's own trace column, the four boundary spans and the
 three instruments.
 *Made reusable:* `health.Report`, `telemetry.Tracer` (taken per span, so a span
 arrives at the provider the process installed), `telemetry.Propagators`,

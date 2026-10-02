@@ -11,7 +11,7 @@ package httpx_test
 // context wherever a child span is opened — kit/db's "database transaction" span
 // (tx.go), kit/jobs' run span and kit/events' delivery span all stamp it through
 // telemetry.SpanAttrs — and kit/events' carriedContext injects the same bag onto the
-// outbox row's baggage column (migrations/000036), which is how the id crosses into
+// outbox row's baggage column (migrations/000041), which is how the id crosses into
 // the worker's spans.
 //
 // Baggage is a *request* header this router extracts: the composite propagator
@@ -173,7 +173,7 @@ func TestAChildSpanNamesTheRequestTheCallerWasAnsweredFor(t *testing.T) {
 	}
 
 	child := carriedChild(t)
-	// Naming no request at all is a permitted answer: migrations/000036 says a row
+	// Naming no request at all is a permitted answer: migrations/000041 says a row
 	// is NULL for "a request whose id Baggage itself will not carry", and a span
 	// with no correlation attribute is the same fact on the other channel. What is
 	// not permitted is naming one this caller wrote into a header.
@@ -196,7 +196,7 @@ func TestAChildSpanNamesTheRequestTheCallerWasAnsweredFor(t *testing.T) {
 // same value on the channel that crosses processes: the `baggage` member the relay
 // stores on the outbox row and the worker extracts to open its delivery span. A
 // carried id that is not the one the caller was answered for does not stop at this
-// process — migrations/000036 gives it a column and kit/events gives it the
+// process — migrations/000041 gives it a column and kit/events gives it the
 // delivery span and every span the handler opens below it.
 func TestTheContextAPublisherLeavesBehindNamesTheRequestTheCallerWasAnsweredFor(t *testing.T) {
 	router := carriedIDFixture(t)
@@ -217,7 +217,7 @@ func TestTheContextAPublisherLeavesBehindNamesTheRequestTheCallerWasAnsweredFor(
 	baggage, _ := v.(string)
 	if carriedForgedIn(baggage) {
 		t.Errorf("the baggage a publisher leaves behind is %q, which names %s — an id this caller invented, "+
-			"not the %q it was answered: migrations/000036 stores it, and kit/events reads it back onto the "+
+			"not the %q it was answered: migrations/000041 stores it, and kit/events reads it back onto the "+
 			"delivery span in the worker process, which serves this installation's tenants",
 			baggage, carriedIDForged, answered)
 	}

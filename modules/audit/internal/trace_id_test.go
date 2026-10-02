@@ -1,10 +1,12 @@
 package internal_test
 
 // The trail row names the trace that wrote it — the join an operator uses to go from
-// a line of audit history to the request in the trace backend, which is why
-// migrations/000035 added the column at all. The value arrives on the envelope as
-// W3C's traceparent (kit/events stores it there from the publishing transaction) and
-// is stored as a uuid rather than as the header string, so a query can answer from it.
+// a line of audit history to the request in the trace backend, which is why the trail
+// keeps a trace at all. The value arrives on the envelope as W3C's traceparent
+// (kit/events stores it there from the publishing transaction, migrations/000035, and
+// migrations/000037 indexes its second field) and the contract's row hands over the id
+// inside that one string as a uuid, so neither a query nor a caller has to parse a
+// header to make the join.
 //
 // What is checked here is therefore both halves of a rule the brief states as one:
 // that a traced event's row carries the id, and that the three ways an event can

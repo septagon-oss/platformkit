@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/trace"
 )
@@ -26,10 +27,12 @@ const maxRequestID = 64
 // requestIDFrom returns the id of the request ctx belongs to, or "" outside a
 // request. It is the string the caller saw in the response header and in the
 // problem body's instance; every caller of it is in this package, which is why
-// it is not exported.
+// it is not exported. The value itself belongs to kit/request, which is why this
+// reads it rather than keeping a second copy under a second key: the id an event
+// carries and the id the caller was answered with have to be one string.
 func requestIDFrom(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
+	r, _ := request.From(ctx)
+	return r.ID
 }
 
 // requestID gives every request an id: the caller's, when they sent one worth
@@ -56,20 +59,33 @@ func (a *API) requestID(next http.Handler) http.Handler {
 		} else if tc, ok := trace.FromRequestID(id); ok {
 			ctx = trace.With(ctx, tc)
 		}
+		// The call's three facts are recorded once, here, where all three are
+		// known: the id this call will be answered with, the address of the
+		// connection it arrived on, and the trace it opened. Everything that
+		// outlives the call — the outbox row, and through it the audit trail —
+		// reads them back from kit/request.
+		me := request.Context{ID: id, ClientAddr: ClientAddr(r)}
+		if tc, ok := trace.From(ctx); ok {
+			me.Trace = tc
+		}
 		w.Header().Set(RequestIDHeader, id)
-		ctx = context.WithValue(ctx, requestIDKey{}, id)
-		// Two things happen to the id here, both because a request is answered by
-		// more than the process that received it. It goes in the baggage, so a span
-		// opened below — in kit/db, in a job the request started — can name the
-		// request that caused it without the id being an argument through four
-		// signatures; and it goes on the span the router already opened, which is
-		// stamped here rather than carried, so a log line and a trace can be joined by
-		// quoting the string the caller saw in the response header.
+		// kit/request is the id's one owner: the line below is what every reader
+		// of this call — the problem body's instance, the log line, the outbox row
+		// and through it the audit trail — reads it from. Two more things happen to
+		// the id here, because a request is answered by more than the process that
+		// received it: it goes in the baggage, so a span opened below — in kit/db,
+		// in a job the request started — can name the request that caused it
+		// without the id being an argument through four signatures; and it goes on
+		// the span the router already opened, which is stamped here rather than
+		// carried, so a log line and a trace can be joined by quoting the string the
+		// caller saw in the response header.
 		//
-		// It rides beside kit/trace rather than instead of it: that package carries a
-		// caller's W3C trace context to the outbox row and the envelope in a process
-		// that installed no provider, and this is the baggage and the span attribute,
-		// which it does not hold. kit/events writes both channels onto one row.
+		// The baggage and the span attribute ride beside kit/trace rather than
+		// instead of it: that package carries a caller's W3C trace context to the
+		// outbox row and the envelope in a process that installed no provider, and
+		// this is the baggage and the span attribute, which it does not hold.
+		// kit/events writes both channels onto one row.
+		ctx = request.With(ctx, me)
 		ctx = telemetry.WithRequestID(ctx, id)
 		spanAttr(ctx, telemetry.AttrRequestID, id)
 		next.ServeHTTP(w, r.WithContext(ctx))

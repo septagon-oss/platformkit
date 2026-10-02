@@ -55,8 +55,23 @@ type Event struct {
 	// when the publisher had nothing to leave, exactly as the pair above: the
 	// envelope carries it as a PlatformKit extension attribute beside the two the
 	// distributed tracing extension names, and it reaches the delivery's span and
-	// every span the handler opens below it. See migrations/000036.
+	// every span the handler opens below it. See migrations/000041.
 	Baggage string
+	// RequestID is the id the call was answered with (X-Request-ID), and ClientIP
+	// is the peer address of the connection it arrived on — never a header a
+	// client could write. They arrive with the event because they are readable
+	// only while the request is open: the publisher copies them from kit/request
+	// into its outbox row, and the relay reads them back onto the delivery. Empty
+	// is the normal case, and it means the same thing an empty TraceParent
+	// means: no request caused this, so there is no call to name.
+	//
+	// RequestID holds the same fact as Baggage in the other form: Baggage is the
+	// trace's correlation member spelled as W3C spells one (`pkit.request_id=<id>`),
+	// put back on the handler's context so its spans name the request; RequestID
+	// is the bare id, which is what the audit trail answers "which call" with,
+	// without parsing a header. One write, two readers.
+	RequestID string
+	ClientIP  string
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a

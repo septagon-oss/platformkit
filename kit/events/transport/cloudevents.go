@@ -67,7 +67,7 @@ type envelope struct {
 	// name this program owns. It carries the publisher's request id, the identifier
 	// a response header, a log line and a customer's ticket all agree on, so that a
 	// worker's trace names the call a person can quote. Absent when the publisher
-	// had none — see migrations/000036.
+	// had none — see migrations/000041.
 	Baggage string `json:"baggage,omitempty"`
 }
 

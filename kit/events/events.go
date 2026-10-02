@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -104,25 +105,34 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if id, ok := tenancy.ActorFrom(ctx); ok {
 		actor = id
 	}
-	// The trace context is stored beside the actor for the same reason the actor is:
-	// the relay publishes later, in a transaction of its own and with no request left
-	// to ask. Storing it here is what lets a delivery name the call that caused it.
-	// Absent is normal and stays absent — a periodic job, a handler reacting to
-	// another event. See kit/trace and kit/events/trace.go.
+	// The trace context is stored beside the actor for the same reason the actor
+	// is: the relay publishes later, in a transaction of its own and with no
+	// request left to ask. Storing it here is what lets a delivery name the call
+	// that caused it. Absent is normal and stays absent — a periodic job, a
+	// handler reacting to another event. See kit/trace and kit/events/trace.go.
 	//
-	// Three members, not two: the request id that lets an operator quote this write in
-	// a trace travels beside the trace parent, in the baggage the router wrote — see
-	// migrations/000036. An absent member is written as NULL and not as the empty
-	// string: the propagator answers "" for what it was not given, and a row that
-	// carries no trace is asked about with `traceparent IS NULL` — the query the
-	// migration says is ordinary, and one the empty string answers with an empty
-	// result set.
+	// Three trace members, not two: the request id that lets an operator quote
+	// this write in a trace travels beside the trace parent, in the baggage the
+	// router wrote — see migrations/000041. The request id and the client address
+	// arrive in the same breath and for the same reason: they are readable only
+	// while the call is open, and the row outlives it. The baggage and the column
+	// hold the same id by different owners — the baggage is the trace's own
+	// correlation member, read back onto the delivery's context, while request_id
+	// is the audit trail's answer to "which call", read by a query — and the
+	// together set is what lets the trail answer who, what, when, which call and
+	// from where: see kit/request and migrations/000034. An absent member is
+	// written as NULL and not as the empty string: the propagator answers "" for
+	// what it was not given, and a row that carries no trace is asked about with
+	// `traceparent IS NULL` — the query the migration says is ordinary, and one
+	// the empty string answers with an empty result set.
 	parent, state, correlation := carriedContext(ctx)
+	req, _ := request.From(ctx)
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?)",
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet)",
 		uuid.New(), tenantID, name, string(body), actor,
 		nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation),
+		nilIfEmpty(req.ID), req.ClientAddr,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}

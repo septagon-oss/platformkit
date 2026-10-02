@@ -1,7 +1,7 @@
 package events_test
 
 // The outbox row is where a request id outlives the process that minted it, so it is
-// where a correlation defect stops being cosmetic: migrations/000036 gives the bag a
+// where a correlation defect stops being cosmetic: migrations/000041 gives the bag a
 // column, the relay reads that column, and `startDelivery` extracts it into the
 // context a *worker* opens its delivery span on — along with every span the handler's
 // transaction opens below it. A member that reached the row would name its request in
@@ -138,7 +138,7 @@ func TestARowWrittenUnderAnUncarriedRequestIDKeepsNoCallerItsOwn(t *testing.T) {
 			"and a tenant nobody resolved", stored)
 	}
 	if stored == "" {
-		t.Logf("the row stores no correlation member, which is the NULL migrations/000036 calls the " +
+		t.Logf("the row stores no correlation member, which is the NULL migrations/000041 calls the " +
 			"ordinary case for a request whose id Baggage will not carry")
 	}
 	for _, s := range []sdktrace.ReadOnlySpan{delivery, txSpan} {

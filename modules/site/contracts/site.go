@@ -127,6 +127,46 @@ type SiteSettings struct {
 	// on an item for the same reason module.NavEntry has none: the order is the
 	// order somebody wrote them in.
 	Nav Nav `json:"nav,omitempty" gorm:"type:jsonb;not null;default:'[]'" required:"false" doc:"The site's navigation, in order"`
+
+	// Revision counts this row's own writes, from 1 (migrations/000039). Nothing
+	// in this module reads it. It exists because somebody diffing these settings
+	// needs a number to say "I made this against revision 3", and the only honest
+	// answer to "has it moved" is the row counting its own writes — see
+	// WriteGate and the subject binding apps/platformkit writes for it.
+	// readOnly because the count belongs to the row: a body that sent one would be
+	// a caller choosing how many times it had been saved.
+	Revision int64 `json:"revision" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
+}
+
+// LockedReader is the one read a caller about to write needs: the settings with
+// the row locked, so the revision it is comparing against cannot move underneath
+// it between the read and the write.
+//
+// It is a separate interface rather than a fourth method on Service because adding
+// a method to an exported interface is a break to anything outside this repository
+// that implements Service, and the exported-API gate refuses that break rather than
+// treating it as a detail. The implementation is the same object either way —
+// site.Module hands out the Service, site.NewLockedReader hands out this — so the
+// split costs a constructor and buys an unchanged contract.
+type LockedReader interface {
+	// SettingsForUpdate is Settings with the tenant's row locked FOR UPDATE. A
+	// tenant with no row yet gets the defaults, whose revision is 0.
+	SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
+}
+
+// WriteGate is the question a deployment asks about a direct write of a tenant's
+// settings: write them now, or not until somebody else has said yes.
+//
+// The question is asked here, in the module that owns the row, and answered
+// somewhere else, because which writes are sensitive enough to need a second
+// account is a fact about the installation and not about a site. The
+// composition answers it — a flag read for the tenant, and a refusal naming the
+// door to go through instead — and a module that read the flag itself would be a
+// module with a product in it.
+type WriteGate interface {
+	// Check returns nil when the write may go ahead, or an error that names what
+	// the caller has to do instead. A non-nil error writes nothing.
+	Check(ctx context.Context, tx db.Tx[db.Tenant]) error
 }
 
 // TableName pins the table, so the entity and migrations/000018 agree.
@@ -205,5 +245,9 @@ type Service interface {
 	// Save writes the settings and publishes site.settings_updated. Saving what
 	// is already stored changes nothing and says nothing, so a screen that
 	// submits its form twice does not invalidate a cache twice.
+	//
+	// It is the door an approved proposal comes through, and it is not gated: the
+	// gate in Deps stands on the route a person types into, not here. Refusing the
+	// apply as well would make a proposal impossible to apply.
 	Save(ctx context.Context, tx db.Tx[db.Tenant], in *SiteSettings) (*SiteSettings, error)
 }

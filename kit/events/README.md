@@ -74,7 +74,7 @@ Four consequences, each a test rather than an assurance:
   reconciliation `reconcile` logs a line rather than an incident. Independent
   sinks that are not `Consume` must supply the same durable idempotency.
 * **The trace context is stored with the row** (`000028_outbox_trace.up.sql` and
-  `000036_outbox_baggage.up.sql`, all nullable) and carried onto the envelope by the
+  `000041_outbox_baggage.up.sql`, all nullable) and carried onto the envelope by the
   relay, because by relay time the request is gone. `kit/trace` fixes the W3C format and
   collects nothing: it holds no span, no exporter and no sampling decision.
   `kit/telemetry` names the vocabulary of a span, and this package opens two of them —

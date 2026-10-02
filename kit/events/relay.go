@@ -37,21 +37,25 @@ type row struct {
 	Payload   []byte
 	CreatedAt time.Time
 	Actor     *uuid.UUID
-	// The publisher's trace context and its correlation member. Absent is NULL — see
-	// nilIfEmpty and the rows this file shipped before either column existed — and
-	// the relay reads all three as the empty string, because its own contract is the
-	// envelope's optional members, not the column's nullability. It does not read them
-	// into its own span — one batch is many unrelated traces — it carries them to the
-	// envelope, where kit/events puts them back on the handler's context. See trace.go.
+	// The publisher's trace context, its correlation member, and the call the
+	// event was written by. Absent is NULL — see nilIfEmpty and the rows this file
+	// shipped before either column existed — and the relay reads all five as the
+	// empty string, because its own contract is the envelope's optional members
+	// and the trail's empty string, not the column's nullability. It does not read
+	// the trace into its own span — one batch is many unrelated traces — it carries
+	// them to the envelope, where kit/events puts them back on the handler's
+	// context. See trace.go.
 	//
-	// The three column tags are load-bearing. GORM maps a scanned field by snake_case,
-	// so TraceParent arrives as trace_parent: without the tag, naming the SELECT alias
-	// after the column is how a carried fact silently stops being carried. The tag
-	// binds field to column explicitly, which is why the aliases below can be the
-	// COALESCE that turns a NULL into the empty string this struct holds.
+	// The column tags are load-bearing. GORM maps a scanned field by snake_case,
+	// so TraceParent arrives as trace_parent: without the tag, naming the SELECT
+	// alias after the column is how a carried fact silently stops being carried.
+	// The tag binds field to column explicitly, which is why the aliases below can
+	// be the COALESCE that turns a NULL into the empty string this struct holds.
 	TraceParent string `gorm:"column:traceparent"`
 	TraceState  string `gorm:"column:tracestate"`
 	Baggage     string `gorm:"column:baggage"`
+	RequestID   string `gorm:"column:request_id"`
+	ClientIP    string `gorm:"column:client_ip"`
 }
 
 // lagKey is one pkit.outbox.lag time series: one tenant's share of one event name.
@@ -261,7 +265,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		// the empty string the envelope's optional members are written for.
 		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
 			COALESCE(traceparent, '') AS traceparent, COALESCE(tracestate, '') AS tracestate,
-			COALESCE(baggage, '') AS baggage FROM ` + table + `
+			COALESCE(baggage, '') AS baggage, COALESCE(request_id, '') AS request_id,
+			COALESCE(host(client_ip), '') AS client_ip FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -306,14 +311,18 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		ids := make([]uuid.UUID, 0, len(rows))
 		for _, r := range rows {
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt,
-				TraceParent: r.TraceParent, TraceState: r.TraceState, Baggage: r.Baggage}
+				TraceParent: r.TraceParent, TraceState: r.TraceState, Baggage: r.Baggage,
+				RequestID: r.RequestID, ClientIP: r.ClientIP}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
 			// The trace the request left in the row, carried onto the envelope
 			// the relay publishes. This transaction has no request of its own
 			// to substitute: a relay span started here would join the delivery
-			// to the wrong trace.
+			// to the wrong trace. The call itself — its id and the address it
+			// arrived on — comes from the same row for the same reason: the trail
+			// row a handler writes has to name the request that caused it, and
+			// this transaction is not that request.
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go
 				// again next tick. That is the at-least-once bargain.
