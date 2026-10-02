@@ -848,13 +848,40 @@ func whoami(t *testing.T, cfg config.Config, client *http.Client) string {
 	return body
 }
 
-// waitForAudit is the first trail row with this event name, once the worker has
-// got to it. The relay runs once a second, so this is a wait and not a read:
-// what it proves is that the row arrives, not how soon.
+// waitForAudit is the newest row the trail holds under this event name, once the
+// trail has caught up with everything this composition has already committed.
+//
+// Waiting for "the first row with this name" waits for the wrong fact, because a
+// name is not a row. tenant.lifecycle_recorded is published by every lifecycle
+// verb, so a case that creates a customer before it suspends one has its wait
+// closed by the create's own mirror row twenty round-trips early, and the
+// assertions that follow read the create back as the suspension. Whether that
+// happens depends on which side of the relay's one-second tick (kit/app
+// relayEvery) the two writes fall on — a coin toss about a scheduler, not a test.
+//
+// What a case knows at the moment it asks is narrower and enough: it just
+// performed a write, that write's outbox row committed with it, and the trail row
+// exists once the worker has published that row. The queue is the thing that says
+// so. relayBatch publishes a batch and only then stamps it (kit/events/relay.go),
+// and Publish on the in-process transport returns only after every sink has
+// finished handling the event (kit/events/providers/memory). So while any row is
+// still unpublished the trail is filling; the moment none is, every committed
+// write has its row. From there the newest row with the name is the row this test
+// caused, and the answer stops depending on how fast or slow the tick underneath
+// it happened to be.
 func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name string) map[string]any {
 	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open the database to read the queue: %v", err)
+	}
+	defer conn.Close()
+
 	var row map[string]any
-	eventually(t, "the trail to record "+name, func() bool {
+	eventually(t, "the trail to record "+name+" once the queue has delivered what is on it", func() bool {
+		if !queueDrained(t, conn) {
+			return false
+		}
 		code, body := do(t, cfg, client, http.MethodGet, acmeHost, auditPath+"?name="+name, "")
 		if code != http.StatusOK {
 			t.Fatalf("GET %s = %d %s, want 200", auditPath, code, body)
@@ -872,6 +899,25 @@ func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name str
 		return true
 	})
 	return row
+}
+
+// queueDrained reports whether the outbox holds nothing still waiting for the
+// relay. It reads the queue the way the relay reads it, in one system
+// transaction, because the queue spans every tenant and the row that matters here
+// belongs to whichever one a request acted on. An unpublished row is a trail row
+// on its way, which is why a read of the trail that means to see the whole of it
+// asks this first.
+func queueDrained(t *testing.T, conn *db.Conn) bool {
+	t.Helper()
+	var pending int64
+	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Table("platformkit_outbox").Where("published_at IS NULL").
+			Count(&pending).Error
+	})
+	if err != nil {
+		t.Fatalf("count the outbox rows still unpublished: %v", err)
+	}
+	return pending == 0
 }
 
 // notify raises one notification the way another module will: through the

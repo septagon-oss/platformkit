@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "2e4b3d94c3cd5db339e76b39ce29b66c6f0b8f79"
+    "candidate": "cd42b2c0905d58a60401b226bd15a3a35666ec33"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -47,7 +47,11 @@
     "./modules/site/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/task/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/tenant/contracts.Service.ClearOIDC: added",
+    "./modules/tenant/contracts.Service.Delete: added",
     "./modules/tenant/contracts.Service.OIDCOf: added",
+    "./modules/tenant/contracts.Service.Reactivate: added",
+    "./modules/tenant/contracts.Service.RemoveHost: added",
+    "./modules/tenant/contracts.Service.Rename: added",
     "./modules/tenant/contracts.Service.SetLocale: added",
     "./modules/tenant/contracts.Service.SetOIDC: added",
     "./modules/user/contracts.Registrations.ConfirmAddress: added",
