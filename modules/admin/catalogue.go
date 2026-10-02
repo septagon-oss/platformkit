@@ -7,8 +7,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 )
 
-// catalogues is the admin-authored copy as files, one per locale. English
-// entries let the pseudo-locale transform the same keys the pages render.
+// catalogues is the admin-authored copy as files, one per locale. The English file
+// is the source the Go strings are read against — the loader's source language is
+// "en" — and the parity check the composition runs refuses a Portuguese file short
+// of a key English carries. No pseudo-locale transform reads these files: none
+// exists in this repository, and a claim that one did would be a comment no test
+// holds.
 //
 // This replaced a Go builder of the same four keys in both languages, which is how
 // every catalogue in the product started and is exactly what decision 0012 rule 2

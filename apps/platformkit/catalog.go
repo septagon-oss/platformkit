@@ -28,8 +28,10 @@ import (
 // ordinary decision and not a pull request into the foundation.
 //
 // "en" is the source language: the sentences in the Go code are English.
-// Resource names and admin-authored copy also have explicit English entries
-// so the pseudo-locale and coverage checks can inspect their source forms.
+// Resource names and admin-authored copy also have explicit English entries: the
+// loader's source language, and what the composition's parity check compares every
+// other locale against. This repository carries no pseudo-locale transform, and
+// building one is a decision about a deployment, not a fact about this one.
 // Which languages this deployment answers in is the set of files these directories
 // hold — the gate that fails when one of them is short is the loader's own
 // (kit/locale/providers/xtext), and the tenant's own supported set is negotiated
