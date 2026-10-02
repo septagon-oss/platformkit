@@ -5,6 +5,7 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"runtime/debug"
 	"sort"
@@ -292,13 +293,41 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 // is answered in modules/user's catalogue, and nothing in this package holds it —
 // which is the rule a permission label already follows. An entry nobody translated
 // is answered in the language its module wrote it in.
-func navLabel(r page.Request, entry module.NavEntry) string {
+//
+// The exception is the two pages this shell writes inside another module's
+// namespace, the tenant switcher and the roles screen (writtenHere). The word they
+// are led by comes from this package's own catalogue rather than the declaring
+// module's, because the copy of a page belongs to whoever wrote the page, and
+// because the alternative is a menu that renames the screen it leads to: a heading
+// read out of one catalogue and a link out of another drift the moment either is
+// re-worded. The entry's own label is the last resort, so a composition with no
+// catalogue at all still shows what its manifest declared.
+func navLabel(r page.Request, entry module.NavEntry, own string) string {
+	fallback := entry.Label
+	if own != "" {
+		fallback = own
+	}
 	if r.Locale == nil {
-		return entry.Label
+		return fallback
 	}
 	key := "nav." + strings.ReplaceAll(
 		strings.TrimPrefix(entry.Screen, httpx.AppRoot+"/"), "/", ".")
-	return r.Locale.Text(key, entry.Label)
+	return r.Locale.Text(key, fallback)
+}
+
+// writtenHere is this shell's own word for a nav entry whose screen it serves with a
+// page it wrote, and empty for every other entry. The two are the pages mounted in
+// another module's namespace — see addresses.tenants and addresses.roles — and the
+// key is the one the page itself is titled with, so a person who follows the link
+// arrives at the words the link used.
+func (a addresses) writtenHere(screen string) (string, bool) {
+	switch screen {
+	case a.roles.at:
+		return "roles.title", true
+	case a.tenants.at:
+		return "tenants.title", true
+	}
+	return "", false
 }
 
 // sidebar is the navigation: the dashboard, what the caller may reach, and the
@@ -308,7 +337,12 @@ func navLabel(r page.Request, entry module.NavEntry) string {
 func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, maySetLanguages bool) components.SidebarProps {
 	items := []components.SidebarItem{{Label: chrome(r, "nav.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
-		items = append(items, components.SidebarItem{Label: navLabel(r, entry), Href: entry.Screen, Icon: "file-text"})
+		key, own := a.writtenHere(entry.Screen)
+		label := entry.Label
+		if own {
+			label = chrome(r, key, entry.Label)
+		}
+		items = append(items, components.SidebarItem{Label: navLabel(r, entry, label), Href: entry.Screen, Icon: "file-text"})
 	}
 	// A tenant's own languages, in its own namespace, offered to whoever the
 	// authorizer says may set them — the same answer the page's guard gives, so the
@@ -345,6 +379,35 @@ func chrome(r page.Request, key, fallback string) string {
 		return fallback
 	}
 	return r.Locale.Text("admin."+key, fallback)
+}
+
+// chromeSentence is the shell's own copy with somebody else's words inside it — a
+// role's name, the permissions a save would drop. The placeholders belong to the
+// catalogue entry, so a translation puts the name where its own sentence reads it
+// rather than where this file happened to concatenate it, and the fallback is the
+// source English the call site is written in.
+func chromeSentence(r page.Request, key, format string, args ...any) string {
+	if r.Locale == nil {
+		return fmt.Sprintf(format, args...)
+	}
+	return r.Locale.Text("admin."+key, format, args...)
+}
+
+// chromeCount is a sentence of the shell's own copy about how many there are, in
+// the form this request's language picks for that number. English writes "1 role."
+// and "4 roles."; Portuguese writes "1 função." and "4 funções.". Neither is built
+// here by appending a letter to a word — the two forms are the catalogue's, and the
+// language's cardinal rule chooses between them — which is what tools/checkplurals
+// refuses a page for doing by hand.
+func chromeCount(r page.Request, key string, count int64, one, other string) string {
+	if r.Locale == nil {
+		chosen := other
+		if count == 1 {
+			chosen = one
+		}
+		return fmt.Sprintf(chosen, count)
+	}
+	return r.Locale.Plural("admin."+key, count, one, other)
 }
 
 // header is the tenant, the caller, the theme switch and the way out — and, below the large

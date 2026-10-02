@@ -287,6 +287,205 @@
       "": "Saltar para o conteúdo"
     }
   },
+  "admin.roles.title": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Funções",
+    "plural": {
+      "": "Funções"
+    }
+  },
+  "admin.roles.subtitle": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "O que cada nome de função concede aqui, que é o que quem a detém pode fazer.",
+    "plural": {
+      "": "O que cada nome de função concede aqui, que é o que quem a detém pode fazer."
+    }
+  },
+  "admin.roles.count": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%d função.",
+    "plural": {
+      "one": "%d função.",
+      "other": "%d funções."
+    }
+  },
+  "admin.roles.pagination": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Paginação das funções",
+    "plural": {
+      "": "Paginação das funções"
+    }
+  },
+  "admin.roles.new": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Nova função",
+    "plural": {
+      "": "Nova função"
+    }
+  },
+  "admin.roles.new_form": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Uma nova função",
+    "plural": {
+      "": "Uma nova função"
+    }
+  },
+  "admin.roles.name": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Nome",
+    "plural": {
+      "": "Nome"
+    }
+  },
+  "admin.roles.name_help": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Um identificador em minúsculas: letras, dígitos e sublinhados.",
+    "plural": {
+      "": "Um identificador em minúsculas: letras, dígitos e sublinhados."
+    }
+  },
+  "admin.roles.name_example": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "editor",
+    "plural": {
+      "": "editor"
+    }
+  },
+  "admin.roles.create": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Criar a função",
+    "plural": {
+      "": "Criar a função"
+    }
+  },
+  "admin.roles.save": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Guardar %s",
+    "plural": {
+      "": "Guardar %s"
+    }
+  },
+  "admin.roles.grants": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "O que %s concede",
+    "plural": {
+      "": "O que %s concede"
+    }
+  },
+  "admin.roles.everything": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "* — tudo nesta organização",
+    "plural": {
+      "": "* — tudo nesta organização"
+    }
+  },
+  "admin.roles.drops": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Guardar %s também remove %s, que esta aplicação já não oferece aqui.",
+    "plural": {
+      "": "Guardar %s também remove %s, que esta aplicação já não oferece aqui."
+    }
+  },
+  "admin.tenants.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Organizações",
+    "plural": {
+      "": "Organizações"
+    }
+  },
+  "admin.tenants.subtitle": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Todas as organizações desta instalação. Uma ligação abre a área de trabalho dessa organização.",
+    "plural": {
+      "": "Todas as organizações desta instalação. Uma ligação abre a área de trabalho dessa organização."
+    }
+  },
+  "admin.tenants.name": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Organização",
+    "plural": {
+      "": "Organização"
+    }
+  },
+  "admin.tenants.slug": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Identificador",
+    "plural": {
+      "": "Identificador"
+    }
+  },
+  "admin.tenants.status": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "admin.tenants.hosts": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Servida em",
+    "plural": {
+      "": "Servida em"
+    }
+  },
+  "admin.tenants.empty": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Sem organizações. Execute `platformkit bootstrap`.",
+    "plural": {
+      "": "Sem organizações. Execute `platformkit bootstrap`."
+    }
+  },
+  "admin.gallery.title": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Componentes",
+    "plural": {
+      "": "Componentes"
+    }
+  },
   "admin.dialog.cancel": {
     "references": [
       "modules/admin/internal/mount.go"

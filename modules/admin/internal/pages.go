@@ -19,20 +19,20 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
-// writtenHere is the language of the copy written in this file. Every word on the
-// pages below is a Go string rather than a catalogue key, so each says which
-// language it is in rather than wearing the request's: document.View.Language
-// exists for exactly that, and a page that declared a language its sentences are
-// not written in would send a screen reader off with the wrong voice and tell a
-// translation tool the work is done. A page whose copy comes from a catalogue says
-// nothing here and takes the language that was negotiated — see signIn, which
-// reads its labels out of admin.login.* and declares nothing.
-const writtenHere = "en"
-
 // pages are the screens no schema describes: the way in, the way around, and
 // the two that are about the installation rather than about its data. Each is
 // a function of what it read and of the request, and returns a View; the
 // document around it is page.Serve's.
+//
+// Every visible word they themselves choose is a catalogue key read in the request's
+// own language — the shell's words under admin.* in modules/admin/messages, the
+// generated screens' under screens.* and field.* in ui/resource — so none of them
+// declares a language of its own. A page whose sentences are Go literals would have
+// to say so (document.View.Language exists for exactly that, and a page that
+// declared a language its sentences are not written in would send a screen reader
+// off with the wrong voice and tell a translation tool the work is done). The one
+// body of copy here that is not this package's is the component gallery's own
+// specimen index and preview controls, which ui/export writes for its own pages.
 type pages struct {
 	Shell
 	at        addresses
@@ -75,8 +75,8 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	// sidebar drops the link for the same reason, so the two agree.
 	page.Serve(namespace(s.App, "tenant"), p.shell, page.Route{ID: "admin-tenants", Method: http.MethodGet, Path: p.at.tenants.rel, Summary: "The tenants of this installation"},
 		httpx.OperatorPermission(tenantcontracts.PermissionTenantManage),
-		func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return p.tenants(ctx)
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return p.tenants(ctx, r)
 		})
 }
 
@@ -170,15 +170,11 @@ func (p pages) dashboard(ctx context.Context, selected *page.Locale) page.View {
 	if len(failed) > 0 {
 		tone, message = "danger", text("not_ready", "Not ready: %s", strings.Join(failed, ", "))
 	}
-	// Language says what this page's words are written in, which is not the
-	// request's language: every word on this page — the title, the subtitle, the
-	// health alert, the counts under the cards — is a Go string in this file, and no
-	// catalogue is consulted for any of them. A page declares the language of the
-	// copy it shows (see document.View.Language, and the refusal page in ui/document
-	// which says the same about its own words), so a browser, a screen reader and a
-	// translation tool are told the truth: this one is English, whichever language
-	// the tenant is served in. The day any of this copy goes into a catalogue, this
-	// line goes with it.
+	// What each card counts is the number and the resource's own noun, in the
+	// language's plural form, from the catalogue of the module that owns the entity
+	// (kit/rest's resource names) — the health alert above them is the shell's own
+	// copy under admin.dashboard.*. Nothing here is a Go sentence in the tenant's
+	// place, so the page declares no language of its own.
 	return page.View{Title: text("title", "Dashboard"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: text("title", "Dashboard"), Subtitle: text("subtitle", "What this tenant has, and whether the instance is well.")}),
@@ -257,7 +253,7 @@ func checks(ctx context.Context) []result {
 // tenant, so listing them takes a system transaction, opened on a detached
 // context so it is a transaction of its own rather than a widening of the
 // request's. See docs/adr/0006.
-func (p pages) tenants(ctx context.Context) (page.View, error) {
+func (p pages) tenants(ctx context.Context, r page.Request) (page.View, error) {
 	conn, reachable := httpx.ConnFrom(ctx)
 	if !reachable {
 		return page.View{}, unreachable
@@ -277,18 +273,20 @@ func (p pages) tenants(ctx context.Context) (page.View, error) {
 			"name": t.Name, "slug": t.Slug, "status": t.Status, "hosts": strings.Join(t.Hosts, ", "),
 		}})
 	}
-	return page.View{Title: "Tenants", Body: []g.Node{
+	return page.View{Title: chrome(r, "tenants.title", "Tenants"), Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Tenants", Subtitle: "Every tenant of this installation. A link opens that tenant's own shell."}),
+			Title: chrome(r, "tenants.title", "Tenants"),
+			Subtitle: chrome(r, "tenants.subtitle",
+				"Every tenant of this installation. A link opens that tenant's own shell.")}),
 		components.TableWithSlots(components.TableProps{
 			Columns: []components.TableColumn{
-				{Key: "name", Label: "Tenant", Primary: true},
-				{Key: "slug", Label: "Slug"},
-				{Key: "status", Label: "Status"},
-				{Key: "hosts", Label: "Served at"},
+				{Key: "name", Label: chrome(r, "tenants.name", "Tenant"), Primary: true},
+				{Key: "slug", Label: chrome(r, "tenants.slug", "Slug")},
+				{Key: "status", Label: chrome(r, "tenants.status", "Status")},
+				{Key: "hosts", Label: chrome(r, "tenants.hosts", "Served at")},
 			},
 			Rows:      rows,
-			EmptyText: "No tenants. Run `platformkit bootstrap`.",
+			EmptyText: chrome(r, "tenants.empty", "No tenants. Run `platformkit bootstrap`."),
 		}, components.TableSlots{
 			Cell: func(row components.TableRow, c components.TableColumn) g.Node {
 				switch c.Key {

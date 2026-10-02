@@ -2,7 +2,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -147,7 +146,7 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 	if err != nil {
 		return page.View{}, rest.Fault(err)
 	}
-	return rolesPage(p.at.roles.at, roles, p.declared, r.Tenant.Operator, at, detail), nil
+	return rolesPage(p.at.roles.at, roles, p.declared, r.Tenant.Operator, at, detail, r), nil
 }
 
 // rolesPage is the screen as a function of values: the roles there are, the
@@ -156,7 +155,13 @@ func (p pages) rolesView(ctx context.Context, r page.Request, at int, detail str
 // One form per role, each posting the whole list back. That is the shape of the
 // route underneath — a PUT replaces what a role grants — so a form that posted
 // a change instead would be describing a write the server does not have.
-func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Grant, operator bool, at int, detail string) page.View {
+//
+// Every word of it is a catalogue entry read in the request's own language, as the
+// frame's words are: the document declares the language the negotiation settled on,
+// and a page that wrote English under pt-PT would tell a screen reader and a
+// translation tool something the page does not do.
+func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Grant, operator bool,
+	at int, detail string, r page.Request) page.View {
 	offered := offeredPermissions(declared, operator)
 	total := len(roles)
 	last := max((total+rolesPerPage-1)/rolesPerPage, 1)
@@ -166,10 +171,12 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 	from := (at - 1) * rolesPerPage
 	shown := roles[from:min(from+rolesPerPage, total)]
 
+	title := chrome(r, "roles.title", "Roles")
 	status := 0
 	body := []g.Node{components.Toolbar(components.ToolbarProps{
-		Title:    "Roles",
-		Subtitle: counted(total) + " What each role name grants here, which is what everybody holding one may do.",
+		Title: title,
+		Subtitle: chromeCount(r, "roles.count", int64(total), "%d role.", "%d roles.") + " " +
+			chrome(r, "roles.subtitle", "What each role name grants here, which is what everybody holding one may do."),
 	})}
 	if detail != "" {
 		status = http.StatusUnprocessableEntity
@@ -177,25 +184,16 @@ func rolesPage(where string, roles []*authcontracts.Role, declared []tenancy.Gra
 			Tone: "danger", Message: detail, Bordered: true}))
 	}
 	for _, role := range shown {
-		body = append(body, roleFieldset(where, role.Name, role.Grants, offered, at))
+		body = append(body, roleFieldset(r, where, role.Name, role.Grants, offered, at))
 	}
 	body = append(body,
 		components.Pagination(components.PaginationProps{
 			CurrentPage: at, TotalPages: last, BaseURL: where,
-			NavigationLabel: "Roles pagination",
+			NavigationLabel: chrome(r, "roles.pagination", "Roles pagination"),
 		}),
-		components.Divider(components.DividerProps{Text: "New role"}),
-		newRoleFieldset(where, offered, at))
-	return page.View{Title: "Roles", Status: status, Body: body}
-}
-
-// counted is how many there are, the way a generated list says it before saying
-// what they are.
-func counted(total int) string {
-	if total == 1 {
-		return "1 role."
-	}
-	return strconv.Itoa(total) + " roles."
+		components.Divider(components.DividerProps{Text: chrome(r, "roles.new", "New role")}),
+		newRoleFieldset(r, where, offered, at))
+	return page.View{Title: title, Status: status, Body: body}
 }
 
 // pageURL is where a write returns to: the screenful it was made on.
@@ -226,8 +224,10 @@ func offeredPermissions(declared []tenancy.Grant, operator bool) []string {
 }
 
 // roleFieldset is one role: its name, what it grants, and the one button that
-// writes the two together.
-func roleFieldset(where string, name string, granted []string, offered []string, at int) g.Node {
+// writes the two together. The name is data — an identifier somebody typed — and
+// the sentence around it is copy, so the name arrives as an argument the catalogue
+// sentence places rather than as a word this file chose.
+func roleFieldset(r page.Request, where string, name string, granted []string, offered []string, at int) g.Node {
 	form := "pk-role-" + name
 	nodes := []g.Node{
 		components.Heading(components.HeadingProps{Text: name, Level: 2}),
@@ -245,34 +245,42 @@ func roleFieldset(where string, name string, granted []string, offered []string,
 	if lost := notOffered(granted, offered); len(lost) > 0 {
 		nodes = append(nodes, components.Alert(components.AlertProps{
 			Tone: "warning", Compact: true, Bordered: true,
-			Message: fmt.Sprintf("Saving %s also drops %s, which this application no longer offers here.",
+			Message: chromeSentence(r, "roles.drops",
+				"Saving %s also drops %s, which this application no longer offers here.",
 				name, strings.Join(lost, ", ")),
 		}))
 	}
 	nodes = append(nodes,
-		permissionBoxes(form, granted, offered),
+		permissionBoxes(r, form, granted, offered),
 		components.FormActions(components.FormActionsProps{},
-			components.Button(components.ButtonProps{Label: "Save " + name, Type: "submit"})))
-	return components.Form(components.FormProps{Action: where, Label: "What " + name + " grants"}, nodes...)
+			components.Button(components.ButtonProps{
+				Label: chromeSentence(r, "roles.save", "Save %s", name), Type: "submit"})))
+	return components.Form(components.FormProps{
+		Action: where, Label: chromeSentence(r, "roles.grants", "What %s grants", name)}, nodes...)
 }
 
 // newRoleFieldset is the same form with the name left to be typed. There is no
 // separate create route: SetRole writes the role it is given whether or not it
 // existed, so a second form would be a second door to one write.
-func newRoleFieldset(where string, offered []string, at int) g.Node {
+func newRoleFieldset(r page.Request, where string, offered []string, at int) g.Node {
 	// A role name cannot contain a hyphen, so this prefix cannot collide with
 	// the form of a role somebody has actually called "new".
 	const form = "pk-new-role"
-	return components.Form(components.FormProps{Action: where, Label: "A new role"},
+	return components.Form(components.FormProps{
+		Action: where, Label: chrome(r, "roles.new_form", "A new role")},
 		components.Input(components.InputProps{
 			ComponentProps: components.ComponentProps{ID: form + "-name"},
-			Name:           "name", Label: "Name", Required: true, MaxLength: authcontracts.MaxRoleName,
-			HelpText: "A lower-case identifier: letters, digits and underscores.",
-			Pattern:  "[a-z][a-z0-9_]*", Placeholder: "editor"}),
+			Name:           "name", Label: chrome(r, "roles.name", "Name"), Required: true,
+			MaxLength: authcontracts.MaxRoleName,
+			HelpText: chrome(r, "roles.name_help",
+				"A lower-case identifier: letters, digits and underscores."),
+			Pattern:     "[a-z][a-z0-9_]*",
+			Placeholder: chrome(r, "roles.name_example", "editor")}),
 		hidden(form+"-page", "page", strconv.Itoa(at)),
-		permissionBoxes(form, nil, offered),
+		permissionBoxes(r, form, nil, offered),
 		components.FormActions(components.FormActionsProps{},
-			components.Button(components.ButtonProps{Label: "Create the role", Type: "submit"})),
+			components.Button(components.ButtonProps{
+				Label: chrome(r, "roles.create", "Create the role"), Type: "submit"})),
 	)
 }
 
@@ -300,12 +308,16 @@ func notOffered(granted, offered []string) []string {
 // id built from its own form, because several forms on one page otherwise
 // render the same id and a label then points at whichever input the browser
 // found first — a person ticking member's boxes would be ticking admin's.
-func permissionBoxes(form string, granted []string, offered []string) g.Node {
+//
+// A permission string is an identifier the kernel checks byte for byte, so every
+// box carries it untranslated; only the wildcard, which is a rule rather than a
+// permission, gets a sentence a person can read.
+func permissionBoxes(r page.Request, form string, granted []string, offered []string) g.Node {
 	boxes := make([]g.Node, 0, len(offered))
 	for _, permission := range offered {
 		label := permission
 		if permission == authcontracts.Wildcard {
-			label = "* — everything in this tenant"
+			label = chrome(r, "roles.everything", "* — everything in this tenant")
 		}
 		boxes = append(boxes, components.Checkbox(components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: boxID(form, permission)},

@@ -287,6 +287,205 @@
       "": "Skip to content"
     }
   },
+  "admin.roles.title": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Roles",
+    "plural": {
+      "": "Roles"
+    }
+  },
+  "admin.roles.subtitle": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "What each role name grants here, which is what everybody holding one may do.",
+    "plural": {
+      "": "What each role name grants here, which is what everybody holding one may do."
+    }
+  },
+  "admin.roles.count": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%d role.",
+    "plural": {
+      "one": "%d role.",
+      "other": "%d roles."
+    }
+  },
+  "admin.roles.pagination": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Roles pagination",
+    "plural": {
+      "": "Roles pagination"
+    }
+  },
+  "admin.roles.new": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "New role",
+    "plural": {
+      "": "New role"
+    }
+  },
+  "admin.roles.new_form": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "A new role",
+    "plural": {
+      "": "A new role"
+    }
+  },
+  "admin.roles.name": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Name",
+    "plural": {
+      "": "Name"
+    }
+  },
+  "admin.roles.name_help": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "A lower-case identifier: letters, digits and underscores.",
+    "plural": {
+      "": "A lower-case identifier: letters, digits and underscores."
+    }
+  },
+  "admin.roles.name_example": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "editor",
+    "plural": {
+      "": "editor"
+    }
+  },
+  "admin.roles.create": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Create the role",
+    "plural": {
+      "": "Create the role"
+    }
+  },
+  "admin.roles.save": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Save %s",
+    "plural": {
+      "": "Save %s"
+    }
+  },
+  "admin.roles.grants": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "What %s grants",
+    "plural": {
+      "": "What %s grants"
+    }
+  },
+  "admin.roles.everything": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "* — everything in this tenant",
+    "plural": {
+      "": "* — everything in this tenant"
+    }
+  },
+  "admin.roles.drops": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Saving %s also drops %s, which this application no longer offers here.",
+    "plural": {
+      "": "Saving %s also drops %s, which this application no longer offers here."
+    }
+  },
+  "admin.tenants.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Tenants",
+    "plural": {
+      "": "Tenants"
+    }
+  },
+  "admin.tenants.subtitle": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Every tenant of this installation. A link opens that tenant's own shell.",
+    "plural": {
+      "": "Every tenant of this installation. A link opens that tenant's own shell."
+    }
+  },
+  "admin.tenants.name": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Tenant",
+    "plural": {
+      "": "Tenant"
+    }
+  },
+  "admin.tenants.slug": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Slug",
+    "plural": {
+      "": "Slug"
+    }
+  },
+  "admin.tenants.status": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Status",
+    "plural": {
+      "": "Status"
+    }
+  },
+  "admin.tenants.hosts": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Served at",
+    "plural": {
+      "": "Served at"
+    }
+  },
+  "admin.tenants.empty": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "No tenants. Run `platformkit bootstrap`.",
+    "plural": {
+      "": "No tenants. Run `platformkit bootstrap`."
+    }
+  },
+  "admin.gallery.title": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Components",
+    "plural": {
+      "": "Components"
+    }
+  },
   "admin.dialog.cancel": {
     "references": [
       "modules/admin/internal/mount.go"

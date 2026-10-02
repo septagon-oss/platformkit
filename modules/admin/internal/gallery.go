@@ -31,6 +31,11 @@ type galleryInput struct {
 
 // storybook is the only selection path, shared by index, previews, exports and
 // navigation. A configured provider is authoritative even for operator users.
+//
+// It leaves Title empty when nobody named one: the composition's own title is a
+// value the provider chose, and a name written here would be this package naming
+// another owner's screens — and an English one, on a page the tenant is served in
+// whatever language it declared. The gallery page names it (mountGallery).
 func (s Shell) storybook(ctx context.Context) (export.Storybook, error) {
 	tenant, ok := tenancy.FromContext(ctx)
 	if !ok {
@@ -44,15 +49,12 @@ func (s Shell) storybook(ctx context.Context) (export.Storybook, error) {
 			return export.Storybook{}, err
 		}
 	} else if tenant.Operator {
-		book = export.Storybook{Title: "Components", Theme: s.Theme, Examples: examples.Gallery()}
+		book = export.Storybook{Theme: s.Theme, Examples: examples.Gallery()}
 	} else {
 		return export.Storybook{}, problem.New(http.StatusForbidden, "No storybook is available for this tenant.")
 	}
 	if book.Theme == (design.Pair{}) {
 		book.Theme = s.Theme
-	}
-	if book.Title == "" {
-		book.Title = "Components"
 	}
 	return book, book.Validate()
 }
@@ -87,10 +89,16 @@ func (p pages) mountGallery(app *httpx.Router) {
 	p.mountStorybook(app)
 	auth := httpx.Permission("gallery:read")
 	page.Serve(app, p.shell, page.Route{ID: "admin-gallery", Method: http.MethodGet, Path: p.at.gallery.rel, Summary: "The tenant's component gallery"},
-		auth, func(ctx context.Context, _ page.Request, in *galleryInput) (page.View, error) {
+		auth, func(ctx context.Context, r page.Request, in *galleryInput) (page.View, error) {
 			book, err := p.storybook(ctx)
 			if err != nil {
 				return page.View{}, err
+			}
+			// The heading is this shell's word for what it is showing, in the language the
+			// tenant is served in; a composition that named its own composition keeps that
+			// name, because it is the one that knows what it chose.
+			if book.Title == "" {
+				book.Title = chrome(r, "gallery.title", "Components")
 			}
 			example, err := galleryExample(book, in)
 			if err != nil {
