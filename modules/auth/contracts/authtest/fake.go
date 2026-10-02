@@ -60,21 +60,33 @@ type Fake struct {
 	// password_tokens.created_at.
 	offered   map[uuid.UUID]time.Time
 	published []string
+
+	// The second factor's two maps, and the tenant's own row about the
+	// usernameless door. See passkeys.go for what the fake decides about them
+	// and what it deliberately does not.
+	factors       map[uuid.UUID]*fakeFactor
+	ceremonies    map[uuid.UUID]*fakeCeremony
+	passkeySignIn bool
 }
 
 // NewFake returns a fake signing people in from users.
 func NewFake(users contracts.Users) *Fake {
 	return &Fake{
-		Users:    users,
-		limiter:  contracts.NewLimiter(limit.Memory()),
-		sessions: map[uuid.UUID]contracts.Session{},
-		roles:    map[string]contracts.Permissions{},
-		offered:  map[uuid.UUID]time.Time{},
-		tokens:   map[string]uuid.UUID{},
+		Users:      users,
+		limiter:    contracts.NewLimiter(limit.Memory()),
+		sessions:   map[uuid.UUID]contracts.Session{},
+		roles:      map[string]contracts.Permissions{},
+		offered:    map[uuid.UUID]time.Time{},
+		tokens:     map[string]uuid.UUID{},
+		factors:    map[uuid.UUID]*fakeFactor{},
+		ceremonies: map[uuid.UUID]*fakeCeremony{},
 	}
 }
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service  = (*Fake)(nil)
+	_ contracts.Passkeys = (*Fake)(nil)
+)
 
 // Published is the names of the events the fake would have emitted, in order.
 func (f *Fake) Published() []string {
