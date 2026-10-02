@@ -266,7 +266,11 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 // prefix — and nothing in them reads the database, so decision 0074 rule 1 puts
 // them before the migration rather than after it. What stays on this side of the
 // migration is only what genuinely needs the connection: the pool, the transport,
-// and /ready's own probe of the schema it opened.
+// and /ready's own probe of the schema it opened. The engine answers the same gates
+// over that connection too, and migrates only after they answer, because a module's
+// Routes callback runs once on each side and one that mounted differently the
+// second time would otherwise serve a surface no gate ever read
+// (app.refuseASecondRegistration).
 func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, error) {
 	p, err := a.Plan(d)
 	if err != nil {

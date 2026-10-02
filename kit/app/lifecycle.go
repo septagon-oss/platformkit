@@ -69,7 +69,9 @@ type Runtime struct {
 // has been changed yet.
 //
 // Call it before Start. A caller that does is not unsafe, only late: Start runs
-// the gates again over the live connection and refuses the boot there.
+// the gates again over the live connection and refuses the boot there — before it
+// migrates, and with one more answer, which is whether the routes the modules
+// mounted the second time are the routes they mounted the first.
 func (a *App) Declarations() error {
 	// The recorder needs a store because httpx requires one — a belief about which
 	// tenant a host is has to be something every replica can forget — and this
@@ -83,14 +85,23 @@ func (a *App) Declarations() error {
 	}
 	dry := cache.Memory(segment)
 	defer func() { _ = dry.Close() }()
-	_, _, err = a.composeRoutes(nil, dry, true)
+	api, _, err := a.composeRoutes(nil, dry, true)
+	if api != nil {
+		// What the gates just read is what the registration on the way to serving is
+		// held to; see refuseASecondRegistration.
+		a.declaredRoutes = registeredRoutes(api)
+	}
 	return err
 }
 
-// Start migrates as the owner role, opens the application connection, builds the
-// API, runs every boot gate, and opens the transport the role names — in that
-// order, the order Run uses. Every failure returns a nil Runtime, nothing
-// listening, and everything it opened already released.
+// Start opens the application connection, builds the API, runs every boot gate,
+// migrates as the owner role, and opens the transport the role names — in that
+// order, the order Run uses. The gates come before the migration because a gate is
+// an answer about the composition and a migration is a change to the database: the
+// composition somebody has to fix is cheaper to refuse while the schema it was
+// pointed at is still the schema it was. Nothing serves before the migration, so a
+// composition that reaches a listener has its schema. Every failure returns a nil
+// Runtime, nothing listening, and everything it opened already released.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -103,9 +114,6 @@ func (a *App) Declarations() error {
 // an injected transport is the same instance both Runtimes then share, so closing
 // either releases what the other is still using. A new lifecycle needs a new App.
 func (a *App) Start(ctx context.Context) (*Runtime, error) {
-	if err := a.migrate(ctx); err != nil {
-		return nil, err
-	}
 	conn, err := a.openConn(ctx)
 	if err != nil {
 		return nil, err
@@ -118,6 +126,11 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	handler, err := a.buildAPI(ctx, conn, store)
 	if err != nil {
 		_ = conn.Close() // a composition that failed a gate is never mounted
+		_ = store.Close()
+		return nil, err
+	}
+	if err := a.migrate(ctx); err != nil {
+		_ = conn.Close()
 		_ = store.Close()
 		return nil, err
 	}

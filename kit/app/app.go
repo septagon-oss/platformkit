@@ -220,6 +220,12 @@ type App struct {
 	mods []module.Module
 	opts Options
 	log  *slog.Logger
+
+	// declaredRoutes is the composition's route signature as the dry registration
+	// left it, and nil exactly when no Declarations call preceded this Start.
+	// registeredRoutes and refuseASecondRegistration are its whole life: one
+	// registration writes it, the next one is judged against it.
+	declaredRoutes []string
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -335,7 +341,8 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
 }
 
-// Run migrates, then serves or works or both, and returns when ctx is done. It is
+// Run answers every gate, migrates, then serves or works or both, and returns
+// when ctx is done. It is
 // Start, whichever halves this process's role names, and Close; a caller that owns
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
@@ -507,7 +514,9 @@ func useJetStream(mode string, role Role) (bool, error) {
 // Two callers, one sequence: Declarations runs this before anything is migrated,
 // and buildAPI runs it again over the open connection on the way to serving. One
 // registration order and one set of gates, so the dry answer and the real one
-// cannot disagree about what a composition is.
+// cannot disagree about what a composition is — and one check, because a module's
+// Routes callback is the one part of a composition two calls can run differently,
+// and what they wrote the first time is recorded and compared.
 func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
 		Declarations: declarations,
@@ -563,6 +572,12 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 			m.Routes(api.Surfaces(m.Name))
 		}
 	}
+	// Before any gate, because every gate below reads the routes as they are and
+	// would answer a disagreement between the two registrations as some other
+	// composition's problem — usually as "this composition mounts nothing".
+	if err := a.refuseASecondRegistration(api); err != nil {
+		return nil, nil, err
+	}
 	if err := a.composeGates(api); err != nil {
 		return nil, nil, err
 	}
@@ -587,6 +602,79 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 		return nil, nil, err
 	}
 	return api, router, nil
+}
+
+// registeredRoutes is what one registration of this composition mounted: every
+// operation the recorder holds, as one line naming its method, its composed path,
+// its operation id and the authorization guarding it, sorted so the answer is a set
+// rather than a sequence. The path is the composed one, so the surface a route
+// landed on is already in it, and the recorded surface itself is not read: huma's
+// own /schemas route carries none until ValidateDeclarations stamps one, which it
+// does after this point, and a signature that read a field one pass has stamped and
+// the other has not would refuse every composition in the repository. A module's
+// Routes callback writes exactly these facts, and the kernel and the manifests
+// write them the same way in both registrations, which makes them the whole of what
+// the two registrations can disagree about.
+func registeredRoutes(api *httpx.API) []string {
+	recorded := api.Recorded()
+	lines := make([]string, 0, len(recorded))
+	for _, op := range recorded {
+		lines = append(lines, fmt.Sprintf("%s %s (%s) guarded by %v",
+			op.Method, op.Path, op.OperationID, op.Extensions[httpx.AuthExtension]))
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+// refuseASecondRegistration answers the one question the two registrations of one
+// composition can fall out over: did every module mount what it mounted the first
+// time. A module's Routes callback is not required to be repeatable —
+// kit/module.Module.Routes never said so, and an idempotent mount guard inside one
+// is a reasonable thing to have written — so the disagreement is possible, and the
+// dry pass cannot see it: what the second registration mounts is what serves.
+// Refusing at the point of the disagreement, before the migration, is what lets
+// Declarations say that the composition it gated is the composition that serves.
+func (a *App) refuseASecondRegistration(api *httpx.API) error {
+	first := a.declaredRoutes
+	if first == nil {
+		// Nobody registered this composition before this call — kit/app's own Run, a
+		// caller that starts without asking first — so there is one registration and
+		// nothing to compare it with.
+		return nil
+	}
+	live := registeredRoutes(api)
+	var bad []string
+	for _, gone := range onlyIn(first, live) {
+		bad = append(bad, "mounted before the connection and not on the way to serving: "+gone)
+	}
+	for _, added := range onlyIn(live, first) {
+		bad = append(bad, "mounted on the way to serving and not before the connection: "+added)
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return errors.New("app: invalid composition:\n  this composition registered its routes twice and answered twice:\n    " +
+		strings.Join(bad, "\n    ") +
+		"\n  a module's Routes callback runs once on the dry composition, where the gates are answered, and once on the way to serving; a callback that mounts on one of those runs and not the other serves a surface no gate ever read — mount the same routes every time Routes is called")
+}
+
+// onlyIn is every line the first registration carries that the second does not,
+// repeats included: the same route mounted twice is not the same composition as
+// that route mounted once.
+func onlyIn(first, second []string) []string {
+	count := make(map[string]int, len(second))
+	for _, line := range second {
+		count[line]++
+	}
+	var out []string
+	for _, line := range first {
+		if count[line] == 0 {
+			out = append(out, line)
+			continue
+		}
+		count[line]--
+	}
+	return out
 }
 
 // buildAPI is composeRoutes over the open connection and the store Start built,

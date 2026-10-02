@@ -71,9 +71,9 @@ app := pkit.NewApp("collect").Use(uses...).Theme(pair).Languages(copy).
 return app.Run(ctx, deployment, app.All)
 ```
 
-  - **Reused** — `kit/app` stays the engine: it migrates, opens the connection,
-    builds the API and its gates, opens the transport and serves. `pkit` adds the
-    step before it and nothing after it.
+  - **Reused** — `kit/app` stays the engine: it opens the connection, builds the
+    API and answers its gates, migrates, opens the transport and serves. `pkit`
+    adds the dry registration before all of it and nothing after it.
   - **Added** — the resolver over declared needs, provides and contributions, and
     every answer given before the first effect: no connection is opened, no
     migration runs and no port is listened on until the composition resolves and
