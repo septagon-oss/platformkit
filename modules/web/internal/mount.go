@@ -169,7 +169,8 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title s
 	v := page.View{Title: title, Revalidate: true, Language: sourceLanguage, Body: []g.Node{
 		s.header(settings, r),
 		h.Main(h.ID("content"), h.Class(clMain.Compile()),
-			components.Container(components.ContainerProps{MaxWidth: "3xl"}, main...)),
+			components.Container(components.ContainerProps{MaxWidth: "3xl"},
+				h.Div(h.Class(clMeasure.Compile()), g.Group(main)))),
 		footer(settings, r),
 	}}
 	if settings.Theme == "light" || settings.Theme == "dark" {
@@ -223,7 +224,8 @@ func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request) g.Nod
 
 func footer(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
 	return h.Footer(h.Class(clFooter.Compile()),
-		components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"}))
+		h.Div(h.Class(clFooterLine.Compile()),
+			components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"})))
 }
 
 func (s Site) nothingYet() []g.Node {

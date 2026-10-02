@@ -16,10 +16,20 @@ var (
 	clNav    = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().Gap(style.S4)
 	clMain   = style.New().PaddingX(style.S6).PaddingY(style.S8)
 	clFooter = style.New().PaddingX(style.S6).PaddingY(style.S8).FontSize(style.TextXS).TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
+	// clMeasure and clFooterLine are the site's reading measure. The container is
+	// the page's width and not a measure: an uncapped paragraph of this site runs to
+	// 156 characters of gate measure at 1440px and 232 for the footer line, which the
+	// design floor refuses above 75. Each cap is the same 64 characters counted at
+	// its own text size — 32rem at the body size the article is set in, 24rem at the
+	// xs size the footer line is — and rem is the unit that holds there whatever
+	// face the visitor has, which `ch` would not: a cap in ch widens with a font whose
+	// "0" is wide, and the floor measures the line, not the unit.
+	clMeasure    = style.New().MaxWScaled(style.MaxWLG)
+	clFooterLine = style.New().MaxWScaled(style.MaxWSM)
 )
 
 func lists() []style.ClassList {
-	return []style.ClassList{clPage, clHeader, clBrand, clLogo, clTitle, clNav, clMain, clFooter}
+	return []style.ClassList{clPage, clHeader, clBrand, clLogo, clTitle, clNav, clMain, clFooter, clMeasure, clFooterLine}
 }
 
 // prose styles what the Markdown renderer emits inside an article. The
