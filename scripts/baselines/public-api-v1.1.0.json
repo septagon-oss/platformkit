@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "2e4b3d94c3cd5db339e76b39ce29b66c6f0b8f79"
+    "candidate": "7799ceaa3e92c3810f0304d4ab6ffac8482bfe5b"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -55,9 +55,11 @@
     "./modules/user/contracts.Service.Holders: added",
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/web.Deps: old is comparable, new is not",
+    "./ui/forms.Options: old is comparable, new is not",
     "./ui/page.Serve: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I]) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I])",
     "./ui/resource.Options.Root: removed",
     "./ui/resource.Path: removed",
+    "./ui/screens.CatalogVersion: value changed from 1 to 2",
     "./ui/screens.Mount: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, github.com/septagon-oss/platformkit/ui/page.Shell, Options, github.com/septagon-oss/platformkit/kit/httpx.Resource) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, github.com/septagon-oss/platformkit/ui/page.Shell, Options, github.com/septagon-oss/platformkit/kit/httpx.Resource)",
     "./ui/screens.Path: removed"
   ]
