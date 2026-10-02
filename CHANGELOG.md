@@ -202,10 +202,10 @@ that default: the accent is body copy on a light canvas in one mode and on a dar
 in the other, which needs those two grounds 4.5 x 4.5 = 20.25:1 apart, and
 `design.Default()` puts them 18.28:1 apart — of 32768 colours sampled on a step of 8 in
 each channel it issues none unchanged in both modes. So `DefaultPrimaryColor`, the
-column default (`000019`) and the form now name *no colour*, `Validate` fills in
+column default (`000041`) and the form now name *no colour*, `Validate` fills in
 nothing, and a site that holds none is painted the accent of the palette its own sheet
 links, mode by mode, which is the colour that palette's gate certified. A row that
-already carries a colour keeps it: `000019` moves the default and runs no `UPDATE`,
+already carries a colour keeps it: `000041` moves the default and runs no `UPDATE`,
 because a migration cannot tell the colour somebody typed from the default that used to
 be there. What stays open is the wire — the field's `pattern` still refuses an empty
 string, so a client says "none" by leaving the field out, and widening that pattern is a
