@@ -78,8 +78,14 @@ and repeat these checks against their own examples and private asset routes.
 Everything the shell itself writes — sidebar, header, theme toggle, the confirm
 dialog, the account form — goes through `chrome(r, key, fallback)` in
 `modules/admin/internal/mount.go` and `account.go`, with the keys in
-`modules/admin/messages/en.json` and `pt-PT.json`. A literal that skips it is a
-sentence an implementation of a different language can never say.
+`modules/admin/messages/en.json` and `pt-PT.json`. The hand-written pages take the
+same route: `roles.go` says `admin.roles.*`, the tenant switcher in `pages.go` says
+`admin.tenants.*`, and the gallery's own heading says `admin.gallery.title`. A
+literal that skips it is a sentence an implementation of a different language can
+never say, on a page that will still declare the language it was asked in. Where a
+nav entry names one of these two pages this shell wrote, the entry's own module is
+asked first and this shell's title for the page answers when nobody did — see
+`navLabel`.
 
 ### Interface
 
@@ -101,10 +107,13 @@ sentence an implementation of a different language can never say.
 
 ### Limits
 
-No pseudo-locale exists in this repository and nothing claims one: `catalogue.go`
-says what the English file is for, which is the loader's source language and the
-parity check, not a transform. The module writes no page of its own about content
-translation and knows nothing about which content exists in which language.
+The pseudo-locale is `kit/locale/providers/xtext`'s `Pseudo`, not this module's: a
+composition opts into `en-XA`, and the answer is these same keys with every letter
+accented and every sentence bracketed. It transforms copy, so it cannot tell a word
+the code supplied from one a person did — a tenant's own name, a role name and a
+permission identifier arrive accented too, and those are data rather than copy. The
+module writes no page of its own about content translation and knows nothing about
+which content exists in which language.
 
 The account control's empty option — the one that takes the choice back — carries this
 module's words, `admin.account.unset`, and is selectable: `ui/components` disables an
