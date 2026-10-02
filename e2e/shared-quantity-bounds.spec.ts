@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 for (const language of ['en', 'pt-PT']) {
-  test(`review 6: served quantity keeps exact bounds and localized validity (${language})`, async ({ page }) => {
+  test(`served quantity keeps exact bounds and localized validity (${language})`, async ({ page }) => {
     await page.goto('/app/admin/login');
     await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
     await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
