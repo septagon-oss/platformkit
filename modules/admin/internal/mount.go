@@ -265,7 +265,10 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 		}
 		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages)
 		return g.Group([]g.Node{
-			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
+			components.Shell(components.ShellProps{
+				SkipTarget: "content",
+				SkipLabel:  chrome(r, "shell.skip", "Skip to content"),
+			}, components.ShellSlots{
 				Sidebar: []g.Node{components.Sidebar(navigation)},
 				Header:  header(ctx, deps, r, navigation),
 				Main:    body,
@@ -273,9 +276,29 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{
-				Title: chrome(r, "dialog.title", "Are you sure?")}),
+				Title:       chrome(r, "dialog.title", "Are you sure?"),
+				CancelLabel: chrome(r, "dialog.cancel", "Cancel"),
+				AcceptLabel: chrome(r, "dialog.delete", "Delete")}),
 		})
 	}
+}
+
+// navLabel is a module's nav entry, in the language this request is answered in.
+//
+// The entry's Label is the module's own sentence, written where the module declares
+// the screen. The key comes from the entry's Screen and never from its Label,
+// because a label is exactly what a translation is allowed to change and a screen
+// is not. The words belong to the module that declared the entry — nav.user.users
+// is answered in modules/user's catalogue, and nothing in this package holds it —
+// which is the rule a permission label already follows. An entry nobody translated
+// is answered in the language its module wrote it in.
+func navLabel(r page.Request, entry module.NavEntry) string {
+	if r.Locale == nil {
+		return entry.Label
+	}
+	key := "nav." + strings.ReplaceAll(
+		strings.TrimPrefix(entry.Screen, httpx.AppRoot+"/"), "/", ".")
+	return r.Locale.Text(key, entry.Label)
 }
 
 // sidebar is the navigation: the dashboard, what the caller may reach, and the
@@ -285,7 +308,7 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, maySetLanguages bool) components.SidebarProps {
 	items := []components.SidebarItem{{Label: chrome(r, "nav.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
-		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
+		items = append(items, components.SidebarItem{Label: navLabel(r, entry), Href: entry.Screen, Icon: "file-text"})
 	}
 	// A tenant's own languages, in its own namespace, offered to whoever the
 	// authorizer says may set them — the same answer the page's guard gives, so the

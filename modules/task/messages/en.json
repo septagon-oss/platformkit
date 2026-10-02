@@ -23,5 +23,14 @@
     "plural": {
       "": "write tasks"
     }
+  },
+  "nav.task.tasks": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Tasks",
+    "plural": {
+      "": "Tasks"
+    }
   }
 }

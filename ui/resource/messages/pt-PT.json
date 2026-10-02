@@ -95,5 +95,32 @@
     "plural": {
       "": "Caminho"
     }
+  },
+  "screens.choose": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Escolher…",
+    "plural": {
+      "": "Escolher…"
+    }
+  },
+  "screens.cancel": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Cancelar",
+    "plural": {
+      "": "Cancelar"
+    }
+  },
+  "screens.save": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Guardar",
+    "plural": {
+      "": "Guardar"
+    }
   }
 }

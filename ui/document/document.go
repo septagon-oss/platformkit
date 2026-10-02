@@ -147,7 +147,7 @@ func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 	// and it is derived here, from the tag, rather than passed in, because a fact
 	// with one source should not have two ways to be wrong.
 	attrs = append(attrs, g.Attr("dir", Direction(language)))
-	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c), sessionNotice(c)))...)
+	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c, r), sessionNotice(c)))...)
 }
 
 // rtlScripts are the base languages whose ordinary modern text is written right
@@ -207,15 +207,37 @@ func sessionNotice(c Chrome) g.Node {
 
 // Notices are source-rendered components, not HTML rebuilt by a controller.
 // They stay outside the form's swap target; its input is never serialized.
-func requestNotices(c Chrome) g.Node {
+//
+// The wrapper declares the language of the sentence it actually holds. That is the
+// request's selected language where a shell negotiated one — the copy then comes
+// from the same catalogue the page around it is written from, so a controller that
+// clones one of these into the live page puts a sentence in the reader's language
+// in front of them — and "en" wherever no language was negotiated, which is the
+// language the sentences were written in. Declaring the document's language over
+// English copy would be a wrapper that lies about what is inside it, which is why
+// this reads the locale and not the chrome.
+func requestNotices(c Chrome, r Request) g.Node {
 	if !slices.Contains(c.Scripts, "htmx-config.js") {
 		return nil
 	}
+	language := "en"
+	if r.Locale != nil {
+		language = r.Locale.Language
+	}
 	var nodes []g.Node
-	for _, example := range RequestNoticeExamples(c.SignIn) {
-		nodes = append(nodes, h.Div(h.ID(example.ID), h.Hidden(""), h.Lang("en"), g.Attr("data-request-notice", ""), example.Node))
+	for _, example := range requestNoticeExamples(c.SignIn, r.text) {
+		nodes = append(nodes, h.Div(h.ID(example.ID), h.Hidden(""), h.Lang(language), g.Attr("data-request-notice", ""), example.Node))
 	}
 	return g.Group(nodes)
+}
+
+// text is one request's words: the catalogue's in the language it selected, the
+// source sentence when the request carries no locale at all.
+func (r Request) text(key, fallback string) string {
+	if r.Locale == nil {
+		return fallback
+	}
+	return r.Locale.Text(key, fallback)
 }
 
 // RequestNoticeExamples captures the visible content Document serves for request
@@ -230,6 +252,16 @@ func requestNotices(c Chrome) g.Node {
 // caller's to have checked. ui/page.RequestNoticeExamples applies the kernel's
 // local-path rule before calling this, so a shell reaches the rule through it.
 func RequestNoticeExamples(signIn string) []examples.Example {
+	return requestNoticeExamples(signIn, func(_ string, fallback string) string { return fallback })
+}
+
+// requestNoticeExamples is RequestNoticeExamples with the sentences supplied by
+// whoever is reading them. The exported form is the design gallery's — one
+// component, in the language it was written in, shown to a reader with no request
+// in front of them; a page's own notices are the same sentences read through that
+// request's catalogue. One list of them exists here, which is why the words are
+// parameters of this function and not two copies of the same sentences.
+func requestNoticeExamples(signIn string, text func(key, fallback string) string) []examples.Example {
 	var captures []examples.Example
 	for _, notice := range []struct {
 		kind, title, message string
@@ -240,14 +272,15 @@ func RequestNoticeExamples(signIn string) []examples.Example {
 		{"changed", "Account changed", "Sign in with the account that opened this page before submitting again. Keep this page open to retain your input.", true},
 		{"uncertain", "Check the result", "The request outcome is unknown. Keep this page open and check whether the action completed before trying again.", false},
 	} {
+		title := text("fault.request."+notice.kind+".title", notice.title)
 		body := []g.Node{examples.ExampleWithSlots(
 			examples.ExampleInfo{ID: "message", ComponentID: "pk-ui.component.alert"},
-			components.AlertProps{Tone: "danger", Title: notice.title, Message: notice.message, Bordered: true},
+			components.AlertProps{Tone: "danger", Title: title, Message: text("fault.request."+notice.kind+".message", notice.message), Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node}
 		if notice.signin && signIn != "" {
 			body = append(body, examples.ExampleOf(
 				examples.ExampleInfo{ID: "sign-in", ComponentID: "pk-ui.component.link"},
-				components.LinkProps{Label: "Sign in (opens a new tab)", Href: signIn, External: true}, components.Link).Node)
+				components.LinkProps{Label: text("fault.request.sign_in", "Sign in (opens a new tab)"), Href: signIn, External: true}, components.Link).Node)
 		}
 		captures = append(captures, examples.ExampleWithChildren(
 			examples.ExampleInfo{ID: "pk-auth-" + notice.kind, ComponentID: "pk-ui.component.stack", Group: "Request recovery", Name: notice.title},

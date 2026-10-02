@@ -277,5 +277,32 @@
     "plural": {
       "": "Idiomas guardados."
     }
+  },
+  "admin.shell.skip": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Saltar para o conteúdo",
+    "plural": {
+      "": "Saltar para o conteúdo"
+    }
+  },
+  "admin.dialog.cancel": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Cancelar",
+    "plural": {
+      "": "Cancelar"
+    }
+  },
+  "admin.dialog.delete": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Eliminar",
+    "plural": {
+      "": "Eliminar"
+    }
   }
 }

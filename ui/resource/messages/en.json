@@ -95,5 +95,32 @@
     "plural": {
       "": "Breadcrumb"
     }
+  },
+  "screens.choose": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Choose…",
+    "plural": {
+      "": "Choose…"
+    }
+  },
+  "screens.cancel": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Cancel",
+    "plural": {
+      "": "Cancel"
+    }
+  },
+  "screens.save": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Save",
+    "plural": {
+      "": "Save"
+    }
   }
 }

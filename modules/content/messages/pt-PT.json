@@ -23,5 +23,14 @@
       "one": "Item de conteúdo",
       "other": "Itens de conteúdo"
     }
+  },
+  "nav.content.contents": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Conteúdos",
+    "plural": {
+      "": "Conteúdos"
+    }
   }
 }

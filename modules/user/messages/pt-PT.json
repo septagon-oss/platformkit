@@ -32,5 +32,50 @@
       "one": "Utilizador",
       "other": "Utilizadores"
     }
+  },
+  "nav.user.users": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Utilizadores",
+    "plural": {
+      "": "Utilizadores"
+    }
+  },
+  "field.displayName": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Nome visível",
+    "plural": {
+      "": "Nome visível"
+    }
+  },
+  "field.createdAt": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Criado em",
+    "plural": {
+      "": "Criado em"
+    }
+  },
+  "field.updatedAt": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Atualizado em",
+    "plural": {
+      "": "Atualizado em"
+    }
+  },
+  "field.roles": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Funções",
+    "plural": {
+      "": "Funções"
+    }
   }
 }
