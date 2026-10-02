@@ -124,7 +124,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
 	//
-	// The frame's floor fixes (T-0234) move it again, twice over: three utilities
+	// The frame's floor fixes move it again, twice over: three utilities
 	// and one colour pair join the sheet for the brand link, the footer's bound and
 	// the heading break, and then the inverse sidebar column gains a text colour and
 	// the breadcrumb a break rule. A leaf-by-leaf diff before and after those two
