@@ -215,10 +215,10 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 		// errors.Is reaches either half.
 		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrSelfReview)
 	}
-	if !row.Open() {
-		// The replay of the same verdict is the decision already made, said once; a
-		// different one is a conflict, because the verdict is the part of this row an
-		// audit relies on and a retry is not a correction of it.
+	if row.State != contracts.StateProposed {
+		// A verdict is one-way: review is legal only from proposed. Open() is the wrong
+		// question — an approved row still expects its apply but holds its verdict: the
+		// reviewer's own same verdict again, otherwise a conflict, and the row stands.
 		if row.Verdict == verdict && row.Reviewer != nil && *row.Reviewer == reviewer {
 			return row, nil
 		}

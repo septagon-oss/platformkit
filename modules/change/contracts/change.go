@@ -159,9 +159,9 @@ func (p *Proposal) Validate(context.Context) error {
 	return nil
 }
 
-// Open reports whether this proposal still expects a decision — which is the
-// question the unique index over (tenant, subject, digest) asks, and the reason a
-// screen that submits twice gets the same proposal back.
+// Open reports whether this proposal is still in the queue — what the unique index
+// over (tenant, subject, digest) asks, and why a screen that submits twice gets one
+// row. An approved row is open because its apply is owed, not another verdict.
 func (p *Proposal) Open() bool { return p.State == StateProposed || p.State == StateApproved }
 
 // NewProposal is what a proposer puts forward: the subject, the change and one
@@ -223,10 +223,10 @@ type Service interface {
 	// List reads a page of them, newest first.
 	List(ctx context.Context, tx db.Tx[db.Tenant], q Query) ([]*Proposal, int64, error)
 
-	// Review decides. The verdict must come from an account that is not the
-	// proposer's, at the row's exact revision; the same verdict from the same
-	// reviewer again changes nothing and says nothing, and a different one is a
-	// conflict, because the verdict is on the record.
+	// Review decides, and only ever from `proposed`: the verdict must come from an
+	// account that is not the proposer's, at the row's exact revision. Past that
+	// state the same verdict from the same reviewer again changes nothing and says
+	// nothing, and any other is a conflict, because the verdict is on the record.
 	Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in Review) (*Proposal, error)
 
 	// Apply writes the change. It refuses unless the actor is not the proposer, the
