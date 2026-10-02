@@ -10,7 +10,7 @@ import (
 	g "maragu.dev/gomponents"
 )
 
-func TestReviewRound2AbsentDetailsRefuseEveryProtectedSlot(t *testing.T) {
+func TestAbsentDetailsRefuseEveryProtectedSlot(t *testing.T) {
 	child := examples.ExampleOf(examples.ExampleInfo{ID: "review/private-content", ComponentID: "pk-ui.component.text"},
 		c.TextProps{Content: "private previous selection"}, c.Text)
 	for _, kind := range []string{"side-panel", "detail-sheet"} {

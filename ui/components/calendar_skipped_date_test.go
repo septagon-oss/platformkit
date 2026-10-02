@@ -11,14 +11,14 @@ import (
 	c "github.com/septagon-oss/platformkit/ui/components"
 )
 
-func TestReviewRound2CalendarTerminatesAcrossASkippedCivilDate(t *testing.T) {
+func TestCalendarTerminatesAcrossASkippedCivilDate(t *testing.T) {
 	// Isolate a nonterminating renderer so a regression cannot leave a goroutine
 	// allocating memory throughout the rest of the package's test suite.
 	const child = "PLATFORMKIT_REVIEW_CALENDAR_CHILD"
 	if os.Getenv(child) != "1" {
 		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
 		defer cancel()
-		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestReviewRound2CalendarTerminatesAcrossASkippedCivilDate$")
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCalendarTerminatesAcrossASkippedCivilDate$")
 		cmd.Env = append(os.Environ(), child+"=1")
 		output, err := cmd.CombinedOutput()
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {

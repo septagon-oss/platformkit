@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
 // skipped-date loop. Use the event identity as the positive reachability check;
 // a localized error message or a particular failure status is not the contract.
 for (const language of ['en', 'pt-PT']) {
-  test(`review 3: calendar refuses skipped dates without partial output and recovers (${language})`, async ({ page }) => {
+  test(`calendar refuses skipped dates without partial output and recovers (${language})`, async ({ page }) => {
     await page.goto('/app/admin/login');
     await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
     await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);

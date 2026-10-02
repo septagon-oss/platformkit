@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 for (const language of ['en', 'pt-PT']) for (const javaScriptEnabled of [false, true]) {
-  test.describe(`review 8: slot-picker native availability (${language}, JavaScript ${javaScriptEnabled})`, () => {
+  test.describe(`slot-picker native availability (${language}, JavaScript ${javaScriptEnabled})`, () => {
     test.use({ javaScriptEnabled });
 
     test('the served Gallery preserves eligible choices and refuses stale or unavailable choices', async ({ page }) => {
