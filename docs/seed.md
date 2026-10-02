@@ -3,11 +3,11 @@
 This is the intended contract for `kit/seed`. Delivered: the loader, reference
 orderer, date resolver, state comparator, generic writer service, tenant bridge
 and provenance migrations, the reference application's two writers and its
-`platformkit seed` command with `make seed`, and the starter and demo fixtures
-under `apps/platformkit/seed/`. Not delivered: the tenant-create hook — which
-needs the provisioning permit below and nothing weaker — and a permit type, an
-`--as` grant check beyond the composition's own authorizer, the typed `Problem`
-codes and the audit column for a file and line. Where this document says
+`platformkit seed` command with `make seed`, the starter and demo fixtures under
+`apps/platformkit/seed/`, the tenant-create hook that applies the starter to a
+tenant being created, and the audit columns that name `seed` and cite the file and
+line. Not delivered: a permit type, an `--as` grant check beyond the composition's
+own authorizer, and the typed `Problem` codes. Where this document says
 `RunCommand`, the kernel door is `app.RunCommand`. Original trace:
 `20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
 The existing consumer is the reference application's literal module composition in
