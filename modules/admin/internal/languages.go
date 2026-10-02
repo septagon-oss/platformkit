@@ -18,8 +18,8 @@ package internal
 // One screen holds the default and the set, and the review step above the save names
 // what removing a language can cost. A two-step disclosure with progress is the
 // brief's shape for this, and the drawer and stepper that would carry it are not in
-// this repository yet — T-0181 owns them, and this page takes the Section and Select
-// that exist over an invented imitation of a stepper.
+// this repository yet — T-0181 owns them, and this page takes the heading, Select and
+// Checkbox the foundation has over an invented imitation of a stepper.
 
 import (
 	"context"
@@ -129,51 +129,78 @@ func (p pages) languagesView(ctx context.Context, r page.Request, detail string)
 		}))
 	}
 	title := text("title", "Languages")
+	// One content column, measured rather than asserted:
+	// e2e/tenant-languages-design.spec.ts reads the left edge of every heading and
+	// paragraph at 390 and at 1440 and refuses more than two columns — this page's
+	// copy at one edge and the shell header's own account block at the other. That
+	// is why nothing on this page is boxed. An Alert sits behind a border, four
+	// steps of padding and a 36px icon disc with a gap beside it, which put its
+	// sentence 68px in from the page edge and made a third column out of one
+	// sentence; a Section behind a Container's padding made a fourth out of the
+	// group heading. Both were indistinguishable from the drift the floor exists to
+	// catch: copy that agrees with nothing around it.
 	body := []g.Node{
 		components.Toolbar(components.ToolbarProps{
 			Title: title, Subtitle: text("available", "Languages this installation can serve.")}),
 	}
-	if detail != "" {
-		body = append(body, components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}))
+	// The refusal and the receipt are a line of copy under the title in the tone the
+	// state deserves, carrying the live region that makes a screen reader say it
+	// without a reload — `role="alert"` for a write that was refused and wrote
+	// nothing, `role="status"` for one that went in. They land where the page's own
+	// subtitle lands, so reading the page top-down gives title, what happened,
+	// what is on offer.
+	switch {
+	case detail != "":
+		body = append(body, components.Text(components.TextProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"role": "alert"}},
+			Content:        detail,
+			Color:          "danger",
+			Element:        "p",
+		}))
+	case justSaved:
+		body = append(body, components.Text(components.TextProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"role": "status"}},
+			Content:        text("saved", "Languages saved."),
+			Color:          "success",
+			Element:        "p",
+		}))
 	}
-	body = append(body,
-		components.Form(components.FormProps{Action: p.at.languages.at, Label: title},
-			components.Select(components.SelectProps{
-				Name:     "default",
-				Label:    text("default", "Default language"),
-				Value:    current.Default,
-				Options:  options,
-				Required: true,
-			}),
-			components.Input(components.InputProps{
-				Name:  "localeRevision",
-				Type:  "hidden",
-				Value: strconv.FormatInt(current.Revision, 10),
-			}),
-			components.Section(components.SectionProps{Gap: "4"}, components.SectionSlots{
-				Header: []g.Node{components.SectionHeader(components.SectionHeaderProps{
-					Title: text("other", "Other languages")})},
-				Body: others,
-			}),
-			// The review step. It is above the save rather than behind it because what
-			// it warns about is the write, not a step of a wizard: removing a language
-			// can hide the translations content already holds in it. The content module
-			// keeps no inventory of what is translated into what, so this is the truthful
-			// generic warning and not a count — and a count invented here would be a
-			// number this repository cannot check.
-			components.Alert(components.AlertProps{
-				Tone: "warning", Bordered: true,
-				Message: text("remove_warning", "Removing a language can hide its content translations. Review them before saving."),
-			}),
-			components.FormActions(components.FormActionsProps{},
-				components.Button(components.ButtonProps{
-					Label: text("save", "Save languages"), Type: "submit"})),
-		))
-	if justSaved {
-		body = append([]g.Node{components.Alert(components.AlertProps{
-			Tone: "success", Bordered: true, Message: text("saved", "Languages saved."),
-		})}, body...)
+	fields := []g.Node{
+		components.Select(components.SelectProps{
+			Name:     "default",
+			Label:    text("default", "Default language"),
+			Value:    current.Default,
+			Options:  options,
+			Required: true,
+		}),
+		components.Input(components.InputProps{
+			Name:  "localeRevision",
+			Type:  "hidden",
+			Value: strconv.FormatInt(current.Revision, 10),
+		}),
+		// The review step, as the heading over the ticks it warns about. It is above
+		// the save rather than behind it because what it warns about is the write, not
+		// a step of a wizard: removing a language can hide the translations content
+		// already holds in it. The content module keeps no inventory of what is
+		// translated into what, so this is the truthful generic warning and not a
+		// count — and a count invented here would be a number this repository cannot
+		// check. SectionHeader is the heading-and-copy block the foundation already
+		// composes page introductions out of, and it carries no box of its own.
+		//
+		// The design system has no <fieldset>, so the group is named by the heading
+		// printed over it rather than by a legend: every tick is still labelled by
+		// the language tag it is for, so nothing here is an unnamed control.
+		components.SectionHeader(components.SectionHeaderProps{
+			Level:       2,
+			Title:       text("other", "Other languages"),
+			Description: text("remove_warning", "Removing a language can hide its content translations. Review them before saving."),
+		}),
 	}
+	fields = append(fields, others...)
+	fields = append(fields, components.FormActions(components.FormActionsProps{},
+		components.Button(components.ButtonProps{
+			Label: text("save", "Save languages"), Type: "submit"})))
+	body = append(body, components.Form(components.FormProps{Action: p.at.languages.at, Label: title}, fields...))
 	return page.View{Title: title, Body: body}, nil
 }
 
