@@ -121,6 +121,32 @@ jobs:
           docker logs "$container"
           exit 1
 
+      # The development mail catcher, on this job's network under the name the e2e
+      # step's environment names. compose.yaml's mailpit service is the same image
+      # and the same ports: the journeys that open a mailed link read it from here,
+      # so the mail path they exercise — SMTP out of the application, the link back
+      # into a browser — is the one a developer gets from `make up`, not a stand-in
+      # the job invented. Started by hand for the same reason as NATS: this job
+      # stands up its own services rather than the compose stack whose localhost
+      # defaults belong to a workstation.
+      - name: Start the mail catcher
+        id: mailpit
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-mailpit
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias mailpit \
+            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://mailpit:8025/api/v1/info >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit
@@ -209,6 +235,14 @@ jobs:
       # named it said nothing about it. It now follows the Go gates and its own
       # browser, and the budget verdict still runs after it.
       - name: make e2e
+        # The catcher this job started earlier, under the alias its network gives it
+        # (`Start the mail catcher`, beside the object store). scripts/e2e.sh refuses
+        # to boot the application without one, and a localhost default is not
+        # reachable from a job that runs its services by service name.
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
         run: make e2e
 
       # The editor images are built and driven here rather than in `design` for one
@@ -347,12 +381,14 @@ jobs:
         env:
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
           VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
+          MAILPIT_CONTAINER: ${{ steps.mailpit.outputs.container }}
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           NATS_NAME: platformkit-${{ github.run_id }}-nats
           VALKEY_NAME: platformkit-${{ github.run_id }}-valkey
+          MAILPIT_NAME: platformkit-${{ github.run_id }}-mailpit
           EDITOR_NAME: platformkit-${{ github.run_id }}-editor
           PREVIEW_NAME: platformkit-${{ github.run_id }}
         run: |
@@ -372,6 +408,7 @@ jobs:
           }
           drop "$NATS_CONTAINER" "$NATS_NAME"
           drop "$VALKEY_CONTAINER" "$VALKEY_NAME"
+          drop "$MAILPIT_CONTAINER" "$MAILPIT_NAME"
           drop "$EDITOR_CONTAINER" "$EDITOR_NAME"
           drop "$PREVIEW_CONTAINER" "$PREVIEW_NAME-latin"
           drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"
