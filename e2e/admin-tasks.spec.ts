@@ -37,7 +37,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
   await page.getByLabel('Due At').fill('2026-12-01T14:30');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
 
   // The write redirects to the row it created.
   await expect(page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
@@ -55,7 +55,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Title').fill(renamed);
   await page.getByLabel('Description').fill('');
   await page.getByLabel('Due At').fill('');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).toHaveURL(row);
   await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
   await page.goto(`${row}/edit`);
@@ -74,7 +74,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
 
 test('an empty title is refused on the form rather than by a page of JSON', async ({ page }) => {
   await page.goto('/app/task/tasks/new');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   // The browser's own required check fires first, which is the point of
   // rendering it: the request is never made.
   await expect(page.getByLabel('Title')).toBeFocused();
@@ -100,14 +100,14 @@ test('a refused generated edit retains command-owned values for the retry', asyn
   await page.getByLabel('Title').fill('   ');
   const rejected = page.waitForResponse(response =>
     new URL(response.url()).pathname === `/app/task/tasks/${task.id}` && response.request().method() === 'POST');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   expect((await rejected).status()).toBe(422);
   await expect(page.getByRole('alert').first()).toContainText('a task needs a title');
   await expect(assignee).toHaveValue(assigneeId);
   await expect(assignee).toHaveJSProperty('readOnly', true);
 
   await page.getByLabel('Title').fill('Corrected title keeps its assignment');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`/app/task/tasks/${task.id}$`));
   const saved = await page.request.get(taskPath);
   expect(saved.status()).toBe(200);

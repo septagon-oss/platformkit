@@ -60,7 +60,7 @@ test.beforeAll(async ({ browser }) => {
   await page.getByLabel('Title').fill('Design audit specimen');
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Long enough that the description column has a real width to report.');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`${tasks}/[0-9a-f-]{36}$`));
   await context.close();
 });

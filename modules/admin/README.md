@@ -106,6 +106,22 @@ says what the English file is for, which is the loader's source language and the
 parity check, not a transform. The module writes no page of its own about content
 translation and knows nothing about which content exists in which language.
 
+The account control's empty option — the one that takes the choice back — is labelled
+by `ui/components`'s own placeholder fallback, "Choose…", and not by
+`admin.account.unset`: the component renders a caller's `Placeholder` disabled, so a
+translated placeholder would be an unselectable one and the choice could never be
+withdrawn. The word is the design layer's, not this module's, and it is the
+foundation's to decide; what is on offer is a `PlaceholderSelectable` prop or its
+equivalent, which no consumer here asks for yet. `e2e/account-language.spec.ts`
+selects the empty option by value for that reason.
+
+Because the account form is a `Form` with its own submit control, every signed-in page
+carries two submit buttons: the page's own and `Save language`. They are distinct
+accessible names — which is why the shell puts the noun in the label rather than
+depending on where the button sits — and `e2e/admin-tasks.spec.ts` and
+`e2e/design-audit.spec.ts` match the page's own `Save` with `exact: true` for the same
+reason: a substring match would find the shell's control and fail strict mode.
+
 ### Verification
 
 `modules/admin/internal/mount_test.go` and `modules/admin/module_test.go` cover the
