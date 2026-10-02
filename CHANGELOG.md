@@ -244,10 +244,10 @@ configured nothing is installed at all, which is cheaper than a no-op, and an un
 fails no boot, moves no health verdict and does not decide an exit code: `kit/health` reports its
 last success as a reading an operator sees, not as a check, and the last flush of a process that is
 leaving is a log line. The reading is kept per export, because the spans and the numbers are two
-services on two schedules: the record that held one answer for both let a metric tick that arrived
-clear a span batch that did not, and the reading an operator asked about the trace pipeline was
-answered with the metric pipeline's delivery. The half that failed is named; the half nobody asked
-about yet is silent rather than assumed down. A bare `host:port` is accepted as the unencrypted endpoint it names, which
+services on two schedules: one answer for both let a metric tick that arrived clear a span batch
+that did not, and an operator asking about traces was answered with the metric pipeline's delivery.
+The half that failed is named; the half nobody asked about yet is silent rather than assumed down.
+A bare `host:port` is accepted as the unencrypted endpoint it names, which
 is the form the example file prints. A composition notices one change: `health.Register` and
 `health.Mux` now take the checks as one slice and the reports as a trailing variadic, so the call
 that passed `Check` values passes `[]health.Check{…}`; each report then runs on the readiness
