@@ -36,15 +36,25 @@
 # this file invented from an environment variable it cannot check would be a broker
 # that never starts.
 #
-# CI_RESOURCES_FILE names the same output file for a rehearsal run outside a job
-# (scripts/ci_setup_test.sh); CI_SETUP_PROBE=fake answers the readiness waits without
-# a server, for the same rehearsal, and fakes nothing else. Nothing reads either
-# variable except this file and that one.
+# CI_RESOURCES_FILE names the same output file for a rehearsal (scripts/ci_setup_test.sh),
+# and it outranks GITHUB_OUTPUT wherever both are set. That is not a convenience: the
+# rehearsal does not run outside a job — `make check` runs it inside one, where the runner
+# has exported GITHUB_OUTPUT for that job's own step outputs — and a script that preferred
+# the ambient file wrote the rehearsal's fake container ids into the job's record (ci.yml
+# run 46460, job go-checks: `make check` handed the cleanup step four `nats=fake-nats-1`
+# lines and then failed reading its own fixture, which nothing had written). The variable
+# a caller named for *this* run is the record this run writes; the one the environment
+# happens to carry is the fallback. No workflow sets CI_RESOURCES_FILE, so the order is
+# invisible to a real job and decisive for the rehearsal.
+#
+# CI_SETUP_PROBE=fake answers the readiness waits without a server, for the same
+# rehearsal, and fakes nothing else. Nothing reads either variable except this file and
+# that one.
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
-resources="${GITHUB_OUTPUT:-${CI_RESOURCES_FILE:-}}"
+resources="${CI_RESOURCES_FILE:-${GITHUB_OUTPUT:-}}"
 probe="${CI_SETUP_PROBE:-}"
 
 # The image the workflow pinned before this file existed, digest for digest.

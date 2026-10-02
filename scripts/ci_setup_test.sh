@@ -18,8 +18,15 @@ setup="$root/scripts/ci_setup.sh"
 cleanup="$root/scripts/ci_cleanup.sh"
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
+# `fail` counts, it does not set a flag. It used to write `failed=1`, and `say_ok` asks
+# whether the count moved since the case began — so from the second failing case onwards
+# every case printed `ok` beside its own FAIL. ci.yml run 46460 shows it: `ok a broker the
+# job named is named on the container` on the line after `FAIL: the named broker left the
+# cleanup step no id either`. A gate that says `ok` about a case that failed is the thing
+# this task exists to remove, so the counter is the fix and `check_budget_ratchet_test.sh`
+# already wrote it this way. The exit code stays any non-zero count on a red run.
 failed=0
-fail() { echo "FAIL: $*" >&2; failed=1; }
+fail() { echo "FAIL: $*" >&2; failed=$((failed + 1)); }
 say_ok() { if [ "$failed" = "${start:-0}" ]; then echo "ok   $*"; fi; }
 
 # The fake docker: it prints an id built from its arguments' last word, so an
@@ -115,6 +122,27 @@ grep -q '^rm -f platformkit-77-go-checks-nats$' "$DOCKER_LOG" || fail "nothing d
 grep -q '^nats=fake-nats-1$' "$fixture/res" || fail "the named broker left the cleanup step no id either: $(cat "$fixture/res")"
 say_ok "a broker the job named is named on the container, and the name is cleared first"
 
+start=$failed
+# case 5c — which record wins when both are named. This file is run by `make check`, which
+# runs *inside* a CI job, and there the runner exports GITHUB_OUTPUT for that job's own step
+# outputs. A setup script that preferred the ambient file over the one the rehearsal named
+# wrote every fake id below into the job's record — ci.yml run 46460, job go-checks: the
+# step's output file ended up holding four `nats=fake-nats-1` lines, and cases 5 and 5b
+# failed reading a fixture nothing had written (`FAIL: nats app-role: 0 output lines`).
+# No workflow sets CI_RESOURCES_FILE, so only this case can see the precedence: the file a
+# caller names for this run is where the record goes, and the runner's own stays empty.
+: >"$DOCKER_LOG"
+: >"$fixture/res"
+: >"$fixture/job-output"
+GITHUB_OUTPUT="$fixture/job-output" CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net \
+	CI_SETUP_PROBE=fake bash "$setup" nats >/dev/null
+grep -q '^nats=fake-nats-1$' "$fixture/res" \
+	|| fail "CI_RESOURCES_FILE lost to GITHUB_OUTPUT: the rehearsal's own record holds: $(cat "$fixture/res")"
+[ ! -s "$fixture/job-output" ] \
+	|| fail "the rehearsal wrote the job's own \$GITHUB_OUTPUT: $(cat "$fixture/job-output")"
+say_ok "the record the rehearsal names wins over the runner's, which stays empty"
+
+start=$failed
 # case 6 — with the health answers not faked, both units ask the server first: the
 # role step waits for the service rather than racing it.
 export TOOL_LOG="$fixture/tools2.log"
@@ -126,6 +154,7 @@ grep -q 'curl -fsS http://nats:8222/healthz' "$fixture/tools2.log" || fail "nats
 grep -q 'pg_isready -h postgres' "$fixture/tools2.log" || fail "the role step never probed the database"
 say_ok "each unit asks the server the question, instead of sleeping and hoping"
 
+start=$failed
 # case 7 — Postgres is the job's service and the object store is another job's step.
 # Both are units a workflow author could name by mistake, and each mistake would leave a
 # job with two databases or no store, three minutes from now.
@@ -139,6 +168,7 @@ out="$(CI_RESOURCES_FILE="$fixture/res" JOB_NETWORK=net CI_SETUP_PROBE=fake bash
 grep -q 'ci.yml' <<<"$out" || fail "s3 as a unit: the answer does not say where the store is started: $out"
 say_ok "the database and the object store name the job that owns each"
 
+start=$failed
 # case 8 — the workflow and this script in step: every job that calls it declares a
 # database of its own, and no job calls it for a unit this file refuses. Three calls,
 # three service blocks, one workflow file.
@@ -173,6 +203,7 @@ for pair in 'go-checks|make check' 'race-and-vuln|make check-race' 'e2e|make e2e
 done
 say_ok "every job that calls the script declares the database it points at"
 
+start=$failed
 # case 9 — cleanup removes the handles it was handed, says nothing about the ones a
 # failed setup never produced, reports the one it could not remove, and skips a handle
 # that names no container on this daemon (the step that would have made it may never
@@ -197,6 +228,7 @@ bash "$cleanup" gone >/dev/null && code=0 || code=$?
 [ "$code" = 1 ] || fail "a container that would not go away exited $code, want 1"
 say_ok "cleanup takes ids and names, skips the empty ones and the ones naming nothing, and reports the one it could not remove"
 
+start=$failed
 # case 10 — the shared store arrives with the suite that dials it. kit/cache's
 # conformance case, kit/httpx's host-invalidation connections and apps/platformkit's
 # suspension across a second process all fail rather than skip once

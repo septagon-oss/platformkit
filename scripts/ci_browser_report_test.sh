@@ -21,8 +21,11 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 report="$root/scripts/ci_browser_report.sh"
 fixture="$(mktemp -d)"
 trap 'rm -rf "$fixture"' EXIT
+# `fail` counts rather than setting a flag, because `say_ok` asks whether the count moved
+# since the case began: with a flag, the second failing case onwards prints `ok` beside its
+# own FAIL. Seen on ci.yml run 46460 in the file beside this one, which shares the shape.
 failed=0
-fail() { echo "FAIL: $*" >&2; failed=1; }
+fail() { echo "FAIL: $*" >&2; failed=$((failed + 1)); }
 say_ok() { if [ "$failed" = "${start:-0}" ]; then echo "ok   $*"; fi; }
 start=$failed
 
