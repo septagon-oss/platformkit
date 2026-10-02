@@ -2015,6 +2015,22 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "homeSlug": {
                 "type": "string"
               },
