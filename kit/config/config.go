@@ -66,6 +66,7 @@ type Seed struct {
 	OperatorEmail    string `yaml:"operator_email"`
 	OperatorPassword string `yaml:"operator_password"`
 }
+
 // Demo is what the demo seed cannot decide for itself: the one password every
 // demo person signs in with. Empty means the seed generates a password per
 // person and prints each once, the way bootstrap does with the administrator's.
