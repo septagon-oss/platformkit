@@ -72,6 +72,33 @@ func traceContext(ctx context.Context) (parent, state, correlation string) {
 	return carrier["traceparent"], carrier["tracestate"], carrier["baggage"]
 }
 
+// rowContext returns the context one outbox row's own propagated members describe:
+// the trace the row stores, when it stores one, and the correlation value the row
+// stores, which for a job's event is none at all.
+//
+// The caller's correlation is emptied *before* the row's carrier is extracted, and
+// that order is the reason this function exists. A reader cannot clear it: an empty
+// `baggage` member makes propagation.Baggage.Extract hand back its parent, so the
+// row's members, extracted however conditionally, leave standing whatever bag the
+// caller's context already holds. A pass runs on the context of whoever asked for it,
+// and when that is a request, a row that stores no member would otherwise be published
+// and delivered under it — the event owner's publication joined to a request that
+// caused nothing, another customer's request whenever the relay was not its own.
+// The correlation a row's spans name is therefore its own member or nothing.
+//
+// The trace members keep the caller's context as their parent when the row stores
+// none, because TraceContext.Extract returns its parent unchanged for a carrier with
+// no valid traceparent: a job's event in a process that exports nothing hangs off the
+// pass span, which is the trace it belongs to.
+func rowContext(ctx context.Context, ev Event) context.Context {
+	ctx = telemetry.WithRequestID(ctx, "")
+	if ev.TraceParent != "" || ev.Baggage != "" {
+		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{
+			"traceparent": ev.TraceParent, "tracestate": ev.TraceState, "baggage": ev.Baggage})
+	}
+	return ctx
+}
+
 // startPublication opens the span for one event leaving the outbox: the moment
 // the row's payload is handed to a transport.
 //
@@ -90,15 +117,14 @@ func traceContext(ctx context.Context) (parent, state, correlation string) {
 // hangs off the pass span, which is the trace it belongs to.
 // The request id comes from the same place — the correlation member the publisher
 // left, which is the only way a relay learns it — and a row with no member names
-// no request and keeps its tenant, which is the ordinary case for a job's event.
+// no request and keeps its tenant, which is the ordinary case for a job's event:
+// rowContext is what makes an absent member mean no request rather than whatever
+// request the pass happens to be running under.
 //
 // The tenant is named by id alone, as in startDelivery: a relay holds the UUID its
 // row carries and the slug would cost a query per row.
 func startPublication(ctx context.Context, ev Event) (context.Context, trace.Span) {
-	if ev.TraceParent != "" || ev.Baggage != "" {
-		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{
-			"traceparent": ev.TraceParent, "tracestate": ev.TraceState, "baggage": ev.Baggage})
-	}
+	ctx = rowContext(ctx, ev)
 	attrs := []attribute.KeyValue{
 		attribute.String(telemetry.AttrTenantID, ev.TenantID.String()),
 		attribute.String("messaging.operation.name", "publish"),
@@ -130,7 +156,9 @@ func startPublication(ctx context.Context, ev Event) (context.Context, trace.Spa
 // request span to sit under, so the id is read out of the baggage the publisher left
 // and lands on this span and on every span the handler opens below it. An event with
 // only a trace and no baggage (a job that published it, or a row written before
-// migrations/000041) is the ordinary case and gives the trace alone.
+// migrations/000041) is the ordinary case and gives the trace alone — and no request,
+// not the request the delivery's caller is standing in, which rowContext drops before
+// the row's members are read.
 //
 // The tenant is named by id and not by slug, because this path has only the id: a
 // job that lists tenants or a request that resolved a host has both names, and a
@@ -138,10 +166,7 @@ func startPublication(ctx context.Context, ev Event) (context.Context, trace.Spa
 // delivery, which is not a price tracing should charge. kit/telemetry's comment
 // names the two keys and which spans write which.
 func startDelivery(ctx context.Context, ev Event) (context.Context, trace.Span) {
-	if ev.TraceParent != "" || ev.Baggage != "" {
-		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{
-			"traceparent": ev.TraceParent, "tracestate": ev.TraceState, "baggage": ev.Baggage})
-	}
+	ctx = rowContext(ctx, ev)
 	attrs := append(telemetry.SpanAttrs(ctx),
 		// Which broker carried this is the adapter's fact, and this package does not
 		// know it: memory and JetStream are both a Transport here. So the span names
