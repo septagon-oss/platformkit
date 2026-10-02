@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -68,4 +69,31 @@ func loginLocale(ctx context.Context, _ page.Request) string {
 		}
 	}
 	return ""
+}
+
+// accountLanguage is the same fact as accountLocale's, reached through the door a
+// person uses to change it rather than the one every page reads it through: the
+// shell's account control reads the choice to draw itself and hands a submitted one
+// to the user module's command.
+//
+// Two types over one field is deliberate. The locale resolver only ever reads, and a
+// resolver that could write would be a page that changes what it was asked about;
+// the account surface writes, and so it is a second, narrower thing composition
+// wires — both to the same service, which is the one place the decision lives.
+// Choose takes no user id for the reason the command gives no user id: the
+// principal of the request transaction is the subject, and an id written by a
+// browser is an id that can name a colleague.
+type accountLanguage struct{ users usercontracts.Service }
+
+func (a accountLanguage) Preferred(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (string, error) {
+	u, err := a.users.Get(ctx, tx, userID)
+	if err != nil {
+		return "", err
+	}
+	return u.PreferredLocale, nil
+}
+
+func (a accountLanguage) Choose(ctx context.Context, tx db.Tx[db.Tenant], tag string) error {
+	_, err := a.users.SetPreferredLocale(ctx, tx, tag)
+	return err
 }

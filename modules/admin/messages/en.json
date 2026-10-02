@@ -97,5 +97,113 @@
     "plural": {
       "": "read the component gallery"
     }
+  },
+  "admin.nav.dashboard": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Dashboard",
+    "plural": {
+      "": "Dashboard"
+    }
+  },
+  "admin.nav.health": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Health",
+    "plural": {
+      "": "Health"
+    }
+  },
+  "admin.nav.components": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Components",
+    "plural": {
+      "": "Components"
+    }
+  },
+  "admin.nav.label": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Admin navigation",
+    "plural": {
+      "": "Admin navigation"
+    }
+  },
+  "admin.theme.toggle": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Switch between the light and dark theme",
+    "plural": {
+      "": "Switch between the light and dark theme"
+    }
+  },
+  "admin.dialog.title": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Are you sure?",
+    "plural": {
+      "": "Are you sure?"
+    }
+  },
+  "admin.account.sign_out": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Sign out",
+    "plural": {
+      "": "Sign out"
+    }
+  },
+  "admin.account.no_roles": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "no roles",
+    "plural": {
+      "": "no roles"
+    }
+  },
+  "admin.account.language": {
+    "references": [
+      "modules/admin/internal/account.go"
+    ],
+    "translation": "Language",
+    "plural": {
+      "": "Language"
+    }
+  },
+  "admin.account.unset": {
+    "references": [
+      "modules/admin/internal/account.go"
+    ],
+    "translation": "Use tenant default",
+    "plural": {
+      "": "Use tenant default"
+    }
+  },
+  "admin.account.save": {
+    "references": [
+      "modules/admin/internal/account.go"
+    ],
+    "translation": "Save language",
+    "plural": {
+      "": "Save language"
+    }
+  },
+  "admin.account.saved": {
+    "references": [
+      "modules/admin/internal/account.go"
+    ],
+    "translation": "Language saved.",
+    "plural": {
+      "": "Language saved."
+    }
   }
 }
