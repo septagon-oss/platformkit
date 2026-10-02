@@ -81,10 +81,7 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 	if existing, err := s.openDuplicate(tx, in.SubjectModule, in.SubjectEntity, in.SubjectID, digest); err != nil {
 		return nil, err
 	} else if existing != nil {
-		// The same opinion, told twice, is one proposal: the row comes back as it is
-		// and nothing is published, because a screen that submits twice must not
-		// appear in the queue twice and must not reach the trail twice.
-		return existing, nil
+		return s.oneOpinion(proposer, existing)
 	}
 	// The subject is locked before its revision is read, so the base revision this
 	// row records is the revision no other transaction can move out from under it
@@ -117,15 +114,15 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 	if err := s.insert(ctx, tx, row); err != nil {
 		// The unique index over an open proposal is the answer to the race the
 		// duplicate check above cannot see: two inserts at once. Postgres reports the
-		// loser only after the winner has committed, so the row is visible now, and
-		// the loser reports it — the same answer the sequential case gives. A caller
-		// who clicked twice is told which proposal exists rather than that something
-		// conflicted, because "conflict, no id" does not say whether the change is
-		// queued at all.
+		// loser only after the winner has committed, so the row is visible now, and the
+		// loser answers with it the way the sequential path does — through oneOpinion,
+		// which decides whether that is the row or the refusal. A caller who clicked
+		// twice is told which proposal exists rather than that something conflicted,
+		// because "conflict, no id" does not say whether the change is queued at all.
 		if existing, dupErr := s.openDuplicate(tx, in.SubjectModule, in.SubjectEntity, in.SubjectID, digest); dupErr != nil {
 			return nil, dupErr
 		} else if existing != nil {
-			return existing, nil
+			return s.oneOpinion(proposer, existing)
 		}
 		return nil, err
 	}
@@ -209,6 +206,15 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	if verdict != contracts.VerdictApproved && verdict != contracts.VerdictDeclined {
 		return nil, fmt.Errorf("%w: a verdict is approved or declined, not %q", crud.ErrInvalid, verdict)
 	}
+	if reviewer == row.Proposer {
+		// Asked before the row's state, so the author cannot read a decided proposal
+		// back through a retry of the verdict somebody else wrote. Wrapped in crud's
+		// conflict as well as in its own sentinel, so the one error mapping in kit/rest
+		// answers with the status the kernel uses for "the row is not in a state that
+		// allows this" and the client still gets the sentence that names the cure.
+		// errors.Is reaches either half.
+		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrSelfReview)
+	}
 	if !row.Open() {
 		// The replay of the same verdict is the decision already made, said once; a
 		// different one is a conflict, because the verdict is the part of this row an
@@ -217,13 +223,6 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 			return row, nil
 		}
 		return nil, fmt.Errorf("%w: this proposal was already %s", crud.ErrConflict, row.State)
-	}
-	if reviewer == row.Proposer {
-		// Wrapped in crud's conflict as well as in its own sentinel, so the one error
-		// mapping in kit/rest answers with the status the kernel uses for "the row is
-		// not in a state that allows this" and the client still gets the sentence that
-		// names the cure. errors.Is reaches either half.
-		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrSelfReview)
 	}
 	at := db.Now()
 	row.State = contracts.StateDeclined
@@ -251,14 +250,18 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	if err != nil {
 		return nil, err
 	}
-	if row.State == contracts.StateApplied {
-		// Applied once, and a retry sees the same row. The subject is not written
-		// again, because the thing that was approved was one write, not however many
-		// times the client managed to ask for it.
-		return row, nil
-	}
 	if applier == row.Proposer {
+		// The author is refused whether or not the change is already written: the rule
+		// is about who may apply, not about whether an apply is still owed. Answering a
+		// proposer's retry of somebody else's apply with the applied row would hand the
+		// author the verdict through a command they are refused on every other path.
 		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrSelfReview)
+	}
+	if row.State == contracts.StateApplied {
+		// Applied once, and a retry by an account that may apply sees the same row. The
+		// subject is not written again, because the thing that was approved was one
+		// write, not however many times the client managed to ask for it.
+		return row, nil
 	}
 	if row.State != contracts.StateApproved {
 		return nil, fmt.Errorf("%w: only an approved proposal may be applied, and this one is %s", crud.ErrConflict, row.State)
@@ -318,16 +321,19 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
+	if proposer != row.Proposer {
+		// Only the person who put it forward may take it back; a decider who disagrees
+		// declines it, which leaves both opinions on the record. This is asked before the
+		// row's state, so a second account retrying an author's withdraw is refused the
+		// withdrawn row rather than handed it: the idempotent answer belongs to whoever
+		// the command would have accepted the first time.
+		return nil, fmt.Errorf("%w: only the proposer may withdraw a proposal", crud.ErrConflict)
+	}
 	if row.State == contracts.StateWithdrawn {
 		return row, nil
 	}
 	if !row.Open() {
 		return nil, fmt.Errorf("%w: a %s proposal is over", crud.ErrConflict, row.State)
-	}
-	if proposer != row.Proposer {
-		// Only the person who put it forward may take it back; a decider who disagrees
-		// declines it, which leaves both opinions on the record.
-		return nil, fmt.Errorf("%w: only the proposer may withdraw a proposal", crud.ErrConflict)
 	}
 	at := db.Now()
 	from := row.State
@@ -339,6 +345,23 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return row, events.Publish(ctx, tx, contracts.EventWithdrawn, contracts.Withdrawn{
 		ProposalID: row.ID, Proposer: row.Proposer, FromState: from, At: at,
 	})
+}
+
+// oneOpinion answers the submitter whose diff is already sitting in the queue.
+//
+// From the author who put it there it is one proposal and the row as it stands, with
+// nothing published: a screen that submits twice must not appear in the queue twice
+// and must not reach the trail twice. From anybody else it is a refusal that names no
+// row. The partial unique index over one open proposal per (subject, diff) means
+// their bytes cannot have a second row, and handing them the first author's summary,
+// proposer and later verdict would be a read of a proposal they hold no `change:read`
+// grant for — the queue's answer to them is that the change is already in it.
+func (s *Service) oneOpinion(proposer uuid.UUID, existing *contracts.Proposal) (*contracts.Proposal, error) {
+	if existing.Proposer == proposer {
+		return existing, nil
+	}
+	return nil, fmt.Errorf("%w: an identical change to %s/%s %s is already proposed by somebody else",
+		crud.ErrConflict, existing.SubjectModule, existing.SubjectEntity, existing.SubjectID)
 }
 
 // open locks the row and rechecks the two things a mutation may not be decided

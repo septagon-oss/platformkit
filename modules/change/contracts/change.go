@@ -210,9 +210,11 @@ type Query struct {
 type Service interface {
 	// Propose records a change against the subject's exact current revision and
 	// publishes change.proposal_proposed. The same subject and the same digest
-	// while a proposal is already open is that proposal: the row comes back
-	// unchanged and nothing is published, because a screen that submits twice is
-	// one opinion twice told.
+	// while a proposal is already open is that proposal *to the account that put it
+	// forward*: the row comes back unchanged and nothing is published, because a
+	// screen that submits twice is one opinion twice told. The same bytes from a
+	// different account are a conflict with no row in it — their retry is not a
+	// licence to read somebody else's proposal, which is change:read's to give.
 	Propose(ctx context.Context, tx db.Tx[db.Tenant], in NewProposal) (*Proposal, error)
 
 	// Get reads one proposal of this tenant.
@@ -227,15 +229,19 @@ type Service interface {
 	// conflict, because the verdict is on the record.
 	Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in Review) (*Proposal, error)
 
-	// Apply writes the change. It refuses unless the row is approved, the actor is
-	// not the proposer, the subject is still on the revision the diff was made
+	// Apply writes the change. It refuses unless the actor is not the proposer, the
+	// row is approved, the subject is still on the revision the diff was made
 	// against, and the merge applies; then it writes the subject, stamps the
 	// revision it produced, and publishes change.proposal_applied — once, so a
-	// retry of an applied proposal is the same row and no second write.
+	// retry of an applied proposal by an account that may apply is the same row and
+	// no second write. The actor rule is asked first, so the proposer is refused
+	// even where another account has already finished the apply.
 	Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expectedRevision int64) (*Proposal, error)
 
 	// Withdraw takes a proposal back. Only the proposer may, and only while it is
 	// open; a decision that has been made is not something the proposer un-says.
+	// Who may is decided before what state the row is in, so a second account
+	// retrying a finished withdraw is refused the row rather than handed it.
 	Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, expectedRevision int64) (*Proposal, error)
 }
 
