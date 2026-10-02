@@ -126,8 +126,8 @@ func dkimKey(t *testing.T) []byte {
 
 func sender(key []byte) *contracts.Sender {
 	return &contracts.Sender{
-		Domain: "clinic.example", Selector: "sel1", FromName: "Ada's Clinic",
-		FromAddress: "care@clinic.example", Status: contracts.SenderVerified, Key: key,
+		Domain: "acme.example.com", Selector: "sel1", FromName: "Acme",
+		FromAddress: "notifications@acme.example.com", Status: contracts.SenderVerified, Key: key,
 	}
 }
 
@@ -143,7 +143,7 @@ func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 	r := serve(t, &relay{})
 	s := gomail.New(r.config())
 	m := contracts.Message{
-		To: "ada@patient.example", ReplyTo: "helpdesk@clinic.example",
+		To: "ada@example.com", ReplyTo: "helpdesk@acme.example.com",
 		Subject: "Your appointment", Body: "Come at ten.", HTML: "<p>Come at ten.</p>",
 		Lang: "en", Sender: sender(dkimKey(t)),
 	}
@@ -154,14 +154,14 @@ func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 		t.Errorf("MAIL FROM is %q, want the deployment's envelope address", r.envelope)
 	}
 	for _, want := range []string{
-		`From: =?UTF-8?Q?Ada's_Clinic=?= <care@clinic.example>`,
-		"<care@clinic.example>",
-		"d=clinic.example", "s=sel1",
-		"Reply-To: <helpdesk@clinic.example>",
+		`From: Acme <notifications@acme.example.com>`,
+		"<notifications@acme.example.com>",
+		"d=acme.example.com", "s=sel1",
+		"Reply-To: <helpdesk@acme.example.com>",
 		"text/plain", "text/html", "multipart/alternative",
 		"Come at ten.", "<p>Come at ten.</p>",
 	} {
-		if want == `From: =?UTF-8?Q?Ada's_Clinic=?= <care@clinic.example>` {
+		if want == `From: Acme <notifications@acme.example.com>` {
 			// The name may be encoded or literal; what must not happen is it being
 			// absent, so the check below reads the decoded form.
 			continue
@@ -170,7 +170,7 @@ func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 			t.Errorf("the message carries no %q:\n%s", want, r.data)
 		}
 	}
-	if !strings.Contains(r.data, "care@clinic.example") || !strings.Contains(r.data, "Ada") {
+	if !strings.Contains(r.data, "notifications@acme.example.com") || !strings.Contains(r.data, "Acme") {
 		t.Errorf("the From header is not the tenant's:\n%s", r.data)
 	}
 }
@@ -181,7 +181,7 @@ func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 func TestASenderWithNoKeyIsRefusedUnsigned(t *testing.T) {
 	r := serve(t, &relay{})
 	err := gomail.New(r.config()).Send(t.Context(), contracts.Message{
-		To: "ada@patient.example", Subject: "s", Body: "b", Sender: sender(nil),
+		To: "ada@example.com", Subject: "s", Body: "b", Sender: sender(nil),
 	})
 	if !errors.Is(err, contracts.ErrPermanent) {
 		t.Fatalf("unsigned mail was answered %v, want contracts.ErrPermanent", err)
@@ -207,7 +207,7 @@ func TestTheRelaysVerdictsAreToldApart(t *testing.T) {
 		t.Run(c.answer, func(t *testing.T) {
 			r := serve(t, &relay{rcptErr: c.answer})
 			err := gomail.New(r.config()).Send(t.Context(), contracts.Message{
-				To: "gone@patient.example", Subject: "s", Body: "b",
+				To: "gone@example.com", Subject: "s", Body: "b",
 			})
 			if err == nil {
 				t.Fatal("a refused recipient was reported as delivered")
@@ -263,7 +263,7 @@ func TestAHungMailServerIsAnErrorAndNotAWait(t *testing.T) {
 func TestAMessageWithNoTextIsRefused(t *testing.T) {
 	r := serve(t, &relay{})
 	err := gomail.New(r.config()).Send(t.Context(), contracts.Message{
-		To: "ada@patient.example", Subject: "s", HTML: "<p>b</p>",
+		To: "ada@example.com", Subject: "s", HTML: "<p>b</p>",
 	})
 	if !errors.Is(err, contracts.ErrPermanent) {
 		t.Fatalf("a textless message was answered %v, want contracts.ErrPermanent", err)

@@ -130,9 +130,9 @@ func (s *Sender) message(m contracts.Message) (*mail.Msg, error) {
 		return nil, fmt.Errorf("notification: %s is not a usable envelope sender: %w", s.cfg.EnvelopeFrom, err)
 	}
 	if m.Sender != nil {
-		// Header() is RFC 5322's quoted form, so "Ada's Clinic" arrives as a name
-		// and not as a broken header — the reason this goes through net/mail in
-		// contracts rather than through fmt.Sprintf here.
+		// Header() is RFC 5322's quoted form, so a display name with an apostrophe or
+		// a comma arrives as a name rather than as a broken header — the reason this
+		// goes through net/mail in contracts rather than through fmt.Sprintf here.
 		if err := msg.From(m.Sender.Header()); err != nil {
 			return nil, contracts.Permanent(fmt.Sprintf("%s cannot be a From header: %s", m.Sender.Header(), err))
 		}
