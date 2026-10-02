@@ -2,16 +2,18 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "2e4b3d94c3cd5db339e76b39ce29b66c6f0b8f79"
+    "candidate": "ea102dcc699ba7ebc15c47598883f863d32ae068"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
+    "./kit/events/providers/nats.JetStream: changed from func(string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error) to func(github.com/septagon-oss/platformkit/kit/appname.Name, string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error)",
     "./kit/httpx.(*API).InvalidateHost: changed from func(string) to func(...string) error",
     "./kit/httpx.(*API).Static: removed",
     "./kit/httpx.HTML: changed from func(*API, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*Page, error)) to func(*Router, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*Page, error))",
     "./kit/httpx.Register: changed from func(*API, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*O, error)) to func(*Router, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*O, error))",
     "./kit/httpx.SessionCookie: value changed from \"platformkit_session\" to \"session\"",
+    "./kit/jobs.NewScheduler: changed from func(*github.com/septagon-oss/platformkit/kit/db.Conn, *log/slog.Logger, ...Job) *Scheduler to func(*github.com/septagon-oss/platformkit/kit/db.Conn, *log/slog.Logger, github.com/septagon-oss/platformkit/kit/appname.Name, ...Job) *Scheduler",
     "./kit/module.Module.Routes: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API) to func(github.com/septagon-oss/platformkit/kit/httpx.Surfaces)",
     "./kit/module.NavEntry.Path: removed",
     "./kit/rest.Command: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, Spec[T], string, string, string, []string, func(ctx context.Context, tx github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.Tenant], id github.com/google/uuid.UUID, in I) (T, error), CommandOptions) to func(github.com/septagon-oss/platformkit/kit/httpx.Surfaces, Spec[T], string, string, string, []string, func(ctx context.Context, tx github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.Tenant], id github.com/google/uuid.UUID, in I) (T, error), CommandOptions)",
