@@ -125,12 +125,26 @@ say_ok "the database and the object store name the job that owns each"
 # case 8 — the workflow and this script in step: every job that calls it declares a
 # database of its own, and no job calls it for a unit this file refuses. Three calls,
 # three service blocks, one workflow file.
-workflow="$root/.gitea/workflows/ci.yml"
+workflow="${CI_WORKFLOW_FILE:-$root/.gitea/workflows/ci.yml}"
 calls=$(grep -c 'bash scripts/ci_setup.sh' "$workflow")
 services=$(grep -cE '^      postgres:$' "$workflow")
 [ "$calls" = "$services" ] || fail "$calls jobs call scripts/ci_setup.sh but $services declare a postgres service"
 grep -E 'bash scripts/ci_setup.sh' "$workflow" | grep -vE 'scripts/ci_setup\.sh (nats )?(nats )?app-role$|scripts/ci_setup.sh nats app-role$' \
 	&& fail "a job calls this script with a unit it does not start"
+# A valid URL still fails the suite if the role step is moved below the gate.
+for pair in 'go-checks|make check' 'race-and-vuln|make check-race' 'e2e|make e2e'; do
+	job="${pair%%|*}"
+	goal="${pair#*|}"
+	if ! awk -v job="$job" -v goal="$goal" '
+		$0 == "  " job ":" { found = 1; inside = 1; next }
+		inside && /^  [a-z0-9-]+:/ { exit }
+		inside && /run: bash scripts\/ci_setup.sh nats app-role$/ { setup = NR }
+		inside && $0 ~ ("run: " goal "$") { gate = NR }
+		END { if (!found || !setup || !gate || setup >= gate) exit 1 }
+	' "$workflow"; then
+		fail "$job must create the application role before $goal"
+	fi
+done
 say_ok "every job that calls the script declares the database it points at"
 
 # case 9 — cleanup removes the ids it was handed, says nothing about the ones a
