@@ -47,6 +47,7 @@ func RegisterRegistrationRoutes(surfaces httpx.Surfaces, svc *Service) {
 		}
 		err = events.Publish(ctx, tx, contracts.EventRegistrationRequested, contracts.RegistrationRequested{
 			Email: candidate.Email, DisplayName: candidate.DisplayName, At: db.Now(),
+			Served: httpx.ServedAuthority(r),
 		})
 		if err != nil {
 			return nil, rest.Fault(err)
@@ -77,7 +78,7 @@ func RegistrationSubscription(svc *Service, users contracts.RegistrationUsers) e
 			existing, err := users.ByEmail(ctx, tx, candidate.Email)
 			if err == nil {
 				if existing.Status == user.StatusInvited {
-					return svc.Offer(ctx, tx, existing.ID)
+					return svc.Offer(WithServed(ctx, asked.Served), tx, existing.ID)
 				}
 				return nil
 			}

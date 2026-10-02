@@ -33,6 +33,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err := json.Unmarshal(event.Payload, &asked); err != nil {
 				return fmt.Errorf("auth: read verification request: %w", err)
 			}
+			ctx = WithServed(ctx, asked.Served)
 			found, err := svc.users.ByEmail(ctx, tx, asked.Email)
 			if errors.Is(err, crud.ErrNotFound) {
 				return nil
