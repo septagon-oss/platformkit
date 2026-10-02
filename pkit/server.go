@@ -179,6 +179,12 @@ func (s *Server) hostedNames() []string {
 	return names
 }
 
+// claim is one tenant's host as the collision check holds it: which tenant claims
+// it, spelled as the Host call spelled it. The map holding claims is keyed by the
+// canonical host the request path sees; the spelling is kept because a refusal that
+// quotes the two claims that collided is the answer an operator can act on.
+type claim struct{ tenant, spelled string }
+
 // refusals is the process's own half of Build: every problem with what it hosts,
 // what it was given, and what its tenants claim, answered before anything is
 // opened. It is separate from the effects because Run needs exactly this answer
@@ -195,7 +201,7 @@ func (s *Server) refusals() error {
 		errs = append(errs, errors.New("pkit: server: Build hosts nothing: Host(app) first"))
 	}
 	seen := map[*App]string{}
-	claims := map[string]string{}
+	claims := map[string]claim{}
 	for _, h := range s.hosts {
 		if prior, twice := seen[h.app]; twice && prior == h.app.name {
 			errs = append(errs, fmt.Errorf("pkit: %s: Host: %s is hosted twice; one call names its tenants", h.app.name, h.app.name))
@@ -208,10 +214,21 @@ func (s *Server) refusals() error {
 			case t.Host == "":
 				errs = append(errs, fmt.Errorf("pkit: %s: Tenant(%q, %q): a host with no name cannot belong to anybody", h.app.name, t.Name, t.Host))
 			}
-			if owner, taken := claims[t.Host]; taken {
-				errs = append(errs, fmt.Errorf("pkit: %s: Host: %s is claimed by both %s and %s; a host belongs to one tenant", h.app.name, t.Host, owner, t.Name))
+			// The key is the host the request path would see, not the host the
+			// operator spelled: httpx.HostOnly is the one normalisation every
+			// TenantLoader gets its lookup key through, so "ACME.Test",
+			// "acme.test." and "acme.test:8080" are one host here exactly as they
+			// are one host to the served router. Comparing the raw spellings instead
+			// let two claims the process cannot tell apart start anyway.
+			key := httpx.HostOnly(t.Host)
+			if prior, taken := claims[key]; taken {
+				spelled := t.Host
+				if prior.spelled != t.Host {
+					spelled = fmt.Sprintf("%s and %s are one host, %s", prior.spelled, t.Host, key)
+				}
+				errs = append(errs, fmt.Errorf("pkit: %s: Host: %s is claimed by both %s and %s; a host belongs to one tenant", h.app.name, spelled, prior.tenant, t.Name))
 			}
-			claims[t.Host] = t.Name
+			claims[key] = claim{tenant: t.Name, spelled: t.Host}
 		}
 	}
 	if len(s.hosts) > 1 {
