@@ -485,7 +485,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)
@@ -787,7 +787,7 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -821,7 +821,7 @@ func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
 	req.Host = tenantHost
