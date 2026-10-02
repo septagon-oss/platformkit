@@ -3,6 +3,7 @@ package internal_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -154,5 +155,44 @@ func TestARolledBackSaveLeavesNothing(t *testing.T) {
 	}
 	if rows != 0 || events != 0 {
 		t.Errorf("after the rollback there are %d rows and %d events; want none of either", rows, events)
+	}
+}
+
+// TestTheColumnDefaultIsTheColourTheContractNames holds the two defaults against
+// each other rather than against a literal: site_settings.primary_color and
+// contracts.DefaultPrimaryColor must be the same answer about a site whose tenant
+// never chose a colour, or the row, the settings form and the page disagree about
+// every tenant that never opened the form. No #rrggbb can be that answer — the
+// accent is body copy on a light canvas in one mode and on a dark canvas in the
+// other, and no colour reads on both — so the answer both places give is that
+// there is no colour, and a save that says none stores none.
+func TestTheColumnDefaultIsTheColourTheContractNames(t *testing.T) {
+	admin, conn := dbtest.Schema(t, site.Migrations)
+	var def string
+	if err := admin.QueryRowContext(t.Context(), `SELECT pg_get_expr(d.adbin, d.adrelid)
+		FROM pg_attrdef d JOIN pg_class c ON c.oid = d.adrelid
+		WHERE c.relname = 'site_settings' AND d.adnum = (
+			SELECT attnum FROM pg_attribute WHERE attrelid = c.oid AND attname = 'primary_color')`).Scan(&def); err != nil {
+		t.Fatalf("read the column default: %v", err)
+	}
+	stored := strings.Trim(strings.TrimSuffix(def, "::bpchar"), "'")
+	if stored != contracts.DefaultPrimaryColor {
+		t.Errorf("the column defaults to %s where the contract names %q: a tenant that never opened the settings screen would hold one colour and be shown another", def, contracts.DefaultPrimaryColor)
+	}
+	svc := internal.NewService()
+	got := "not saved"
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		out, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme"})
+		if err != nil {
+			return err
+		}
+		got = out.PrimaryColor
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("save a site that named no colour: %v", err)
+	}
+	if got != contracts.DefaultPrimaryColor {
+		t.Errorf("a save that named no colour stored %q, want the none the contract names", got)
 	}
 }

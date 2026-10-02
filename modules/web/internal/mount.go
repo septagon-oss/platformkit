@@ -206,19 +206,21 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title s
 // palette that fails its own gate — nothing is declared, and the page keeps the
 // accent the stylesheet it links already carries.
 func (s Site) accent(settings *sitecontracts.SiteSettings) string {
-	// Characters first, and only this module's own grammar for them: the value
-	// goes into a style element, so anything that is not six hex digits is
-	// dropped rather than interpolated. LegibleAccent parses too; this guard is
-	// the injection defence, not the legibility one.
-	if !colour.MatchString(settings.PrimaryColor) {
-		return ""
-	}
 	pair := s.palette()
 	base, other := "light", "dark"
 	if settings.Theme == "dark" {
 		base, other = "dark", "light"
 	}
-	measured, err := pair.LegibleAccent(base, settings.PrimaryColor)
+	// Characters first, and only this module's own grammar for them: the value
+	// goes into a style element, so anything that is not six hex digits is
+	// dropped rather than interpolated. LegibleAccent parses too; this guard is
+	// the injection defence, not the legibility one. An empty value is not
+	// dropped: it is what a tenant that chose none stores, and such a site wears
+	// the palette's own accent, which that palette's gate issued.
+	if settings.PrimaryColor != "" && !colour.MatchString(settings.PrimaryColor) {
+		return ""
+	}
+	measured, err := pair.LegibleAccent(base, accentWanted(pair, base, settings.PrimaryColor))
 	if err != nil {
 		return ""
 	}
@@ -227,7 +229,7 @@ func (s Site) accent(settings *sitecontracts.SiteSettings) string {
 	// it: the visitor's stored choice (beforePaint in ui/page moves data-theme)
 	// and, for a site that named no mode, the browser's own preference, which is
 	// the sheet's :root:not([data-theme]) case and outranks the plain :root.
-	alternate, err := pair.LegibleAccent(other, settings.PrimaryColor)
+	alternate, err := pair.LegibleAccent(other, accentWanted(pair, other, settings.PrimaryColor))
 	if err != nil || alternate == measured {
 		return rules
 	}
@@ -236,6 +238,20 @@ func (s Site) accent(settings *sitecontracts.SiteSettings) string {
 		rules += "@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" + alternate + "}}"
 	}
 	return rules
+}
+
+// accentWanted is the colour to measure for one mode: what the tenant stored, or
+// when the tenant stored none, the accent this palette already paints in that mode
+// — so a site that chose no colour is painted the colour its own palette's gate
+// certified, and says so in the declaration rather than by leaving one out.
+func accentWanted(pair design.Pair, mode, stored string) string {
+	if stored != "" {
+		return stored
+	}
+	if mode == "dark" {
+		return pair.Dark.AccentDefault
+	}
+	return pair.Light.AccentDefault
 }
 
 // palette is the pair this site paints and the pair its tenant's colour is
