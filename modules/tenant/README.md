@@ -88,7 +88,10 @@ form against the revision it moved and shows none of the three changed.
 `apps/platformkit/tenant_languages_page_test.go` follows the link a dashboard gives
 the administrator and expects a page with controls for each served language.
 `modules/tenant/internal` covers the operator's door and the floor under the last
-language.
+language, and `own_row_column_rule_test.go` runs the column rule of 000031 at the
+application role: `slug`, `name`, `status`, `operator` and `created_at` are refused to
+the tenant's own transaction, and `default_locale`, `locale_revision` and `updated_at`
+are not.
 
 ## Authorization
 

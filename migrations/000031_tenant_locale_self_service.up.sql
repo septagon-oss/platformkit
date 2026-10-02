@@ -89,7 +89,8 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 -- role is subject to this even as the table's own grantee, because the trigger
 -- asks who the transaction *is* rather than what the role *owns*, and the review
 -- that asked for it insisted it be proved at the application role rather than
--- inferred from the SQL. It is: see modules/tenant/internal/self_service_test.go.
+-- inferred from the SQL. It does, column by column, in
+-- modules/tenant/internal/own_row_column_rule_test.go.
 CREATE OR REPLACE FUNCTION tenants_language_only() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
