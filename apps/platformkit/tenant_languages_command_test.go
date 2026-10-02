@@ -12,6 +12,7 @@ package main
 // expected revision rather than a number the page printed.
 
 import (
+	"database/sql"
 	"fmt"
 	"io"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
@@ -148,6 +150,12 @@ func TestAnAdministratorSetsTheTenantsLanguagesAndTheTrailHoldsIt(t *testing.T) 
 		t.Fatalf("locale_revision stayed at %s across a changed declaration", before)
 	}
 
+	// The refusal is compared against a trail that has stopped moving: the relay
+	// feeds audit_events once a second, so the readings above can still have been
+	// arriving when they were taken. Settling first is what makes the comparison a
+	// statement about the refused write rather than about the relay's tick.
+	events, audits = settledLanguageTrail(t, owner)
+
 	// A stale write is refused and leaves nothing behind: not the row, not the
 	// count of events, not a second audit record. The old revision the person's
 	// other tab read is the evidence, and it stays the evidence.
@@ -178,4 +186,31 @@ func TestAnAdministratorSetsTheTenantsLanguagesAndTheTrailHoldsIt(t *testing.T) 
 	if still := revision(); still != after {
 		t.Errorf("the refused write moved locale_revision from %s to %s", after, still)
 	}
+}
+
+// settledLanguageTrail answers with the tenant.locale_set counts once two readings a
+// second apart agree, so a caller can compare a refused write against a settled pair
+// instead of a moment. The relay ticks once a second, which is why the beat is longer
+// than the tick: a shorter one can straddle a delivery and call it settled.
+func settledLanguageTrail(t *testing.T, owner *sql.DB) (int, int) {
+	t.Helper()
+	var lastEvents, lastAudits int
+	for range 20 {
+		var events, audits int
+		if err := owner.QueryRowContext(t.Context(),
+			`SELECT count(*) FROM platformkit_outbox WHERE name = 'tenant.locale_set'`).Scan(&events); err != nil {
+			t.Fatalf("count the outbox: %v", err)
+		}
+		if err := owner.QueryRowContext(t.Context(),
+			`SELECT count(*) FROM audit_events WHERE name = 'tenant.locale_set'`).Scan(&audits); err != nil {
+			t.Fatalf("count the audit trail: %v", err)
+		}
+		if events > 0 && audits > 0 && events == lastEvents && audits == lastAudits {
+			return events, audits
+		}
+		lastEvents, lastAudits = events, audits
+		time.Sleep(1100 * time.Millisecond)
+	}
+	t.Fatalf("the tenant.locale_set trail never stopped moving")
+	return 0, 0
 }
