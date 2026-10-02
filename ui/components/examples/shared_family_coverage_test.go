@@ -6,7 +6,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
 
-func TestReviewTheSharedWebBriefHasAnExecutableExampleForEveryFamily(t *testing.T) {
+func TestTheSharedWebBriefHasAnExecutableExampleForEveryFamily(t *testing.T) {
 	gallery := examples.Gallery()
 	// These are the public component identities specified by this delivery,
 	// not a total pinned against unrelated additions to the repository.

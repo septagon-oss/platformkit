@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 // Drive the served, sandboxed Gallery: no copied component HTML or controller.
 for (const language of ['en', 'pt-PT']) {
-  test(`review 9: photo-gallery keyboard navigation and focus (${language})`, async ({ page }) => {
+  test(`photo-gallery keyboard navigation and focus (${language})`, async ({ page }) => {
     test.setTimeout(60_000);
     const signedIn = await page.request.post('/api/v1/auth/login', {
       data: { email: process.env.PLATFORMKIT_E2E_EMAIL, password: process.env.PLATFORMKIT_E2E_PASSWORD },
