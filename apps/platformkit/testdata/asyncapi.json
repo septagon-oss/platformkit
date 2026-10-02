@@ -3110,6 +3110,9 @@
               "email": {
                 "type": "string"
               },
+              "served": {
+                "type": "string"
+              },
               "userId": {
                 "format": "uuid",
                 "type": "string"
