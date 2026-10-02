@@ -72,7 +72,10 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 	available := r.CommandsFor(ctx)
 	out := make([]resource.Command, 0, len(available))
 	for _, c := range available {
-		if c.Run == nil {
+		// Two things are dropped beyond the closure: a command nobody wired, and
+		// one about the reader rather than about any row on the screen. See
+		// rest.CommandOptions.Self.
+		if c.Run == nil || c.Self {
 			continue
 		}
 		out = append(out, resource.Command{

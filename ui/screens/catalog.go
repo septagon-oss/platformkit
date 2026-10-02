@@ -80,12 +80,18 @@ type Entry struct {
 // reachable by — so a document written before this key existed is read the same
 // way it always was.
 type Command struct {
-	Verb        string         `json:"verb"`
-	Summary     string         `json:"summary,omitempty"`
-	Description string         `json:"description,omitempty"`
-	Collection  bool           `json:"collection,omitempty"`
-	Path        string         `json:"path,omitempty"`
-	Fields      []entity.Field `json:"fields,omitempty"`
+	Verb        string `json:"verb"`
+	Summary     string `json:"summary,omitempty"`
+	Description string `json:"description,omitempty"`
+	Collection  bool   `json:"collection,omitempty"`
+	// Self says the caller is the subject: no id and no row argument names who the
+	// command writes, so it belongs to the account and not to any listed row. The
+	// web screens leave it off for that reason (ui/screens' commands); a native
+	// shell has the same rule and no generated screen to apply it in, so the
+	// document says which door is an account's.
+	Self   bool           `json:"self,omitempty"`
+	Path   string         `json:"path,omitempty"`
+	Fields []entity.Field `json:"fields,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
@@ -121,7 +127,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 	for _, c := range r.Commands {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
-			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
+			Collection: c.Collection, Self: c.Self, Path: derived(r, c), Fields: c.Fields,
 		})
 	}
 	return e

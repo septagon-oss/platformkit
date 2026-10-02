@@ -136,6 +136,10 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		}, rest.CommandOptions{
 			Auth:       httpx.SignedIn(),
 			Collection: true,
+			// The caller is the subject, so the generated Users list offers no
+			// control for it: a button labelled with the language question, sitting
+			// beside a list of other people, would write the reader's own row.
+			Self: true,
 		})
 }
 
