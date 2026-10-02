@@ -39,20 +39,15 @@ PLATFORMKIT_TEST_S3_BUCKET_PREFIX ?= platformkit-test
 PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
 PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
 
-# The development mail catcher compose.yaml's mailpit service publishes, and the
-# three names `make e2e` writes down with it: the SMTP host and port go into the
-# configuration file of the application it boots, and the HTTP API into the browser
-# journeys' environment, because a journey that cannot read the link it was mailed
-# has nothing to click. Derived from the two ports, so an operator who moves the
-# stack moves the journeys with it and says nothing twice.
+# The development mail catcher compose.yaml's mailpit service publishes. The two
+# ports are all this recipe says: what the application dials and what the journeys
+# read are derived from them by scripts/e2e.sh, the only reader, so the name of the
+# catcher exists in one file (compose.yaml) and the address is worked out in the one
+# place that uses it. An operator who moves the stack moves the journeys with it.
 PLATFORMKIT_MAILPIT_SMTP_PORT ?= 1025
 PLATFORMKIT_MAILPIT_PORT ?= 8025
-PLATFORMKIT_E2E_MAIL_HOST ?= localhost
-PLATFORMKIT_E2E_MAIL_PORT ?= $(PLATFORMKIT_MAILPIT_SMTP_PORT)
-PLATFORMKIT_E2E_MAILPIT_URL ?= http://$(PLATFORMKIT_E2E_MAIL_HOST):$(PLATFORMKIT_MAILPIT_PORT)
-export PLATFORMKIT_E2E_MAIL_HOST
-export PLATFORMKIT_E2E_MAIL_PORT
-export PLATFORMKIT_E2E_MAILPIT_URL
+export PLATFORMKIT_MAILPIT_SMTP_PORT
+export PLATFORMKIT_MAILPIT_PORT
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL

@@ -702,8 +702,8 @@ invitation nobody can open is the walkthrough the front door was written against
 [compose.yaml](compose.yaml) composes `mailpit` (SMTP on 1025, its API on 8025, both
 overridable the way the stack's other ports are), [scripts/e2e.sh](scripts/e2e.sh) writes the
 `mail:` block of the configuration it generates and refuses a run whose catcher is not
-answering before it builds anything, and the CI job starts the same image on its own network
-for `make e2e`. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
+answering before it builds anything, and every job that runs `make e2e` (both check
+jobs, and the release job) starts the same image, by container name where it can. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
 catcher by recipient for each of the four account links this application mails — an
 invitation, a sign-up confirmation, a resent confirmation and a forgotten-password reset —
 and assert what the delivered message says: that its link carries the address and port the
