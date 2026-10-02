@@ -5,17 +5,18 @@ package httpx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
@@ -25,46 +26,34 @@ import (
 // coffee rather than a deploy.
 const hostTTL = 30 * time.Second
 
-type hostEntry struct {
-	tenant tenancy.Tenant
-	until  time.Time
+// hostScope is the namespace of host resolutions, and it is Shared rather than
+// Of(tenant): a host resolution is the thing that *decides* a tenant, so it belongs
+// to the installation and to no customer. It is a package constant and not caller
+// data, because the invalidation and the write must name one namespace.
+var hostScope = cache.Shared("host")
+
+// cachedTenant is the part of a resolution a request needs before it has a
+// transaction — which is to say, all of it. It is a wire struct rather than
+// encoding tenancy.Tenant itself for two reasons: the shape on the store is then a
+// declaration this package owns and can pin (TestACachedResolutionCarriesTheWhole-
+// Tenant), and a field added to the kernel's Tenant tomorrow does not arrive in the
+// cache by invisibility. Dropping a field here is a real bug and must look like one:
+// Operator decides whether a caller may reach the control plane, and a resolution
+// that came back without it would refuse an operator whenever the cache answered.
+type cachedTenant struct {
+	ID        uuid.UUID          `json:"id"`
+	Slug      string             `json:"slug"`
+	Name      string             `json:"name"`
+	Operator  bool               `json:"operator"`
+	Languages *tenancy.Languages `json:"languages,omitempty"`
 }
 
-// hostCache remembers resolutions that succeeded, and only those. Caching a
-// failure would turn one blink of the database into thirty seconds of refusals
-// for that host, and would let anyone fill the map with Host headers they
-// invented; remembering only real tenants bounds it by data the operator owns.
-type hostCache struct {
-	mu    sync.Mutex
-	hosts map[string]hostEntry
+func (c cachedTenant) tenant() tenancy.Tenant {
+	return tenancy.Tenant{ID: c.ID, Slug: c.Slug, Name: c.Name, Operator: c.Operator, Languages: c.Languages}
 }
 
-func (c *hostCache) get(host string) (tenancy.Tenant, bool) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	e, ok := c.hosts[host]
-	if !ok {
-		return tenancy.Tenant{}, false
-	}
-	if time.Now().After(e.until) {
-		// Dropped on the way past, so a host that stopped being served stops
-		// occupying the map instead of waiting for a restart.
-		delete(c.hosts, host)
-		return tenancy.Tenant{}, false
-	}
-	return e.tenant, true
-}
-
-func (c *hostCache) remove(host string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.hosts, host)
-}
-
-func (c *hostCache) put(host string, t tenancy.Tenant) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.hosts[host] = hostEntry{tenant: t, until: time.Now().Add(hostTTL)}
+func newCachedTenant(t tenancy.Tenant) cachedTenant {
+	return cachedTenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator, Languages: t.Languages}
 }
 
 // resolveTimeout bounds the one query every request makes before it is a
@@ -72,25 +61,58 @@ func (c *hostCache) put(host string, t tenancy.Tenant) {
 // holds every arriving request open on the client's patience rather than ours.
 const resolveTimeout = 2 * time.Second
 
-// InvalidateHost forgets a cached resolution, so a rename or a removal takes
-// effect now rather than within hostTTL. The tenant module calls it when it
-// changes a host; nothing else has any reason to.
-func (a *API) InvalidateHost(host string) { a.hosts.remove(HostOnly(host)) }
-
-// resolve maps a host to a tenant, through the loader, inside a cross-tenant
-// transaction the kernel opens for it. The loader is a module: it cannot mint
-// the capability itself, and it never holds one outside this call.
+// InvalidateHost closes the namespace of host resolutions, so a rename, a
+// suspension or a new language declaration takes effect now rather than within
+// hostTTL. The tenant module calls it when it changes a host; nothing else has any
+// reason to.
 //
-// Concurrent misses for one host share a single query. A cold cache at the
-// front of a traffic spike is otherwise one lookup per request, all of them
-// asking the same question.
+// It is a Move and not a Delete of the hosts named, and the race is the reason for
+// the whole of kit/cache. A delete forgets what is in the store at the moment it
+// runs and nothing else: replica A has missed, is already in its loader, and the
+// operator's replica commits a suspension and deletes the key; replica A writes the
+// tenant it loaded a moment later, and every replica that reads this store serves a
+// suspended host for the rest of hostTTL. A move forbids what arrives afterwards as
+// well as what is there — TestAnInvalidationDuringALoadLeavesNoResolutionBehind is
+// that interleaving run through this function rather than through the port. The
+// names are therefore not the keys being forgotten, and nothing here normalises
+// them: the namespace is what closes.
+//
+// What the names decide is whether anything is closed at all: a change that touched
+// no host changes no resolution, and a tenant with no hosts costs no command.
+// The cost of the coarser invalidation is that one suspension costs every other host
+// one loader query on its next request — for a handful of operator actions a day
+// over an indexed query, the trade kit/cache names on Move.
+//
+// It returns the store's error, because the invalidation crosses a network and a
+// failure there is a fact the caller has to answer for: the committed write stands —
+// unwinding a suspension because a cache stopped answering is the worse outage — but
+// the change is not yet true at every process reading that store, and the route that
+// made it says so rather than reporting an outcome it did not achieve.
+func (a *API) InvalidateHost(hosts ...string) error {
+	if len(hosts) == 0 {
+		return nil
+	}
+	return a.opts.Cache.Move(context.Background(), hostScope)
+}
+
+// resolve maps a host to a tenant, through the shared store and, on a miss, the
+// loader inside a cross-tenant transaction the kernel opens for it. The loader is a
+// module: it cannot mint the capability itself, and it never holds one outside this
+// call.
+//
+// Concurrent misses for one host share a single query. A cold cache at the front of
+// a traffic spike is otherwise one lookup per request, all of them asking the same
+// question — and now the answer any one of them writes is the answer every other
+// replica reads, which is the half a map in this process could not do.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
-	if t, ok := a.hosts.get(host); ok {
+	key := hostScope.Entry(host)
+	if t, ok := a.cached(ctx, key); ok {
 		return t, nil
 	}
 	shared, err, _ := a.resolving.Do(host, func() (any, error) {
-		if t, ok := a.hosts.get(host); ok {
-			return t, nil
+		resolved, hit, under := a.cachedUnder(ctx, key)
+		if hit {
+			return resolved, nil
 		}
 		// WithoutCancel, because this lookup is shared: the request that
 		// happened to arrive first must not take everyone else's answer with
@@ -103,21 +125,80 @@ func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) 
 			t, err = a.opts.Tenants.ByHost(rctx, tx, host)
 			return err
 		})
-		return t, err
+		if err != nil {
+			return tenancy.Tenant{}, err
+		}
+		if t.ID == uuid.Nil {
+			// A loader that answers with the zero Tenant and no error has resolved
+			// nothing and does not know it. Taking it at its word would scope the
+			// request's transaction to the nil UUID and, worse, make every zero
+			// Principal a member of it. It is refused here, before the store sees it,
+			// so no path — this load or a later read of an entry — can put the nil
+			// tenant on a request.
+			return tenancy.Tenant{}, fmt.Errorf("the loader returned the zero tenant for %q", host)
+		}
+		// Successes only. Caching a failure would turn one blink of the database into
+		// half a minute of refusals for that host, and would let anyone fill the store
+		// with Host headers they invented; remembering only real tenants bounds it by
+		// data the operator owns.
+		buf, err := json.Marshal(newCachedTenant(t))
+		if err != nil {
+			// A tenant this package cannot serialise is a tenant this store has no
+			// business holding; the request is served from the loader anyway.
+			a.log.DebugContext(ctx, "httpx: could not put a host resolution in the shared store", "host", host, "error", err)
+			return t, nil
+		}
+		// The write carries the generation the miss above read open, so a move that
+		// lands during this query closes the entry it would have written: the answer
+		// the installation stopped believing serves the request that was already
+		// loading and is not believed for hostTTL by every replica that reads this
+		// store. One Set per shared load, not one per request that waited for it.
+		if err := a.opts.Cache.Set(ctx, key, buf, hostTTL, under); err != nil {
+			a.log.WarnContext(ctx, "httpx: could not store a host resolution; this replica will ask again",
+				"host", host, "error", err)
+		}
+		return t, nil
 	})
 	if err != nil {
 		return tenancy.Tenant{}, err
 	}
 	t := shared.(tenancy.Tenant)
-	if t.ID == uuid.Nil {
-		// A loader that answers with the zero Tenant and no error has resolved
-		// nothing and does not know it. Taking it at its word would scope the
-		// request's transaction to the nil UUID and, worse, make every zero
-		// Principal a member of it.
-		return tenancy.Tenant{}, fmt.Errorf("the loader returned the zero tenant for %q", host)
-	}
-	a.hosts.put(host, t)
 	return t, nil
+}
+
+// cached reads the store and takes the answer at its word. See cachedUnder, which
+// is the same read with the half a caller needs to write.
+func (a *API) cached(ctx context.Context, key cache.Key) (tenancy.Tenant, bool) {
+	t, ok, _ := a.cachedUnder(ctx, key)
+	return t, ok
+}
+
+// cachedUnder reads the store and answers the generation its read found open,
+// which is what a write that follows this miss has to be stamped with.
+//
+// A miss, a value that will not decode, a resolution of the nil tenant and an
+// unreachable store are all "ask the loader": the database is the truth for a
+// resolution, so failing open to it is always correct and costs one query. The
+// distinction the log keeps is the one an operator needs — a store that is
+// answering nothing is an outage, and a cold cache is not.
+func (a *API) cachedUnder(ctx context.Context, key cache.Key) (tenancy.Tenant, bool, cache.Generation) {
+	buf, found, under, err := a.opts.Cache.Get(ctx, key)
+	if err != nil {
+		a.log.WarnContext(ctx, "httpx: the shared cache is not answering; resolving from the database",
+			"host", key.Entry(), "error", err)
+		return tenancy.Tenant{}, false, cache.Generation{}
+	}
+	if !found {
+		return tenancy.Tenant{}, false, under
+	}
+	var c cachedTenant
+	if err := json.Unmarshal(buf, &c); err != nil {
+		return tenancy.Tenant{}, false, under
+	}
+	if c.ID == uuid.Nil {
+		return tenancy.Tenant{}, false, under
+	}
+	return c.tenant(), true, under
 }
 
 // tenant resolves the request host to a tenant and puts it on the context,

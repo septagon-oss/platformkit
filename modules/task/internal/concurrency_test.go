@@ -19,6 +19,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -222,6 +223,7 @@ func TestTaskRESTWaitsForCommittedState(t *testing.T) {
 				return err
 			}, func(ctx context.Context, started chan<- int) error {
 				api, router := httpx.New(httpx.Options{
+					Cache:      cache.Memory("pkit"),
 					PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 					Authenticate: func(_ context.Context, tx db.Tx[db.Tenant], _ *http.Request) (tenancy.Principal, bool, error) {
 						return tenancy.Principal{UserID: uuid.New()}, true, reportTaskBackend(tx, started)

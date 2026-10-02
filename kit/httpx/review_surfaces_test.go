@@ -27,6 +27,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -62,6 +63,7 @@ func operatorFixtureWithFault(t *testing.T, fault httpx.Fault) http.Handler {
 	operator := tenancy.Tenant{ID: uuid.New(), Slug: "installation", Name: "Installation", Operator: true}
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -359,7 +361,8 @@ func (c *countedWrites) Forget(context.Context, string) error { return nil }
 // refused write is still not a transaction that rolled back an attempt nobody made.
 func TestThePublicWriteLimitCountsTheTenantItSaysItCounts(t *testing.T) {
 	counted := &countedWrites{}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: counted})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: counted})
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
 		OperationID: "reviewer-register", Method: http.MethodPost, Path: "/register",
 	}, httpx.Public(), ok)

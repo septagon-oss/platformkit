@@ -30,6 +30,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -90,6 +91,7 @@ func askSetup(t *testing.T, reach httpx.AskForAccess, lim httpx.WriteLimiter) (h
 	}
 	records := &[]httpx.AccessRecord{}
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		Installation: host,
 		PublicHost:   host,
 		Tenants:      f,
@@ -296,6 +298,7 @@ func TestTheAskCommandAnswersEveryVerdictItsOwnCodeCanProduce(t *testing.T) {
 			logs:   &lines{},
 		}
 		api, router := httpx.New(httpx.Options{
+			Cache:        cache.Memory("pkit"),
 			Installation: host, PublicHost: host, Tenants: f, Conn: app,
 			Authorize: f, Entitle: f, Authenticate: f.authenticate,
 			Log: slog.New(slog.NewTextHandler(io.Discard, nil)),

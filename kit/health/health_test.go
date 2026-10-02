@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/health"
@@ -46,6 +47,7 @@ func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 	t.Helper()
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
 		Authorize:    sites{},
@@ -155,6 +157,7 @@ func TestTheProbesAnswerWithTheDatabaseDown(t *testing.T) {
 func TestReadinessIs503WhenTheDatabaseIsDown(t *testing.T) {
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
 		Authorize:    sites{},
@@ -219,6 +222,7 @@ func TestTheProbesNeverResolveTheHost(t *testing.T) {
 		delay: 3 * time.Second,
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:   cache.Memory("pkit"),
 		Tenants: slow, Conn: app, Authorize: sites{}, Authenticate: anonymous,
 	})
 	health.Register(api, check{name: "queue"})
@@ -249,6 +253,7 @@ func TestTheProbesNeverResolveTheHost(t *testing.T) {
 func TestReadinessAnswersWithinTheProbeTimeout(t *testing.T) {
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
 		Authorize:    sites{},

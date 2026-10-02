@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -44,6 +45,7 @@ func TestASignedInResourceClosureCannotReadAnotherTenantsRow(t *testing.T) {
 	s.Read = ""
 	s.ReadAuth = httpx.SignedIn()
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: acmeHost, Installation: acmeHost,
 		Tenants: hosts{byHost: map[string]tenancy.Tenant{acmeHost: acme, globexHost: globex}},
 		Conn:    app, Authorize: member{}, Entitle: everyPlan{},

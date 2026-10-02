@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/cache/providers/valkey"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
@@ -290,6 +291,14 @@ func compose(cfg config.Config) composition {
 // constructor here and nowhere else. See app.Transports.
 func transports() app.Transports {
 	return app.Transports{Memory: memory.New, JetStream: eventnats.Connect}
+}
+
+// caches is the one place this application names a value store. cache.adapter
+// selects between the in-process store the kernel builds itself and the shared one
+// named here; a product that runs one process forever may leave this nil, and is
+// refused the day it sets cache.adapter to valkey. See app.Caches.
+func caches() app.Caches {
+	return app.Caches{Valkey: valkey.Connect}
 }
 
 func operatorStorybook(dir string) func(context.Context) (export.Storybook, error) {
