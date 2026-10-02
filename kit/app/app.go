@@ -223,8 +223,8 @@ type App struct {
 
 	// declaredRoutes is the composition's route signature as the dry registration
 	// left it, and nil exactly when no Declarations call preceded this Start.
-	// registeredRoutes and refuseASecondRegistration are its whole life: one
-	// registration writes it, the next one is judged against it.
+	// registeredRoutes and registrationsAgree are its whole life: the first
+	// registration writes it and the next one is judged against it.
 	declaredRoutes []string
 }
 
@@ -513,10 +513,9 @@ func useJetStream(mode string, role Role) (bool, error) {
 //
 // Two callers, one sequence: Declarations runs this before anything is migrated,
 // and buildAPI runs it again over the open connection on the way to serving. One
-// registration order and one set of gates, so the dry answer and the real one
-// cannot disagree about what a composition is — and one check, because a module's
-// Routes callback is the one part of a composition two calls can run differently,
-// and what they wrote the first time is recorded and compared.
+// registration order and one set of gates, and one check — registrationsAgree —
+// because a module's callback is the one part of a composition two calls can run
+// differently, and what it wrote the first time is what the second is judged to.
 func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
 		Declarations: declarations,
@@ -572,10 +571,14 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 			m.Routes(api.Surfaces(m.Name))
 		}
 	}
-	// Before any gate, because every gate below reads the routes as they are and
-	// would answer a disagreement between the two registrations as some other
-	// composition's problem — usually as "this composition mounts nothing".
-	if err := a.refuseASecondRegistration(api); err != nil {
+	// The same line of the same sequence on both passes: every module's Routes has
+	// run, and composeGates has not yet mounted the routes the kernel owns, nor
+	// ValidateDeclarations stamped a surface onto huma's own schema route — what the
+	// kernel mounts it mounts alike on both runs, and a module's callback is the one
+	// thing they can disagree about. Before every gate below, each of which reads the
+	// routes as they are and would answer a disagreement as some other composition's
+	// problem: "this composition mounts nothing".
+	if err := a.registrationsAgree(api, declarations); err != nil {
 		return nil, nil, err
 	}
 	if err := a.composeGates(api); err != nil {
@@ -607,14 +610,10 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 // registeredRoutes is what one registration of this composition mounted: every
 // operation the recorder holds, as one line naming its method, its composed path,
 // its operation id and the authorization guarding it, sorted so the answer is a set
-// rather than a sequence. The path is the composed one, so the surface a route
-// landed on is already in it, and the recorded surface itself is not read: huma's
-// own /schemas route carries none until ValidateDeclarations stamps one, which it
-// does after this point, and a signature that read a field one pass has stamped and
-// the other has not would refuse every composition in the repository. A module's
-// Routes callback writes exactly these facts, and the kernel and the manifests
-// write them the same way in both registrations, which makes them the whole of what
-// the two registrations can disagree about.
+// rather than a call order. The path is the composed one, so which surface a route
+// landed on is already in it. A module's Routes callback writes exactly these facts,
+// and the kernel and the manifests write them the same way in both registrations,
+// which makes them the whole of what the two registrations can disagree about.
 func registeredRoutes(api *httpx.API) []string {
 	recorded := api.Recorded()
 	lines := make([]string, 0, len(recorded))
@@ -626,29 +625,33 @@ func registeredRoutes(api *httpx.API) []string {
 	return lines
 }
 
-// refuseASecondRegistration answers the one question the two registrations of one
-// composition can fall out over: did every module mount what it mounted the first
-// time. A module's Routes callback is not required to be repeatable —
-// kit/module.Module.Routes never said so, and an idempotent mount guard inside one
-// is a reasonable thing to have written — so the disagreement is possible, and the
-// dry pass cannot see it: what the second registration mounts is what serves.
-// Refusing at the point of the disagreement, before the migration, is what lets
-// Declarations say that the composition it gated is the composition that serves.
-func (a *App) refuseASecondRegistration(api *httpx.API) error {
-	first := a.declaredRoutes
-	if first == nil {
-		// Nobody registered this composition before this call — kit/app's own Run, a
-		// caller that starts without asking first — so there is one registration and
-		// nothing to compare it with.
+// registrationsAgree makes the two registrations of one composition's routes one
+// claim rather than a hope. They are registered twice: once on the dry recorder,
+// where Declarations answers the gates before any effect, and once over the live
+// connection on the way to serving. kit/module.Module.Routes never asked a callback
+// to answer the same way twice — kit/app called each one exactly once before the dry
+// registration existed — so a callback behind an idempotent guard answers differently
+// and the dry pass cannot see it: what the second registration mounts is what serves.
+// The first registration therefore sets the standard, and a route mounted on one side
+// only refuses the boot, naming the side, while the migration has still not run.
+func (a *App) registrationsAgree(api *httpx.API, dry bool) error {
+	if a.declaredRoutes == nil {
+		if !dry {
+			// Nobody registered this composition before this call — kit/app's own Run —
+			// so there is one registration and nothing to compare it with.
+			return nil
+		}
+		a.declaredRoutes = registeredRoutes(api)
 		return nil
 	}
+	first := a.declaredRoutes
 	live := registeredRoutes(api)
 	var bad []string
 	for _, gone := range onlyIn(first, live) {
-		bad = append(bad, "mounted before the connection and not on the way to serving: "+gone)
+		bad = append(bad, "mounted by the first registration and not the second: "+gone)
 	}
 	for _, added := range onlyIn(live, first) {
-		bad = append(bad, "mounted on the way to serving and not before the connection: "+added)
+		bad = append(bad, "mounted by the second registration and not the first: "+added)
 	}
 	if len(bad) == 0 {
 		return nil

@@ -270,7 +270,7 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 // over that connection too, and migrates only after they answer, because a module's
 // Routes callback runs once on each side and one that mounted differently the
 // second time would otherwise serve a surface no gate ever read
-// (app.refuseASecondRegistration).
+// (app.registrationsAgree).
 func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, error) {
 	p, err := a.Plan(d)
 	if err != nil {

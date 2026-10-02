@@ -85,12 +85,9 @@ func (a *App) Declarations() error {
 	}
 	dry := cache.Memory(segment)
 	defer func() { _ = dry.Close() }()
-	api, _, err := a.composeRoutes(nil, dry, true)
-	if api != nil {
-		// What the gates just read is what the registration on the way to serving is
-		// held to; see refuseASecondRegistration.
-		a.declaredRoutes = registeredRoutes(api)
-	}
+	// The dry registration is the first one, so it is the standard the live
+	// registration is judged against; see registrationsAgree.
+	_, _, err = a.composeRoutes(nil, dry, true)
 	return err
 }
 
