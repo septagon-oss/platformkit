@@ -642,7 +642,11 @@ var (
 
 	// Breadcrumb.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
-			ListStyle("none").Margin(style.S0).Padding(style.S0)
+			ListStyle("none").Margin(style.S0).Padding(style.S0).BreakAnywhere()
+	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
+	// hyphenate (a UUID pasted into a title, a hash, a URL). overflow-wrap inherits, so one rule on the
+	// list covers every crumb and its separator; without it the entry measured 1352px wide inside a
+	// 390px viewport and the page scrolled sideways even after the heading below it broke.
 	clBreadcrumbSep = style.New().TextColor(style.FgTertiary)
 	clBreadcrumbCur = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium)
 
@@ -659,10 +663,17 @@ var (
 	clSidebarWidthExpanded = style.New().Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
 		return c.Width(style.S64)
 	})
-	clSidebarDisabled    = style.New().Opacity(style.Opacity50)
-	clSidebarInner       = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	clSidebarDisabled = style.New().Opacity(style.Opacity50)
+	clSidebarInner    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	// The column paints an inverse surface, so it names the text colour that reads on it. Without this,
+	// every descendant that chooses no colour of its own — the nav `<li>` around each link, a plain
+	// <span> — inherits the page's foreground token, and both this package's floor probe and the
+	// clients' gate measure text elements, not only links: 1.02:1 measured on an <li> at 1440px.
+	// The content flavour needs nothing, because its column is SurfacePrimary and the inherited
+	// foreground is legible on it (16.12:1).
 	clSidebarColumnAdmin = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
-				Bg(style.SurfaceInverse).PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
+				Bg(style.SurfaceInverse).TextColor(style.FgOnInverse).
+				PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
 	clSidebarColumnContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
 				Bg(style.SurfacePrimary).OverflowY(style.OverflowVisible)
 	clSidebarBrandAdmin = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexShrink0().
