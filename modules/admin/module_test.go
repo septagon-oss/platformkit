@@ -232,8 +232,8 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	// to mount into, and the screen would fall back to the shell's own.
 	rolesModule := module.Module{
 		Name:        "auth",
-		Permissions: []module.Permission{{Key: "auth:manage", Label: "manage authentication"}},
-		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "auth:manage"}},
+		Permissions: []module.Permission{{Key: "role:manage", Label: "manage roles"}},
+		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "role:manage"}},
 	}
 	deps := admin.Deps{
 		Modules: []module.Module{notes, catalogue, rolesModule}, Authorize: authorize,
@@ -999,21 +999,53 @@ func TestTheDoorsBesideSignInAnswer(t *testing.T) {
 // toHaveURL(/\/app$/): one of them pins it for a person holding exactly
 // audit:read, one for a person holding exactly role:manage, one for a plain
 // member and one for the tenant's administrator. Those four cover every shape of
-// caller, so no landing rule that moves a signed-in person off the root can pass
-// the suite that is pinned, and the root is where a person who signs in is sent.
-// What the walkthrough's zero scores were about is answered on that page — see
-// TestTheDashboardNamesTheScreensThisCallersRoleOpens — not behind a redirect.
+// caller, so no landing rule that moves a person off the root *when the sign-in
+// answers them* can pass the suite that is pinned, and the root is where a person
+// who signs in is sent. What the walkthrough's zero scores were about is answered
+// on that page — see TestTheDashboardNamesTheScreensThisCallersRoleOpens — not
+// behind a redirect.
+//
+// One caller is not pinned anywhere, and it is the one this page can only get
+// wrong: a person who is *already* signed in and opens the sign-in address. For
+// them the form asks for a credential they do not need, so its destination is the
+// first screen their role opens — TestASignedInPersonLandsOnTheFirstScreenTheirRoleOpens
+// is that promise, and the rule is in login. Whether the first-pinned caller above
+// should be moved there too is a question with two owners and neither is this
+// delivery's: the specs that pin it are review's, so it is root's to settle.
 func TestTheSignInCardSendsAPersonToTheShellsOwnHome(t *testing.T) {
-	_, page, _ := call(t, mount(t), http.MethodGet, "/app/admin/login", "")
+	// Anonymous: nobody is signed in, so the destination is the shell's own home.
+	_, page, _ := callAnon(t, mount(t), http.MethodGet, "/app/admin/login", "")
 	if got := attribute(page, "data-next"); got != "/app" {
 		t.Errorf("the sign-in form's default next is %q, want the shell's own home", got)
 	}
-	// An explicit next still wins over it: somebody pushed off a specific screen
+	// Signed in, and holding one screen: that screen, because a second sign-in is
+	// not what this person needs.
+	_, page, _ = call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())),
+		http.MethodGet, "/app/admin/login", "")
+	if got := attribute(page, "data-next"); got != "/app/auth/roles" {
+		t.Errorf("a signed-in person's destination is %q, want the screen their role opens", got)
+	}
+	// An explicit next wins over both: somebody pushed off a specific screen
 	// goes back to that screen.
-	_, page, _ = call(t, mount(t), http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
+	_, page, _ = callAnon(t, mount(t), http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
 	if got := attribute(page, "data-next"); got != "/app/note/notes" {
 		t.Errorf("an explicit next was not honoured: %q", got)
 	}
+	_, page, _ = call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())),
+		http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
+	if got := attribute(page, "data-next"); got != "/app/note/notes" {
+		t.Errorf("an explicit next was not honoured for a signed-in person: %q", got)
+	}
+}
+
+// callAnon is call without the session cookie, which is what leaves the caller
+// anonymous: the identity hook is only reached for a request that carries one.
+func callAnon(t *testing.T, r http.Handler, method, path, body string) (int, string, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w.Code, w.Body.String(), w.Header().Get("Location")
 }
 
 // TestTheDashboardNamesTheScreensThisCallersRoleOpens is rule 5 of the front door
@@ -1032,7 +1064,7 @@ func TestTheSignInCardSendsAPersonToTheShellsOwnHome(t *testing.T) {
 // that" is a fact a person can act on and an empty grid is not.
 func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// Counted nothing, opens one screen: the hand-written one, named and linked.
-	_, body, _ := call(t, mountAs(t, member{"auth:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
+	_, body, _ := call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
 	if strings.Contains(body, "In note") {
 		t.Error("the dashboard drew a count for a caller who may not read it")
 	}

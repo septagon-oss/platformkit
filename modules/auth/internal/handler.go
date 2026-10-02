@@ -95,7 +95,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Method:      http.MethodPost,
 		Path:        "/password/reset",
 		Summary:     "Set a password with a link",
-		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
+		Description: "Consumes the token the link carried, sets the password, ends every session this person had, and signs this browser in — an invitation that left the invited person back at the sign-in form was half a door. An account that also answers with a second factor is the one left signed out: its password changes and its other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
 		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
@@ -262,9 +262,27 @@ type sessionOutput struct {
 // wanted to be signed out and they are.
 type clearOutput struct {
 	SetCookie http.Cookie `header:"Set-Cookie"`
-	Body      struct {
-		SignedOut bool `json:"signedOut"`
-	}
+	Body      clearOutputBody
+}
+
+// clearOutputBody is the body of every answer whose job is to say what happened
+// to this browser's cookie. It is a named type rather than the anonymous struct
+// it was, because the set-password route answers with the same shape plus one
+// field, and two shapes that differ by one optional field have to be one schema
+// to stay the schema the published document already names: a new name for it is
+// a break on an address a shipped client already calls, and the wire gate is
+// right to refuse one.
+//
+// SignedIn is that one field, and it belongs to the set-password route alone.
+// SignedOut keeps the meaning it has always had there — every session this
+// person held before the link was spent is ended — and SignedIn says whether
+// this browser holds a session now. Both are true of the same answer, and
+// neither says what the other does. A route that opens no session leaves the
+// field out, which is why it is optional: the sign-out routes never set it, and
+// a false there would be a fact nothing wrote.
+type clearOutputBody struct {
+	SignedOut bool `json:"signedOut"`
+	SignedIn  bool `json:"signedIn,omitempty"`
 }
 
 type identityOutput struct {

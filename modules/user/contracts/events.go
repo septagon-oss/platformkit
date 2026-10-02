@@ -32,6 +32,16 @@ type Invited struct {
 	Email  string    `json:"email"`
 	Status string    `json:"status"`
 	At     time.Time `json:"at"`
+	// Served is the address the call that invited this person was answered at,
+	// port included, and "" when no call asked for the invitation. The subscriber
+	// that mails the set-password link builds it from this: a link built from the
+	// tenant's name alone opens port 80 on a development installation that serves
+	// its tenants behind a port, and only the call knew the port it arrived on.
+	// See auth's contracts.ResetRequested.Served and httpx.ServedAuthority, which
+	// is where the value is read. Not a credential and not an address to trust:
+	// the name in it is a name tenancy already resolved to this tenant, and the
+	// only thing taken from it is the port.
+	Served string `json:"served,omitempty"`
 }
 
 // PasswordSet is the payload of EventPasswordSet. It carries no password, no

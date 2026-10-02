@@ -238,17 +238,35 @@ func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 // purge's maxAge already uses.
 var resetInterval = fmt.Sprintf("%d seconds", int(contracts.ResetInterval.Seconds()))
 
-// Reset consumes a token, sets the password and ends every session.
+// Reset consumes a token, sets the password, ends every session, and lets the
+// browser that spent the link in.
 //
-// Every one, including any the caller holds: whoever is resetting a password
-// has already shown they were not relying on a session, and whoever else held
-// one may be the reason it is being reset. The row is deleted rather than
-// flagged, so "used once" is the row being gone — two requests racing on one
-// token is one DELETE returning a row and one returning none, decided by
-// Postgres rather than by a read and a write this code would have to get right.
-func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Every session that existed when the link was spent ends, including any the
+// caller holds: whoever is resetting a password has already shown they were not
+// relying on a session, and whoever else held one may be the reason it is being
+// reset. The row is deleted rather than flagged, so "used once" is the row being
+// gone — two requests racing on one token is one DELETE returning a row and one
+// returning none, decided by Postgres rather than by a read and a write this code
+// would have to get right.
+//
+// The session that comes back is opened after that sweep rather than before it,
+// which is the order the whole answer depends on: opening one first would have it
+// deleted by the revocation that follows, and a link that set a password and then
+// signed nobody in is the half-journey the front door was scored zero on — the
+// invited person who chose a password in the page the mail opened and then had to
+// sign in anyway. The method it records is "reset", not "password": what this
+// person spent was a token, and the trail says what was spent.
+//
+// nil and no error is the one account this leaves signed out: a person who
+// enrolled a second factor. Their password is still set and their other sessions
+// still ended — a dead phone must not lock anybody out of their own account — but
+// the first half of a sign-in does not open a session on an account that answers
+// with two, and a mailed link is a weaker first half than a password. They are
+// sent to the sign-in page to finish the sign-in the way the account asks for.
+func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	if token == "" {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	// The lookup is by the hash of what was presented, which is a primary-key
 	// probe on a value an attacker cannot steer: the token is 256 bits of
@@ -263,19 +281,34 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
 		// An unknown token, a spent one and an expired one are one answer, for
 		// the reason Login's three refusals are one answer.
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	case err != nil:
-		return fmt.Errorf("auth: consume a password token: %w", err)
+		return nil, fmt.Errorf("auth: consume a password token: %w", err)
 	}
 	if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
-	return events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
+	if err := events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
 		UserID: userID, At: db.Now(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+	answersWith, err := s.factorEnrolled(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if answersWith {
+		return nil, nil
+	}
+	person, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := s.open(ctx, tx, person, from, "reset")
+	return session, err
 }
 
 // The two messages. They are here rather than in a template because the
