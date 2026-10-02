@@ -10,7 +10,11 @@
 // The id is the same identifier the log line carries as request_id and
 // the problem body carries as its instance, which is what makes the join real
 // today: an event's traceparent names the request that caused it in the terms
-// every log of that request already uses.
+// every log of that request already uses. Where a request's id cannot be a trace
+// id — an opaque handle a proxy chose — the trace is minted and the join runs the
+// other way, through the request id the row, the envelope and the log all carry.
+// Every accepted request leaves a trace either way; only work nobody asked for
+// carries none.
 package trace
 
 import (
@@ -149,7 +153,10 @@ func New() Context {
 // traceparent are then one identifier rather than three that happen to agree.
 // An id that is not 32 hex characters — a proxy's opaque handle, within the
 // length httpx accepts — cannot be a W3C trace id, and this says so rather than
-// hashing something into a shape it does not have.
+// hashing something into a shape it does not have. Saying so is not the same as
+// leaving the request untraced: whoever opened that request mints a trace of its
+// own (kit/httpx's request-id middleware does) and keeps the id it answered with.
+// What this returns is the join, not the whole of a trace.
 func FromRequestID(id string) (Context, bool) {
 	id = strings.ReplaceAll(id, "-", "")
 	if !hexID(id, 32) {

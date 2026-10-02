@@ -192,7 +192,11 @@ row in the transaction that wrote the event, so the request that moved a
 state and the handler that reacted to it are one trace and not two that happen to sit
 next to each other, an operator reading a worker's span can quote the id the response
 header carried, and the trail's own `traceparent` column (migrations/000035)
-makes a row of the trail name the request and the trace that caused it. Three numbers, each with a tenant dimension where one is
+makes a row of the trail name the request and the trace that caused it. A request
+whose caller supplied an id that W3C cannot use as a trace id — a proxy's opaque
+handle, which the router accepts and echoes — opens a trace of its own instead of
+writing an event that names no trace at all; its trace joins to the log line and the
+row through the request id, which all three of them carry. Three numbers, each with a tenant dimension where one is
 known: `pkit.http.operation.duration`, `pkit.outbox.lag`, `pkit.http.refusals` by
 class — the last counted once per request, from the status the client was finally
 answered with, so the refusals the router writes for itself (a query value that is

@@ -53,9 +53,10 @@ type Context struct {
 	// RemoteAddr records the proxy, which is the truth.
 	ClientAddr string
 
-	// Trace is the W3C trace context of the call, parsed by kit/trace from the
-	// caller's traceparent or opened from the request id. Invalid is the normal
-	// case for work nobody requested.
+	// Trace is the W3C trace context of the call: kit/trace parsed it from the
+	// caller's traceparent, opened it from the request id, or minted it for a
+	// request whose id could not be a trace id. Invalid is the normal case for
+	// work nobody requested — a job, a relayed row — and not for a call.
 	Trace trace.Context
 }
 
