@@ -93,30 +93,42 @@ func scanGo(path string) ([]string, error) {
 	return problems, nil
 }
 
-// pluralSuffixFormat refuses a noun pluralised by appending a letter to a verb:
-// "%ss", and the numbered verb a gotext catalogue writes its forms with, "%[1]ss".
-// They are the same suffix; a checker that read only the unnumbered spelling would
-// let a translated catalogue pluralise in English while Go source stayed clean.
+// pluralSuffixFormat refuses a noun pluralised by appending a letter to a verb: the
+// unnumbered verb a Go format writes ("%" then "ss" below), and the numbered verb a
+// gotext catalogue writes its forms with ("%[1]ss"). They are the same suffix; a
+// checker that read only the unnumbered spelling would let a translated catalogue
+// pluralise in English while Go source stayed clean. The verb is matched a byte at a
+// time rather than written whole beside the tail, because this checker walks its own
+// source and the joined literal is the finding it reports.
 func pluralSuffixFormat(value string) bool {
-	if strings.Contains(value, "%"+"ss") {
-		return true
-	}
-	for at := 0; at+1 < len(value); {
-		if value[at] != '[' || !strings.HasSuffix(value[:at], "%") {
-			at++
+	const tail = "ss"
+	for at := 0; at < len(value); at++ {
+		if value[at] != '%' {
 			continue
 		}
-		end := strings.IndexByte(value[at:], ']')
-		if end < 0 {
-			return false
-		}
-		number := value[at+1 : at+end]
-		if number != "" && strings.Trim(number, "0123456789") == "" && strings.HasPrefix(value[at+end+1:], "s"+"s") {
+		rest := value[at+1:]
+		if strings.HasPrefix(rest, tail) {
 			return true
 		}
-		at += end + 1
+		end := strings.IndexByte(rest, ']')
+		if end <= 0 {
+			continue
+		}
+		if digits(rest[1:end]) && strings.HasPrefix(rest[end+1:], tail) {
+			return true
+		}
 	}
 	return false
+}
+
+// digits reports a non-empty run of decimal digits: the index a numbered verb names.
+func digits(value string) bool {
+	for i := 0; i < len(value); i++ {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return value != ""
 }
 
 func literal(expr ast.Expr) string {
