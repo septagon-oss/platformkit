@@ -50,6 +50,9 @@ import (
 // a million names is slow in every filesystem worth naming — has never been
 // needed inside a tenant's own directory, and an operator who wants one moves
 // the bytes rather than getting a second shape from this adapter.
+//
+// Reading is not sweeping: which of those positions a delete may reach is
+// tenantOf's answer, and it is narrower than the list above on purpose.
 type Local struct {
 	dir string
 
@@ -76,7 +79,11 @@ func NewLocal(dir string) *Local { return NewLocalOf(appname.Name(""), dir) }
 // reading them: Get, Delete and Prove look at every position below, so the move
 // (`mv <dir>/<tenant>/<2>/<key> <dir>/<app>/<tenant>/<key>`, one move per blob)
 // is a boot's step and not this adapter's, and a deployment that never takes it
-// still serves what it holds.
+// still serves what it holds. What it stops doing is reconciling those older
+// bytes: Blobs lists this slug's own segment only, so an abandoned upload whose
+// bytes were never moved stays on the volume until the move happens. That costs
+// disk and deletes nothing, which is the right way to be wrong about a directory
+// this app shares with every other app mounted at the same root.
 func NewLocalOf(app appname.Name, dir string) *Local {
 	return &Local{dir: dir, app: app}
 }
@@ -253,6 +260,11 @@ func (l *Local) erase(names ...string) error {
 // not something this package wrote, and a sweep that deleted what it did not
 // recognise would be a sweep that deletes a backup somebody left here — or, with
 // two apps sharing one volume, another app's bytes.
+//
+// What is listed is therefore narrower than what is readable: an app that names
+// itself lists its own segment, an app that names nothing lists the tenant
+// directories, and both list the flat directory. tenantOf is that line, and a blob
+// on the other side of it stays on the volume whatever its modification time says.
 func (l *Local) Blobs(_ context.Context, _ db.Tx[db.System], before time.Time) ([]contracts.Blob, error) {
 	var out []contracts.Blob
 	err := filepath.WalkDir(l.dir, func(at string, e fs.DirEntry, err error) error {
@@ -292,14 +304,30 @@ func (l *Local) Blobs(_ context.Context, _ db.Tx[db.System], before time.Time) (
 	return out, nil
 }
 
-// tenantOf is whose object this is, from where it sits. <app>/<tenant>/<key> is
-// that tenant's in an app that names itself — and only when the first segment is
-// this store's own slug, because two apps mounted at one root each see the
-// other's directory and neither is the other's to sweep. <tenant>/<2>/<key> is
-// that tenant's in the deployment that names none, and is what an app that names
-// itself reads from before its own boot named it. The flat <dir>/<2>/<key> a
-// release before the scope wrote is nobody's that this package can name, so it
-// reports uuid.Nil and the sweep treats it as a blob no row claims.
+// tenantOf is whose object this is, from where it sits — and, for a store that
+// names itself, whether these bytes are its own to remove at all.
+//
+// <app>/<tenant>/<key> is that tenant's, and only when the first segment is this
+// store's own slug: two apps mounted at one root each see the other's directory
+// and neither is the other's to sweep.
+//
+// <tenant>/<2>/<key> is that tenant's in the deployment that names none. An app
+// that names itself reads that position — Get, Delete and Prove must keep serving
+// bytes written before its boot added the segment — but never lists it, and so
+// never removes what lives in it. The reason is one sentence: a listing is a list
+// of things to delete, and nothing in that directory says which app wrote the
+// bytes, so a named app that listed it would be claiming a directory it shares
+// with every other app on the volume — including the deployment of one app whose
+// live bytes are still being written there. Its own older blobs are in the same
+// directory, and the command that closes that window (kit/appname/README.md,
+// *Stored files*) is the `mv` into the app's own segment, after which this listing
+// sees them and their age decides.
+//
+// The flat <dir>/<2>/<key> a release before the scope wrote is nobody's that this
+// package can name, so it reports uuid.Nil and the sweep treats it as a blob no
+// row claims; every app sharing the root can list it, and what protects a live
+// blob in it is the row naming its key, which the sweep asks about across every
+// tenant of the one database this server hosts (decision 0074).
 func (l *Local) tenantOf(at string, key uuid.UUID) (uuid.UUID, bool) {
 	rel, err := filepath.Rel(l.dir, at)
 	if err != nil {
@@ -308,8 +336,11 @@ func (l *Local) tenantOf(at string, key uuid.UUID) (uuid.UUID, bool) {
 	parts := strings.Split(filepath.ToSlash(rel), "/")
 	switch len(parts) {
 	case 3:
-		if l.app.Named() && parts[0] == l.app.String() && parts[2] == key.String() {
-			return minted(parts[1])
+		if l.app.Named() {
+			if parts[0] == l.app.String() && parts[2] == key.String() {
+				return minted(parts[1])
+			}
+			return uuid.Nil, false
 		}
 		if parts[2] != key.String() || parts[1] != key.String()[:2] {
 			return uuid.Nil, false

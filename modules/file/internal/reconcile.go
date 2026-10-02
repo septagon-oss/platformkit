@@ -168,7 +168,11 @@ func chunks(blobs []contracts.Blob, n int) [][]contracts.Blob {
 //
 // A blob the listing located under a tenant goes to Local.remove, which takes the
 // app segment from the store rather than from the listing: two apps mounted at one
-// root each remove from their own directory and never from the other's.
+// root each remove from their own directory and never from the other's. Blobs
+// names no object outside that directory, so no other app's bytes reach this line
+// from the sweep, and the older positions of a tenant this store does name are
+// erased with the current one because bytes still lying in an older directory are
+// a copy that is still here, which is what Prove then counts.
 func (l *Local) RemoveBlob(_ context.Context, _ db.Tx[db.System], b contracts.Blob) error {
 	id, ok := minted(b.Key.String())
 	if !ok {
