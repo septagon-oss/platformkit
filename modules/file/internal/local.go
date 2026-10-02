@@ -88,6 +88,13 @@ func NewLocalOf(app appname.Name, dir string) *Local {
 	return &Local{dir: dir, app: app}
 }
 
+// App is the slug whose segment these bytes sit in — the empty Name for the
+// deployment of one app, whose bytes sit at the un-prefixed position every app on
+// the volume can reach. The orphan sweep asks it (reconcile.go): the segment says
+// which directories this adapter may list, and only a row says which app a tenant
+// inside one of them belongs to.
+func (l *Local) App() appname.Name { return l.app }
+
 var _ contracts.Storage = (*Local)(nil)
 var _ contracts.Prover = (*Local)(nil)
 var _ contracts.Reconciler = (*Local)(nil)
@@ -311,9 +318,13 @@ func (l *Local) Blobs(_ context.Context, _ db.Tx[db.System], before time.Time) (
 // store's own slug: two apps mounted at one root each see the other's directory
 // and neither is the other's to sweep.
 //
-// <tenant>/<2>/<key> is that tenant's in the deployment that names none. An app
-// that names itself reads that position — Get, Delete and Prove must keep serving
-// bytes written before its boot added the segment — but never lists it, and so
+// <tenant>/<2>/<key> is that tenant's in the deployment that names none — and
+// which of those tenants belong to an app that names itself is a row's answer,
+// not a path's, so reconcile.go's foreignTenants drops the listed bytes of a
+// tenant another app holds before any of them is removed.
+//
+// An app that names itself reads that position — Get, Delete and Prove must keep
+// serving bytes written before its boot added the segment — but never lists it, and
 // never removes what lives in it. The reason is one sentence: a listing is a list
 // of things to delete, and nothing in that directory says which app wrote the
 // bytes, so a named app that listed it would be claiming a directory it shares
