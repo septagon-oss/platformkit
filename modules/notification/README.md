@@ -30,6 +30,14 @@ the recipient's, the tenant's, or the deployment's. `notification.Settings()` is
 behind those choices, over the caller's own rows, and `notification.Senders(verifier, keys)`
 the tenant's sending address, one row per tenant; neither is reached by a route here.
 
+A provider in `Providers` is a channel this deployment sends, and a channel it sends has
+somebody listening: `subscriptions(deps)` composes one carrier subscription per provider
+(`internal.Carrier`), named by the same `contracts.RequestedEvent` table `Notify` asks that
+channel by, so the two halves come from one `Deps` value and cannot disagree. The carrier
+answers into a ledger row this module writes — nil is `sent`, `contracts.ErrPermanent` is
+`failed` with its sentence, anything else rolls back and retries — and a provider wired for
+`in_app` or `email`, which the module carries itself, panics at composition.
+
 Mail leaves as the tenant that raised it. `SendMail` reads `notification_senders` in
 the worker's own transaction and hands the row to the carrier, which puts the tenant's
 name and address in the `From:` **header** and signs it with DKIM (RFC 6376) under the
@@ -54,6 +62,25 @@ and the worker acknowledges the retry instead of dead-lettering a delivery that
 happened. `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
 
+## Interface
+
+`contracts/` is the whole surface: `Service` (notify, list, mark read), `PreferenceService`
+and `Preferences` (one person's channel switches and quiet window), `Senders` and
+`SenderAdmin` (the tenant's one sending address), `Decide` and the channel vocabulary, the
+nine names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
+`HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `Provider`).
+Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake `Mailer`
+and `RunService`, the suite the real service also runs — and never `internal/`. The two
+faces the composition reaches are `notification.Settings()` and
+`notification.Senders(verifier, keys)`; the two HTTP routes are hand-written, because a
+`rest.Spec` list route is the whole tenant and these rows are addressed to a person.
+
+There is no mobile counterpart to derive or compose here, and this module is why not: with
+no `rest.Spec` there is no catalog resource and no command surface, so a phone client
+holding this module's own contracts would have to be written against Go, not a generated
+catalog (decision 0019). A bell derived from `Service` and `PreferenceService` is the form
+that surface would take; it is the product's to build and the limits below name what stops.
+
 ## Composition
 
 **Reused** — the delivery ledger and its one writer (`internal.record`,
@@ -74,16 +101,18 @@ row saying so" are both facts about the send and no existing unit reached the se
 `kit/events/providers/{memory,nats}` pattern, one package per SDK, so the module links no
 vendor library and a deployment that sends nothing imports nothing), `contracts.Permanent`
 as the one error a provider returns when another attempt would say the same thing, and
-`gomail_test.go`'s in-process relay, which any future carrier's test can copy to assert
-what went on the wire rather than what a mock said.
+and the shape of a provider test — an in-process relay in the carrier's own package that
+asserts what went on the wire rather than what a mock said (`providers/gomail`, whose relay
+lives in `gomail_test.go` and is therefore a pattern to copy, not a package to import).
 
 ## Authorization
 
 ### Permissions
 
-None. `permissions` in `modules/notification/module.go` is an empty `[]module.Permission`, and the module has no nav entry.
-Both routes are guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`).
-The `SendMail` event subscription (`modules/notification/internal/mail.go`) is run by the kernel and is not guarded by a permission.
+One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines.
+No nav entry names it: a nav entry decides who sees a link, and this key guards a mail identity, not a page.
+The module's two routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing.
+The `SendMail` event subscription (`modules/notification/internal/mail.go`), and the one carrier subscription per wired provider (`internal.Carrier`), are run by the kernel and are not guarded by a permission.
 
 ### Object scope
 
@@ -103,10 +132,50 @@ It has no public write, so `kit/limit` is not used.
 
 ### The operator boundary
 
-None. There are no permissions, so none is marked `Operator: true`, and no `OperatorRead` or `OperatorWrite` route exists.
+None. `sender:manage` is not marked `Operator: true` — its scope is the tenant's own row, which the transaction resolves, so an operator is not the only one who may hold it — and no `OperatorRead` or `OperatorWrite` route exists.
 
 ### Provisioning
 
-Nothing needs granting. Every signed-in person can read and mark their own notifications, which is why the manifest declares no key.
-The settings and sender-admin faces (`Settings()`, `Senders(verifier, keys)`) are reached by no route yet: the module holds the commands, and the routes and the permission a role would be granted for them are the application's share.
-Roles and the roles API therefore do not affect this module's routes.
+`sender:manage` is the one key a role would be granted, and it is granted by nothing today, because the module mounts no route over the sender face: the composition holds `Senders(verifier, keys)` and the product writes the page. Granting it is therefore the product's act over its own roles, and until it does, the commands are reachable only from inside the composition.
+Every signed-in person can read and mark their own notifications and set their own channel switches without any grant: those commands are scoped by the principal, not by a key.
+Roles and the roles API therefore do not affect this module's two routes.
+
+## Limits
+
+What this module does not do, stated here rather than only in the branch that left it out:
+
+- **No in-app bell and no list in the kernel shell.** `Service.ListFor` and `MarkRead` and
+  the two routes answer the question a bell asks; nobody renders it. There is no nav entry
+  and no page, so a `requested` in-app row is read only by a client that already knows the path.
+- **No settings or sender page, and no route over either face.** `Settings()` and
+  `Senders(verifier, keys)` are the commands and `sender:manage` is the key; the product
+  writes the form and the route, and until it does a person cannot change a channel switch
+  from a screen and an administrator cannot set a tenant's sender from anywhere but Go.
+- **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
+  one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
+  by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
+- **Mail is the only carrier that reaches a device.** The module can host a carrier for any
+  channel — `internal.Carrier` asks it and closes the ledger row around the answer — and
+  `contracts.Provider` is the shape, but nothing in this repository implements it: a wired
+  push carrier gets `Delivery.Target` empty, because device tokens, browser subscriptions
+  and tenant endpoint URLs live outside this module.
+- **No expected revision.** No command in this module takes one, as none in the reference
+  module does; the sender row is read under `FOR UPDATE` where a lost update would matter.
+- **Not measured as an evidence indicator.** `internal.Coverage` computes
+  `delivery_ledger_coverage` as requested channels with a terminal row over all requested
+  ones; the repository has no `tools/pillars.py` to report it through, so the ratio is a
+  query and a number in the brief, not a dashboard.
+
+## Verification
+
+`go test ./modules/notification/...` runs the contracts suite against the real service,
+a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
+sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
+send against 000030 (`TestARedeliveredSendWritesOneSentRow`), one tenant's writes against
+another tenant's rows (`TestOneTenantsLedgerIsNotAnothers`,
+`TestAnotherTenantWritesNothingOfThisTenants`), the sender commands against a caller that
+names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`) and a wired carrier through
+its ledger row (`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`).
+`providers/gomail`'s assertions run against an in-process relay in its own package, so what
+a real relay answers — DKIM as the far end verifies it, STARTTLS negotiation, AUTH — is
+observed by no test here.
