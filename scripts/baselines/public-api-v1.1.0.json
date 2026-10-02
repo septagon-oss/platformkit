@@ -2,11 +2,13 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "2e4b3d94c3cd5db339e76b39ce29b66c6f0b8f79"
+    "candidate": "1770706a438cd0352176126d0e298ab51a4ed520"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
+    "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, []Check, ...Report) net/http.Handler",
+    "./kit/health.Register: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, ...Check) to func(*github.com/septagon-oss/platformkit/kit/httpx.API, []Check, ...Report)",
     "./kit/httpx.(*API).InvalidateHost: changed from func(string) to func(...string) error",
     "./kit/httpx.(*API).Static: removed",
     "./kit/httpx.HTML: changed from func(*API, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*Page, error)) to func(*Router, github.com/danielgtaylor/huma/v2.Operation, Auth, func(context.Context, *I) (*Page, error))",
