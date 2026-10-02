@@ -779,6 +779,7 @@ const (
 	classWhitespacePreWrap = "whitespace-pre-wrap"
 	classBreakWords        = "break-words"
 	classBreakAll          = "break-all"
+	classBreakAnywhere     = "break-anywhere"
 	classTabularNums       = "tabular-nums"
 	classObjectCover       = "object-cover"
 	classObjectContain     = "object-contain"

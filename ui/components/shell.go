@@ -51,7 +51,10 @@ func Shell(p ShellProps, slots ShellSlots) g.Node {
 		h.Div(h.Class(clShellColumn.Compile()),
 			h.Header(h.Class(clShellHeader.Compile()), g.Group(slots.Header)),
 			h.Main(h.ID(target), h.Class(clShellMain.Compile()), g.Group(slots.Main)),
-			h.Footer(h.Class(clShellFooter.Compile()), g.Group(slots.Footer)),
+			// The bound lives on a wrapper rather than on the footer: clShellFooter's top border is the
+			// frame's rule and spans the column, and a max-width on the footer would cut its own rule.
+			h.Footer(h.Class(clShellFooter.Compile()),
+				h.Div(h.Class(clShellFooterMeasure.Compile()), g.Group(slots.Footer))),
 		),
 	)
 	return h.Div(nodes...)
