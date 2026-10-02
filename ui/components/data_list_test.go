@@ -87,12 +87,16 @@ func TestDataListClearedStatesDoNotInvokeDataSlots(t *testing.T) {
 			EmptyAction: []g.Node{g.Text("create")}, RetryAction: []g.Node{g.Text("retry")},
 			BulkActions: []g.Node{g.Text("protected actions")},
 		}
-		if status == c.MediaRefused {
+		if status == c.MediaFailed || status == c.MediaRefused {
 			var rejected strings.Builder
 			if err := c.DataListWithSlots(p, slots).Render(&rejected); err == nil || rejected.Len() != 0 {
-				t.Fatalf("P2: refused state retained stale slots: %q, %v", rejected.String(), err)
+				t.Fatalf("P2: %s state retained stale slots: %q, %v", status, rejected.String(), err)
 			}
 			slots = c.DataListSlots{}
+			if status == c.MediaFailed {
+				// The failed read keeps its own recovery control and nothing else.
+				slots.RetryAction = []g.Node{g.Text("retry")}
+			}
 		}
 		out := html(t, c.DataListWithSlots(p, slots))
 		if strings.Contains(out, "protected actions") || (status == c.MediaRefused && strings.Contains(out, "retry")) {

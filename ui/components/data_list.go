@@ -31,11 +31,14 @@ func (p DataListProps) Validate() error {
 	if !p.State.ready() && (len(p.Groups) != 0 || len(p.SelectedIDs) != 0) {
 		return fmt.Errorf("DataList: absent content must not retain groups or selection")
 	}
-	if p.State.Status == MediaRefused && (len(p.Columns) != 0 || len(p.Filters) != 0 || len(p.SortChoices) != 0 || len(p.Views) != 0 ||
-		p.ResultKey != "" || p.SelectionName != "" || p.FormID != "" || p.SelectAllLabel != "" || p.ClearSelectionLabel != "" ||
-		len(p.SelectionCountLabels) != 0 || p.ResultCountText != "" || p.Pagination != nil || p.LoadingLayout != nil ||
-		p.HTMXProps != (HTMXProps{})) {
-		return fmt.Errorf("DataList: refused content must clear result data and controls")
+	// A failed read returns no result set either, so it keeps no part of an
+	// earlier one: the same fields that describe a result are C1 correctable
+	// before a byte or a capture leaves. Only refused content also loses Columns.
+	if (p.State.Status == MediaFailed || p.State.Status == MediaRefused) && dataListRetainsResult(p) {
+		return fmt.Errorf("DataList: absent content must clear result data and controls")
+	}
+	if p.State.Status == MediaRefused && len(p.Columns) != 0 {
+		return fmt.Errorf("DataList: refused content must clear columns")
 	}
 	for _, choices := range [][]ChoiceLink{p.Filters, p.SortChoices, p.Views} {
 		if err := validateChoices(choices); err != nil {
@@ -123,8 +126,8 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 	if err := p.Validate(); err != nil {
 		return g.NodeFunc(func(io.Writer) error { return err })
 	}
-	if p.State.Status == MediaRefused && dataListRetainsSlots(slots) {
-		return invalidComponent(fmt.Errorf("DataList: refused content must clear slots"))
+	if (p.State.Status == MediaFailed || p.State.Status == MediaRefused) && dataListRetainsSlots(p.State.Status, slots) {
+		return invalidComponent(fmt.Errorf("DataList: absent content must clear slots"))
 	}
 	nodes := append(baseAttrs(p.ComponentProps), classes(clDataList.Compile(), p.Class),
 		g.Attr("data-component", "data-list"), g.Attr("aria-label", p.Label), g.Attr("data-result-key", p.ResultKey))
@@ -232,12 +235,24 @@ func DataListWithSlots(p DataListProps, slots DataListSlots) g.Node {
 	return h.Section(nodes...)
 }
 
+// The fields that describe a result set rather than the request for it. A
+// failed or refused read returned none, so retaining one is a stale payload:
+// the earlier result's filter URL, result key, selection or pager would reach
+// the HTML and the typed capture without any row behind them.
+func dataListRetainsResult(p DataListProps) bool {
+	return len(p.Filters) != 0 || len(p.SortChoices) != 0 || len(p.Views) != 0 ||
+		p.ResultKey != "" || p.SelectionName != "" || p.FormID != "" || p.SelectAllLabel != "" ||
+		p.ClearSelectionLabel != "" || len(p.SelectionCountLabels) != 0 || p.ResultCountText != "" ||
+		p.Pagination != nil || p.LoadingLayout != nil || p.HTMXProps != (HTMXProps{})
+}
+
 // A refused result may be captured as typed input, so hidden slots must be
-// cleared even when this renderer would not place them in the HTML.
-func dataListRetainsSlots(slots DataListSlots) bool {
+// cleared even when this renderer would not place them in the HTML. A failed
+// read keeps only its own recovery control.
+func dataListRetainsSlots(status MediaStatus, slots DataListSlots) bool {
 	table := slots.TableSlots
 	return len(slots.Toolbar) != 0 || len(slots.BulkActions) != 0 || len(slots.EmptyAction) != 0 ||
-		len(slots.RetryAction) != 0 || len(slots.Footer) != 0 || slots.RowActions != nil ||
+		(status != MediaFailed && len(slots.RetryAction) != 0) || len(slots.Footer) != 0 || slots.RowActions != nil ||
 		len(table.Empty) != 0 || table.Cell != nil || table.CellAttrs != nil || table.RowAttrs != nil ||
 		table.SortURL != nil || table.SortState != nil || table.SortButtonAttrs != nil ||
 		table.SelectAllLabel != "" || table.SelectRowLabel != nil || table.SelectRowChecked != nil ||
