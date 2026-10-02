@@ -52,7 +52,12 @@ jobs:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
-      # The object store the S3 adapter's cases dial. It is this job's own concern
+      # The Valkey conformance suite runs here rather than skipping: the Makefile
+      # points this variable at whatever `make up` publishes when a caller does not
+      # set it, and the job sets it, so the one production adapter of kit/cache is
+      # exercised by the gate that ships it and not only by hand.
+      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
+      # The object store the suite the S3 adapter's cases dial. It is this job's own concern
       # because it is the only job that runs them; the step below starts the store
       # under this alias, and modules/file's workflow_store_fixture_test reads both
       # halves of that arrangement out of this file.
@@ -92,6 +97,7 @@ jobs:
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-nats
         run: bash scripts/ci_setup.sh nats app-role
 
       # The S3-compatible object store modules/file's S3 adapter is tested against,
@@ -104,14 +110,41 @@ jobs:
         id: s3
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-s3
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias s3 \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias s3 \
             -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
             chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data)
           echo "container=$container" >> "$GITHUB_OUTPUT"
           for i in $(seq 1 30); do
             if curl -s -o /dev/null http://s3:8333/; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      # noeviction, as compose.yaml names it: the generation counter a Move raises is
+      # written with no TTL, and a store that evicts it reads back as generation 0,
+      # which believes again the entries the first Move closed. docs/cache.md. In
+      # this job because this is the job that runs `make check`, whose Valkey
+      # conformance case fails rather than skips once PLATFORMKIT_TEST_VALKEY_URL is
+      # set — an address a job sets for itself is a promise.
+      - name: Start Valkey on this job's network
+        id: valkey
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-valkey
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
+            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
+            --maxmemory-policy noeviction)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
             sleep 1
           done
           docker logs "$container"
@@ -133,7 +166,18 @@ jobs:
         env:
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
           S3_CONTAINER: ${{ steps.s3.outputs.container }}
-        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER" "$S3_CONTAINER"
+          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
+          RUN: platformkit-${{ github.run_id }}
+        run: |
+          # Both handles reach the same container: the id the step recorded when it
+          # finished, and the name it was given, which is the handle that survives a
+          # step the job's own deadline cut off mid-write. `ci-cleanup` skips a handle
+          # that names nothing — the step that would have made that container may
+          # never have run.
+          bash scripts/ci_cleanup.sh \
+            "$NATS_CONTAINER" "$RUN-go-checks-nats" \
+            "$S3_CONTAINER" "$RUN-go-checks-s3" \
+            "$VALKEY_CONTAINER" "$RUN-go-checks-valkey"
 
   # Second, and load-bearing: the outbox, the request transaction, the advisory
   # locks over a tenant's administration, the limit counters and the router under
@@ -156,6 +200,12 @@ jobs:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      # The same store as go-checks, because RACE_PACKAGES names two cases that dial
+      # it: kit/httpx's host-invalidation store connections and apps/platformkit's
+      # suspension that has to reach a second process. Set for `make check` on main,
+      # where one job ran both suites; set here too, so the split does not quietly
+      # hand those two cases back the skip they were written not to need.
+      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
       GOFLAGS: -p=4
     services:
       # The database is the runner's own service, in this shape and no other: the
@@ -191,7 +241,29 @@ jobs:
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-race-and-vuln-nats
         run: bash scripts/ci_setup.sh nats app-role
+
+      # The store go-checks starts, for the same reason: two cases in
+      # RACE_PACKAGES dial it and fail rather than skip once the URL is set.
+      - name: Start Valkey on this job's network
+        id: valkey
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-race-and-vuln-valkey
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
+            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
+            --maxmemory-policy noeviction)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
 
       - name: make check-race
         run: make check-race
@@ -203,7 +275,11 @@ jobs:
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER"
+          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
+          RUN: platformkit-${{ github.run_id }}
+        run: bash scripts/ci_cleanup.sh \
+          "$NATS_CONTAINER" "$RUN-race-and-vuln-nats" \
+          "$VALKEY_CONTAINER" "$RUN-race-and-vuln-valkey"
 
   # The design tooling and its browsers. Every one of its steps that launches a
   # Chromium used to sit between `make check-race` and `make e2e`, which is the
@@ -279,9 +355,11 @@ jobs:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
           PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
             --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -331,6 +409,7 @@ jobs:
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}
         run: |
           test -n "$JOB_NETWORK"
           for profile in latin complete; do
@@ -339,7 +418,8 @@ jobs:
               complete) target=complete-preview; test_file=complete-fonts.test.mjs ;;
             esac
             export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
-            container=$(docker run -d --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+            docker rm -f "$CONTAINER_NAME-$profile" >/dev/null 2>&1 || true
+            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
               --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -360,9 +440,16 @@ jobs:
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+          RUN: platformkit-${{ github.run_id }}
         run: |
           status=0
-          bash scripts/ci_cleanup.sh "$EDITOR_CONTAINER" "$PREVIEW_CONTAINER" "$COMPLETE_PREVIEW_CONTAINER" || status=1
+          # By the id the step recorded when it finished, and by the name it gave the
+          # container: a step the job limit took down never finished writing its
+          # output, and run 245's editor container is the reason main wrote that rule.
+          bash scripts/ci_cleanup.sh \
+            "$EDITOR_CONTAINER" "$RUN-editor" \
+            "$PREVIEW_CONTAINER" "$RUN-latin" \
+            "$COMPLETE_PREVIEW_CONTAINER" "$RUN-complete" || status=1
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi
@@ -418,6 +505,7 @@ jobs:
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-e2e-nats
         run: bash scripts/ci_setup.sh nats app-role
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -442,4 +530,5 @@ jobs:
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER"
+          RUN: platformkit-${{ github.run_id }}
+        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER" "$RUN-e2e-nats"
