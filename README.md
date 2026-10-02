@@ -79,13 +79,16 @@ return app.Run(ctx, deployment, app.All)
     migration runs, no store is dialled and no port is listened on until the
     composition resolves and its route gates — the whole composition mounted four
     times and compared against itself, the last of those being the API that would
-    serve — have answered. Beside those answers the process keeps one record: which
-    application it runs on which database. A second application over that database,
-    hosted by another `pkit.Server` value or built straight from an `App`, is
-    refused there as well and names the application already standing, because what
-    shapes a composition declares its events to have is process state and a second
-    successful boot would replace it. A build that is refused changes nothing in the
-    process it was asked in, including what shape its events have.
+    serve — have answered. Beside those answers the process keeps two records. Which
+    application it runs on which database, and with which composition: a second
+    application over a held database — hosted by another `pkit.Server` value or built
+    straight from an `App` — or the held name coming back with a different list of
+    modules is refused there, naming the application already standing. And the shapes
+    a composition declares its events to have, which are process state: a boot beside
+    a live application installs its declarations next to the standing ones, is refused
+    if it spells one of them another way, and gives back what its own boot declared
+    when its `Runtime` closes. A build that is refused changes nothing in the process
+    it was asked in, including what shape its events have.
   - **Made reusable** — the reference application is composed this way in
     [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
     committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)

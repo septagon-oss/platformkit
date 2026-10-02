@@ -342,7 +342,16 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// the route gates, the pool, the store and the migration all still refuse, and a
 	// refusal that had already overwritten the catalog would take the payload guard
 	// away from an application this composition was never allowed to become.
+	//
+	// What is answered here, rather than installed, is the one thing about the
+	// catalog a boot can answer free of effects: whether this composition spells an
+	// event name another live composition already chose another way. Refusing that
+	// at Start would dial the pool, migrate and open a transport on the way to a
+	// sentence about two manifests (0074 rule 1).
 	declared := declaredEvents(mods)
+	if err := events.CheckDeclared(declared); err != nil {
+		return nil, err
+	}
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is

@@ -7,21 +7,31 @@ package pkit
 // `Server.Explain` refuses to write a composition file for one. Both answers are
 // read off one `Server` value, which is the whole of their scope: a second
 // `Server` value, or a bare `App.Build`, is a second boot the first one never
-// heard about, and the two databases they name can be the same database. That is
-// not a smaller version of the same mistake — it is the mistake, and the damage
-// lands in the process rather than in the deployment: kit/app's last act of a
-// successful boot is to install the composition's declared event shapes as
-// process state (kit/events DeclareAll), so the application that boots second
-// overwrites what the first one is still answering publishes with, and an event
-// the first app would have refused for its payload commits.
+// heard about, and the two databases they name can be the same database. Two
+// compositions over one database is the arrangement kit/app's Runtime.Work says it
+// does not support — `events.Relay` claims any unpublished outbox row and stamps
+// what it publishes, so one composition can move another's event onto a transport
+// nobody subscribes to, and two schedulers over one database silence each other's
+// same-named job through the advisory lock — and the review that found it reached
+// the same database through a second `pkit.Server` value.
 //
-// So the claim is recorded per process and keyed by database, which is the scope
-// the damage has: the event catalog is process-wide, and one process composes one
-// application per database. The claim is taken before the first effect, beside the
-// other answers about the composition, and released by the release of the
-// lifecycle that took it — a boot refused above the connection, a Runtime Closed,
-// a Run that returned. A process that holds nothing on a database claims it again
-// freely.
+// So the claim is recorded per process and keyed by database, because one process
+// composes one application per database, and the claim carries that application's
+// composition: a second boot with the held name and a different list of modules is
+// a different application wearing it, and the events the first one declared are the
+// first one's contract rather than the name's. The event catalog answers the other
+// half, beside the database rather than over it: it is the union of what the live
+// compositions declared (kit/events DeclareMore), a boot neither replaces a shape
+// another application is answering under nor takes one away on its way out, and the
+// Close of the Runtime that took a declaration gives it back. Refusing the one
+// composition per database is what keeps that union from being asked to paper over
+// two compositions writing one outbox.
+//
+// The claim is taken before the first effect, beside the other answers about the
+// composition, and released by the release of the lifecycle that took it — a boot
+// refused above the connection, a Runtime Closed, a Run that returned. A process
+// that holds nothing on a database claims it again freely, which is what lets a
+// deployment restart into a different composition once the live one is down.
 //
 // What this check is not: a lock across processes, and not a reading of what the
 // database already holds. Two OS processes pointed at one database each carry
@@ -38,6 +48,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/septagon-oss/platformkit/kit/module"
 )
 
 // databaseClaims is the record: which application holds which database in this
@@ -52,10 +64,25 @@ var databaseClaims = struct {
 	byKey map[string]*holding
 }{byKey: map[string]*holding{}}
 
-// holding is one application's grip on one database.
+// holding is one application's grip on one database: which application, the
+// composition it holds the database with, and how many of that application's
+// lifecycles are in the grip.
 type holding struct {
-	app        string
-	lifecycles int
+	app         string
+	composition string
+	lifecycles  int
+}
+
+// compositionSignature is the module list one grip holds, spelled the way the
+// refusal below prints it. One application's own second lifecycle repeats it
+// exactly; a restart that means to change the composition repeats the name only,
+// which is the difference this record makes observable.
+func compositionSignature(built []module.Module) string {
+	names := make([]string, len(built))
+	for i, m := range built {
+		names[i] = m.Name
+	}
+	return strings.Join(names, ", ")
 }
 
 // held is one lifecycle's receipt for one hold: whose hold it took, at which
@@ -86,14 +113,17 @@ func (h *held) release() {
 	})
 }
 
-// claimDatabase records that this application is starting on the database this
-// deployment names, and refuses the start when another application holds it. Two
-// lifecycles of the application already holding it is the one arrangement
-// recorded without a word: one image under two roles is what decision 0005 says a
-// deployment runs. The refusal names the application it refuses and the one
-// already standing, which is the whole answer, so it comes back alone.
-func claimDatabase(d Deployment, app string) (*held, error) {
+// claimDatabase records that this application is starting, with this composition,
+// on the database this deployment names, and refuses the start when another
+// application holds it or when the held name comes back with a different
+// composition. Two lifecycles of the application already holding it, composing the
+// same modules, is the one arrangement recorded without a word: one image under two
+// roles is what decision 0005 says a deployment runs. Each refusal names the
+// application it refuses and the one already standing, and the second names the two
+// module lists, which is the whole answer, so it comes back alone.
+func claimDatabase(d Deployment, app string, built []module.Module) (*held, error) {
 	key := databaseKey(d.Config.Database.URL)
+	composition := compositionSignature(built)
 	databaseClaims.mu.Lock()
 	defer databaseClaims.mu.Unlock()
 	prior, taken := databaseClaims.byKey[key]
@@ -101,10 +131,13 @@ func claimDatabase(d Deployment, app string) (*held, error) {
 	case taken && prior.app != app:
 		return nil, fmt.Errorf("pkit: %s: Build: this process already runs %s on this configuration's database, so a second application on it is refused before it opens anything; one process composes one application per database, and many applications over one database wait for T-0231, which puts the app's name in every name two apps share and the check at every boundary (0074 rule 6)",
 			app, prior.app)
+	case taken && prior.composition != composition:
+		return nil, fmt.Errorf("pkit: %s: Build: this process already runs %s on this configuration's database with another composition — that one composes %s, this one composes %s — so the repeated name is a second application wearing it and is refused before anything opens; one process composes one composition per database, and a deployment that means to change the composition closes the lifecycle holding it first",
+			app, prior.app, prior.composition, composition)
 	case taken:
 		prior.lifecycles++
 	default:
-		prior = &holding{app: app, lifecycles: 1}
+		prior = &holding{app: app, composition: composition, lifecycles: 1}
 		databaseClaims.byKey[key] = prior
 	}
 	return &held{grip: prior, at: key}, nil

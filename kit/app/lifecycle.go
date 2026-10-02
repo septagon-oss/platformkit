@@ -48,6 +48,12 @@ type Runtime struct {
 	closeOnce sync.Once
 	closeErr  error
 
+	// declaredRelease is this boot's receipt for the event shapes it put in the
+	// process's catalog (kit/events DeclareMore). Close gives them back, which is
+	// what keeps a composition that has stopped from holding shapes no live
+	// composition declared — and from holding the shapes the next one means.
+	declaredRelease func()
+
 	// closed records that Close has run. Work reads it before it claims anything, so
 	// a Work that *starts* after Close returned is refused instead of scheduling jobs
 	// and a relay onto a pool nobody can reach any more. It is a state read, not a
@@ -163,7 +169,7 @@ func (a *App) Declarations() error {
 // answers: a refusal above the connection was answered with nothing spent, and one
 // below it reached the deployment. The one thing a successful Start leaves behind
 // in the process is the composition's declared event shapes, put up as its last
-// act — see below.
+// act and given back by Close — see below.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -267,7 +273,21 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// exactly where they were. Nothing between here and the end of this function
 	// publishes: the first outbox row this composition can write is a request or
 	// a job tick, both of which need the Runtime this call returns.
-	events.DeclareAll(a.declared)
+	//
+	// Beside, not over: another composition can be live in this process — one
+	// application under two roles, or two applications on two databases — and what a
+	// publish is checked against is then what the live compositions declared
+	// together. New refused the one disagreement that can be refused for free, a
+	// name this composition spells with another payload than a live one chose, so
+	// the only way left to reach this refusal is the race in which that other
+	// composition installed its own shapes in the meantime: everything this boot
+	// opened is released and no Runtime comes back.
+	declaredRelease, err := events.DeclareMore(a.declared)
+	if err != nil {
+		_ = rt.Close()
+		return nil, err
+	}
+	rt.declaredRelease = declaredRelease
 	return rt, nil
 }
 
@@ -309,9 +329,10 @@ func (r *Runtime) Work(ctx context.Context) error {
 	return r.app.work(ctx, r.conn, r.transport, nil)
 }
 
-// Close releases the transport, the connection, then the cache, and is safe to
-// call more than once: the second call returns the first call's result. Call it
-// once the served requests and the work have stopped — an in-flight handler holds a
+// Close releases the transport, the connection, the event shapes this composition
+// declared and then the cache, and is safe to call more than once: the second call
+// returns the first call's result. Call it once the served requests and the work
+// have stopped — an in-flight handler holds a
 // detached transaction on this pool, and a running Work keeps its ticks until its
 // own context is done. Work started after this returns is refused: what Close
 // released — the connection, the cache, and the transport whether Start built it
@@ -325,6 +346,14 @@ func (r *Runtime) Close() error {
 		}
 		if err := r.conn.Close(); r.closeErr == nil {
 			r.closeErr = err
+		}
+		// The declared shapes go back after the connection, not before it: until the
+		// pool is closed a handler this Runtime served could still be publishing, and
+		// giving the guard away early is how a mis-shaped payload slips past a boot
+		// that had promised to refuse it. What goes back is this Runtime's own
+		// declarations, and only the ones no other live composition named as well.
+		if r.declaredRelease != nil {
+			r.declaredRelease()
 		}
 		// Last, because nothing depends on it and a store that refused its own
 		// release must not hide a pool that refused one first. A cache is a belief;

@@ -296,8 +296,9 @@ func (a *App) release(err error) {
 // configuration reaches kit/app, which answers about the pool, the transport the
 // role would use and every manifest gate before anything is opened.
 //
-// It is also where this process records that the application is on this database
-// (claims.go), which is the last answer that can be given free of both effects: it
+// It is also where this process records that this application, with this
+// composition, is on this database (claims.go), which is the last answer that can be
+// given free of both effects: it
 // is read after Plan, so a composition that does not resolve is refused by the
 // sentences that caused it rather than by a process fact, and it is taken before
 // startEngine, so a boot refused here leaves the database it names undialed and
@@ -336,7 +337,7 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 	if a.built {
 		return nil, nil, nil, fmt.Errorf("pkit: %s: Build: this app is already built; a new lifecycle needs a new App", a.name)
 	}
-	claim, err := claimDatabase(d, a.name)
+	claim, err := claimDatabase(d, a.name, p.built)
 	if err != nil {
 		return nil, nil, nil, err
 	}
