@@ -71,10 +71,15 @@ type Tenant struct {
 	// anything is DefaultLocale — and they live in their own table for the same
 	// reason Hosts do, loaded with the tenant for the same reason: a tenant that
 	// cannot say what it speaks is a page that guesses.
-	Locales   []string   `json:"locales" gorm:"-"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	DeletedAt *time.Time `json:"-"`
+	Locales []string `json:"locales" gorm:"-"`
+	// LocaleRevision counts the declarations made about this tenant's languages,
+	// from either door. json:"-": it is not copy and not a field a caller writes
+	// through a body — it is what SetOwnLocale compares an expected revision
+	// against, and a number a client could post at would be a number it could pick.
+	LocaleRevision int64      `json:"-"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	DeletedAt      *time.Time `json:"-"`
 }
 
 // TableName pins the table, so the entity and migrations/000006 agree.
@@ -193,6 +198,30 @@ type SetLocale struct {
 	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
 }
 
+// Locale is the tenant's own declaration of the languages it is served in, with the
+// revision that declaration carries. It is not tenancy.Tenant's Languages field:
+// that one is what the loader hands a request, and a number in it would be a number
+// the kernel was asked to carry without ever reading.
+type Locale struct {
+	Default   string
+	Supported []string
+	Revision  int64
+}
+
+// LocaleManager answers one question inside the authoritative transaction: may the
+// caller of this request set this tenant's own languages?
+//
+// It is declared here because the answer lives in another module's table — the
+// grants are the auth module's — and this one reads no table it does not own.
+// Composition satisfies it over the same authorizer the route guard consulted,
+// which is the point: a guard at the door is an early refusal, not the command's
+// authority, and a command that writes a tenant's languages has to ask the question
+// again where its own transaction can be answered. An empty answer is a refusal, and
+// a refusal writes nothing and publishes nothing.
+type LocaleManager interface {
+	MaySetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error)
+}
+
 // Hook is something that has to happen inside the transaction that creates a
 // tenant. main hands this module a list of them.
 //
@@ -235,6 +264,16 @@ type Inviter interface {
 // The errors are kit/crud's, so one mapping answers for these routes and the
 // generated ones alike: crud.ErrNotFound, crud.ErrInvalid, crud.ErrConflict.
 type Service interface {
+	// OwnLocale is this tenant's declaration as the tenant's own transaction may
+	// read it: the set, and the revision a command has to agree with.
+	//
+	// It is CurrentLanguages plus the revision, and it is a separate method because
+	// the two questions have different askers. A page resolving a person's language
+	// needs the set and must not care about the count; the settings page that offers
+	// to change the set needs the count, because it is about to submit an expected
+	// revision and a form cannot expect a number it was never shown.
+	OwnLocale(ctx context.Context, tx db.Tx[db.Tenant]) (Locale, error)
+
 	// CurrentLanguages locks this tenant's row and reads its current language
 	// set. A preference command calls it before locking its user row.
 	CurrentLanguages(ctx context.Context, tx db.Tx[db.Tenant]) (tenancy.Languages, error)
@@ -251,6 +290,23 @@ type Service interface {
 	// Suspend stops the tenant being served. Suspending it again changes
 	// nothing and publishes nothing.
 	Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// SetOwnLocale is the tenant's own declaration of the same pair, through the
+	// transaction that already resolved to that tenant: no id names the tenant, because
+	// a tenant cannot be shown a door it could point at a neighbour, and the row it
+	// writes is this transaction's own under row-level security.
+	//
+	// It normalises, decides and publishes exactly what SetLocale does — one fact, one
+	// event, one refusal to leave a tenant with a default it does not serve — and it
+	// rechecks inside this transaction what the route guard only checked at the door:
+	// the actor's grant (LocaleManager), the row under a lock, the set's validity, and
+	// the expected revision. An administrator's page left open across somebody else's
+	// change is refused rather than overwritten.
+	//
+	// The last-language rule is checked against the proposed union: the default is the
+	// floor, so removing the final *other* language is allowed and a blank default is
+	// not. Refusing removes nothing: a refusal returns no row and publishes nothing.
+	SetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, in SetLocale) (*Tenant, error)
 
 	// SetLocale says which languages one tenant is served in, and which of them a
 	// request that brought nothing usable is answered in. Setting the same pair

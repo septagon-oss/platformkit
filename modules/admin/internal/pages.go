@@ -61,6 +61,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 		})
 
 	p.mountGallery(app)
+	p.mountLanguages(app)
 	p.mountRoles(s.App)
 	p.mountAccountLanguage(app)
 

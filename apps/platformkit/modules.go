@@ -115,10 +115,16 @@ func compose(cfg config.Config) composition {
 	})
 
 	installed := catalogues()
+	// The self-service language command's authorizer, filled below the authorizer
+	// exists in the same way roles.auth is: the tenant module is one of the modules
+	// the authorizer is built over, so it cannot be handed one at its own line.
+	localeGrant := &tenantLocaleManager{}
 	tenants, tenantModule := tenant.Module(tenant.Deps{
-		OnCreate: []tenantcontracts.Hook{seedRoles},
-		Invite:   firstAdmin{users: users},
-		// A tenant created here is served in every language this installation's
+		OnCreate:      []tenantcontracts.Hook{seedRoles},
+		Invite:        firstAdmin{users: users},
+		LocaleManager: localeGrant,
+		// The same tenant module, the languages of this installation's copy — see
+		// modules/tenant. A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
@@ -257,10 +263,15 @@ func compose(cfg config.Config) composition {
 		// The account control in the shell's header, wired to the same service the
 		// page language reads: read to draw the select, written by the command.
 		Language: accountLanguage{users: users},
+		// The languages this installation's copy is written in, which are the most
+		// the tenant's own languages page may offer. Read off the catalogues this
+		// function composed, named once and handed down.
+		Installed: installed.Languages(),
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
 	roles.auth = auths
+	localeGrant.auth = auths
 	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,

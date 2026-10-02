@@ -205,5 +205,77 @@
     "plural": {
       "": "Language saved."
     }
+  },
+  "admin.nav.languages": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Languages",
+    "plural": {
+      "": "Languages"
+    }
+  },
+  "admin.languages.title": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Languages",
+    "plural": {
+      "": "Languages"
+    }
+  },
+  "admin.languages.default": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Default language",
+    "plural": {
+      "": "Default language"
+    }
+  },
+  "admin.languages.other": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Other languages",
+    "plural": {
+      "": "Other languages"
+    }
+  },
+  "admin.languages.available": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Languages this installation can serve.",
+    "plural": {
+      "": "Languages this installation can serve."
+    }
+  },
+  "admin.languages.save": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Save languages",
+    "plural": {
+      "": "Save languages"
+    }
+  },
+  "admin.languages.remove_warning": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Removing a language can hide its content translations. Review them before saving.",
+    "plural": {
+      "": "Removing a language can hide its content translations. Review them before saving."
+    }
+  },
+  "admin.languages.saved": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Languages saved.",
+    "plural": {
+      "": "Languages saved."
+    }
   }
 }

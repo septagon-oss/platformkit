@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 )
@@ -25,6 +27,10 @@ import (
 // notified without this one importing them (see contracts.Hook).
 type Service struct {
 	hooks []contracts.Hook
+	// may answers whether the caller may set their own tenant's languages, which
+	// SetOwnLocale asks inside its own transaction. It is the auth module's
+	// answer, handed to this one by composition: see contracts.LocaleManager.
+	may contracts.LocaleManager
 	// langs are the languages this installation's catalogues answer in, and the
 	// most a tenant may ever be served in: SetLocale chooses from them, because a
 	// language nobody wrote copy for is a page that declares a tongue it does not
@@ -35,11 +41,30 @@ type Service struct {
 
 // NewService returns the control plane. module.go constructs it, passing the
 // languages the composition's catalogues answer in.
-func NewService(hooks []contracts.Hook, langs []string) *Service {
-	return &Service{hooks: hooks, langs: langs}
+func NewService(hooks []contracts.Hook, langs []string, may contracts.LocaleManager) *Service {
+	if may == nil {
+		panic("tenant.Module: Deps.LocaleManager is nil; the self-service language command would answer \"nobody may\" and refuse every administrator")
+	}
+	return &Service{hooks: hooks, langs: langs, may: may}
 }
 
 var _ contracts.Service = (*Service)(nil)
+
+// OwnLocale reads the declaration and its revision on a tenant transaction: the
+// rows are this tenant's by row-level security, so nothing here names an id.
+func (s *Service) OwnLocale(_ context.Context, tx db.Tx[db.Tenant]) (contracts.Locale, error) {
+	id := db.TenantOf(tx).ID
+	var t contracts.Tenant
+	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+		return contracts.Locale{}, crud.Classify(err)
+	}
+	var others []string
+	if err := tx.DB().Table("tenant_locales").Where("tenant_id = ? AND locale <> ?", id, t.DefaultLocale).
+		Order("locale").Pluck("locale", &others).Error; err != nil {
+		return contracts.Locale{}, crud.Classify(err)
+	}
+	return contracts.Locale{Default: t.DefaultLocale, Supported: others, Revision: t.LocaleRevision}, nil
+}
 
 // CurrentLanguages serializes a personal preference choice with changes to
 // the tenant's offered set. RLS and the explicit id both restrict the read.
@@ -183,6 +208,95 @@ func (s *Service) Suspend(ctx context.Context, tx db.Tx[db.System], id uuid.UUID
 	})
 }
 
+// SetOwnLocale is the same declaration and the same event, reached by the tenant
+// it is about.
+//
+// The order is the command. Ask whether this caller may at all, through the port
+// composition wired — the route's guard refused the same caller at the door, and
+// asking again here is what makes the door's answer the same fact as the write's
+// rather than a promise about it. Then read this tenant's row under a lock, which
+// is the only row row-level security lets a tenant transaction see, so no id and no
+// second tenant appear in this function at all. Then decide the pair with the
+// operator's own rule (one normalisation, one refusal to serve a language with no
+// copy, one floor under the last language). Then compare the revision, and write
+// default, revision and timestamp in one statement so the set and the count move
+// together. The rows behind the set are replaced after that, and the event is
+// published into the same transaction — so a refusal, an abort or a lost row leaves
+// no trail behind it, and the trail says who asked because kit/events puts the
+// request's actor, tenant and trace on it.
+func (s *Service) SetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, in contracts.SetLocale) (*contracts.Tenant, error) {
+	may, err := s.may.MaySetOwnLocale(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if !may {
+		// The same problem document the door would have answered with, so the
+		// person sees one refusal whichever half of the path caught it. Codes and
+		// all: kit/httpx's own vocabulary, not one invented here.
+		return nil, problem.New(http.StatusForbidden,
+			httpx.CodeDenied+": "+contracts.PermissionLocaleManage+" is what sets a tenant's languages")
+	}
+	wanted, err := s.validLocales(in)
+	if err != nil {
+		return nil, err
+	}
+	id := db.TenantOf(tx).ID
+	var t contracts.Tenant
+	if err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	if t.DefaultLocale == wanted[0] && slices.Equal(t.Locales, wanted[1:]) {
+		// Nothing changed: no write, no revision, no event, however stale the
+		// revision the caller brought. A retry of what the row already says lost
+		// nothing, and an audit of two identical declarations is an audit that
+		// cannot be read.
+		return s.current(tx, id)
+	}
+	if t.LocaleRevision != expectedRevision {
+		return nil, fmt.Errorf("%w: this declaration was read at revision %d and the tenant is on revision %d",
+			crud.ErrConflict, expectedRevision, t.LocaleRevision)
+	}
+	t.DefaultLocale, t.LocaleRevision, t.UpdatedAt = wanted[0], t.LocaleRevision+1, db.Now()
+	if err := tx.DB().Model(&t).Select("default_locale", "locale_revision", "updated_at").Updates(&t).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	if err := tx.DB().Exec("DELETE FROM tenant_locales WHERE tenant_id = ?", id).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	for _, tag := range wanted {
+		if err := tx.DB().Exec("INSERT INTO tenant_locales (tenant_id, locale) VALUES (?, ?)", id, tag).Error; err != nil {
+			return nil, crud.Classify(err)
+		}
+	}
+	// Publish rather than PublishFor: the tenant this event belongs to is the
+	// transaction's own, which is the one thing a self-service command cannot be asked
+	// to name and get wrong.
+	if err := events.Publish(ctx, tx, contracts.EventLocaleSet, contracts.LocaleSet{
+		TenantID: id, Default: wanted[0], Supported: wanted[1:], At: t.UpdatedAt,
+	}); err != nil {
+		return nil, err
+	}
+	return s.current(tx, id)
+}
+
+// current is this tenant's declaration as the transaction now holds it — the read
+// both the no-op and the write end on, so what a command returns is never a value it
+// assembled itself.
+func (s *Service) current(tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Tenant, error) {
+	var t contracts.Tenant
+	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	var others []string
+	if err := tx.DB().Table("tenant_locales").Where("tenant_id = ? AND locale <> ?", id, t.DefaultLocale).
+		Order("locale").Pluck("locale", &others).Error; err != nil {
+		return nil, crud.Classify(err)
+	}
+	t.Locales = others
+	return &t, nil
+}
+
 // SetLocale says which languages one tenant is served in, and which of them is the
 // one to fall back to. Both halves are written in the caller's transaction and one
 // event says so, because a tenant whose default is not in its own set is a request
@@ -199,8 +313,14 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	if t.DefaultLocale == wanted[0] && slices.Equal(t.Locales, wanted[1:]) {
 		return t, nil
 	}
-	t.DefaultLocale, t.UpdatedAt = wanted[0], db.Now()
-	if err := tx.DB().Model(t).Select("default_locale", "updated_at").Updates(t).Error; err != nil {
+	// The operator's declaration moves the same revision the tenant's own command
+	// compares: one counter over one fact, whichever door wrote it. The control-plane
+	// route does not *require* an expected one, because every installation's existing
+	// operator caller — bootstrap, the control-plane tests, whatever a product built
+	// against it — posts the pair alone, and the command with authority over a
+	// customer's set is the one that may not be the one refused for being stale.
+	t.DefaultLocale, t.LocaleRevision, t.UpdatedAt = wanted[0], t.LocaleRevision+1, db.Now()
+	if err := tx.DB().Model(t).Select("default_locale", "locale_revision", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	if err := tx.DB().Exec("DELETE FROM tenant_locales WHERE tenant_id = ?", t.ID).Error; err != nil {

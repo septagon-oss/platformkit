@@ -28,6 +28,9 @@ type Fake struct {
 	hosts     map[string]uuid.UUID
 	published []string
 
+	// maySetLocale is the answer MaySetOwnLocale gives; open until a case closes it.
+	maySetLocale bool
+
 	// Hooks are what Create runs, the same list the real module takes in Deps.
 	Hooks []contracts.Hook
 
@@ -47,10 +50,24 @@ func InstallationLanguages() []string { return []string{"en", "pt-PT"} }
 // NewFake returns an empty control plane that speaks the suite's installation.
 func NewFake() *Fake {
 	return &Fake{tenants: map[uuid.UUID]contracts.Tenant{}, hosts: map[string]uuid.UUID{},
-		Installation: InstallationLanguages()}
+		maySetLocale: true, Installation: InstallationLanguages()}
 }
 
 var _ contracts.Service = (*Fake)(nil)
+
+// OwnLocale is CurrentLanguages with the revision the fake counts, for the suite
+// that submits an expected one.
+func (f *Fake) OwnLocale(ctx context.Context, tx db.Tx[db.Tenant]) (contracts.Locale, error) {
+	languages, err := f.CurrentLanguages(ctx, tx)
+	if err != nil {
+		return contracts.Locale{}, err
+	}
+	chosen, _ := tenancy.FromContext(ctx)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return contracts.Locale{Default: languages.Default, Supported: slices.Clone(languages.Others),
+		Revision: f.tenants[chosen.ID].LocaleRevision}, nil
+}
 
 func (f *Fake) CurrentLanguages(ctx context.Context, _ db.Tx[db.Tenant]) (tenancy.Languages, error) {
 	chosen, ok := tenancy.FromContext(ctx)
@@ -211,6 +228,69 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.copy(id)
+}
+
+// MaySetOwnLocale is contracts.LocaleManager, answered from the knob below. The
+// fake holds the answer rather than the authorizer because the suite that uses it
+// asserts the refusal, not the wiring: what has to agree with the SQL service is the
+// decision, and the decision is "this caller may, or may not".
+func (f *Fake) MaySetOwnLocale(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.maySetLocale, nil
+}
+
+// AllowSetOwnLocale closes the door the fake answers with, for the case that asserts
+// a caller without the grant writes nothing. Open by default, so a suite that is
+// about something else is not silently about this too.
+func (f *Fake) AllowSetOwnLocale(may bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.maySetLocale = may
+}
+
+// SetOwnLocale mirrors internal.Service.SetOwnLocale: the tenant is the transaction's
+// own (so no id names it here either), the grant is rechecked before anything is
+// touched, the pair is decided by the operator's own rule, a stale revision conflicts
+// rather than winning, and the equal declaration publishes nothing however old the
+// revision it came with.
+func (f *Fake) SetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, in contracts.SetLocale) (*contracts.Tenant, error) {
+	may, err := f.MaySetOwnLocale(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if !may {
+		return nil, fmt.Errorf("%w: %s is what sets a tenant's languages", crud.ErrInvalid, contracts.PermissionLocaleManage)
+	}
+	wanted, err := f.validLocales(in)
+	if err != nil {
+		return nil, err
+	}
+	chosen, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return nil, crud.ErrNotFound
+	}
+	f.mu.Lock()
+	t, found := f.tenants[chosen.ID]
+	switch {
+	case !found:
+		f.mu.Unlock()
+		return nil, crud.ErrNotFound
+	case t.DefaultLocale == wanted[0] && slices.Equal(t.Locales, wanted[1:]):
+		f.mu.Unlock()
+		return f.copy(chosen.ID)
+	case t.LocaleRevision != expectedRevision:
+		f.mu.Unlock()
+		return nil, fmt.Errorf("%w: this declaration was read at revision %d and the tenant is on revision %d",
+			crud.ErrConflict, expectedRevision, t.LocaleRevision)
+	}
+	t.DefaultLocale, t.Locales, t.LocaleRevision, t.UpdatedAt = wanted[0], wanted[1:], t.LocaleRevision+1, db.Now()
+	f.tenants[chosen.ID] = t
+	f.mu.Unlock()
+	f.record(contracts.EventLocaleSet)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.copy(chosen.ID)
 }
 
 // validLocales is internal.Service.validLocales, kept beside it rather than shared

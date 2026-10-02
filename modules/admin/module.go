@@ -81,6 +81,11 @@ type Deps struct {
 	// people. Nil draws no control. See AccountLanguage.
 	Language AccountLanguage
 
+	// Installed are the languages this installation's copy is written in: the set
+	// the tenant's own languages page offers, and the most a tenant may declare. The
+	// composition read them off the catalogues it composed. See internal.Shell.
+	Installed []string
+
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
 	// changes nothing else, because every rule above the tokens is written in
@@ -125,6 +130,7 @@ func Module(deps Deps) module.Module {
 				Tenants:   deps.Tenants,
 				Roles:     deps.Roles,
 				Language:  deps.Language,
+				Installed: deps.Installed,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,
