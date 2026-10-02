@@ -76,11 +76,11 @@ const (
 // Config belongs here rather than on App because there is no environment-free
 // truth about a composition (0074 rule 4): the same app is Stripe in one
 // environment and simulated in another, and Validate, Explain and Build all
-// answer about one named deployment. The two transport fields are here for the
-// same reason and are the process's rather than the app's: kit/app knows the
-// names memory and jetstream and the rule between them and builds neither, so
-// the process that links the provider packages names the constructors here and
-// nowhere else.
+// answer about one named deployment. The transport fields and Caches are here for
+// the same reason and are the process's rather than the app's: kit/app knows the
+// names memory, jetstream and valkey and the rule between them and builds none of
+// them, so the process that links the provider packages names the constructors
+// here and nowhere else.
 type Deployment struct {
 	Environment Environment
 	Inputs      map[string]string
@@ -91,6 +91,13 @@ type Deployment struct {
 	// Transport is the explicit override: a process that already holds a
 	// transport hands it over instead of naming a constructor.
 	Transport events.Transport
+
+	// Caches are the constructors cache.adapter's one name maps to, for the same
+	// reason Transports is here: kit/app knows the name valkey and the rule between
+	// the adapters and links no client, so the process that imports the provider
+	// package names how to reach one here. A deployment that sets cache.adapter to
+	// valkey and leaves this empty is refused by kit/app before anything is opened.
+	Caches app.Caches
 }
 
 // Wiring is what a module's build reads and writes: the values it declared it

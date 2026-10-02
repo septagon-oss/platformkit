@@ -51,6 +51,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 			Environment: env,
 			Config:      cfg,
 			Transports:  transports(),
+			Caches:      caches(),
 		},
 		app: sentences(cfg, c),
 	}

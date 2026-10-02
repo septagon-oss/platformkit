@@ -12,6 +12,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 )
@@ -23,6 +24,14 @@ type Runtime struct {
 	app     *App
 	conn    *db.Conn
 	handler http.Handler
+
+	// cache is the store Start chose from the configuration — the shared one or
+	// this process's own — and Close is its one release, as it is the transport's.
+	// It belongs to the Runtime rather than to buildAPI's local because a value
+	// every replica reads outlives the handler that reads it: the worker half
+	// resolves hosts too, and an adapter closed when the router was built would
+	// take that with it.
+	cache cache.Cache
 
 	// transport is nil exactly when the role runs no worker half: role web must
 	// not need a reachable broker to serve. Start builds it for the other roles
@@ -52,15 +61,29 @@ type Runtime struct {
 // an authorization, no operation is guarded by a permission no composed module
 // defines, no operation publishes an event no module promised, the workspace
 // mounts something, no address names a prefix — over a recorder, and opens
-// nothing: no pool, no migration, no listener, no broker. It is the same
-// registration and the same gates Start runs after the connection is open, which
-// is why a composition refused here is the same composition Start would have
-// refused, answered while nothing has been changed yet.
+// nothing: no pool, no migration, no listener, no broker, and no connection to
+// the store the deployment names (see the body for the store it does build, and
+// why that one opens nothing). It is the same registration and the same gates
+// Start runs after the connection is open, which is why a composition refused
+// here is the same composition Start would have refused, answered while nothing
+// has been changed yet.
 //
 // Call it before Start. A caller that does is not unsafe, only late: Start runs
 // the gates again over the live connection and refuses the boot there.
 func (a *App) Declarations() error {
-	_, _, err := a.composeRoutes(nil, true)
+	// The recorder needs a store because httpx requires one — a belief about which
+	// tenant a host is has to be something every replica can forget — and this
+	// composition serves nothing, so the store it is handed is named for the option
+	// and thrown away with the recorder. The shared one is built by Start: dialing a
+	// server the deployment named would be an effect, and this method's whole claim
+	// is that it answers before any effect happens.
+	segment, err := a.cacheSegment()
+	if err != nil {
+		return err
+	}
+	dry := cache.Memory(segment)
+	defer func() { _ = dry.Close() }()
+	_, _, err = a.composeRoutes(nil, dry, true)
 	return err
 }
 
@@ -87,12 +110,18 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	handler, err := a.buildAPI(ctx, conn)
+	store, err := a.cache(ctx)
 	if err != nil {
-		_ = conn.Close() // a composition that failed a gate is never mounted
+		_ = conn.Close()
 		return nil, err
 	}
-	rt := &Runtime{app: a, conn: conn, handler: handler}
+	handler, err := a.buildAPI(ctx, conn, store)
+	if err != nil {
+		_ = conn.Close() // a composition that failed a gate is never mounted
+		_ = store.Close()
+		return nil, err
+	}
+	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store}
 	if a.opts.Role == Worker {
 		// The routes were built and gated above and are then set aside: the two
 		// probes are the whole surface Run gives a worker today.
@@ -101,6 +130,7 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	if a.opts.Role != Web {
 		if rt.transport, err = a.transport(); err != nil {
 			_ = conn.Close()
+			_ = rt.cache.Close()
 			return nil, err
 		}
 	}
@@ -145,14 +175,14 @@ func (r *Runtime) Work(ctx context.Context) error {
 	return r.app.work(ctx, r.conn, r.transport, nil)
 }
 
-// Close releases the transport, then the connection, and is safe to call more
-// than once: the second call returns the first call's result. Call it once the
-// served requests and the work have stopped — an in-flight handler holds a
+// Close releases the transport, the connection, then the cache, and is safe to
+// call more than once: the second call returns the first call's result. Call it
+// once the served requests and the work have stopped — an in-flight handler holds a
 // detached transaction on this pool, and a running Work keeps its ticks until its
 // own context is done. Work started after this returns is refused: what Close
-// released — the connection, and the transport whether Start built it or the
-// application injected it — is not reusable, so a new lifecycle starts from a new
-// App rather than from this Runtime again.
+// released — the connection, the cache, and the transport whether Start built it
+// or the application injected it — is not reusable, so a new lifecycle starts from
+// a new App rather than from this Runtime again.
 func (r *Runtime) Close() error {
 	r.closeOnce.Do(func() {
 		r.closed.Store(true)
@@ -160,6 +190,12 @@ func (r *Runtime) Close() error {
 			r.closeErr = closer.Close()
 		}
 		if err := r.conn.Close(); r.closeErr == nil {
+			r.closeErr = err
+		}
+		// Last, because nothing depends on it and a store that refused its own
+		// release must not hide a pool that refused one first. A cache is a belief;
+		// the truth it was about is in the database.
+		if err := r.cache.Close(); r.closeErr == nil {
 			r.closeErr = err
 		}
 	})

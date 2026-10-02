@@ -27,6 +27,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -135,6 +136,42 @@ type Options struct {
 	// opened; the check runs in every role, because one image must answer
 	// "will this start?" the same way whichever half it runs.
 	Transports Transports
+
+	// Caches is the constructor behind cache.adapter's one shared name. The
+	// kernel names the store an entry every replica must read lives in, and builds
+	// none of them: an installation that sets cache.adapter to valkey is refused at
+	// New if this composition never named how to reach one. An empty adapter is the
+	// in-process store, which needs no constructor because it opens nothing — and
+	// says so once, in a boot line, because a cache that reaches one process is a
+	// deployment choice an operator should not discover from a stale host.
+	Caches Caches
+}
+
+// Caches is how the stores cache.adapter can name are reached. The kernel knows
+// the names and the rule between them; the composing application is the one
+// importer of the provider package, so kit/app does not link a cache client any
+// more than it links a broker (scripts/check_packages.sh records that), and a
+// product that wants a different server supplies its own constructor here.
+type Caches struct {
+	// Valkey builds the shared store from the cache settings New has already
+	// validated. It is called with the boot context, and a store that cannot be
+	// reached within its own boot budget is a boot failure rather than a cache that
+	// misses forever: a deployment that says "shared" and silently gets a private
+	// one has lost every invalidation it will ever run.
+	Valkey func(ctx context.Context, cfg config.Cache) (cache.Cache, error)
+}
+
+// constructor is the Caches field the selected adapter needs, or the error that
+// names the missing one — Transports.constructor's shape, for the same reason: an
+// option a composition forgot is a boot refusal, not a runtime surprise.
+func (c Caches) constructor(adapter string) (func(context.Context, config.Cache) (cache.Cache, error), error) {
+	if adapter != "valkey" {
+		return nil, nil
+	}
+	if c.Valkey == nil {
+		return nil, errors.New("app: cache.adapter selects valkey and Options.Caches.Valkey is nil; the application supplies the constructor (kit/cache/providers/valkey.Connect)")
+	}
+	return c.Valkey, nil
 }
 
 // Transports is how the two event transports nats.transport can name are
@@ -251,6 +288,13 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 				return nil, fmt.Errorf("app: %w", err)
 			}
 		}
+	}
+	// The store is checked the same way, in every role: the two halves of one
+	// deployment must answer "will this start?" identically, and a worker that
+	// resolves a host through a cache it cannot build is the same wiring bug as a
+	// web process serving the same page.
+	if _, err := opts.Caches.constructor(cfg.Cache.Adapter); err != nil {
+		return nil, err
 	}
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
@@ -380,6 +424,62 @@ func (a *App) transport() (events.Transport, error) {
 	return transport, nil
 }
 
+// defaultCacheApp is the first segment of every key this kernel writes when the
+// configuration names no application: the reference composition's own. It is a
+// default and not a secret — an installation with more than one product behind one
+// store is exactly the installation that must set cache.app, and cache.Validate
+// refuses to leave it empty once a shared store is named.
+const defaultCacheApp = "pkit"
+
+// cacheSegment is the first segment of every key this kernel writes: cache.app,
+// or the reference composition's own name when the installation named none. It is
+// checked here, before any store is built, because the one error these
+// constructors answer for a name is this one, and a boot that panics on its own
+// configuration is a worse log than a boot that names the key to fix — and
+// cache.Memory answers that name with a panic, which is the reason Declarations
+// asks for the segment the same way rather than handing a store straight to
+// httpx.
+func (a *App) cacheSegment() (string, error) {
+	segment := a.cfg.Cache.App
+	if segment == "" {
+		segment = defaultCacheApp
+	}
+	if _, err := cache.Slug(segment); err != nil {
+		return "", fmt.Errorf("app: cache.app: %w", err)
+	}
+	return segment, nil
+}
+
+// cache is the store this process reads values from: the shared one the
+// configuration names, or the in-process one when it names none. Where a shared
+// value lives is the runner's choice, which is why it is made here beside
+// transport() and not inside the package that reads a value.
+func (a *App) cache(ctx context.Context) (cache.Cache, error) {
+	segment, err := a.cacheSegment()
+	if err != nil {
+		return nil, err
+	}
+	build, err := a.opts.Caches.constructor(a.cfg.Cache.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	if build == nil {
+		a.log.InfoContext(ctx, "cache: in-process store; forgetting a value reaches this process only")
+		return cache.Memory(segment), nil
+	}
+	store, err := build(ctx, a.cfg.Cache)
+	if err != nil {
+		return nil, fmt.Errorf("app: cache.adapter %s: %w", a.cfg.Cache.Adapter, err)
+	}
+	// The same refusal transport() makes of a constructor: answering (nil, nil) is
+	// reporting success, and a request that then reads a nil store is a panic in a
+	// middleware rather than a boot that came back.
+	if store == nil {
+		return nil, fmt.Errorf("app: cache.adapter %s answered with no store and no error", a.cfg.Cache.Adapter)
+	}
+	return store, nil
+}
+
 func useJetStream(mode string, role Role) (bool, error) {
 	switch mode {
 	case "":
@@ -400,14 +500,18 @@ func useJetStream(mode string, role Role) (bool, error) {
 // every gate that needs nothing but the routes. conn is what every request
 // transaction opens on and what /ready probes; it is nil only in the dry
 // composition, which registers, answers the gates, and is then thrown away.
+// store is where a resolved host is believed, and httpx requires one for the
+// same reason it requires the connection; the dry composition is handed an
+// in-process store it never writes, because nothing serves the API it returns.
 //
 // Two callers, one sequence: Declarations runs this before anything is migrated,
 // and buildAPI runs it again over the open connection on the way to serving. One
 // registration order and one set of gates, so the dry answer and the real one
 // cannot disagree about what a composition is.
-func (a *App) composeRoutes(conn *db.Conn, declarations bool) (*httpx.API, *chi.Mux, error) {
+func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
 		Declarations: declarations,
+		Cache:        store,
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
 		Tenants:      a.opts.Tenants,
@@ -485,11 +589,11 @@ func (a *App) composeRoutes(conn *db.Conn, declarations bool) (*httpx.API, *chi.
 	return api, router, nil
 }
 
-// buildAPI is composeRoutes over the open connection, plus what boot prints once
-// the composition is known to be good. It returns before anything listens, so a
-// composition that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
-	api, router, err := a.composeRoutes(conn, false)
+// buildAPI is composeRoutes over the open connection and the store Start built,
+// plus what boot prints once the composition is known to be good. It returns
+// before anything listens, so a composition that fails a gate never takes the port.
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (http.Handler, error) {
+	api, router, err := a.composeRoutes(conn, store, false)
 	if err != nil {
 		return nil, err
 	}

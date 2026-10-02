@@ -168,10 +168,10 @@ func workspaceCatalog() func(api *httpx.API) {
 
 // appOptions is the same composition app.go sentences, read as app.Options: the
 // in-process answer for a test that wants the handler rather than a process, and
-// the reason the two cannot disagree about who provides what. The three fields
+// the reason the two cannot disagree about who provides what. The four fields
 // that belong to a process rather than to a composition — the role, the
-// transports, the installation's host — are filled here, because pkit leaves
-// them to whoever is starting something.
+// transports, the stores, the installation's host — are filled here, because pkit
+// leaves them to whoever is starting something.
 func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 	p, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 	if err != nil {
@@ -179,11 +179,14 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 	}
 	opts := p.Options()
 	opts.Role = role
-	// The three fields pkit leaves to whoever is starting something. Transports is
-	// one of them and is not decoration: kit/app refuses a role whose mode has no
-	// constructor, so a test that lost this line fails in app.New with a message
-	// about memory and jetstream rather than booting the wrong thing.
+	// The four fields pkit leaves to whoever is starting something. Transports and
+	// Caches are not decoration: kit/app refuses a role whose mode has no
+	// constructor and a composition whose cache.adapter names a store it never
+	// learned to reach, so a test that lost these lines fails in app.New with a
+	// message about memory and jetstream, or about Caches.Valkey, rather than
+	// booting the wrong thing.
 	opts.Transports = transports()
+	opts.Caches = caches()
 	opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
 	return opts
 }

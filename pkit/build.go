@@ -292,14 +292,15 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 }
 
 // startEngine is the engine's own constructor with the deployment's process
-// fields filled in: the role, the two transport seams and the installation's
-// host. They come from the Deployment rather than the App because they are what a
-// process knows and a composition does not.
+// fields filled in: the role, the two transport seams, the cache constructors and
+// the installation's host. They come from the Deployment rather than the App
+// because they are what a process knows and a composition does not.
 func (a *App) startEngine(ctx context.Context, p *Planned, d Deployment, role app.Role) (*app.App, error) {
 	opts := p.options
 	opts.Role = role
 	opts.Transports = d.Transports
 	opts.Transport = d.Transport
+	opts.Caches = d.Caches
 	opts.Installation = app.Installation{Host: d.Config.Server.InstallationHost}
 	return app.New(ctx, d.Config, p.built, opts)
 }
