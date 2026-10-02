@@ -358,7 +358,10 @@ func (s *Server) Explain() (string, error) {
 }
 
 // start is Run's and Build's shared half: the engine this app resolves to under
-// this process's role, configuration and transports.
+// this process's role, configuration and transports. What the engine's effects
+// cost the App is release's answer, the same one Build settles with: a process
+// refused above the connection leaves its App free to build a corrected
+// composition, and one that reached the pool does not.
 func (a *App) start(ctx context.Context, d Deployment, role app.Role, s *Server) (*Runtime, *Planned, error) {
 	engine, p, err := a.engineWith(ctx, d, role, s)
 	if err != nil {
@@ -366,6 +369,7 @@ func (a *App) start(ctx context.Context, d Deployment, role app.Role, s *Server)
 	}
 	rt, err := engine.Start(ctx)
 	if err != nil {
+		a.release(err)
 		return nil, nil, err
 	}
 	return &Runtime{rt: rt}, p, nil
@@ -379,7 +383,9 @@ func (a *App) runStarted(ctx context.Context, d Deployment, role app.Role, s *Se
 	if err != nil {
 		return err
 	}
-	return engine.Run(ctx)
+	err = engine.Run(ctx)
+	a.release(err)
+	return err
 }
 
 // engineWith is newEngine behind Server's door: the same claim, the same dry

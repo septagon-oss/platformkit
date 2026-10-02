@@ -19,6 +19,13 @@ package pkit
 // pool, the store the deployment names and the migration are what Start spends
 // after it, and the API that answers them is the one this registration built, so
 // there is no fifth call left to disagree with anything.
+//
+// Free means free of both sides of the effect: an App refused above the connection
+// — in the gate pass or in that fourth registration — keeps no record of the
+// attempt, so the corrected composition builds on this App, and an App whose boot
+// reached the pool keeps the lifecycle it handed over. App.release is what tells
+// the two apart, and app.RefusedBeforeEffects is what answers which side a refusal
+// was answered on.
 
 import (
 	"context"
@@ -227,7 +234,9 @@ func (a *App) Run(ctx context.Context, d Deployment, role app.Role) error {
 	if err != nil {
 		return err
 	}
-	return engine.Run(ctx)
+	err = engine.Run(ctx)
+	a.release(err)
+	return err
 }
 
 // MustBuild is Build for tests and examples. It panics with Build's joined
@@ -252,9 +261,29 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 	}
 	rt, err := engine.Start(ctx)
 	if err != nil {
+		a.release(err)
 		return nil, err
 	}
 	return &Runtime{rt: rt}, nil
+}
+
+// release settles what a call to the engine's effects left this App. A boot
+// kit/app refused above the connection — a route gate, the fourth registration,
+// an operation gate, the cache segment the configuration names — was answered
+// over an in-process store: nothing was dialled, migrated or listened on, so the
+// App never had a lifecycle and the composition can be corrected and built again
+// (README: a build refused before the first effect "changes nothing in the process
+// it was asked in"). Any other refusal reached the pool, the store the deployment
+// names, the migration or the transport, and this App keeps the one lifecycle it
+// handed the engine whatever that boot gave back. The answer is app's, not a guess
+// at which sentence came from where (see app.RefusedBeforeEffects).
+func (a *App) release(err error) {
+	if !app.RefusedBeforeEffects(err) {
+		return
+	}
+	a.buildMu.Lock()
+	defer a.buildMu.Unlock()
+	a.built = false
 }
 
 // newEngine is Plan plus the engine's own checks: it is where a Deployment's
@@ -299,7 +328,10 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 	if err := engine.Declarations(); err != nil {
 		// Refused before the first effect: nothing was migrated and nothing was
 		// listened on, so the App is not built and the composition can be
-		// corrected and built again.
+		// corrected and built again. The fourth registration is answered inside
+		// Start, still above the connection, and release gives this App back there
+		// too — the flag is set now because a Start that reaches the pool spends
+		// this App's lifecycle even when it comes back with no Runtime.
 		return nil, nil, fmt.Errorf("pkit: %s: Build: %w", a.name, err)
 	}
 	a.built = true

@@ -42,9 +42,10 @@ type App struct {
 	// built says this App has handed its lifecycle to the engine. kit/app
 	// documents one Start per App; a chain that records cannot honestly be
 	// re-composed after one, so a second Build is refused rather than attempted.
-	// buildMu is what makes that refusal hold when the two Builds arrive at the
-	// same moment: one App is one lifecycle, and two calls that overlap must not
-	// both reach the engine.
+	// buildMu is what makes that refusal hold when the two Builds arrive at
+	// the same moment: one App is one lifecycle, and two calls that overlap must
+	// not both reach the engine. A boot the engine refused before it reached the
+	// deployment never had a lifecycle, and release says so — see build.go.
 	buildMu sync.Mutex
 	built   bool
 }

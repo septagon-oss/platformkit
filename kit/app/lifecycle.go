@@ -57,6 +57,38 @@ type Runtime struct {
 	closed atomic.Bool
 }
 
+// refusedBeforeEffects marks the refusals a boot answers before the deployment
+// pays for anything: the cache segment the configuration names, the route gates,
+// the three dry registrations and the fourth one whose surface would serve are all
+// answers about the composition, given over an in-process store with no pool
+// dialled, nothing migrated, nothing listened on and nothing served. Everything
+// from openConn onward — the connection, the store the deployment names, the
+// migration and the transport — is spent, even when the boot comes back with no
+// Runtime and everything it opened already released.
+//
+// The line belongs to kit/app because kit/app is where the deployment starts to
+// pay, and nothing in the error's text says which side of it a refusal came from.
+// A caller that records having spent itself on the way to a boot — pkit.App.Build
+// records exactly that, because one App is one lifecycle — can only keep the
+// record honest by asking where the refusal was answered.
+type refusedBeforeEffects struct{ error }
+
+func (e refusedBeforeEffects) Unwrap() error { return e.error }
+
+// RefusedBeforeEffects reports whether err is a boot refusal kit/app answered
+// while the deployment was still untouched: no pool dialled, no shared store
+// dialled, nothing migrated and nothing listening. A caller that spent a lifecycle
+// on the way to such a boot spent nothing and may begin again with a corrected
+// composition; any other refusal reached the deployment, and whatever else the
+// released boot gave back, that lifecycle is among what it spent.
+func RefusedBeforeEffects(err error) bool {
+	var refused refusedBeforeEffects
+	return errors.As(err, &refused)
+}
+
+// beforeEffects marks an error as answered on the free side of the line above.
+func beforeEffects(err error) error { return refusedBeforeEffects{err} }
+
 // Declarations answers the composition's route gates — every operation declared
 // an authorization, no operation is guarded by a permission no composed module
 // defines, no operation publishes an event no module promised, the workspace
@@ -87,7 +119,7 @@ func (a *App) Declarations() error {
 	// which moves this pass's own store. Nothing on it queries the pool.
 	segment, err := a.cacheSegment()
 	if err != nil {
-		return err
+		return beforeEffects(err)
 	}
 	// Three times, and the second and third are the reason there are three. Every
 	// other gate below reads one registration and answers about it; the agreement
@@ -108,7 +140,7 @@ func (a *App) Declarations() error {
 		// first pass into the second would be a third thing no module mounted.
 		_ = dry.Close()
 		if err != nil {
-			return err
+			return beforeEffects(err)
 		}
 	}
 	return nil
@@ -126,9 +158,12 @@ func (a *App) Declarations() error {
 // when they are actually asked. The migration comes after the gates for the same
 // reason one gate down. Nothing serves before the migration, so a
 // composition that reaches a listener has its schema. Every failure returns a nil
-// Runtime, nothing listening, and everything it opened already released. The one
-// thing a successful Start leaves behind in the process is the composition's
-// declared event shapes, put up as its last act — see below.
+// Runtime, nothing listening, and everything it opened already released. Which of
+// those failures cost a caller its own lifecycle is what RefusedBeforeEffects
+// answers: a refusal above the connection was answered with nothing spent, and one
+// below it reached the deployment. The one thing a successful Start leaves behind
+// in the process is the composition's declared event shapes, put up as its last
+// act — see below.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -148,6 +183,8 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// A caller that already asked — pkit.Build, which says so in its own words —
 	// is not asked again; what is left to answer is the fourth registration below.
 	if a.declaredRoutes == nil {
+		// Already marked by Declarations: every answer it gives is about the
+		// composition and costs the deployment nothing.
 		if err := a.Declarations(); err != nil {
 			return nil, err
 		}
@@ -163,13 +200,13 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// installation should hold.
 	segment, err := a.cacheSegment()
 	if err != nil {
-		return nil, err
+		return nil, beforeEffects(err)
 	}
 	build := cache.Memory(segment)
 	api, handler, err := a.buildAPI(ctx, build)
 	if err != nil {
 		_ = build.Close() // a composition that failed a gate is never mounted
-		return nil, err
+		return nil, beforeEffects(err)
 	}
 	// The first two things a deployment spends, and they are spent only once every
 	// answer about this composition has been given.
