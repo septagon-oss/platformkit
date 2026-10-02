@@ -132,7 +132,9 @@ func (s *Service) ApproveRegistration(ctx context.Context, tx db.Tx[db.Tenant], 
 		return u, nil
 	}
 	if u.Status != contracts.StatusPending || u.PasswordHash == "" {
-		return nil, fmt.Errorf("%w: only a pending registration with a password can be approved", crud.ErrConflict)
+		// One sentence per status, written by the contracts package so the
+		// conformance fake refuses with the same words: contracts.ApproveConflict.
+		return nil, contracts.ApproveConflict(u)
 	}
 	u.Status = contracts.StatusActive
 	if err := crud.Update(ctx, tx, u, "status", "updated_at"); err != nil {
