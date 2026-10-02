@@ -357,8 +357,10 @@ resolves dependencies after their writes and re-runs `Target`. The
 writer owns normalization and semantic comparison inputs; `Decide` compares
 only the target's managed projection and returns `create`, `update`, or
 `unchanged` plus sorted changed field/command names. It never compares raw YAML
-bytes, display ordering of a set, a password hash or server timestamps. The
-SQL writer and `seedtest.FakeWriter` must call this same function. A generated
+bytes, display ordering of a set, a password hash or server timestamps. Every
+writer calls this same function: the composition's SQL adapters in
+`apps/platformkit/seed.go`, and the map-backed `fakeWriter` of
+`kit/seed/service_test.go`. A generated
 Spec writer must reuse the Spec's decode, immutable-field check, validation,
 event and hook core; its adapter adds a transaction argument and permission
 check, not a second CRUD implementation. A command writer delegates every
@@ -615,7 +617,8 @@ to existing RLS-protected tables, with no down files or second audit store.
 
 ## Conformance cases fixed before implementation
 
-`seedtest.FakeWriter` is a small map-backed implementation of the port. It
+The fake is `fakeWriter` in `kit/seed/service_test.go`: a small map-backed
+implementation of the port. It
 holds separate tenant maps, snapshots, event/audit intentions and optional
 revision values; its mutation methods call the same `Decide` as the SQL
 adapter. The package's private reconciliation engine accepts a narrow key
@@ -625,12 +628,16 @@ cases exercise ordering and no-write refusals without manufacturing a
 `db.Tx[db.Tenant]`; the public `Apply` still requires that type and takes the
 Postgres lock before entering the same engine. The fake does **not** claim to
 prove RLS, a database commit, or file-storage rollback. The executable cases
-below are to be placed under `kit/seed` in the implementation phase and run
-against the fake; the SQL adapter runs the same decision cases plus the
-database cases. The names in the table below are the intended set, not the delivered one. The
-delivered cases are `kit/seed/{keys,service,demo_row,prune_gone_row}_test.go` and
-`apps/platformkit/seed_owners_test.go`, which applies the reference seed through
-the composition it is declared in; each is named for the behaviour it pins rather
+below sit under `kit/seed` and run against the fake; the SQL adapter runs the
+same decision cases plus the database cases. The names in the table below are the intended set, not the
+delivered one. The delivered cases are
+`kit/seed/{seed,service,keys,demo_row,prune_gone_row}_test.go` — the loader,
+the ordering and the decision engine, the key table's RLS, the tenant row's
+answer, and a prune whose row is already gone — and, in `apps/platformkit`,
+`seed_owners_test.go` (the write path, the provisioning proof, the owner's
+refusal and the command), `reference_seed_test.go`, `seeded_home_test.go`,
+`seed_attribution_test.go`, `seed_audit_trail_test.go` and
+`seed_concurrent_runs_test.go`. Each is named for the behaviour it pins rather
 than for a row of this table.
 
 | Case name | Fake setup and action | Required result |
@@ -650,11 +657,37 @@ than for a row of this table.
 | `TestSeedTranslationWarning` | No translation writer, `i18n.pt` present. | Base write succeeds; one warning; no pretend translation. |
 | `TestSeedPasswordNeverLeaks` | User creation with generated password. | Password absent from plan, event and audit intention; rerun never calls `SetPassword`. |
 
-Postgres conformance must separately cover the typed system-to-tenant bridge,
-RLS on both owner rows and `seed_keys`, two concurrent seed runs, manual-write
-revision races, rollback of rows/outbox/mappings, audit delivery with trace and
-seed source, and file orphan cleanup. The browser journey must open on the
-starter home page after tenant creation.
+What Postgres conformance covers, and where:
+
+- The typed system-to-tenant bridge, and the rollback of owner rows, outbox
+  events and key mappings: every case in `apps/platformkit/seed_owners_test.go`
+  opens `dbtest.System` and `db.InTenant` over the composition's real owners,
+  and `TestTheSeedRefusesARecordItsOwnerWouldRefuse` reads the refused record
+  back to show a refused run left nothing behind.
+- RLS on `seed_keys`: `TestSeedKeysAreIsolatedByDatabaseRLS` in
+  `kit/seed/keys_test.go`, under the application role whose policies the
+  migration FORCEs.
+- Two seed runs on one tenant: `TestTwoSeedRunsOnOneTenantCreateEachRecordOnce`
+  in `apps/platformkit/seed_concurrent_runs_test.go`. It holds the first run's
+  transaction open while the second starts, and it holds only while `lockRun`
+  takes the per-tenant advisory lock — with that call removed, the second run
+  fails on the `contents_tenant_slug` unique index instead of waiting.
+- Audit delivery with trace and seed source:
+  `TestSeededWriteCarriesSourceActorAndTrace` and
+  `TestASeededWriteIsAuditedAsTheSeedWithItsSource` in
+  `apps/platformkit/{seed_attribution,seed_audit_trail}_test.go`.
+- The browser journey: `e2e/site.spec.ts`'s "a new tenant opens on its starter
+  home, and a published page takes its place", with
+  `TestSeededTenantOpensOnItsHomePage` as the same claim without a browser.
+
+Two of the items this contract first asked for are **not delivered here**. A
+manual-write revision race has no owner to race against yet: no Spec in this
+checkout takes an expected revision, so a run serializes on the row locks
+`crud.GetForUpdate` takes until T-0138 lands one (see *Ordering, transaction and
+concurrency* above). And file orphan cleanup has nothing to sweep, because a seed
+run writes no file bytes: `apps/platformkit/seed.go` names three writers —
+content, site and user — and the starter and demo files declare pages, one site
+record and people's roles only.
 
 ## Ten module questions and limits
 
