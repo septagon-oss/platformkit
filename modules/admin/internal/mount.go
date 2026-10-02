@@ -88,12 +88,6 @@ type addresses struct {
 	// shell's — and reset belongs to auth, whose link the person arrived by.
 	forgot route
 	reset  route
-	// start is where a person who has just signed in belongs. It is an address of
-	// its own rather than a behaviour of the workspace root, because when nothing
-	// else claimed the root the root *is* the generated dashboard and the sidebar's
-	// Dashboard link points at it: answering the root with a redirect would make
-	// that link a lie about the page it leads to.
-	start route
 	// sessions is another module's screen again, for the same reason: the auth
 	// module names it in its nav, and this is the module that can draw it.
 	sessions      route
@@ -147,7 +141,6 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		gallery:       at(app, "/_gallery"),
 		tenants:       inNamespace(app, "tenant", "/tenants"),
 		roles:         inNamespace(app, "auth", "/roles"),
-		start:         at(app, "/start"),
 		forgot:        at(app, "/login/forgot"),
 		reset:         inNamespace(app, "auth", "/reset"),
 		sessions:      inNamespace(app, "auth", "/sessions"),
