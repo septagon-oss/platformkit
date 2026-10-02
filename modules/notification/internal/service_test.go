@@ -56,6 +56,15 @@ func TestServiceConforms(t *testing.T) {
 	})
 }
 
+// asAdmin is a context the sender commands accept: a caller the transaction
+// names. Put, Verify and Delete refuse a caller nobody wrote, because the event
+// they publish is the record of who changed this tenant's mail identity, and an
+// audit row naming nobody answers nothing; the cases below are about what those
+// commands decide about a row, so they say who is asking, the way a route does.
+func asAdmin(ctx context.Context) context.Context {
+	return tenancy.WithActor(ctx, notificationtest.Ada)
+}
+
 // outbox is what has been published in this transaction, in order.
 func outbox(t *testing.T, tx db.Tx[db.Tenant]) []string {
 	t.Helper()

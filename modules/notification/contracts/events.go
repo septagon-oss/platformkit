@@ -42,16 +42,17 @@ const (
 	EventPreferenceSet  = "notification.preference_set"
 	EventSenderSet      = "notification.sender_set"
 	EventSenderVerified = "notification.sender_verified"
-	EventDeviceAdded    = "notification.device_added"
-	EventDeviceRevoked  = "notification.device_revoked"
 )
 
-// Events is every event this module emits, for the manifest.
+// Events is every event this module emits, for the manifest. Device registration
+// is not among them, and it is not a trimming of something promised: the device
+// table those two events described was never written, so a consumer that
+// subscribed to either would wait for an event nothing could publish. It returns
+// with the table and the command that writes it.
 var Events = []string{
 	EventCreated, EventEmailRequested, EventRead,
 	EventPushRequested, EventWebPushRequested, EventWebhookRequested,
 	EventPreferenceSet, EventSenderSet, EventSenderVerified,
-	EventDeviceAdded, EventDeviceRevoked,
 }
 
 // RequestedEvent is the event a chosen channel is asked for by — the one table
@@ -147,15 +148,4 @@ type Verified struct {
 	Selector string    `json:"selector"`
 	Actor    uuid.UUID `json:"actorId"`
 	At       time.Time `json:"at"`
-}
-
-// DeviceChanged is the payload of EventDeviceAdded and EventDeviceRevoked. It
-// names the device and its platform and never the token: a push token is what
-// anybody needs to put a message on somebody's screen, which puts it with the
-// credentials that may not be copied into a trail (see EmailRequested).
-type DeviceChanged struct {
-	DeviceID  uuid.UUID `json:"deviceId"`
-	Recipient uuid.UUID `json:"recipientId"`
-	Platform  string    `json:"platform"`
-	At        time.Time `json:"at"`
 }

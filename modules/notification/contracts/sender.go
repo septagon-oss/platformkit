@@ -34,7 +34,7 @@ const (
 //
 // The envelope sender stays the deployment's (config's mail.from, still one bare
 // address, still refused with a display name, because that is what MAIL FROM is).
-// What lives here is the *header* — `From: "Ada's Clinic" <care@clinic.example>` —
+// What lives here is the *header* — `From: "Acme" <notifications@acme.example>` —
 // and the DKIM pair that has to exist for the far end to believe it. That is why
 // kit/config's refusal is untouched by this type: the two addresses answer
 // different questions, and a display name is legal in one and a bug in the other.
@@ -50,7 +50,7 @@ type Sender struct {
 	// Domain is the domain that signs, which is the domain of FromAddress:
 	// DKIM signs the domain in the header, so a row pairing one domain with
 	// another's address would be a signature the far end cannot find.
-	Domain string `json:"domain" gorm:"type:text;not null" validate:"required" maxLength:"253" doc:"The domain that signs" example:"clinic.example"`
+	Domain string `json:"domain" gorm:"type:text;not null" validate:"required" maxLength:"253" doc:"The domain that signs" example:"acme.example"`
 	// Selector is the DNS label the public key hangs off. Two selectors per
 	// domain let a key rotate without a gap: the old one keeps signing while the
 	// new one publishes.
@@ -59,9 +59,9 @@ type Sender struct {
 	// one thing in a mail header a tenant is entitled to choose. It carries no
 	// angle brackets and no line break, because both would let a tenant put a
 	// second header in somebody's mail.
-	FromName string `json:"fromName" gorm:"column:from_name;type:text;not null" validate:"required" maxLength:"200" doc:"The display name in the From header" example:"Ada's Clinic"`
+	FromName string `json:"fromName" gorm:"column:from_name;type:text;not null" validate:"required" maxLength:"200" doc:"The display name in the From header" example:"Acme"`
 	// FromAddress is the mailbox in the From header, and its domain is Domain.
-	FromAddress string `json:"fromAddress" gorm:"column:from_address;type:text;not null" validate:"required" format:"email" maxLength:"320" doc:"The address mail arrives as" example:"care@clinic.example"`
+	FromAddress string `json:"fromAddress" gorm:"column:from_address;type:text;not null" validate:"required" format:"email" maxLength:"320" doc:"The address mail arrives as" example:"notifications@acme.example"`
 	// ReplyTo is where a person's answer goes. Empty means the From address,
 	// which is what the far end does anyway; a tenant that wants answers at a
 	// helpdesk says so here.
@@ -185,10 +185,17 @@ type DKIMKeys interface {
 	KeyFor(ctx context.Context, tx db.Tx[db.Tenant], s Sender) []byte
 }
 
-// SenderAdmin is what an administrator of the tenant does about it. Both
-// commands recheck the actor's grant and the tenant's own row inside their
-// transaction, and a refusal writes nothing, publishes nothing and returns no
-// stale row.
+// SenderAdmin is what an administrator of the tenant does about it. All three
+// commands recheck their caller and the tenant's own row inside the transaction
+// they run in: a caller the transaction does not name is refused (there is no
+// actor to put in the audit event that is the record of the change), and a row
+// that is not this tenant's reads as nobody's. A refusal writes nothing,
+// publishes nothing and returns no stale row.
+//
+// The grant over the identity is the application's share, and the key is defined
+// here (PermissionSenderManage) because kit/app refuses to start a route whose
+// permission no manifest defines: a product that mounts a page for this face
+// guards it with this key, and a role that does not hold it never reaches it.
 type SenderAdmin interface {
 	// Put saves the tenant's sender, creating it or replacing what is there.
 	// Status is never taken from the caller: a row whose domain or selector

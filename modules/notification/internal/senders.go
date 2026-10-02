@@ -70,6 +70,10 @@ func (s *Senders) For(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Send
 // changing takes the row back to pending with a fresh token, and the pair
 // staying the same keeps the verification it already earned.
 func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sender) (*contracts.Sender, error) {
+	actor, err := adminActor(ctx)
+	if err != nil {
+		return nil, err
+	}
 	in.Status = contracts.SenderPending // whatever the caller asked for is refused here
 	in.Key = nil
 	existing, err := s.live(tx)
@@ -98,10 +102,34 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 		"domain", "selector", "from_name", "from_address", "reply_to", "status", "token", "proof", "verified_at", "updated_at"); err != nil {
 		return nil, err
 	}
-	actor, _ := tenancy.ActorFrom(ctx)
 	return &in, events.Publish(ctx, tx, contracts.EventSenderSet, contracts.SenderSet{
 		SenderID: in.ID, Domain: in.Domain, Selector: in.Selector, Status: in.Status, Actor: actor, At: db.Now(),
 	})
+}
+
+// adminActor is the caller one of these three commands has to be able to name.
+//
+// tenancy.ActorFrom is unset for work with no person behind it — a job, the
+// relay, a retried event — and for a read that is the honest answer rather than a
+// sentinel, which is why For and the notice's own decision ask nothing about it.
+// For these three it is not enough: what they change is the address this tenant
+// may put in a From header and the selector its mail signs under, and the answer
+// to "who set this" lives in the event these commands publish. A write whose own
+// audit row would name nobody has not rechecked its caller, so the command is
+// refused before the row is read: it writes nothing, publishes nothing and
+// returns no row, which is what contracts.SenderAdmin promises.
+//
+// The grant above the identity is the application's: the key this module defines
+// (contracts.PermissionSenderManage) exists so the route it composes can guard
+// the face with it, and kit/app refuses a route whose permission no manifest
+// defines. What the module can enforce from inside the transaction is that the
+// caller is somebody the transaction names and that the row is this tenant's.
+func adminActor(ctx context.Context) (uuid.UUID, error) {
+	actor, ok := tenancy.ActorFrom(ctx)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("%w: notification: this tenant's sender is changed by a caller its own transaction names, and this one names nobody", tenancy.ErrPolicyDenied)
+	}
+	return actor, nil
 }
 
 // Verify asks the composition whether the domain says so and, when it does,
@@ -112,6 +140,10 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 // same moment must not both see pending, and the second must find the row
 // already believed rather than run a second check into a second proof.
 func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Sender, error) {
+	actor, err := adminActor(ctx)
+	if err != nil {
+		return nil, err
+	}
 	if s.Verifier == nil {
 		return nil, fmt.Errorf("notification: this deployment has no way to check a sender's domain")
 	}
@@ -134,7 +166,6 @@ func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	if err := crud.Update(ctx, tx, row, "status", "proof", "verified_at", "updated_at"); err != nil {
 		return nil, err
 	}
-	actor, _ := tenancy.ActorFrom(ctx)
 	return row, events.Publish(ctx, tx, contracts.EventSenderVerified, contracts.Verified{
 		SenderID: row.ID, Domain: row.Domain, Selector: row.Selector, Actor: actor, At: at,
 	})
@@ -149,6 +180,9 @@ func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 // Deleting nothing deletes nothing: an unknown id is ErrNotFound, the same
 // answer another tenant's id gives.
 func (s *Senders) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	if _, err := adminActor(ctx); err != nil {
+		return err
+	}
 	row, err := crud.GetForUpdate[*contracts.Sender](tx, id)
 	if err != nil {
 		return err

@@ -213,7 +213,7 @@ func TestQuietHoursAreInTheZoneTheyName(t *testing.T) {
 func TestSettingsAreSomebodyElseInvisible(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	store := internal.Prefs{}
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(asAdmin(tenancy.WithTenant(t.Context(), acme)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := store.SetChannel(ctx, tx, notificationtest.Ada, "", contracts.ChannelEmail, false); err != nil {
 			return err
 		}
@@ -278,7 +278,7 @@ func sender() contracts.Sender {
 func TestAConversationWithTheSenderCommands(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	var id uuid.UUID
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(asAdmin(tenancy.WithTenant(t.Context(), acme)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		in := sender()
 		in.Status = contracts.SenderVerified // the caller's claim, refused
 		row, err := senders().Put(ctx, tx, in)
@@ -333,7 +333,7 @@ func TestAConversationWithTheSenderCommands(t *testing.T) {
 
 	// A deployment that holds no key cannot sign as the tenant's own sender, and
 	// says whose problem that is.
-	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err = db.Run(asAdmin(tenancy.WithTenant(t.Context(), acme)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		noKeys := &internal.Senders{Verifier: verified{"ok"}, Keys: keys{}}
 		row, err := noKeys.Put(ctx, tx, sender())
 		if err != nil {
@@ -397,7 +397,7 @@ func TestARedeliveredSendWritesOneSentRow(t *testing.T) {
 func TestAChoiceThatIsNotOneIsRefused(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	prefs := internal.Prefs{}
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(asAdmin(tenancy.WithTenant(t.Context(), acme)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := prefs.SetChannel(ctx, tx, notificationtest.Ada, "", contracts.ChannelInApp, false); err == nil {
 			t.Error("muteing one's own inbox succeeded")
 		}

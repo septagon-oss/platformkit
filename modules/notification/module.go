@@ -37,11 +37,17 @@ type Deps struct {
 	Senders contracts.Senders
 
 	// Providers are the carriers beyond mail — VAPID for a browser, T-0120's
-	// adapter for a phone, an HTTP client for a tenant's endpoint. A channel with
-	// no provider here is suppressed with a reason that names the deployment, so
-	// the ledger accounts for every channel a notice asked for whatever this list
-	// holds. Mail is not one of them: the module's own worker carries it, which is
-	// what Deps.Mailer is for.
+	// adapter for a phone, an HTTP client for a tenant's endpoint. Each one is
+	// carried by a subscription the manifest composes for it (internal.Carrier),
+	// named by the same event Notify asks that channel by, so a channel this list
+	// holds reaches its carrier and closes its ledger row with sent, failed or a
+	// suppression. A channel with no provider here is suppressed with a reason
+	// that names the deployment. Either way the ledger accounts for every channel
+	// a notice asked for, whatever this list holds — which is what
+	// delivery_ledger_coverage measures and what it would stop measuring the
+	// moment a provider were wired to nothing. Mail is not one of these: the
+	// module's own worker carries it, which is what Deps.Mailer is for, and
+	// wiring a provider for mail or for in-app panics where the mistake is.
 	Providers contracts.Providers
 
 	// Mailer sends the rendered message, in the worker.
@@ -64,15 +70,45 @@ type Deps struct {
 // Module is the manifest, and the service it is built on: main holds the
 // service because the modules that raise notices are wired against it.
 //
-// permissions is what the manifest declares, and it is empty. It is a var
-// rather than a nil literal in the manifest so that all six modules answer the
-// question in the same place and in the same shape: a reader looking for what a
-// module lets a role be granted finds one name, whatever the answer is.
+// permissions is what the manifest declares. It is a var rather than a literal
+// in the manifest so that every module answers the question in the same place and
+// in the same shape: a reader looking for what a module lets a role be granted
+// finds one name, whatever the answer is.
 //
-// The answer here is nothing. Both routes are about the caller themselves,
-// which is what httpx.SignedIn is for, and a permission every signed-in person
-// must hold is a permission that decides nothing.
-var permissions []module.Permission
+// The answer is one key. The two routes this module mounts stay outside it —
+// both are about the caller themselves, which is what httpx.SignedIn is for, and
+// a permission every signed-in person must hold decides nothing — and it is not
+// there for them. It is there because the tenant's sending address is not about
+// the caller: the module enforces from inside the transaction that whoever calls
+// Put, Verify or Delete is somebody the transaction names, and the route a
+// product composes over that face guards it with this key, which kit/app refuses
+// to start unless the manifest that defines it says so.
+var permissions = []module.Permission{{Key: contracts.PermissionSenderManage}}
+
+// subscriptions is the manifest's list of who does this module's asynchronous
+// work: the mail this module sends itself, and one carrier per provider the
+// deployment wired, in contracts.Channels' order so the list a reader sees does
+// not depend on Go's map iteration. A provider is a channel this deployment
+// sends, and a channel it sends has to have somebody listening, so the two
+// halves are built from the same Deps value and cannot disagree.
+func subscriptions(deps Deps) []events.Subscription {
+	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
+	for _, c := range contracts.Channels {
+		p := deps.Providers.Get(c)
+		if p == nil {
+			continue
+		}
+		if c == contracts.ChannelInApp || c == contracts.ChannelEmail {
+			// in-app is the row itself and mail is internal.SendMail above, which
+			// Module already refuses to compose without. A second carrier for either
+			// would be two subscriptions on one event and two sent rows for one
+			// delivery, so it fails at the wiring rather than in the worker.
+			panic("notification.Module: Deps.Providers carries a channel this module carries itself: " + string(c))
+		}
+		subs = append(subs, internal.Carrier(p, deps.Hosts, deps.Secure))
+	}
+	return subs
+}
 
 func Module(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
@@ -90,16 +126,16 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Events:      contracts.Events,
-		// No nav entry, and it is the same fact as the empty Permissions: a
-		// nav entry names the permission that decides who sees the link, and
-		// there is no permission here to name. Everybody's notifications are
-		// their own, so the link belongs in the chrome the admin shell puts
-		// around every page (E4) rather than in the module list.
+		// No nav entry: a nav entry names the permission that decides who sees the
+		// link, and the key this module defines guards the tenant's mail identity,
+		// not a page. Everybody's notifications are their own, so the link belongs
+		// in the chrome the admin shell puts around every page (E4) rather than in
+		// the module list.
 		Nav: nil,
 		// No periodic work: a notification is caused by something happening,
 		// which is an event and not the clock (docs/adr/0004).
 		Jobs:          nil,
-		Subscriptions: []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)},
+		Subscriptions: subscriptions(deps),
 		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s.App, svc) },
 	}
 }
