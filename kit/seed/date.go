@@ -48,10 +48,18 @@ func ResolveDate(now time.Time, expression string, dateOnly bool) (time.Time, er
 	if !ok || len(clock) != 5 || clock[2] != ':' {
 		return time.Time{}, fmt.Errorf("seed: invalid relative date %q", expression)
 	}
-	hour, hourErr := strconv.Atoi(clock[:2])
-	minute, minuteErr := strconv.Atoi(clock[3:])
-	if hourErr != nil || minuteErr != nil || hour > 23 || minute > 59 {
-		return time.Time{}, fmt.Errorf("seed: invalid relative date %q", expression)
+	// Two digits each, and no sign. A leading minus parses as an int, and
+	// time.Date would then have quietly moved the answer into the previous day —
+	// a file that wrote monday -1:00 would have got Sunday 23:00 and no word
+	// about it. A clock part that is not two digits is a typo, and a typo is
+	// refused rather than normalised.
+	if !twoDigits(clock[:2]) || !twoDigits(clock[3:]) {
+		return time.Time{}, fmt.Errorf("seed: invalid clock %q in relative date %q", clock, expression)
+	}
+	hour, _ := strconv.Atoi(clock[:2])
+	minute, _ := strconv.Atoi(clock[3:])
+	if hour > 23 || minute > 59 {
+		return time.Time{}, fmt.Errorf("seed: invalid clock %q in relative date %q", clock, expression)
 	}
 	days := (int(wanted) - int(now.Weekday()) + 7) % 7
 	candidate := time.Date(now.Year(), now.Month(), now.Day()+days, hour, minute, 0, 0, time.UTC)
@@ -59,4 +67,10 @@ func ResolveDate(now time.Time, expression string, dateOnly bool) (time.Time, er
 		candidate = candidate.AddDate(0, 0, 7)
 	}
 	return candidate, nil
+}
+
+// twoDigits is a clock part as the grammar writes it: exactly two decimal
+// digits, no sign.
+func twoDigits(s string) bool {
+	return len(s) == 2 && s[0] >= '0' && s[0] <= '9' && s[1] >= '0' && s[1] <= '9'
 }

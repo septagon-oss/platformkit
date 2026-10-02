@@ -269,15 +269,14 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 	}
 	resolved := make(map[string]uuid.UUID)
 	ordered, err := Order(documents, references, func(resource, key string) (bool, error) {
-		writer := s.writers[resource]
-		if writer == nil {
-			return false, nil
+		id, present, err := s.existing(ctx, tx, resource, key)
+		if err != nil {
+			return false, err
 		}
-		row, err := writer.Read(ctx, tx, Key{Value: key}, false)
-		if err == nil && row.Present {
-			resolved[resource+"/"+key] = row.ID
+		if present {
+			resolved[resource+"/"+key] = id
 		}
-		return row.Present, err
+		return present, nil
 	})
 	if err != nil {
 		return Plan{}, err
@@ -290,6 +289,9 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		// argument because the code that publishes is the owner's write path,
 		// several calls away from this loop.
 		wctx := events.WithAttribution(ctx, seedAttribution(ctx, entry.Record.Source))
+		// The resource's own write grant, asked before an update-locking read of
+		// the owner's row: a run whose actor holds nothing is refused without
+		// taking a lock a person is waiting on.
 		if err := s.authorize.Check(ctx, tx, r, Update); err != nil {
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 		}
@@ -313,13 +315,22 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		if current.Present && !owned && decision.Action == Update {
 			return Plan{}, fmt.Errorf("seed: %s: %s/%s is an unowned natural-key row", entry.Record.Source, entry.Resource, entry.Record.Key)
 		}
+		// A create is a different grant from an update, and the check belongs to
+		// the decision rather than to the write: a dry run that printed CREATE
+		// for a caller who could not have created the row would be a plan that
+		// lied, and the run it predicted would refuse. Plan and Apply therefore
+		// ask the same question here, before either of them writes.
+		if decision.Action == Create {
+			if err := s.authorize.Check(ctx, tx, r, Create); err != nil {
+				return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
+			}
+		}
 		item := Item{Action: decision.Action, Resource: entry.Resource, Key: entry.Record.Key, Source: entry.Record.Source, Changed: decision.Changed, RecordID: current.ID}
 		if apply {
 			switch decision.Action {
 			case Create:
-				if err := s.authorize.Check(ctx, tx, r, Create); err != nil {
-					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
-				}
+				// The create grant was asked above, at the decision — the same
+				// question, in the same transaction, that Plan asks.
 				current, err = writer.Create(wctx, tx, target)
 			case Update:
 				current, err = writer.Update(wctx, tx, current, target)
@@ -344,6 +355,32 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		return Plan{}, err
 	}
 	return plan, nil
+}
+
+// existing answers the question a reference to a record outside these files
+// asks: does this tenant already hold the row it names. It is the same two
+// reads a record's own pass makes — the provenance mapping, then the owner's
+// row by the ID that mapping holds or, for a resource with a natural key, by
+// that key — because a target the seed wrote earlier is often known to the seed
+// by nothing but its opaque key.
+func (s *Service) existing(ctx context.Context, tx db.Tx[db.Tenant], alias, key string) (uuid.UUID, bool, error) {
+	writer := s.writers[alias]
+	if writer == nil {
+		return uuid.Nil, false, nil
+	}
+	r := writer.Resource()
+	name, _, err := lookupKey(tx, r, key)
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	row, err := writer.Read(ctx, tx, name, false)
+	if err != nil {
+		return uuid.Nil, false, err
+	}
+	if !row.Present {
+		return uuid.Nil, false, nil
+	}
+	return row.ID, true, nil
 }
 
 // prune visits referring resources before their targets. Only mappings from a
