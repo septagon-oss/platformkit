@@ -122,10 +122,12 @@ What this branch does not do, in the order it costs:
   spelling a different app is refused rather than left to serve one app and relay
   another's. Choosing the slug for `apps/platformkit`, declaring its `app.hosts`, and
   the browser test that signs in to two apps on two hosts of one deployment are the
-  product's share. The split seen from the other side — an `Options.App` naming an app
-  while `nats.app` stays empty — is left standing, because nothing in `kit/app` stamps
-  a tenant: that composition checks a contract no tenant's row points at, and the
-  wiring that names both keys is where it is fixed.
+  product's share. The split seen from the other side is closed: an `Options.App` that names
+  an app while `nats.app` stays empty is the composition saying what it is, and `New` writes
+  that slug into the `nats.app` of the configuration it carries, so the transport's subjects,
+  subscription filter and connection name, and the app the migration places this boot's
+  tenants against, name the app its payload contract, relay claim, durables and job lock
+  already named. A caller's own `config.Config` is passed by value and keeps its empty key.
 - **The slug's one key is `nats.app` and the deployment facts are `app.*`.** The
   split is history: the slug landed on the transport's section before the migration
   needed anything, and moving it now would rename a published key for no gain. A

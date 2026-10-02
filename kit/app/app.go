@@ -92,12 +92,12 @@ type Options struct {
 	// name, a job lock and a cookie name.
 	//
 	// It is the same fact as the configuration key `nats.app`, and New reconciles the
-	// two before anything reads either: an empty App takes the configured slug, which
-	// is what places this app's tenants (migrations/000041) and addresses its subjects,
-	// so a composition naming itself nowhere else would otherwise check its own events
-	// against no contract at all (kit/events/catalog.go). Two spellings are refused; an
-	// App named while the key stays empty is not, and no tenant's row will point at its
-	// contract — the stamp comes from the key, so that one is wiring's left to fix.
+	// two before anything reads either: an empty App takes the configured slug, and an
+	// App named while the key stays empty is written into the key as this App carries
+	// it, so one value places this app's tenants (migrations/000041), addresses its
+	// subjects (kit/events/providers/nats) and keys its payload contract
+	// (kit/events/catalog.go). Two spellings naming two apps are refused; a caller
+	// that stamps tenants from its own config.Config still reads its own empty key.
 	App appname.Name
 
 	// Installation names the host the installation itself is reached at — the
@@ -286,7 +286,10 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
 	// nothing below re-reads either input: the payload catalog, the relay's claim,
 	// every subscription's durable and the job lock are named from the value this
-	// block leaves in opts.App. Left to agree by themselves they do not: a
+	// block leaves in opts.App, and everything that reads the setting rather than the
+	// option — the transport constructor, which transport() hands a.cfg.NATS, and the
+	// migration's placement of this boot's tenants — reads the value it leaves in
+	// cfg.NATS.App. Left to agree by themselves they do not: a
 	// deployment that named itself in configuration alone stamped its tenants
 	// "collect", addressed its events as collect and installed its catalog under
 	// nobody's slug, so checkPayload — which asks which app holds the tenant the row
@@ -319,6 +322,20 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 			// events carried the other name. Which one to keep is the deployment's
 			// decision, and a boot cannot make it; the error names both spellings.
 			return nil, fmt.Errorf("app: Options.App %q and nats.app %q are two answers to which app this composition is", string(opts.App), cfg.NATS.App)
+		}
+		if !configured.Named() {
+			// The opposite direction, and the one the case above cannot see: the code
+			// spoke and the setting said nothing. nats.app is not only how a deployment
+			// names itself, it is the key two consumers read — the transport constructor
+			// (kit/events/providers/nats forms its subjects, its subscription filter and
+			// its connection name from settings.AppName) and migrationDeclaration, whose
+			// app is what migrations/000041 places tenants against. Left empty, this boot
+			// would scope its relay, its durables and its job lock by the option and form
+			// every other shared name as the deployment of one app: the same question
+			// answered twice, which is what the two-spellings refusal above exists to
+			// forbid. Written to the copy of the configuration this App carries — a
+			// caller's own config.Config is passed by value and keeps its empty key.
+			cfg.NATS.App = string(opts.App)
 		}
 	} else {
 		// The composition said nothing about itself, so the deployment speaks: nats.app
