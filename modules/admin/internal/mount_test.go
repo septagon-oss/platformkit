@@ -229,12 +229,14 @@ func TestTheHealthPageNamesEachCheckAndItsState(t *testing.T) {
 // and the authored English when none is composed.
 func TestTheSignInPageSpeaksTheRequestLanguage(t *testing.T) {
 	t.Parallel()
-	english := render(t, g.Group(login(context.Background(), nil, "/app", "/api/v1/auth/login", "/app/login/forgot").Body))
+	// No register address: this composition wired no registration service, and
+	// the case below is the language of the card, not which ways in it offers.
+	english := render(t, g.Group(login(context.Background(), nil, "/app", "/api/v1/auth/login", "/app/login/forgot", "").Body))
 	if !strings.Contains(english, ">Sign in<") || !strings.Contains(english, `data-next="/app"`) {
 		t.Fatalf("english sign-in:\n%s", english)
 	}
 	pt := &page.Locale{Language: "pt-PT", Formatter: words{"admin.login.title": "Iniciar sessão", "admin.login.password": "Palavra-passe"}}
-	view := login(context.Background(), pt, "/app", "/api/v1/auth/login", "/app/login/forgot")
+	view := login(context.Background(), pt, "/app", "/api/v1/auth/login", "/app/login/forgot", "")
 	body := render(t, g.Group(view.Body))
 	if view.Title != "Iniciar sessão" || !strings.Contains(body, "Palavra-passe") || !strings.Contains(body, ">Email<") {
 		t.Fatalf("localized sign-in lost a translation or its fallback:\n%s", body)
