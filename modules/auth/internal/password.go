@@ -55,8 +55,9 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 // mistypes their own address is told nothing, and the mail that does not arrive
 // is the message.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+	r, _ := httpx.RequestFrom(ctx)
 	return events.Publish(ctx, tx, contracts.EventResetRequested, contracts.ResetRequested{
-		Email: contracts.EmailKey(email), At: db.Now(),
+		Email: contracts.EmailKey(email), At: db.Now(), Served: httpx.ServedAuthority(r),
 	})
 }
 
@@ -202,7 +203,15 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 	if s.mail.Secure {
 		scheme = "https"
 	}
-	return scheme + "://" + host, nil
+	base := scheme + "://" + host
+	// The port the request that raised this link was served at, when there was one
+	// and when it is a port on this host of record: a development installation
+	// serves a tenant at its name and a port, and a link that drops the port opens
+	// a different server, or none. See served.go.
+	if port := servedPort(ctx, host); port != "" {
+		base += ":" + port
+	}
+	return base, nil
 }
 
 // recent reports whether this person was sent a link inside ResetInterval.
