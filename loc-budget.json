@@ -11,7 +11,7 @@
       "exclude_suffixes": [
         "_test.go"
       ],
-      "max": 22261
+      "max": 22308
     },
     {
       "name": "modules",
@@ -80,7 +80,7 @@
       "exclude_dir_suffixes": [
         "test"
       ],
-      "max": 66879
+      "max": 66928
     },
     {
       "name": "go_testsupport",
@@ -100,7 +100,7 @@
       "suffixes": [
         "_test.go"
       ],
-      "max": 93374
+      "max": 93541
     },
     {
       "name": "js",
@@ -149,7 +149,7 @@
       "suffixes": [
         ".md"
       ],
-      "max": 9018
+      "max": 9021
     }
   ]
 }
