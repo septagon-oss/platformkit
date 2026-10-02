@@ -1,7 +1,7 @@
 {
   "schema": "platformkit.design-export-source.v1",
   "fixture": "testdata/design-tokens.json",
-  "sha256": "6f192d6df272ebd0e88b953845a37a4a3e4466b56a394359d33ff67f4f39672a",
+  "sha256": "bce69062419a3d2634f40ad0b9fa5203d955566ecd36737cb2241b6a0ecde095",
   "upstream": {
     "repository": "https://github.com/septagon-oss/platformkit",
     "path": "tools/designexport/testdata/design-tokens.json",

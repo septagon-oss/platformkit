@@ -151,7 +151,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and every resolved value of both themes against the previous commit: 8 lines —
 	// per theme border-default and the three values derived from it — and 12 of the
 	// pair's 196 across the two commits together.
-	if legacy.SHA256 != "e4247c772f189d7976d48ef28f09fe4c196528126909b1b35e515d1dc17fff02" {
+	//
+	// Re-recorded once more for the rebase onto origin/main, which brings the
+	// cascade-layer change: Compose now emits `@layer tokens, base, components,
+	// client;` and wraps each layer's rules in a block, so the sheet is the same
+	// declarations at one more level of nesting. No token, icon, example or schema
+	// of this branch moves — the two themes' resolved values are the ones review 15
+	// recorded above; only the sheet they are printed into gained a layer. The
+	// digest below is measured on this rebased tree, not inherited from either side.
+	if legacy.SHA256 != "372f1db919e2e28053a2b1022cc3b64b9b0441959c199b9daaee1b36ee3ded59" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
