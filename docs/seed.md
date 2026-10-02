@@ -159,13 +159,15 @@ The user writer injects `email`; creation calls `Invite`, then `SetRoles` and
 `SetPassword` through that service. The normal invitation event and its effects
 remain in force. The password is never a file field or plan value. On first
 creation only, it comes from `PLATFORMKIT_DEMO_PASSWORD`, or a freshly generated
-password shared for that run and surfaced once **after commit**: to the
-operator-only tenant-create response for an HTTP hook, or to stderr for the
-CLI/bootstrap. `Plan` never generates or displays a secret. The tenant hook
-result must carry the generated secret to the tenant creation caller; the
-server never logs it. A
-rerun never resets a person's password. If no user was created, nothing is
-printed. Empty or invalid supplied passwords refuse before any write.
+password shared for that person and printed once to stderr, where the run that
+hashed it stands. `Plan` never generates or displays a secret, and the server
+never logs one. The generated value is not returned through a create result:
+nothing in this checkout carries a secret out of a tenant hook to a request
+caller, and a password printed for a transaction that later rolled back names
+nobody's credential. What the managed `signIn` fact compares is whether the row
+holds a credential at all, so a rerun never resets a person's password and never
+repeats the print. Empty or invalid supplied passwords refuse at the user
+module's own policy before the row is written.
 
 **Demo binary (`demo/files.yaml`, keyless identity):**
 
@@ -548,8 +550,10 @@ its own typed refusal, which is preserved with the same source wrapper.
    it is confined to a tenant that came into being in the same transaction and can
    only create. The demo password is config's `demo.password`
    (`PLATFORMKIT_DEMO_PASSWORD`), not a value the hook returns to its caller; no
-   generated secret travels through a create result, and a deployment that names
-   none leaves the demo people invited rather than signed in.
+   generated secret travels through a create result. A deployment that names none
+   gets one minted per person by the seed's own `SetPassword` call and printed
+   once to stderr, because an invited person nobody can sign in as is not a
+   demonstration.
 
 ## Time, audit and external effects
 

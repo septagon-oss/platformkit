@@ -5,9 +5,11 @@
 #
 # "demo" is not a secret and never one: it asks the application to give this
 # person the demo password the deployment holds (config `demo.password`,
-# PLATFORMKIT_DEMO_PASSWORD). Where a deployment names none, the writer asks for
-# nothing and compares nothing, the three arrive invited, and the walkthrough
-# stops at the sign-in page. What arrives through SetPassword is the module's own
+# PLATFORMKIT_DEMO_PASSWORD). Where a deployment names none, the run mints one
+# for this person, gives it through the same command, and prints it once to
+# stderr — an invited person nobody can sign in as is not a walkthrough. What the
+# comparison asks is whether the row holds a credential at all, so the person who
+# later chooses their own password keeps it: no rerun writes over a credential. What arrives through SetPassword is the module's own
 # command, hashed by the module and announced by its own user.password_set event.
 #
 # The roles are the ones this application composes: auth's member, which grants
