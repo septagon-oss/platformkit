@@ -185,6 +185,22 @@ func (a Auth) Declared() bool {
 	}
 }
 
+// IsPublic reports whether this declaration admits a caller nobody recognised.
+// kit/rest refuses it on a Spec — a Spec's routes are a tenant's rows — and the
+// question has to be answerable outside this package to refuse it.
+func (a Auth) IsPublic() bool { return a.kind == kindPublic }
+
+// NamesAGrant reports whether this declaration asks the roles table a
+// permission. Public, SignedIn and AnyCredential do not: one asks nothing of
+// anybody, the other asks only that there be somebody, and the third asks for a
+// recognised caller of any credential while naming nothing to check. kit/rest
+// asks it because the two generic writes whose row the caller names cannot be
+// guarded by a declaration that decides nothing about the row — see Spec.check.
+func (a Auth) NamesAGrant() bool {
+	_, asks := a.grant()
+	return asks
+}
+
 // grant is the permission question this declaration asks, and whether it asks
 // one at all. Public, SignedIn and AnyCredential ask none — which is why the
 // middleware, not this function, is where a credential carrying its own ceiling
