@@ -285,16 +285,36 @@ func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logge
 
 // resource is the trace's and the metric's origin: service.name always, and
 // pkit.client when the deployment named one. The SDK's own attributes and whatever
-// OTEL_RESOURCE_ATTRIBUTES says stay; this overrides only the name.
+// OTEL_RESOURCE_ATTRIBUTES says stay; this overrides only the name — except for the
+// two keys a tenant owns, which are refused below.
 //
 // No tenant, and no client either when the installation is shared. A resource
 // describes the process, and this process serves many tenants — so the tenant
 // arrives on the spans, where a request put it, and not here. kit/telemetry's
-// package comment carries the argument; this is where it is enforced.
+// package comment carries the argument; this is where it is enforced, against the
+// environment as well as against this file.
+//
+// The environment is the part that needs saying. Both providers merge
+// resource.Environment() into whatever they are handed — sdk/trace's and
+// sdk/metric's WithResource both do it inside the option — so a tenant key in
+// OTEL_RESOURCE_ATTRIBUTES reaches every span and number this process exports no
+// matter what this function builds, and the only way to hold the promise with the
+// SDK as it is pinned would be to edit this process's environment behind its owner.
+// So a reserved key named at boot stops the boot, the way a value of
+// telemetry.otlp_endpoint that no exporter can use stops it: a configuration that
+// would attribute one tenant's data to a process that serves many is wrong in a way
+// no operator should discover in the backend, and the message says which key and what
+// to do instead. Every other key the environment names — a deployment environment, a
+// cluster, a pod — arrives unchanged.
 func resource(cfg config.Telemetry) (*sdkresource.Resource, error) {
 	attrs := []attribute.KeyValue{attribute.String("service.name", cfg.ServiceName)}
 	if cfg.Client != "" {
 		attrs = append(attrs, attribute.String(telemetry.AttrClient, cfg.Client))
+	}
+	if named := reservedTenantKeys(sdkresource.Environment()); len(named) > 0 {
+		return nil, fmt.Errorf("app: telemetry: %s in OTEL_RESOURCE_ATTRIBUTES names a tenant on a process that "+
+			"serves many tenants; remove it and let each request name its own tenant on the span it opens",
+			strings.Join(named, ", "))
 	}
 	// Schemaless, so merging with the SDK's default resource keeps that resource's
 	// schema URL instead of refusing two schema URLs in one merge. service.name
@@ -304,6 +324,27 @@ func resource(cfg config.Telemetry) (*sdkresource.Resource, error) {
 		return nil, fmt.Errorf("app: telemetry: %w", err)
 	}
 	return merged, nil
+}
+
+// reservedTenantKey reports whether a key is a tenant's: it belongs to the operation
+// that resolved the tenant and to no process. These two keys, and only these, are
+// refused on a resource — dropping a key that is not a tenant's would be this file
+// deciding what an operator's deployment may say about itself.
+func reservedTenantKey(key attribute.Key) bool {
+	return key == telemetry.AttrTenant || key == telemetry.AttrTenantID
+}
+
+// reservedTenantKeys names the reserved keys a resource carries, which is the
+// refusal's list of what to remove. An empty answer is the common one: an environment
+// that asks for no tenant label needs no saying.
+func reservedTenantKeys(res *sdkresource.Resource) []string {
+	var keys []string
+	for _, kv := range res.Attributes() {
+		if reservedTenantKey(kv.Key) {
+			keys = append(keys, string(kv.Key))
+		}
+	}
+	return keys
 }
 
 // collector is the endpoint as the exporters are given it — and the check that

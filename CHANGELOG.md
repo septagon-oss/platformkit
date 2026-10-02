@@ -247,6 +247,11 @@ leaving is a log line. The reading is kept per export, because the spans and the
 services on two schedules: one answer for both let a metric tick that arrived clear a span batch
 that did not, and an operator asking about traces was answered with the metric pipeline's delivery.
 The half that failed is named; the half nobody asked about yet is silent rather than assumed down.
+One environment input is refused rather than honoured: OpenTelemetry merges `OTEL_RESOURCE_ATTRIBUTES`
+into the resource of every provider it is handed, so a deployment that names `pkit.tenant` or
+`pkit.tenant.id` there would export every tenant's spans and numbers under that one tenant's name;
+the boot stops, names the key and says what to do instead, and every other attribute the environment
+supplies still arrives on the resource.
 A bare `host:port` is accepted as the unencrypted endpoint it names, which
 is the form the example file prints. A composition notices one change: `health.Register` and
 `health.Mux` now take the checks as one slice and the reports as a trailing variadic, so the call

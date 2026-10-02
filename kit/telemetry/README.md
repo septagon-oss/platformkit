@@ -59,6 +59,14 @@ resource would be a lie for every request but one, or one provider per tenant, w
 is the unpickable singleton the pillar contract refuses. `pkit.client` is the one
 exception and is a deployment's own fact, not a request's.
 
+The rule reaches past what this repository writes. OpenTelemetry merges
+`OTEL_RESOURCE_ATTRIBUTES` into whatever resource a provider is handed, inside its
+own `WithResource`, so a deployment that names `pkit.tenant` or `pkit.tenant.id` in
+the environment would export every tenant's span and every tenant's number under the
+first one's name, whatever `kit/app` passed; that boot is refused, with the key named
+and the fix stated. Every other attribute the environment supplies — a deployment
+environment, a cluster, a pod — arrives on the resource unchanged.
+
 ## What is deliberately absent
 
 No collector, no dashboard, no actor on a span, no `messaging.system` (which broker
