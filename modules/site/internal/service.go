@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -127,6 +128,12 @@ func (s *Service) stored(tx db.Tx[db.Tenant], lock bool) (*contracts.SiteSetting
 	err := q.Where("deleted_at IS NULL").Take(&row).Error
 	switch classified := crud.Classify(err); {
 	case classified == nil:
+		// A char(7) holding fewer than seven characters arrives from the driver
+		// blank-padded, so the site that named no colour reads back as "       ".
+		// That is the same nothing and is not equal to it, and without this line
+		// every second save of a site with no colour is a change that publishes.
+		// Validate normalises the same way on the way in; this is the read of it.
+		row.PrimaryColor = strings.TrimSpace(row.PrimaryColor)
 		return &row, nil
 	case errors.Is(classified, crud.ErrNotFound):
 		return nil, nil
