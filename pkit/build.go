@@ -12,10 +12,12 @@ package pkit
 // rule 1), and "before any effect" is meant literally: no connection is opened,
 // no migration runs, no row is written, no port is listened on.
 //
-// The one thing Build does not move out of the engine is the gate that needs a
-// connection to answer — "every operation declared its authorization" lives in
-// kit/app.buildAPI, after the pool is open, and stays there. The phases below
-// say which claims are made before effects and which are the engine's.
+// The one thing Build cannot move out of the engine is the registration that can
+// only be made over an open connection: kit/app.buildAPI registers the modules'
+// routes a third time, over the pool and the store it just opened, and refuses a
+// callback that mounted differently there than it did on the dry pair. That
+// refusal is still before the migration. The phases below say which claims are
+// made before effects and which are the engine's.
 
 import (
 	"context"
@@ -259,18 +261,23 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 // role would use and every manifest gate before anything is opened.
 //
 // Between the engine's constructor and the first effect sits one more answer:
-// the route gates, over a dry registration (app.Declarations). They are
+// the route gates, over two dry registrations (app.Declarations). They are
 // registration-time checks over httpx's recorder — an operation guarded by a
 // permission no composed module defines, an operation that publishes an event no
 // module promised, a workspace that mounts nothing, an address that names a
-// prefix — and nothing in them reads the database, so decision 0074 rule 1 puts
-// them before the migration rather than after it. What stays on this side of the
+// prefix, and the two registrations that did not mount the same surface — and
+// nothing in them reads the database, so decision 0074 rule 1 puts them before
+// the migration rather than after it. Two registrations, not one, because the
+// last of those answers needs both: one dry run cannot tell a callback that
+// mounts the same routes every time from one behind a mount guard, and the
+// comparison against the live registration happens after the engine opens the
+// pool and the store, which is an effect. What stays on this side of the
 // migration is only what genuinely needs the connection: the pool, the transport,
 // and /ready's own probe of the schema it opened. The engine answers the same gates
 // over that connection too, and migrates only after they answer, because a module's
-// Routes callback runs once on each side and one that mounted differently the
-// second time would otherwise serve a surface no gate ever read
-// (app.registrationsAgree).
+// Routes callback runs twice on the dry side and once on the live one, and one that
+// mounted differently between any two of those runs would otherwise serve a surface
+// no gate ever read (app.registrationsAgree).
 func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, error) {
 	p, err := a.Plan(d)
 	if err != nil {

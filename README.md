@@ -77,7 +77,7 @@ return app.Run(ctx, deployment, app.All)
   - **Added** — the resolver over declared needs, provides and contributions, and
     every answer given before the first effect: no connection is opened, no
     migration runs and no port is listened on until the composition resolves and
-    its route gates have answered.
+    its route gates, over both dry registrations, have answered.
   - **Made reusable** — the reference application is composed this way in
     [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
     committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)

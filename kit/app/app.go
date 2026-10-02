@@ -511,11 +511,12 @@ func useJetStream(mode string, role Role) (bool, error) {
 // same reason it requires the connection; the dry composition is handed an
 // in-process store it never writes, because nothing serves the API it returns.
 //
-// Two callers, one sequence: Declarations runs this before anything is migrated,
-// and buildAPI runs it again over the open connection on the way to serving. One
-// registration order and one set of gates, and one check — registrationsAgree —
-// because a module's callback is the one part of a composition two calls can run
-// differently, and what it wrote the first time is what the second is judged to.
+// Three callers in one boot, one sequence: Declarations runs this twice on a
+// recorder before anything is opened, and buildAPI runs it again over the open
+// connection on the way to serving. One registration order and one set of gates,
+// and one check — registrationsAgree — because a module's callback is the one part
+// of a composition those calls can run differently, and what it wrote first is
+// what every later one is judged to.
 func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
 		Declarations: declarations,
@@ -640,15 +641,16 @@ func registeredRoutes(api *httpx.API) []string {
 	return lines
 }
 
-// registrationsAgree makes the two registrations of one composition's routes one
-// claim rather than a hope. They are registered twice: once on the dry recorder,
-// where Declarations answers the gates before any effect, and once over the live
-// connection on the way to serving. kit/module.Module.Routes never asked a callback
-// to answer the same way twice — kit/app called each one exactly once before the dry
-// registration existed — so a callback behind an idempotent guard answers differently
-// and the dry pass cannot see it: what the second registration mounts is what serves.
-// The first registration therefore sets the standard, and a route mounted on one side
-// only refuses the boot, naming the side, while the migration has still not run.
+// registrationsAgree makes every registration of one composition's routes one
+// claim rather than a hope. They are registered three times: twice on the dry
+// recorder, where Declarations answers the gates before any effect, and once over
+// the live connection on the way to serving. kit/module.Module.Routes never asked
+// a callback to answer the same way twice — kit/app called each one exactly once
+// before the dry registration existed — so a callback behind an idempotent guard
+// answers differently and one dry pass cannot see it. The first registration
+// therefore sets the standard and every later one is judged against it, naming the
+// side that differs: the second answers before the pool or the shared store is
+// opened, the third before the migration runs.
 func (a *App) registrationsAgree(api *httpx.API, dry bool) error {
 	if a.declaredRoutes == nil {
 		if !dry {
@@ -671,9 +673,9 @@ func (a *App) registrationsAgree(api *httpx.API, dry bool) error {
 	if len(bad) == 0 {
 		return nil
 	}
-	return errors.New("app: invalid composition:\n  this composition registered its routes twice and answered twice:\n    " +
+	return errors.New("app: invalid composition:\n  this composition registered its routes more than once and answered more than once:\n    " +
 		strings.Join(bad, "\n    ") +
-		"\n  a module's Routes callback runs once on the dry composition, where the gates are answered, and once on the way to serving; a callback that mounts on one of those runs and not the other serves a surface no gate ever read — mount the same routes every time Routes is called")
+		"\n  a module's Routes callback runs three times in one boot — twice while the gates are answered, once on the way to serving; a callback that mounts differently on any two of those runs serves a surface no gate ever read — mount the same routes every time Routes is called")
 }
 
 // onlyIn is every line the first registration carries that the second does not,
