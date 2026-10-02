@@ -148,19 +148,34 @@ func TestTheRefusalRollsBackTheTransactionThatAskedForIt(t *testing.T) {
 	}
 }
 
-// TestAnUndeclaredNameIsNotChecked here is not an endorsement: kit/app refuses
-// a composition whose route would publish a name no module declared, and that is
-// the gate. What this pins is that the schema check adds no second error for
-// the same mistake, and that a module emitting a payload the kernel cannot
-// describe (Declared.Payload nil) is published rather than refused.
-func TestAnUndeclaredNameIsNotChecked(t *testing.T) {
+// TestAManifestMayDeclareANameWithNoTypeAndAnUndeclaredNameIsRefused pins the two
+// halves of the door beside the schema check. A name the composition declared with no
+// payload type is published and unchecked: some payloads the kernel cannot describe,
+// and a manifest's choice not to describe one is not a bug. A name nobody declared is
+// refused outright, which is what the core review of 2026-09-29 (P2) found missing:
+// such a publication used to be accepted, stamped published and received by nobody,
+// because SubscribeAll expands over declared names only. The manifest gate in kit/app
+// covers routes; this one covers every publisher, and it says so before the INSERT.
+func TestAManifestMayDeclareANameWithNoTypeAndAnUndeclaredNameIsRefused(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	declare(t, events.Declared{Name: "billing.plan_created"})
 	if err := publishErr(t, conn, "billing.plan_created", map[string]any{"anything": true}); err != nil {
-		t.Fatalf("an undeclared name was refused by the schema check: %v", err)
+		t.Fatalf("a name declared without a type was refused by the schema check: %v", err)
 	}
-	if err := publishErr(t, conn, "billing.other_name", "anything at all"); err != nil {
-		t.Fatalf("a name with no declaration was refused: %v", err)
+	err := publishErr(t, conn, "billing.other_name", "anything at all")
+	if err == nil || !strings.Contains(err.Error(), "declared by no module") {
+		t.Fatalf("a name no module declared was accepted: %v", err)
+	}
+	// Rule 9 in full: the refusal wrote nothing, so the transaction that carried it
+	// has no outbox row to roll back.
+	var rows int
+	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Raw("SELECT count(*) FROM platformkit_outbox").Scan(&rows).Error
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 {
+		t.Errorf("the refused publication left %d outbox rows, want the one the declared name wrote", rows)
 	}
 }
 
