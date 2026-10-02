@@ -33,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	"go.opentelemetry.io/otel/trace"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -65,6 +66,7 @@ func tracedFixture(t *testing.T) http.Handler {
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host,
 		Conn:       app,
+		Cache:      cache.Memory("pkit"),
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost

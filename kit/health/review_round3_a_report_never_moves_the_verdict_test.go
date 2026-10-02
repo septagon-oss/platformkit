@@ -37,6 +37,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -66,6 +67,7 @@ func serveReports(t *testing.T, checks []health.Check, reports ...health.Report)
 	api, router := httpx.New(httpx.Options{
 		Tenants:      sites{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme"}},
 		Conn:         app,
+		Cache:        cache.Memory("pkit"),
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})

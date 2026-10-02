@@ -53,6 +53,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -79,6 +80,7 @@ func round8Router(t *testing.T) http.Handler {
 	api, router := httpx.New(httpx.Options{
 		PublicHost: host,
 		Conn:       app,
+		Cache:      cache.Memory("pkit"),
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
 			if h != host {
 				return tenancy.Tenant{}, tenancy.ErrNoSuchHost
