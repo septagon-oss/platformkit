@@ -607,19 +607,34 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 	return api, router, nil
 }
 
-// registeredRoutes is what one registration of this composition mounted: every
-// operation the recorder holds, as one line naming its method, its composed path,
-// its operation id and the authorization guarding it, sorted so the answer is a set
-// rather than a call order. The path is the composed one, so which surface a route
-// landed on is already in it. A module's Routes callback writes exactly these facts,
-// and the kernel and the manifests write them the same way in both registrations,
-// which makes them the whole of what the two registrations can disagree about.
+// registeredRoutes is what one registration of this composition mounted, as one
+// sorted set of lines rather than a call order. The composition writes every
+// route into two readings of itself and the set carries both, because neither
+// alone names what a module's Routes callback decided. The mount table is every
+// address a router mounted — routes and file trees alike — with its surface, its
+// module and the authorization guarding it; a tree mounted with Surfaces.Static
+// is recorded there and nowhere else, because it is no operation, so the recorder
+// never saw it and no operation gate ever will. The operation recorder adds what
+// only an operation carries — the id the OpenAPI document names it by, which is
+// what validateEvents and validatePermissions read — and names the kernel's own
+// routes, which no module mounted and which the kernel mounts alike on both
+// sides. A module's Routes callback writes both readings, and the kernel and the
+// manifests write them the same way in both registrations, which makes them the
+// whole of what the two registrations can disagree about.
 func registeredRoutes(api *httpx.API) []string {
-	recorded := api.Recorded()
-	lines := make([]string, 0, len(recorded))
+	recorded, mounted := api.Recorded(), api.Mounted()
+	lines := make([]string, 0, len(recorded)+len(mounted))
 	for _, op := range recorded {
-		lines = append(lines, fmt.Sprintf("%s %s (%s) guarded by %v",
+		lines = append(lines, fmt.Sprintf("operation %s %s (%s) guarded by %v",
 			op.Method, op.Path, op.OperationID, op.Extensions[httpx.AuthExtension]))
+	}
+	for _, m := range mounted {
+		kind := "value"
+		if m.Page {
+			kind = "document"
+		}
+		lines = append(lines, fmt.Sprintf("mount %s %s on %s by %s, a %s, guarded by %s",
+			m.Method, m.Path, m.Surface, m.Module, kind, m.Auth))
 	}
 	sort.Strings(lines)
 	return lines
