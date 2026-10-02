@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math/rand/v2"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -409,9 +411,10 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// TestTheControlPlaneIsNotFoundAtATenantHost in kit/httpx, which holds the
 	// installation host fixed and changes only the tenant.
 	//
-	// Which languages a tenant is served in is in this list because it is the newest
-	// of these routes and the one a tenant would most like to write for itself: the
-	// tenant's own host is exactly where its absence has to show.
+	// Which languages a tenant is served in, and which identity provider its people
+	// sign in against, are in this list because they are the newest of these routes
+	// and the two a tenant would most like to write for itself: the tenant's own
+	// host is exactly where their absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -419,6 +422,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc", `{"issuer":"https://idp.globex.example","clientId":"platformkit","secretRef":"GLOBEX_OIDC_SECRET"}`},
+		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc/clear", ""},
 	} {
 		code, body = do(t, cfg, other, probe.method, globexHost, probe.path, probe.body)
 		if code != http.StatusNotFound {
@@ -560,12 +565,13 @@ func TestBootstrapRefusesAnInstallationThatAlreadyExists(t *testing.T) {
 // TestEveryOperationDeclaresExactlyOneAuthorization is gate 7, read off the
 // recording rather than trusted: kit/app runs it at boot, and this says what it
 // is checking — every route the whole composition mounts, the new ones
-// included, carries one declaration from the closed set of three.
+// included, carries one declaration from the closed set of five.
 func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	_, cfg := configure(t)
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		// The installation is where the control plane is served, and this is the
@@ -600,17 +606,23 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			t.Fatalf("%s %s: %v", op.Method, op.Path, err)
 		}
 		switch read.Kind {
-		case "public", "signed_in":
+		case "public", "signed_in", "any_credential":
 		case "permission", "operator_permission":
 			if read.Permission == "" {
 				t.Errorf("%s %s requires a permission with no name", op.Method, op.Path)
 			}
 		default:
-			t.Errorf("%s %s declares %q, which is not one of the four", op.Method, op.Path, read.Kind)
+			t.Errorf("%s %s declares %q, which is not one of the five", op.Method, op.Path, read.Kind)
 		}
 		kinds[read.Kind]++
 	}
-	// Every kind is used, which is what makes the closed set worth having.
+	// Every kind is used, which is what makes the closed set worth having. The
+	// fifth, any_credential, is not in this list because it is the composition's
+	// own declaration — kit/app mounts the one operation that carries it, at the
+	// catalog address, and this gate builds the API from module routes without
+	// going through kit/app's boot. What the fifth door is for is pinned where the
+	// rule lives, by kit/httpx's scoped-credential cases, and at the live
+	// composition by TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom.
 	for _, kind := range []string{"public", "signed_in", "permission", "operator_permission"} {
 		if kinds[kind] == 0 {
 			t.Errorf("no operation declares %q", kind)
@@ -688,6 +700,7 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		Installation: cfg.Server.InstallationHost,
@@ -1011,29 +1024,161 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
+// waitFor returns once the application this test started answers its own
+// liveness probe at addr.
+//
+// It asks a question rather than dialling, because a dial is answered by whoever
+// holds the port and not by this test's application. The address comes from
+// freeAddr, which releases the port it chose, and Run migrates before it
+// listens, so the application is seconds away from binding it; on a host with
+// several suites live somebody else can take the port inside that window, and
+// the bare dial used to be satisfied by whoever had it. Two cases here have
+// failed that way — the second with
+// `Post "http://127.0.0.1:46755/api/v1/auth/login": ... malformed HTTP response "0"`
+// from a process that speaks no HTTP at all, in a case about signing in.
+//
+// GET /health is what the wait ends on instead: both roles serve it (kit/health
+// and app.work), it runs no check of its own, so 200 says this application is up
+// and nothing else can. Anything that answers it with something else is whoever
+// holds the port, and the case says so in a second rather than after thirty of
+// waiting and one request that was never going to be answered here.
 func waitFor(t *testing.T, addr string) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
+	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
-		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
-			_ = c.Close()
-			return
+		res, err := http.Get("http://" + addr + "/health")
+		if err != nil {
+			// Nobody is home, which is what it looks like while the application is
+			// still migrating. Keep waiting.
+			last = err.Error()
+		} else {
+			body, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				return
+			}
+			// /health is liveness: it runs no check, and this process answers it with
+			// 200 from the moment it listens. Anything else that answers is somebody
+			// else's socket, and no amount of waiting will make this application own
+			// it — say so at once, and say who did.
+			t.Fatalf("the port %s belongs to something that is not this application: "+
+				"GET /health answered %d, Server %q, body %q",
+				addr, res.StatusCode, res.Header.Get("Server"), firstLine(string(body)))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
+	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
 }
 
-// freeAddr picks a port the kernel has just confirmed is free.
+// The band freeAddr picks from. The kernel allocates nothing below
+// ip_local_port_range — an :0 bind and the source port of an outbound
+// connection both come out of that range — and 20000 keeps the choice clear of
+// the well-known services a development host runs. What is left is ports some
+// program named on purpose, which is the point: the ceiling is 30000 rather than
+// the kernel's floor because a preview proxy publishing a container answered this
+// suite at 30082 on 2026-10-01, and it names ports from 30000 up.
+const (
+	firstChosenPort = 20000
+	lastChosenPort  = 29999
+	chosenPortTries = 24
+)
+
+// chosenPorts remembers what this test binary has already served at, so that two
+// of its cases never stand on one port. The transport every case shares pools
+// connections by address, and a case that reuses a port its predecessor served
+// inherits a connection to a process that has gone away.
+var (
+	chosenPortsMu sync.Mutex
+	chosenPorts   = map[int]bool{}
+)
+
+// freeAddr picks a port the kernel cannot hand to somebody else while this test
+// is on its way to binding it.
+//
+// Asking the kernel for one and closing the listener, which is what this did,
+// picks out of the ephemeral range and then gives it back: every other process on
+// the host draws its :0 binds and its outbound source ports from that same range,
+// so the port was free at the moment it was named and possibly not one later.
+// The application migrates before it listens, so "later" is seconds, and the case
+// that noticed was speaking to whoever had taken it (waitFor carries what that
+// looked like). Below the ephemeral range a port is only ever held by something
+// that asked for that number, which is the closest thing to a guarantee this
+// shared host has. The bind is what says nobody holds it at the moment of
+// choosing, the candidate after it is what a port somebody does hold costs, and
+// the random start is what keeps two suites running at once reaching for the same
+// one.
+//
+// Even a bind is not ownership here: a container published at a host port is
+// reached there whatever socket stands underneath, so the candidate has to answer
+// the connection this test is about to make. One dial into the listener, accepted
+// on the other side, is that check, and it costs a millisecond once per case.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve a port: %v", err)
+	low := min(ephemeralLow()-1, lastChosenPort)
+	first := rand.IntN(low - firstChosenPort + 1)
+	chosenPortsMu.Lock()
+	defer chosenPortsMu.Unlock()
+	for i := range chosenPortTries {
+		port := firstChosenPort + (first+i)%(low-firstChosenPort+1)
+		if chosenPorts[port] {
+			continue
+		}
+		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+		if err != nil {
+			continue
+		}
+		addr := l.Addr().String()
+		if !loopbackReaches(l) {
+			_ = l.Close()
+			continue
+		}
+		_ = l.Close()
+		chosenPorts[port] = true
+		return addr
 	}
-	addr := l.Addr().String()
-	_ = l.Close()
-	return addr
+	t.Fatalf("every port between %d and %d is held by something else",
+		firstChosenPort, low)
+	return ""
+}
+
+// loopbackReaches reports whether a connection to l arrives at l. The dial is
+// what a case will do; the accept is what this process has to be able to get.
+func loopbackReaches(l net.Listener) bool {
+	accepted := make(chan bool, 1)
+	go func() {
+		c, err := l.Accept()
+		if err == nil {
+			_ = c.Close()
+		}
+		accepted <- err == nil
+	}()
+	c, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	select {
+	case ok := <-accepted:
+		return ok
+	case <-time.After(time.Second):
+		return false
+	}
+}
+
+// ephemeralLow is the first port the kernel allocates for a socket nobody named.
+func ephemeralLow() int {
+	const fallback = 32768 // Linux's own default, and the answer without the file
+	body, err := os.ReadFile("/proc/sys/net/ipv4/ip_local_port_range")
+	if err != nil {
+		return fallback
+	}
+	low, _, _ := strings.Cut(strings.TrimSpace(string(body)), "\t")
+	n, err := strconv.Atoi(low)
+	if err != nil || n <= firstChosenPort {
+		return fallback
+	}
+	return n
 }
 
 // do sends one request to the running application at the given Host header,
@@ -1285,7 +1430,49 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	var top int64
 	t.Helper()
 	all := fstest.MapFS{}
+	// An installation from before the split applied the files that existed then,
+	// which is every file the foundation shipped under its own name and every file a
+	// module has since taken over from it. The second half of that is a fact the
+	// release states rather than a number it can be compared to: a source's Adopts
+	// list is exactly the versions the previous owner applied and this one now ships
+	// (docs/adr/0011), so the ceiling of the old layout is the highest version any
+	// owner adopts from platformkit. It used to be derivable from the foundation's
+	// own highest file, and the two were the same set for as long as the foundation
+	// numbered below every module. They stopped being the same set when the kernel
+	// shipped a file above a module's own — main's 000030_tenant_oidc above nothing,
+	// this branch's 000036_outbox_baggage above modules/auth's 31, 32 and 33 and
+	// modules/file's 34 — because a kernel file at the top would then drag those
+	// post-split files into the pre-split ledger, where no adoption exists to re-own
+	// them and kit/db is right to call an applied file that no release ships a
+	// contradiction (migrate.go, "was applied but is missing from this release"). A
+	// file outside the pre-split set applies in the upgrade below and is counted as a
+	// new row there, which is what lets any owner ship any version above it without
+	// rewriting this fixture.
+	var preSplitTop int64
 	for _, source := range sources {
+		for _, adoption := range source.Adopts {
+			if adoption.Owner != "platformkit" {
+				continue
+			}
+			for _, version := range adoption.Versions {
+				if version > preSplitTop {
+					preSplitTop = version
+				}
+			}
+		}
+	}
+	for _, source := range sources {
+		// The foundation's own files were all in the release; a module's file was
+		// only in it if the module adopts that version back, which is the same
+		// statement in the other direction.
+		adopted := map[int64]bool{}
+		for _, adoption := range source.Adopts {
+			if adoption.Owner == "platformkit" {
+				for _, version := range adoption.Versions {
+					adopted[version] = true
+				}
+			}
+		}
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
 			t.Fatalf("read %s: %v", source.Owner, err)
@@ -1299,7 +1486,14 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 				t.Fatalf("two owners ship %s; the old layout had one of each", entry.Name())
 			}
 			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > top {
+			version, err := strconv.ParseInt(digits, 10, 64)
+			if err != nil || version > preSplitTop {
+				continue
+			}
+			if source.Owner != "platformkit" && !adopted[version] {
+				continue
+			}
+			if version > top {
 				top = version
 			}
 			all[entry.Name()] = &fstest.MapFile{Data: body}
@@ -1355,26 +1549,39 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
 	// kernel added 000028_outbox_trace, which gives the outbox the trace columns the
 	// CloudEvents envelope carries, 28 became 29 when the kernel added
-	// 000029_tenant_locale, 29 became 30 when modules/audit added 000030_audit_trace
-	// (the trace id on the trail), and 30 became 31 when the kernel added
-	// 000031_outbox_baggage (the request id beside its trace members). Two of those
-	// files are not the number they were written as, for the one reason: this fixture
-	// flattens every owner's files under one owner, so two files at one version are
-	// one INSERT past the ledger's PRIMARY KEY (owner, version) — and kit/db refuses a
-	// repeated version in a source before that (migration_files.go, "invalid or
-	// repeated version"). A new file continues past the highest number anywhere in the
-	// composition.
+	// 000029_tenant_locale, 29 became 30 when the kernel added 000030_tenant_oidc, the
+	// per-tenant issuer columns on `tenants`, and the chain continues past the split
+	// with 000036_outbox_baggage (the request id beside its trace members). Four of
+	// those files are not the number they were written as, for the one reason: this
+	// fixture rebuilds the pre-split ledger by flattening every owner's files under
+	// one owner, so two files at one version are one INSERT past the ledger's
+	// PRIMARY KEY (owner, version) — and kit/db refuses a repeated version in a
+	// source before that (migration_files.go, "invalid or repeated version"). Main
+	// shipped 000030_tenant_oidc at the number modules/file's retention hold had been
+	// written as, which is why that file is 000034 and not 30; this branch's
+	// 000035_audit_trace moved off 30 for the same reason, and 000036_outbox_baggage
+	// moved past 34 when the merge brought in modules/auth's 31, 32 and 33. The
+	// unreleased file is the one that moves, and it moves past the highest number
+	// anywhere in the composition, whichever owner shipped it.
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so a new migration has to arrive here and
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 31 — thirteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 31) and eighteen under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 30), all distinct.
-	if len(before) != 31 {
-		t.Fatalf("the old layout applied %d files, want 31", len(before))
+	// this head prints 36 — fourteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29, 30, 36) and twenty-two under modules/*/migrations/
+	// (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33,
+	// 34, 35), all at distinct versions. The release this fixture is applied from
+	// shipped 27 of them: the ten under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26) and the seventeen a module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16,
+	// 17, 18, 19, 22, 23, 24, 25, 27), which is every version up to the highest one
+	// adopted. The nine above it — the kernel's own 28, 29, 30 and 36, modules/auth's
+	// 31, 32 and 33, modules/file's 34 and modules/audit's 35 — postdate that
+	// release, are not in the old installation's ledger, and legacyLayout leaves them
+	// out; the upgrade below applies them and counts them as new rows.
+	if len(before) != 27 {
+		t.Fatalf("the old layout applied %d files, want 27", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
@@ -1385,15 +1592,21 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	ledger(owners, "SELECT version, owner FROM schema_migrations")
 	after := map[int64]string{}
 	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
-	if len(owners) != len(before) {
-		t.Fatalf("the upgrade left %d applied files, want the same %d", len(owners), len(before))
-	}
+	// The upgrade re-owns the old rows and applies the files that postdate them,
+	// so the ledger grows by exactly the new files and by nothing else: a fixture
+	// that re-ran an old file would be caught below by applied_at, and one that
+	// lost a row would be caught here.
+
 	for version, when := range before {
 		if after[version] != when {
 			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
 		}
 	}
-	// Each file now reads under the owner that ships it.
+	// Each file now reads under the owner that ships it — and every file this
+	// release ships is in the ledger, which is where the nine files the pre-split
+	// ledger does not name (the kernel's own 28, 29, 30 and 36, modules/auth 31, 32
+	// and 33, modules/file 34 and modules/audit 35) have to be accounted for: 36
+	// files in the release, 36 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
@@ -1407,6 +1620,9 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			}
 			want[version] = source.Owner
 		}
+	}
+	if len(owners) != len(want) {
+		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
 	for version, owner := range want {
 		if owners[version] != owner {

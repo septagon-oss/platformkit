@@ -138,7 +138,7 @@ for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault 
     kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config modules/auth/contracts; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -172,6 +172,12 @@ boundary_rejects kit/entity/display "$foundation/kit/crud"
 # imports kit/fault and the Go compiler refuses the cycle before any gate sees
 # it. What protects the package either way is the empty allowance below,
 # check("kit/fault", ""), which refuses this closure on its first non-standard line.
+# The value cache is a port over a store, not a second path to the database: the
+# one edge that would make it a second read path is the one into kit/db.
+boundary_rejects kit/cache "$foundation/kit/db"
+# The one store it speaks to reaches the port and the configuration and nothing
+# else — no router, no transaction, and no other provider.
+boundary_rejects kit/cache/providers/valkey "$foundation/kit/db"
 boundary_rejects kit/fault "$foundation/kit/db"
 # kit/trace carries a W3C trace context and nothing else: the two values, their
 # parsing and the standard library. It is in the outbox and kernel allowances
@@ -699,6 +705,18 @@ for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_b
 	fi
 done
 echo 'rehearsal step: the candidate line names the tree the binary was built from, at one uncommitted file and at five thousand'
+
+# The restore drill's own default path, which needs no cluster because the case
+# supplies the psql, pg_dump and pg_restore. `make restore-drill` names --files
+# whenever the deployment has a byte store and names no --from, so the drill takes
+# the backup it drills — and a drill that hands its own backup step nothing but a
+# connection refuses the only installation the flag was there for, every time. The
+# case asks the question the drill answers from its own arguments.
+if ! drill_out=$(bash "$scripts/restore_drill_store_test.sh" 2>&1); then
+	printf 'FAIL: the restore drill does not drill its own default path:\n%s\n' "$drill_out" >&2
+	exit 1
+fi
+echo 'restore drill: with --files named and no --from, the backup the drill takes for itself carries the store'
 
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.

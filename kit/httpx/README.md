@@ -3,8 +3,8 @@
 `kit/httpx` builds the one Huma API the application serves and enforces that
 every operation declares its authorization. `New(Options)` returns the `*API`
 and the router; `Register` mounts a handler with an `Auth` — `Public()`,
-`SignedIn()`, `Permission(key)` or `OperatorPermission(key)` — and
-`ValidateDeclarations` is the boot gate that refuses a route without one. Read
+`SignedIn()`, `AnyCredential()`, `Permission(key)` or `OperatorPermission(key)` —
+and `ValidateDeclarations` is the boot gate that refuses a route without one. Read
 [httpx.go](httpx.go) for the middleware chain: which surface an address is, host
 to tenant, the lazily opened tenant transaction (`TxFrom`, `ConnFrom`), the
 request on the context (`RequestFrom`), the security headers and the per-request
@@ -56,6 +56,30 @@ Each surface has its own chain, and the difference is not cosmetic:
   the installation's is refused the same way, before the `Authorizer` is
   consulted. `app.Installation{Host}` is the deployment's fact, read from
   `server.installation_host`.
+
+A credential that carries its own authority is held to it at **both**
+declarations that spend authority, and that pair is the whole of what makes a
+scoped key mean something: an operation naming `Permission(k)` is refused unless
+`k` is on the list, and an operation declaring `SignedIn()` — the door about the
+caller themselves, which names no permission and so spends its caller's whole
+authority — is refused outright. A key narrowed to a list therefore never
+reaches the doors that manage the credentials a person holds, and can never
+widen itself back to its holder. `scoped_credential_test.go` is both halves,
+with the session caller as the control.
+
+The one operation that names no permission because there is no permission to name
+— because it spends none of the caller's authority and only describes what the
+caller may already reach — declares `AnyCredential()` instead, and a scoped key is
+admitted to it. The set holds the two apart because the answers differ: the
+catalogue at `GET /api/v1/app/resources` (mounted by `kit/app`, the kernel's own
+namespace) is built by asking the authorizer which resources *this caller* may
+read and write, so the document a narrowed credential receives is already narrowed
+by that credential, and refusing it would leave a bearer key able to do its work
+and unable to find the routes its scopes name — the first request of a client that
+is not a browser. Mounting a self-service door here is the escalation `SignedIn()`
+exists to refuse: the test at such a mount is that the operation reads grants and
+never spends them, which is why no module's route belongs there and today only
+`kit/app` has one.
 
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take

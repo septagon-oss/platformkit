@@ -17,13 +17,17 @@
 -- two of, so the request id reaches the delivery span, and the handler's transaction
 -- spans below it, the way the request's own spans already do.
 --
--- This file is 31 and not the 29 it was written as. The release that gave each tenant
--- its languages took 000029_tenant_locale while this one held 29 for the baggage
--- member, and one owner cannot apply two files at one version: the ledger keys on
--- (owner, version) and kit/db refuses a repeated version in a source before that
--- (migration_files.go, "invalid or repeated version"). The unreleased file is the one
--- that moves, and it moves past the highest number anywhere in the composition,
--- which is modules/audit's 000030_audit_trace.
+-- This file is 36 and not the 29 it was written as, nor the 31 it held on its own
+-- branch. The release that gave each tenant its languages took 000029_tenant_locale
+-- while this one held 29 for the baggage member, and merging main took 30 for
+-- 000030_tenant_oidc, modules/auth 31, 32 and 33 for its factors, and modules/file 34
+-- for its retention hold. Two owners at one version is not a collision in the ledger,
+-- which keys on (owner, version); it is a collision in the two places that flatten
+-- every owner into one: the upgrade fixture, which rebuilds the pre-split world by
+-- applying this release's files under the foundation's own name
+-- (apps/platformkit/app_test.go, legacyLayout), and the same test's count of what the
+-- release ships, which is one row per version. So the unreleased file is the one that
+-- moves, and it moves past the highest number anywhere in the composition.
 --
 -- Nullable, and NULL is the ordinary case rather than a defect: the baggage is empty
 -- whenever the publisher had no request to leave one behind — a periodic job, a

@@ -44,11 +44,22 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 }
 
 // resource is this Spec as httpx.Resource, for Mount to register.
+//
+// It carries the Spec's own answers — its two guard declarations and its
+// operation set — because the screens are generated from this value and not from
+// the Spec, and a door a shell draws behind which no route answers is a refusal
+// with a button on it. The closures of a verb this Spec did not mount refuse
+// rather than being nil, the way rest.Singleton's do: the generator calls all
+// five, and a nil closure is a panic where a sentence belongs.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
-	return httpx.Resource{
+	refused := func(verb string) error {
+		return problem.Conflict("a " + s.Entity + " resource offers no " + verb + " route; its Operations name the verbs it has")
+	}
+	res := httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
+		ReadBy: s.ReadAuth, WriteBy: s.WriteAuth, Operations: s.Operations,
 		Immutable: s.Immutable, Schema: schema,
 
 		Count: func(ctx context.Context) (int64, error) {
@@ -110,6 +121,32 @@ func (s Spec[T]) resource() httpx.Resource {
 			return err
 		},
 	}
+	if !s.offers(httpx.CRUDList) {
+		// Count goes with the list, not with the read. Its one caller outside this
+		// package is the dashboard card (modules/admin/internal/pages.go), and the
+		// whole card links to r.Screen — the address of the list page this Spec did
+		// not mount. A refused count produces no card, which is the truth; a number
+		// on a card that leads nowhere is the lie.
+		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
+		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
+			return nil, 0, refused("list")
+		}
+	}
+	if !s.offers(httpx.CRUDRead) {
+		res.Get = func(context.Context, uuid.UUID) (map[string]any, error) { return nil, refused("read") }
+	}
+	if !s.offers(httpx.CRUDCreate) {
+		res.Create = func(context.Context, map[string]any) (map[string]any, error) { return nil, refused("create") }
+	}
+	if !s.offers(httpx.CRUDUpdate) {
+		res.Update = func(context.Context, uuid.UUID, map[string]any) (map[string]any, error) {
+			return nil, refused("update")
+		}
+	}
+	if !s.offers(httpx.CRUDDelete) {
+		res.Delete = func(context.Context, uuid.UUID) error { return refused("delete") }
+	}
+	return res
 }
 
 // row is the entity as a screen reads it. It is the entity's own JSON, so a

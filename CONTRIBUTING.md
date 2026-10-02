@@ -67,7 +67,7 @@ line is the version this repository is verified with. Make selects that exact
 toolchain for its commands and child scripts, including the formatter; a different
 installed Go does not change the verification version. The Go command downloads the
 selected toolchain if it is not already available.
-From the repository root, start the development PostgreSQL and NATS services:
+From the repository root, start the development PostgreSQL, NATS and Valkey services:
 
 ```sh
 docker compose ps
@@ -75,10 +75,15 @@ make up
 make check
 ```
 
-Set `PLATFORMKIT_PG_PORT` and `PLATFORMKIT_NATS_PORT` if the default ports are
-in use, retaining those values for every command. Never use production test
-credentials: tests create and remove database schemas. `make down` deletes the
-Compose volumes as well as stopping services; it is not a test step.
+Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT` and `PLATFORMKIT_VALKEY_PORT` if
+the default ports are in use, retaining those values for every command. Never use
+production test credentials: tests create and remove database schemas. `make down`
+deletes the Compose volumes as well as stopping services; it is not a test step.
+The Valkey service is optional in a way the other two are not: `kit/cache` boots
+without a store, so its adapter's conformance suite skips when nothing answers the
+Valkey port and names the skip, and every other case in `make check` runs either way.
+Exporting `PLATFORMKIT_TEST_VALKEY_URL` yourself runs those cases against what you
+named, and a name that does not answer is a failure.
 Use the [local setup](README.md#try-it-locally) for application development.
 `make run` instead uses `config.yaml`, copied from `config.example.yaml` when absent.
 

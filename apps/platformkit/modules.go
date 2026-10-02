@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/cache/providers/valkey"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
@@ -158,8 +159,25 @@ func compose(cfg config.Config) composition {
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
 		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
-		OIDC:              auth.OIDC(cfg.Auth.OIDC),
-		PublicHost:        cfg.Server.PublicHost,
+		// The installation's own provider is the fallback; the tenant's row wins
+		// where it names one, which is what lets two tenants on this one process
+		// send their people to two issuers. The secret is resolved from the
+		// environment by reference, per request, so it is in no row, no outbox
+		// payload and no audit record.
+		FactorKey:     cfg.Auth.FactorKey,
+		OIDC:          auth.OIDCFromConfig(cfg.Auth.OIDC),
+		OIDCProviders: tenantProviders{tenants: tenants},
+		Secrets:       auth.EnvironmentSecrets{},
+		// A tenant that sets `provision` has said, at its own control-plane route,
+		// that an address its provider verified is an account here. This
+		// application honours that: the person is made over the user module — the
+		// adapter is in oidc.go, beside the other one — with the roles the tenant's
+		// row names and no others, and the address confirmation the callback
+		// records is what makes them able to sign in. A deployment that would
+		// rather not admit anyone leaves this field unwired, and auth then answers
+		// every tenant as `existing`: a refusal, and not a half-made person.
+		Provisioner: provisioner{users: users},
+		PublicHost:  cfg.Server.PublicHost,
 	})
 
 	// The file service is returned beside its manifest, as user's and
@@ -174,6 +192,13 @@ func compose(cfg config.Config) composition {
 	_, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
+		// Which class lives how long is the deployment's table (files.retention
+		// in the config file) and who to walk is the tenant module's answer; this
+		// line only hands the two to the module. A deployment that names no class
+		// schedules no sweep at all — the same file.Module call, no job — which is
+		// why the reference application ships the table empty: the classes are
+		// whatever this product's uploads name them, and nothing here invents one.
+		Retention: cfg.Files.Retention, Tenants: active,
 	})
 
 	mods := []module.Module{
@@ -242,7 +267,8 @@ func compose(cfg config.Config) composition {
 	// that changes when they do: everything above the tokens is written in
 	// terms of a role. See design.Pair.
 	mods = append(mods, admin.Module(admin.Deps{
-		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
+		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Sessions: auths,
+		Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
@@ -265,6 +291,14 @@ func compose(cfg config.Config) composition {
 // constructor here and nowhere else. See app.Transports.
 func transports() app.Transports {
 	return app.Transports{Memory: memory.New, JetStream: eventnats.Connect}
+}
+
+// caches is the one place this application names a value store. cache.adapter
+// selects between the in-process store the kernel builds itself and the shared one
+// named here; a product that runs one process forever may leave this nil, and is
+// refused the day it sets cache.adapter to valkey. See app.Caches.
+func caches() app.Caches {
+	return app.Caches{Valkey: valkey.Connect}
 }
 
 func operatorStorybook(dir string) func(context.Context) (export.Storybook, error) {

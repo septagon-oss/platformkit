@@ -86,6 +86,25 @@ nats:
   # Optional PEM trust roots for tls://; empty uses system trust roots.
   ca_cert: ""
 
+# Where a value that every replica must read is kept. An empty adapter is this
+# process's own memory: a complete deployment for one process, which kit/app says
+# once in a boot line, because forgetting a value there reaches only that process.
+cache:
+  # "" (the in-process store) | memory | valkey. The application supplies the
+  # constructor for the shared name (app.Caches), as it does for each transport.
+  adapter: ""
+  # The first segment of every key this installation writes. Required with
+  # valkey: two products behind one address have one keyspace.
+  app: ""
+  # redis://, rediss://, valkey:// or unix://, no path, no query. URL credentials
+  # are refused: put the secret in PLATFORMKIT_CACHE_PASSWORD.
+  url: ""
+  password: ""
+  # The store may never evict a key: the counter an invalidation raises has no TTL,
+  # and an evicted one reads back as generation 0, which believes again what the
+  # first invalidation closed. maxmemory-policy noeviction, or no maxmemory at all —
+  # docs/cache.md, and the store `make up` starts.
+
 log:
   # debug | info | warn | error
   level: "info"
@@ -141,6 +160,15 @@ auth:
     client_secret: ""
     redirect_path: "/api/v1/auth/oidc/callback"
 
+  # The key that seals a second factor's shared secret at rest. Empty — the
+  # default — offers no second factor at all: the enrolment routes are not
+  # mounted, so signing in stays password-only rather than opening a door that
+  # can only answer "unavailable". Set it in PLATFORMKIT_AUTH_FACTOR_KEY, never
+  # here: an attacker with a database copy and this key holds working second
+  # factors, and without it holds sealed bytes. Rotating it invalidates every
+  # enrolled factor, which is a decision to make having withdrawn them.
+  factor_key: ""
+
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
 # email are logged rather than sent, which is what a development machine wants
@@ -184,3 +212,12 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # How long each retention class lives, keyed by the `kind` an upload carried.
+  # A kind this table does not name is never deleted, only logged, so the empty
+  # table below keeps everything and is the safe default for an example. A
+  # duration is Go's own spelling — "8760h", not "365d" — and a class name is the
+  # token the upload sent and not a word this repository invents: the application
+  # that stores invoices under kind invoice is the one that says how long one
+  # lives. An entry with no class name, or one that is not a positive duration,
+  # fails the load rather than quietly deleting nothing.
+  retention: {}

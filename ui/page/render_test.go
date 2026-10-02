@@ -12,6 +12,7 @@ import (
 	g "maragu.dev/gomponents"
 	h "maragu.dev/gomponents/html"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -51,6 +52,7 @@ func TestAFragmentIsTheSameHTMLWithoutTheDoctype(t *testing.T) {
 func TestAnInlineScriptCarriesThePolicysOwnNonce(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	kernel, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: "localhost", Tenants: privacyTenant{}, Conn: conn, Authorize: privacyTenant{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil

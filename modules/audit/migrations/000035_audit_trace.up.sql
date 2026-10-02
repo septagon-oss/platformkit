@@ -11,4 +11,13 @@
 -- format. Nullable, because an event published by a periodic job, or by any
 -- process with no collector configured, has no trace to name, and NULL is the
 -- honest answer where the zero UUID would be a lie.
+--
+-- This file is 35 and not the 30 it was written as: main's 000030_tenant_oidc took
+-- that number while this one held it, and two owners at one version is the shape the
+-- upgrade fixture flattens into one ledger row
+-- (apps/platformkit/app_test.go, legacyLayout). An unreleased file moves past the
+-- highest number anywhere in the composition rather than a released one, and moving
+-- it is free: nothing applied it under another owner, so this source's Adopts stays
+-- {10, 15, 23} and this file is a new row for the audit owner rather than a re-owned
+-- one.
 ALTER TABLE audit_events ADD COLUMN trace_id uuid;

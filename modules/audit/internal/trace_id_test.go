@@ -2,7 +2,7 @@ package internal_test
 
 // The trail row names the trace that wrote it — the join an operator uses to go from
 // a line of audit history to the request in the trace backend, which is why
-// migrations/000030 added the column at all. The value arrives on the envelope as
+// migrations/000035 added the column at all. The value arrives on the envelope as
 // W3C's traceparent (kit/events stores it there from the publishing transaction) and
 // is stored as a uuid rather than as the header string, so a query can answer from it.
 //

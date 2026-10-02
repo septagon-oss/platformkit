@@ -122,7 +122,7 @@ func Propagators() propagation.TextMapPropagator {
 // function that handed back `ctx` unchanged when it had nothing to write left the
 // caller's own pkit.request.id as the only one below the router: every span
 // `RequestID` then stamped named a request nobody was answered for, and
-// kit/events injected the same value into the member migrations/000031 stores on
+// kit/events injected the same value into the member migrations/000036 stores on
 // the outbox row and reads back onto the delivery span in another process.
 //
 // An id W3C will not carry is left uncarried rather than escaped — the value set
@@ -132,7 +132,7 @@ func Propagators() propagation.TextMapPropagator {
 // silently rewritten in transit would name a request nobody asked about, and a
 // caller's value standing in its place is the same lie with the sign reversed.
 // Nothing on the row is the ordinary case there, which is what
-// migrations/000031's "NULL is the ordinary case" is for.
+// migrations/000036's "NULL is the ordinary case" is for.
 func WithRequestID(ctx context.Context, id string) context.Context {
 	empty := baggage.Baggage{}
 	if id == "" {
