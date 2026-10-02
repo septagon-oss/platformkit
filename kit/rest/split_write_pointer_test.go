@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -62,6 +63,7 @@ func askTheSplitWriteDoor(t *testing.T, verbs []httpx.CRUD) splitWriteAnswers {
 	}
 	f := &operatorReader{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "ops", Operator: true}, allow: true}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: f, Conn: app, Authorize: f, Installation: host,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: principal}, true, nil
