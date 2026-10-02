@@ -47,7 +47,10 @@ func TestAnUnknownAddressAnInvitedPersonAndAnUnverifiedAccountGetTheSameSentence
 		t.Errorf("the three refusals differ, which is an enumeration oracle:\n  unknown:    %s\n  invited:    %s\n  unverified: %s",
 			bodies["nobody@acme.localhost"], bodies["invited@acme.localhost"], bodies["unverified@acme.localhost"])
 	}
-	for _, want := range []string{"are not right", "Forgot your password?"} {
+	// The refusal names what to do next, and names it by what the link is rather
+	// than by its label: the label is translated and this sentence is not, so a
+	// quoted label is a phrase the person may not be able to find on the page.
+	for _, want := range []string{"are not right", "forgotten-password link under this form"} {
 		if !strings.Contains(bodies["nobody@acme.localhost"], want) {
 			t.Errorf("the one sentence omits %q; a refusal at the door names what to do next:\n  %s",
 				want, bodies["nobody@acme.localhost"])

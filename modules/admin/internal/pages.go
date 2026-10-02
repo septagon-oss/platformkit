@@ -47,7 +47,11 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	loginShell := p.shell
 	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at), nil
+			var register string
+			if p.Registration != nil {
+				register = p.at.register.at
+			}
+			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at, register), nil
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
@@ -64,6 +68,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	p.mountRoles(s.App)
 	p.mountSessions(s.App)
 	p.mountPasswordDoors(app)
+	p.mountRegistration(app)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -85,7 +90,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-func login(ctx context.Context, locale *page.Locale, next, action, forgot string) page.View {
+func login(ctx context.Context, locale *page.Locale, next, action, forgot, register string) page.View {
 	if r, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
 		// wrong: "/\\evil.example" has a leading slash and a second character
@@ -99,6 +104,25 @@ func login(ctx context.Context, locale *page.Locale, next, action, forgot string
 			return fallback
 		}
 		return locale.Text("admin.login."+key, fallback)
+	}
+	// The two ways in below the form. The forgotten-password link is always offered:
+	// the sentence that refuses a wrong password points at it, and a person who
+	// cannot sign in has to be able to find the way that answers them. The register
+	// link is the composition's to offer — forgetting a password is never an
+	// opt-in, signing up is — and it leads to the page that renders the form, not
+	// to the JSON door, so a person sees what signing up asks for first.
+	ways := []g.Node{
+		components.Link(components.LinkProps{Href: forgot, Variant: "text",
+			Label: text("forgot", "Forgot your password?")}),
+	}
+	// The register link is the one way in that is the composition's to offer:
+	// forgetting a password is never an opt-in, signing up is. It appears when
+	// admin.Deps.Registration is wired and leads to the page that renders the
+	// form, not to the JSON door, so a person sees what signing up asks for
+	// before they are asked for it.
+	if register != "" {
+		ways = append(ways, components.Link(components.LinkProps{Href: register, Variant: "text",
+			Label: text("register", "Create an account")}))
 	}
 	title := text("title", "Sign in")
 	return page.View{Title: title, Bare: true, Body: []g.Node{
@@ -130,9 +154,112 @@ func login(ctx context.Context, locale *page.Locale, next, action, forgot string
 		// door re-issues to an invited address and says the same thing to an unknown
 		// one. It is always offered, whatever the composition wires: forgetting a
 		// password is not an opt-in.
-		components.Flex(components.FlexProps{Direction: "row", Gap: "2"},
-			components.Link(components.LinkProps{Href: forgot, Variant: "text",
-				Label: text("forgot", "Forgot your password?")})),
+		components.Flex(components.FlexProps{Direction: "row", Gap: "2"}, ways...),
+	}}
+}
+
+// registerPage is the way in for somebody the tenant has no account for yet, and
+// it exists only when the composition said a stranger may make one — see
+// admin.Deps.Registration. The form posts to the registration door itself, as the
+// other three do: the module behind that door owns who becomes a person here and
+// in what state, and a second path that decided it would be a second answer.
+//
+// The copy says what the state is, because it is the part a person cannot see:
+// a password-first sign-up leaves an account that cannot sign in until the
+// mailbox link is opened, and a form that promises otherwise sends somebody who
+// did nothing wrong to a refusal they cannot explain.
+func registerPage(ctx context.Context, locale *page.Locale, kind RegistrationKind, action, back string) page.View {
+	text := func(key, fallback string) string {
+		if locale == nil {
+			return fallback
+		}
+		return locale.Text("admin.register."+key, fallback)
+	}
+	title := text("title", "Create an account")
+	slots := []g.Node{
+		components.Alert(components.AlertProps{
+			ComponentProps: components.ComponentProps{
+				Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
+			Tone: "danger", Message: "", Bordered: true,
+		}),
+		// No lang on the acknowledgment: its sentence comes from the catalogue, so
+		// in a translated tenant it is that language and takes the document's
+		// declaration the way the card's description does. See forgotPassword.
+		components.Alert(components.AlertProps{
+			ComponentProps: components.ComponentProps{
+				Hidden: true, Attrs: map[string]string{"data-auth-message": "", "role": "status"}},
+			Tone: "success", Bordered: true,
+			Message: text("sent", "If this address can receive an account email, a link will be sent. Check your inbox."),
+		}),
+		components.Input(components.InputProps{
+			Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
+			Autocomplete: "username", AutoFocus: true, FullWidth: true}),
+		components.Input(components.InputProps{
+			Name: "displayName", Type: "text", Label: text("name", "Name"),
+			Autocomplete: "name", FullWidth: true}),
+	}
+	// The two doors take different fields, and session.js already tells them apart
+	// by the form's kind alone.
+	if kind == RegistrationKindPassword {
+		slots = append(slots,
+			components.Input(components.InputProps{
+				Name: "password", Type: "password", Label: text("password", "Password"), Required: true,
+				MinLength: 12, FullWidth: true, Autocomplete: "new-password"}),
+			components.Input(components.InputProps{
+				Name: "confirmation", Type: "password", Label: text("confirmation", "Confirm the password"),
+				Required: true, MinLength: 12, FullWidth: true, Autocomplete: "new-password"}),
+			components.Checkbox(components.CheckboxProps{
+				Name: "termsAccepted", Label: text("terms", "I accept the terms of this tenant."),
+				Required: true}),
+		)
+	}
+	slots = append(slots, components.FormActions(components.FormActionsProps{},
+		components.Button(components.ButtonProps{Label: text("submit", "Create the account"),
+			Type: "submit", FullWidth: true})))
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.Card(components.CardProps{Title: title, Description: text("description",
+			"Tell us who you are. If the address is not here yet, an account is made for it.")}),
+		components.Form(components.FormProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-auth-form": kind.form()}},
+			Action:         action, Label: title,
+		}, slots...),
+		backToSignIn(text, back),
+	}}
+}
+
+// verifyEmailPage is the other half of a sign-up: the link the mailbox carries
+// opens this page, which spends the token and sends the person on to sign in. It
+// is mounted because the mail is sent — an address the mail links to that answers
+// 404 is a sign-up with no way to finish it.
+//
+// The token never reaches a field: session.js reads it out of the address, clears
+// it from the location bar and posts it, so the one bearer in this page's address
+// is not also in its markup, its history or a password manager's offer.
+func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back string) page.View {
+	text := func(key, fallback string) string {
+		if locale == nil {
+			return fallback
+		}
+		return locale.Text("admin.verify."+key, fallback)
+	}
+	title := text("title", "Confirm your email address")
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.Card(components.CardProps{Title: title, Description: text("description",
+			"This link confirms the address and turns on the account. It works once and expires in twenty-four hours.")}),
+		components.Form(components.FormProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"data-auth-form": "verify-email", "data-next": back}},
+			Action: action, Label: title,
+		},
+			components.Alert(components.AlertProps{
+				ComponentProps: components.ComponentProps{
+					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
+				Tone: "danger", Message: "", Bordered: true,
+			}),
+			components.FormActions(components.FormActionsProps{},
+				components.Button(components.ButtonProps{Label: text("submit", "Confirm the address"), Type: "submit", FullWidth: true})),
+		),
+		backToSignIn(text, back),
 	}}
 }
 
@@ -174,6 +301,30 @@ func (p pages) mountPasswordDoors(app *httpx.Router) {
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			return setPassword(ctx, r.Locale, set, p.at.login.at), nil
 		})
+
+	// The same argument for the confirmation link a sign-up mails: auth names
+	// this workspace screen in that mail, so this is where the mount goes.
+	page.Serve(auth, p.shell, page.Route{ID: "admin-verify-email", Method: http.MethodGet, Path: p.at.verify.rel,
+		Summary: "Confirm an email address"}, httpx.Public(),
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return verifyEmailPage(ctx, r.Locale, auth.Path("/verify-email"), p.at.login.at), nil
+		})
+}
+
+// mountRegistration mounts the page a stranger signs up on, for a composition
+// that named the door the form posts to. The link on the sign-in card and this
+// mount read the same Deps.Registration, so neither can offer what the other did
+// not build: a form that posts to an address nothing mounted answers is the door
+// painted on a wall, and a route with no link to it is a way in nobody finds.
+func (p pages) mountRegistration(app *httpx.Router) {
+	if p.Registration == nil {
+		return
+	}
+	page.Serve(app, p.shell, page.Route{ID: "admin-register", Method: http.MethodGet, Path: p.at.register.rel,
+		Summary: "Create an account"}, httpx.Public(),
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return registerPage(ctx, r.Locale, p.Registration.Kind, p.Registration.Address, p.at.login.at), nil
+		})
 }
 
 // forgot asks for one thing and promises the answer it can honestly make: the same
@@ -199,9 +350,16 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
 				Tone: "danger", Message: "", Bordered: true,
 			}),
+			// No lang here, and that is the file's own rule (see writtenHere): this
+			// sentence comes from the catalogue, so in a pt-PT request it is
+			// Portuguese and it takes the document's negotiated language the way the
+			// card's description and every label on the page do. Declaring "en" over
+			// Portuguese copy is a screen reader reading Portuguese with an English
+			// voice. The error alert above keeps its lang="en" because what arrives
+			// there is session.js's own English sentence, not this page's copy.
 			components.Alert(components.AlertProps{
 				ComponentProps: components.ComponentProps{
-					Hidden: true, Attrs: map[string]string{"data-auth-message": "", "role": "status", "lang": "en"}},
+					Hidden: true, Attrs: map[string]string{"data-auth-message": "", "role": "status"}},
 				Tone: "success", Bordered: true,
 				Message: text("sent", "If this address can receive an account email, a link will be sent. Check your inbox."),
 			}),
@@ -230,8 +388,13 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back string) 
 	}
 	title := text("title", "Choose a password")
 	return page.View{Title: title, Bare: true, Body: []g.Node{
+		// The twelve-character rule is in this sentence rather than in a help line
+		// under the field: help text renders at the sheet's smallest step, and a
+		// page whose <p> copy comes in three sizes is a design-gate refusal — body
+		// size is constant down the page. The field still carries minLength, so the
+		// browser refuses a short password where it is typed.
 		components.Card(components.CardProps{Title: title, Description: text("description",
-			"This link sets a password once. Saving it ends every session already open for this account.")}),
+			"This link sets a password once. Saving it ends every session already open for this account. A password is at least twelve characters.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-auth-form": "reset", "data-next": back}},
@@ -244,8 +407,7 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back string) 
 			}),
 			components.Input(components.InputProps{
 				Name: "new", Type: "password", Label: text("password", "New password"), Required: true,
-				MinLength: 12, AutoFocus: true, FullWidth: true, Autocomplete: "new-password",
-				HelpText: text("password.help", "At least twelve characters.")}),
+				MinLength: 12, AutoFocus: true, FullWidth: true, Autocomplete: "new-password"}),
 			components.FormActions(components.FormActionsProps{},
 				components.Button(components.ButtonProps{Label: text("submit", "Save the password"), Type: "submit", FullWidth: true})),
 		),

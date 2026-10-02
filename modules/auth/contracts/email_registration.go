@@ -38,7 +38,6 @@ func (r EmailRegistration) Checked() (EmailRegistration, error) {
 const (
 	VerificationLifetime       = 24 * time.Hour
 	VerificationResendInterval = time.Minute
-	VerifyEmailPath            = "/auth/verify-email"
 	EventVerificationRequested = "auth.verification_requested"
 )
 

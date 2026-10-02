@@ -130,6 +130,13 @@ func compose(cfg config.Config) composition {
 		Secure: !config.Local(cfg.Server.PublicHost),
 	})
 
+	// This installation turns password-first signup on, and one value is the
+	// whole of that decision: auth serves the door, and the shell is handed the
+	// same choice through admin.Deps.Registration so the sign-in page can link
+	// the form that posts to it. The address is the public door as the surface
+	// composes it — see pinnedRegisterAPI — and the kind says which of the two
+	// forms that door takes.
+	emailRegistration := &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}
 	auths, authModule := auth.Module(auth.Deps{
 		Users:  users,
 		Notify: notify,
@@ -158,7 +165,7 @@ func compose(cfg config.Config) composition {
 		// no message leaves this machine. The roles come from here and never from
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
-		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
+		EmailRegistration: emailRegistration,
 		// The installation's own provider is the fallback; the tenant's row wins
 		// where it names one, which is what lets two tenants on this one process
 		// send their people to two issuers. The secret is resolved from the
@@ -289,7 +296,15 @@ func compose(cfg config.Config) composition {
 		Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
-		SignIn: pinnedSignInAPI}))
+		SignIn: pinnedSignInAPI,
+		// The way in for a person the tenant has no account for. Nil here and
+		// the sign-in page offers the password door alone; the two halves of
+		// this line — the page and the link to it — are one value, so neither
+		// can offer what the other did not mount.
+		Registration: &admin.Registration{
+			Kind:    admin.RegistrationKindPassword,
+			Address: pinnedRegisterAPI,
+		}}))
 
 	roles.auth = auths
 	personas = declaredRoles(mods)
