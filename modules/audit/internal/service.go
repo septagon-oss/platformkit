@@ -49,15 +49,33 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
 	}
+	// The rest of what caused the event, copied rather than derived. The outbox row
+	// the relay deleted is the only other place these four were ever written, so a
+	// trail that leaves them out loses the cause for good: `actor` NULL says nobody
+	// signed in and nothing about what did. A kind may stand alone; a source is a
+	// place, so it is cited in whole — the pair rule kit/events owns and the outbox
+	// column enforces, kept here because this table holds no constraint of its own
+	// on the pair. See migrations/000033.
+	var kind, file, line, initiator any
+	if ev.ActorKind != "" {
+		kind = ev.ActorKind
+		if ev.SourceFile != "" {
+			file, line = ev.SourceFile, ev.SourceLine
+		}
+	}
+	if ev.Initiator != uuid.Nil {
+		initiator = ev.Initiator
+	}
 	// The ids the payload mentions are lifted out here, once, so that reading
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records,"+
+		" actor_kind, source_file, source_line, initiator)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload))).Error
+		pq.Array(mentioned(ev.Payload)), kind, file, line, initiator).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}

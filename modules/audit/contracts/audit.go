@@ -35,7 +35,8 @@ import (
 // was written — and not when the worker got round to it. Actor is nil when
 // nobody caused it: a job, an event handler, the bootstrap. EventID is the
 // outbox event's own id, which is what makes recording idempotent whatever
-// redelivers it. The columns are migrations/000010.
+// redelivers it. The columns are migrations/000010 and, for the four that name a
+// cause which was no session, migrations/000033.
 type Event struct {
 	ID         uuid.UUID       `json:"id" format:"uuid" doc:"The trail row's own id"`
 	TenantID   uuid.UUID       `json:"-"`
@@ -44,9 +45,30 @@ type Event struct {
 	Actor      *uuid.UUID      `json:"actor,omitempty" format:"uuid" doc:"The user who caused it, absent for system work"`
 	EventID    uuid.UUID       `json:"eventId" format:"uuid" doc:"The event this row records"`
 	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
+
+	// Attribution: what caused this when the cause was not a session. The outbox
+	// carries these four (kit/events.Attribution, migrations/000032) and this trail
+	// is where they outlive it, because the relay deletes a published row once its
+	// retention window passes and the trail is append-only: a copy that dropped
+	// them is the last chance the installation had to say what caused the write.
+	// ActorKind names the sort of cause and is the only one of the four that may
+	// stand alone — the seed run that named no file is still a seed run. Actor and
+	// ActorKind are both absent for a job with nobody behind it, and Actor is absent
+	// while ActorKind is 'seed' for a run that served a person: `actor` is who was
+	// signed in, and no session wrote this. Initiator is that person, and is not
+	// Actor — the trail's Actor is a login, and no login wrote a seed run's row.
+	// SourceFile and SourceLine are cited together or not at all: the pair rule is
+	// kit/events.Attribution's, and Record keeps it here because this table holds no
+	// constraint of its own on the pair. migrations/000033 says why nothing here is
+	// backfilled.
+	ActorKind  *string    `json:"actorKind,omitempty" doc:"What kind of cause wrote this, when it was no session: user, system, seed or job" example:"seed"`
+	SourceFile *string    `json:"sourceFile,omitempty" maxLength:"512" doc:"The file that asked for the write, cited by the run that made it" example:"seed/starter/contents.yaml"`
+	SourceLine *int       `json:"sourceLine,omitempty" doc:"The line of that file" example:"12"`
+	Initiator  *uuid.UUID `json:"initiator,omitempty" format:"uuid" doc:"The person the run served, who did not sign in"`
 }
 
-// TableName pins the table, so the struct and migrations/000010 agree.
+// TableName pins the table, so the struct and the migrations that made it —
+// 000010 and 000033 — agree.
 func (Event) TableName() string { return "audit_events" }
 
 // Query is a page of the trail: what happened, who did it, when, and to what.

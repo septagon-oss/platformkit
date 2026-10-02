@@ -591,17 +591,18 @@ that copy's duration. Email triggered by
 invitation event to deliver. Provider credentials, delivery behavior and asset
 licensing are product decisions.
 
-**Delivered (T-0194).** The outbox and the envelope carry the attribution; the
-audit table does not yet. `kit/events.WithAttribution` puts an `Attribution`
+**Delivered (T-0194).** The outbox, the envelope and the audit trail all carry
+the attribution. `kit/events.WithAttribution` puts an `Attribution`
 (`ActorKind`, `SourceFile`, `SourceLine`, `InitiatorID`) on the run's context,
 `Apply` puts it around each owner write, `migrations/000032_outbox_attribution.up.sql`
 stores the four beside `actor`, and the relay carries them onto the CloudEvents
 envelope (`actorkind`, `sourcefile`, `sourceline`, `initiator`). A
 `platformkit seed` run mints one W3C trace, so `traceparent` names the run for
-every row it caused. What is **not** built is `modules/audit/migrations/000024_…`:
-the audit subscriber still records only `actor`, so its page cannot yet show the
-seed source, and its label for a seeded write is the absence of an actor rather
-than the word `seed`. That is a follow-up brief, named in this task's report.
+every row it caused. `audit.Service.Record` copies the four into `audit_events`
+(`modules/audit/migrations/000033_audit_attribution.up.sql`), so the trail
+outlives the outbox row the relay deletes: a seeded write is labelled `seed`
+between the file and line that asked for it, with no actor because nobody
+signed in, and its initiator beside it. The two read routes return them.
 
 The schema changes this design proposed, verbatim, were a transactional kernel
 `000032_outbox_seed_attribution.up.sql` (nullable actor kind, source file/line
