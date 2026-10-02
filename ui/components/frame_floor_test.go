@@ -1,9 +1,11 @@
 package components
 
-// frame_floor_test.go pins the three properties of the frame the design floor
+// frame_floor_test.go pins the five properties of the frame the design floor
 // refuses without a browser: the tabbable brand link carries its own colour,
-// the sentence in the footer is bounded, and a heading breaks a token no
-// dictionary has. Each is also a rule the sheet must carry — the sheet side is
+// the inverse column names the colour that reads on it, the sentence in the
+// footer is bounded, a heading breaks a token no dictionary has, and so does
+// the breadcrumb carrying a record's name. Each is also a rule the sheet must
+// carry — the sheet side is
 // ui/frame_floor_test.go, because Compose lives above this package.
 
 import (
@@ -110,6 +112,53 @@ func TestTheFooterSentenceIsBounded(t *testing.T) {
 	}
 	if strings.Contains(classOf(t, out, "<footer", "<footer"), "max-w-") {
 		t.Error("the footer bounds itself, which cuts the frame's own top border")
+	}
+}
+
+// TestTheInverseColumnNamesTheColourThatReadsOnIt: the floor's probe reads every text element, not
+// only links — `li` is in its contrast set — so an element inside the inverse column that chooses no
+// colour of its own inherits the page's foreground token and is measured against the dark column.
+// Measured at 1440px on a generated page: the <li> around a nav link, 1.02:1. The column therefore
+// names the colour that reads on what it paints; the flavour that paints a light column needs
+// nothing, because the inherited foreground already reads on it.
+func TestTheInverseColumnNamesTheColourThatReadsOnIt(t *testing.T) {
+	t.Parallel()
+	admin := draw(t, Sidebar(SidebarProps{BrandLabel: "Acme", BrandHref: "/app"}))
+	found := false
+	for _, seg := range strings.Split(admin, `class="`)[1:] {
+		end := strings.Index(seg, `"`)
+		if end < 0 {
+			continue
+		}
+		cls := seg[:end]
+		if !hasClass(cls, "bg-surface-inverse") {
+			continue
+		}
+		found = true
+		if !hasClass(cls, "text-fg-on-inverse") {
+			t.Errorf("the element that paints the inverse column carries %q, so everything in it that "+
+				"chooses no colour inherits a foreground token and reads at 1.02:1", cls)
+		}
+	}
+	if !found {
+		t.Fatal("the admin sidebar paints no inverse column, so this case measures nothing")
+	}
+	if content := draw(t, Sidebar(SidebarProps{BrandLabel: "Acme", BrandHref: "/app", Flavor: "content"})); strings.Contains(content, "bg-surface-inverse") {
+		t.Error("the content flavour paints an inverse column, which its own link colour does not read on")
+	}
+}
+
+// TestTheBreadcrumbBreaksTheNameItCarries: the current crumb is a row's name, and a name can be one
+// token nobody can hyphenate. overflow-wrap inherits, so the rule sits on the list and covers every
+// crumb, its separator and the links between them.
+func TestTheBreadcrumbBreaksTheNameItCarries(t *testing.T) {
+	t.Parallel()
+	out := draw(t, Breadcrumb(BreadcrumbProps{Items: []BreadcrumbItem{
+		{Label: "Tasks", Href: "/app/task/tasks"},
+		{Label: strings.Repeat("a", 60), Current: true},
+	}}))
+	if cls := classOf(t, out, "<ol", "<ol"); !hasClass(cls, "break-anywhere") {
+		t.Errorf("the breadcrumb list carries %q, so the record's own name widens the page it is on", cls)
 	}
 }
 

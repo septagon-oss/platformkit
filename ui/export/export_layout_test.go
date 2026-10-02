@@ -123,7 +123,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	if legacy.SHA256 != "98c226e11e0bfecf2e9fc3f8e58e2c2f85ef9854b2874885b63eb95dd7bdca7c" {
+	//
+	// The frame's floor fixes (T-0234) move it again, twice over: three utilities
+	// and one colour pair join the sheet for the brand link, the footer's bound and
+	// the heading break, and then the inverse sidebar column gains a text colour and
+	// the breadcrumb a break rule. A leaf-by-leaf diff before and after those two
+	// commits changes /css and /sha256 and nothing else — no token, icon, example or
+	// schema — which is what this assertion has always had to be re-measured for.
+	if legacy.SHA256 != "74125ab38cc97b15b07025811741a6670f217d9e124b0c3991fccb3ef23ce144" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
