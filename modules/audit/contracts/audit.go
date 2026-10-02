@@ -72,6 +72,15 @@ type Event struct {
 	// so a Go name of TraceParent reads a column named trace_parent and finds
 	// nothing — the failure kit/events/relay.go warns about, reached here first.
 	Traceparent string `json:"traceparent,omitempty" doc:"The W3C trace context of the call that caused this" example:"00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-00"`
+	// TraceID is the trace this row was written in, as the uuid a trace backend
+	// and a query can answer from: the second field of Traceparent, read out of it
+	// on the way back rather than stored beside it. The trail keeps one string —
+	// two columns for one fact are two columns that can disagree, and migrations/
+	// 000037 indexes the id out of the one column that exists — and this field is
+	// what makes that join answerable without the caller parsing a header. It is
+	// absent, not zero, when the row carries no traceparent or an unparseable one:
+	// "no trace" and "the trace whose id is all zeros" are different facts.
+	TraceID *uuid.UUID `json:"traceId,omitempty" format:"uuid" gorm:"-" doc:"The trace this event happened in, absent when nobody traced it"`
 }
 
 // TableName pins the table, so the struct and migrations/000010 agree.
