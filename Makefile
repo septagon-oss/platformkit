@@ -296,10 +296,10 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
-# The third rehearsal script is a gate over the gates beside the two above: the CI
-# fixture the four jobs of .gitea/workflows/ci.yml stand up through scripts/ci_setup.sh.
-# A job that cannot start its database is a red tick that says nothing about the
-# change, so the file that starts it is checked here.
+# The rehearsal scripts are gates over the gates: architecture rules, budget ratchet,
+# CI fixture setup and browser failure reporting. A job that cannot start its
+# database is a red tick that says nothing about the change, so setup and ordering
+# are checked here too.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
