@@ -1879,12 +1879,37 @@ async function writeEditorFontFixtures(temporary) {
   return { fonts, config }
 }
 
+// The first Local Font Access enumeration of a browser process asks the host for its
+// whole font list; every later call in that process reads what was already built. The
+// editor's Local-fonts toggle performs that enumeration, so on a cold process the
+// five-second wait on the toggle's state is also waiting on the host's font cache.
+// Run 46493 is that race lost: the panel was open and its button already read
+// "Requesting…", and `Local fonts / Enabled` was "element(s) not found" at
+// "Timeout: 5000ms" — Playwright's default, which no expect in this file overrides.
+// Its three sibling cases, which cross the same toggle in the same file, passed at
+// 91.2 s, 94.3 s and 95.3 s.
+// Measured against the CI image built from this tree, on a host at load 20: the first
+// enumeration of a process 1928-2664 ms, every later one 1-58 ms.
+//
+// So the enumeration is taken here, before the toggle is touched, and what it returns
+// is checked rather than discarded. Nothing is waited for more generously: the default
+// bound stays, because the cold cache is no longer inside the window it measures — with
+// this order the first cycle of a cold process answered in 188 ms, against the
+// 1928-2459 ms that same first cycle cost while the enumeration sat inside the wait.
+async function localFontFaces(page) {
+  const faces = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async face =>
+    [...new Uint8Array(await (await face.blob()).arrayBuffer())])))
+  return faces.map(bytes => hash(Uint8Array.from(bytes))).sort()
+}
+
 async function enableLocalFonts(page, fonts) {
+  const expected = fonts.map(face => face.sha256).sort()
   assert.deepEqual(await page.evaluate(() => [window.isSecureContext, typeof window.queryLocalFonts]), [true, 'function'])
   await page.keyboard.press('t')
   await page.locator('[data-test-id="canvas-element"]').click({ position: { x: 300, y: 300 } })
   await page.keyboard.type('Font access')
   await page.keyboard.press('Escape')
+  assert.deepEqual(await localFontFaces(page), expected, 'the cold enumeration carries the fixture faces')
   await page.getByRole('button', { name: 'Font settings', exact: true }).click()
   const panel = page.locator('[data-test-id="font-settings-panel"]')
   // Online and local access are separate permissions, never interchangeable.
@@ -1896,9 +1921,7 @@ async function enableLocalFonts(page, fonts) {
   await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible()
   await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled()
   await page.keyboard.press('Escape')
-  const blobs = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async font =>
-    [...new Uint8Array(await (await font.blob()).arrayBuffer())])))
-  assert.deepEqual(blobs.map(bytes => hash(Uint8Array.from(bytes))).sort(), fonts.map(face => face.sha256).sort())
+  assert.deepEqual(await localFontFaces(page), expected, 'the enabled toggle exposes the same faces')
 }
 
 for (const [field, choices, editFamilyCopy = true, dashed = false, centered = false] of [
