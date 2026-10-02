@@ -95,11 +95,13 @@ other tenant from it; `tenants.deleted_at`, the partial slug index of
 delivery finally writes, so no state, column or index is new; and the operator-side
 audit row is `modules/audit`'s existing `SubscribeAll` subscription reached through the
 tenant an outbox row *names* — the trail's schema, its `Record` and its routes are
-untouched apart from the `traceparent` column this adds. **Added:** `Rename`,
+untouched — `audit_events.traceparent` is `modules/audit`'s own `000035_audit_context`,
+and what this delivery adds is the pair of rows that carry it. **Added:** `Rename`,
 `Reactivate`, `RemoveHost` and `Delete` with their routes, payloads and cases;
 `contracts.ErrNoOperatorTenant`, because "no installation to audit into" is none of
-`kit/crud`'s three answers; and `audit_events.traceparent`, which is the join the trail
-could not make before. Nothing existing could carry the operator's half of the audit:
+`kit/crud`'s three answers; and `record` writing both halves with the one `traceparent`
+the request carried, the join the trail could not make while only one of the two rows
+existed. Nothing existing could carry the operator's half of the audit:
 `events.Publish` takes the tenant from the transaction, and this transaction belongs to
 no tenant by design. **Made reusable:** `Installed()` in `tenanttest`, and the same step
 in the SQL fixture — stand up the installation's own tenant, then empty the outbox, so a

@@ -21,13 +21,13 @@ import (
 func tracesOf(rows []*contracts.Event) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, r.TraceParent)
+		out = append(out, r.Traceparent)
 	}
 	return out
 }
 
 // TestATrailRowCarriesTheRequestThatCausedIt is the read-back of
-// migrations/000035_audit_trace, this module's own file: the trail answers who,
+// migrations/000035_audit_context, the file that gives this table its trace column: the trail answers who,
 // what and when, and now which request.
 // The value is the envelope's, the outbox's and the header's — one W3C traceparent,
 // stored verbatim, which is the only way the two trail rows one control-plane command
@@ -65,7 +65,7 @@ func TestATrailRowCarriesTheRequestThatCausedIt(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(causedRows) != 1 || causedRows[0].TraceParent != tr.Parent() {
+		if len(causedRows) != 1 || causedRows[0].Traceparent != tr.Parent() {
 			t.Errorf("the trail of %s carries %v, want the one row holding the request's %q",
 				caused.Name, tracesOf(causedRows), tr.Parent())
 		}
@@ -73,7 +73,7 @@ func TestATrailRowCarriesTheRequestThatCausedIt(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(quiet) != 1 || quiet[0].TraceParent != "" {
+		if len(quiet) != 1 || quiet[0].Traceparent != "" {
 			t.Errorf("an event nobody caused carries %v", tracesOf(quiet))
 		}
 		return nil

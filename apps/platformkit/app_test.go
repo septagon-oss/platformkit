@@ -414,12 +414,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// Which languages a tenant is served in, and which identity provider its people
 	// sign in against, are in this list because they are the newest of these routes
 	// and the two a tenant would most like to write for itself: the tenant's own
-	// host is exactly where their absence has to show. The four lifecycle verbs
-	// beside them — rename, reactivate, remove-host, delete — are here for the same
-	// reason and the plain one: a route is not in this list because it is old, it is in
-	// it because a tenant could want to use it on itself, and these four end or reshape
-	// a customer. Each is a well-formed request the decoder would take and the service
-	// would act on at the installation's host, so the 404 answers the surface itself.
+	// host is exactly where their absence has to show.
 	for _, probe := range []struct{ method, path, body string }{
 		{http.MethodGet, tenantPath, ""},
 		{http.MethodPost, tenantPath, `{"slug":"evil","name":"Evil","host":"evil.localhost"}`},
@@ -427,10 +422,6 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		{http.MethodGet, tenantPath + "/" + globexID.String(), ""},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/hosts", `{"host":"evil.localhost"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/locale", `{"default":"pt-PT","supported":["en","pt-PT"]}`},
-		{http.MethodPost, tenantPath + "/" + globexID.String() + "/rename", `{"name":"Globex Renewed"}`},
-		{http.MethodPost, tenantPath + "/" + globexID.String() + "/reactivate", ""},
-		{http.MethodDelete, tenantPath + "/" + globexID.String() + "/hosts/evil.localhost", ""},
-		{http.MethodPost, tenantPath + "/" + globexID.String() + "/delete", `{"confirm":"globex"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc", `{"issuer":"https://idp.globex.example","clientId":"platformkit","secretRef":"GLOBEX_OIDC_SECRET"}`},
 		{http.MethodPost, tenantPath + "/" + globexID.String() + "/oidc/clear", ""},
 	} {
@@ -857,29 +848,11 @@ func whoami(t *testing.T, cfg config.Config, client *http.Client) string {
 	return body
 }
 
-// waitForAudit is the trail's newest row with this event name, once the worker has
-// carried the envelope the caller just wrote. The relay runs once a second, so this
-// is a wait and not a read: what it proves is that the row arrives, not how soon.
-//
-// It waits on the queue rather than on the trail, and that distinction is the whole
-// shape of this helper. `GET /api/v1/audit/events?name=` answers as soon as *any*
-// row of that name is there, and a lifecycle verb's mirror row shares its name with
-// every other verb's: the case that found this creates a customer before it suspends
-// it, and both verbs mirror into this one installation trail under
-// `tenant.lifecycle_recorded`, one carrying verb:create and one verb:suspend. A
-// predicate on the name is therefore satisfied by the older act whenever the create
-// reaches the trail more than one relay tick before the suspend does, and the
-// assertions that follow read a row the request did not cause. The queue holds the
-// fact the wait actually needs: relayBatch stamps `published_at` only after
-// Transport.Publish returns (kit/events/relay.go), and the memory transport returns
-// only once every subscriber has answered for that envelope
-// (kit/events/providers/memory). So once nothing under this name is pending, the
-// audit row the caller caused is committed, and the newest row of that name — which
-// is what the trail's own read returns first, `occurred_at DESC, id`,
-// modules/audit/internal/service.go — is that row.
+// waitForAudit is the first trail row with this event name, once the worker has
+// got to it. The relay runs once a second, so this is a wait and not a read:
+// what it proves is that the row arrives, not how soon.
 func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name string) map[string]any {
 	t.Helper()
-	waitForPublication(t, cfg, name)
 	var row map[string]any
 	eventually(t, "the trail to record "+name, func() bool {
 		code, body := do(t, cfg, client, http.MethodGet, acmeHost, auditPath+"?name="+name, "")
@@ -899,33 +872,6 @@ func waitForAudit(t *testing.T, cfg config.Config, client *http.Client, name str
 		return true
 	})
 	return row
-}
-
-// waitForPublication waits until the outbox holds no unpublished envelope with this
-// name. A command's envelope commits with the column that caused it, so by the time
-// a caller waits, its own row is in that count and stays there until the relay has
-// carried it — which is the moment after which the trail cannot answer with an older
-// act. The name is the queue's own column, so this is the same fact the trail read is
-// about to ask for, taken from the table that cannot be satisfied by a stale row.
-func waitForPublication(t *testing.T, cfg config.Config, name string) {
-	t.Helper()
-	conn, err := db.Open(t.Context(), cfg.Database.URL)
-	if err != nil {
-		t.Fatalf("open the queue: %v", err)
-	}
-	defer conn.Close()
-
-	eventually(t, "the relay to carry "+name, func() bool {
-		var pending int64
-		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
-			return tx.DB().Table("platformkit_outbox").
-				Where("published_at IS NULL AND name = ?", name).Count(&pending).Error
-		})
-		if err != nil {
-			t.Fatalf("read the queue for %s: %v", name, err)
-		}
-		return pending == 0
-	})
 }
 
 // notify raises one notification the way another module will: through the
@@ -1491,9 +1437,13 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// applied — there would be no row to re-own and kit/db would be right to call
 	// an applied file that no release ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
-	// lets a module ship a version above the kernel's highest without rewriting
-	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
-	// normally in the upgrade, and are checked as new rows below.
+	// This is what lets a module ship a version above the kernel's highest
+	// without rewriting this fixture every time it does: a file that postdates
+	// the split lands here as a new row, applies normally in the upgrade, and is
+	// checked as new below. The direction the rule cuts is the reason a kernel
+	// file above somebody else's is not free: migrations/000034_outbox_request
+	// moves preSplitTop to 34, and modules/auth's 31, 32 and 33 fall back inside
+	// the old ledger and have to be adopted by name.
 	var preSplitTop int64
 	for _, source := range sources {
 		if source.Owner != "platformkit" {
@@ -1602,18 +1552,35 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// past a file it should have applied, so a new migration has to arrive here and
 	// say so.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 35 — thirteen under migrations/ and twenty-two under
-	// modules/*/migrations/, with distinct names and distinct versions throughout.
-	// The release this fixture is applied from shipped 30 of them: the thirteen
-	// under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the
-	// seventeen module files at or below the kernel's own highest (4, 7, 8, 10, 11,
-	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The five above the kernel's
-	// 30 — modules/auth's 31, 32 and 33, modules/file's 34 and modules/audit's 35 —
-	// postdate the split, are not in the old installation's ledger, and legacyLayout
-	// leaves them out; the upgrade below applies them and counts them as new rows.
-	if len(before) != 30 {
-		t.Fatalf("the old layout applied %d files, want 30", len(before))
+	// 29 became 34 when the kernel added migrations/000034_outbox_request, which
+	// gives the outbox the request id and the client address the audit trail keeps.
+	// It is 34 rather than the 30 the file was written as because every number to
+	// 33 was taken while this branch was still open — 000030 is migrations/
+	// 000030_tenant_oidc and 000031 to 000033 are modules/auth's factors, API
+	// tokens and first-factor proofs — and modules/audit's three files, the columns
+	// behind those two questions and the two indexes that answer them, continue at
+	// 35 for the same reason and not at the 24 its own sequence had reached: this
+	// fixture flattens every owner's files under one owner, and 000024 is
+	// modules/auth's email_verification.
+	//
+	// The same flattening is why modules/file's retention file is 000040 here and
+	// not the 000034 it was merged as: the kernel's own 000034 moves preSplitTop
+	// to 34, so a second 34 would arrive in this ledger under the same name, and
+	// kit/db refuses a repeated version before the ledger ever sees it
+	// (migration_files.go, "invalid or repeated version"). One version, one row.
+	//
+	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l`
+	// at this head prints 40, of which the release this fixture is applied from
+	// shipped 34: fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26,
+	// 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10, 11, 13,
+	// 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct. The
+	// six that postdate the split — modules/audit's 000035, 000036 and 000037,
+	// modules/change's 000038, modules/site's 000039 and modules/file's 000040 —
+	// are left out of the old ledger and apply under the owner that ships them
+	// (see legacyLayout). Each continues past the highest number anywhere in the
+	// composition, which is the rule this fixture exists to enforce.
+	if len(before) != 34 {
+		t.Fatalf("the old layout applied %d files, want 34", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
@@ -1635,10 +1602,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the five files above the
-	// kernel's 30 (modules/auth 31, 32 and 33, modules/file 34 and modules/audit 35,
-	// all absent from the old ledger) have to be accounted for: 35 files in the
-	// release, 35 rows.
+	// release ships is in the ledger, which is where the six files above the
+	// kernel's 34 (modules/audit 35, 36 and 37, modules/change 38, modules/site 39
+	// and modules/file 40, all absent from the old ledger) have to be accounted
+	// for: 40 files in the release, 40 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

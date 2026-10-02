@@ -49,25 +49,30 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
 	}
+	// The call that caused the event, from the event: this transaction is the
+	// relay's, not the request's, and the three facts stopped being readable when
+	// the request ended. kit/events carried them off kit/request into the outbox
+	// row for exactly this moment. An empty one is stored as NULL — "no request
+	// caused this" is an answer, and the empty string is not an address.
+	//
 	// The ids the payload mentions are lifted out here, once, so that reading
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records, traceparent)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.TraceParent)).Error
+		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent)).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}
 	return nil
 }
 
-// nilIfEmpty stores the absence of a trace as NULL and not as the empty string,
-// because "this event arrived with no request behind it" and "it arrived with a
-// request that sent an empty header" are the same fact to this column and a
-// different fact to nobody.
+// nilIfEmpty is the absence the column stores: a request that never happened
+// leaves NULL, which is what migrations/000035 says an absence means, and not a
+// second word for the same fact.
 func nilIfEmpty(s string) any {
 	if s == "" {
 		return nil
@@ -98,6 +103,15 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 		// the search was a sequential scan of the tenant's whole trail.
 		if q.Record != uuid.Nil {
 			g = g.Where("records @> ?", pq.Array([]uuid.UUID{q.Record}))
+		}
+		// Which call, and which trace. The trace id is the second field of the
+		// stored traceparent, which is the only place it exists — see 000035 and
+		// the expression index 000037 builds over that same split_part.
+		if q.Request != "" {
+			g = g.Where("request_id = ?", q.Request)
+		}
+		if q.TraceID != "" {
+			g = g.Where("split_part(traceparent, '-', 2) = ?", q.TraceID)
 		}
 		if !q.Since.IsZero() {
 			g = g.Where("occurred_at >= ?", q.Since)

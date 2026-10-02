@@ -29,6 +29,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/trace"
 )
@@ -110,14 +111,22 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	// no request left to ask. Storing it here is what lets a delivery name the
 	// call that caused it. Absent is normal and stays absent — a periodic job,
 	// a handler reacting to another event. See kit/trace.
+	//
+	// The request id and the client address arrive in the same breath and for
+	// the same reason: they are readable only while the call is open, and the
+	// row outlives it. Together the four columns are what lets the audit trail
+	// answer who, what, when, which call and from where — see kit/request and
+	// migrations/000034.
 	parent, state := "", ""
 	if tc, ok := trace.From(ctx); ok {
 		parent, state = tc.Parent(), tc.TraceState
 	}
+	req, _ := request.From(ctx)
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?)",
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, request_id, client_ip)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, NULLIF(?, '')::inet)",
 		uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state),
+		nilIfEmpty(req.ID), req.ClientAddr,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}

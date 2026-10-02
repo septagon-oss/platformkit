@@ -35,6 +35,8 @@ type row struct {
 	Actor       *uuid.UUID
 	TraceParent *string
 	TraceState  *string
+	RequestID   *string
+	ClientIP    *string
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -74,7 +76,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		// trace_parent. Naming the alias after the column and letting the field
 		// go nil is how a carried fact silently stops being carried.
 		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
-			traceparent AS trace_parent, tracestate AS trace_state FROM ` + table + `
+			traceparent AS trace_parent, tracestate AS trace_state,
+			request_id, host(client_ip) AS client_ip FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -97,6 +100,15 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			}
 			if r.TraceState != nil {
 				ev.TraceState = *r.TraceState
+			}
+			// The call itself, from the same row and for the same reason: the
+			// trail row a handler writes has to name the request that caused it,
+			// and this transaction is not that request.
+			if r.RequestID != nil {
+				ev.RequestID = *r.RequestID
+			}
+			if r.ClientIP != nil {
+				ev.ClientIP = *r.ClientIP
 			}
 			if err := t.Publish(ctx, ev); err != nil {
 				// The rows published so far are still unstamped, so they go

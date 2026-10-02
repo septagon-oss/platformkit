@@ -184,6 +184,40 @@ check-fixtures: ## Compile the Go program every design test embeds
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+# The rehearsal and the public-API comparison, both of which existed as steps
+# nobody was forced to run: `make rehearse` needed an operator who remembered it,
+# and the apidiff workflow said "deliberately not a required check" and ran on a
+# Sunday. Both answer a question no other gate here can — what this release's
+# migrations cost on a table the size the installation actually has, and which
+# exported name a pinned consumer compiled against last time — and a question
+# answered only after a version is published is a review of the damage.
+#
+# The base is v1.1.0 for both, because that is the release consumers are on and
+# it is the tag scripts/PUBLIC-API.md already names. The seed is the fixture the
+# rehearsal script documents, because a migration measured against an empty table
+# is a migration measured against nothing.
+#
+# The cost is measured, not assumed: against a copy of the v1.1.0 ledger seeded
+# with 10,000 rows per table, the rehearsal of this tree's nine pending files ran
+# in 19 s of wall clock (commit b7a0354's Verified: line names the run), and
+# check-apidiff takes about a minute. Both sit inside the 75-minute ceiling
+# 8a3297a set for the check job. When that ceiling gets tight, T-0219 splits the
+# job; nothing is removed from `check` to fit it.
+REHEARSE_BASE ?= v1.1.0
+REHEARSE_ARGS ?= --base-ref $(REHEARSE_BASE) --seed scripts/testdata/rehearse/seed.sql
+APIDIFF_BASELINE ?= scripts/baselines/public-api-$(REHEARSE_BASE).json
+
+check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The baseline is the reviewed set of incompatibilities the release already owed
+# at the merge base of this change; `--baseline` then refuses a *new* one and a
+# vanished one, so a documented breaking line cannot hide an accidental one.
+# Regenerating it is its own deliberate act: --write-baseline at the base commit,
+# committed alone, with the diff of the list as the review.
+check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
+	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -209,16 +243,23 @@ fmt-check: ## Fail when any file is not gofmt'd
 # two halves are composed and where the only test that can watch a write in one
 # module queue behind a write in the other lives.
 # RACE_PACKAGES overrides the list when a change reaches somewhere else.
+# modules/change is in the standing list rather than one change's override because
+# the whole point of the object is a lock: the proposal is taken FOR UPDATE before
+# the subject is, and two applies of two proposals over one subject settle by that
+# order. An author who cannot run the two commands concurrently cannot tell a lock
+# that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
-	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... ./apps/platformkit
+	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
+	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/check_pin_rehearsal_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package

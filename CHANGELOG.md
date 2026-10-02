@@ -11,7 +11,7 @@ plane offered. Each publishes its own event (`tenant.renamed`, `tenant.reactivat
 *two* audit rows in the transaction that wrote the column: one in the customer's own trail and one
 `tenant.lifecycle_recorded` mirror in the installation's, so "who suspended Acme, and when" is answered
 without reading a tenant's rows. `audit_events.traceparent` carries the request's W3C trace into both
-(`modules/audit/migrations/000035_audit_trace.up.sql` — expand-only, nullable, no backfill, no index),
+(`modules/audit`'s `000035_audit_context.up.sql` — expand-only, nullable, no backfill),
 which is what makes them one act rather than two rows that happen to share a second. A refusal writes
 none of it: no column, no event, no stale row read back. Four refusals are the module's own and are
 asked before the write — this installation's tenant is not deletable, the primary host and the last host

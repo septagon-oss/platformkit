@@ -145,8 +145,8 @@ func TestTheOperatorsTrailOfAnotherTenantsActIsReadableOnlyByTheOperator(t *test
 	if payload.Verb != "suspend" || payload.TenantID != acme.ID || payload.Slug != acme.Slug {
 		t.Errorf("the operator's mirror reads %+v, want the verb, the subject and its slug", payload)
 	}
-	if rows[0].TraceParent != tr.Parent() {
-		t.Errorf("the operator's mirror carries trace %q, want the request's %q", rows[0].TraceParent, tr.Parent())
+	if rows[0].Traceparent != tr.Parent() {
+		t.Errorf("the operator's mirror carries trace %q, want the request's %q", rows[0].Traceparent, tr.Parent())
 	}
 }
 
