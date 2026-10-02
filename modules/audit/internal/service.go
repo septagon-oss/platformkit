@@ -55,7 +55,7 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	// signed in and nothing about what did. A kind may stand alone; a source is a
 	// place, so it is cited in whole — the pair rule kit/events owns and the outbox
 	// column enforces, kept here because this table holds no constraint of its own
-	// on the pair. See migrations/000033.
+	// on the pair. See migrations/000038.
 	var kind, file, line, initiator any
 	if ev.ActorKind != "" {
 		kind = ev.ActorKind

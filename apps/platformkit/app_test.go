@@ -1304,7 +1304,18 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// lets a module ship a version above the kernel's highest without rewriting
 	// this fixture every time it does: modules/auth's 31 and 32 land here, apply
 	// normally in the upgrade, and are checked as new rows below.
-	var preSplitTop int64
+	//
+	// The number is named, not derived. Version 30 is migrations/000030_tenant_oidc,
+	// the last file the foundation shipped as the only owner; what the kernel ships
+	// afterwards says nothing about what that old ledger held. Derived from this
+	// head's highest kernel file — which is how this read until this release added
+	// 000035, 000036 and 000037 of its own — the number moves every time the kernel
+	// ships a file, and it would sweep each module's own post-split file (modules/auth
+	// 31, 32 and 33, modules/file 34) into a ledger that never held them, which is
+	// the contradiction the paragraph above refuses. The loop below checks the named
+	// version is still shipped, so the constant cannot rot quietly.
+	const preSplitTop = 30
+	var shipped bool
 	for _, source := range sources {
 		if source.Owner != "platformkit" {
 			continue
@@ -1315,10 +1326,13 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 		}
 		for _, entry := range entries {
 			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > preSplitTop {
-				preSplitTop = version
+			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version == preSplitTop {
+				shipped = true
 			}
 		}
+	}
+	if !shipped {
+		t.Fatalf("the pre-split top (version %d) is no longer a file the kernel ships; this fixture's constant is stale", preSplitTop)
 	}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
@@ -1413,13 +1427,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 34 — thirteen under migrations/ and twenty-one under
+	// this head prints 38 — sixteen under migrations/ and twenty-two under
 	// modules/*/migrations/, with distinct names and distinct versions throughout.
 	// The release this fixture is applied from shipped 30 of them: the thirteen
 	// under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the
 	// seventeen module files at or below the kernel's own highest (4, 7, 8, 10, 11,
-	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The four above the kernel's
-	// 30 — modules/auth's 31, 32 and 33 and modules/file's 34 — postdate the split,
+	// 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27). The eight above the kernel's
+	// 30 — modules/auth's 31, 32 and 33, modules/file's 34, this release's own 35,
+	// 36 and 37 (the tenant's demo marker, the seed's provenance keys, the attribution
+	// columns beside each event) and modules/audit's 38 — postdate the split,
 	// are not in the old installation's ledger, and legacyLayout leaves them out;
 	// the upgrade below applies them and counts them as new rows.
 	if len(before) != 30 {
@@ -1445,9 +1461,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the four files above the
-	// kernel's 30 (modules/auth 31, 32 and 33 and modules/file 34, all absent from
-	// the old ledger) have to be accounted for: 34 files in the release, 34 rows.
+	// release ships is in the ledger, which is where the eight files above the
+	// kernel's 30 (modules/auth 31, 32 and 33, modules/file 34, the three this
+	// release adds under migrations/, and modules/audit 38, all absent from the old
+	// ledger) have to be accounted for: 38 files in the release, 38 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

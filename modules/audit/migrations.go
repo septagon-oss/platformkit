@@ -13,14 +13,16 @@ var schema embed.FS
 // "audit". The manifest hands the kernel the same files and adoption, and a test
 // composes the schema it needs beside the foundation: dbtest.Schema(t, audit.Migrations).
 //
-// The files keep the versions they had when the foundation applied them under
-// its own name, so an installation migrated before this module owned its SQL is
-// adopted by checksum (db.Adoption, docs/adr/0011) — a new file too, which the
-// upgrade in app_test.go applies under that one owner before it re-owns it.
+// The files keep the version numbers they had when the foundation applied
+// them under their own name, so an installation migrated before this module
+// owned its SQL is adopted by checksum rather than migrated again (see
+// db.Adoption and docs/adr/0011). New files continue from the highest number,
+// above anything the foundation shipped alone, so they are new rows and are not
+// in the adoption list.
 var Migrations = db.MigrationSource{
 	Owner:  "audit",
 	Files:  db.Sub(schema, "migrations"),
-	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{10, 15, 23, 33}}},
+	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{10, 15, 23}}},
 	// Two applied files index audit_events in a file that does not create it
 	// (000015, 000023), which is the shape the guard refuses. They are history
 	// and cannot be rewritten, so the guard starts past them.

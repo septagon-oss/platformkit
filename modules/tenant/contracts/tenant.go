@@ -120,7 +120,7 @@ type NewTenant struct {
 	// the operator permission and creating a demo tenant is the ordinary way to
 	// get one; the flag names which seed records the tenant may be given, never
 	// who may reach the control plane. It is written here or not at all — see
-	// migrations/000030_tenant_demo.up.sql.
+	// migrations/000035_tenant_demo.up.sql.
 	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
