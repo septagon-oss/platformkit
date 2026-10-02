@@ -37,6 +37,7 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -144,19 +145,23 @@ type Options struct {
 
 	// Conn is the application connection every request transaction opens on.
 	//
-	// It may be nil exactly when Declarations is set. Every other build of an
-	// API is a build that intends to serve, and serving without a connection is
-	// a request that panics instead of a composition that was refused.
+	// It may be nil exactly when Unwired is set. Every other build of an API is a
+	// build that intends to serve, and serving without a connection is a request
+	// that panics instead of a composition that was refused. An unwired build that
+	// will serve gets its connection from Connect; one that will not is thrown away
+	// once the gates have answered.
 	Conn *db.Conn
 
-	// Declarations records that this API is a dry composition: the routes are
-	// registered so the gates can read them, and nothing will serve them.
-	// kit/app builds one before it migrates, so a route guarded by a permission
-	// nobody defines is refused with the schema still empty — see
-	// app.Declarations. Nothing serves the API it returns: kit/app reads its
-	// recorded operations and discards it, which is why the recorder needs no
-	// connection at all rather than a fake one.
-	Declarations bool
+	// Unwired records that this API is built while the deployment has opened
+	// nothing: the routes are registered so the gates can read them, and the API is
+	// then either thrown away (a gate pass, see app.Declarations) or handed its
+	// connection and its store by Connect before anything can reach it (the build
+	// that will serve). What the flag buys is the thing it is there for: a build
+	// that answers a question about its own routes without a pool, a migration or a
+	// dial of the store the deployment named — and, for the build that serves, the
+	// same answer about the last registration of its routes rather than only the
+	// first three. Kit/app is the only caller that sets it.
+	Unwired bool
 
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
@@ -370,8 +375,8 @@ func New(cfg Options) (*API, *chi.Mux) {
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
-	case cfg.Conn == nil && !cfg.Declarations:
-		panic("httpx.New: Options.Conn is required; every tenant request runs in a transaction")
+	case cfg.Conn == nil && !cfg.Unwired:
+		panic("httpx.New: Options.Conn is required, or Options.Unwired and a call to Connect; every tenant request runs in a transaction")
 	case cfg.Authorize == nil:
 		panic("httpx.New: Options.Authorize is required; Permission declarations have nothing to ask otherwise")
 	case cfg.Authenticate == nil:
@@ -497,6 +502,42 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// afterwards still takes precedence over it for its own prefix.
 	root.Mount("/", inner)
 	return a, root
+}
+
+// Connect hands an unwired API the two things its deployment opens after its
+// routes are built: the connection every request transaction opens on, and the
+// store a resolved host is believed in. kit/app.Start is its only caller, and the
+// reason it exists is the ordering decision 0074 rule 1 makes: which routes the
+// modules mounted is the last thing a composition can get wrong for free, and the
+// pool and the shared store are the first things it spends. An API therefore
+// registers its routes and answers every gate over them before either is dialled,
+// and the connection arrives here, after the last registration and before anything
+// can listen.
+//
+// Nothing is re-mounted. Both values are read per request and neither while a
+// route is being mounted, so the middleware chain, every operation, every page and
+// every static tree is the one the gates read; the OpenAPI document is unchanged.
+// The in-process store the build was handed is left for its owner to close — it
+// belongs to the build, not to this API — and from this call every host resolution
+// is believed in the store every replica can forget, which is the store the
+// deployment named and not the one a build that might still be refused invented.
+//
+// A nil connection, a nil store and a second call on an API that already has a
+// connection are all refused: the first two describe an API that could only fail
+// closed on every request, and the third is two deployments' connections in one
+// router, one of which somebody closes while the other is still serving.
+func (a *API) Connect(conn *db.Conn, store cache.Cache) error {
+	switch {
+	case conn == nil:
+		return errors.New("httpx.Connect: the connection is required; a request transaction opens on it")
+	case store == nil:
+		return errors.New("httpx.Connect: the store is required; a host resolution this package holds has to be one every replica can forget")
+	case a.opts.Conn != nil:
+		return errors.New("httpx.Connect: this API already has a connection; a second one is a second deployment in one router")
+	}
+	a.opts.Conn = conn
+	a.opts.Cache = store
+	return nil
 }
 
 // methodNotAllowed answers an address that is served but does not take this

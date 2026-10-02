@@ -69,12 +69,12 @@ type Runtime struct {
 // composition Start would have refused, answered while nothing has been spent.
 //
 // Call it before Start. Start answers all of it itself for a caller that does not,
-// so the order is a caller's convenience and not a safety condition: the gates are
-// answered over three dry registrations before either opens a pool or dials the store
-// the deployment names, and Start then runs them again over the live connection and
-// refuses the boot there — before it migrates, and with one more answer, which is
-// whether the routes the modules mounted a fourth time are the routes they mounted
-// the first three.
+// so the order is a caller's convenience and not a safety condition. What Start adds
+// to what this answers is the fourth registration — the one whose surface would
+// serve — and it is answered in the same place this one is, over an in-process store
+// with no connection open, because the composition that mounts differently on its
+// last registration is a composition too, and a refusal of it that first dialed the
+// deployment's own database would be a refusal that spent what it says it did not.
 func (a *App) Declarations() error {
 	// The recorder needs a store because httpx requires one — a belief about which
 	// tenant a host is has to be something every replica can forget — and this
@@ -91,18 +91,18 @@ func (a *App) Declarations() error {
 	}
 	// Three times, and the second and third are the reason there are three. Every
 	// other gate below reads one registration and answers about it; the agreement
-	// between registrations can only be answered by registering more than once, and
-	// the alternative — comparing the dry registration with the one Start builds
-	// over the open connection — leaves that answer sitting behind the pool and the
-	// store Start opens on its way there, so a boot refuses its composition after
-	// dialing the server the deployment named. Two passes are what a callback behind
-	// an idempotent mount guard needs; a third is what a callback that answers
-	// differently on its third call needs, and it costs the same recorder nothing.
-	// The first pass records the standard and every later one is judged against it;
-	// see registrationsAgree.
+	// between registrations can only be answered by registering more than once. Two
+	// passes are what a callback behind an idempotent mount guard needs; a third is
+	// what a callback that answers differently on its third call needs, and it costs
+	// the same recorder nothing. The fourth registration — the API Start builds to
+	// serve — is judged here too, by the same comparison, and for the same price:
+	// composeRoutes builds it no differently, so a boot whose last registration
+	// disagrees with its first is refused before it has opened anything. The first
+	// pass records the standard and every later one is judged against it; see
+	// registrationsAgree.
 	for pass := 1; pass <= 3; pass++ {
 		dry := cache.Memory(segment)
-		_, _, err := a.composeRoutes(nil, dry, true)
+		_, _, err := a.composeRoutes(dry)
 		// Each recorder store is released as soon as its recorder has answered:
 		// nothing serves the API either pass returns, and a belief carried from the
 		// first pass into the second would be a third thing no module mounted.
@@ -114,13 +114,16 @@ func (a *App) Declarations() error {
 	return nil
 }
 
-// Start answers the composition's route gates over three dry registrations, opens
-// the application connection, builds the API, runs every boot gate, migrates as the
-// owner role, and opens the transport the role names — in that order, the order Run
-// uses. The gates come before the connection because a gate is an answer about the
-// composition and a connection is the first thing a deployment spends: the
-// composition somebody has to fix is cheaper to refuse while the store it was
-// pointed at is still undialed. The migration comes after the gates for the same
+// Start answers the composition's route gates over three dry registrations, builds
+// the API it will serve and runs every boot gate over it, opens the application
+// connection, opens the store the deployment names and hands both to that API,
+// migrates as the owner role, and opens the transport the role names — in that
+// order, the order Run uses. The gates come before the connection because a gate is
+// an answer about the composition and a connection is the first thing a deployment
+// spends: the composition somebody has to fix is cheaper to refuse while the store
+// it was pointed at is still undialed, and that includes the composition whose
+// modules mount one surface when they are asked what they would serve and another
+// when they are actually asked. The migration comes after the gates for the same
 // reason one gate down. Nothing serves before the migration, so a
 // composition that reaches a listener has its schema. Every failure returns a nil
 // Runtime, nothing listening, and everything it opened already released. The one
@@ -138,32 +141,65 @@ func (a *App) Declarations() error {
 // an injected transport is the same instance both Runtimes then share, so closing
 // either releases what the other is still using. A new lifecycle needs a new App.
 func (a *App) Start(ctx context.Context) (*Runtime, error) {
-	// The route gates first, because three of the four registrations they are read
-	// from need nothing and the comparison between them can be answered no other
+	// The route gates first, because every registration they are read from needs
+	// nothing and the comparison between them can be answered no other
 	// way: a boot that opens the pool and dials the shared store before it has
 	// compared its registrations has spent what its refusal says it did not spend.
 	// A caller that already asked — pkit.Build, which says so in its own words —
-	// is not asked again; what is left to answer is the live registration below.
+	// is not asked again; what is left to answer is the fourth registration below.
 	if a.declaredRoutes == nil {
 		if err := a.Declarations(); err != nil {
 			return nil, err
 		}
 	}
+	// The API this process will serve, built the way the three registrations above
+	// were: over an in-process store this build never writes, and with no connection
+	// open. Nothing a module's Routes callback can reach reads either of them, so the
+	// registration whose surface would serve answers the gates on the same terms as
+	// the three that set the standard, and a composition that means two things is
+	// refused with the deployment's own store still undialed. The in-process store is
+	// released below, the moment the deployment's takes over: a host resolution
+	// believed by a build that may still be refused is a belief nobody serving this
+	// installation should hold.
+	segment, err := a.cacheSegment()
+	if err != nil {
+		return nil, err
+	}
+	build := cache.Memory(segment)
+	api, handler, err := a.buildAPI(ctx, build)
+	if err != nil {
+		_ = build.Close() // a composition that failed a gate is never mounted
+		return nil, err
+	}
+	// The first two things a deployment spends, and they are spent only once every
+	// answer about this composition has been given.
 	conn, err := a.openConn(ctx)
 	if err != nil {
+		_ = build.Close()
 		return nil, err
 	}
 	store, err := a.cache(ctx)
 	if err != nil {
 		_ = conn.Close()
+		_ = build.Close()
 		return nil, err
 	}
-	handler, err := a.buildAPI(ctx, conn, store)
-	if err != nil {
-		_ = conn.Close() // a composition that failed a gate is never mounted
+	// The router built above now holds the deployment: the connection its request
+	// transactions open on and the store its host resolutions are believed in. It
+	// could not have been built with them without spending them first, and nothing
+	// reached it in the meantime — no listener is open and no Runtime has been handed
+	// out — so this is a composition finishing itself, not a router changing under a
+	// request. The three doors of this package that read the connection on a request
+	// — /ready, the anonymous write limit and the record of a refusal — were built
+	// against the same value being there (see heldConn).
+	if err := api.Connect(conn, store); err != nil {
+		_ = conn.Close()
 		_ = store.Close()
+		_ = build.Close()
 		return nil, err
 	}
+	a.held.fill(conn)
+	_ = build.Close()
 	if err := a.migrate(ctx); err != nil {
 		_ = conn.Close()
 		_ = store.Close()

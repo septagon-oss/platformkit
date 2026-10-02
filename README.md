@@ -71,14 +71,15 @@ app := pkit.NewApp("collect").Use(uses...).Theme(pair).Languages(copy).
 return app.Run(ctx, deployment, app.All)
 ```
 
-  - **Reused** — `kit/app` stays the engine: it opens the connection, builds the
-    API and answers its gates, migrates, opens the transport and serves. `pkit`
+  - **Reused** — `kit/app` stays the engine: it builds the API and answers its
+    gates, opens the connection, migrates, opens the transport and serves. `pkit`
     adds the dry registrations before all of it and nothing after it.
   - **Added** — the resolver over declared needs, provides and contributions, and
     every answer given before the first effect: no connection is opened, no
     migration runs, no store is dialled and no port is listened on until the
-    composition resolves and its route gates — the whole composition mounted
-    three times on a recorder and compared against itself — have answered. A
+    composition resolves and its route gates — the whole composition mounted four
+    times and compared against itself, the last of those being the API that would
+    serve — have answered. A
     build that is refused there changes nothing in the process it was asked in,
     including what shape its events have.
   - **Made reusable** — the reference application is composed this way in

@@ -13,11 +13,12 @@ package pkit
 // open no connection, run no migration, write no row and listen on no port.
 //
 // What the engine registers one more time is the routes: kit/app.buildAPI mounts
-// them a fourth time, over the pool and the store it just opened, and refuses a
-// callback that mounted differently there than on the three recorder passes. That
-// refusal is still before the migration, and it is the one answer given after the
-// connection opened: no door on httpx.Surfaces runs a query, so what it guards is
-// a callback that reads process state nobody handed it. The phases below, in order.
+// them a fourth time, over an in-process store and with no connection open, and
+// refuses a callback that mounted differently there than on the three recorder
+// passes. That refusal is the last one the composition can be given for free: the
+// pool, the store the deployment names and the migration are what Start spends
+// after it, and the API that answers them is the one this registration built, so
+// there is no fifth call left to disagree with anything.
 
 import (
 	"context"
@@ -270,13 +271,16 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 // migration rather than after it. Three registrations on the recorder, not one:
 // the second is what a callback behind an idempotent mount guard needs and the
 // third is what a callback that answers differently on its third call needs, and
-// both are answered before the pool, the shared store and the migration. What
-// stays on this side of the migration is only what genuinely needs the connection:
-// the pool, the transport, and /ready's own probe of the schema it opened. The
-// engine answers the same gates over that connection too, and migrates only after
-// they answer, because a module's Routes callback runs three times on the recorder
-// and once on the way to serving, and one that mounted differently between any of
-// those four runs would otherwise serve a surface no gate ever read
+// both are answered before the pool, the shared store and the migration. What the
+// engine builds after them, still with nothing open, is the API that would serve —
+// the fourth registration, judged against the first by the same comparison, and
+// the last thing this composition can be refused for. What stays on this side of
+// the migration is only what genuinely needs the connection: the pool, the
+// transport, and /ready's own probe of the schema it opened. The engine hands both
+// to the router it built above (httpx.API.Connect) and migrates only after every
+// gate has answered, because a module's Routes callback runs four times in one boot
+// and one that mounted differently between any of those runs would otherwise be a
+// composition that means two different things
 // (app.registrationsAgree).
 func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, error) {
 	p, err := a.Plan(d)
