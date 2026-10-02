@@ -222,7 +222,10 @@ Timed intervals intersect local civil days with exclusive ends; all-day events
 use exclusive civil dates. Day/week grids load the vendored FullCalendar Standard
 7.1.0 only when needed. SSR navigation supplies the range; the engine does not
 fetch, drag, resize, book or run a browser-clock decision. A range is limited to
-366 civil days. The optional engine is destroyed when its HTMX root is removed.
+366 civil days, and the strip's selected day — the one it marks `aria-current`
+and the grid opens on — must fall inside that half-open range, so a composition
+whose selection belongs to another range renders nothing. The optional engine is
+destroyed when its HTMX root is removed.
 
 ## Commerce and plans
 
