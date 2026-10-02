@@ -88,5 +88,14 @@
     "plural": {
       "": "Failing"
     }
+  },
+  "permission.gallery:read": {
+    "references": [
+      "modules/admin/module.go"
+    ],
+    "translation": "read the component gallery",
+    "plural": {
+      "": "read the component gallery"
+    }
   }
 }

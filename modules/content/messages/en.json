@@ -5,5 +5,23 @@
       "one": "Content item",
       "other": "Content items"
     }
+  },
+  "permission.content:read": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "read content",
+    "plural": {
+      "": "read content"
+    }
+  },
+  "permission.content:manage": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "manage content",
+    "plural": {
+      "": "manage content"
+    }
   }
 }

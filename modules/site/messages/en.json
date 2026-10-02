@@ -5,5 +5,14 @@
       "one": "Setting",
       "other": "Settings"
     }
+  },
+  "permission.site:manage": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "manage the site",
+    "plural": {
+      "": "manage the site"
+    }
   }
 }

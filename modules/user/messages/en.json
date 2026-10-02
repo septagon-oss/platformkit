@@ -5,5 +5,32 @@
       "one": "User",
       "other": "Users"
     }
+  },
+  "permission.user:read": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "read people",
+    "plural": {
+      "": "read people"
+    }
+  },
+  "permission.user:manage": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "manage people",
+    "plural": {
+      "": "manage people"
+    }
+  },
+  "permission.user:approve": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "approve new accounts",
+    "plural": {
+      "": "approve new accounts"
+    }
   }
 }

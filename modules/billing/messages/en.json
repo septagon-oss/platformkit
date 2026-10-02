@@ -12,5 +12,32 @@
       "one": "Subscription",
       "other": "Subscriptions"
     }
+  },
+  "permission.billing:read": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "read billing",
+    "plural": {
+      "": "read billing"
+    }
+  },
+  "permission.billing:manage": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "manage billing",
+    "plural": {
+      "": "manage billing"
+    }
+  },
+  "permission.billing:catalog": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "manage the plan catalogue",
+    "plural": {
+      "": "manage the plan catalogue"
+    }
   }
 }

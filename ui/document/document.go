@@ -140,7 +140,56 @@ func Document(c Chrome, r Request, v View, body g.Node) g.Node {
 			attrs = append(attrs, g.Attr(k, c.Attrs[k]))
 		}
 	}
+	// dir says which way the document's language is written, and it follows the
+	// language and nothing else: a page declared pt-PT says ltr, and one declared
+	// ar says rtl, whoever the tenant is. It is the pair of lang — a browser and a
+	// screen reader given only lang lay out an RTL page as if it were English —
+	// and it is derived here, from the tag, rather than passed in, because a fact
+	// with one source should not have two ways to be wrong.
+	attrs = append(attrs, g.Attr("dir", Direction(language)))
 	return h.HTML(append(attrs, head(c, r, v), h.Body(body, requestNotices(c), sessionNotice(c)))...)
+}
+
+// rtlScripts are the base languages whose ordinary modern text is written right
+// to left. A script subtag in the tag itself wins over this list: a Kazakh page
+// tagged kk-Cyrl-RU is written left to right whatever its language would say on
+// its own. See Direction.
+var rtlScripts = map[string]bool{
+	"ar": true, "he": true, "fa": true, "prs": true, "ps": true, "sd": true,
+	"ug": true, "ur": true, "yi": true, "dv": true, "ks": true, "ku": true,
+}
+
+// rtlScriptsInScript are the scripts that are only ever written right to left,
+// which is what a tag's own script subtag is checked against.
+var rtlScriptsInScript = map[string]bool{
+	"Arab": true, "Hebr": true, "Nkoo": true, "Syrc": true, "Mand": true, "Thaa": true,
+}
+
+// Direction is the writing direction a document declared in this language has to
+// be laid out in: "rtl" or "ltr". A tag with a script subtag decides from the
+// script — Arabic script runs right to left in any language, English written in
+// Arabic script does not — and a bare language tag decides from the language.
+// Anything unrecognised is left to right, because that is the direction of every
+// language the platform has catalogues for and guessing rtl for a tag nobody
+// heard of would mirror a page nobody asked to have mirrored.
+func Direction(tag string) string {
+	if tag == "" {
+		return "ltr"
+	}
+	parts := strings.Split(tag, "-")
+	base := strings.ToLower(parts[0])
+	for _, part := range parts[1:] {
+		if len(part) == 4 { // the script subtag, Title-Case as BCP 47 spells it
+			if rtlScriptsInScript[part] {
+				return "rtl"
+			}
+			return "ltr"
+		}
+	}
+	if rtlScripts[base] {
+		return "rtl"
+	}
+	return "ltr"
 }
 
 // The notice stays outside account menus, which may close during sign-out.
