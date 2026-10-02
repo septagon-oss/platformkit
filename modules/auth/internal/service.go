@@ -422,8 +422,19 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if proofs.Error != nil {
 		return 0, fmt.Errorf("auth: purge the spent first-factor proofs: %w", proofs.Error)
 	}
+	// A passkey prompt nobody answered is a nonce with a two-minute expiry and a
+	// stranger's request behind it: the begin legs are public, they each write one
+	// row, and the answer that would have deleted it may never arrive. The window is
+	// short enough that a tenant's live count is the number of people mid-ceremony,
+	// so this is the ordinary case rather than a sweep of anybody's history.
+	ceremonies := tx.DB().Exec(
+		"DELETE FROM passkey_challenges WHERE id IN ("+
+			"SELECT id FROM passkey_challenges WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if ceremonies.Error != nil {
+		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
+	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
-		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected, nil
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason

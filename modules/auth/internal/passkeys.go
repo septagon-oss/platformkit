@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"net/http"
 	"strings"
 	"time"
@@ -156,15 +157,33 @@ func credentialsOf(rows []passkeyCredentialRow) []webauthn.Credential {
 	return out
 }
 
+// passkeyRequest is the request this ceremony answers. Every leg of the passkey
+// half is an HTTP ceremony: the relying party is built from the host it arrived
+// at, and the origin a browser will claim is read off the same request, so a
+// ceremony with no request is not a ceremony with a default — it is a call nobody
+// can answer.
+func (s *Service) passkeyRequest(ctx context.Context) (*http.Request, error) {
+	r, ok := httpx.RequestFrom(ctx)
+	if !ok || r == nil {
+		return nil, errors.New("auth: a passkey ceremony answers an HTTP request")
+	}
+	return r, nil
+}
+
+// mayPrompt is the cap on the public ceremony legs: how many prompts one address
+// may have begun in the window (contracts.PasskeyPrompts). It is asked inside the
+// command rather than on the route because the write it caps is made here, and a
+// command capped by its caller is a command one new route away from uncapped.
+func (s *Service) mayPrompt(ctx context.Context, r *http.Request) bool {
+	return s.limiter.Prompted(ctx, ClientOf(r).IP)
+}
+
 // passkeyRelyingParty builds the relying party for one request. See the header.
 //
 // The display name is the tenant's own — the string a platform shows somebody
 // deciding whether to trust a prompt — falling back to what the composition
 // supplied. No constant in this module names one (rule 4).
 func (s *Service) passkeyRelyingParty(r *http.Request, tx db.Tx[db.Tenant]) (*webauthn.WebAuthn, error) {
-	if r == nil {
-		return nil, errors.New("auth: a passkey ceremony answers an HTTP request")
-	}
 	rpID := httpx.HostOnly(r.Host)
 	if rpID == "" {
 		return nil, errors.New("auth: a passkey ceremony needs the host it was asked at")
@@ -230,12 +249,15 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, tx db.Tx[db.Tena
 	if !user.CanSignIn() {
 		return nil, contracts.ErrCredentials
 	}
-	r, _ := httpx.RequestFrom(ctx)
-	rp, err := s.passkeyRelyingParty(r, tx)
+	r, err := s.passkeyRequest(ctx)
 	if err != nil {
 		return nil, err
 	}
 	holds, err := s.passkeyCredentials(ctx, tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	rp, err := s.passkeyRelyingParty(r, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -250,7 +272,10 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, tx db.Tx[db.Tena
 // the ceremony was begun for — which is the caller, rechecked here rather than
 // assumed from the credential that got them to the route (rule 9).
 func (s *Service) FinishPasskeyRegistration(ctx context.Context, tx db.Tx[db.Tenant], userID, ceremony uuid.UUID, response json.RawMessage, name string) (*contracts.Factor, error) {
-	r, _ := httpx.RequestFrom(ctx)
+	r, err := s.passkeyRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rp, err := s.passkeyRelyingParty(r, tx)
 	if err != nil {
 		return nil, err
@@ -258,7 +283,7 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, tx db.Tx[db.Ten
 	name = trimFactorName(name)
 	// The nonce first, in a transaction of its own: an enrolment refused after it
 	// was answered must not leave an answer that stays answerable.
-	session, _, spent, err := s.spendCeremony(ctx, tx, ceremony, contracts.PasskeyCeremonyRegister, &userID)
+	session, _, spent, err := s.spendCeremony(ctx, tx, ceremony, &userID, contracts.PasskeyCeremonyRegister)
 	if err != nil {
 		return nil, err
 	}
@@ -315,20 +340,26 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, tx db.Tx[db.Ten
 }
 
 // BeginPasskeyAssertion begins the second half of a sign-in a password earned. It
-// learns nothing, writes nothing but the nonce, and costs the same whether or not
-// the address holds a passkey: the allow list is empty on purpose, so the request
-// the browser sends is the same request either way and this leg cannot be an
-// account-enumeration oracle handed out for free. An unknown address still pays the
-// argon2id the login path pays, so the three doors cannot be told apart by a
-// stopwatch.
+// learns nothing and writes nothing but the nonce, and it costs the same for every
+// address because it does not read the one it was sent: the prompt is the
+// discoverable one, an empty allow list on purpose, so the request a browser makes
+// for an address that holds ten passkeys is byte-for-byte the request for an
+// address that holds none.
+//
+// The address is therefore not looked up at all. It used to be, and only when the
+// answer was "nobody here", to pay the argon2id the login path pays so a stopwatch
+// could not tell the two apart — which worked, and cost one indexed read per known
+// address to hide the difference the lookup itself created. Spending hash work to
+// hide a branch is a way of keeping the branch; not taking it is the smaller and
+// stronger answer, and it is the one the route's sentence already claimed.
 func (s *Service) BeginPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], email string) (*contracts.PasskeyChallenge, error) {
-	if _, err := s.users.ByEmail(ctx, tx, email); err != nil {
-		if !errors.Is(err, crud.ErrNotFound) {
-			return nil, err
-		}
-		usercontracts.EqualWork(email)
+	r, err := s.passkeyRequest(ctx)
+	if err != nil {
+		return nil, err
 	}
-	r, _ := httpx.RequestFrom(ctx)
+	if !s.mayPrompt(ctx, r) {
+		return nil, contracts.ErrTooManyAttempts
+	}
 	rp, err := s.passkeyRelyingParty(r, tx)
 	if err != nil {
 		return nil, err
@@ -350,7 +381,13 @@ func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (
 	if !enabled {
 		return nil, contracts.ErrPasskeySignInOff
 	}
-	r, _ := httpx.RequestFrom(ctx)
+	r, err := s.passkeyRequest(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !s.mayPrompt(ctx, r) {
+		return nil, contracts.ErrTooManyAttempts
+	}
 	rp, err := s.passkeyRelyingParty(r, tx)
 	if err != nil {
 		return nil, err
@@ -383,7 +420,10 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	if !s.MayRedeem(ctx, from.IP) {
 		return nil, nil, contracts.ErrTooManyAttempts
 	}
-	r, _ := httpx.RequestFrom(ctx)
+	r, err := s.passkeyRequest(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 	rp, err := s.passkeyRelyingParty(r, tx)
 	if err != nil {
 		return nil, nil, err
@@ -392,7 +432,8 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	if err != nil {
 		return nil, nil, contracts.ErrCredentials
 	}
-	session, door, spent, err := s.spendCeremony(ctx, tx, ceremony, "", nil)
+	session, door, spent, err := s.spendCeremony(ctx, tx, ceremony, nil,
+		contracts.PasskeyCeremonySignIn, contracts.PasskeyCeremonySecondFactor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -488,22 +529,22 @@ func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], use
 		return uuid.Nil, err
 	}
 	if cred.Authenticator.CloneWarning {
-		res := tx.DB().Model(&passkeyCredentialRow{}).Where("id = ?", row.ID).
-			Update("clone_warning", true)
-		if res.Error != nil {
-			return row.ID, fmt.Errorf("auth: record a suspect passkey: %w", res.Error)
+		// The verdict has to outlive the refusal that delivers it. A 401 rolls the
+		// request's transaction back — kit/httpx commits only below 400 — so a flag
+		// and an event written here would be undone by the very answer that discovered
+		// the clone: the credential would still be usable tomorrow and the trail would
+		// hold nothing about why anybody thought it was not. The write therefore goes
+		// outside the request's transaction, the way spending a nonce does, for the
+		// reason stated there and with the same budget.
+		//
+		// What it cannot do is soften the answer: the person is refused as they are
+		// for any wrong signature, and the flag is the module's own record, read by
+		// whoever is told about a cloned authenticator.
+		if err := s.flagPasskeySuspect(ctx, row.ID, userID, row.SignCount,
+			int64(cred.Authenticator.SignCount)); err != nil {
+			slog.ErrorContext(ctx, "auth: the suspect-passkey record could not be written",
+				"user", userID, "factor", row.ID, "error", err)
 		}
-		if err := events.Publish(ctx, tx, contracts.EventFactorSuspect, contracts.FactorSuspect{
-			UserID: userID, FactorID: row.ID, Kind: "passkey",
-			PreviousCount: row.SignCount, ObservedCount: int64(cred.Authenticator.SignCount),
-			At: db.Now(),
-		}); err != nil {
-			return row.ID, err
-		}
-		// The one log line this delivery writes, and it names two ids: no
-		// credential material is ever logged, in an event or a line.
-		slog.WarnContext(ctx, "auth: a passkey reported a counter going backwards",
-			"user", userID, "factor", row.ID)
 		return row.ID, contracts.ErrCredentials
 	}
 	// The guard is in the UPDATE rather than in a comparison: two tabs answering
@@ -520,6 +561,42 @@ func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], use
 		return row.ID, contracts.ErrCredentials
 	}
 	return row.ID, nil
+}
+
+// flagPasskeySuspect writes the clone verdict and the event that describes it,
+// committed on its own, before the request that discovered the clone is refused.
+//
+// The UPDATE carries no counter: a credential flagged as suspect is refused by
+// recordPasskeyUse's own predicate from here on, and the two counters the review
+// needs are in the event rather than in the row that has already stopped answering.
+func (s *Service) flagPasskeySuspect(ctx context.Context, factorID, userID uuid.UUID,
+	previous, observed int64) error {
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return errors.New("auth: no connection to record a suspect passkey on")
+	}
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	return db.Run(detached, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		res := tx.DB().Model(&passkeyCredentialRow{}).Where("id = ?", factorID).
+			Update("clone_warning", true)
+		if res.Error != nil {
+			return fmt.Errorf("auth: record a suspect passkey: %w", res.Error)
+		}
+		if res.RowsAffected != 1 {
+			// The credential was withdrawn between the read and the verdict, so there
+			// is no factor left to put out of use and no row an event could name.
+			return nil
+		}
+		// The one log line this delivery writes, and it names two ids: no credential
+		// material is ever logged, in an event or a line.
+		slog.WarnContext(ctx, "auth: a passkey reported a counter going backwards",
+			"user", userID, "factor", factorID)
+		return events.Publish(ctx, tx, contracts.EventFactorSuspect, contracts.FactorSuspect{
+			UserID: userID, FactorID: factorID, Kind: "passkey",
+			PreviousCount: previous, ObservedCount: observed, At: db.Now(),
+		})
+	})
 }
 
 // passkeySignInEnabled reads the tenant this request resolved to: may a passkey
@@ -590,11 +667,14 @@ func (s *Service) storeCeremony(ctx context.Context, tx db.Tx[db.Tenant], kind s
 // spendCeremony deletes the row a ceremony answer is being made against and reports
 // whether this request is the one that got it, with the door the row names.
 //
-// An empty wantKind matches either sign-in door and a nil wantUser any owner; the
-// caller still cannot answer somebody else's enrolment, because that check is part
-// of what the DELETE is asked for. A body aimed at the wrong door consumes nothing
-// — the DELETE carries the kind, and the row survives for the door it was minted
-// at.
+// The caller names the doors this answer is good at, and the row's own kind is the
+// thing compared: a second-factor prompt is spendable at the second-factor answer
+// and nowhere else, and the assertion leg names its two sign-in doors rather than
+// "anything" — a register ceremony is not a sign-in waiting to be answered, and a
+// list a caller forgot to fill matches nothing rather than everything.
+//
+// A body aimed at the wrong door consumes nothing — the DELETE asks for the kind
+// the row itself reported, and the row survives for the door it was minted at.
 //
 // The delete is a transaction of its own, which is the one new write outside the
 // request's transaction in this delivery, and markFirstFactorProved's reasoning is
@@ -606,7 +686,7 @@ func (s *Service) storeCeremony(ctx context.Context, tx db.Tx[db.Tenant], kind s
 //
 // A failure is logged and the answer is unchanged: the person is refused and begins
 // again, which costs one tap.
-func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, wantKind string, wantUser *uuid.UUID) (*webauthn.SessionData, string, bool, error) {
+func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, wantUser *uuid.UUID, wantKinds ...string) (*webauthn.SessionData, string, bool, error) {
 	var row ceremonyRow
 	err := tx.DB().Raw(
 		"SELECT kind, user_id, session, expires_at FROM passkey_challenges WHERE id = ?", ceremony,
@@ -614,7 +694,7 @@ func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremo
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, "", false, fmt.Errorf("auth: read a passkey ceremony: %w", err)
 	}
-	if row.Kind == "" || (wantKind != "" && row.Kind != wantKind) {
+	if !slices.Contains(wantKinds, row.Kind) {
 		return nil, "", false, nil
 	}
 	if wantUser != nil && (row.UserID == nil || *row.UserID != *wantUser) {
@@ -623,7 +703,7 @@ func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremo
 	if !row.ExpiresAt.After(db.Now()) {
 		return nil, "", false, nil
 	}
-	if !spendCeremonyRow(ctx, ceremony, wantKind, wantUser) {
+	if !spendCeremonyRow(ctx, ceremony, row.Kind, wantUser) {
 		return nil, "", false, nil
 	}
 	session := &webauthn.SessionData{}
@@ -634,7 +714,9 @@ func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremo
 }
 
 // spendCeremonyRow is the consuming DELETE, outside the request's transaction.
-func spendCeremonyRow(ctx context.Context, ceremony uuid.UUID, wantKind string, wantUser *uuid.UUID) bool {
+// It asks for the kind the row itself reported, so the DELETE is a compare-and-
+// delete against the row this request read rather than against an argument.
+func spendCeremonyRow(ctx context.Context, ceremony uuid.UUID, kind string, wantUser *uuid.UUID) bool {
 	conn, ok := httpx.ConnFrom(ctx)
 	if !ok {
 		return false
@@ -646,7 +728,7 @@ func spendCeremonyRow(ctx context.Context, ceremony uuid.UUID, wantKind string, 
 		q := tx.DB().Exec(
 			"DELETE FROM passkey_challenges WHERE id = ? AND kind = ? AND user_id IS NOT DISTINCT FROM ?"+
 				" AND expires_at > now()",
-			ceremony, wantKind, wantUser)
+			ceremony, kind, wantUser)
 		spent = q.RowsAffected
 		return q.Error
 	})
@@ -657,13 +739,28 @@ func spendCeremonyRow(ctx context.Context, ceremony uuid.UUID, wantKind string, 
 	return spent == 1
 }
 
+// maxFactorName is the name budget the list and the removal dialog can show, and
+// the same 40 the passkey_credentials CHECK spells as char_length and the route
+// schema spells as maxLength. Three places, one number, and a case that enrols a
+// name of exactly this many characters is what keeps them one number.
+const maxFactorName = 40
+
 // trimFactorName is the whole of the name policy at the module: the schema also
 // refuses an untrimmed or control-character name, and a human-readable 40 characters
 // is what the list and the removal dialog can show. Refusing an over-long name is
 // huma's maxLength; a name that merely needs trimming is trimmed.
+//
+// The cut is at the 40th character, which in UTF-8 is not the 40th byte. "日本" is
+// two characters and six bytes; a name typed in a script whose characters are wider
+// than one is a name a person is entitled to give their own key, and slicing it at
+// a byte boundary can land in the middle of one. Postgres calls the result invalid
+// UTF-8 and refuses the INSERT — after the ceremony nonce was already spent, so the
+// person's tap is gone and the name they typed is what says nothing enrolled.
 func trimFactorName(name string) string {
-	if len(name) > 40 {
-		name = name[:40]
+	name = strings.TrimSpace(name)
+	runes := []rune(name)
+	if len(runes) <= maxFactorName {
+		return name
 	}
-	return strings.TrimSpace(name)
+	return string(runes[:maxFactorName])
 }

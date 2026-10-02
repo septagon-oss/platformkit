@@ -160,7 +160,7 @@ func handleBeginPasskeyAssertion(passkeys contracts.Passkeys) func(context.Conte
 		}
 		challenge, err := passkeys.BeginPasskeyAssertion(ctx, tx, in.Body.Email)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, passkeyRefusal(err)
 		}
 		return passkeyChallenge(challenge), nil
 	}
@@ -202,7 +202,7 @@ func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies) 
 		}
 		session, identity, err := passkeys.FinishPasskeyAssertion(ctx, tx, in.Body.Ceremony, response, ClientOf(r))
 		if err != nil {
-			return nil, refusal(err)
+			return nil, passkeyRefusal(err)
 		}
 		return &sessionOutput{
 			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
@@ -230,6 +230,13 @@ func passkeyRefusal(err error) error {
 	case errors.Is(err, contracts.ErrCredentials):
 		return problem.New(http.StatusUnauthorized,
 			"that passkey prompt expired or did not answer; try again")
+	case errors.Is(err, contracts.ErrTooManyAttempts):
+		// One sentence for the whole of the ceremony half, asked of the address and
+		// never of the account: the leg that mints a prompt is a public write, and a
+		// person told to wait a few minutes can do exactly that, whereas a person
+		// told their passkey is wrong goes and removes a factor they did not need to.
+		return problem.New(http.StatusTooManyRequests,
+			"this device has asked for too many passkey prompts; wait a few minutes and try again")
 	}
 	return refusal(err)
 }
