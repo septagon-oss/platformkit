@@ -24,9 +24,9 @@ package migrations_test
 //   * each tenant reads its own tags and none of the other's — the controls are the
 //     rows themselves, so a policy widened to "every tenant" is caught by the
 //     refusal, not by the absence of a row;
-//   * a tenant-scoped session writes nothing, not even beside its own id, because
-//     `WITH CHECK (platformkit_is_system())` is the half that keeps which languages
-//     a customer is served in the operator's declaration;
+//   * a tenant-scoped session writes no row belonging to another tenant, and the
+//     write it is refused leaves nothing behind. It may now write its own — see the
+//     block below for what changed and what did not;
 //   * the same write through a system transaction, the door `SetLocale` uses, lands.
 
 import (
@@ -93,22 +93,46 @@ func TestATenantReadsItsOwnLanguagesAndWritesNone(t *testing.T) {
 		}
 	}
 
-	// A tenant of this installation cannot say which languages it is served in, not
-	// even for itself: the write is refused by the policy, and nothing it refused
-	// stands behind.
+	// What this pin refuses today is a tenant naming somebody else.
+	//
+	// The block that used to sit here refused a tenant's own row as well: `WITH
+	// CHECK (platformkit_is_system())` made every language row the operator's to
+	// write. T-0196's fourth section gave that back to the customer — a tenant's
+	// administrator holds `tenant:locale_manage` and `Service.SetOwnLocale` writes
+	// the set through it — and `migrations/000031_tenant_locale_self_service.up.sql`
+	// rewrote these policies to `platformkit_is_system() OR tenant_id =
+	// platformkit_current_tenant_id()`. So the sentence that carries the security
+	// property now is the scope, not the table: the session below is one tenant's,
+	// and the row it names is another tenant's, which is the write no version of
+	// this policy has ever allowed and the one a widened `USING` clause would let
+	// through.
+	//
+	// What the tenant *may* do to its own rows is not this file's question: the
+	// column rule a row policy cannot state is `tenants_language_only`, the BEFORE
+	// UPDATE trigger, and `modules/tenant/internal/self_service_test.go` proves it at
+	// the application role rather than inferring it from the SQL.
 	if err := db.Run(tenancy.WithTenant(ctx, tenancy.Tenant{ID: a, Slug: "r10-languages-a"}), app,
 		func(_ context.Context, tx db.Tx[db.Tenant]) error {
 			return tx.DB().Exec(`INSERT INTO tenant_locales (tenant_id, locale) VALUES (?, ?)`,
-				a, "de").Error
+				b, "de").Error
 		}); err == nil {
-		t.Error("a tenant-scoped session wrote a language row: WITH CHECK (platformkit_is_system()) did not bind it")
+		t.Error("a session scoped to r10-languages-a wrote a language row for r10-languages-b: the policy's own-tenant check does not bind the row it is given")
 	}
-	got, err := readLocales(ctx, app, a, "r10-languages-a")
-	if err != nil {
-		t.Fatalf("read after the refused write: %v", err)
-	}
-	if got != "en,pt-PT" {
-		t.Errorf("the refused write left [%s] behind, want the two rows it was refused", got)
+	for _, want := range []struct {
+		who     uuid.UUID
+		slug    string
+		locales string
+	}{
+		{a, "r10-languages-a", "en,pt-PT"},
+		{b, "r10-languages-b", "ja"},
+	} {
+		got, err := readLocales(ctx, app, want.who, want.slug)
+		if err != nil {
+			t.Fatalf("read after the refused write: %v", err)
+		}
+		if got != want.locales {
+			t.Errorf("the refused write left [%s] on %s, want the rows it was refused", got, want.slug)
+		}
 	}
 }
 
