@@ -307,6 +307,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/ci_setup_test.sh
+	bash scripts/ci_browser_report_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
