@@ -179,9 +179,6 @@ func (f *Fake) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], 
 	if row == nil {
 		return nil, nil, contracts.ErrCredentials
 	}
-	if row.kind == contracts.PasskeyCeremonySecondFactor && !f.proved(row) {
-		return nil, nil, contracts.ErrCredentials
-	}
 	owner := uuid.Nil
 	f.mu.Lock()
 	for _, held := range f.factors {
@@ -197,6 +194,16 @@ func (f *Fake) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], 
 	user, err := f.Users.Get(ctx, tx, owner)
 	if err != nil {
 		return nil, nil, contracts.ErrCredentials
+	}
+	// Which door this was is the row's fact. The second-factor door spends the
+	// first-factor proof against the address the credential belongs to — the
+	// caller never gets to name it — before the passkey opens anything, so a
+	// signature over a challenge this server minted is still not a sign-in for
+	// an account that never offered its password.
+	if row.kind == contracts.PasskeyCeremonySecondFactor {
+		if err := f.RequireFirstFactorProof(ctx, tx, user.Email, from); err != nil {
+			return nil, nil, err
+		}
 	}
 	f.record(contracts.EventFactorUsed)
 	return f.open(ctx, tx, user, from)
@@ -293,12 +300,38 @@ func (f *Fake) spend(id, user uuid.UUID, kinds ...string) *fakeCeremony {
 	return row
 }
 
-// proved is the fake's half of RequireFirstFactorProof: this second-factor
-// ceremony was refused by a Login that minted the window. The fake mints nothing
-// yet — its Login still opens the session a factor should hold at — so this
-// reports false, and the case that would answer true is the one named as not
-// delivered in RunPasskeys.
-func (f *Fake) proved(*fakeCeremony) bool { return false }
+// RequireFirstFactorProof mirrors the real command: the address /login refused
+// to finish has a window, and spending it is what makes the second half
+// answerable. Absent, spent or expired is ErrCredentials — the answer a wrong
+// code gets, at its cost, because "sign in with your password first" and "that
+// code is wrong" would tell a stranger which of the two halves they were missing.
+func (f *Fake) RequireFirstFactorProof(_ context.Context, _ db.Tx[db.Tenant], email string, _ contracts.Client) error {
+	key := strings.ToLower(strings.TrimSpace(email))
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	at, ok := f.proofs[key]
+	if ok {
+		delete(f.proofs, key)
+	}
+	if !ok || !at.Add(contracts.FirstFactorProofWindow).After(db.Now()) {
+		return contracts.ErrCredentials
+	}
+	return nil
+}
+
+// holds is whether this person has any factor at all, whichever kind it is —
+// the question Login asks before it opens anything, and the one the last-factor
+// refusal asks before it deletes anything.
+func (f *Fake) holds(user uuid.UUID) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, held := range f.factors {
+		if held.user == user {
+			return true
+		}
+	}
+	return false
+}
 
 // credentialIn reads the one member the fake consults. Anything unparseable is
 // nobody's credential, which is the same answer as an unknown one.

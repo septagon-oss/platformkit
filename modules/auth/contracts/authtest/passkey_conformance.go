@@ -68,14 +68,13 @@ type PasskeyHarness func(t *testing.T, run func(PasskeyFixture))
 // rows, doors, owners and counts, written once so a second implementation has to
 // read them the same way.
 //
-// One case is not here, and saying so is part of the suite. SPECIFY §9's
-// `no factor key is nobody's business` asks the first door — Login — to hold a
-// passkey-only person at ErrFactorRequired while both passkey doors answer
-// normally. The fake's Login does not do that yet: it opens the session a factor
-// should hold at, so the case would assert an affordance rather than a rule. It
-// is the SQL service's case today (modules/auth/internal
-// TestTheUsernamelessDoorIsTheTenantsOwnRow and the second-factor pins there), and
-// it comes back here when the fake's Login mints the first-factor proof.
+// Twelve cases, all of them §9's. The one this suite reads differently from the
+// SQL service is `no factor key is nobody's business`: there is no factor key in
+// the fake at all, so the passkey doors answering normally is the ground this
+// case runs on, and TOTP enrolment's ErrNoFactorKey is not asked — the fake has
+// no secret half to refuse (see FactorList). What the case does hold the
+// implementation to is the part that outlives risk 3: a person holding only
+// passkeys is held at the first door, and their passkey answers the second.
 func RunPasskeys(t *testing.T, h PasskeyHarness) {
 	t.Helper()
 	for name, run := range passkeyCases() {
@@ -289,6 +288,45 @@ func passkeyCases() map[string]func(*testing.T, PasskeyFixture) {
 				t.Errorf("the set holds %d codes, want %d", len(codes), contracts.RecoveryCodes)
 			}
 			published(t, f.Fixture, contracts.EventFactorEnrolled, contracts.EventRecoveryCodesIssued)
+		},
+
+		"no factor key is nobody's business": func(t *testing.T, f PasskeyFixture) {
+			ada := f.User("ada@acme.example.com", Password, contracts.RoleAdmin)
+			// No factor yet: the password signs her in alone, which is the state
+			// the platform stays in until a factor is chosen rather than imposed.
+			session, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody)
+			if err != nil || session == nil {
+				t.Fatalf("Login with no factor = %v, want a session", err)
+			}
+			enrol(t, f, ada, theCred, "Office laptop")
+			// Now the password is one half, and the door says so. A person told
+			// otherwise reaches for the reset link, which is how a second factor
+			// becomes a password reset queue.
+			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); !errors.Is(err, contracts.ErrFactorRequired) {
+				t.Fatalf("Login for a passkey-only account = %v, want ErrFactorRequired", err)
+			}
+			// The proof that refusal minted is what makes the passkey answerable.
+			begin, err := f.Passkeys.BeginPasskeyAssertion(f.Ctx, f.Tx, "ada@acme.example.com")
+			if err != nil {
+				t.Fatalf("BeginPasskeyAssertion: %v", err)
+			}
+			session, _, err = f.Passkeys.FinishPasskeyAssertion(f.Ctx, f.Tx, begin.Ceremony,
+				f.Answer(*begin, theCred), nobody)
+			if err != nil || session == nil || session.UserID != ada {
+				t.Fatalf("the second factor = %v with session %+v, want one for its owner", err, session)
+			}
+			// And a code is not a first factor: the same door, with no refused
+			// sign-in behind it, is the answer a wrong code gets.
+			again, err := f.Passkeys.BeginPasskeyAssertion(f.Ctx, f.Tx, "ada@acme.example.com")
+			if err != nil {
+				t.Fatalf("BeginPasskeyAssertion again: %v", err)
+			}
+			if _, _, err := f.Passkeys.FinishPasskeyAssertion(f.Ctx, f.Tx, again.Ceremony,
+				f.Answer(*again, theCred), nobody); !errors.Is(err, contracts.ErrCredentials) {
+				t.Errorf("a second factor with no refused sign-in behind it = %v, want ErrCredentials", err)
+			}
+			published(t, f.Fixture, contracts.EventLoggedIn, contracts.EventFactorEnrolled,
+				contracts.EventFactorUsed, contracts.EventLoggedIn)
 		},
 
 		"a tenant that has not enabled passkey sign-in is refused at that door only": func(t *testing.T, f PasskeyFixture) {
