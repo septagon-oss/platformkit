@@ -242,7 +242,8 @@ above make a measurement without reaching a collector; [kit/app](kit/app/) insta
 the one `TracerProvider` and `MeterProvider`, OTLP over gRPC, and installs nothing
 where no endpoint is configured. Spans cover the boundaries above — the operation,
 named after the operation id and opened before routing, the transaction under `Tx`,
-the outbox relay, the job run — and the tenant rides on each where the request
+the outbox relay (one span for the pass and one per event it hands to the
+transport, on that event's own trace), the job run — and the tenant rides on each where the request
 resolved one, as a span attribute and never a resource one, because one process
 serves many tenants. The publisher's trace context is stored on the outbox row, so a
 request and the handler that reacted to it are one trace, and

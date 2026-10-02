@@ -182,7 +182,10 @@ the one `MeterProvider` against an OTLP/gRPC collector, because that package is 
 only one whose closure may hold a provider. A span covers each of the four
 boundaries: the HTTP operation, named after the operation id and opened before
 routing so a probe and a 404 are inside one too; the transaction under `Tx`, one per
-transaction and none per statement; the outbox relay; and the job run, with one span
+transaction and none per statement; the outbox relay — one span for the pass, and one
+beside each event it hands to the transport, on that event's own trace and naming the
+tenant of the row it published, because a batch is read across every tenant and no
+tenant a pass span could name would name the rest; and the job run, with one span
 per tenant inside a run that walks them. The publisher's W3C context — both trace
 members and the baggage member that carries the request id — is written on the outbox
 row in the transaction that wrote the event, so the request that moved a
@@ -267,8 +270,9 @@ log — so the claim that the kernel is traced is checkable without an account a
 error shape, `health.Check` (a sibling type, not a fork), the T-0018 migration
 runner, `otelhttp` as the inbound span, and the SDK's own span recorder and manual
 reader as the test doubles. *Added:* `kit/telemetry`, the baggage column beside the
-envelope's two trace columns, the trail's own trace column, the four boundary spans and the
-three instruments.
+envelope's two trace columns, the trail's own trace column, the four boundary spans,
+the publication span beside every event the relay hands over, and the three
+instruments.
 *Made reusable:* `health.Report`, `telemetry.Tracer` (taken per span, so a span
 arrives at the provider the process installed), `telemetry.Propagators`,
 `telemetry.SpanAttrs`, `telemetry.MetricAttrs`, `telemetry.Shared` and

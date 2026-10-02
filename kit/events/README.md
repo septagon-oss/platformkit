@@ -77,8 +77,9 @@ Four consequences, each a test rather than an assurance:
   `000041_outbox_baggage.up.sql`, all nullable) and carried onto the envelope by the
   relay, because by relay time the request is gone. `kit/trace` fixes the W3C format and
   collects nothing: it holds no span, no exporter and no sampling decision.
-  `kit/telemetry` names the vocabulary of a span, and this package opens two of them —
-  one relay pass, one delivery parented from the context stored on the row — so the
+  `kit/telemetry` names the vocabulary of a span, and this package opens three of them —
+  one relay pass, one publication per row and one delivery, the last two parented from the
+  context stored on the row and each naming the tenant of the row it published — so the
   trace does continue into the handler. The provider and its exporter are installed by
   `kit/app` alone: a composition that configures no endpoint propagates a context and
   exports nothing. See [kit/telemetry](../telemetry/README.md).

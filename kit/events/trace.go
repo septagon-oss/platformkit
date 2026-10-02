@@ -1,8 +1,9 @@
 package events
 
 // The tracing half of delivery. Three facts live here: the context a publisher
-// leaves on the outbox row, the span one delivery of an event makes, and the
-// trace id every audit record of this package can be joined by. All three go
+// leaves on the outbox row, the spans one publication and one delivery of an
+// event make, and the trace id every audit record of this package can be joined
+// by. All three go
 // through the global propagator and the global tracer rather than through a
 // parameter, for the reason kit/telemetry gives: the publisher is a module's
 // service and a delivery is a transport's callback, so a tracer passed down would
@@ -69,6 +70,52 @@ func traceContext(ctx context.Context) (parent, state, correlation string) {
 	carrier := propagation.MapCarrier{}
 	otel.GetTextMapPropagator().Inject(ctx, carrier)
 	return carrier["traceparent"], carrier["tracestate"], carrier["baggage"]
+}
+
+// startPublication opens the span for one event leaving the outbox: the moment
+// the row's payload is handed to a transport.
+//
+// It is a span per row, and the batch span beside it stays. The two answer two
+// questions, and one span cannot answer both: "is the queue draining, and how
+// long was a pass" is a fact about a batch of a hundred rows, while "whose event
+// went out, under which request" is a fact about one of them. A batch is read
+// across every tenant, so the one tenant a pass span could name would name none
+// of the others; this span names the tenant of the row it published and nothing
+// else's.
+//
+// Its parent is the trace stored on the row, extracted the way startDelivery
+// extracts it, so a hundred-row burst puts a hundred spans on the hundred traces
+// that caused them and leaves the worker's own trace the one pass span it was; a
+// row that stores no trace — a job's event in a process that exports nothing —
+// hangs off the pass span, which is the trace it belongs to.
+// The request id comes from the same place — the correlation member the publisher
+// left, which is the only way a relay learns it — and a row with no member names
+// no request and keeps its tenant, which is the ordinary case for a job's event.
+//
+// The tenant is named by id alone, as in startDelivery: a relay holds the UUID its
+// row carries and the slug would cost a query per row.
+func startPublication(ctx context.Context, ev Event) (context.Context, trace.Span) {
+	if ev.TraceParent != "" || ev.Baggage != "" {
+		ctx = otel.GetTextMapPropagator().Extract(ctx, propagation.MapCarrier{
+			"traceparent": ev.TraceParent, "tracestate": ev.TraceState, "baggage": ev.Baggage})
+	}
+	attrs := []attribute.KeyValue{
+		attribute.String(telemetry.AttrTenantID, ev.TenantID.String()),
+		attribute.String("messaging.operation.name", "publish"),
+		attribute.String("messaging.source.name", ev.Name),
+		attribute.String("messaging.message.id", ev.ID.String()),
+	}
+	// The id is read back off the extracted context by the one accessor that owns
+	// that carrier, the way every span below a delivery reads it. The tenant is
+	// written from the row rather than read out of ctx by telemetry.SpanAttrs: the
+	// context a pass runs on is a system transaction's and names no tenant, and a
+	// publication whose tenant came from anywhere but its row would name the wrong
+	// customer for someone else's event.
+	if id := telemetry.RequestID(ctx); id != "" {
+		attrs = append(attrs, attribute.String(telemetry.AttrRequestID, id))
+	}
+	return telemetry.Tracer().Start(ctx, ev.Name+" publish",
+		trace.WithSpanKind(trace.SpanKindProducer), trace.WithAttributes(attrs...))
 }
 
 // startDelivery opens the span for one delivery of one event. It is a child of

@@ -41,10 +41,10 @@ type row struct {
 	// event was written by. Absent is NULL — see nilIfEmpty and the rows this file
 	// shipped before either column existed — and the relay reads all five as the
 	// empty string, because its own contract is the envelope's optional members
-	// and the trail's empty string, not the column's nullability. It does not read
-	// the trace into its own span — one batch is many unrelated traces — it carries
-	// them to the envelope, where kit/events puts them back on the handler's
-	// context. See trace.go.
+	// and the trail's empty string, not the column's nullability. It reads each
+	// row's trace into that row's own publication span and onto the envelope, not
+	// into the pass span: one batch is many unrelated traces, and the pass is the
+	// worker's. See startPublication and trace.go.
 	//
 	// The column tags are load-bearing. GORM maps a scanned field by snake_case,
 	// so TraceParent arrives as trace_parent: without the tag, naming the SELECT
@@ -249,11 +249,15 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 // The publish happens before the stamp, so a crash in between redelivers rather
 // than loses — see the package comment on idempotency.
 func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
-	// One span for the pass, not one per row: what a reader wants from a relay span
-	// is whether the queue is draining and how long a pass took, and a burst of a
-	// hundred events would otherwise make the worker's own trace a hundred spans of
-	// queue housekeeping. A pass that moved nothing still makes one, because "the
-	// relay runs and moves nothing" is the answer to a question somebody asked.
+	// One span for the pass, and one per row below it. What a reader wants from a
+	// pass span is whether the queue is draining and how long a pass took — one
+	// fact about a hundred rows, and one the worker's own trace should hold. Whose
+	// rows went out is the other fact, and a batch is read across every tenant, so
+	// no tenant this span could name would name the rest: that half belongs on the
+	// publication span of each row (startPublication), which hangs off that row's
+	// own trace and so leaves this trace the single span it is here. A pass that
+	// moved nothing still makes one, because "the relay runs and moves nothing" is
+	// the answer to a question somebody asked.
 	ctx, span := telemetry.Tracer().Start(ctx, "outbox relay batch")
 	defer func() { span.End() }()
 	var moved int
@@ -316,14 +320,15 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
 			}
-			// The trace the request left in the row, carried onto the envelope
-			// the relay publishes. This transaction has no request of its own
-			// to substitute: a relay span started here would join the delivery
-			// to the wrong trace. The call itself — its id and the address it
-			// arrived on — comes from the same row for the same reason: the trail
-			// row a handler writes has to name the request that caused it, and
-			// this transaction is not that request.
-			if err := t.Publish(ctx, ev); err != nil {
+			// One span for this row's departure, on this row's own trace, naming
+			// this row's tenant. It carries the row's trace context rather than the
+			// pass's, and it is the context the transport is handed, so anything the
+			// adapter opens underneath is on the trace of the request that caused the
+			// event. See startPublication.
+			pubCtx, publication := startPublication(ctx, ev)
+			err := t.Publish(pubCtx, ev)
+			endSpan(publication, err)
+			if err != nil {
 				// The rows published so far are still unstamped, so they go
 				// again next tick. That is the at-least-once bargain.
 				return fmt.Errorf("events: relay: publish %s: %w", r.Name, err)
