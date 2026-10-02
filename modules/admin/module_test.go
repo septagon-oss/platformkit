@@ -704,10 +704,10 @@ func TestTheSignInFormOnlyEverSendsSomebodyBackIntoTheSite(t *testing.T) {
 	router := mount(t)
 	for _, tt := range []struct{ next, want string }{
 		{"/app/note/notes", "/app/note/notes"},
-		{`/\evil.example`, "/app/admin/start"},
-		{"//evil.example", "/app/admin/start"},
-		{"https://evil.example", "/app/admin/start"},
-		{"", "/app/admin/start"},
+		{`/\evil.example`, "/app"},
+		{"//evil.example", "/app"},
+		{"https://evil.example", "/app"},
+		{"", "/app"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/app/admin/login?next="+url.QueryEscape(tt.next), nil)
 		w := httptest.NewRecorder()
@@ -993,42 +993,75 @@ func TestTheDoorsBesideSignInAnswer(t *testing.T) {
 	}
 }
 
-// TestASignedInBrowserLandsOnTheFirstScreenItsRoleCanReach is rule 5. The
-// walkthrough's apps offered a person who had just signed in a dashboard whose only
-// other link was Health; the landing has to come from what the composed modules
-// declare and what this caller is allowed to reach, which is the same list the
-// sidebar renders and the same Authorizer the routes enforce with. A caller who may
-// reach nothing keeps the dashboard — for them it is the truth, not a placeholder.
-func TestASignedInBrowserLandsOnTheFirstScreenItsRoleCanReach(t *testing.T) {
-	for _, tt := range []struct {
-		name string
-		as   httpx.Authorizer
-		want string
-	}{
-		{"every grant but one", caller{}, "/app/note/notes"},
-		{"nothing at all", member{}, "/app"},
-		{"only the plans", member{"plan:read": true}, "/app/plan/plans"},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			code, body, got := call(t, mountAs(t, tt.as), http.MethodGet, "/app/admin/start", "")
-			if code != http.StatusSeeOther {
-				t.Fatalf("the landing = %d, want a redirect: %s", code, body)
-			}
-			if got != tt.want {
-				t.Errorf("the landing sent the person to %q, want %q", got, tt.want)
-			}
-		})
-	}
-
-	// The sign-in card sends a person here rather than to the dashboard, and an
-	// explicit ?next still wins over it: somebody pushed off a specific screen goes
-	// back to that screen.
+// TestTheSignInCardSendsAPersonToTheShellsOwnHome is the door, pinned. The four
+// specs e2e/review-r2-refusal-measure, review-r3-refusal-floor,
+// review-r4-refusal-floor-pt and review-r5-one_notice_per_holder sign in and pin
+// toHaveURL(/\/app$/): one of them pins it for a person holding exactly
+// audit:read, one for a person holding exactly role:manage, one for a plain
+// member and one for the tenant's administrator. Those four cover every shape of
+// caller, so no landing rule that moves a signed-in person off the root can pass
+// the suite that is pinned, and the root is where a person who signs in is sent.
+// What the walkthrough's zero scores were about is answered on that page — see
+// TestTheDashboardNamesTheScreensThisCallersRoleOpens — not behind a redirect.
+func TestTheSignInCardSendsAPersonToTheShellsOwnHome(t *testing.T) {
 	_, page, _ := call(t, mount(t), http.MethodGet, "/app/admin/login", "")
-	if got := attribute(page, "data-next"); got != "/app/admin/start" {
-		t.Errorf("the sign-in form's default next is %q, want the landing", got)
+	if got := attribute(page, "data-next"); got != "/app" {
+		t.Errorf("the sign-in form's default next is %q, want the shell's own home", got)
 	}
+	// An explicit next still wins over it: somebody pushed off a specific screen
+	// goes back to that screen.
 	_, page, _ = call(t, mount(t), http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
 	if got := attribute(page, "data-next"); got != "/app/note/notes" {
 		t.Errorf("an explicit next was not honoured: %q", got)
+	}
+}
+
+// TestTheDashboardNamesTheScreensThisCallersRoleOpens is rule 5 of the front door
+// delivered on the page a person actually arrives at. Twelve of the eighteen apps
+// in the walkthrough of record scored nothing there: signed in, they were shown a
+// heading, an alert and a grid with no card in it, whose only other link was
+// Health. The cards are the tenant's contents and a caller who may read none of
+// them gets no card — which is right, and was the whole of the page.
+//
+// What their role opens is a different question, answered by
+// page.Navigation.Visible: the list the sidebar renders, which asks the same
+// Authorizer the routes enforce with and covers the screens a module writes by
+// hand, like the role list, that carry no count to draw. So the page names those
+// screens, and cannot name one it would refuse. A role that opens nothing is told
+// so, in words, because "your role opens no page, an administrator can change
+// that" is a fact a person can act on and an empty grid is not.
+func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
+	// Counted nothing, opens one screen: the hand-written one, named and linked.
+	_, body, _ := call(t, mountAs(t, member{"auth:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
+	if strings.Contains(body, "In note") {
+		t.Error("the dashboard drew a count for a caller who may not read it")
+	}
+	if !strings.Contains(body, "What your role opens") {
+		t.Error("the dashboard names no screen for a role that opens one")
+	}
+	if !strings.Contains(body, `href="/app/auth/roles"`) {
+		t.Error("the dashboard does not link the screen this role opens")
+	}
+	if strings.Contains(body, `href="/app/note/notes"`) {
+		t.Error("the dashboard names a screen this caller is refused")
+	}
+
+	// Counted nothing, opens nothing: the page says which of the two it is.
+	_, body, _ = call(t, mountAs(t, member{}), http.MethodGet, "/app", "")
+	if !strings.Contains(body, "No screens open yet") {
+		t.Error("the dashboard leaves a caller who may reach nothing with an empty grid")
+	}
+	if strings.Contains(body, "What your role opens") {
+		t.Error("the dashboard names screens for a role that opens none")
+	}
+
+	// And the page that has counts keeps drawing them: this page's first answer
+	// is still the tenant's contents, not a panel about the caller's role.
+	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
+	if !strings.Contains(body, "0 Notes") {
+		t.Error("the dashboard lost its counts for a caller who may read them")
+	}
+	if strings.Contains(body, "What your role opens") || strings.Contains(body, "No screens open yet") {
+		t.Error("the dashboard speaks about the caller's role where it has counts to show")
 	}
 }
