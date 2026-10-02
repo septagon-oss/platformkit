@@ -214,7 +214,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(ctx, tx, invited.UserID)
+				return svc.Offer(internal.WithServed(ctx, invited.Served), tx, invited.UserID)
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,

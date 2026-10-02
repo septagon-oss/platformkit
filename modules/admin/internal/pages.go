@@ -8,6 +8,8 @@ import (
 
 	g "maragu.dev/gomponents"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -51,7 +53,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 			if p.Registration != nil {
 				register = p.at.register.at
 			}
-			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at, register), nil
+			return p.login(ctx, r, p.at.dashboard.at, p.SignIn, p.at.forgot.at, register), nil
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
@@ -90,14 +92,34 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-func login(ctx context.Context, locale *page.Locale, next, action, forgot, register string) page.View {
-	if r, ok := httpx.RequestFrom(ctx); ok {
+//
+// The destination under the form is where the person goes once the sign-in
+// answers. Three callers, three answers, in that order:
+//
+//   - Somebody pushed off a specific screen (`?next=`) goes back to it, if the
+//     kernel's own local-path rule accepts it.
+//   - Somebody who is already signed in and is standing at the sign-in page goes
+//     to the first screen their role opens. They do not need a second sign-in,
+//     and the page that asks for one anyway is a dead end with a form on it.
+//   - Everybody else gets the shell's own home, which is the page that reads
+//     like their role — see TestTheDashboardNamesTheScreensThisCallersRoleOpens
+//     for why the landing stays there, and what answers the walkthrough's zero
+//     scores once they arrive.
+func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
+	locale := r.Locale
+	asked := ""
+	if h, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
 		// wrong: "/\\evil.example" has a leading slash and a second character
 		// that is not one, and every browser resolves it off-site.
-		if to := r.URL.Query().Get("next"); httpx.LocalPath(to) {
-			next = to
+		if to := h.URL.Query().Get("next"); httpx.LocalPath(to) {
+			asked = to
 		}
+	}
+	if asked != "" {
+		next = asked
+	} else if open := p.firstScreen(ctx, r); open != "" {
+		next = open
 	}
 	text := func(key, fallback string) string {
 		if locale == nil {
@@ -299,7 +321,7 @@ func (p pages) mountPasswordDoors(app *httpx.Router) {
 	page.Serve(auth, p.shell, page.Route{ID: "admin-set-password", Method: http.MethodGet, Path: p.at.reset.rel,
 		Summary: "Choose a new password"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return setPassword(ctx, r.Locale, set, p.at.login.at), nil
+			return setPassword(ctx, r.Locale, set, p.at.login.at, p.at.dashboard.at), nil
 		})
 
 	// The same argument for the confirmation link a sign-up mails: auth names
@@ -373,13 +395,45 @@ func forgotPassword(ctx context.Context, locale *page.Locale, action, back strin
 	}}
 }
 
+// firstScreen is the first page this caller's role opens, and "" when nobody is
+// signed in, the host resolved no tenant, or their role opens nothing they are
+// not already standing on.
+//
+// The two pages this shell writes about itself — its home and its health check —
+// are not what a role *opens*: every signed-in person can reach them whatever
+// they hold, so naming one of them would answer "the first screen your role
+// opens" with the page a person with no grants at all also reaches. What is left
+// is the list the sidebar renders, in the sidebar's own order, from
+// page.Navigation.Visible, which asks the same Authorizer the routes enforce with.
+// A screen it names is a screen that answers this person 200; a screen no module
+// serves is already dropped by that read.
+func (p pages) firstScreen(ctx context.Context, r page.Request) string {
+	if !r.SignedIn || p.Authorize == nil || r.Tenant.ID == uuid.Nil {
+		return ""
+	}
+	for _, e := range p.nav.Visible(ctx, r.Tenant, p.Authorize) {
+		if e.Screen == p.at.dashboard.at || e.Screen == p.at.health.at {
+			continue
+		}
+		return e.Screen
+	}
+	return ""
+}
+
 // setPassword is the other end of that link, for an invitation and a reset alike:
 // the person who was invited and the person who forgot both arrive here with a
-// token in the address, and both leave with a password they chose. The token stays
-// out of the form's fields — session.js reads it from the address and rewrites the
-// URL so it is not left in the location bar — because a token in a text input is
-// one a password manager offers to save.
-func setPassword(ctx context.Context, locale *page.Locale, action, back string) page.View {
+// token in the address, and both leave with a password they chose — and with a
+// session, because spending the link is the sign-in this credential is. So the
+// form's destination is the workspace, not the sign-in page it came from: a page
+// that sets a password and then asks for one is the half-door the front door was
+// scored zero on. `back` stays the link under the form for the one account the
+// answer leaves signed out — a person who enrolled a second factor finishes at the
+// sign-in form — and for anybody who decides not to use the link at all.
+//
+// The token stays out of the form's fields — session.js reads it from the address
+// and rewrites the URL so it is not left in the location bar — because a token in
+// a text input is one a password manager offers to save.
+func setPassword(ctx context.Context, locale *page.Locale, action, back, home string) page.View {
 	text := func(key, fallback string) string {
 		if locale == nil {
 			return fallback
@@ -397,7 +451,7 @@ func setPassword(ctx context.Context, locale *page.Locale, action, back string) 
 			"This link sets a password once. Saving it ends every session already open for this account. A password is at least twelve characters.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-auth-form": "reset", "data-next": back}},
+				"data-auth-form": "reset", "data-next": home}},
 			Action: action, Label: title,
 		},
 			components.Alert(components.AlertProps{
