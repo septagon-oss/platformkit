@@ -7,8 +7,8 @@
 // its service back to main as well as its manifest: main holds the value,
 // because three other things need it.
 //
-// It imports no other module, and the modules above it reach it through hooks
-// (contracts.Hook) rather than the other way round.
+// Its one cross-module import is modules/user/contracts, for the invite route's
+// Inviter; otherwise it is reached through hooks (contracts.Hook), not the reverse.
 package tenant
 
 import (
@@ -72,6 +72,11 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.Suspended](contracts.EventSuspended),
 			events.Declare[contracts.HostAdded](contracts.EventHostAdded),
 			events.Declare[contracts.LocaleSet](contracts.EventLocaleSet),
+			events.Declare[contracts.Renamed](contracts.EventRenamed),
+			events.Declare[contracts.HostRemoved](contracts.EventHostRemoved),
+			events.Declare[contracts.Reactivated](contracts.EventReactivated),
+			events.Declare[contracts.Deleted](contracts.EventDeleted),
+			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
 			events.Declare[contracts.OIDCSet](contracts.EventOIDCSet),
 			events.Declare[contracts.OIDCCleared](contracts.EventOIDCCleared),
 		},
