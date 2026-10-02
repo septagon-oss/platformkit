@@ -43,5 +43,122 @@
     "plural": {
       "": "ler a galeria de componentes"
     }
+  },
+  "admin.login.forgot": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Esqueceu a sua palavra-passe?",
+    "plural": {
+      "": "Esqueceu a sua palavra-passe?"
+    }
+  },
+  "admin.forgot.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Esqueceu a sua palavra-passe?",
+    "plural": {
+      "": "Esqueceu a sua palavra-passe?"
+    }
+  },
+  "admin.forgot.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Introduza o endereço associado à sua conta nesta organização. Se puder receber emails da conta, enviamos uma ligação para definir uma nova palavra-passe. A ligação funciona uma vez e deixa de funcionar ao fim de uma hora.",
+    "plural": {
+      "": "Introduza o endereço associado à sua conta nesta organização. Se puder receber emails da conta, enviamos uma ligação para definir uma nova palavra-passe. A ligação funciona uma vez e deixa de funcionar ao fim de uma hora."
+    }
+  },
+  "admin.forgot.email": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "admin.forgot.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Enviar-me uma ligação",
+    "plural": {
+      "": "Enviar-me uma ligação"
+    }
+  },
+  "admin.forgot.sent": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Se este endereço puder receber emails da conta, será enviada uma ligação. Verifique a sua caixa de entrada.",
+    "plural": {
+      "": "Se este endereço puder receber emails da conta, será enviada uma ligação. Verifique a sua caixa de entrada."
+    }
+  },
+  "admin.forgot.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Voltar ao início de sessão",
+    "plural": {
+      "": "Voltar ao início de sessão"
+    }
+  },
+  "admin.reset.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Escolher uma palavra-passe",
+    "plural": {
+      "": "Escolher uma palavra-passe"
+    }
+  },
+  "admin.reset.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta.",
+    "plural": {
+      "": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta."
+    }
+  },
+  "admin.reset.password": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Nova palavra-passe",
+    "plural": {
+      "": "Nova palavra-passe"
+    }
+  },
+  "admin.reset.password.help": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Pelo menos doze caracteres.",
+    "plural": {
+      "": "Pelo menos doze caracteres."
+    }
+  },
+  "admin.reset.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Guardar a palavra-passe",
+    "plural": {
+      "": "Guardar a palavra-passe"
+    }
+  },
+  "admin.reset.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Voltar ao início de sessão",
+    "plural": {
+      "": "Voltar ao início de sessão"
+    }
   }
 }

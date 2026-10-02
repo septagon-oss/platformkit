@@ -204,7 +204,16 @@ func done() *doneOutput {
 func refusal(err error) error {
 	switch {
 	case errors.Is(err, contracts.ErrCredentials):
-		return problem.New(http.StatusUnauthorized, "those credentials are not right")
+		// One sentence for every way a sign-in fails — no such address, the wrong
+		// password, an account still waiting to be verified, a person who has been
+		// invited and has not yet chosen a password — because telling them apart is
+		// an enumeration oracle. What it now also does is name the next step: the
+		// walkthrough found people at this sentence with no idea what to do, and
+		// three of the twelve apps that scored nothing stopped here. The advice is
+		// the same for all four, because the door that answers each of them is the
+		// one the sign-in card names.
+		return problem.New(http.StatusUnauthorized,
+			"those credentials are not right. Check the address, or use \"Forgot your password?\" to be sent a link that sets one")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
 	case errors.Is(err, contracts.ErrFactorRequired):

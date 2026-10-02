@@ -488,7 +488,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	})
 	// On initech's own host, not acme's and not the application's: the operator
 	// invited them from acme's host, and the link they follow is theirs.
-	if !strings.Contains(first, "http://"+initechHost+"/auth/reset") {
+	if !strings.Contains(first, "http://"+initechHost+"/app/auth/reset") {
 		t.Errorf("the first administrator's link is not initech's own host:\n%s", first)
 	}
 	// No password crossed the control plane: the operator chose none, and this
@@ -530,7 +530,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// every tenant is reached at its own name, so a link built from
 	// server.public_host would send one customer's people to a front door that
 	// is not theirs — and to a sign-in page their session does not answer at.
-	if !strings.Contains(link, "http://"+acmeHost+"/auth/reset") {
+	if !strings.Contains(link, "http://"+acmeHost+"/app/auth/reset") {
 		t.Errorf("the invitation link is not acme's own host:\n%s", link)
 	}
 	if strings.Contains(link, cfg.Server.PublicHost) {
