@@ -69,7 +69,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	p.mountGallery(app)
 	p.mountRoles(s.App)
 	p.mountSessions(s.App)
-	p.mountPasswordDoors(app)
+	p.mountPasswordDoors(s.App, s.Public)
 	p.mountRegistration(app)
 
 	// The switcher lives at the path the tenant module's nav entry already
@@ -303,7 +303,7 @@ func verifyEmailPage(ctx context.Context, locale *page.Locale, action, back stri
 // credential, and a second path that did it differently is the duplicate worth not
 // having. ui/assets/js/session.js has known the forgot and reset form kinds since
 // it was written; what was missing was any page that rendered one.
-func (p pages) mountPasswordDoors(app *httpx.Router) {
+func (p pages) mountPasswordDoors(app, public *httpx.Router) {
 	if !app.Known("auth") {
 		return
 	}
@@ -311,8 +311,16 @@ func (p pages) mountPasswordDoors(app *httpx.Router) {
 	// session door, these are the plain composed addresses: the workspace puts a
 	// module's API under its own name, and asking the kernel where that is beats
 	// writing another module's prefix down here.
-	auth := namespace(app, "auth")
-	ask, set := auth.Path("/password/forgot"), auth.Path("/password/reset")
+	//
+	// The two doors are asked of two routers, because auth mounts them on two
+	// surfaces: the set-password door answers on the workspace, the request for a
+	// link on the public face. Asking the workspace router for the second one is not
+	// harmless — /api/v1/auth/password/forgot is an alias row (kit/httpx/aliases.go)
+	// and answers 307, and ui/assets/js/session.js posts with redirect: "error", so a
+	// person pressing "Forgot your password?" would be told the outcome is unknown and
+	// nothing would be sent. A form posts to the address that answers it.
+	auth, asks := namespace(app, "auth"), namespace(public, "auth")
+	ask, set := asks.Path("/password/forgot"), auth.Path("/password/reset")
 
 	page.Serve(app, p.shell, page.Route{ID: "admin-forgot", Method: http.MethodGet, Path: p.at.forgot.rel,
 		Summary: "Ask for a link to set a new password"}, httpx.Public(),
@@ -334,7 +342,7 @@ func (p pages) mountPasswordDoors(app *httpx.Router) {
 	page.Serve(auth, p.shell, page.Route{ID: "admin-verify-email", Method: http.MethodGet, Path: p.at.verify.rel,
 		Summary: "Confirm an email address"}, httpx.Public(),
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return verifyEmailPage(ctx, r.Locale, auth.Path("/verify-email"), p.at.login.at), nil
+			return verifyEmailPage(ctx, r.Locale, asks.Path("/verify-email"), p.at.login.at), nil
 		})
 }
 

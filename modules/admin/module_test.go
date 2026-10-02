@@ -960,11 +960,21 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 //
 // The two pages answer anonymously: a person with no session is exactly who they
 // are for.
+//
+// Each `action` is the address that answers, asked of the surface auth mounts that
+// door on: the set-password door sits on the workspace, the other two on the public
+// face. The workspace spelling of a public door is an alias row that answers 307, and
+// ui/assets/js/session.js posts with redirect: "error" — a form pointed at an alias is
+// a button that tells the person the outcome is unknown and sends nothing, which no
+// assertion about the page alone can see. apps/platformkit's
+// TestEveryAccountDoorPostsToAnAddressThatAnswers asks the running application the
+// other half of this table.
 func TestTheDoorsBesideSignInAnswer(t *testing.T) {
 	router := mount(t)
 	for _, door := range []struct{ path, form, action string }{
-		{"/app/admin/login/forgot", "forgot", "/api/v1/auth/password/forgot"},
+		{"/app/admin/login/forgot", "forgot", "/api/v1/public/auth/password/forgot"},
 		{"/app/auth/reset", "reset", "/api/v1/auth/password/reset"},
+		{"/app/auth/verify-email", "verify-email", "/api/v1/public/auth/verify-email"},
 	} {
 		w := httptest.NewRecorder()
 		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+door.path, nil))
