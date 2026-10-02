@@ -43,8 +43,14 @@ var (
 	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6)
 	clShellFooter = style.New().PaddingX(style.S6).PaddingY(style.S4).FontSize(style.TextXS).
 			TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
-	clSkipLink = style.New().SrOnly().
-			On(style.StateFocus, func(c style.ClassList) style.ClassList {
+	// clShellFooterMeasure bounds what a composition puts *inside* the footer. The footer itself keeps
+	// no max-width of its own: its top border is the frame's rule and must span the column. The bound is
+	// the one Bare (ui/document) and the reference app's fault page already chose — 24rem — because the
+	// design floor refuses a body measure above 75 characters and an unbounded footer sentence measured
+	// 189ch at 1440px (384px is 64ch at 12px, 48ch at 16px).
+	clShellFooterMeasure = style.New().MaxWScaled(style.MaxWSM)
+	clSkipLink           = style.New().SrOnly().
+				On(style.StateFocus, func(c style.ClassList) style.ClassList {
 			return c.NotSrOnly().Position(style.PositionAbsolute).Left(style.S4).Top(style.S4).
 				ZLayer(style.ZOverlay).Rounded(style.RadiusMD).PaddingX(style.S3).PaddingY(style.S2).
 				Bg(style.SurfacePrimary).TextColor(style.FgPrimary).Shadow(style.ShadowLG)
@@ -400,7 +406,12 @@ var (
 	clTextNoWrap    = style.New().WhitespaceNowrap()
 	clTruncate      = style.New().Truncate()
 
-	clHeadingBase  = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).FontWeight(style.FontSemibold)
+	// clHeadingBase carries the break rule every level inherits: a name that is one long token (a UUID
+	// pasted into a title, a commit hash, a URL) has no break opportunity, so it sets the min-content
+	// width of the column it sits in and the page scrolls sideways. overflow-wrap: anywhere is the value
+	// that participates in that sizing; break-words is not. See the case in e2e/.
+	clHeadingBase = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).
+			FontWeight(style.FontSemibold).BreakAnywhere()
 	clHeadingLevel = map[int]style.ClassList{
 		1: style.New().FontSize(style.Text3XL),
 		2: style.New().FontSize(style.Text2XL),
@@ -658,15 +669,25 @@ var (
 				PaddingX(style.S4).MarginBottom(style.S8)
 	clSidebarBrandContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S3).
 				FlexShrink0().MarginBottom(style.S4)
-	clSidebarBrandLink      = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Merge(clFocusRing)
-	clSidebarBrandText      = style.New().FontSize(style.TextXL).FontWeight(style.FontBold).TextColor(style.FgOnInverse)
-	clSidebarNavWrapAdmin   = style.New().MarginTop(style.S5).Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
-	clSidebarNavWrapContent = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
-	clSidebarNavAdmin       = style.New().Flex1().PaddingX(style.S2).SpaceY(style.S1)
-	clSidebarNavContent     = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
-	clSidebarLinkAdmin      = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).
-				FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
-				Transition(style.TransitionColors).Merge(clFocusRing)
+	// The brand link is tabbable, so it is in the contrast set the design floor reads, and it is the one
+	// link in the frame that inherits no colour of its own: `a { color: inherit }` (ui/ui.go) hands it the
+	// column's text colour, which on the admin's inverse column is a foreground token on a foreground
+	// column — 1.02:1 measured. So the link and its label take their colour from the flavour, as the nav
+	// links below already do: the inverse column reads FgOnInverse, the content column reads FgPrimary
+	// (FgOnInverse there measures 1.10:1, which is why one list cannot serve both).
+	clSidebarBrandLink        = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Merge(clFocusRing)
+	clSidebarBrandLinkAdmin   = clSidebarBrandLink.TextColor(style.FgOnInverse)
+	clSidebarBrandLinkContent = clSidebarBrandLink.TextColor(style.FgPrimary)
+	clSidebarBrandText        = style.New().FontSize(style.TextXL).FontWeight(style.FontBold)
+	clSidebarBrandTextAdmin   = clSidebarBrandText.TextColor(style.FgOnInverse)
+	clSidebarBrandTextContent = clSidebarBrandText.TextColor(style.FgPrimary)
+	clSidebarNavWrapAdmin     = style.New().MarginTop(style.S5).Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
+	clSidebarNavWrapContent   = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
+	clSidebarNavAdmin         = style.New().Flex1().PaddingX(style.S2).SpaceY(style.S1)
+	clSidebarNavContent       = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
+	clSidebarLinkAdmin        = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).
+					FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
+					Transition(style.TransitionColors).Merge(clFocusRing)
 	clSidebarLinkContent = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).Gap(style.S2).
 				FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
 				Transition(style.TransitionColors).Merge(clFocusRing)
@@ -813,7 +834,8 @@ func GalleryClassLists() []style.ClassList {
 // application's own pages render. ui.Stylesheet is composed from these.
 func ShellClassLists() []style.ClassList {
 	out := []style.ClassList{
-		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clSkipLink,
+		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clShellFooterMeasure,
+		clSkipLink,
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
@@ -851,7 +873,9 @@ func ShellClassLists() []style.ClassList {
 		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
 		clSidebarColumnAdmin, clSidebarColumnContent,
-		clSidebarBrandAdmin, clSidebarBrandContent, clSidebarBrandLink, clSidebarBrandText,
+		clSidebarBrandAdmin, clSidebarBrandContent,
+		clSidebarBrandLinkAdmin, clSidebarBrandLinkContent,
+		clSidebarBrandTextAdmin, clSidebarBrandTextContent,
 		clSidebarNavWrapAdmin, clSidebarNavWrapContent, clSidebarNavAdmin, clSidebarNavContent,
 		clSidebarLinkAdmin, clSidebarLinkContent,
 		clSidebarLinkPadExpanded, clSidebarLinkPadCollapsed,
