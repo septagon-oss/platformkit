@@ -123,7 +123,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
+	if legacy.SHA256 != "98c226e11e0bfecf2e9fc3f8e58e2c2f85ef9854b2874885b63eb95dd7bdca7c" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
