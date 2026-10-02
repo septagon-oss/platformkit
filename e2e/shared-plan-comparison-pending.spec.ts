@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.use({ reducedMotion: 'reduce' });
 
 for (const language of ['en', 'pt-PT']) for (const theme of ['light', 'dark']) {
-  test(`review 7: pending plans retain keyboard disclosure and suppress purchase (${language}, ${theme})`, async ({ page }) => {
+  test(`pending plans retain keyboard disclosure and suppress purchase (${language}, ${theme})`, async ({ page }) => {
     const signedIn = await page.request.post('/api/v1/auth/login', {
       data: { email: process.env.PLATFORMKIT_E2E_EMAIL, password: process.env.PLATFORMKIT_E2E_PASSWORD },
     });

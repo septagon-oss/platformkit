@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 for (const language of ['en', 'pt-PT']) {
   for (const kind of ['side-panel', 'detail-sheet']) {
-    test(`review 4: ${kind} rejects retained fields before Gallery output (${language})`, async ({ page }) => {
+    test(`${kind} rejects retained fields before Gallery output (${language})`, async ({ page }) => {
       await page.goto('/app/admin/login');
       await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
       await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);
