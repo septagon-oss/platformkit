@@ -36,6 +36,7 @@ type pages struct {
 	Shell
 	at        addresses
 	shell     page.Shell
+	nav       page.Navigation
 	resources []httpx.Resource
 	declared  []tenancy.Grant
 }
@@ -46,7 +47,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	loginShell := p.shell
 	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at), nil
+			return login(ctx, r.Locale, p.at.start.at, p.SignIn, p.at.forgot.at), nil
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
@@ -63,6 +64,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	p.mountRoles(s.App)
 	p.mountSessions(s.App)
 	p.mountPasswordDoors(app)
+	p.mountLanding(app)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -133,6 +135,42 @@ func login(ctx context.Context, locale *page.Locale, next, action, forgot string
 			components.Link(components.LinkProps{Href: forgot, Variant: "text",
 				Label: text("forgot", "Forgot your password?")})),
 	}}
+}
+
+// mountLanding mounts the address a person arrives at when the sign-in form has
+// answered: the first screen their role can actually use.
+//
+// The answer is read from page.Navigation.Visible, which is the list the sidebar
+// renders and asks the same Authorizer the routes enforce with — so the landing and
+// the menu cannot disagree, and no second notion of "where they should be" exists to
+// drift. With nothing visible it is the dashboard, which for that person is the truth
+// rather than a placeholder: they may see what there is and nothing else.
+//
+// A person who is refused every screen is not sent to a screen they are refused. That
+// is the whole of rule 5, and the twelve apps that scored nothing in the walkthrough
+// of record failed before it: signed in, they were shown a dashboard whose only links
+// were Dashboard and Health.
+func (p pages) mountLanding(app *httpx.Router) {
+	page.Serve(app, p.shell, page.Route{ID: "admin-start", Method: http.MethodGet, Path: p.at.start.rel,
+		Summary: "Where a person who has just signed in belongs"}, httpx.SignedIn(),
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			if first, ok := p.firstScreen(ctx, r.Tenant); ok {
+				return page.View{}, httpx.SeeOther(first)
+			}
+			return page.View{}, httpx.SeeOther(p.at.dashboard.at)
+		})
+}
+
+// firstScreen is the first nav entry that is served, that this tenant's caller is
+// allowed to follow, and that this shell can name an address for. Visible already
+// returns entries carrying their resolved workspace address, which is why no
+// translation from "module/entity" to a URL happens here.
+func (p pages) firstScreen(ctx context.Context, t tenancy.Tenant) (string, bool) {
+	visible := p.nav.Visible(ctx, t, p.Authorize)
+	if len(visible) == 0 {
+		return "", false
+	}
+	return visible[0].Screen, true
 }
 
 // mountPasswordDoors mounts the two pages a person who cannot sign in needs: the
