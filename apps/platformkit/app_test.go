@@ -1371,17 +1371,21 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// say so.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 31 — thirteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
-	// 20, 21, 26, 28, 29, 31) and eighteen under modules/*/migrations/ (4, 7, 8, 10,
-	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 30), all distinct.
+	// this head prints 32 — thirteen files under migrations/ (1, 2, 3, 5, 6, 9, 12,
+	// 20, 21, 26, 28, 29, 31) and nineteen under modules/*/migrations/ (4, 7, 8, 10,
+	// 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 30, 32), all distinct.
 	//
 	// The thirty-first is 000031_tenant_locale_self_service.up.sql, the kernel half
 	// of a tenant setting its own languages. It moves this number for the reason the
 	// paragraph above gives, and not because the fixture stopped counting anything:
 	// the count this line wants is the count the command in the comment prints, and
 	// both were run at this head.
-	if len(before) != 31 {
-		t.Fatalf("the old layout applied %d files, want 31", len(before))
+	//
+	// The thirty-second is modules/user/000032_user_language_revision.up.sql, the
+	// revision a person's language choice is read at. It is 32 and not 31 because
+	// the kernel file above already holds that version.
+	if len(before) != 32 {
+		t.Fatalf("the old layout applied %d files, want 32", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with

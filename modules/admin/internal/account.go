@@ -89,12 +89,13 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 		return nil
 	}
 	// The empty option is the choice to stop choosing: the browser and the tenant's
-	// default answer again. components.Select renders a named, empty option only as
-	// its Placeholder, which is what this is.
-	placeholder := ""
-	if current == "" {
-		placeholder = chrome(r, "account.unset", "Use tenant default")
-	}
+	// default answer again. It carries its label from the catalogue on every page,
+	// whether or not a choice is held — a control whose way back is worded by
+	// components.Select's own fallback would say "Choose…" to somebody reading
+	// Portuguese, and the option that undoes a choice has to be readable by the
+	// person who wants to undo it. It is selectable now that an empty selection is
+	// an ordinary value for this field rather than a prompt.
+	placeholder := chrome(r, "account.unset", "Use tenant default")
 	options := make([]components.SelectOption, 0, len(languages))
 	for _, tag := range languages {
 		options = append(options, components.SelectOption{Label: tag, Value: tag})

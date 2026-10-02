@@ -119,6 +119,13 @@ type User struct {
 	// Handle is: it arrives by command, publishes user.language_set, and is only
 	// ever about the person signed in, which a PATCH that names any id cannot be.
 	PreferredLocale string `json:"preferredLocale,omitempty" gorm:"type:text;not null;default:''" maxLength:"35" doc:"Language this person chose, empty while the browser and the tenant decide" example:"pt-PT"`
+	// LocaleRevision counts the language choices this person has made. json:"-":
+	// it is not copy, and it is not a field a caller writes through a user body —
+	// it is what the versioned account door compares an expected revision against,
+	// and a number a client could post at would be a number it could pick. It is
+	// read on every write and handed back by GET /api/v1/user/me/language, which
+	// is the only place it is ever shown.
+	LocaleRevision int64 `json:"-"`
 
 	// Status is a closed set; the enum tag is what a form renders as a select
 	// and what Validate refuses a value outside.
@@ -259,6 +266,16 @@ type Service interface {
 	// the choice, and a choice that is already the one held changes nothing and
 	// publishes nothing.
 	SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*User, error)
+	// SetPreferredLocaleAt is the same choice with the revision it was read at.
+	// The account door — GET then PUT /api/v1/user/me/language — brings one, so a
+	// page that has been open while the person's other tab chose answers with a
+	// conflict instead of quietly writing the older intent again. The two methods
+	// are one decision: the command, the lock and the counter are shared, and an
+	// expected revision is the only difference between them.
+	SetPreferredLocaleAt(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, tag string) (*User, error)
+	// OwnLanguage answers the choice the person signed in as holds, and the
+	// revision to bring back with the next change. No argument names a person.
+	OwnLanguage(ctx context.Context, tx db.Tx[db.Tenant]) (Language, error)
 	// Invite creates a user with no password, in status invited, and publishes
 	// user.invited. Inviting an address that is already here is a conflict.
 	Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*User, error)

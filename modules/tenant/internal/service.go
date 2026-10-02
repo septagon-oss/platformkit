@@ -325,6 +325,16 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 	if err != nil {
 		return nil, err
 	}
+	// The row is locked before anything is read from it. Two doors write this one
+	// fact — SetOwnLocale on the tenant's own transaction and this command on the
+	// control plane — and each computes the next revision from what it read. Read
+	// unlocked, both compute the same successor, one overwrites the other's step,
+	// and the tenant is left one event short of its own trail. Lock first and the
+	// second writer's read is the first writer's committed result, which is the
+	// only way "one accepted declaration, one step" holds of a fact with two doors.
+	if err := lockLanguageRow(tx, id); err != nil {
+		return nil, err
+	}
 	t, err := s.Get(ctx, tx, id)
 	if err != nil {
 		return nil, err
@@ -358,6 +368,22 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 		return nil, err
 	}
 	return s.Get(ctx, tx, id)
+}
+
+// lockLanguageRow takes, and holds to the end of the transaction, the row lock
+// every writer of a tenant's languages takes. It hands back nothing because the
+// caller reads the row again afterwards, by which time this lock is what makes
+// that read the committed state rather than a snapshot somebody else has since
+// written over. SetOwnLocale, CurrentLanguages and this command's own write all
+// arrive here, so there is one lock to queue behind and no order in which two of
+// them can deadlock.
+func lockLanguageRow(tx db.Tx[db.System], id uuid.UUID) error {
+	var t contracts.Tenant
+	if err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+		return crud.Classify(err)
+	}
+	return nil
 }
 
 // validLocales is the command's rule, in one place: every tag is a tag, every tag is

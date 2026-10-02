@@ -51,3 +51,19 @@ func (f *LocalePolicyFunc) CurrentLanguages(ctx context.Context, tx db.Tx[db.Ten
 	}
 	return f.Ask(ctx, tx)
 }
+
+// Language is one person's answer to "which language should this be written in",
+// with the revision it is held at.
+//
+// It is a type and not the two fields on a User row because it is what the account
+// door reads and writes: the choice, plus the number that makes a second write from
+// a stale page a conflict rather than a loss. A user body carries no revision — a
+// caller could pick one — so the pair travels on its own, and the two routes that
+// speak it answer with it and nothing else.
+type Language struct {
+	// Locale is the chosen tag, empty for "nobody chose: negotiate".
+	Locale string `json:"language" maxLength:"35" doc:"Language this person chose, empty while the browser and the tenant decide" example:"pt-PT"`
+	// Revision is what to send back as expectedRevision. It moves once per accepted
+	// change, and a change that changes nothing leaves it where it was.
+	Revision int64 `json:"revision" doc:"Revision this choice is held at; send it back as expectedRevision" example:"2"`
+}
