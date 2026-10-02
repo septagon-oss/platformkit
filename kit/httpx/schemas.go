@@ -116,7 +116,13 @@ type Command struct {
 	Verb                 string
 	Summary, Description string
 	Collection           bool
-	Auth                 Auth
+	// Self says the command writes the caller's own row: nothing in its arguments
+	// names a subject. The generated screens drop those (see ui/screens'
+	// commands), because a control that writes the reader while labelled with the
+	// name of a listed row is a form that lies, and the catalog publishes it so a
+	// shell can put it where the account belongs instead.
+	Self bool
+	Auth Auth
 	// Endpoint is the command's absolute address as the kernel composed it:
 	// /api/v1/ops/billing/subscription/cancel. A shell used to derive a
 	// command's path from the resource's own — {path}/{id}/{verb} — and that

@@ -351,6 +351,18 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// Self says the caller is the subject of the command: no argument names the
+	// row it writes, because the row is whoever is signed in.
+	//
+	// It changes no guard — the route's own Auth answers who may call — and it
+	// changes one thing on the screen. A generated list offers the commands its
+	// rows may have run on them, and a command about the person reading the list
+	// is not about any row on it: rendered beside "New User" it reads as a write
+	// on the people listed, and a person who pressed it would have changed their
+	// own account. So the generated screens leave it off, and the account is the
+	// surface that offers it (modules/admin's account menu) or the API is.
+	Self bool
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -414,7 +426,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	// catalog publishes it for exactly that reason — see screens.Command.Path.
 	surfaces.AddCommand(spec.Module, spec.Entity, httpx.Command{
 		Verb: verb, Summary: summary, Description: description,
-		Collection: opts.Collection, Auth: auth,
+		Collection: opts.Collection, Self: opts.Self, Auth: auth,
 		Endpoint: router.Prefix() + path,
 		Fields:   fields,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
