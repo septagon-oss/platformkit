@@ -190,6 +190,7 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 		AccessPage: func(router *httpx.Router) { page.MountAccess(router, faultShell(c)) },
 		Role:       role,
 		Transports: transports(),
+		Caches:     caches(),
 	}
 }
 

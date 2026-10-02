@@ -21,6 +21,7 @@ require (
 	github.com/open-feature/go-sdk v1.18.0
 	github.com/open-feature/go-sdk-contrib/providers/ofrep v0.1.7
 	github.com/open-policy-agent/opa v1.21.0
+	github.com/redis/go-redis/v9 v9.22.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/yuin/goldmark v1.8.6
 	golang.org/x/crypto v0.57.0
@@ -88,6 +89,7 @@ require (
 	github.com/xi2/xz v0.0.0-20171230120015-48954b6210f8 // indirect
 	github.com/yashtewari/glob-intersection v0.2.0 // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 	golang.org/x/mod v0.41.0 // indirect

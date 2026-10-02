@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -28,6 +29,7 @@ func mountedWithStorage(t *testing.T, storage contracts.Storage) http.Handler {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	hosts := map[string]tenancy.Tenant{host: acme}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{hosts}, Conn: conn, Authorize: caller{hosts},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil

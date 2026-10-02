@@ -12,6 +12,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -117,6 +118,7 @@ func TestALocalDeploymentIsNotToldToUseHTTPS(t *testing.T) {
 	_ = admin
 	f := &fixture{tenant: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}, app: app, logs: &lines{}}
 	api, router := httpx.New(httpx.Options{
+		Cache: cache.Memory("pkit"),
 		// The installation is reached at the same host as the tenant, so a probe mounted on
 		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
 		// where the gate itself is tested.

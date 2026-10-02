@@ -30,6 +30,7 @@ type Config struct {
 	Server   Server   `yaml:"server"`
 	Database Database `yaml:"database"`
 	NATS     NATS     `yaml:"nats"`
+	Cache    Cache    `yaml:"cache"`
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
@@ -152,6 +153,68 @@ func (n NATS) Validate() error {
 		if n.Username != "" && u.Scheme != "tls" && !Local(u.Host) {
 			return errors.New("nats.username and nats.password require tls:// outside localhost")
 		}
+	}
+	return nil
+}
+
+// Cache names where a value every replica must read is kept. Empty Adapter is the
+// in-process store: complete for one process, and it says so in one boot log line,
+// because forgetting a value there reaches only that process.
+type Cache struct {
+	Adapter  string `yaml:"adapter"`
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Password string `yaml:"password"`
+}
+
+// Validate checks the cache settings without opening a connection.
+//
+// app is required the moment a shared store is named: every key starts with the
+// application that wrote it, and two clients sharing one keyspace with no first
+// segment are two clients reading each other's entries. For the in-process store
+// the segment carries nothing, so it may stay empty there.
+func (c Cache) Validate() error {
+	switch c.Adapter {
+	case "", "memory", "valkey":
+	default:
+		return errors.New("cache.adapter must be memory, valkey or empty for the in-process store")
+	}
+	if c.Adapter != "valkey" && (c.URL != "" || c.Password != "") {
+		return errors.New("cache.url and cache.password belong to cache.adapter valkey")
+	}
+	if c.Adapter != "valkey" {
+		return nil
+	}
+	if c.App == "" {
+		return errors.New("cache.app is required with cache.adapter valkey: every shared key begins with the application that wrote it")
+	}
+	if c.URL == "" {
+		return errors.New("cache.url is required with cache.adapter valkey")
+	}
+	// One sentence for every address that is not one: the operator's fix is the
+	// same edit to the same line whichever way it was wrong.
+	bad := errors.New("cache.url must be redis://, valkey://, rediss:// or unix:// without credentials, paths or queries")
+	u, err := url.Parse(c.URL)
+	if err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	// A unix socket's address is its path, so the two shapes are checked apart.
+	// redis.ParseURL accepts exactly these schemes; valkey:// is rewritten to
+	// redis:// by the provider, which is what a Valkey answers to.
+	switch u.Scheme {
+	case "redis", "rediss", "valkey":
+		if u.Host == "" || u.Path != "" {
+			return bad
+		}
+	case "unix":
+		if u.Host != "" || u.Path == "" {
+			return bad
+		}
+	default:
+		return bad
+	}
+	if u.User != nil {
+		return errors.New("cache.url cannot contain credentials; use cache.password and PLATFORMKIT_CACHE_PASSWORD instead")
 	}
 	return nil
 }
@@ -290,6 +353,12 @@ var keys = []key{
 	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
 	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, false},
 	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, false},
+	{"cache.adapter", "PLATFORMKIT_CACHE_ADAPTER", func(c *Config) *string { return &c.Cache.Adapter }, false},
+	{"cache.app", "PLATFORMKIT_CACHE_APP", func(c *Config) *string { return &c.Cache.App }, false},
+	{"cache.url", "PLATFORMKIT_CACHE_URL", func(c *Config) *string { return &c.Cache.URL }, false},
+	// A secret, so it earns an override for the reason rule 7 gives and earns no
+	// place in config.example.yaml with a value in it.
+	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
@@ -413,6 +482,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 		}
 	}
 	if err := c.NATS.Validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	if err := c.Cache.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	if err := c.Auth.OIDC.validate(path); err != nil {

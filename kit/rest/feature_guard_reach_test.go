@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -56,6 +57,7 @@ func mountEntitled(t *testing.T, s rest.Spec[*Task], plan httpx.Entitler) (*http
 		t.Fatalf("create tasks: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: httpx.TenantLoader(caller{}), Conn: app, Authorize: caller{},
 		Entitle: plan, Installation: host,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {

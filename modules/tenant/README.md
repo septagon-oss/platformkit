@@ -74,8 +74,10 @@ set travels on the host resolution `ByHost` already performs, because three owne
 installation's own languages, which had no owner because the catalogue decided alone.
 **Made reusable:** a control-plane write that rechecks its own rules, publishes one
 event, and invalidates the cache whose truth it moved, which is the shape a second
-`/tenants` command copies; and `tenant.locale_set`, which is what a second process
-will subscribe to when a TTL stops being good enough.
+`/tenants` command copies — the whole shape, including what it does when the shared
+store will not take that invalidation: the write stands, and the route answers 503
+rather than reporting an effect it did not achieve. And `tenant.locale_set`, which is
+what a second process will subscribe to when a TTL stops being good enough.
 
 The provider per tenant is the same delivery again. **Reused:** `SetOIDC` is
 `SetLocale`'s command shape and `SetOIDC`'s read, `OIDCOf`, is a tenant
