@@ -48,10 +48,15 @@ type Deps struct {
 // sweepEvery is the default interval. See Deps.SweepEvery.
 const sweepEvery = time.Minute
 
-// spec is the entity's presence in the application: five routes, two
+// Spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads. Everything
 // generic about a task is this value; internal/ holds only what is not.
-var spec = rest.Spec[*contracts.Task]{
+//
+// It is exported for one consumer and one reason: a write made outside an HTTP
+// request — the application's own seed — still owes this entity's validation,
+// its list schema and its event, and the alternative was a second write core
+// beside this one. Module below mounts a copy of it with one more hook.
+var Spec = rest.Spec[*contracts.Task]{
 	Module:     "task",
 	Entity:     "task",
 	Path:       "/tasks",
@@ -114,7 +119,7 @@ func Module(deps Deps) module.Module {
 	// create's own transaction, rather than a minute later when the sweep gets
 	// to it. The hook is set here and not in the spec literal above because it
 	// needs the service, and the service is constructed here.
-	mounted := spec
+	mounted := Spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
 		Name:        "task",

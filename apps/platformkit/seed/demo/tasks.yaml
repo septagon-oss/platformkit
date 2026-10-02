@@ -1,0 +1,30 @@
+# Three pieces of work, so the demonstration opens on a list with something in
+# it: one thing to do, one thing somebody is already doing, and one nobody has
+# taken yet. Every row is written by task's own write core, the one its POST route
+# runs, and assigned by its Assign command — a seeded task is a task, with the
+# same validation, the same task.created event, and, where a person is named, the
+# same task.assigned one.
+#
+# No deadline is declared here on purpose. The task module mounts its Spec with a
+# create hook that marks a task breached when its deadline is already behind it,
+# and that hook belongs to the route the hook was written for; a seed that named a
+# past deadline would be a seed that skipped the breach. Relative dates are the
+# seeder's grammar and the owners that take them through their service use it —
+# kit/seed/README.md's Limits names what this writer does not.
+apiVersion: platformkit.seed/v1
+resource: tasks
+records:
+  - key: take-the-tour
+    fields:
+      title: Take the tour of the site
+      priority: high
+      assignee: users/marta@example.test
+  - key: write-the-first-page
+    fields:
+      title: Write the first page for a real reader
+      priority: normal
+      assignee: users/devin@example.test
+  - key: invite-a-colleague
+    fields:
+      title: Invite a colleague and give them a role
+      priority: low

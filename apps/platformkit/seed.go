@@ -14,7 +14,9 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"mime"
 	"os"
+	"path"
 	"slices"
 	"strings"
 	"time"
@@ -29,7 +31,10 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
+	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/task"
+	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -58,6 +63,8 @@ func seedService(c composition) (*seed.Service, error) {
 			&contentSeeder{svc: c.contents},
 			&siteSeeder{sites: c.sites},
 			&userSeeder{users: c.users, demoPassword: c.demoPassword},
+			&taskSeeder{svc: c.tasks},
+			&fileSeeder{svc: c.files},
 		},
 		Authorize: seedGrants{auth: c.auth},
 	})
@@ -84,12 +91,14 @@ type seedProvisioner struct {
 	users        usercontracts.Service
 	contents     contentcontracts.Service
 	sites        sitecontracts.Service
+	tasks        taskcontracts.Service
+	files        filecontracts.Service
 	auth         authcontracts.Auth
 	demoPassword string
 }
 
 func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
-	if p.users == nil || p.contents == nil || p.sites == nil || p.auth == nil {
+	if p.users == nil || p.contents == nil || p.sites == nil || p.tasks == nil || p.files == nil || p.auth == nil {
 		return errors.New("seed: the creation hook ran before compose filled its owners")
 	}
 	service, err := seed.New(seed.Deps{
@@ -98,6 +107,8 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 			&contentSeeder{svc: p.contents},
 			&siteSeeder{sites: p.sites},
 			&userSeeder{users: p.users, demoPassword: p.demoPassword},
+			&taskSeeder{svc: p.tasks},
+			&fileSeeder{svc: p.files},
 		},
 		// The same authorizer a command run goes through, with one branch:
 		// seedGrants lets a provisioning run through where it would ask a person.
@@ -487,7 +498,7 @@ func (w userSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key,
 		"email": row.Email, "displayName": row.DisplayName,
 		// The stored answer, sorted the same way the declared one is, so a file
 		// that lists roles in another order is the same declaration.
-		"roles": seedRolesSorted(row.Roles),
+		"roles":  seedRolesSorted(row.Roles),
 		"signIn": signInHeld(row),
 	}
 	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
@@ -569,7 +580,7 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 	}
 	fields := map[string]any{
 		"email": row.Email, "displayName": row.DisplayName,
-		"roles": seedRolesSorted(row.Roles),
+		"roles":  seedRolesSorted(row.Roles),
 		"signIn": signInHeld(row),
 	}
 	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
@@ -577,6 +588,236 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 
 func (w userSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
 	return errors.New("user: deactivating a person is not undoing an invitation")
+}
+
+// taskSeeder seeds the work a demonstration opens on. A task is created through
+// task.Spec — the module's own write core, the one its POST route runs — and
+// assigned through its Assign command, so a seeded row arrives with the same
+// validation and the same task.created and task.assigned events a person's click
+// produces. The title is the natural key the record is found by, because a task
+// is named by its one line and the module says so.
+type taskSeeder struct{ svc taskcontracts.Service }
+
+func (taskSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "tasks", Module: "task", Entity: "task",
+		NaturalKey: "title", WriteGrant: taskcontracts.PermissionTaskUpdate,
+		// No delete path: resolving or closing a task is a person's account of
+		// their own work, and a file that stopped declaring a title has no
+		// business writing that account.
+		Prunable: false,
+		// The assignee is a person of these same files, named as
+		// users/<address>, so the orderer writes the people before the work that
+		// names them and a typo in an address refuses at the record.
+		References: []seed.Reference{{Resource: "tasks", Path: "fields/assignee", Target: "users"}},
+	}
+}
+
+func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	priority := seedText(r.Fields["priority"])
+	if priority == "" {
+		priority = taskcontracts.PriorityNormal
+	}
+	assignee := uuid.Nil
+	if ref := seedText(r.Fields["assignee"]); ref != "" {
+		id, known := resolved[ref]
+		if !known {
+			return seed.Target{}, fmt.Errorf("assignee %q names no person this seed knows", ref)
+		}
+		// Assigning is a person's act in this application, and it is decided twice:
+		// by the grant the seed's authorizer asks the auth module about, and by
+		// policy/task.rego, which is asked with the person as its actor and refuses a
+		// run that carries nobody (modules/task/internal/policy.go). A tenant created
+		// with its own seed in the same transaction has no person yet, so what this
+		// run may ask for is the work, unassigned, and the operator's later run — the
+		// one `make seed` names a person for — is what assigns it. Naming the
+		// assignee here anyway would put a CREATE line in the plan for a write this
+		// run cannot make, which is the thing a plan exists not to do.
+		if _, hasPerson := tenancy.PrincipalFrom(ctx); hasPerson {
+			assignee = id
+		}
+	}
+	return seed.Target{Fields: map[string]any{
+		"title": seedText(r.Fields["title"]), "priority": priority, "assignee": assignee,
+	}}, nil
+}
+
+func (taskSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, forUpdate bool) (seed.Snapshot, error) {
+	id := key.RecordID
+	if id == uuid.Nil {
+		rows, _, err := crud.List[*taskcontracts.Task](tx, crud.Query{Limit: 1, Filter: map[string]any{"title": key.Value}})
+		if err != nil {
+			return seed.Snapshot{}, err
+		}
+		if len(rows) == 0 {
+			return seed.Snapshot{}, nil
+		}
+		id = rows[0].ID
+	}
+	var (
+		row *taskcontracts.Task
+		err error
+	)
+	if forUpdate {
+		row, err = crud.GetForUpdate[*taskcontracts.Task](tx, id)
+	} else {
+		row, err = crud.Get[*taskcontracts.Task](tx, id)
+	}
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return assigned(row), nil
+}
+
+func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	row, err := task.Spec.CreateRow(ctx, tx, &taskcontracts.Task{
+		Title: seedText(t.Fields["title"]), Priority: seedText(t.Fields["priority"]),
+	})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.assign(ctx, tx, assigned(row), t)
+}
+
+// Update changes the priority and, where the file names a different person,
+// assigns. The title is how the record was found, so it is not in the patch: a
+// run that renamed a task would be a run that closed one and wrote another.
+func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{"priority": seedText(t.Fields["priority"])})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return w.assign(ctx, tx, assigned(row), t)
+}
+
+func (w taskSeeder) assign(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	want, _ := t.Fields["assignee"].(uuid.UUID)
+	if want == uuid.Nil || want == cur.Fields["assignee"] {
+		return cur, nil
+	}
+	row, err := w.svc.Assign(ctx, tx, cur.ID, want)
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return assigned(row), nil
+}
+
+func (taskSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("task: resolving a task is not undoing one")
+}
+
+// assigned is a task's canonical seed state: the line a list shows, the urgency
+// beside it, and who is responsible — nobody being uuid.Nil, so an unassigned row
+// and a record that names no person agree.
+func assigned(row *taskcontracts.Task) seed.Snapshot {
+	assignee := uuid.Nil
+	if row.AssigneeID != nil {
+		assignee = *row.AssigneeID
+	}
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"title": row.Title, "priority": row.Priority, "assignee": assignee}}
+}
+
+// fileSeeder seeds the one image a demonstration carries. The bytes live beside
+// the record that names them, in the same embedded tree the records came from, and
+// they go through the file module's own Upload — the door the upload form uses —
+// so a seeded file is counted, hashed, quota-checked and announced by
+// file.uploaded exactly as an upload is. No row is written by hand here.
+type fileSeeder struct{ svc filecontracts.Service }
+
+// seedAssets is that tree, spelled from the record's own key: `asset` names a
+// file beside the YAML, the loader checked it is a regular file, and the name the
+// record gives the upload is the last part of it. A Target carries a value and not
+// a source path, so this is where the two meet — and a record whose asset is not
+// where its name says it is fails here, rather than quietly uploading something
+// else with the same name.
+const seedAssets = "seed/demo/assets/"
+
+func (fileSeeder) Resource() seed.Resource {
+	return seed.Resource{
+		Alias: "files", Module: "file", Entity: "file",
+		// No natural key: a file's identity is its id, and the name a person reads
+		// is not unique. The seed finds its own row through seed_keys alone.
+		WriteGrant: filecontracts.PermissionFileManage,
+		// No delete path: the bytes behind a file may be read by something that
+		// linked to them, and a YAML record that stopped existing is not the event
+		// that decides they should go.
+		Prunable: false,
+	}
+}
+
+func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+	if r.Asset == "" {
+		return seed.Target{}, errors.New("a file record names the asset beside it")
+	}
+	name := path.Base(r.Asset)
+	if name != seedText(r.Fields["name"]) && seedText(r.Fields["name"]) != "" {
+		return seed.Target{}, fmt.Errorf("a file record's key names its asset %q, not %q", name, seedText(r.Fields["name"]))
+	}
+	return seed.Target{Fields: map[string]any{
+		"name": name, "contentType": mime.TypeByExtension(strings.ToLower(path.Ext(name))),
+	}}, nil
+}
+
+func (fileSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _ bool) (seed.Snapshot, error) {
+	if key.RecordID == uuid.Nil {
+		// Without provenance there is nothing to read: a name is not an identity
+		// here, and guessing which of a tenant's files "looks like" a seeded one
+		// would be a seed that deleted a person's upload.
+		return seed.Snapshot{}, nil
+	}
+	var (
+		row *filecontracts.File
+		err error
+	)
+	row, err = crud.Get[*filecontracts.File](tx, key.RecordID)
+	if errors.Is(err, crud.ErrNotFound) {
+		return seed.Snapshot{}, nil
+	}
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType}}, nil
+}
+
+func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
+	name, _ := t.Fields["name"].(string)
+	body := seedAssets + name
+	file, err := seedFiles.Open(body)
+	if err != nil {
+		return seed.Snapshot{}, fmt.Errorf("the seed's own asset %q is not in the binary: %w", body, err)
+	}
+	defer file.Close()
+	// The accessor answers with the run's own transaction, because there is
+	// nothing to stream: the bytes are already in the binary, so no connection
+	// stands open while they arrive, which is the only reason Upload takes an
+	// accessor rather than a transaction.
+	row, err := w.svc.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
+		filecontracts.Upload{
+			Name: name, ContentType: seedText(t.Fields["contentType"]),
+			Visibility: filecontracts.VisibilityPublic, Declared: -1, Body: file,
+		})
+	if err != nil {
+		return seed.Snapshot{}, err
+	}
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType}}, nil
+}
+
+// Update refuses, and the refusal is the design: a rerun reads back the name and
+// the media type it stored, finds them unchanged, and never reaches here. The
+// alternative — re-uploading the asset every run — would leave a new row and new
+// bytes on every deploy, and the old ones behind.
+func (fileSeeder) Update(context.Context, db.Tx[db.Tenant], seed.Snapshot, seed.Target) (seed.Snapshot, error) {
+	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
+}
+
+func (fileSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
+	return errors.New("file: a seeded upload is a person's file from the moment it exists")
 }
 
 // seedRoles_ reads the record's roles field as the sorted list both sides of the

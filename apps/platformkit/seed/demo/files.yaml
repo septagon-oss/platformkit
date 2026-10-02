@@ -1,0 +1,18 @@
+# The one image a demonstration carries. `asset` names a file beside this one, in
+# the same embedded tree: the loader refuses an asset that is not a regular file,
+# and refuses one that reaches outside the tree, so the bytes a record points at
+# are the bytes the binary was built with.
+#
+# They go through the file module's own Upload — the door the upload form uses —
+# so the row is counted, hashed, quota-checked and announced by file.uploaded like
+# any other upload. What the seed manages about it is the name and the media type;
+# the bytes have one owner, and it is not a YAML record.
+#
+# No page embeds it yet: no owner field in this checkout links a content row to a
+# file row, and a seed that invented one would be writing a second schema. That
+# link is a content-module brief, named in docs/seed.md's Limits.
+apiVersion: platformkit.seed/v1
+resource: files
+records:
+  - key: welcome
+    asset: assets/welcome.png

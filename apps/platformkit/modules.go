@@ -31,6 +31,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
+	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
@@ -66,6 +67,11 @@ type composition struct {
 	// setting, and a seed that wrote pages but never named one would leave a
 	// visitor at "/" reading an empty site.
 	sites sitecontracts.Service
+	// tasks and files are carried for the seed too: a demonstration that opens on
+	// an empty list and a page with no picture has not opened on anything. Both go
+	// through the owner's own write core and command, named where they are wired.
+	tasks taskcontracts.Service
+	files filecontracts.Service
 	// demoPassword is the password the demo seed's people sign in with, empty
 	// when this installation offers no demo sign-in at all.
 	demoPassword string
@@ -207,9 +213,14 @@ func compose(cfg config.Config) composition {
 	// it for every operation that declares a feature. See app.Options.Entitle.
 	plans, billingModule := billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()})
 
+	// The task lifecycle commands are composed once and shared: the routes take
+	// them through task.Deps.Service, and the seed takes the same value to assign
+	// the work its own files declare. Two instances would be two answers about
+	// who may be assigned what.
+	tasks := task.NewServiceWithPolicy(taskPolicy)
 	contents, contentModule := content.Module(content.Deps{})
 	sites, siteModule := site.Module(site.Deps{})
-	_, fileModule := file.Module(file.Deps{
+	files, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
 		// Which class lives how long is the deployment's table (files.retention
@@ -227,7 +238,10 @@ func compose(cfg config.Config) composition {
 		notificationModule,
 		authModule,
 		// Object scope (decision 0011): tasks are decided by policy/task.rego, embedded OPA.
-		task.Module(task.Deps{Tenants: active, Policy: taskPolicy}),
+		// The one lifecycle service this composition made, with the object-scope
+		// policy it decides by (decision 0011): tasks are decided by
+		// policy/task.rego, embedded OPA.
+		task.Module(task.Deps{Tenants: active, Service: tasks}),
 		// The four reference modules a product is actually made of: what a
 		// tenant pays, what it publishes, what its site looks like, and the
 		// bytes behind both. Each takes the one thing it cannot decide for
@@ -295,10 +309,12 @@ func compose(cfg config.Config) composition {
 
 	roles.auth = auths
 	provision.contents, provision.sites, provision.auth = contents, sites, auths
+	provision.tasks, provision.files = tasks, files
 	provision.demoPassword = cfg.Demo.Password
 	checkPersonas(mods)
 	return composition{modules: mods, tenants: tenants, users: users, contents: contents,
-		sites: sites, demoPassword: cfg.Demo.Password, auth: auths,
+		sites: sites, tasks: tasks, files: files,
+		demoPassword: cfg.Demo.Password, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,
 		access: accessReach{users: users, notify: notify, may: roles.May},
 		// The words a refusal is allowed to use: the label of the grant that gates
