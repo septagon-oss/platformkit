@@ -486,6 +486,78 @@
       "": "Components"
     }
   },
+  "admin.gallery.skip_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Skip links appear when focused. Tab into this preview to reveal the link, then press Enter to skip the sample navigation.",
+    "plural": {
+      "": "Skip links appear when focused. Tab into this preview to reveal the link, then press Enter to skip the sample navigation."
+    }
+  },
+  "admin.gallery.focus_skip": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Focus skip link",
+    "plural": {
+      "": "Focus skip link"
+    }
+  },
+  "admin.gallery.sample_nav": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Sample navigation",
+    "plural": {
+      "": "Sample navigation"
+    }
+  },
+  "admin.gallery.sample_nav_link": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Sample navigation link",
+    "plural": {
+      "": "Sample navigation link"
+    }
+  },
+  "admin.gallery.sample_content": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Sample page content",
+    "plural": {
+      "": "Sample page content"
+    }
+  },
+  "admin.gallery.sample_field_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "The skip link moves keyboard focus here. Press Tab again to reach the field.",
+    "plural": {
+      "": "The skip link moves keyboard focus here. Press Tab again to reach the field."
+    }
+  },
+  "admin.gallery.sample_field": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Sample content field",
+    "plural": {
+      "": "Sample content field"
+    }
+  },
+  "admin.gallery.sidebar_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "The admin sidebar is hidden at this viewport width. Choose Desktop in Storybook's viewport menu or widen the preview.",
+    "plural": {
+      "": "The admin sidebar is hidden at this viewport width. Choose Desktop in Storybook's viewport menu or widen the preview."
+    }
+  },
   "admin.dialog.cancel": {
     "references": [
       "modules/admin/internal/mount.go"

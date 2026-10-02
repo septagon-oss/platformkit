@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
@@ -25,7 +26,9 @@ import (
 // where precedence is decided. `ui/page` claims the `fault.` prefix as it is read,
 // which is what keeps a product's catalogue from re-wording what a kernel refusal
 // says; `ui/resource` claims nothing, so re-labelling "Delete" is a product's
-// ordinary decision and not a pull request into the foundation.
+// ordinary decision and not a pull request into the foundation, and `ui/export`
+// claims nothing for the same reason, so a product may re-word the gallery's own
+// frame at the same keys.
 //
 // "en" is the source language: the sentences in the Go code are English.
 // Resource names and admin-authored copy also have explicit English entries: the
@@ -50,6 +53,9 @@ func catalogues() xtext.Catalog {
 	return xtext.Pseudo(xtext.Load("en",
 		page.Catalogue(),
 		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
+		// The words of the gallery's frame — its landmark, its preview menus, the
+		// button that applies a preview — belong to the layer that draws them.
+		xtext.Source{FS: export.Catalogues(), Name: "ui/export"},
 		admin.Catalogue(),
 		// Each module's own permission labels, so a refusal names a grant in the
 		// language the tenant is served in and not in a key. Every module that

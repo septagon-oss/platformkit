@@ -13,7 +13,7 @@ import (
 var englishSources = []string{
 	"modules/admin/messages", "modules/billing/messages", "modules/content/messages",
 	"modules/site/messages", "modules/task/messages", "modules/user/messages",
-	"ui/resource/messages",
+	"ui/resource/messages", "ui/export/messages",
 }
 
 // TestEveryEnglishCatalogueCarriesThePortugueseKeys: where a module ships both

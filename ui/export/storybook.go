@@ -13,10 +13,40 @@ import (
 	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 )
+
+// Options is what one request to a gallery decides about the words framing its
+// specimens. The gallery chrome — the landmark around the list of examples, the
+// theme and width menus, the summary over the Go snippet — is copy this layer
+// wrote, and the tenant reading it may be served in a language this layer has a
+// file for and not another. The specimen inside the frame is data its author
+// wrote in one language, and this package asks for no word of it.
+type Options struct {
+	// Locale is this request's selected language, as the shell negotiated it.
+	// Nil keeps the source English, which is what a composition with no catalog
+	// is served today.
+	Locale *locale.Locale
+}
+
+// Label is one word of the gallery's own chrome under its gallery. prefix, in the
+// language this request is answered in. The fallback is the source English the
+// call site is written in, so a composition that ships no ui/export catalogue
+// still reads exactly what it always read — and, because that English is the
+// pseudo-locale's source, a deployment that does ship one sees these sentences
+// accented like every other translated one.
+func (o Options) Label(key, fallback string, args ...any) string {
+	if o.Locale == nil {
+		if len(args) > 0 {
+			return fmt.Sprintf(fallback, args...)
+		}
+		return fallback
+	}
+	return o.Locale.Text("gallery."+key, fallback, args...)
+}
 
 // Storybook is one application's selected design composition. The application
 // authorizes it before passing it to a gallery or Export; this value neither
@@ -67,12 +97,12 @@ func (b Storybook) groups() []string {
 // StorybookPage renders the index and one live example. Previews use their own
 // document so a modal can own focus without taking over the documentation.
 // The server validates the selected ID and applies Props before calling this.
-func StorybookPage(b Storybook, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
+func StorybookPage(b Storybook, o Options, path, group string, selected examples.Example, props, mode, width string) (g.Node, error) {
 	var links []g.Node
 	for _, name := range append([]string{""}, b.groups()...) {
 		label := name
 		if name == "" {
-			label = "All"
+			label = o.Label("all", "All")
 		}
 		links = append(links, components.Link(components.LinkProps{Label: label, Href: path + "?" + url.Values{"group": {name}}.Encode()}))
 	}
@@ -87,25 +117,27 @@ func StorybookPage(b Storybook, path, group string, selected examples.Example, p
 		}
 		choices = append(choices, h.Li(h.A(attrs...)))
 	}
-	index := h.Nav(g.Attr("aria-label", "Component examples"), h.Ul(g.Group(choices)))
-	var detail g.Node = components.Text(components.TextProps{Content: "No examples are published for this selection."})
+	index := h.Nav(g.Attr("aria-label", o.Label("landmark", "Component examples")), h.Ul(g.Group(choices)))
+	var detail g.Node = components.Text(components.TextProps{
+		Content: o.Label("empty", "No examples are published for this selection.")})
 	if selected.ID != "" {
 		var err error
-		detail, err = storybookExample(selected, path, group, props, mode, width)
+		detail, err = storybookExample(selected, o, path, group, props, mode, width)
 		if err != nil {
 			return nil, err
 		}
 	}
 	return h.Div(g.Attr("data-gallery", ""),
 		components.Stack(components.StackProps{Gap: "6"},
-			components.SectionHeader(components.SectionHeaderProps{Title: b.Title, Level: 1, Description: "Explore components, adjust their properties, and test light, dark, and responsive layouts."}),
-			g.If(b.Files != nil, components.Link(components.LinkProps{Label: "Open Storybook", Href: path + "/storybook/index.html"})),
+			components.SectionHeader(components.SectionHeaderProps{Title: b.Title, Level: 1,
+				Description: o.Label("description", "Explore components, adjust their properties, and test light, dark, and responsive layouts.")}),
+			g.If(b.Files != nil, components.Link(components.LinkProps{Label: o.Label("open_storybook", "Open Storybook"), Href: path + "/storybook/index.html"})),
 			components.Flex(components.FlexProps{Wrap: true, Gap: "3"}, links...),
-			components.Link(components.LinkProps{Label: "Download design export", Href: path + "/export"}),
+			components.Link(components.LinkProps{Label: o.Label("download", "Download design export"), Href: path + "/export"}),
 			h.Div(g.Attr("data-gallery-layout", ""), index, detail))), nil
 }
 
-func storybookExample(example examples.Example, path, group, props, mode, width string) (g.Node, error) {
+func storybookExample(example examples.Example, o Options, path, group, props, mode, width string) (g.Node, error) {
 	d, err := example.Describe()
 	if err != nil {
 		return nil, err
@@ -117,31 +149,38 @@ func storybookExample(example examples.Example, path, group, props, mode, width 
 		h.Input(h.Type("hidden"), h.Name("example"), h.Value(example.ID)),
 		h.Input(h.Type("hidden"), h.Name("group"), h.Value(group)),
 		h.Input(h.Type("hidden"), h.Name("props"), h.Value(props)),
-		components.Select(components.SelectProps{Name: "theme", Label: "Preview theme", Value: mode, Required: true, Options: []components.SelectOption{{Value: "light", Label: "Light"}, {Value: "dark", Label: "Dark"}, {Value: "system", Label: "System"}}}),
-		components.Select(components.SelectProps{Name: "width", Label: "Preview width", Value: width, Required: true, Options: []components.SelectOption{{Value: "fit", Label: "Fit available space"}, {Value: "320", Label: "Phone · 320px"}, {Value: "768", Label: "Tablet · 768px"}, {Value: "1280", Label: "Desktop · 1280px"}}}),
+		components.Select(components.SelectProps{Name: "theme", Label: o.Label("preview_theme", "Preview theme"), Value: mode, Required: true,
+			Options: []components.SelectOption{{Value: "light", Label: o.Label("light", "Light")},
+				{Value: "dark", Label: o.Label("dark", "Dark")},
+				{Value: "system", Label: o.Label("system", "System")}}}),
+		components.Select(components.SelectProps{Name: "width", Label: o.Label("preview_width", "Preview width"), Value: width, Required: true,
+			Options: []components.SelectOption{{Value: "fit", Label: o.Label("fit", "Fit available space")},
+				{Value: "320", Label: o.Label("phone", "Phone · 320px")},
+				{Value: "768", Label: o.Label("tablet", "Tablet · 768px")},
+				{Value: "1280", Label: o.Label("desktop", "Desktop · 1280px")}}}),
 	}
 	if d.PropsEditable {
-		form = append(form, propertyControls(d)...)
+		form = append(form, propertyControls(d, o)...)
 	}
-	form = append(form, components.Button(components.ButtonProps{Label: "Apply preview", Type: "submit"}),
-		components.Link(components.LinkProps{Label: "Reset properties", Href: path + "?" + url.Values{"example": {example.ID}, "group": {group}}.Encode()}))
+	form = append(form, components.Button(components.ButtonProps{Label: o.Label("apply", "Apply preview"), Type: "submit"}),
+		components.Link(components.LinkProps{Label: o.Label("reset", "Reset properties"), Href: path + "?" + url.Values{"example": {example.ID}, "group": {group}}.Encode()}))
 	var snippet g.Node
 	if code, err := example.GoProps(); err == nil {
-		snippet = h.Details(h.Summary(g.Text("Go properties")),
-			components.Textarea(components.TextareaProps{Name: "go-props", Label: "Copyable Go properties", Value: code, ReadOnly: true, Rows: 8, FullWidth: true}),
-			components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-copy": ""}}, Label: "Copy Go properties", Variant: "secondary"}))
+		snippet = h.Details(h.Summary(g.Text(o.Label("go_properties", "Go properties"))),
+			components.Textarea(components.TextareaProps{Name: "go-props", Label: o.Label("copyable_properties", "Copyable Go properties"), Value: code, ReadOnly: true, Rows: 8, FullWidth: true}),
+			components.Button(components.ButtonProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-copy": ""}}, Label: o.Label("copy_properties", "Copy Go properties"), Variant: "secondary"}))
 	}
 	return h.Article(components.Stack(components.StackProps{Gap: "4"},
 		components.Heading(components.HeadingProps{Text: example.Name, Level: 2}),
-		components.Text(components.TextProps{Content: "Preview interactions stay local. Network requests and form submissions are disabled.", Size: "sm", Color: "muted"}),
-		h.Div(g.Attr("data-gallery-viewport", ""), h.IFrame(h.Title(example.Name+" preview"), h.Src(preview), g.Attr("sandbox", "allow-scripts"), g.Attr("data-gallery-width", width))),
-		components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-preview-link": ""}}, Label: "Open preview", Href: preview, External: true}),
-		h.Details(h.Open(), h.Summary(g.Text("Preview controls")), h.Form(form...)),
+		components.Text(components.TextProps{Content: o.Label("local_only", "Preview interactions stay local. Network requests and form submissions are disabled."), Size: "sm", Color: "muted"}),
+		h.Div(g.Attr("data-gallery-viewport", ""), h.IFrame(h.Title(o.Label("preview_title", "%s preview", example.Name)), h.Src(preview), g.Attr("sandbox", "allow-scripts"), g.Attr("data-gallery-width", width))),
+		components.Link(components.LinkProps{ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-preview-link": ""}}, Label: o.Label("open_preview", "Open preview"), Href: preview, External: true}),
+		h.Details(h.Open(), h.Summary(g.Text(o.Label("preview_controls", "Preview controls"))), h.Form(form...)),
 		h.Div(h.ID("pk-gallery-status"), h.Role("status"), g.Attr("data-gallery-status", "")), snippet,
-		h.Details(h.Summary(g.Text("Properties and slots")), examples.Documentation(example)))), nil
+		h.Details(h.Summary(g.Text(o.Label("properties_slots", "Properties and slots"))), examples.Documentation(example)))), nil
 }
 
-func propertyControls(d examples.ExampleDescription) []g.Node {
+func propertyControls(d examples.ExampleDescription, o Options) []g.Node {
 	var schema struct {
 		Properties map[string]map[string]any `json:"properties"`
 	}
@@ -181,7 +220,7 @@ func propertyControls(d examples.ExampleDescription) []g.Node {
 				text := fmt.Sprint(choice)
 				label := text
 				if text == "" {
-					label = "Default"
+					label = o.Label("default", "Default")
 				}
 				options = append(options, components.SelectOption{Value: text, Label: label})
 			}

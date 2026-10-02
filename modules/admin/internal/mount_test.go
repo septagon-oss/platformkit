@@ -187,7 +187,7 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 	t.Parallel()
 	example := examples.ExampleOf(examples.ExampleInfo{ID: "product/button", ComponentID: "product.button", Name: "Button"},
 		components.ButtonProps{Label: "Buy"}, components.Button)
-	out, err := galleryPreview(export.Storybook{Theme: design.Default()}, example, "dark", "/app/app/admin/assets")
+	out, err := galleryPreview(page.Request{}, export.Storybook{Theme: design.Default()}, example, "dark", "/app/app/admin/assets")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +203,7 @@ func TestThePreviewDocumentIsSandboxedAndCarriesItsOwnStylesheet(t *testing.T) {
 			t.Errorf("preview lacks %q", want)
 		}
 	}
-	system, _ := galleryPreview(export.Storybook{Theme: design.Default()}, example, "system", "/app/app/admin/assets")
+	system, _ := galleryPreview(page.Request{}, export.Storybook{Theme: design.Default()}, example, "system", "/app/app/admin/assets")
 	if strings.Contains(string(system.Body), `<html lang="en" data-theme=`) {
 		t.Error("a system preview pinned a theme")
 	}

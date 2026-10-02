@@ -1,0 +1,236 @@
+{
+  "gallery.all": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Todos",
+    "plural": {
+      "": "Todos"
+    }
+  },
+  "gallery.apply": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Aplicar pré-visualização",
+    "plural": {
+      "": "Aplicar pré-visualização"
+    }
+  },
+  "gallery.copy_properties": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Copiar as propriedades Go",
+    "plural": {
+      "": "Copiar as propriedades Go"
+    }
+  },
+  "gallery.copyable_properties": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Propriedades Go para copiar",
+    "plural": {
+      "": "Propriedades Go para copiar"
+    }
+  },
+  "gallery.dark": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Escuro",
+    "plural": {
+      "": "Escuro"
+    }
+  },
+  "gallery.default": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Predefinição",
+    "plural": {
+      "": "Predefinição"
+    }
+  },
+  "gallery.description": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Explore os componentes, ajuste as suas propriedades e teste as disposições clara, escura e responsiva.",
+    "plural": {
+      "": "Explore os componentes, ajuste as suas propriedades e teste as disposições clara, escura e responsiva."
+    }
+  },
+  "gallery.desktop": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Computador · 1280px",
+    "plural": {
+      "": "Computador · 1280px"
+    }
+  },
+  "gallery.download": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Descarregar a exportação de design",
+    "plural": {
+      "": "Descarregar a exportação de design"
+    }
+  },
+  "gallery.empty": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Nenhum exemplo publicado para esta seleção.",
+    "plural": {
+      "": "Nenhum exemplo publicado para esta seleção."
+    }
+  },
+  "gallery.fit": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Ajustar ao espaço disponível",
+    "plural": {
+      "": "Ajustar ao espaço disponível"
+    }
+  },
+  "gallery.go_properties": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Propriedades Go",
+    "plural": {
+      "": "Propriedades Go"
+    }
+  },
+  "gallery.landmark": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Exemplos de componentes",
+    "plural": {
+      "": "Exemplos de componentes"
+    }
+  },
+  "gallery.light": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Claro",
+    "plural": {
+      "": "Claro"
+    }
+  },
+  "gallery.local_only": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "As interações da pré-visualização ficam locais. Os pedidos de rede e o envio de formulários estão desativados.",
+    "plural": {
+      "": "As interações da pré-visualização ficam locais. Os pedidos de rede e o envio de formulários estão desativados."
+    }
+  },
+  "gallery.open_preview": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Abrir a pré-visualização",
+    "plural": {
+      "": "Abrir a pré-visualização"
+    }
+  },
+  "gallery.open_storybook": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Abrir o Storybook",
+    "plural": {
+      "": "Abrir o Storybook"
+    }
+  },
+  "gallery.phone": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Telemóvel · 320px",
+    "plural": {
+      "": "Telemóvel · 320px"
+    }
+  },
+  "gallery.preview_controls": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Controlos da pré-visualização",
+    "plural": {
+      "": "Controlos da pré-visualização"
+    }
+  },
+  "gallery.preview_theme": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Tema da pré-visualização",
+    "plural": {
+      "": "Tema da pré-visualização"
+    }
+  },
+  "gallery.preview_title": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Pré-visualização de %s",
+    "plural": {
+      "": "Pré-visualização de %s"
+    }
+  },
+  "gallery.preview_width": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Largura da pré-visualização",
+    "plural": {
+      "": "Largura da pré-visualização"
+    }
+  },
+  "gallery.properties_slots": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Propriedades e slots",
+    "plural": {
+      "": "Propriedades e slots"
+    }
+  },
+  "gallery.reset": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Repor as propriedades",
+    "plural": {
+      "": "Repor as propriedades"
+    }
+  },
+  "gallery.system": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Sistema",
+    "plural": {
+      "": "Sistema"
+    }
+  },
+  "gallery.tablet": {
+    "references": [
+      "ui/export/storybook.go"
+    ],
+    "translation": "Tablete · 768px",
+    "plural": {
+      "": "Tablete · 768px"
+    }
+  }
+}

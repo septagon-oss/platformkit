@@ -104,7 +104,7 @@ func (p pages) mountGallery(app *httpx.Router) {
 			if err != nil {
 				return page.View{}, err
 			}
-			body, err := export.StorybookPage(book, p.at.gallery.at, in.Group, example, in.Props, in.Theme, in.Width)
+			body, err := export.StorybookPage(book, export.Options{Locale: r.Locale}, p.at.gallery.at, in.Group, example, in.Props, in.Theme, in.Width)
 			return page.View{Title: book.Title, Head: []g.Node{
 				h.Link(h.Rel("stylesheet"), h.Href(p.at.assets.at+"/gallery.css?v="+ui.Gallery().Fingerprint)),
 				h.StyleEl(g.Raw(export.StorybookCSS())),
@@ -133,15 +133,25 @@ func (p pages) mountGallery(app *httpx.Router) {
 			if err != nil {
 				return nil, err
 			}
-			return galleryPreview(book, example, in.Theme, p.at.assets.at)
+			return galleryPreview(p.shell.Request(ctx), book, example, in.Theme, p.at.assets.at)
 		})
 	}
 }
 
-func galleryPreview(book export.Storybook, example examples.Example, mode, assets string) (*httpx.Page, error) {
+// galleryPreview is a preview document: the specimen on its own sheet, in the
+// language the reader's request asked to be answered in. It carries no chrome and
+// no other tenant's asset, and its own <html lang> says which language the wrapper
+// below is written in — a document that declared the installation's source language
+// while the page framing it declared the tenant's would be two pages lying about
+// one screen.
+func galleryPreview(r page.Request, book export.Storybook, example examples.Example, mode, assets string) (*httpx.Page, error) {
 	extra := append(slices.Clone(book.Extra), ui.Extra{Lists: components.GalleryClassLists()})
 	sheet := ui.Compose(book.Theme, extra...)
-	attrs := []g.Node{h.Lang("en")}
+	language := "en"
+	if r.Locale != nil {
+		language = r.Locale.Language
+	}
+	attrs := []g.Node{h.Lang(language)}
 	if mode != "system" {
 		attrs = append(attrs, g.Attr("data-theme", mode))
 	}
@@ -151,10 +161,17 @@ func galleryPreview(book export.Storybook, example examples.Example, mode, asset
 		h.Script(h.Src(assets+"/js/components.js"), g.Attr("defer")),
 		h.Script(h.Src(assets+"/js/confirm.js"), g.Attr("defer")),
 		h.Script(h.Src(assets+"/js/gallery-preview.js"), g.Attr("defer"))),
-		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(example))))
+		h.Body(h.Div(h.Style("padding:1.5rem"), galleryPreviewContent(r, example))))
 	out, err := page.Render(h.HTML(attrs...), http.StatusOK)
 	if err != nil {
 		return nil, err
+	}
+	// What the document declares in its lang attribute it says in its headers too,
+	// the way page.Serve says it — and only when a catalog was composed to choose a
+	// language at all, because a preview that always answers in the language it was
+	// written in varies by nothing.
+	if r.Locale != nil {
+		out.ContentLanguage, out.Vary = language, "Accept-Language"
 	}
 	// Enforce isolation on the direct URL too. Only the widget scripts execute;
 	// sample forms, HTMX requests and nested frames cannot reach application data.
@@ -166,29 +183,35 @@ func galleryPreview(book export.Storybook, example examples.Example, mode, asset
 
 // Demonstration context belongs to the preview, outside the exact component
 // invocation captured by export.Export. Keep the real keyboard and responsive behavior.
-func galleryPreviewContent(example examples.Example) g.Node {
+//
+// It is copy, not specimen: the sample navigation is data, but the sentence that
+// tells a person to press Tab, the button that moves focus onto the skip link and
+// the name of the landmark they are being shown are words this package chose, so
+// they are asked for in the language this preview is served in. The specimen itself
+// stays in the language its author wrote it — that is what the frame is for.
+func galleryPreviewContent(r page.Request, example examples.Example) g.Node {
 	switch example.ComponentID {
 	case "pk-ui.component.skiplink":
 		return components.Stack(components.StackProps{Align: "start", ComponentProps: components.ComponentProps{
 			Attrs: map[string]string{"data-gallery-skiplink": ""},
 		}}, example.Node,
-			components.Text(components.TextProps{Content: "Skip links appear when focused. Tab into this preview to reveal the link, then press Enter to skip the sample navigation."}),
-			components.Button(components.ButtonProps{Label: "Focus skip link", Variant: "secondary", ComponentProps: components.ComponentProps{
+			components.Text(components.TextProps{Content: chrome(r, "gallery.skip_hint", "Skip links appear when focused. Tab into this preview to reveal the link, then press Enter to skip the sample navigation.")}),
+			components.Button(components.ButtonProps{Label: chrome(r, "gallery.focus_skip", "Focus skip link"), Variant: "secondary", ComponentProps: components.ComponentProps{
 				Attrs: map[string]string{"data-gallery-focus-skip": ""},
 			}}),
-			h.Nav(g.Attr("aria-label", "Sample navigation"), components.Button(components.ButtonProps{
-				Label: "Sample navigation link", Href: "#content", Variant: "link",
+			h.Nav(g.Attr("aria-label", chrome(r, "gallery.sample_nav", "Sample navigation")), components.Button(components.ButtonProps{
+				Label: chrome(r, "gallery.sample_nav_link", "Sample navigation link"), Href: "#content", Variant: "link",
 			})),
 			h.Main(g.Attr("data-gallery-skip-target", ""), g.Attr("tabindex", "-1"),
 				components.Stack(components.StackProps{},
-					components.Heading(components.HeadingProps{Text: "Sample page content", Level: 1, Size: 3}),
-					components.Text(components.TextProps{Content: "The skip link moves keyboard focus here. Press Tab again to reach the field."}),
-					components.Input(components.InputProps{Name: "sample-content", Label: "Sample content field"}),
+					components.Heading(components.HeadingProps{Text: chrome(r, "gallery.sample_content", "Sample page content"), Level: 1, Size: 3}),
+					components.Text(components.TextProps{Content: chrome(r, "gallery.sample_field_hint", "The skip link moves keyboard focus here. Press Tab again to reach the field.")}),
+					components.Input(components.InputProps{Name: "sample-content", Label: chrome(r, "gallery.sample_field", "Sample content field")}),
 				)),
 		)
 	case "pk-ui.component.sidebar":
 		return h.Main(components.Stack(components.StackProps{},
-			components.Text(components.TextProps{Content: "The admin sidebar is hidden at this viewport width. Choose Desktop in Storybook's viewport menu or widen the preview.",
+			components.Text(components.TextProps{Content: chrome(r, "gallery.sidebar_hint", "The admin sidebar is hidden at this viewport width. Choose Desktop in Storybook's viewport menu or widen the preview."),
 				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-gallery-sidebar-hint": "", "hidden": ""}}}),
 			example.Node,
 		))
