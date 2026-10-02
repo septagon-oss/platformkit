@@ -16,8 +16,7 @@ var schema embed.FS
 // The files keep the version numbers they had when the foundation applied
 // them under its own name, so an installation migrated before this module
 // owned its SQL is adopted by checksum rather than migrated again (see
-// db.Adoption and docs/adr/0011). New files continue from the highest number
-// anywhere in the composition.
+// db.Adoption and docs/adr/0011). New files continue from the highest number.
 var Migrations = db.MigrationSource{
 	Owner:  "audit",
 	Files:  db.Sub(schema, "migrations"),
