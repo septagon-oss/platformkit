@@ -270,6 +270,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
+	# Where a run finds the mail catcher. The journeys that open a mailed link are
+	# the only proof the address the application dials is right, and they cannot say
+	# which of the two addresses in this repository they were pointed at: a caller
+	# that runs one spec directly used to dial compose.yaml's default port while the
+	# catcher it had been given answered on another one, and the journey blamed
+	# Playwright. This case asks the script itself, in under a second, with no stack.
+	bash scripts/e2e_mail_address_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
