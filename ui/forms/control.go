@@ -18,6 +18,13 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
+	// ChooseLabel is the empty choice of a select that has a value to offer:
+	// the row a reader picks when they mean "back to nothing chosen". It is a
+	// prop because the words are the page's — ui/components only draws the
+	// option — and a select on a page written in another language has no
+	// business keeping its placeholder in English. Empty keeps the component's
+	// own fallback, which is what a form rendered without a catalog says.
+	ChooseLabel string
 }
 
 // widgetInputType names the <input> type each widget that draws an input asks
@@ -65,7 +72,7 @@ func Control(p ControlProps) g.Node {
 				options = append(options, components.SelectOption{Label: value, Value: value})
 			}
 		}
-		placeholder := ""
+		placeholder := p.ChooseLabel
 		if f.Default == "" {
 			placeholder = "Choose a " + strings.ToLower(label)
 		}

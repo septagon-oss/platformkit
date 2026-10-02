@@ -37,6 +37,15 @@ func raisedFaults(t *testing.T) []string {
 	// and they are copy a person reads: a missing entry is the same defect one
 	// sentence down.
 	keys = append(keys, refusalParts...)
+	// The session refusals the shell carries on every page are refusals too: the
+	// document renders them from ui/document, which holds the sentences, and this
+	// package is the source that owns the `fault.` prefix they are addressed under,
+	// so they are checked here beside the pages they arrive on. A person whose
+	// session ended mid-form meets one of these four and nothing else.
+	for _, kind := range []string{"anonymous", "denied", "changed", "uncertain"} {
+		keys = append(keys, "fault.request."+kind+".title", "fault.request."+kind+".message")
+	}
+	keys = append(keys, "fault.request.sign_in") // the recovery link the first and third offer
 	slices.Sort(keys)
 	return slices.Compact(keys)
 }

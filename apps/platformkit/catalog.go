@@ -36,8 +36,18 @@ import (
 // hold — the gate that fails when one of them is short is the loader's own
 // (kit/locale/providers/xtext), and the tenant's own supported set is negotiated
 // on top of it in locale.go.
+//
+// The one language no file carries is en-XA, the pseudo-locale: this composition
+// asks xtext to derive it from the English source copy, so every sentence the
+// reference application can answer in arrives accented and longer than it is. That
+// is a decision about this deployment — a client that ships no debugging language
+// writes this line differently and nothing else changes — and it is the cheapest
+// standing answer to "is this page actually translated", because a string that
+// never went through a catalogue is the only kind of string that stays plain ASCII.
+// A deployment that serves it to real customers has a problem; a deployment that
+// cannot serve it has no way to see the bug.
 func catalogues() xtext.Catalog {
-	return xtext.Load("en",
+	return xtext.Pseudo(xtext.Load("en",
 		page.Catalogue(),
 		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
 		admin.Catalogue(),
@@ -53,5 +63,5 @@ func catalogues() xtext.Catalog {
 		site.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
-		user.Catalogue())
+		user.Catalogue()), "en-XA")
 }

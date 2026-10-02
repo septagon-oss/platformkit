@@ -23,5 +23,14 @@
     "plural": {
       "": "manage content"
     }
+  },
+  "nav.content.contents": {
+    "references": [
+      "modules/content/module.go"
+    ],
+    "translation": "Content",
+    "plural": {
+      "": "Content"
+    }
   }
 }

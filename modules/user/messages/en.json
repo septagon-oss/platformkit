@@ -32,5 +32,50 @@
     "plural": {
       "": "approve new accounts"
     }
+  },
+  "nav.user.users": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Users",
+    "plural": {
+      "": "Users"
+    }
+  },
+  "field.displayName": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Display name",
+    "plural": {
+      "": "Display name"
+    }
+  },
+  "field.createdAt": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Created at",
+    "plural": {
+      "": "Created at"
+    }
+  },
+  "field.updatedAt": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Updated at",
+    "plural": {
+      "": "Updated at"
+    }
+  },
+  "field.roles": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Roles",
+    "plural": {
+      "": "Roles"
+    }
   }
 }

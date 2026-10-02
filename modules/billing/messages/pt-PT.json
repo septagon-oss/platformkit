@@ -39,5 +39,14 @@
       "one": "Subscrição",
       "other": "Subscrições"
     }
+  },
+  "nav.billing.plans": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Faturação",
+    "plural": {
+      "": "Faturação"
+    }
   }
 }

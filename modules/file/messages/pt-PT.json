@@ -16,5 +16,14 @@
     "plural": {
       "": "gerir ficheiros"
     }
+  },
+  "nav.file.files": {
+    "references": [
+      "modules/file/module.go"
+    ],
+    "translation": "Ficheiros",
+    "plural": {
+      "": "Ficheiros"
+    }
   }
 }

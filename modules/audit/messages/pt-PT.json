@@ -7,5 +7,14 @@
     "plural": {
       "": "ler o registo de auditoria"
     }
+  },
+  "nav.audit.events": {
+    "references": [
+      "modules/audit/module.go"
+    ],
+    "translation": "Auditoria",
+    "plural": {
+      "": "Auditoria"
+    }
   }
 }

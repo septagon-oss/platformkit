@@ -16,5 +16,14 @@
     "plural": {
       "": "definir os idiomas desta organização"
     }
+  },
+  "nav.tenant.tenants": {
+    "references": [
+      "modules/tenant/module.go"
+    ],
+    "translation": "Organizações",
+    "plural": {
+      "": "Organizações"
+    }
   }
 }

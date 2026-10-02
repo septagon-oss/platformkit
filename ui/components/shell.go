@@ -21,10 +21,13 @@ type ShellProps struct {
 	ComponentProps
 	// SkipTarget is the id the skip link jumps to; the main region takes it.
 	//
-	// There is no SkipLabel beside it. One existed and nothing ever set it: a
-	// skip link says "Skip to content" in every application that has one, and a
-	// prop nobody writes is a prop every reader of this struct has to rule out.
+	// SkipLabel is the skip link's words. It used to be the other way round: a
+	// label prop existed and no caller set it, so the one sentence every page
+	// writes first was the only visible string on an admin page that could not be
+	// answered in another language. A shell that negotiates a language sets it;
+	// the fallback is what a shell with no catalog says.
 	SkipTarget string
+	SkipLabel  string
 }
 
 // ShellSlots are the frame's four regions.
@@ -46,7 +49,7 @@ func Shell(p ShellProps, slots ShellSlots) g.Node {
 	nodes := baseAttrs(p.ComponentProps)
 	nodes = append(nodes, classes(clShell.Compile(), p.Class))
 	nodes = append(nodes,
-		SkipLink(target, "Skip to content"),
+		SkipLink(target, fallbackText(p.SkipLabel, "Skip to content")),
 		g.Group(slots.Sidebar),
 		h.Div(h.Class(clShellColumn.Compile()),
 			h.Header(h.Class(clShellHeader.Compile()), g.Group(slots.Header)),

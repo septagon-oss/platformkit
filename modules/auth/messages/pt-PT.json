@@ -7,5 +7,14 @@
     "plural": {
       "": "gerir funções"
     }
+  },
+  "nav.auth.roles": {
+    "references": [
+      "modules/auth/module.go"
+    ],
+    "translation": "Funções",
+    "plural": {
+      "": "Funções"
+    }
   }
 }

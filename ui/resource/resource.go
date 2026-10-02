@@ -90,6 +90,17 @@ type Options struct {
 // Text is one label through the seam: the catalog's translation of key, or
 // fallback formatted with args when no catalog is composed or lacks the key.
 // The adapter reads it for the titles its mounted routes name.
+// Label is Text with no arguments: the words a screen writes over something —
+// a column, a control, a button — rather than a sentence that interpolates one.
+// Its own name is the reason it exists: Text reads as a printf to the toolchain,
+// and a label built from a field name is not a format string.
+func (o Options) Label(key, fallback string) string {
+	if o.Locale == nil {
+		return fallback
+	}
+	return o.Locale.Text(key, fallback)
+}
+
 func (o Options) Text(key, fallback string, args ...any) string {
 	if o.Locale == nil {
 		return fmt.Sprintf(fallback, args...)
@@ -237,7 +248,7 @@ const statusUnprocessableEntity = 422
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
 	fields := make([]forms.Field, 0, len(r.Schema.Fields))
 	for _, field := range r.Schema.Fields {
-		fields = append(fields, formField(field))
+		fields = append(fields, formField(field, o))
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
@@ -248,23 +259,26 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		// The address the form posts to is its DOM scope: see forms.Namespace.
 		Namespace: forms.Namespace(action),
 		Action:    action, CancelURL: r.Screen, Title: title,
+		CancelLabel: o.Label("screens.cancel", "Cancel"),
+		SubmitLabel: o.Label("screens.save", "Save"),
+		ChooseLabel: o.Label("screens.choose", "Choose…"),
 	})
 }
 
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(f), Value: value, Error: fieldErr, Immutable: immutable})
+	return forms.Control(forms.ControlProps{Field: formField(f, Options{}), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField projects display words at the screen boundary. The portable form
 // owns controls; the value words keep their owner in kit/entity/display.
-func formField(f entity.Field) forms.Field {
+func formField(f entity.Field, o Options) forms.Field {
 	options := make([]components.SelectOption, 0, len(f.Enum))
 	for _, value := range f.Enum {
 		options = append(options, components.SelectOption{Label: display.Humanize(value), Value: value})
 	}
-	return forms.Field{Definition: f, Label: display.FieldLabel(f), Options: options}
+	return forms.Field{Definition: f, Label: o.Label("field."+f.Name, display.FieldLabel(f)), Options: options}
 }
 
 // table is the list screen's rows: the field a row is known by first, as the
@@ -284,7 +298,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 	columns := make([]components.TableColumn, 0, len(shown))
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: display.FieldLabel(f), Sortable: f.Type != entity.TypeList, Primary: i == 0,
+			Key: f.Name, Label: o.Label("field."+f.Name, display.FieldLabel(f)), Sortable: f.Type != entity.TypeList, Primary: i == 0,
 		})
 	}
 	out := make([]components.TableRow, 0, len(rows))

@@ -23,5 +23,14 @@
       "one": "Tarefa",
       "other": "Tarefas"
     }
+  },
+  "nav.task.tasks": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Tarefas",
+    "plural": {
+      "": "Tarefas"
+    }
   }
 }

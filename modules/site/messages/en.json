@@ -14,5 +14,14 @@
     "plural": {
       "": "manage the site"
     }
+  },
+  "nav.site.settings": {
+    "references": [
+      "modules/site/module.go"
+    ],
+    "translation": "Site",
+    "plural": {
+      "": "Site"
+    }
   }
 }

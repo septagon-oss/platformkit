@@ -45,6 +45,10 @@ type Options struct {
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
+	// ChooseLabel is the empty choice of a select that already holds a value —
+	// see ControlProps.ChooseLabel. One sentence for the whole form, set by the
+	// screen from its own catalog.
+	ChooseLabel string
 }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
@@ -155,7 +159,7 @@ func example(id string, model Model, options Options) examples.Example {
 		if !present && model.Create {
 			value = f.Default
 		}
-		body = append(body, Control(ControlProps{Field: field,
+		body = append(body, Control(ControlProps{Field: field, ChooseLabel: options.ChooseLabel,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),

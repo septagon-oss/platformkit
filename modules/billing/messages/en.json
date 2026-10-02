@@ -39,5 +39,14 @@
     "plural": {
       "": "manage the plan catalogue"
     }
+  },
+  "nav.billing.plans": {
+    "references": [
+      "modules/billing/module.go"
+    ],
+    "translation": "Billing",
+    "plural": {
+      "": "Billing"
+    }
   }
 }
