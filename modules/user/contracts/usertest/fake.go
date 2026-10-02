@@ -247,6 +247,32 @@ func (f *Fake) ServeLanguages(l tenancy.Languages) {
 // the principal of ctx and never an argument, a tag outside the tenant's set is
 // refused, and the choice already held is not a change.
 func (f *Fake) SetPreferredLocale(ctx context.Context, _ db.Tx[db.Tenant], tag string) (*contracts.User, error) {
+	return f.choose(ctx, nil, tag)
+}
+
+// SetPreferredLocaleAt mirrors the service's: the same decision, with the revision
+// the caller read compared against the one held before anything is written.
+func (f *Fake) SetPreferredLocaleAt(ctx context.Context, _ db.Tx[db.Tenant], expectedRevision int64, tag string) (*contracts.User, error) {
+	return f.choose(ctx, &expectedRevision, tag)
+}
+
+// OwnLanguage answers the principal's choice and the revision to bring back with
+// the next one.
+func (f *Fake) OwnLanguage(ctx context.Context, _ db.Tx[db.Tenant]) (contracts.Language, error) {
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn || principal.UserID == uuid.Nil {
+		return contracts.Language{}, contracts.ErrNoSignIn
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	u, err := f.get(principal.UserID)
+	if err != nil {
+		return contracts.Language{}, err
+	}
+	return contracts.Language{Locale: u.PreferredLocale, Revision: u.LocaleRevision}, nil
+}
+
+func (f *Fake) choose(ctx context.Context, expected *int64, tag string) (*contracts.User, error) {
 	principal, signedIn := tenancy.PrincipalFrom(ctx)
 	if !signedIn || principal.UserID == uuid.Nil {
 		return nil, contracts.ErrNoSignIn
@@ -263,7 +289,11 @@ func (f *Fake) SetPreferredLocale(ctx context.Context, _ db.Tx[db.Tenant], tag s
 	if u.PreferredLocale == tag {
 		return u, nil
 	}
-	u.PreferredLocale, u.UpdatedAt = tag, db.Now()
+	if expected != nil && u.LocaleRevision != *expected {
+		return nil, fmt.Errorf("%w: this choice was read at revision %d and this person's is on revision %d",
+			crud.ErrConflict, *expected, u.LocaleRevision)
+	}
+	u.PreferredLocale, u.LocaleRevision, u.UpdatedAt = tag, u.LocaleRevision+1, db.Now()
 	f.users[principal.UserID] = *u
 	f.published = append(f.published, contracts.EventLanguageSet)
 	return u, nil

@@ -67,12 +67,37 @@ var _ contracts.Service = (*Service)(nil)
 // no id here to lie about, and the tenant scope comes from the same transaction
 // row-level security already enforces.
 //
+// The write itself is choose; see it for the lock order and for what an expected
+// revision changes.
+func (s *Service) SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*contracts.User, error) {
+	return s.choose(ctx, tx, nil, tag)
+}
+
+// SetPreferredLocaleAt is the same command for the caller that read the choice
+// first. The versioned account door — GET then PUT /api/v1/user/me/language — is
+// that caller: it drew a page at one revision, and a second tab, an operator who
+// narrowed the set, or the person's own other device may have moved it since. The
+// row lock below is what makes the comparison and the write one decision rather
+// than a promise about the row between them.
+func (s *Service) SetPreferredLocaleAt(ctx context.Context, tx db.Tx[db.Tenant], expectedRevision int64, tag string) (*contracts.User, error) {
+	return s.choose(ctx, tx, &expectedRevision, tag)
+}
+
+// choose is the one decision, reached with or without an expected revision.
+//
+// A nil expectation says the caller brought an intent and not a read: "answer me
+// in Portuguese" is a complete statement, and the losing half of two such writes
+// is told which language it now holds by the row it gets back. An expectation says
+// the caller read something, and the only honest answer to a read that is no longer
+// current is a conflict that writes nothing and publishes nothing.
+//
 // The tenant's row is locked before the person's, the order every write that
 // touches both takes: SetLocale changes the set this tag has to be found in, and
 // two writers who take the two rows in the opposite order deadlock rather than
 // decide. Holding it is also what makes the read below and the write below one
-// decision — no other transaction can move the row between them.
-func (s *Service) SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], tag string) (*contracts.User, error) {
+// decision — no other transaction can move either row between them, which is what
+// makes the revision compared below the revision the write lands on.
+func (s *Service) choose(ctx context.Context, tx db.Tx[db.Tenant], expected *int64, tag string) (*contracts.User, error) {
 	principal, signedIn := tenancy.PrincipalFrom(ctx)
 	if !signedIn || principal.UserID == uuid.Nil {
 		return nil, contracts.ErrNoSignIn
@@ -93,14 +118,38 @@ func (s *Service) SetPreferredLocale(ctx context.Context, tx db.Tx[db.Tenant], t
 		// revision anybody has to read again.
 		return u, nil
 	}
+	if expected != nil && u.LocaleRevision != *expected {
+		return nil, fmt.Errorf("%w: this choice was read at revision %d and this person's is on revision %d",
+			crud.ErrConflict, *expected, u.LocaleRevision)
+	}
 	was := u.PreferredLocale
-	u.PreferredLocale = tag
-	if err := crud.Update(ctx, tx, u, "preferred_locale", "updated_at"); err != nil {
+	u.PreferredLocale, u.LocaleRevision = tag, u.LocaleRevision+1
+	if err := crud.Update(ctx, tx, u, "preferred_locale", "locale_revision", "updated_at"); err != nil {
 		return nil, err
 	}
 	return u, events.Publish(ctx, tx, contracts.EventLanguageSet, contracts.LanguageSet{
 		UserID: u.ID, Was: was, Now: tag, At: db.Now(),
 	})
+}
+
+// OwnLanguage is the account door's read: the choice and the revision to bring
+// back with the next one. It names no person because it answers the one the
+// transaction is standing for, and it takes no lock — a read a caller may hold
+// open while it draws a page is not the read that decides a write.
+func (s *Service) OwnLanguage(ctx context.Context, tx db.Tx[db.Tenant]) (contracts.Language, error) {
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn || principal.UserID == uuid.Nil {
+		return contracts.Language{}, contracts.ErrNoSignIn
+	}
+	var row struct {
+		Locale   string
+		Revision int64
+	}
+	if err := tx.DB().Table("users").Select("preferred_locale AS locale, locale_revision AS revision").
+		Where("id = ?", principal.UserID).Take(&row).Error; err != nil {
+		return contracts.Language{}, crud.Classify(err)
+	}
+	return contracts.Language{Locale: row.Locale, Revision: row.Revision}, nil
 }
 
 // Invite creates a user with no password and publishes the invitation. Auth's

@@ -128,10 +128,22 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		"Writes the signed-in person's own language, which beats browser negotiation on every page they are shown and survives signing out and back in. An empty locale takes the choice back and leaves it to the browser and the tenant's default. A tag this tenant is not served in is refused: the set is the tenant's declaration and a choice outside it would be a preference that silently means nothing.",
 		[]string{contracts.EventLanguageSet},
 		func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in languageBody) (*contracts.User, error) {
-			u, err := svc.SetPreferredLocale(ctx, tx, in.Locale)
+			var (
+				u   *contracts.User
+				err error
+			)
+			if in.ExpectedRevision != nil {
+				u, err = svc.SetPreferredLocaleAt(ctx, tx, *in.ExpectedRevision, in.Locale)
+			} else {
+				u, err = svc.SetPreferredLocale(ctx, tx, in.Locale)
+			}
 			if errors.Is(err, contracts.ErrNoSignIn) {
 				return nil, problem.New(http.StatusUnauthorized, "sign in to choose a language")
 			}
+			// A stale revision comes back as crud.ErrConflict, which rest.Fault turns
+			// into a 409 whose detail names both revisions — and, because the command
+			// returns no row when it refuses, the body holds no user at all. A body
+			// that looked like the write that was refused would be a lie about it.
 			return u, err
 		}, rest.CommandOptions{
 			Auth:       httpx.SignedIn(),
@@ -141,6 +153,65 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 			// beside a list of other people, would write the reader's own row.
 			Self: true,
 		})
+
+	// The same choice, read and replaced by the person it is about.
+	//
+	// The command above takes an intent; these two take a read. A page that shows
+	// the choice has seen it, and a page that has seen it can say so — which is the
+	// only way its save can be refused when the row moved underneath it. That is
+	// why the pair is GET/PUT on an address of its own rather than a second verb on
+	// the collection: a POST says "do this", and these two say "this is what I read,
+	// and this is what I now want". The module's own account control posts through
+	// the same two commands, so the form and the JSON door decide one fact the same
+	// way (modules/admin/internal/account.go).
+	httpx.Register(surfaces.App, huma.Operation{
+		OperationID: "user-own-language",
+		Method:      http.MethodGet,
+		Path:        ownLanguage,
+		Summary:     "Which language this person is answered in",
+		Description: "The language the person signed in as chose, empty while the browser and the tenant decide, with the revision it is held at. The revision is what to send back as expectedRevision: it moves once per accepted change, and a change that changes nothing leaves it where it was.",
+		Tags:        []string{"user"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*languageOutput, error) {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+		}
+		language, err := svc.OwnLanguage(ctx, tx)
+		if err != nil {
+			if errors.Is(err, contracts.ErrNoSignIn) {
+				return nil, problem.New(http.StatusUnauthorized, "sign in to choose a language")
+			}
+			return nil, rest.Fault(err)
+		}
+		return &languageOutput{Body: language}, nil
+	})
+
+	httpx.Register(surfaces.App, huma.Operation{
+		OperationID: "user-own-language-set",
+		Method:      http.MethodPut,
+		Path:        ownLanguage,
+		Summary:     "Choose which language this person is answered in",
+		Description: "Replaces the signed-in person's own language at the revision it was read at. An expected revision that is not the one the row holds answers 409 and writes nothing: the page that brought it saw a choice somebody else has since replaced. A tag this tenant is not served in is refused the same way the command's is, and the answer is the choice and its new revision — never a user row, because a body that looks like the write that was refused is a lie about it.",
+		Tags:        []string{"user"},
+		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusConflict, http.StatusServiceUnavailable},
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLanguageSet}},
+	}, httpx.SignedIn(), func(ctx context.Context, in *languageInput) (*languageOutput, error) {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+		}
+		u, err := svc.SetPreferredLocaleAt(ctx, tx, in.Body.ExpectedRevision, in.Body.Locale)
+		if err != nil {
+			if errors.Is(err, contracts.ErrNoSignIn) {
+				return nil, problem.New(http.StatusUnauthorized, "sign in to choose a language")
+			}
+			return nil, rest.Fault(err)
+		}
+		return &languageOutput{Body: contracts.Language{
+			Locale: u.PreferredLocale, Revision: u.LocaleRevision,
+		}}, nil
+	})
 }
 
 // passwordBody and rolesBody are the arguments of the two commands that take
@@ -154,11 +225,43 @@ type handleBody struct {
 	Handle string `json:"handle" minLength:"3" maxLength:"32" doc:"Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform" example:"ada"`
 }
 
-// languageBody is the account language command's argument. It is one field and it
-// is not a pointer: "" is the caller saying "stop asking me", which a nil and an
+// languageBody is the account language command's argument. Locale is one field and
+// it is not a pointer: "" is the caller saying "stop asking me", which a nil and an
 // empty string would have to be distinguished for.
+//
+// ExpectedRevision is the other half, and it is a pointer because the two answers
+// it carries are different questions. Bringing the revision the choice was read at
+// says "this is what I saw, and I mean to be the next write after it": a row that
+// moved since is a conflict and not a second write. Bringing none says the caller
+// stated an intent rather than a read — a person pressing a control labelled
+// Portuguese need not have read anything first — and the row that comes back says
+// which language they now hold either way.
 type languageBody struct {
-	Locale string `json:"locale" maxLength:"35" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
+	Locale           string `json:"locale" maxLength:"35" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
+	ExpectedRevision *int64 `json:"expectedRevision,omitempty" doc:"The revision the current choice was read at; a stale one is a conflict that writes nothing" example:"2"`
+}
+
+// ownLanguage is the address of the versioned pair. It names no person because
+// neither route takes one: the transaction answers who is asking, which is the
+// half of these commands that no caller may be trusted with.
+const ownLanguage = "/me/language"
+
+// languageInput is the PUT body: the choice and the revision it was read at.
+// Unlike the command's argument, the revision is not optional here — a caller of
+// this door read the choice through its GET, so it holds a number and the only
+// honest question left is whether the row still agrees with it.
+type languageInput struct {
+	Body languageWrite `required:"true"`
+}
+
+type languageWrite struct {
+	Locale           string `json:"language" maxLength:"35" doc:"One of the languages this tenant is served in, or empty to leave the choice to the browser" example:"pt-PT"`
+	ExpectedRevision int64  `json:"expectedRevision" doc:"The revision GET /api/v1/user/me/language answered" example:"2"`
+}
+
+// languageOutput is what both routes answer with: the choice and its revision.
+type languageOutput struct {
+	Body contracts.Language
 }
 
 type rolesBody struct {

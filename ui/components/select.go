@@ -11,9 +11,14 @@ import (
 )
 
 // Select renders SelectProps as a labelled native <select>, styled as
-// an input-family control. A Placeholder renders as an empty leading option
-// so an untouched control has no accidental value; when the field is
-// Required the placeholder is how "nothing chosen yet" stays expressible.
+// an input-family control. A Placeholder renders as the empty leading option's
+// label — the caller's words for "nothing chosen", because a control cannot know
+// what an empty field means in a form it was handed and a sentence written here
+// would be one page's English on every other page's request. The option is a
+// prompt rather than a choice when the field is Required: an empty value is not
+// something that may be submitted, so "nothing chosen yet" stays expressible
+// without being selectable. Where the field is optional the empty value is a
+// value like any other, and the option that names it is selectable.
 func Select(p SelectProps) g.Node {
 	id := p.ID
 	if id == "" && p.Name != "" {
@@ -44,7 +49,7 @@ func Select(p SelectProps) g.Node {
 			label = "Choose…"
 		}
 		placeholder := []g.Node{h.Value(""), g.Text(label)}
-		if p.Placeholder != "" || p.Required {
+		if p.Required {
 			placeholder = append(placeholder, h.Disabled())
 		}
 		if len(selectedValues) == 0 {
