@@ -95,13 +95,13 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Method:      http.MethodPost,
 		Path:        "/password/reset",
 		Summary:     "Set a password with a link",
-		Description: "Consumes the token the link carried, sets the password, ends every session this person had, and signs this browser in — an invitation that left the invited person back at the sign-in form was half a door. An account that also answers with a second factor is the one left signed out: its password changes and its other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer.",
+		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds, and this browser is signed in — an invitation that left the invited person back at the sign-in form was half a door. The one account left signed out is a person who enrolled a second factor: their password changes and their other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
 		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
-			contracts.EventSessionRevoked,
+			contracts.EventSessionRevoked, contracts.EventLoggedIn,
 		}},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
 
