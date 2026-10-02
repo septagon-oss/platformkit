@@ -192,9 +192,12 @@ func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the composition's own seed service: %v", err)
 	}
+	// All six owners, as modules.go fills them: the refusal asked for here is
+	// the state check, and a hook two owners short is refused by the wiring
+	// guard before it ever reads the tenant.
 	provision := &seedProvisioner{
 		users: c.users, contents: c.contents, sites: c.sites,
-		auth: c.auth, demoPassword: cfg.Demo.Password,
+		tasks: c.tasks, files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
 	}
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {

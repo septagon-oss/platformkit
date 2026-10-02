@@ -38,8 +38,12 @@ func TestNewTenantOpensWithStarterAndDemoContent(t *testing.T) {
 			tenant   tenancy.Tenant
 			demoKeys int
 		}{
+			// The count is the demo half of the reference seed, record for record:
+			// five pages, three people, three pieces of work and one image
+			// (seed/demo/{contents,users,tasks,files}.yaml). A tenant whose own row
+			// does not say demo is created with none of them.
 			{tenant: bootstrapTenant, demoKeys: 0},
-			{tenant: created.Tenancy(), demoKeys: 8},
+			{tenant: created.Tenancy(), demoKeys: 12},
 		} {
 			if err := db.InTenant(ctx, system, want.tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 				for _, slug := range []string{"home", "about"} {
