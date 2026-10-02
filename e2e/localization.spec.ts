@@ -20,8 +20,21 @@ test('Portuguese sign-in keeps accessible labels and the existing keyboard authe
   expect((await new AxeBuilder({ page }).include('[data-login-form]').analyze()).violations).toEqual([]);
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/app$/);
-  await expect(page.locator('html')).toHaveAttribute('lang', 'en');
-  await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
+  // The two assertions above are about a page nobody has signed in to. This one is
+  // about the page they arrive at, and the branch this spec belongs to changed what
+  // it says: a person who has chosen no language of their own is answered in the one
+  // their browser asked for, because an account preference is a choice and not a
+  // default, and the fallback chain is choice, then browser, then the tenant's
+  // default. This deployment serves pt-PT and the browser here declares pt-PT, so a
+  // Portuguese sign-in now ends on a Portuguese dashboard — which is the brief's own
+  // acceptance line. Expecting English here would be expecting the bug: the page used
+  // to declare pt-PT over English chrome and the fix was to make the copy follow the
+  // declaration. `lang` and `dir` are both asserted, and the heading in the same
+  // language, so a page that translated one and forgot the other fails here rather
+  // than passing on a half-localised render.
+  await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
 });
 
 test('an English URL preference overrides the Portuguese browser without persisting it', async ({ page }) => {
