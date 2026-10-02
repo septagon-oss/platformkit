@@ -106,6 +106,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 //     for why the landing stays there, and what answers the walkthrough's zero
 //     scores once they arrive.
 func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
+	home := p.at.dashboard.at
 	locale := r.Locale
 	asked := ""
 	if h, ok := httpx.RequestFrom(ctx); ok {
@@ -151,7 +152,11 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		components.Card(components.CardProps{Title: title, Description: text("description", "Use the address this tenant knows you by.")}),
 		components.Form(components.FormProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
-				"data-login-form": "", "data-next": next}},
+				// home travels next to next because the two can be different
+				// people: next is the screen the *caller of this page* opens,
+				// and the form below can answer with somebody else — the
+				// second tab that switches account. See session.js.
+				"data-login-form": "", "data-next": next, "data-home": home}},
 			Action: action, Label: title,
 		},
 			components.Alert(components.AlertProps{
