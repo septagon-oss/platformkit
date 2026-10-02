@@ -147,9 +147,10 @@ pagination labels belong to the caller. Validation errors return no component
 bytes. A row's opaque Revision is only passed to its caller-owned action slot;
 the component never generates revision fields or treats a checkbox as authority.
 
-A refused list must also clear columns, filter/sort/view choices, result and
-selection metadata, pagination, HTMX controls and every slot. Retaining any of
-these rejects both HTML rendering and typed example capture before export.
+A failed list clears the same fields — filter/sort/view choices, result and
+selection metadata, pagination, HTMX controls and every slot but its own retry —
+and a refused list additionally clears columns and that retry control. Retaining
+any of these rejects both HTML rendering and typed example capture before export.
 
 ## Detail panels
 

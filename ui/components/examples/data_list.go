@@ -86,10 +86,15 @@ func dataListExamples() []Example {
 				p.Pagination = &c.PaginationProps{CurrentPage: 2, TotalPages: 3, BaseURL: "/items?sort=title", NavigationLabel: w.label,
 					PreviousLabel: w.previous, NextLabel: w.next, PageLabel: w.page, CurrentPageLabel: w.current}
 			}
-			if state == "refused" {
-				// A refused capture must not retain earlier results or action slots.
+			if state == "failed" || state == "offline-failed" || state == "refused" {
+				// An absent capture carries no earlier result: the failed read
+				// keeps only its own retry control, the refusal keeps nothing.
+				retry := slots.RetryAction
 				p = c.DataListProps{ComponentProps: p.ComponentProps, Label: p.Label, State: p.State}
 				slots = c.DataListSlots{}
+				if state != "refused" {
+					slots.RetryAction = retry
+				}
 			}
 			entries = append(entries, ExampleWithSlots(ExampleInfo{ID: fmt.Sprintf("pk-ui.component.data-list/%s-%s", state, w.locale),
 				ComponentID: "pk-ui.component.data-list", Group: "Data lists", Name: state + " / " + w.locale}, p, slots, c.DataListWithSlots))
