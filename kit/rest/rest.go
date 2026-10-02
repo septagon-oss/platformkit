@@ -70,6 +70,51 @@ type Spec[T crud.Entity] struct {
 	// of reads. The manifest must declare Write with Operator: true; otherwise
 	// kit/app refuses startup. See docs/adr/0008.
 	OperatorWrite bool
+	// Operations is which of the five routes this resource offers: rest.List,
+	// rest.Read, rest.Create, rest.Update, rest.Delete. Empty is all five, so
+	// every Spec written today is unchanged.
+	//
+	// A verb left out mounts no route, and the router answers accordingly: 405
+	// where the address is mounted for another verb, 404 where nothing is mounted
+	// there at all. Neither is a refusal naming a permission nobody asked for. It
+	// draws no door on a generated page, and mounts no page. It is the resource's
+	// own declaration and not a caller's: what differs per caller is whether they
+	// may use a route that exists, which is Read's, Write's and ReadAuth's
+	// question, never this one's. A module whose writes are commands rather than
+	// CRUD says so by naming the verbs it has: a resource that offers no create
+	// should not advertise one.
+	//
+	// Two shapes are answered differently rather than by the router. A set with no
+	// list has no workspace address, so it mounts no generated page at all and
+	// publishes no screen — such a module writes its own pages, the way
+	// modules/admin writes the ones a Spec cannot describe. A list with no read is
+	// refused at Mount, because the list page links every row's identity to the
+	// record route and a resource that offers no read has no record route to answer
+	// it. Everything else mounts: the doors, the pages and the catalogue are all
+	// written from this one field.
+	Operations []httpx.CRUD
+	// ReadAuth and WriteAuth are the declarations the routes answer to, for the
+	// guard a permission string cannot name: httpx.SignedIn(), or a permission that
+	// also needs a plan feature. Zero means what Read and Write mean now — the two
+	// shorthand fields, read through the two operator flags — and check() refuses a
+	// Spec that spells the same guard both ways. An operator grant keeps the
+	// shorthand (Read and OperatorRead), which is the spelling kit/app cross-checks
+	// against the module manifest; the declaration is for what the shorthand cannot
+	// say, and never for httpx.Public(), which would be a tenant's rows behind no
+	// guard at all.
+	//
+	// SignedIn admits any caller carrying a principal for the resolved tenant and
+	// nothing more (kit/httpx/authorize.go): the rows a signed-in read reaches
+	// are exactly the rows this tenant's transaction may see, which is the
+	// entity's own row-level security policy deciding. A write whose *row* the
+	// caller names is not admitted by it, and check() refuses the mount: the
+	// generic PATCH and DELETE ask only whose tenant a row is in
+	// (crud.RecheckTenant), never whose row it is, so the door that wants an
+	// object decision is rest.Command — which carries an Auth of its own and runs
+	// the module's service, where tenancy.RequirePolicy lives.
+	ReadAuth httpx.Auth
+	// WriteAuth is the write side of the same two declarations.
+	WriteAuth httpx.Auth
 	// SoftDelete keeps deleted rows, hidden, instead of removing them.
 	SoftDelete bool
 	// Immutable names, by json field name, the fields a PATCH refuses because
@@ -112,6 +157,19 @@ type Spec[T crud.Entity] struct {
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 }
+
+// The five operations a Spec may offer, spelled the way the routes that mount
+// them are spelled. The values are httpx.CRUD — the same strings the operation
+// ids end with and the keys of the `writes` map near the bottom of this file —
+// so one verb means the same thing in the route table, on a screen and in the
+// catalogue a phone parses.
+const (
+	List   = httpx.CRUDList
+	Read   = httpx.CRUDRead // a constant, not the field: Spec.Read is a permission string
+	Create = httpx.CRUDCreate
+	Update = httpx.CRUDUpdate
+	Delete = httpx.CRUDDelete
+)
 
 // The three events every Spec publishes.
 const (
@@ -168,100 +226,125 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	schema := s.Schema()
 	read, write := s.readRouter(surfaces), s.writeRouter(surfaces)
 	res := s.resource()
-	res.Screen = surfaces.App.PagePath(s.Path)
+	// The screens' address is the collection page's address, and it exists when
+	// the collection page is mounted. A resource that offers no list has no
+	// workspace page, and ui/screens mounts no generated page behind an address
+	// that answers 404 — such a module serves its own pages, which is what
+	// modules/admin's own mount does for the ones a Spec cannot describe.
+	// Publishing a screen the kernel never mounted is the lie the catalogue
+	// exists to keep.
+	if s.offers(httpx.CRUDList) {
+		res.Screen = surfaces.App.PagePath(s.Path)
+	}
 	res.Schema.Path = read.Prefix() + s.Path
-	if write.Prefix() != read.Prefix() {
+	if write.Prefix() != read.Prefix() && s.offersWrite() {
 		// The one resource whose writes do not answer where its reads do: the
 		// catalog and the kernel's own refusal name that door, because nothing a
 		// caller can derive from the read address says it is elsewhere, and a
 		// shell that derived it anyway would be sent to an address that answers
 		// the read and refuses the write.
+		//
+		// Which writes are mounted is asked here and not assumed: the pointer is a
+		// sentence about an address, and an operation set that names no write
+		// builds no write door on either surface, so the honest answer at the read
+		// door is the router's own — nothing is served for this verb — rather than
+		// a direction to a door that was never built. See offersWrite.
 		res.WritePath = write.Prefix() + s.Path
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
 
-	httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
-		"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-		s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			q, err := in.query(schema.Fields)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			items, total, err := crud.List[T](tx, q)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			out := &Page[T]{}
-			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
-			return out, nil
-		})
+	if s.offers(httpx.CRUDList) {
+		httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
+			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
+			s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
+				tx, err := transaction(ctx)
+				if err != nil {
+					return nil, err
+				}
+				q, err := in.query(schema.Fields)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				items, total, err := crud.List[T](tx, q)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				out := &Page[T]{}
+				out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
+				return out, nil
+			})
+	}
 
-	httpx.Register(write, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
-		"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
-		s.writeAuth(), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			// Immutable is refused at this door as well as at the patch. A
-			// create used to be the way past it: content's author is stamped by
-			// Validate from the actor, and a body naming it stored whatever the
-			// caller said instead, silently, with the entity's own
-			// documentation saying otherwise. See named.
-			if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
-				return nil, Fault(err)
-			}
-			e, err := s.createRow(ctx, tx, in.Body)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			return &Item[T]{Body: e}, nil
-		})
+	if s.offers(httpx.CRUDCreate) {
+		httpx.Register(write, s.op("create", http.MethodPost, s.Path, http.StatusCreated,
+			"Create a "+s.Entity, "The tenant, the id and the timestamps are set by the server."),
+			s.writeAuth(), func(ctx context.Context, in *bodyInput[T]) (*Item[T], error) {
+				tx, err := transaction(ctx)
+				if err != nil {
+					return nil, err
+				}
+				// Immutable is refused at this door as well as at the patch. A
+				// create used to be the way past it: content's author is stamped by
+				// Validate from the actor, and a body naming it stored whatever the
+				// caller said instead, silently, with the entity's own
+				// documentation saying otherwise. See named.
+				if err := refuseImmutable(in.RawBody, s.Immutable); err != nil {
+					return nil, Fault(err)
+				}
+				e, err := s.createRow(ctx, tx, in.Body)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				return &Item[T]{Body: e}, nil
+			})
+	}
 
-	httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
-		"Read a "+s.Entity, ""),
-		s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			e, err := crud.Get[T](tx, in.ID)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			return &Item[T]{Body: e}, nil
-		})
+	if s.offers(httpx.CRUDRead) {
+		httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
+			"Read a "+s.Entity, ""),
+			s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
+				tx, err := transaction(ctx)
+				if err != nil {
+					return nil, err
+				}
+				e, err := crud.Get[T](tx, in.ID)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				return &Item[T]{Body: e}, nil
+			})
+	}
 
-	httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
-		"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-		s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
-			if err != nil {
-				return nil, Fault(err)
-			}
-			return &Item[T]{Body: e}, nil
-		})
+	if s.offers(httpx.CRUDUpdate) {
+		httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+			"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
+			s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
+				tx, err := transaction(ctx)
+				if err != nil {
+					return nil, err
+				}
+				e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
+				if err != nil {
+					return nil, Fault(err)
+				}
+				return &Item[T]{Body: e}, nil
+			})
+	}
 
-	httpx.Register(write, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
-		"Delete a "+s.Entity, ""),
-		s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := s.deleteRow(ctx, tx, in.ID); err != nil {
-				return nil, Fault(err)
-			}
-			return nil, nil
-		})
+	if s.offers(httpx.CRUDDelete) {
+		httpx.Register(write, s.op("delete", http.MethodDelete, s.item(), http.StatusNoContent,
+			"Delete a "+s.Entity, ""),
+			s.writeAuth(), func(ctx context.Context, in *idInput) (*struct{}, error) {
+				tx, err := transaction(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if _, err := s.deleteRow(ctx, tx, in.ID); err != nil {
+					return nil, Fault(err)
+				}
+				return nil, nil
+			})
+	}
 }
 
 // JSON routes and in-process resources share their write orchestration.
@@ -526,25 +609,47 @@ func (s Spec[T]) item() string { return strings.TrimSuffix(s.Path, "/") + "/{id}
 // validatePermissions, which is what makes reading them here a fact rather than
 // a second opinion about who may call this.
 func (s Spec[T]) readRouter(surfaces httpx.Surfaces) *httpx.Router {
-	if s.OperatorRead {
+	if s.OperatorRead || s.readAuth().Operator() {
 		return surfaces.Ops
 	}
 	return surfaces.App
 }
 
 func (s Spec[T]) writeRouter(surfaces httpx.Surfaces) *httpx.Router {
-	if s.OperatorWrite {
+	if s.OperatorWrite || s.writeAuth().Operator() {
 		return surfaces.Ops
 	}
 	return surfaces.App
 }
 
+// offers reports whether this Spec mounted the route for a verb. An empty
+// Operations means all five — the answer every Spec written before the field
+// existed means — which is stated once, on httpx.Resource.Offers, and read here
+// through the value that carries it to the screens.
+func (s Spec[T]) offers(c httpx.CRUD) bool {
+	return httpx.Resource{Operations: s.Operations}.Offers(c)
+}
+
+// offersWrite reports whether this Spec mounts at least one of the three writes.
+// It is the question `WritePath` answers yes to: that address is quoted at a
+// caller who posted to the read door and published as the catalogue's
+// `write_path`, and both are promises that something takes the write there.
+func (s Spec[T]) offersWrite() bool {
+	return s.offers(httpx.CRUDCreate) || s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)
+}
+
 func (s Spec[T]) readAuth() httpx.Auth {
+	if s.ReadAuth.Declared() {
+		return s.ReadAuth
+	}
 	return (httpx.Resource{Read: s.Read, OperatorRead: s.OperatorRead}).ReadAuth()
 }
 
 // writeAuth is the declaration the three write routes and every Command carry.
 func (s Spec[T]) writeAuth() httpx.Auth {
+	if s.WriteAuth.Declared() {
+		return s.WriteAuth
+	}
 	return (httpx.Resource{Write: s.Write, OperatorWrite: s.OperatorWrite}).WriteAuth()
 }
 
@@ -562,9 +667,13 @@ func (s Spec[T]) check() {
 		bad = fmt.Sprintf("Path %q must be relative to the module — %q", s.Path, "/"+strings.TrimPrefix(strings.TrimPrefix(s.Path, "/api/v1/"+s.Module), "/"))
 	case !events.ValidName(s.Event(Created)):
 		bad = fmt.Sprintf("Module %q and Entity %q do not make an event name", s.Module, s.Entity)
-	case !httpx.ValidPermission(s.Read):
+	case !s.ReadAuth.Declared() && !httpx.ValidPermission(s.Read):
+		// A declared guard replaces the shorthand rather than adding to it, so
+		// an empty Read beside ReadAuth is the shape R3 insists on and not the
+		// typo this case refuses. operationsFault names the pair incoherent when
+		// both are spelled.
 		bad = fmt.Sprintf("Read %q is not %q", s.Read, "<resource>:<action>")
-	case !httpx.ValidPermission(s.Write):
+	case !s.WriteAuth.Declared() && !httpx.ValidPermission(s.Write):
 		bad = fmt.Sprintf("Write %q is not %q", s.Write, "<resource>:<action>")
 	}
 	// An Immutable name the entity has no field for guards nothing, silently
@@ -578,6 +687,9 @@ func (s Spec[T]) check() {
 		}
 	}
 	if bad == "" {
+		bad = s.operationsFault()
+	}
+	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
 	}
 	if bad == "" {
@@ -586,6 +698,92 @@ func (s Spec[T]) check() {
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
 	}
+}
+
+// operationsFault names what this Spec's operation set and its two declared
+// guards get wrong, and "" when they are coherent. Every refusal here is a
+// mount-time panic, like the rest of check: the alternative to refusing the
+// mount is a route table that answers a verb nobody declared, a page whose
+// button leads to a 404, or a guard that guards nothing.
+//
+// The set is checked before the guards because a guard is only coherent beside
+// the routes it guards: R7's refusal of a signed-in write is a sentence about
+// Update and Delete being offered.
+func (s Spec[T]) operationsFault() string {
+	seen := map[httpx.CRUD]bool{}
+	for _, c := range s.Operations {
+		if !httpx.ValidCRUD(string(c)) {
+			return fmt.Sprintf("Operations names %q, which is not one of list, read, create, update or delete", string(c))
+		}
+		if seen[c] {
+			return fmt.Sprintf("Operations names %q twice; an operation set is a set, and the catalog would publish the verb twice", string(c))
+		}
+		seen[c] = true
+	}
+	// An empty Operations means all five, and nil and an empty slice both mean
+	// it: nothing here refuses it, and nothing here reads it as "none".
+	//
+	// A list with no read is the one withheld verb that leaves a lie on a page that
+	// *is* mounted: ui/resource.table makes the identity column the way into the
+	// record, so every row of a list whose read route is not mounted would link to
+	// the 404 of a place nothing is served. That is the sentence the doors were
+	// gated with, and here it is refused rather than drawn without its links: a
+	// table of rows nobody may open is not a screen with one door missing, it is a
+	// screen that does not work.
+	if s.offers(httpx.CRUDList) && !s.offers(httpx.CRUDRead) {
+		return "offers list without read: the list page links every row to the record route, and a resource that offers no read mounts no record route to answer it"
+	}
+	for _, d := range []struct {
+		field, shorthand string
+		auth             httpx.Auth
+		operator         bool
+	}{{"ReadAuth", s.Read, s.ReadAuth, s.OperatorRead}, {"WriteAuth", s.Write, s.WriteAuth, s.OperatorWrite}} {
+		if !d.auth.Declared() {
+			continue
+		}
+		switch {
+		case d.shorthand != "":
+			return fmt.Sprintf("declares %s and the permission %q; a guard is stated once, and %s overrides the permission it would be spelled with",
+				d.field, d.shorthand, d.field)
+		case d.operator:
+			return fmt.Sprintf("declares %s with Operator%s; the declaration says whether it is the operator's — httpx.OperatorPermission carries that fact itself",
+				d.field, strings.TrimSuffix(d.field, "Auth"))
+		case d.auth.IsPublic():
+			// Public would be a tenant's rows behind no guard at all. A public
+			// face has a door of its own — rest.Singleton's Public and Face — and a
+			// route a module mounts itself has both the surface and the sentence.
+			return fmt.Sprintf("%s is public; a Spec serves a tenant's rows, so a public face is rest.Singleton's Face or a route you mount yourself", d.field)
+		case d.auth.NamesAGrant() && d.auth.Feature() == "":
+			// A permission has a shorthand, and two spellings of one guard is two
+			// things to keep honest. With .Needing it is the only spelling that can
+			// say "the grant *and* the plan feature", so that one stays. An operator
+			// permission is refused here too, and its sentence has to name *both*
+			// fields: its shorthand is the permission and the operator flag, and the
+			// declaration beside that flag is the doubling R4 refuses above. Naming
+			// only the permission would send an author to the customer's surface with
+			// the operator's grant in hand.
+			shorthand := strings.TrimSuffix(d.field, "Auth")
+			if d.auth.Operator() {
+				return fmt.Sprintf("%s names an operator permission (%s); say it with %s and Operator%s, which is the spelling kit/app checks against the manifest", d.field, d.auth, shorthand, shorthand)
+			}
+			return fmt.Sprintf("%s names a plain permission (%s); say it with %s, and name a plan feature with .Needing when the grant is not the whole question", d.field, d.auth, shorthand)
+		}
+	}
+	// A write whose row the caller names, under a guard that decides nothing but
+	// membership: the generic PATCH and DELETE reach the row through
+	// crud.RecheckTenant, which asks whose tenant and never whose row. The door
+	// for this is rest.Command, which carries an Auth and runs the module's own
+	// service, where tenancy.RequirePolicy decides the object.
+	if s.WriteAuth.Declared() && !s.WriteAuth.NamesAGrant() && (s.offers(httpx.CRUDUpdate) || s.offers(httpx.CRUDDelete)) {
+		return "mounts update or delete under a write guard that is no grant; a write about a row the caller names is a rest.Command or a permission, because the generic routes check the tenant and not the row"
+	}
+	// Immutable is refused at the create and the patch, and shown read-only in
+	// the two forms. A guard that guards no door is a misspelled name one level
+	// up: it looks like a rule and changes nothing.
+	if len(s.Immutable) > 0 && !s.offers(httpx.CRUDCreate) && !s.offers(httpx.CRUDUpdate) {
+		return fmt.Sprintf("names %d Immutable field(s) and mounts neither create nor update, so nothing writes them and nothing refuses them", len(s.Immutable))
+	}
+	return ""
 }
 
 // widgetFault names the first field whose `ui:"widget:…"` is a name no screen

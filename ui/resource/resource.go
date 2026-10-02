@@ -52,6 +52,17 @@ type Resource struct {
 	// duty on httpx.Resource.Singleton, and ui/screens/catalog.go has always
 	// carried it to the native shell; ui/screens carries it here.
 	Singleton bool
+	// Operations names the routes this resource's API actually mounted — "list",
+	// "read", "create", "update", "delete" — in that order. Empty means all
+	// five, which is what every resource written before a Spec could name its
+	// operations offers, and what a screen rendered without a kernel behind it
+	// (a design export, a golden file) renders.
+	//
+	// The renderers draw a door only for a verb named here, because a door behind
+	// which no route answers is not a door: it is a refusal with a button on it.
+	// The value is plain strings rather than httpx.CRUD because this package is
+	// pure by docs/adr/0007 and imports no transport; ui/screens carries it across.
+	Operations []string
 	// Commands are the lifecycle routes this caller may use, in the order the API
 	// declared them, each with the path its route was mounted on. Empty for a
 	// screen rendered without a caller — a design export, a golden file — because
@@ -121,7 +132,10 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	at, one := r.Screen, display.Humanize(r.Schema.Entity)
 	title := listName(one)
 	var actions []g.Node
-	if writable {
+	// The New button is drawn for a caller who may write *and* a resource that
+	// offers a create: the two questions are different, and the second is
+	// answered by the mounted routes rather than by anybody's permissions.
+	if writable && r.offers("create") {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
 	body := []g.Node{
@@ -157,14 +171,16 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 	named := label(row, r.Schema.Fields)
 	var actions []g.Node
 	if writable {
-		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		if r.offers("update") {
+			actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.edit", "Edit"), Href: item + "/edit"})}
+		}
 		// A singleton is not created and not removed, whatever Create and Delete
 		// answer when they are asked. kit/rest makes those two refuse rather than
 		// nil because the generator calls all five closures — which is right for a
 		// closure and wrong for a door: a refusal is a sentence about a mistake
 		// somebody just made, and an absent door is the same truth told before the
 		// mistake. See kit/rest/singleton.go.
-		if !r.Singleton {
+		if !r.Singleton && r.offers("delete") {
 			actions = append(actions, deleteForm(o, item, r.Schema.Entity))
 		}
 	}
@@ -356,6 +372,21 @@ func breadcrumb(o Options, collection, at, here string) g.Node {
 }
 
 func pages(total int64) int { return int((total + PerPage - 1) / PerPage) }
+
+// offers reports whether this resource mounted the route for a verb. An empty
+// Operations means all five; the same question, stated once on httpx.Resource,
+// decides the route table, and this is its answer at the door.
+func (r Resource) offers(verb string) bool {
+	if len(r.Operations) == 0 {
+		return true
+	}
+	for _, o := range r.Operations {
+		if o == verb {
+			return true
+		}
+	}
+	return false
+}
 
 func direction(sort string) string {
 	if strings.HasPrefix(sort, "-") {
