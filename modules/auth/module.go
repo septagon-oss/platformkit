@@ -223,7 +223,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(ctx, tx, asked.Email)
+				return svc.Reissue(internal.WithServed(ctx, asked.Served), tx, asked.Email)
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {
