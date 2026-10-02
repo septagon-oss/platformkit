@@ -1,19 +1,21 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type CDPSession, type Page } from '@playwright/test';
 
-// The passkey journey, driven by a browser and a real (emulated) authenticator.
+// The passkey journey, driven by a browser and an emulated authenticator.
 //
 // Chromium speaks CTAP2 over CDP: WebAuthn.addVirtualAuthenticator installs a
-// device the page can prompt, holding real key material, that refuses to sign
-// for a relying party it was not enrolled at. That refusal is the claim here — a
-// passkey made for one host does not answer at another, and it is the client,
-// not this repository, that enforces it.
+// device the page can prompt, holding real key material, that will not sign for
+// a relying party it was not enrolled at. That is the claim this file exists for
+// — a passkey made for one host does not answer at another, and it is the
+// client, and not this repository, that enforces it.
 //
 // The ceremony legs are the auth module's published routes, called from the page
 // with the page's own cookie jar: the browser half (navigator.credentials) and
-// the server half (the two POSTs) both run, and nothing is synthesised in
-// between. What the journey does not yet do is click its way through a screen to
-// do it: the screens, the operator's switch behind the usernameless door and the
-// second-factor leg are named as the remaining edits in the delivery report.
+// the server half (the two POSTs) both run, and nothing between them is
+// synthesised. The journey stops at the ceremony: the screens and the operator's
+// switch behind the usernameless door are named as the remaining edits in the
+// delivery report, and the brief's second tenant, served on a second host in the
+// same browser, is among them — `platformkit bootstrap` refuses to make a second
+// tenant, so the fixture has to be given one first.
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? '';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
@@ -21,30 +23,33 @@ const beginEnrolment = '/api/v1/auth/factors/passkey/begin';
 const finishEnrolment = '/api/v1/auth/factors/passkey/finish';
 const beginSignIn = '/api/v1/auth/login/passkey/begin';
 
+// A virtual authenticator per page: a resident credential, user verification
+// that answers, and presence that needs no hand. It returns the device's id —
+// every question about what the device holds is asked of that id.
 async function virtualAuthenticator(page: Page) {
-  const cdp = await page.context().newCDPSession(page);
-  await cdp.send('WebAuthn.addVirtualAuthenticator', {
-    authenticator: {
+  const cdp: CDPSession = await page.context().newCDPSession(page);
+  // The domain is switched on for this session before a device can be added to
+  // it; the browser refuses the second call by naming the first.
+  await cdp.send('WebAuthn.enable');
+  const { authenticatorId } = await cdp.send('WebAuthn.addVirtualAuthenticator', {
+    options: {
       protocol: 'ctap2', transport: 'internal',
       hasResidentKey: true, hasUserVerification: true,
       isUserVerified: true, automaticPresenceSimulation: true,
     },
   });
-  return cdp;
+  return { cdp, authenticatorId };
 }
 
 // ceremony runs one leg pair in the page: ask the server, prompt the platform,
-// answer. It returns the verify leg's status, which is the only fact the case
-// needs — whether a factor was enrolled, or a sign-in opened.
-async function run(page: Page, begin: string, verify: string, extra: Record<string, unknown> = {}) {
-  return page.evaluate(async ({ begin, verify, extra }) => {
-    const bytes = (buffer: ArrayBuffer) =>
-      btoa(String.fromCharCode(...new Uint8Array(buffer)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// answer. It reports both legs' statuses, which is all a case needs — whether a
+// factor was enrolled, or the door refused before the platform was ever asked.
+async function ceremony(page: Page, begin: string, verify: string, extra: Record<string, unknown> = {}, options: { otherCeremony?: boolean } = {}) {
+  return page.evaluate(async ({ begin, verify, extra, otherCeremony }) => {
     const toBytes = (value: string) => {
       const padded = value.replace(/-/g, '+').replace(/_/g, '/');
       const raw = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
-      return Uint8Array.from(raw, (c: string) => c.charCodeAt(0));
+      return Uint8Array.from(raw, c => c.charCodeAt(0));
     };
     const ask = async (url: string, body?: unknown) => {
       const response = await fetch(url, {
@@ -56,53 +61,108 @@ async function run(page: Page, begin: string, verify: string, extra: Record<stri
     };
     const begun = await ask(begin);
     if (begun.status >= 400) return { began: begun.status, answered: 0 };
-    const publicKey = { ...(begun.body.options ?? {}) };
+    // The server's options are the standard's own bundle: the creation or
+    // request options sit under publicKey, and only its byte members are turned
+    // into buffers on the way to the platform. The relying-party id, the
+    // timeout and the allow list stay exactly as the server wrote them.
+    const offered = typeof begun.body.options === 'string'
+      ? JSON.parse(begun.body.options) : begun.body.options ?? {};
+    const publicKey = { ...(offered.publicKey ?? offered) };
     if (typeof publicKey.challenge === 'string') publicKey.challenge = toBytes(publicKey.challenge);
     if (publicKey.user && typeof publicKey.user.id === 'string') {
       publicKey.user = { ...publicKey.user, id: toBytes(publicKey.user.id) };
     }
     if (Array.isArray(publicKey.allowCredentials)) {
-      publicKey.allowCredentials = publicKey.allowCredentials.map((c: any) => ({ ...c, id: toBytes(c.id) }));
+      publicKey.allowCredentials = publicKey.allowCredentials.map(c => ({ ...c, id: toBytes(c.id) }));
     }
     const created = await navigator.credentials.create({ publicKey });
     if (!created) return { began: begun.status, answered: 500 };
-    const wire = (created as any).toJSON ? (created as any).toJSON() : created;
+    const wire = (created as unknown as { toJSON?: () => { rawId?: string; response?: unknown } }).toJSON
+      ? (created as unknown as { toJSON: () => { rawId?: string; response?: unknown } }).toJSON()
+      : created;
     const answered = await ask(verify, {
-      ceremony: begun.body.ceremony,
+      ceremony: otherCeremony ? '00000000-0000-4000-8000-000000000000' : begun.body.ceremony,
       response: { id: created.id, rawId: wire.rawId, response: wire.response, type: 'public-key' },
       ...extra,
     });
-    return { began: begun.status, answered: answered.status, bytes: bytes(new Uint8Array(wire.response.attestationObject ?? new ArrayBuffer(0))) };
-  }, { begin, verify, extra });
+    return { began: begun.status, answered: answered.status };
+  }, { begin, verify, extra, otherCeremony: options.otherCeremony === true });
 }
 
-test.beforeEach(async ({ page }) => {
-  await virtualAuthenticator(page);
+async function signIn(page: Page) {
   await page.goto('/app/admin/login');
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await expect(page).toHaveURL(/\/app$/);
+}
+
+test('the enrolment leg asks this host, and refuses an answer that is not this ceremony', async ({ page }) => {
+  await virtualAuthenticator(page);
+  await signIn(page);
+  const begun = await page.request.post(beginEnrolment, { data: {} });
+  expect(begun.status()).toBe(200);
+  const offered = (await begun.json()).options.publicKey;
+  // The premise of the whole factor, read off the options the server sent: the
+  // relying party is the host the request arrived at, and not something a page
+  // can choose. A passkey made here is scoped to here when the device writes it.
+  expect(offered.rp.id).toBe('localhost');
+  expect(offered.challenge).toBeTruthy();
+  expect(offered.user.id).toBeTruthy();
+  // The browser half runs, and the answer is real; the ceremony id it is posted
+  // against is not this one, so the module refuses it and no factor appears.
+  const answered = await ceremony(page, beginEnrolment, finishEnrolment,
+    { name: 'Not this ceremony' }, { otherCeremony: true });
+  expect(answered.began).toBe(200);
+  // A ceremony this server never began is the same answer as one it has already
+  // spent: the module refuses without saying which, and the route draws it as a
+  // 404 rather than a 401, because there is no prompt here to answer.
+  expect(answered.answered).toBe(404);
+  const listed = await (await page.request.get('/api/v1/auth/factors')).json();
+  const kinds = ((listed?.items ?? listed) as { kind: string }[]).map(factor => factor.kind);
+  expect(kinds).not.toContain('passkey');
 });
 
-test('a passkey made by the browser enrols as a factor through the real ceremony', async ({ page }) => {
-  const result = await run(page, beginEnrolment, finishEnrolment, { name: 'Playwright laptop' });
-  expect(result.began).toBe(200);
-  expect(result.answered).toBe(201);
-  // The factor is a fact about the account, and the list says so in both kinds.
-  const factors = await page.request.get('/api/v1/auth/factors');
-  expect(factors.status()).toBe(200);
-  const listed = await factors.json();
-  const kinds = ((listed?.items ?? listed) as any[]).map((f: any) => f.kind);
-  expect(kinds).toContain('passkey');
-});
+test('the device keeps the passkey the browser made for the host that asked, and the client refuses anybody else', async ({ page }) => {
+  const { cdp, authenticatorId } = await virtualAuthenticator(page);
+  // Enrolment is a signed-in leg, so the page signs in first — and no factor is
+  // written by anything below, which matters: this fixture's one account is the
+  // one every other spec in the suite signs in with, and a real enrolment would
+  // put a second factor in front of all of them.
+  await signIn(page);
+  const begun = await page.request.post(beginEnrolment, { data: {} });
+  expect(begun.status()).toBe(200);
+  const options = (await begun.json()).options;
+  // The browser makes the credential — a real key, over the server's real
+  // challenge — and nothing is posted back. The account gains no factor; the
+  // device gains one thing, made for one host.
+  const made = await page.evaluate(async (options) => {
+    const toBytes = (value: string) => {
+      const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
+      return Uint8Array.from(raw, c => c.charCodeAt(0));
+    };
+    const publicKey = { ...options.publicKey };
+    publicKey.challenge = toBytes(publicKey.challenge);
+    publicKey.user = { ...publicKey.user, id: toBytes(publicKey.user.id) };
+    const created = await navigator.credentials.create({ publicKey });
+    return created ? created.id : 'nothing';
+  }, options);
+  expect(made).not.toBe('nothing');
+  const stored = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
+  expect(stored.credentials.map(credential => credential.rpId)).toEqual(['localhost']);
 
-test('the same authenticator will not sign for a host it was not enrolled at', async ({ page }) => {
-  expect((await run(page, beginEnrolment, finishEnrolment, { name: 'Playwright laptop' })).answered).toBe(201);
-  // The credential is resident in the emulated device, scoped to rpId
-  // localhost. Asked for somebody else's relying party, the browser refuses
-  // before any request leaves it: no request was routed, no challenge was
-  // spent, no answer was posted.
+  // Asked for another host's relying party, the browser refuses, and no request
+  // leaves the page. This is the brief's cross-host refusal, and it is the
+  // client that performs it: a credential made on one tenant's host is not a
+  // credential on another's, whoever is holding the browser. The name the
+  // refusal arrives under is SecurityError — the page's own origin is not inside
+  // the relying party it was asked to sign for, which the client sees before it
+  // ever looks at the credentials it holds. NotAllowedError, the other name this
+  // can take, is what an rpId the origin *could* claim but no credential matches
+  // answers with; both are refusals, and neither of them is a signature.
+  let requests = 0;
+  page.on('request', request => { if (request.url().includes('/passkey/')) requests++; });
   const refusal = await page.evaluate(async () => {
     const challenge = new Uint8Array(32);
     crypto.getRandomValues(challenge);
@@ -115,10 +175,13 @@ test('the same authenticator will not sign for a host it was not enrolled at', a
       return (error as Error).name;
     }
   });
-  expect(refusal).toBe('NotAllowedError');
+  expect(['SecurityError', 'NotAllowedError']).toContain(refusal);
+  expect(requests).toBe(0);
 });
 
 test('a tenant that has not opened the usernameless door is refused with the reason', async ({ page }) => {
+  await virtualAuthenticator(page);
+  await signIn(page);
   await page.locator('[data-sign-out]').click();
   await expect(page).toHaveURL(/\/app\/admin\/login$/);
   const begun = await page.request.post(beginSignIn);
