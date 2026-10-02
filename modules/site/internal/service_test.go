@@ -170,9 +170,10 @@ func TestTheColumnDefaultIsTheColourTheContractNames(t *testing.T) {
 	admin, conn := dbtest.Schema(t, site.Migrations)
 	var def string
 	if err := admin.QueryRowContext(t.Context(), `SELECT pg_get_expr(d.adbin, d.adrelid)
-		FROM pg_attrdef d JOIN pg_class c ON c.oid = d.adrelid
-		WHERE c.relname = 'site_settings' AND d.adnum = (
-			SELECT attnum FROM pg_attribute WHERE attrelid = c.oid AND attname = 'primary_color')`).Scan(&def); err != nil {
+		FROM pg_attrdef d
+		WHERE d.adrelid = 'site_settings'::regclass AND d.adnum = (
+			SELECT attnum FROM pg_attribute
+			WHERE attrelid = 'site_settings'::regclass AND attname = 'primary_color')`).Scan(&def); err != nil {
 		t.Fatalf("read the column default: %v", err)
 	}
 	stored := strings.Trim(strings.TrimSuffix(def, "::bpchar"), "'")
