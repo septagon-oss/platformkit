@@ -27,7 +27,8 @@ func tracesOf(rows []*contracts.Event) []string {
 }
 
 // TestATrailRowCarriesTheRequestThatCausedIt is the read-back of
-// migrations/000030: the trail answers who, what and when, and now which request.
+// migrations/000035_audit_trace, this module's own file: the trail answers who,
+// what and when, and now which request.
 // The value is the envelope's, the outbox's and the header's — one W3C traceparent,
 // stored verbatim, which is the only way the two trail rows one control-plane command
 // writes can be read back as one act.

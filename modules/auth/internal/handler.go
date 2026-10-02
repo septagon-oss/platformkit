@@ -23,7 +23,7 @@ import (
 // /api/v1/public/auth/…, which is where every public door answers. Neither
 // address is written here.
 // RegisterRoutes mounts signing in and out, the caller's own identity, the
-// three password routes and the two roles routes.
+// caller's own sessions, the three password routes and the two roles routes.
 //
 // All but the last two are about the caller themselves, which is why they
 // declare no permission: the public ones are for somebody who cannot sign in,
@@ -72,7 +72,9 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Description: "Requires the password in force. Every other session of this person ends; the one making the request does not, so changing a password does not sign you out of the page you changed it on.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-		Extensions:  map[string]any{httpx.EventsExtension: []string{usercontracts.EventPasswordSet}},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			usercontracts.EventPasswordSet, contracts.EventSessionRevoked,
+		}},
 	}, httpx.SignedIn(), handleChangePassword(svc))
 
 	httpx.Register(public, huma.Operation{
@@ -99,8 +101,41 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
+			contracts.EventSessionRevoked,
 		}},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "auth-session-list",
+		Method:      http.MethodGet,
+		Path:        "/sessions",
+		Summary:     "List my sessions",
+		Description: "Every live session this person has, most recently seen first, with the browser and address each was opened with and the one making the request marked. A session is named by its ref and never by its id: this list is something a person reads, not something a client presents.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusServiceUnavailable},
+	}, httpx.SignedIn(), handleListSessions(svc))
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "auth-session-revoke",
+		Method:      http.MethodPost,
+		Path:        "/sessions/{ref}/revoke",
+		Summary:     "Revoke one of my sessions",
+		Description: "Ends the session this person names by its ref. A ref that is not one of their live sessions is a 404 whether it was never there, is somebody else's, or belongs to another tenant. POST rather than DELETE so the page's form can make the write as a CSRF-covered request.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusNotFound, http.StatusServiceUnavailable},
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventSessionRevoked}},
+	}, httpx.SignedIn(), handleRevokeSession(svc))
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "auth-session-revoke-all",
+		Method:      http.MethodPost,
+		Path:        "/sessions/revoke-all",
+		Summary:     "Sign out everywhere",
+		Description: "Ends every session this person has, including the one making the request, and clears the cookie, so the browser lands on the sign-in page rather than holding a credential that names nothing.",
+		Tags:        []string{"auth"},
+		Errors:      []int{http.StatusServiceUnavailable},
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventSessionRevoked}},
+	}, httpx.SignedIn(), handleRevokeAllSessions(svc, cookies))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-role-list",
@@ -122,6 +157,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Errors:      []int{http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventRoleSet}},
 	}, httpx.Permission(contracts.PermissionRoleManage), handleSetRole(svc, surfaces))
+
 }
 
 // sessionOf is the session id the caller presented, read back off the request
@@ -171,6 +207,14 @@ func refusal(err error) error {
 		return problem.New(http.StatusUnauthorized, "those credentials are not right")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
+	case errors.Is(err, contracts.ErrFactorRequired):
+		// 401, and the same shape as every other login answer, because the
+		// caller is not signed in and everything else about a 401 is true. What
+		// it says is the one thing the person needs: the password was right and
+		// one more thing is missing. It is not 403, which here means "you got in
+		// and may not do that", and it is not 403 with a reset hint, which would
+		// send a person whose phone is dead down a path that cannot help them.
+		return problem.New(http.StatusUnauthorized, "that password is right; this account also answers with a second factor")
 	}
 	return rest.Fault(err)
 }
@@ -248,6 +292,19 @@ type roleInput struct {
 
 type roleOutput struct {
 	Body *contracts.Role
+}
+
+// sessionsOutput is the caller's own list: items and total, the shape every
+// other list route here answers with.
+type sessionsOutput struct {
+	Body struct {
+		Items []*contracts.SessionListing `json:"items"`
+		Total int                         `json:"total"`
+	}
+}
+
+type revokeSessionInput struct {
+	Ref string `path:"ref" minLength:"64" maxLength:"64" doc:"The session's ref, as the list shows it. Not the session id, which is the cookie credential and never appears in a response."`
 }
 
 type rolesOutput struct {

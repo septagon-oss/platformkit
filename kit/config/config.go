@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"net"
 	"net/mail"
 	"net/url"
@@ -29,6 +30,7 @@ type Config struct {
 	Server   Server   `yaml:"server"`
 	Database Database `yaml:"database"`
 	NATS     NATS     `yaml:"nats"`
+	Cache    Cache    `yaml:"cache"`
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
@@ -142,6 +144,68 @@ func (n NATS) Validate() error {
 	return nil
 }
 
+// Cache names where a value every replica must read is kept. Empty Adapter is the
+// in-process store: complete for one process, and it says so in one boot log line,
+// because forgetting a value there reaches only that process.
+type Cache struct {
+	Adapter  string `yaml:"adapter"`
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Password string `yaml:"password"`
+}
+
+// Validate checks the cache settings without opening a connection.
+//
+// app is required the moment a shared store is named: every key starts with the
+// application that wrote it, and two clients sharing one keyspace with no first
+// segment are two clients reading each other's entries. For the in-process store
+// the segment carries nothing, so it may stay empty there.
+func (c Cache) Validate() error {
+	switch c.Adapter {
+	case "", "memory", "valkey":
+	default:
+		return errors.New("cache.adapter must be memory, valkey or empty for the in-process store")
+	}
+	if c.Adapter != "valkey" && (c.URL != "" || c.Password != "") {
+		return errors.New("cache.url and cache.password belong to cache.adapter valkey")
+	}
+	if c.Adapter != "valkey" {
+		return nil
+	}
+	if c.App == "" {
+		return errors.New("cache.app is required with cache.adapter valkey: every shared key begins with the application that wrote it")
+	}
+	if c.URL == "" {
+		return errors.New("cache.url is required with cache.adapter valkey")
+	}
+	// One sentence for every address that is not one: the operator's fix is the
+	// same edit to the same line whichever way it was wrong.
+	bad := errors.New("cache.url must be redis://, valkey://, rediss:// or unix:// without credentials, paths or queries")
+	u, err := url.Parse(c.URL)
+	if err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	// A unix socket's address is its path, so the two shapes are checked apart.
+	// redis.ParseURL accepts exactly these schemes; valkey:// is rewritten to
+	// redis:// by the provider, which is what a Valkey answers to.
+	switch u.Scheme {
+	case "redis", "rediss", "valkey":
+		if u.Host == "" || u.Path != "" {
+			return bad
+		}
+	case "unix":
+		if u.Host != "" || u.Path == "" {
+			return bad
+		}
+	default:
+		return bad
+	}
+	if u.User != nil {
+		return errors.New("cache.url cannot contain credentials; use cache.password and PLATFORMKIT_CACHE_PASSWORD instead")
+	}
+	return nil
+}
+
 // Log is the logging surface: one level.
 type Log struct {
 	Level string `yaml:"level"`
@@ -150,9 +214,16 @@ type Log struct {
 // Auth is what the auth module cannot decide for itself. Passwords and sessions
 // need no configuration — the parameters are constants in the module, because a
 // deployment that lowers them is a deployment that has weakened itself — so this
-// is one optional identity provider and nothing else.
+// is one optional identity provider and the key that seals a second factor.
 type Auth struct {
 	OIDC OIDC `yaml:"oidc"`
+	// FactorKey seals a second factor's shared secret at rest. Empty means no
+	// second factor is offered at all — the enrolment routes are not mounted, so
+	// there is no door that can only answer "unavailable". Like the two other
+	// secrets in this file it belongs in the environment and not in a committed
+	// file, and it is not required: a deployment that has not decided to offer a
+	// second factor is not broken, it is one that has not decided.
+	FactorKey string `yaml:"factor_key"`
 }
 
 // OIDC is one OpenID Connect provider. An empty issuer means there is none, and
@@ -215,6 +286,17 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// Retention is how long each class of file lives, keyed by the `kind` an
+	// upload carried. It is a table and not a column because a class is the
+	// product's word and a duration is the deployment's: this package parses the
+	// durations and modules/file matches one token against the other, and a kind
+	// the table does not name is never deleted, only logged.
+	//
+	// A duration is Go's own spelling — "720h", "45m" — the same one
+	// server.read_timeout is written in. There is no environment variable per
+	// class and no row in the kernel's key table: one class per line is a
+	// config-file thing, which is what modules/file.Deps.Retention says too.
+	Retention map[string]time.Duration `yaml:"retention"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught
@@ -258,12 +340,21 @@ var keys = []key{
 	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
 	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, false},
 	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, false},
+	{"cache.adapter", "PLATFORMKIT_CACHE_ADAPTER", func(c *Config) *string { return &c.Cache.Adapter }, false},
+	{"cache.app", "PLATFORMKIT_CACHE_APP", func(c *Config) *string { return &c.Cache.App }, false},
+	{"cache.url", "PLATFORMKIT_CACHE_URL", func(c *Config) *string { return &c.Cache.URL }, false},
+	// A secret, so it earns an override for the reason rule 7 gives and earns no
+	// place in config.example.yaml with a value in it.
+	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
 	// file somebody will commit.
 	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
 	// The second secret, for the same reason as the first.
+	// The factor key, for the same reason as the other three: it seals a
+	// credential, and config.yaml is a file somebody will commit.
+	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
@@ -379,6 +470,9 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if err := c.NATS.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.Cache.Validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err
 	}
@@ -405,6 +499,20 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if c.Files.MaxBytes < 1 {
 		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
+	}
+	// A retention table is a promise that bytes get removed, so the two ways to
+	// write one by mistake are refused here rather than discovered by the sweep.
+	// An empty key is the worst of them: every upload that named no class has
+	// kind '', and the widest policy in this application is one keyed on nothing
+	// — which is also why the module keeps a kind it was never given a policy
+	// for instead of guessing.
+	for _, kind := range slices.Sorted(maps.Keys(c.Files.Retention)) {
+		switch keep := c.Files.Retention[kind]; {
+		case kind == "":
+			return Config{}, fmt.Errorf("config %s: files.retention has an entry with no class name; an empty key is the upload that named no class, which is not a class", path)
+		case keep <= 0:
+			return Config{}, fmt.Errorf("config %s: files.retention.%s is %s; how long a class lives is a positive duration written Go's way, like 720h", path, kind, keep)
+		}
 	}
 	return c, nil
 }
@@ -442,12 +550,14 @@ func (m *Mail) validate(path string) error {
 	if m.From == "" {
 		return fmt.Errorf("config %s: mail.from is empty; a message with no sender is refused by the far end", path)
 	}
-	// One bare address, because this is the envelope sender the SMTP session
-	// opens with (MAIL FROM) as well as the From header. A display name parses
-	// as an address and is refused by the relay hours later, in somebody else's
-	// log, which is the failure this key exists to avoid.
-	if a, err := mail.ParseAddress(m.From); err != nil || a.Address != m.From {
-		return fmt.Errorf("config %s: mail.from is %q; it is the envelope sender, so it is one bare address", path, m.From)
+	// One mailbox, with or without a display name: "noreply@acme.example.com" or
+	// "Acme <noreply@acme.example.com>". The mailer sends the bare address as the
+	// envelope sender (MAIL FROM) and the whole mailbox as the From header, so a
+	// name is what a person sees and never what a relay refuses. A list or a
+	// malformed address is refused here, at boot, rather than by the relay hours
+	// later in somebody else's log.
+	if _, err := mail.ParseAddress(m.From); err != nil {
+		return fmt.Errorf("config %s: mail.from is %q; it is one address, optionally with a display name", path, m.From)
 	}
 	if m.Port == 0 {
 		m.Port = defaultSMTPPort

@@ -39,6 +39,20 @@ const (
 	// says what happened to a customer; this one says which verb the operator
 	// performed, which is the question an audit of the control plane asks.
 	EventLifecycleRecorded = "tenant.lifecycle_recorded"
+
+	// EventOIDCSet says which provider a tenant's people sign in against changed,
+	// or that there is one now. It carries the issuer and client id it replaced
+	// for the same reason user.roles_set carries what a role used to grant: the
+	// question an operator asks afterwards is not "did it change" but "what did
+	// it change from", and a trail that answers only the first is a trail that
+	// gets asked twice.
+	//
+	// It carries the secret *reference* and never a secret: a payload is copied
+	// into audit_events, which is modules/audit's whole design.
+	EventOIDCSet = "tenant.oidc_set"
+	// EventOIDCCleared says a tenant has no provider now: its people sign in with
+	// a password or not at all, and its /oidc/start answers 404.
+	EventOIDCCleared = "tenant.oidc_cleared"
 )
 
 // Created is the payload of EventCreated: there is a new customer.
@@ -67,6 +81,35 @@ type HostAdded struct {
 	TenantID uuid.UUID `json:"tenantId"`
 	Host     string    `json:"host"`
 	Primary  bool      `json:"primary"`
+	At       time.Time `json:"at"`
+}
+
+// OIDCSet is the payload of EventOIDCSet.
+type OIDCSet struct {
+	TenantID     uuid.UUID `json:"tenantId"`
+	Issuer       string    `json:"issuer"`
+	ClientID     string    `json:"clientId"`
+	SecretRef    string    `json:"secretRef"`
+	RedirectPath string    `json:"redirectPath,omitempty"`
+	Registration string    `json:"registration"`
+	Roles        []string  `json:"roles,omitempty"`
+	// WasIssuer and WasClientID name the provider this one replaced, and Replaced
+	// says whether there was one: the difference between a tenant being given
+	// single sign-on and being switched from under it is the difference a person
+	// reading the trail cares about, and it is not recoverable afterwards.
+	WasIssuer string    `json:"wasIssuer,omitempty"`
+	WasClient string    `json:"wasClientId,omitempty"`
+	Replaced  bool      `json:"replaced,omitempty"`
+	At        time.Time `json:"at"`
+}
+
+// OIDCCleared is the payload of EventOIDCCleared: the provider it names is gone.
+// It names which one, because "who took our sign-in away and from when" is the
+// question this event exists to answer.
+type OIDCCleared struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	Issuer   string    `json:"issuer"`
+	ClientID string    `json:"clientId,omitempty"`
 	At       time.Time `json:"at"`
 }
 

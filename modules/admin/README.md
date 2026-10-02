@@ -72,6 +72,17 @@ not have. It mounts at least one GET at that address or under it, and the shell 
 generated screens for that resource and logs one line at boot saying so. The resource keeps its API routes
 and its catalog entry. Every other resource keeps its register.
 
+Beside the generated register this module draws seven pages itself: the dashboard and health page, the
+tenant switcher, the roles workspace, the gallery and its storybook file route, and the sessions screen.
+The last is `mountSessions` in `modules/admin/internal/sessions.go`: a table of the caller's own sessions
+at `/app/auth/sessions` with two forms that end one and end every other, guarded by `httpx.SignedIn()`
+with no permission, because these are the caller's own rows. It renders through modules/auth's commands
+(`Deps.Sessions`, declared in `modules/admin/module.go`) and is mounted only when a composition supplies
+them — a composition without a session store mounts no screen and answers 404, rather than a page with
+nothing in it. The screen's own words and why a ref never appears as row text are modules/auth's
+(`modules/auth/README.md`); this module owns only that it is drawn inside the shell's chrome. It carries no
+sidebar entry, because `kit/module.Validate` refuses a nav entry that names no permission.
+
 ## Authorization
 
 ### Permissions

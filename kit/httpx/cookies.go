@@ -5,6 +5,7 @@ package httpx
 
 import (
 	"net/http"
+	"strings"
 )
 
 // SessionCookie is the base name of the cookie a browser session travels in.
@@ -75,4 +76,30 @@ func legacyNames() []string {
 		out = append(out, CookieName(base, true), base)
 	}
 	return out
+}
+
+// BearerOf returns the bearer credential a request presented, if it presented
+// one. The scheme is matched case-insensitively, as RFC 7235 requires of a
+// scheme, and the credential is returned verbatim.
+//
+// A request that names the scheme twice, or twice with different values, is
+// refused rather than resolved: which of two credentials the caller meant is not
+// something the kernel can guess, and the safe answer to an ambiguous credential
+// is that none was presented. A header with the scheme and nothing after it is the
+// same refusal.
+func BearerOf(r *http.Request) (string, bool) {
+	const scheme = "bearer"
+	var found string
+	for _, line := range r.Header.Values("Authorization") {
+		kind, rest, ok := strings.Cut(line, " ")
+		if !ok || !strings.EqualFold(kind, scheme) {
+			continue
+		}
+		credential := strings.TrimSpace(rest)
+		if credential == "" || (found != "" && found != credential) {
+			return "", false
+		}
+		found = credential
+	}
+	return found, found != ""
 }

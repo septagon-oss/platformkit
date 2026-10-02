@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -29,17 +30,17 @@ import (
 // by construction — which used to mean any customer's administrator could list,
 // create and suspend the tenants beside them, at their own host, with the
 // credentials they were legitimately given. What keeps it safe is that each of
-// these eleven routes declares httpx.OperatorPermission: the kernel refuses
+// these thirteen routes declares httpx.OperatorPermission: the kernel refuses
 // the request at any tenant but the operator's own before it asks the roles
 // table anything, and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
-// RegisterRoutes mounts the control-plane routes.
+// RegisterRoutes mounts the thirteen control-plane routes.
 //
 // They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
 // repository — which stamps one from the transaction — has nothing to stamp.
-// That is the whole cost of the exception, and it is eleven short handlers.
+// That is the whole cost of the exception, and it is thirteen short handlers.
 //
 // Every one of them opens a transaction of its own. The request already holds a
 // tenant transaction, because recognising the caller was a query in it, and a
@@ -53,6 +54,28 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			return problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 		}
 		return db.RunSystem(db.Detached(ctx), conn, token, fn)
+	}
+
+	// invalidateHosts closes the namespace of the resolutions of these hosts after a
+	// route has written what those resolutions carry: which tenant a host is, the
+	// languages served at it, and the name a page is headed with. The write commits
+	// first, and that order is the one this function cannot change — see
+	// invalidationUncertain for why the other order is the worse outage. What a
+	// failure does change is the answer: it comes back as the fault the route answers
+	// with, because the route may not report an effect it did not achieve.
+	//
+	// The hosts are named rather than read off the tenant because one route removes a
+	// name: the row the cache is wrong about is the one the response no longer lists.
+	invalidateHosts := func(ctx context.Context, tenant uuid.UUID, what string, hosts ...string) error {
+		if ierr := r.InvalidateHost(hosts...); ierr != nil {
+			slog.ErrorContext(ctx, "tenant: the write is committed but its host resolutions were not forgotten",
+				"tenant", tenant, "change", what, "error", ierr)
+			return invalidationUncertain(what)
+		}
+		return nil
+	}
+	invalidate := func(ctx context.Context, what string, t *contracts.Tenant) error {
+		return invalidateHosts(ctx, t.ID, what, t.Hosts...)
 	}
 
 	httpx.Register(r, op("list", http.MethodGet, path, 0, "List the tenants",
@@ -95,7 +118,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		})
 
 	httpx.Register(r, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
-		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing.",
+		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing. When the installation's shared store does not accept the invalidation this route answers 503: the suspension stands in the record, but a process that had already resolved these hosts may serve them until those resolutions expire, and repeating the request finishes the change.",
 		[]string{contracts.EventSuspended, contracts.EventLifecycleRecorded}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
@@ -105,17 +128,18 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
+			// One Move closes every host resolution this process and its replicas
+			// hold, including the load a replica is mid-way through; a suspension that
+			// took effect in half a minute would be a suspension somebody has to
+			// explain. A store that will not take it is a 503, not a log line.
 			if err == nil {
-				// The resolution cache believes a host for half a minute, and
-				// a suspension that takes effect in half a minute is a
-				// suspension somebody has to explain.
-				invalidate(r, out.Body.Hosts)
+				err = invalidate(ctx, "the tenant is suspended", out.Body)
 			}
 			return out, fault(err)
 		})
 
 	httpx.Register(r, op("set-locale", http.MethodPost, path+"/{id}/locale", 0, "Say which languages a tenant is served in",
-		"Sets the language a request with no usable preference is answered in, and the set the browser's list is intersected with. Setting the same pair again changes nothing and publishes nothing. The languages a tenant may be answered in are a declaration about a customer, which is why this is the operator's route and not the tenant's: a tenant's own copy is a different capability, in a table a tenant can write.",
+		"Sets the language a request with no usable preference is answered in, and the set the browser's list is intersected with. Setting the same pair again changes nothing and publishes nothing. The languages a tenant may be answered in are a declaration about a customer, which is why this is the operator's route and not the tenant's: a tenant's own copy is a different capability, in a table a tenant can write. When the installation's shared store does not accept the invalidation this route answers 503 rather than promising the next page in the new languages: the row stands, and a process holding an older resolution serves the page it names.",
 		[]string{contracts.EventLocaleSet}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *localeInput) (*itemOutput, error) {
@@ -125,12 +149,14 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
+			// The cached resolution carries the tenant's languages with it, so the
+			// languages of a page are half a minute stale unless the resolution is
+			// closed here — the same reason a suspension closes it, and the same one
+			// command this route already made. Stale languages are a lesser wrong than
+			// a suspended host still served, but the answer that hides which of the two
+			// happened is the same one, so this route does not give it either.
 			if err == nil {
-				// The cached resolution carries the tenant's languages with it, so
-				// the languages of a page are half a minute stale unless the
-				// resolution is forgotten here — the same reason a suspension does
-				// it, and the same one query this route already made.
-				invalidate(r, out.Body.Hosts)
+				err = invalidate(ctx, "the tenant's languages are set", out.Body)
 			}
 			return out, fault(err)
 		})
@@ -161,7 +187,10 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				return err
 			})
 			if err == nil {
-				invalidate(r, out.Body.Hosts)
+				// The inverse of a suspension: until the resolution is closed, a
+				// process that saw the tenant served refuses it for the cache's
+				// lifetime, which is a tenant still shut out after it was let back in.
+				err = invalidate(ctx, "the tenant is reactivated", out.Body)
 			}
 			return out, fault(err)
 		})
@@ -181,7 +210,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				// The cached resolution carries the tenant's name with it, so a
 				// rename nobody followed up here leaves the old company on every
 				// page and mailed link for the cache's lifetime.
-				invalidate(r, out.Body.Hosts)
+				err = invalidate(ctx, "the tenant is renamed", out.Body)
 			}
 			return out, fault(err)
 		})
@@ -200,7 +229,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			if err == nil {
 				// The name this removed is not in the list the response carries,
 				// which is exactly the row the cache is now wrong about.
-				invalidate(r, []string{in.Host})
+				err = invalidateHosts(ctx, out.Body.ID, "the host is removed", in.Host)
 			}
 			return out, fault(err)
 		})
@@ -219,15 +248,49 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			if err == nil {
 				// Every name the retired tenant answered at stops resolving, and
 				// the cache would go on serving it from the row it remembers.
-				invalidate(r, out.Body.Hosts)
+				err = invalidate(ctx, "the tenant is retired", out.Body)
 			}
 			return out, fault(err)
+		})
+
+	// The two provider routes: which identity provider this tenant's people sign
+	// in against, and taking it away again. They are the control plane's because
+	// the row they write is the control plane's — a tenant transaction reads its
+	// own provider and may not choose it (migrations/000030) — and because which
+	// directory a company's people live in is a decision somebody makes about a
+	// customer, in the same shape as which languages they are served in.
+	httpx.Register(r, op("set-oidc", http.MethodPost, path+"/{id}/oidc", 0, "Say which identity provider a tenant signs in against",
+		"Sets the issuer, the client and the secret reference for one tenant, and what an address the provider vouches for and this tenant has no account for does: disabled, existing or provision. Setting the same values again changes nothing and publishes nothing. The secret itself is never written here: the reference names where it is kept, because a row is copied into the audit trail and a secret in a payload is a secret in the trail.",
+		[]string{contracts.EventOIDCSet}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *oidcInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.SetOIDC(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
+		})
+
+	httpx.Register(r, op("clear-oidc", http.MethodPost, path+"/{id}/oidc/clear", 0, "Take a tenant's identity provider away",
+		"After this the tenant's single sign-on answers 404 and its people sign in with a password. People already signed in stay signed in: taking a company's single sign-on away is not a revocation of anybody's session, and revocations are somebody else's decision.",
+		[]string{contracts.EventOIDCCleared}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *idInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.ClearOIDC(ctx, tx, in.ID)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
 		})
 
 	if invite == nil {
 		return
 	}
-	// The sixth route, and the one that makes the other five worth having.
+	// The last route, and the one that makes the others worth having.
 	//
 	// The control plane could create a tenant and could not put anybody in it.
 	// Every route that makes a user is a tenant route, authorized inside that
@@ -273,16 +336,27 @@ func fault(err error) error {
 	return rest.Fault(err)
 }
 
-// invalidate forgets every cached resolution of these hosts. A lifecycle command
-// that changed whether a name resolves, what tenant it resolves to, or what that
-// tenant is called and speaks has to be followed by this: the resolution is
-// believed for half a minute, and half a minute of a change that has already
-// happened in the database is a mailed link with the wrong company on it and a
-// suspension somebody has to explain.
-func invalidate(r *httpx.Router, hosts []string) {
-	for _, host := range hosts {
-		r.InvalidateHost(host)
-	}
+// invalidationUncertain is what a route answers when its write committed and the
+// installation's shared store refused to close the host resolutions that write
+// changes.
+//
+// The record stands, and the two alternatives are worse. Rolling it back makes a
+// cache outage undo a decision somebody took to stop a tenant being served; so does
+// refusing the write before it happens, with the addition of a period in which the
+// operator cannot make that decision at all — a store is often unreachable in the
+// very incident a suspension is the answer to. But the truth is not fully told
+// either: another process holds its own resolution of the host and serves what it
+// says until the move lands or the entry expires, so what this route promises is not
+// yet true everywhere. Answering 200 reports an outcome as settled when the
+// installation could not finish it; 503 says it could not, and the detail says what
+// already stands. The retry that answer asks for is safe: the command is idempotent —
+// suspending a suspended tenant changes nothing and publishes nothing — and the move
+// runs again either way.
+func invalidationUncertain(what string) error {
+	return problem.New(http.StatusServiceUnavailable,
+		fmt.Sprintf("%s in this installation's record, but its shared store did not accept the invalidation, "+
+			"so a process that had already resolved these hosts may keep serving them as before until those "+
+			"resolutions expire. Repeat this request once the store answers again.", what))
 }
 
 // op builds one operation, including the events its handler will publish, which
@@ -303,6 +377,11 @@ func op(verb, method, at string, status int, summary, description string, publis
 		o.Extensions = map[string]any{httpx.EventsExtension: published}
 	}
 	return o
+}
+
+type oidcInput struct {
+	ID   uuid.UUID              `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.OIDCSettings `required:"true"`
 }
 
 type idInput struct {

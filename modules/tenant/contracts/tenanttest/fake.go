@@ -3,12 +3,15 @@ package tenanttest
 import (
 	"context"
 	"fmt"
+	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -27,6 +30,7 @@ type Fake struct {
 	mu      sync.Mutex
 	tenants map[uuid.UUID]contracts.Tenant
 	hosts   map[string]uuid.UUID
+	oidc    map[uuid.UUID]contracts.OIDCSettings
 	log     []publication
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.
@@ -68,6 +72,11 @@ func NewFake() *Fake {
 	return &Fake{tenants: map[uuid.UUID]contracts.Tenant{}, hosts: map[string]uuid.UUID{},
 		Installation: InstallationLanguages()}
 }
+
+// secretRefName is internal's rule, spelled again on purpose: a reference has to
+// be a name a deployment can resolve, and in this repository that means an
+// environment variable.
+var secretRefName = regexp.MustCompile(`^[A-Z][A-Z0-9_]{2,63}$`)
 
 var _ contracts.Service = (*Fake)(nil)
 
@@ -294,8 +303,112 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 	return f.copy(id)
 }
 
-// validLocales is internal.Service.validLocales, kept beside it rather than shared
-// because a fake that imported the implementation would stop being a second opinion.
+// SetOIDC mirrors internal.Service.SetOIDC, refusals included: which provider a
+// tenant's people sign in against is a rule about the values and not about the
+// table they land in, so the fake refuses the same half-providers, for the same
+// reason, in the same words.
+func (f *Fake) SetOIDC(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in contracts.OIDCSettings) (*contracts.Tenant, error) {
+	if err := validOIDC(in); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	t, ok := f.live(id)
+	if !ok {
+		f.mu.Unlock()
+		return nil, crud.ErrNotFound
+	}
+	changed := !sameOIDC(f.oidc[id], in)
+	if f.oidc == nil {
+		f.oidc = map[uuid.UUID]contracts.OIDCSettings{}
+	}
+	in.Registration = mode(in)
+	f.oidc[id] = in
+	t.UpdatedAt = db.Now()
+	f.tenants[id] = t
+	f.mu.Unlock()
+	if changed {
+		f.publish(ctx, id, contracts.EventOIDCSet)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.copy(id)
+}
+
+// ClearOIDC mirrors internal.Service.ClearOIDC, including the rule that clearing
+// a tenant with no provider changes nothing and publishes nothing.
+func (f *Fake) ClearOIDC(ctx context.Context, _ db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
+	f.mu.Lock()
+	t, ok := f.live(id)
+	if !ok {
+		f.mu.Unlock()
+		return nil, crud.ErrNotFound
+	}
+	_, had := f.oidc[id]
+	delete(f.oidc, id)
+	t.UpdatedAt = db.Now()
+	f.tenants[id] = t
+	f.mu.Unlock()
+	if had {
+		f.publish(ctx, id, contracts.EventOIDCCleared)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.copy(id)
+}
+
+// OIDCOf mirrors internal.Service.OIDCOf, answered from the tenant the
+// transaction carries. One tenant per map entry is as far as a fake with no
+// policy can model a boundary; the cross-tenant case is internal's to prove.
+func (f *Fake) OIDCOf(_ context.Context, tx db.Tx[db.Tenant]) (*contracts.OIDCSettings, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	settings, ok := f.oidc[db.TenantOf(tx).ID]
+	if !ok {
+		return nil, false, nil
+	}
+	return &settings, true, nil
+}
+
+// mode, sameOIDC and validOIDC are internal.Service's three helpers, kept here
+// rather than shared because a fake that imported the implementation would stop
+// being a second opinion about it.
+func mode(in contracts.OIDCSettings) string {
+	if in.Registration == "" {
+		return contracts.RegistrationExisting
+	}
+	return in.Registration
+}
+
+func sameOIDC(a, b contracts.OIDCSettings) bool {
+	return a.Issuer == b.Issuer && a.ClientID == b.ClientID && a.SecretRef == b.SecretRef &&
+		a.RedirectPath == b.RedirectPath && mode(a) == mode(b) && slices.Equal(a.Roles, b.Roles)
+}
+
+func validOIDC(in contracts.OIDCSettings) error {
+	u, err := url.Parse(in.Issuer)
+	switch {
+	case err != nil || u.Host == "":
+		return fmt.Errorf("%w: oidc.issuer %q is not a URL", crud.ErrInvalid, in.Issuer)
+	case u.Scheme != "https" && !config.Local(u.Host):
+		return fmt.Errorf("%w: oidc.issuer %q is not https", crud.ErrInvalid, in.Issuer)
+	case u.RawQuery != "" || u.Fragment != "":
+		return fmt.Errorf("%w: oidc.issuer %q carries a query; an issuer is a base URL", crud.ErrInvalid, in.Issuer)
+	case in.ClientID == "":
+		return fmt.Errorf("%w: oidc.clientId is empty", crud.ErrInvalid)
+	case !secretRefName.MatchString(in.SecretRef):
+		return fmt.Errorf("%w: oidc.secretRef %q is not an environment variable's name", crud.ErrInvalid, in.SecretRef)
+	}
+	switch mode(in) {
+	case contracts.RegistrationDisabled, contracts.RegistrationExisting, contracts.RegistrationProvision:
+	default:
+		return fmt.Errorf("%w: oidc.registration %q is not disabled, existing or provision", crud.ErrInvalid, in.Registration)
+	}
+	if mode(in) == contracts.RegistrationProvision && len(in.Roles) == 0 {
+		return fmt.Errorf("%w: provision with no roles would make people who can do nothing", crud.ErrInvalid)
+	}
+	return nil
+}
+
 func (f *Fake) validLocales(in contracts.SetLocale) ([]string, error) {
 	spoken := f.spoken()
 	defaultTag, err := contracts.ValidLocale(in.Default)

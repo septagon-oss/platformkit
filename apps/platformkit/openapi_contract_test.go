@@ -48,9 +48,10 @@ const contractHost = "platformkit.example"
 // into a 404 with an application behind it that cannot be fixed, which is what
 // kit/httpx/aliases.go refuses for a route.
 //
-// The bearer exchange (T-0117) and the push registration (T-0113) are not in the
-// list because nothing answers at either address yet: each joins in the same commit
-// that mounts its door. That is what makes this list a gate and not a wish list.
+// The push registration (T-0113) is not in the list because nothing answers at that
+// address yet; it joins in the same commit that mounts its door. The bearer key
+// (T-0117) answered from the round that mounted it, so it is in the list below.
+// That is what makes this list a gate and not a wish list.
 var deviceContractPaths = []struct {
 	operation string // the operationId the golden publishes
 	method    string
@@ -58,12 +59,23 @@ var deviceContractPaths = []struct {
 	// anonymous says the door answers for a caller nobody has recognised; the
 	// others are read with the composition's own administrator.
 	anonymous bool
+	// body is what the probe sends, empty for the reads. A write needs one to be a
+	// probe at all: the case refuses the 404 of an address nobody mounted, and an
+	// address that answers 422 to nothing at all is the same hole wearing a hat.
+	body string
 }{
-	{operation: "auth-login", method: http.MethodPost, path: "/api/v1/auth/login", anonymous: true},
+	{operation: "auth-login", method: http.MethodPost, path: "/api/v1/auth/login", anonymous: true,
+		body: `{"email":"` + adminEmail + `","password":"` + adminPass + `"}`},
 	{operation: "auth-me", method: http.MethodGet, path: "/api/v1/auth/me"},
 	{operation: "auth-logout", method: http.MethodPost, path: "/api/v1/auth/logout"},
 	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
 	{operation: "audit-event-list", method: http.MethodGet, path: "/api/v1/audit/events"},
+	// The bearer key a shell presents instead of a session cookie. It joined this
+	// list in the round that mounted its door (T-0117's auth-token-issue): a device
+	// that authenticates with a key has to mint one somewhere first, and the address
+	// it mints it at is part of what a generated client needs to exist at.
+	{operation: "auth-token-issue", method: http.MethodPost, path: "/api/v1/auth/tokens",
+		body: `{"name":"The device","scopes":["task:read"]}`},
 }
 
 // TestTheOpenAPIDocumentIsTheCompositionServed is the golden and the gate.
@@ -146,7 +158,7 @@ func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	if entry == nil {
 		t.Fatal("the catalog document's resources are not an array of objects")
 	}
-	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton"} {
+	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton", "operations"} {
 		if _, ok := wireMap(entry["properties"])[name]; !ok {
 			t.Errorf("a catalog entry in the published document has no %q: a generated screen would read a field the contract never mentions", name)
 		}
@@ -169,11 +181,7 @@ func TestEveryDeviceContractAddressAnswers(t *testing.T) {
 		if want.anonymous {
 			client = nil
 		}
-		body := ""
-		if want.operation == "auth-login" {
-			body = `{"email":"` + adminEmail + `","password":"` + adminPass + `"}`
-		}
-		code, answer := do(t, cfg, client, want.method, acmeHost, want.path, body)
+		code, answer := do(t, cfg, client, want.method, acmeHost, want.path, want.body)
 		// Anything but the answer of an address nobody mounted. A 401 or a 403 is a
 		// door refusing a caller, which is a door; the 404 this case refuses is a hole.
 		if code == http.StatusNotFound || strings.Contains(answer, "nothing is served at this address") {
@@ -283,6 +291,15 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		{"a route's authorization changes", "B6", nil, func(t *testing.T, doc map[string]any) {
 			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "public"
 		}},
+		{"the catalog door narrows back to a browser's credential", "B6", nil, func(t *testing.T, doc map[string]any) {
+			// The widening the rule allows, run backwards: any_credential is the door
+			// as mounted (httpx.AnyCredential), and signed_in is what it was before
+			// T-0117 widened it. Read as a change from the golden to this, it is a door
+			// that stops admitting a bearer key, which is exactly what an installed
+			// client holding one was promised. B6 refuses it, and refuses it whichever
+			// way the pair is read.
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "signed_in"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			reference := golden
@@ -299,26 +316,39 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		})
 	}
 
-	// The two changes a delivery is allowed to make on its own: a new address, and a
-	// new optional field on a document a shell already reads. Both are what
+	// The changes a delivery is allowed to make on its own: a new address, a new
+	// optional field on a document a shell already reads, and a door that admits
+	// every credential it admitted and one more. The first two are what
 	// ui/screens/catalog.go promises beside CatalogVersion — additive, optional, and
-	// never a change of meaning — so a composition that grows must not fight the gate.
+	// never a change of meaning — and the third is the one pair in
+	// widenableAuthorization; a composition that grows must not fight the gate.
+	// `before` is the golden as the older document, so a case can state both sides.
 	for _, tc := range []struct {
-		name  string
-		after func(t *testing.T, doc map[string]any)
+		name   string
+		before func(t *testing.T, doc map[string]any)
+		after  func(t *testing.T, doc map[string]any)
 	}{
-		{"a new optional field on a catalog entry", func(t *testing.T, doc map[string]any) {
+		{"a new optional field on a catalog entry", nil, func(t *testing.T, doc map[string]any) {
 			wireAt(t, doc, "components:schemas:Entry:properties")["device_label"] = map[string]any{"type": "string"}
 		}},
-		{"a new address answering a new operation", func(t *testing.T, doc map[string]any) {
+		{"a new address answering a new operation", nil, func(t *testing.T, doc map[string]any) {
 			wireMap(doc["paths"])["/api/v1/app/devices"] = map[string]any{"post": map[string]any{
 				"operationId": "app-device-register",
 				"responses":   map[string]any{"204": map[string]any{"description": "No Content"}},
 			}}
 		}},
+		{"a signed-in door widens to any credential", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "signed_in"
+		}, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "any_credential"
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if problems := breakingWireChanges(t, golden, wireMutated(t, golden, tc.after)); len(problems) != 0 {
+			reference := golden
+			if tc.before != nil {
+				reference = wireMutated(t, golden, tc.before)
+			}
+			if problems := breakingWireChanges(t, reference, wireMutated(t, reference, tc.after)); len(problems) != 0 {
 				t.Errorf("an additive change was refused: %q", problems)
 			}
 		})

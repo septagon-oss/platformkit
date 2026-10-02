@@ -3,6 +3,8 @@ package file_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -14,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -26,6 +29,9 @@ import (
 const (
 	host  = "acme.test"
 	files = "/api/v1/file/files"
+	// otherHost is the second tenant's origin, for the one case that needs two
+	// tenants: what a stranger's session can reach at a door it was not given.
+	otherHost = "globex.test"
 	// The public door is on the public surface: an anonymous visitor's door has no
 	// part of the tenant's workspace in its address. The address this door used to
 	// answer at redirects, for one release, which is asserted below.
@@ -36,18 +42,30 @@ const (
 
 var acme = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 
+// globex is the other tenant, and it exists to be the one asking.
+var globex = tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
+
+// outbox is the kernel's delivery table, named here because this package's tests
+// read what a request left behind rather than only what it answered.
+const outbox = "platformkit_outbox"
+
 // png is the eight-byte signature of a real PNG, which is what
 // http.DetectContentType reads and what the upload now checks a declared image
 // against.
 const png = "\x89PNG\r\n\x1a\n"
 
-type caller struct{}
+// caller is the tenant resolver and the authorizer both, in the shape httpx.New
+// takes them. hosts is the map an origin resolves through: one entry for every
+// case that needs one tenant, two for the case that asks what one tenant's session
+// can reach inside another tenant's workspace.
+type caller struct{ hosts map[string]tenancy.Tenant }
 
-func (caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
-	if h != host {
+func (c caller) ByHost(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
+	resolved, ok := c.hosts[h]
+	if !ok {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost
 	}
-	return acme, nil
+	return resolved, nil
 }
 func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, error) { return true, nil }
 
@@ -55,9 +73,20 @@ func (caller) Allowed(context.Context, tenancy.Tenant, tenancy.Grant) (bool, err
 // directory, with a limit small enough to go past in a test.
 func mounted(t *testing.T) chi.Router {
 	t.Helper()
-	_, conn := dbtest.Schema(t, file.Migrations)
+	router, _, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme})
+	return router
+}
+
+// mountedOn is that mount with the origins it answers on written down, and it
+// hands back the two connections as well: admin to read what a request left in
+// the tables, app for anything that has to be asked from a tenant's own
+// transaction.
+func mountedOn(t *testing.T, hosts map[string]tenancy.Tenant) (chi.Router, *sql.DB, *db.Conn) {
+	t.Helper()
+	admin, conn := dbtest.Schema(t, file.Migrations)
 	api, router := httpx.New(httpx.Options{
-		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
+		Cache:      cache.Memory("pkit"),
+		PublicHost: host, Tenants: caller{hosts: hosts}, Conn: conn, Authorize: caller{hosts: hosts},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil
 		},
@@ -68,7 +97,7 @@ func mounted(t *testing.T) chi.Router {
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
-	return router
+	return router, admin, conn
 }
 
 // upload posts one multipart form with one file part in it.
@@ -102,7 +131,14 @@ func upload(t *testing.T, r http.Handler, at, name, contentType, body string) (i
 
 func send(t *testing.T, r http.Handler, method, at string, signedIn bool) (int, string, http.Header) {
 	t.Helper()
-	req := httptest.NewRequest(method, "http://"+host+at, nil)
+	return sendOn(t, r, host, method, at, signedIn)
+}
+
+// sendOn is the same request from another origin, which is the only way in this
+// harness for one tenant's session to be somebody else's.
+func sendOn(t *testing.T, r http.Handler, from, method, at string, signedIn bool) (int, string, http.Header) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+from+at, nil)
 	if signedIn {
 		req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
 	}
@@ -382,3 +418,354 @@ func TestAnOverlongContentTypeIsTheCallersMistake(t *testing.T) {
 // separately, because validating the composition is the composition's job and
 // holding a *Router would be holding one door of three.
 func surfacesOf(a *httpx.API) httpx.Surfaces { return a.Surfaces("file") }
+
+// ask sends one request with a JSON body and returns the answer.
+func ask(t *testing.T, r http.Handler, method, at, body string) (int, string) {
+	t.Helper()
+	return askOn(t, r, host, method, at, body)
+}
+
+// askOn is ask with the origin it came from, for the case that needs a second
+// tenant's session.
+func askOn(t *testing.T, r http.Handler, from, method, at, body string) (int, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+from+at, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	return rec.Code, rec.Body.String()
+}
+
+// TestAHeldFileRefusesTheDeleteWithAConflict is the answer a caller gets when a
+// hold stops it, at the door it knocked on.
+//
+// The refusal itself lived in the service and nowhere a caller could read it:
+// fault() had no arm for contracts.ErrHeld, so rest.Fault — which knows the
+// kernel's sentinels and none of this module's — handed it back unclassified and
+// the caller read their own successful hold as a 500 outage. 409 is the sentence
+// that means "these two things cannot both be true; go and release the other
+// one", and a refused mutation writes nothing, which is checked here rather than
+// asserted: the file the delete would have taken is still readable.
+func TestAHeldFileRefusesTheDeleteWithAConflict(t *testing.T) {
+	router := mounted(t)
+	code, out := upload(t, router, files, "evidence.txt", "text/plain", "keep this")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	id := field(t, out, "id")
+
+	// 200 and not 201: this command places *or replaces*, and the answer is the
+	// one hold there now, not the creation of a row.
+	if code, out = ask(t, router, http.MethodPost, files+"/"+id+"/hold", `{"reason":"court order 2026-0412"}`); code != http.StatusOK {
+		t.Fatalf("POST the hold = %d %s", code, out)
+	}
+	if !strings.Contains(out, "court order 2026-0412") {
+		t.Errorf("the hold answers %s, which does not carry the reason it was placed for", out)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id, true); code != http.StatusConflict {
+		t.Errorf("DELETE a held file = %d %s, want 409 and not an outage", code, out)
+	}
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+id, true); code != http.StatusOK {
+		t.Errorf("the file the refused delete would have taken reads %d, want it still there", code)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id+"/hold", true); code != http.StatusNoContent {
+		t.Fatalf("DELETE the hold = %d %s", code, out)
+	}
+	// Releasing a file with no hold is the success it is: the caller's intent is
+	// already true, and refusing a write that found nothing is this
+	// architecture's refusal, not its answer.
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id+"/hold", true); code != http.StatusNoContent {
+		t.Errorf("releasing twice = %d %s, want 204 both times", code, out)
+	}
+	if code, out, _ = send(t, router, http.MethodDelete, files+"/"+id, true); code != http.StatusNoContent {
+		t.Errorf("the same delete after the release = %d %s, want 204", code, out)
+	}
+}
+
+// TestAGrantIsRefusedBeforeTheStoreIsAsked pins the order of Grant's refusals,
+// which is the whole reason one sentinel is not enough: the module's own ceiling
+// and a public file are the request's to fix (422), and a deployment wired a
+// store that cannot sign is neither — it is a wiring fact, answered 501 and not
+// the 500 an operator would page about.
+func TestAGrantIsRefusedBeforeTheStoreIsAsked(t *testing.T) {
+	router := mounted(t)
+	code, out := upload(t, router, files, "notes.txt", "text/plain", "private")
+	if code != http.StatusCreated {
+		t.Fatalf("POST a private file = %d %s", code, out)
+	}
+	private := field(t, out, "id")
+	if code, out = upload(t, router, files+"?visibility=public", "logo.png", "image/png", png); code != http.StatusCreated {
+		t.Fatalf("POST a public file = %d %s", code, out)
+	}
+	open := field(t, out, "id")
+
+	// Past the module's 24h cap — refused and not clamped, before anyone asks
+	// the store what it can do.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+private+"/grant?expires=25h", true); code != http.StatusUnprocessableEntity {
+		t.Errorf("a 25h grant = %d %s, want 422 naming the expiry", code, out)
+	}
+	// A public file already has an open door; no signature teaches that signing
+	// is where the access control lives. This is the same disk store, so the
+	// refusal has to come first or it would never be seen.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+open+"/grant", true); code != http.StatusUnprocessableEntity {
+		t.Errorf("a grant for a public file = %d %s, want 422", code, out)
+	}
+	// And the disk store says so out loud.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+private+"/grant", true); code != http.StatusNotImplemented {
+		t.Errorf("a grant from a store that cannot sign = %d %s, want 501", code, out)
+	}
+}
+
+// TestAnErasureNamesTheSubjectOrIsRefused is the other half of the same route,
+// and the reason it is written as a receipt rather than a removal: the harness
+// gives every request its own principal, so this is the one way to see that the
+// command read its body at all. A body nobody read is a zero uuid, and a zero
+// subject is a refusal — so the answer that names the subject back is the proof
+// that the bytes on the wire arrived.
+func TestAnErasureNamesTheSubjectOrIsRefused(t *testing.T) {
+	router := mounted(t)
+	if code, out := upload(t, router, files, "notes.txt", "text/plain", "hello"); code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	subject := uuid.NewString()
+
+	code, out := ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+subject+`","reason":"data protection request"}`)
+	if code != http.StatusOK {
+		t.Fatalf("POST an erasure of a subject with nothing here = %d %s", code, out)
+	}
+	if !strings.Contains(out, `"subject":"`+subject+`"`) || !strings.Contains(out, `"files":0`) {
+		t.Errorf("the receipt reads %s, which does not name the subject it answered for", out)
+	}
+	// An erasure of nobody is the request's to fix, and says so rather than
+	// removing everything this tenant happens to hold.
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"reason":"data protection request"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("an erasure that names no subject = %d %s, want 422", code, out)
+	}
+	// And the file that subject did not upload is where it was.
+	if code, _, _ = send(t, router, http.MethodGet, files, true); code != http.StatusOK {
+		t.Errorf("the list after an erasure of nothing = %d", code)
+	}
+}
+
+// TestATenantCannotGrantOrEraseAnothersFile is the isolation claim at the door a
+// stranger actually knocks on. The port's own suite proves one tenant's key opens
+// nothing in the store, and the service tests prove one tenant's transaction reads
+// no other's row; what nothing proved until now is that a second tenant's *HTTP
+// session* gets nothing at a first tenant's file id — the assertion the register
+// asks to be named, and the one a route could get wrong while every test above
+// stayed green (a handler that read the row before it scoped the transaction would
+// have had no case against it).
+//
+// The shape of the answer matters as much as the refusal. A file that exists in
+// another tenant's workspace has to answer exactly as a file that does not exist
+// here at all: the same 404, and a body that names none of it. "That id is
+// somebody else's" is a fact about the other tenant's workspace, and an answer
+// that explains itself leaks what the request never had to know.
+//
+// The erasure is the widest door of the three — it deletes by a subject rather
+// than by an id — so it is asked for acme's own uploader, and the answer has to be
+// a receipt of zero rather than an error, with nothing written in anybody's table.
+func TestATenantCannotGrantOrEraseAnothersFile(t *testing.T) {
+	router, admin, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme, otherHost: globex})
+	code, out := upload(t, router, files, "diary.txt", "text/plain", "something this person wrote")
+	if code != http.StatusCreated {
+		t.Fatalf("acme's upload = %d %s", code, out)
+	}
+	var row struct {
+		ID       uuid.UUID `json:"id"`
+		Uploader uuid.UUID `json:"uploader"`
+	}
+	if err := json.Unmarshal([]byte(out), &row); err != nil {
+		t.Fatalf("the uploaded record is not the shape the route declares: %v (%s)", err, out)
+	}
+	if row.Uploader == uuid.Nil {
+		t.Fatalf("the uploaded record names nobody: %s", out)
+	}
+
+	for _, door := range []struct{ method, at, why string }{
+		{http.MethodGet, files + "/" + row.ID.String() + "/content", "a download"},
+		{http.MethodGet, files + "/" + row.ID.String() + "/grant", "a signed URL"},
+		{http.MethodDelete, files + "/" + row.ID.String(), "a delete"},
+	} {
+		code, out, _ := sendOn(t, router, otherHost, door.method, door.at, true)
+		if code != http.StatusNotFound {
+			t.Errorf("globex asked for %s of acme's file = %d %s, want the 404 an absent file gets",
+				door.why, code, out)
+		}
+		// The refusal is about the request, not about what it found.
+		if strings.Contains(out, "diary.txt") || strings.Contains(out, row.ID.String()) {
+			t.Errorf("the refusal of %s names what it refused: %s", door.why, out)
+		}
+	}
+	// Which is the same answer acme gets for an id nobody ever minted: one status,
+	// one shape, and no arm of the handler that knows the difference.
+	code, absent, _ := sendOn(t, router, otherHost, http.MethodGet,
+		files+"/"+uuid.NewString()+"/content", true)
+	if code != http.StatusNotFound {
+		t.Errorf("an id never minted = %d %s, want 404", code, absent)
+	}
+
+	// The subject erasure, asked by the tenant that holds none of those files.
+	code, out = askOn(t, router, otherHost, http.MethodPost, files+"/erase",
+		`{"subject":"`+row.Uploader.String()+`","reason":"data protection request 2026-0412"}`)
+	if code != http.StatusOK {
+		t.Fatalf("globex erasing acme's subject = %d %s, want the receipt of nothing", code, out)
+	}
+	if !strings.Contains(out, `"files":0`) {
+		t.Errorf("the receipt across the tenant boundary reads %s, want zero files erased", out)
+	}
+
+	// Read at the tables and not at the response: a refusal that wrote a work
+	// order, a proof row or a soft delete would still have answered zero here.
+	var erased, orders int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM file_erasures`).Scan(&erased); err != nil {
+		t.Fatalf("read the proofs: %v", err)
+	}
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM `+outbox+` WHERE name IN ($1, $2)`,
+		contracts.EventDeleted, contracts.EventErased).Scan(&orders); err != nil {
+		t.Fatalf("read the outbox: %v", err)
+	}
+	if erased != 0 || orders != 0 {
+		t.Errorf("the cross-tenant erasure wrote %d proof rows and %d removal events, want neither",
+			erased, orders)
+	}
+
+	// And acme's file is where it was, at the same doors.
+	if code, out, _ = send(t, router, http.MethodGet, files+"/"+row.ID.String()+"/content", true); code != http.StatusOK ||
+		out != "something this person wrote" {
+		t.Errorf("acme's own download after the other tenant's attempt = %d %s", code, out)
+	}
+}
+
+// TestAnErasureAtTheDoorFilesItsReasonAndRefusesOneThatDoesNotFit is the sentence
+// a person typed travelling from the request body to the record — and the ceiling
+// on it, tested where a caller would hit it.
+//
+// The service tests prove the command files a reason; nothing proved that the
+// reason arrives at the command. `POST /files/erase` is the only way one can reach
+// `EraseSubject` with a sentence in it, and this route is the one this module has
+// already gotten wrong once: eraseBody's fields were flat on the input struct
+// beside a path tag, which kit/rest reads as no body at all, so every erasure ran
+// as though the caller had sent nothing and answered a receipt of zero. A body
+// that arrives is half of "the reason is kept"; the other half is that it is kept
+// somewhere a person can be asked for it, so the case reads the outbox row the
+// command committed rather than only the receipt it answered with. The bytes go
+// after this transaction, which is exactly why the work order is the record a
+// door-level case can read.
+//
+// The over-long reason is the second half and the reason the first half is not
+// enough on its own. Both tables cap the sentence — contracts.MaxErasureReason on
+// the service side, maxLength on the schema — and a cap nobody sends a request
+// past is a comment. What has to be true is that the ceiling refuses rather than
+// truncates: a record with the first 500 characters of a data-protection sentence
+// is a record of a conversation nobody had, and it is unfalsifiable from the
+// receipt, which would read files:1 either way. 422 is what every other refusal
+// on this door answers, and the refusal has to write nothing, which is read at the
+// file and at the outbox rather than assumed.
+//
+// The hold is the last leg because it is the same decision pointed the other way:
+// file_holds.reason is the column this module cites when it argues that a removal
+// is a decision somebody said a reason for. Both doors now state the column's two
+// bounds in their schemas — not empty, at most 500 — and both refuse a request
+// past either without leaving a row, so the argument holds for both.
+func TestAnErasureAtTheDoorFilesItsReasonAndRefusesOneThatDoesNotFit(t *testing.T) {
+	router, admin, _ := mountedOn(t, map[string]tenancy.Tenant{host: acme})
+
+	// Whoever this upload answers for is the subject: the harness gives every
+	// request its own principal, and the record names it back.
+	code, out := upload(t, router, files, "diary.txt", "text/plain", "something this person wrote")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	diary, subject := field(t, out, "id"), field(t, out, "uploader")
+
+	const reason = "data protection request 2026-0412"
+	if code, out = ask(t, router, http.MethodPost, files+"/erase",
+		`{"subject":"`+subject+`","reason":"`+reason+`"}`); code != http.StatusOK {
+		t.Fatalf("POST the erasure = %d %s", code, out)
+	} else if !strings.Contains(out, `"files":1`) {
+		t.Fatalf("the receipt reads %s, want the one file this subject uploaded", out)
+	}
+
+	var filed, cause string
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT coalesce(payload->>'reason', ''), coalesce(payload->>'cause', '') FROM `+outbox+` WHERE name = $1`,
+		contracts.EventDeleted).Scan(&filed, &cause); err != nil {
+		t.Fatalf("read the removal order this erasure left: %v", err)
+	}
+	if filed != reason {
+		t.Errorf("the work order carries reason %q, want the sentence sent at the door (%q)", filed, reason)
+	}
+	if cause != contracts.EraseSubject {
+		t.Errorf("the work order names cause %q, want %q: the reason is a sentence, the cause is which kind of removal this was",
+			cause, contracts.EraseSubject)
+	}
+	// The file it removed is gone from the list the same session reads.
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+diary, true); code != http.StatusNotFound {
+		t.Errorf("the erased file reads %d, want 404", code)
+	}
+
+	// Past the ceiling: refused, and nothing written anywhere.
+	code, out = upload(t, router, files, "second.txt", "text/plain", "a second subject")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	second, other := field(t, out, "id"), field(t, out, "uploader")
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+other+
+		`","reason":"`+strings.Repeat("x", contracts.MaxErasureReason+1)+`"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("an erasure whose reason is %d characters = %d %s, want 422",
+			contracts.MaxErasureReason+1, code, out)
+	}
+	if code, _, _ = send(t, router, http.MethodGet, files+"/"+second, true); code != http.StatusOK {
+		t.Errorf("the file the refused erasure would have taken reads %d, want it still there", code)
+	}
+	var orders int
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM `+outbox+` WHERE name IN ($1, $2)`,
+		contracts.EventDeleted, contracts.EventErased).Scan(&orders); err != nil {
+		t.Fatalf("count the removal orders: %v", err)
+	}
+	if orders != 1 {
+		t.Errorf("the refused erasure published %d removal orders alongside the accepted one, want none", orders)
+	}
+
+	// The ceiling is the ceiling, and not one character short of it: a reason of
+	// exactly MaxErasureReason is a request this module accepts and files, so what
+	// refused above is the width and not an off-by-one.
+	if code, out = ask(t, router, http.MethodPost, files+"/erase", `{"subject":"`+other+
+		`","reason":"`+strings.Repeat("y", contracts.MaxErasureReason)+`"}`); code != http.StatusOK {
+		t.Errorf("an erasure whose reason is exactly %d characters = %d %s, want it accepted and filed",
+			contracts.MaxErasureReason, code, out)
+	}
+
+	// The same ceiling on the decision pointed the other way.
+	code, out = upload(t, router, files, "keep.txt", "text/plain", "held")
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, out)
+	}
+	heldFile := field(t, out, "id")
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold",
+		`{"reason":"`+strings.Repeat("z", contracts.MaxHoldReason+1)+`"}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("a hold whose reason is %d characters = %d %s, want 422",
+			contracts.MaxHoldReason+1, code, out)
+	}
+	// The other half of the column's own CHECK: a hold with no reason is not a
+	// hold at all, and the door says so rather than placing an unjustified one.
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold", `{"reason":""}`); code != http.StatusUnprocessableEntity {
+		t.Errorf("a hold placed for no reason = %d %s, want 422", code, out)
+	}
+	var holds int
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM file_holds`).Scan(&holds); err != nil {
+		t.Fatalf("count the holds: %v", err)
+	}
+	if holds != 0 {
+		t.Errorf("the two refused holds wrote %d rows, want none", holds)
+	}
+	if code, out = ask(t, router, http.MethodPost, files+"/"+heldFile+"/hold",
+		`{"reason":"`+strings.Repeat("w", contracts.MaxHoldReason)+`"}`); code != http.StatusOK {
+		t.Errorf("a hold whose reason is exactly %d characters = %d %s, want it placed",
+			contracts.MaxHoldReason, code, out)
+	}
+}

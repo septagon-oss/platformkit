@@ -45,6 +45,19 @@ type Fixture struct {
 // to hand over the opening rather than the opened.
 func (f Fixture) open(context.Context) (db.Tx[db.Tenant], error) { return f.Tx, nil }
 
+// scope is the tenant this fixture's context carries. The two harnesses both
+// put a tenant on it — the Postgres one because db.Run does, the fake's because
+// the fake takes its scope from the context the way the real Upload does — and
+// the suite asks for the same scope the command under test would derive.
+func (f Fixture) scope(t *testing.T) contracts.Scope {
+	t.Helper()
+	s, err := contracts.ScopeOf(f.Ctx)
+	if err != nil {
+		t.Fatalf("the fixture's context names no tenant: %v", err)
+	}
+	return s
+}
+
 func (f Fixture) one(t *testing.T, what, want string, step func()) {
 	t.Helper()
 	before := len(f.Published())
@@ -225,7 +238,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// The bytes are still there. Removing them is work for after this
 			// transaction commits, which is the subscription's, not the
 			// command's — a blob delete is not something a rollback can undo.
-			if _, err := f.Storage.Get(f.Ctx, row.StorageKey); err != nil {
+			if _, err := f.Storage.Get(f.Ctx, f.scope(t), contracts.Key(row.StorageKey)); err != nil {
 				t.Errorf("the bytes went with the row: %v", err)
 			}
 			if _, _, err := f.Service.Open(f.Ctx, f.Tx, row.ID, false); !errors.Is(err, crud.ErrNotFound) {

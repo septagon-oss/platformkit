@@ -156,6 +156,68 @@ func TestTheRouteStampsTheCatalogVersion(t *testing.T) {
 	}
 }
 
+// TestDescribePublishesOnlyTheOperationsTheResourceOffers is the wire half of the
+// operation set, at the bytes rather than at the struct: `operations` is a key a
+// build in somebody's pocket parses, and the answer it publishes decides whether a
+// shell offers New on a screen that mounts no POST. Three entries, one document —
+// the verbs alone, the verbs beside a command, and nothing at all — because the
+// sentence a shell obeys is the pair, and each half of the pair comes from a
+// different place: the guard says who is asking, the operation set says whether
+// anything here answers what they are about to do.
+func TestDescribePublishesOnlyTheOperationsTheResourceOffers(t *testing.T) {
+	t.Parallel()
+	// Written out of order on purpose: the entry names the verbs in the
+	// vocabulary's order, not the order the Spec happened to hold them in, so a
+	// shell that reads the list positionally reads one list rather than one per
+	// resource.
+	verbs := resource()
+	verbs.Operations = []httpx.CRUD{httpx.CRUDRead, httpx.CRUDList}
+	beside := resource()
+	beside.Entity, beside.Path = "invoice", "/invoices"
+	beside.Schema.Entity, beside.Schema.Path = "invoice", "/api/v1/note/invoices"
+	beside.Operations = []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}
+	beside.Commands = []httpx.Command{{Verb: "void", Auth: httpx.Permission("note:write")}}
+	body, err := json.Marshal(screens.Catalog{Version: screens.CatalogVersion, Resources: []screens.Entry{
+		screens.Describe1(verbs, true), screens.Describe1(beside, true), screens.Describe1(resource(), true),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back struct {
+		Resources []struct {
+			Operations *[]string `json:"operations"`
+			Writable   bool      `json:"writable"`
+		} `json:"resources"`
+	}
+	if err := json.Unmarshal(body, &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Resources[0].Operations == nil {
+		t.Fatalf("a resource that mounted two of five publishes no operations key: %s", body)
+	}
+	if got := *back.Resources[0].Operations; len(got) != 2 || got[0] != "list" || got[1] != "read" {
+		t.Errorf("the entry published %v, want [list read] in the vocabulary's order", got)
+	}
+	if back.Resources[0].Writable {
+		t.Error("a {list,read} entry with no command says writable:true; nothing here answers a write")
+	}
+	// The command is the write the verbs do not name, and it is the difference
+	// between this entry and the one above: the same two verbs, one door that does
+	// stand somewhere, and a caller who may open it.
+	if back.Resources[1].Operations == nil || (*back.Resources[1].Operations)[0] != "list" || !back.Resources[1].Writable {
+		t.Errorf("a {list,read} resource with a command the caller may call: %+v", back.Resources[1])
+	}
+	// And the silence: an entry that mounted everything names nothing, which is
+	// what keeps the shipped document — and every shell already installed against
+	// it — byte-identical while CatalogVersion stays 1.
+	if back.Resources[2].Operations != nil {
+		t.Errorf("an all-five entry publishes operations %v; the absent key is what already meant all five", *back.Resources[2].Operations)
+	}
+	if !back.Resources[2].Writable {
+		t.Error("an all-five entry a caller may write says writable:false")
+	}
+}
+
 // TestTheCatalogNamesOnlyTheWriteDoorItCannotDerive is the entry's other half: a
 // resource whose writes answer where its reads do names no write address, because
 // the derivation is the truth, and a document that repeated it would be a second

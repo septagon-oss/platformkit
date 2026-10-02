@@ -46,7 +46,7 @@ type Event struct {
 	Payload    json.RawMessage `json:"payload" doc:"The event's payload, as its module published it"`
 	// TraceParent is the W3C trace context of the request that caused the event,
 	// copied verbatim from the envelope the outbox stored beside it
-	// (migrations/000028, and this column's 000030). It is the join a trail row
+	// (migrations/000028, and this column's 000035). It is the join a trail row
 	// otherwise has no way to make: which request this happened in. Empty when
 	// nobody caused it — a job, a replay, the bootstrap — which is why it is
 	// omitted rather than zero, the same reason Actor is.

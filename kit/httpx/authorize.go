@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -41,16 +42,10 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 		// middleware runs, except on a host that resolves to none — and a host
 		// with no tenant has no plan, so there is nothing that could include
 		// the feature.
-		if auth.feature != "" {
-			t, hasTenant := tenancy.FromContext(ctx.Context())
-			if !hasTenant {
-				a.refuse(ctx, http.StatusNotFound, "no site is served at this host")
-				return
-			}
-			if !a.entitled(ctx, t, auth) {
-				return
-			}
+		if auth.feature != "" && !a.entitled(ctx, auth) {
+			return
 		}
+		// Not a.pass: a public operation has no account to attribute a refusal to.
 		next(ctx)
 		return
 	}
@@ -79,15 +74,51 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// There is no principal-belongs-to-this-tenant check, because there is no
 	// way for it to fail: the principal was built from a row read inside this
 	// tenant's own transaction. See Principal.
-	if auth.kind == kindSignedIn {
-		if !a.entitled(ctx, t, auth) {
+	// A credential that carries its own ceiling is held to it in both branches
+	// below, and this is the first of the two — a rule about the operation, not
+	// about the credential. An operation that names no permission asks the caller
+	// for their whole authority — being the caller is all it checks, and what sits
+	// behind it resolves the holder's roles — so a key narrowed to a list of
+	// permissions may not stand in for it. Read without this branch, the ceiling
+	// would be asked only of operations that name a permission, and every
+	// self-service door (mint a key, replace the recovery codes, sign out of every
+	// browser) would answer at its holder's full authority to a credential scoped
+	// to one read: the narrowed credential widening itself back to the holder,
+	// which is the escalation tenancy.Principal.Permissions says a non-nil list
+	// prevents.
+	//
+	// SignedIn is the declaration that spends that authority, and it is the only
+	// one that does. AnyCredential names no permission either and spends none: it
+	// is the door for the operation that answers what the caller may already reach
+	// and narrows its own answer by the caller's grants — the resource catalogue,
+	// which is the first request of a client that is not a browser and whose only
+	// credential is a key. Refusing it would leave a scoped credential able to do
+	// its work and unable to find it, and would buy nothing, because that document
+	// is filtered by this credential's own scopes on the way out. See AnyCredential.
+	if auth.kind == kindSignedIn && p.Permissions != nil {
+		a.deny(ctx, CodeDenied, "this credential carries its own scope, and this operation answers only to its holder")
+		return
+	}
+	if auth.kind == kindSignedIn || auth.kind == kindAnyCredential {
+		if !a.entitled(ctx, auth) {
 			return
 		}
-		next(ctx)
+		// A declaration that names no grant still reaches the row question: this is
+		// the shape a signed-in member resolves an object of their own with.
+		a.pass(ctx, next)
 		return
 	}
 
 	grant, _ := auth.grant()
+	// The second half: a credential that carries its own authority is held to it
+	// before the Authorizer is asked. The check is an exact name, so a key never
+	// inherits a wildcard it was not given, and a key whose holder has since been
+	// stood down from the role arrives here with an empty list — the roles are
+	// rechecked on every request, in the resolution that built this one.
+	if p.Permissions != nil && !slices.Contains(p.Permissions, grant.Permission) {
+		a.deny(ctx, CodeDenied, "this credential does not carry "+grant.Permission)
+		return
+	}
 	// Before the Authorizer, and that order is the point of the declaration: a
 	// customer's administrator holds the wildcard in their own tenant, and asking
 	// the roles table first would answer a question about everybody's with the
@@ -138,12 +169,25 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	// that and not told to buy something. The order matters for what a person
 	// reads: "ask your administrator" and "upgrade" are different sentences and
 	// only one of them is true.
-	if !a.entitled(ctx, t, auth) {
+	if !a.entitled(ctx, auth) {
 		return
 	}
-	// The grant is the first question; which row is the second, and a module asks it
-	// through tenancy.RequirePolicy after this middleware is done. Its refusal is
-	// audited here, where the request is known, whatever response the module maps it to.
+	a.pass(ctx, next)
+}
+
+// pass runs the operation a guard admitted. The grant is the first question;
+// which row is the second, and a module asks it through tenancy.RequirePolicy
+// after this middleware is done. The observer installed here records that refusal
+// as a fact of this request and hands it to the audit composition, whatever
+// response the module maps it to — and it goes in behind either guard, which is
+// the point: a signed-in-only command auditing nothing while a command of a
+// named grant audits everything is the drift this method exists to end.
+//
+// A public operation is passed none. Options.Denied declines a denial with no
+// account behind it — a row per probe would make every stranger's request a
+// database write — and the page a refusal fact draws claims the caller already
+// holds what the row's own rule withheld, which is nobody's sentence to read.
+func (a *API) pass(ctx huma.Context, next func(huma.Context)) {
 	refused := func(_ context.Context, r tenancy.PolicyRequest, d tenancy.PolicyDecision) {
 		noteRefused(ctx.Context(), Refusal{
 			Code: CodePolicyDenied, Action: r.Action, ResourceKind: r.Resource.Kind,
@@ -156,44 +200,79 @@ func (a *API) authorize(ctx huma.Context, next func(huma.Context)) {
 	next(huma.WithContext(ctx, tenancy.WithPolicyRefusals(ctx.Context(), refused)))
 }
 
-// entitled answers the feature a declaration names, and writes the refusal
-// itself when the answer is no — 402 rather than 403, because a plan that does
-// not include something is not a permission a person can be granted, and a
-// client that cannot tell the two apart shows the wrong way out of both.
+// entitled renders the plan decision as the route's own refusal. The decision
+// lives in `planDecision` below, which the in-process closures and the doors in
+// kit/httpx/schemas.go ask too, so the answer a caller reads at the address and
+// the answer a page's door, a navigation entry and a catalogue document give
+// cannot drift apart.
 //
-// A declaration that names no feature asks nothing. An Entitler that cannot
-// decide is an outage and not a denial, exactly as an Authorizer that cannot:
-// billing being unreachable must not read as "your plan does not include this".
-func (a *API) entitled(ctx huma.Context, t tenancy.Tenant, auth Auth) bool {
-	if auth.feature == "" {
+// A refusal that names a code is a denial, and 402 rather than 403: a plan that
+// does not include something is not a permission a person can be granted, and a
+// client that cannot tell the two apart shows the wrong way out of both. A
+// refusal that names none is nobody's fault and asks to be come back to.
+func (a *API) entitled(ctx huma.Context, auth Auth) bool {
+	ok, status, code, detail := a.planDecision(ctx.Context(), auth)
+	if ok {
 		return true
+	}
+	if code != "" {
+		a.refuse(ctx, status, code+": "+detail)
+		a.denied(ctx, status, code, detail)
+		return false
+	}
+	if status == http.StatusServiceUnavailable {
+		ctx.SetHeader("Retry-After", "3")
+	}
+	a.refuse(ctx, status, detail)
+	return false
+}
+
+// planDecision is the one place the plan question a declaration names is asked.
+// Its callers render the answer — the middleware as a response, a closure as the
+// error it returns — and neither decides anything: a declaration that names no
+// feature asks nothing, a tenant whose plan includes it is admitted, a tenant
+// whose plan does not is refused 402 with CodePlanExcludes, and an Entitler that
+// cannot decide is an outage and not a denial — 503, exactly as an Authorizer
+// that cannot is — because billing being unreachable must not read as "your plan
+// does not include this".
+//
+// A host the tenant loader resolved to nobody has no plan that could include
+// anything, which is the answer such a host is given wherever else it asks: no
+// site is served here.
+func (a *API) planDecision(ctx context.Context, auth Auth) (ok bool, status int, code, detail string) {
+	if auth.feature == "" {
+		return true, 0, "", ""
+	}
+	t, hasTenant := tenancy.FromContext(ctx)
+	if !hasTenant {
+		return false, http.StatusNotFound, "", "no site is served at this host"
+	}
+	path := ""
+	if r, isRequest := RequestFrom(ctx); isRequest {
+		path = r.URL.Path
 	}
 	if a.opts.Entitle == nil {
 		// Defense in depth, like the undeclared branch above: ValidateDeclarations
 		// refuses this composition, so reaching here means the gate did not run.
 		// Closed rather than open, and an outage rather than a denial, because
 		// the fault is the application's and not the caller's.
-		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: an operation declares a feature and nothing answers it",
-			"feature", auth.feature, "path", ctx.URL().Path)
-		a.refuse(ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
-		return false
+		a.rlog(ctx).ErrorContext(ctx, "httpx: an operation declares a feature and nothing answers it",
+			"feature", auth.feature, "path", path)
+		return false, http.StatusServiceUnavailable, "", "the plan could not be read right now"
 	}
-	included, err := a.opts.Entitle.Includes(ctx.Context(), t, auth.feature)
+	included, err := a.opts.Entitle.Includes(ctx, t, auth.feature)
 	if err != nil {
-		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: entitlement decision unavailable",
-			"feature", auth.feature, "tenant", t.Slug, "error", err)
-		ctx.SetHeader("Retry-After", "3")
-		a.refuse(ctx, http.StatusServiceUnavailable, "the plan could not be read right now")
-		return false
+		a.rlog(ctx).ErrorContext(ctx, "httpx: entitlement decision unavailable",
+			"feature", auth.feature, "tenant", t.Slug, "path", path, "error", err)
+		return false, http.StatusServiceUnavailable, "", "the plan could not be read right now"
 	}
 	if !included {
-		a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: plan excludes this operation",
-			"feature", auth.feature, "tenant", t.Slug, "path", ctx.URL().Path)
-		a.refuse(ctx, http.StatusPaymentRequired, CodePlanExcludes+": this tenant's plan does not include "+auth.feature)
-		a.denied(ctx, http.StatusPaymentRequired, CodePlanExcludes, "this tenant's plan does not include "+auth.feature)
-		return false
+		a.rlog(ctx).InfoContext(ctx, "httpx: plan excludes this operation",
+			"feature", auth.feature, "tenant", t.Slug, "path", path)
+		return false, http.StatusPaymentRequired, CodePlanExcludes,
+			"this tenant's plan does not include " + auth.feature
 	}
-	return true
+	return true, 0, "", ""
 }
 
 // The refusal codes, exported because the presentation layer translates them.

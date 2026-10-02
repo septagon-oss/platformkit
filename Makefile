@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -28,9 +28,38 @@ PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhos
 # test fails rather than skips when this is unset: a suite that quietly skips
 # the transport it ships proves nothing.
 PLATFORMKIT_TEST_NATS_URL ?= nats://localhost:$(PLATFORMKIT_NATS_PORT)
+# modules/file's S3 adapter is tested against the S3-compatible store `make up`
+# starts, and fails rather than skips without it for the same reason. Its port is
+# not part of the allocated pair the test URLs are built from: nothing else in this
+# stack answers on 8333, so the default needs no allocation, and an operator who
+# runs two stacks side by side overrides it the way they override the other two.
+PLATFORMKIT_S3_PORT ?= 8333
+PLATFORMKIT_TEST_S3_ENDPOINT ?= localhost:$(PLATFORMKIT_S3_PORT)
+PLATFORMKIT_TEST_S3_BUCKET_PREFIX ?= platformkit-test
+PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
+PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
+export PLATFORMKIT_TEST_S3_ENDPOINT
+export PLATFORMKIT_TEST_S3_BUCKET_PREFIX
+export PLATFORMKIT_TEST_S3_ACCESS_KEY
+export PLATFORMKIT_TEST_S3_SECRET_KEY
+
+# The shared store kit/cache's Valkey adapter speaks. `make up` starts it on this
+# port, and the suite reads the address below.
+#
+# Unlike PLATFORMKIT_TEST_NATS_URL, this one is exported only when something answers
+# there. The difference is the two kernels' own, not a weaker standard: the worker
+# transport every journey exercises has to be present for its suite to mean anything,
+# while kit/cache boots without a store at all — the in-process adapter is a complete
+# deployment for one process — so a checkout with no cache server runs every case in
+# this repository but the three that name one, and its skip line says which. Whoever
+# exports this variable at a store that is not answering gets those three cases as
+# failures rather than a skip: an address you set yourself is a promise.
+PLATFORMKIT_VALKEY_PORT ?= 6379
+PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
+export PLATFORMKIT_TEST_VALKEY_URL
 
 # Local feedback uses Go's package/dependency cache. The full check below always
 # runs fresh, independently of these local selectors or an earlier test goal.
@@ -99,6 +128,33 @@ mobile-e2e: ## Boot the app on a database of its own and drive it with one devic
 # <ref>" (or --dump <file>); scripts/rehearse_migrations.sh names the four exit codes.
 rehearse: ## Apply this tree's pending migrations to a copy of a production-shaped database
 	./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The other half of "can this installation be put back". `make backup` writes one
+# dump — with the grants on its tables, so the restore can be opened as the
+# application and not only as its owner — plus a copy of the on-disk byte store and
+# a manifest of digests; `make restore-drill` puts a backup (or a fresh one) into a
+# scratch database, compares every object with the installation's own store and
+# every table both as the owner and through the application's role, and prints
+# restore_drill_pass_ratio. Operator steps in the same class as rehearse — psql,
+# pg_dump, pg_restore and a database it may create and drop — and for the same
+# reason they are not in `check`: `check` is what a pull request must pass on a
+# source tree, and these need a running cluster. A backup is one database, never one
+# tenant: the rows and the bytes of every tenant live together, so `TENANT` is
+# refused rather than silently dropped.
+PLATFORMKIT_FILES_DIR ?= data/files
+# Passed only when the directory is there: a deployment on an object store has no
+# byte store on this disk to carry or compare, and one whose files.dir points
+# somewhere else overrides by putting its own --files in BACKUP_ARGS or DRILL_ARGS.
+STORE_ARGS = $(if $(wildcard $(PLATFORMKIT_FILES_DIR)),--files $(PLATFORMKIT_FILES_DIR))
+refuse-tenant = @if [ -n "$$TENANT" ]; then echo "$(1): one backup is one database, not one tenant — TENANT is not read; point --url at the database you mean" >&2; exit 2; fi
+
+backup: ## Write one dump of the database and a copy of the byte store, with a manifest of digests
+	$(call refuse-tenant,backup)
+	./scripts/backup.sh $(STORE_ARGS) $(BACKUP_ARGS)
+
+restore-drill: ## Put a backup back and prove the bytes and the application's read of the tables came back
+	$(call refuse-tenant,restore drill)
+	./scripts/restore_drill.sh $(STORE_ARGS) $(DRILL_ARGS)
 
 load-test: ## Compare bounded tenant work and database pool capacity
 	go test ./kit/jobs -run '^$$' -bench '^BenchmarkPerTenantCapacity$$' -benchtime=2s -count=3 -timeout=3m
@@ -171,8 +227,8 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres and NATS, and wait for both to be healthy
+up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres and NATS and drop their volumes
+down: ## Stop Postgres, NATS, Valkey and the object store and drop their volumes
 	docker compose down -v

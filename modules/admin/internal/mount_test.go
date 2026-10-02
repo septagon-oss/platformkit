@@ -13,6 +13,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -55,6 +56,7 @@ func render(t *testing.T, node g.Node) string {
 func TestEveryHandWrittenPageDeclaresTheAuthorizationItsDataNeeds(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: "admin.test", Tenants: noTenants{}, Conn: conn, Authorize: allow(true),
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil

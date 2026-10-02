@@ -32,7 +32,7 @@ Its one cross-module import is `modules/user/contracts`, for `invite`'s `Inviter
 
 ### Permissions
 
-The manifest in `modules/tenant/module.go` (`permissions`) declares one key: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`). It guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts eleven routes with it: `list`, `create`, `read`, `suspend`, `reactivate`, `rename`, `set-locale`, `add-host`, `remove-host`, `delete` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. Every verb the module has carries this one permission, so no new grant was introduced with the four that arrived here: the seven that move a lifecycle (`create`, `add-host`, `suspend`, `rename`, `reactivate`, `remove-host`, `delete`) and `set-locale`, which is a command but not a lifecycle change — it moves what a tenant is served in, not whether it is served, so it publishes `tenant.locale_set` and no operator mirror. Each declares the events it publishes so `kit/app` refuses at boot a route that would publish something the manifest does not own. The lifecycle has one verb this module does not answer: `export`, and with it `restore`. Neither is here — they are the pair that has to agree on a format for a customer's rows leaving and coming back, and until it lands a deleted tenant stays deleted, `Reactivate` answers it not-found, and `Delete` is the closest thing to a goodbye. `tenanttest` has no fake of a format either: the [fake](contracts/tenanttest/) retires a tenant the way the service does and no further.
+The manifest in `modules/tenant/module.go` (`permissions`) declares one key: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`). It guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts thirteen routes with it: `list`, `create`, `read`, `suspend`, `reactivate`, `rename`, `set-locale`, `add-host`, `remove-host`, `delete`, `set-oidc`, `clear-oidc` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. Every verb the module has carries this one permission, so no new grant was introduced with the four that arrived here: the seven that move a lifecycle (`create`, `add-host`, `suspend`, `rename`, `reactivate`, `remove-host`, `delete`) and `set-locale`, which is a command but not a lifecycle change — it moves what a tenant is served in, not whether it is served, so it publishes `tenant.locale_set` and no operator mirror. The two provider routes beside it are commands in the same shape, and mirror nothing either: which provider a tenant's people sign in against moves neither whether nor in what language the tenant is served. Each declares the events it publishes so `kit/app` refuses at boot a route that would publish something the manifest does not own. The lifecycle has one verb this module does not answer: `export`, and with it `restore`. Neither is here — they are the pair that has to agree on a format for a customer's rows leaving and coming back, and until it lands a deleted tenant stays deleted, `Reactivate` answers it not-found, and `Delete` is the closest thing to a goodbye. `tenanttest` has no fake of a format either: the [fake](contracts/tenanttest/) retires a tenant the way the service does and no further.
 
 ### Object scope
 
@@ -43,6 +43,7 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
 - `Bootstrap` in `modules/tenant/internal/handler.go` refuses to run when any tenant exists (`crud.ErrConflict`). It is the only writer of the operator flag: it sets `in.Operator = true`.
 - `NewTenant.Operator` is `json:"-"` (`modules/tenant/contracts/tenant.go`), so no request body can mark a tenant as the operator. `Service.Create` in `modules/tenant/internal/service.go` copies it from the input.
 - `invite` takes no password and no roles from the caller. The roles are chosen by the `Inviter`.
+- `SetOIDC` refuses half a provider: an issuer that is not a URL, is plain HTTP for a host that is not local, or carries a query; a client id that is empty; a secret reference that is not an environment variable's name; a registration mode outside `disabled | existing | provision`; and `provision` with no roles, which would be a door into an empty room. `migrations/000030` puts the same rule on the row as a CHECK, so a write that reaches the table by another route is refused there, and `modules/tenant/internal/oidc_test.go` is the case that tries it. Writing the same provider again changes nothing and publishes nothing.
 
 - `RemoveHost` refuses a tenant's primary host and its last one, naming the verb that
   would lift each refusal; `Suspend` and `Delete` refuse the installation's own tenant,
@@ -75,7 +76,7 @@ None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for th
 
 ### The operator boundary
 
-`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All eleven routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`, the four lifecycle verbs this delivery adds among them: the grant is one because the surface is one, and a route that needs a second key would be a different surface. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
+`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All thirteen routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`, the four lifecycle verbs this delivery adds among them: the grant is one because the surface is one, and a route that needs a second key would be a different surface. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
 
 ### Provisioning
 
@@ -109,3 +110,31 @@ assertions; and the pair *an event in the subject's scope plus one in the
 installation's, or neither*, which is the shape the next control-plane verb copies
 instead of inventing a second audit table.
 
+The languages the installation answers in arrived the same way. **Reused:** `SetLocale` is `Suspend`'s command shape — `Get`, compare,
+`Select(...).Updates` of the two columns it changed, `events.PublishFor` inside the
+writing transaction, read-back — and a language is refused with `crud.ErrInvalid`
+like every other bad input here; `tenant_locales` is `tenant_hosts`' table shape and
+policy, so the new fact inherits the row-level scope rather than declaring one; the
+set travels on the host resolution `ByHost` already performs, because three owners ask
+"same tenant as before?" with `==` and a slice would answer that wrong. **Added:** `default_locale`, `tenant_locales`,
+`SetLocale`/`ValidLocale`/`EventLocaleSet`, the route, and `Deps.Languages` — the
+installation's own languages, which had no owner because the catalogue decided alone.
+**Made reusable:** a control-plane write that rechecks its own rules, publishes one
+event, and invalidates the cache whose truth it moved, which is the shape a second
+`/tenants` command copies — the whole shape, including what it does when the shared
+store will not take that invalidation: the write stands, and the route answers 503
+rather than reporting an effect it did not achieve. And `tenant.locale_set`, which is
+what a second process will subscribe to when a TTL stops being good enough.
+
+The provider per tenant is the same delivery again. **Reused:** `SetOIDC` is
+`SetLocale`'s command shape and `SetOIDC`'s read, `OIDCOf`, is a tenant
+transaction reading its own row under the policy `000006` already puts over
+`tenants` — no new policy is created for it, which is the check that the fact is
+the tenant's and not a new privilege. **Added:** the six `oidc_*` columns, the
+two CHECKs that make half a provider unstatable rather than a 500, `SetOIDC` /
+`ClearOIDC` / `OIDCOf`, the `set-oidc` and `clear-oidc` routes and
+`tenant.oidc_set` / `tenant.oidc_cleared`. **Made reusable:** a secret that is
+never in a row — the column holds an environment variable's *name*, because
+`modules/audit` copies every payload it is handed — and a control-plane fact a
+lower module reads through its own port, so `modules/auth` resolves an issuer per
+request without importing this module.

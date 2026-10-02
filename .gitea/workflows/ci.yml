@@ -19,11 +19,24 @@ jobs:
     # This self-hosted capacity accepts trusted same-repository changes only.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    timeout-minutes: 45
+    # 45 cut off runs 192, 193, 204, 210, 237 and 243 after every test that ran had passed: the job runs
+    # make check, race, govulncheck, the design editor's browser verification and e2e in sequence. Task
+    # T-0219 splits it across the two kernel runners; until then the limit leaves room.
+    timeout-minutes: 75
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
+      # The Valkey conformance suite runs here rather than skipping: the Makefile
+      # points this variable at whatever `make up` publishes when a caller does not
+      # set it, and the job sets it, so the one production adapter of kit/cache is
+      # exercised by the gate that ships it and not only by hand.
+      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
+      # The object store the S3 adapter's cases dial. They fail rather than skip
+      # without one, as the NATS transport's do, so the fixture belongs here: this
+      # job stands up its own services rather than the compose stack the Makefile's
+      # localhost:8333 default belongs to.
+      PLATFORMKIT_TEST_S3_ENDPOINT: s3:8333
       GOFLAGS: -p=4
     services:
       postgres:
@@ -56,9 +69,17 @@ jobs:
         id: nats
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          # Each container this job starts by hand is named after the run that started it, from the same
+          # run id the image tag below is built from. The cleanup step at the end of the job needs a
+          # handle that outlives the step which made the container: a step the job's own deadline cuts off
+          # never finishes writing $GITHUB_OUTPUT, so the id it recorded is lost, and a container still
+          # running is what makes `docker image rm` refuse below and the job's network unremovable. The
+          # run id is known to every step without any output, so a name is a handle the job cannot lose.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias nats \
             nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
             --jetstream --http_port 8222)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -69,10 +90,55 @@ jobs:
           docker logs "$container"
           exit 1
 
+      # The S3-compatible object store modules/file's S3 adapter is tested against,
+      # on this job's network under the name the endpoint above names. Image,
+      # credentials and port are compose.yaml's s3 service, so the store this job
+      # tests is the store `make up` starts. The probe is that service's own
+      # healthcheck: an anonymous bucket list is refused by design (403), and the
+      # refusal is what says somebody is listening.
+      - name: Start the object store
+        id: s3
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+        run: |
+          test -n "$JOB_NETWORK"
+          container=$(docker run -d --network "$JOB_NETWORK" --network-alias s3 \
+            -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
+            chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://s3:8333/; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
       - name: Create the platformkit_app role
         env:
           PGPASSWORD: platformkit
         run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
+      # noeviction, as compose.yaml names it: the generation counter a Move raises is
+      # written with no TTL, and a store that evicts it reads back as generation 0,
+      # which believes again the entries the first Move closed. docs/cache.md.
+      - name: Start Valkey on this job's network
+        id: valkey
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-valkey
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
+            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
+            --maxmemory-policy noeviction)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
 
       - name: make check
         run: make check
@@ -132,9 +198,11 @@ jobs:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
           PLATFORMKIT_OPENPENCIL_URL: http://openpencil:8080
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-editor
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias openpencil \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
             --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -145,7 +213,25 @@ jobs:
             sleep 1
           done
           curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
-          node --import ./register.mjs --test editor/*.test.mjs
+          # One editor suite at a time. Each file under editor/ launches its own Chromium, and
+          # node's default test concurrency is one file per core, so this step handed the runner
+          # three browsers at the moment its Go suites had just stopped asking for memory. What
+          # comes back from that is not an assertion: the browser dies and the case reports
+          # `locator.click: Target crashed` against a five-second wait. The step has refused two
+          # of main's own pushes that way (`e32fb81a`, `063b6535`, job logs read by task T-0110
+          # round 26). Root reports it refused this branch's head `2be69fa1` too; that run's log
+          # was unreadable from here — the forge API answers 403 to an unauthenticated checkout.
+          # The directory already states the bound for its other browser suite —
+          # `npm run test:browser` passes `--test-concurrency=2` — and this is the step that
+          # never named one.
+          # Measured here at this head against this image and the step's own docker flags, on a
+          # box at load 18-31 with 38 GB free: unbound, 31 tests in 413.2 s of wall over 475.6 s
+          # of test time (ratio 1.15, so at least two files overlap); bound, 31 tests in 441.3 s
+          # over 438.6 s (ratio 0.99, and the process tree held one Chromium). Both forms pass
+          # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
+          # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
+          # 15m24s serial, inside the job's 45 minutes. No assertion, skip, retry or reordering.
+          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
@@ -153,6 +239,7 @@ jobs:
         env:
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
           JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}
         run: |
           test -n "$JOB_NETWORK"
           for profile in latin complete; do
@@ -161,7 +248,8 @@ jobs:
               complete) target=complete-preview; test_file=complete-fonts.test.mjs ;;
             esac
             export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
-            container=$(docker run -d --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+            docker rm -f "$CONTAINER_NAME-$profile" >/dev/null 2>&1 || true
+            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
               --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -190,16 +278,35 @@ jobs:
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
+          NATS_NAME: platformkit-${{ github.run_id }}-nats
+          VALKEY_NAME: platformkit-${{ github.run_id }}-valkey
+          EDITOR_NAME: platformkit-${{ github.run_id }}-editor
+          PREVIEW_NAME: platformkit-${{ github.run_id }}
         run: |
           status=0
-          if [ -n "$EDITOR_CONTAINER" ]; then docker rm -f "$EDITOR_CONTAINER" || status=1; fi
-          if [ -n "$PREVIEW_CONTAINER" ]; then docker rm -f "$PREVIEW_CONTAINER" || status=1; fi
-          if [ -n "$COMPLETE_PREVIEW_CONTAINER" ]; then docker rm -f "$COMPLETE_PREVIEW_CONTAINER" || status=1; fi
-          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          # Each container is dropped by the id its own step recorded, when that step finished, and by the
+          # run's name always. Both handles reach the same container, and the name is the one a step cut
+          # off mid-flight still leaves behind: run 245 lost the editor's id that way and its container
+          # held the run's image against the three removals below, which are deliberately not forced.
+          # A handle that names nothing is not a failure — the step that would have made that container
+          # may never have run.
+          drop() {
+            for handle in "$@"; do
+              [ -n "$handle" ] || continue
+              docker inspect "$handle" >/dev/null 2>&1 || continue
+              docker rm -f "$handle" || status=1
+            done
+          }
+          drop "$NATS_CONTAINER" "$NATS_NAME"
+          drop "$VALKEY_CONTAINER" "$VALKEY_NAME"
+          drop "$EDITOR_CONTAINER" "$EDITOR_NAME"
+          drop "$PREVIEW_CONTAINER" "$PREVIEW_NAME-latin"
+          drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi

@@ -51,6 +51,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -238,6 +239,16 @@ type Options struct {
 	// an event that did not commit rolls the notices back with it — so a composition
 	// that cannot write the trail refuses the ask rather than answering 202.
 	Accessed func(context.Context, AccessRecord) error
+
+	// Cache is where a resolved host is believed, and it is required: a belief this
+	// package holds about which tenant a host is, and that it can be told to stop
+	// holding (modules/tenant does exactly that when it suspends a customer), is not
+	// this process's own business. The in-process store is a complete answer for one
+	// process and the same adapter every test runs on — kit/app builds it when the
+	// deployment names no server — but it has to be named, because a shared value
+	// that silently became a map is a suspension that stops reaching the other
+	// replicas and nobody notices until a suspended customer is still serving.
+	Cache cache.Cache
 }
 
 // WriteLimiter is the counting this kernel asks for and nothing more: it is the
@@ -301,7 +312,6 @@ type API struct {
 	inner  *chi.Mux
 	opts   Options
 	log    *slog.Logger
-	hosts  *hostCache
 	token  tenancy.SystemToken
 	lazy   tenancy.SystemToken
 	system tenancy.SystemToken
@@ -353,6 +363,8 @@ func New(cfg Options) (*API, *chi.Mux) {
 		panic("httpx.New: Options.Authorize is required; Permission declarations have nothing to ask otherwise")
 	case cfg.Authenticate == nil:
 		panic("httpx.New: Options.Authenticate is required; SignedIn declarations have nobody to recognise otherwise")
+	case cfg.Cache == nil:
+		panic("httpx.New: Options.Cache is required; a host resolution cached here must be one every replica can forget")
 	}
 
 	// One error shape for the whole API, assigned where the API is built rather
@@ -377,7 +389,6 @@ func New(cfg Options) (*API, *chi.Mux) {
 		inner:  inner,
 		opts:   cfg,
 		log:    cfg.Log,
-		hosts:  &hostCache{hosts: map[string]hostEntry{}},
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
