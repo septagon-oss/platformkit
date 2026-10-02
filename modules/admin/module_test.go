@@ -704,10 +704,10 @@ func TestTheSignInFormOnlyEverSendsSomebodyBackIntoTheSite(t *testing.T) {
 	router := mount(t)
 	for _, tt := range []struct{ next, want string }{
 		{"/app/note/notes", "/app/note/notes"},
-		{`/\evil.example`, "/app"},
-		{"//evil.example", "/app"},
-		{"https://evil.example", "/app"},
-		{"", "/app"},
+		{`/\evil.example`, "/app/admin/start"},
+		{"//evil.example", "/app/admin/start"},
+		{"https://evil.example", "/app/admin/start"},
+		{"", "/app/admin/start"},
 	} {
 		req := httptest.NewRequest(http.MethodGet, "http://"+host+"/app/admin/login?next="+url.QueryEscape(tt.next), nil)
 		w := httptest.NewRecorder()
@@ -990,5 +990,45 @@ func TestTheDoorsBesideSignInAnswer(t *testing.T) {
 	}
 	if !strings.Contains(w.Body.String(), `href="/app/admin/login/forgot"`) {
 		t.Errorf("the sign-in card names no way to be sent a link:\n%s", w.Body.String())
+	}
+}
+
+// TestASignedInBrowserLandsOnTheFirstScreenItsRoleCanReach is rule 5. The
+// walkthrough's apps offered a person who had just signed in a dashboard whose only
+// other link was Health; the landing has to come from what the composed modules
+// declare and what this caller is allowed to reach, which is the same list the
+// sidebar renders and the same Authorizer the routes enforce with. A caller who may
+// reach nothing keeps the dashboard — for them it is the truth, not a placeholder.
+func TestASignedInBrowserLandsOnTheFirstScreenItsRoleCanReach(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		as   httpx.Authorizer
+		want string
+	}{
+		{"every grant but one", caller{}, "/app/note/notes"},
+		{"nothing at all", member{}, "/app"},
+		{"only the plans", member{"plan:read": true}, "/app/plan/plans"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			code, body, got := call(t, mountAs(t, tt.as), http.MethodGet, "/app/admin/start", "")
+			if code != http.StatusSeeOther {
+				t.Fatalf("the landing = %d, want a redirect: %s", code, body)
+			}
+			if got != tt.want {
+				t.Errorf("the landing sent the person to %q, want %q", got, tt.want)
+			}
+		})
+	}
+
+	// The sign-in card sends a person here rather than to the dashboard, and an
+	// explicit ?next still wins over it: somebody pushed off a specific screen goes
+	// back to that screen.
+	_, page, _ := call(t, mount(t), http.MethodGet, "/app/admin/login", "")
+	if got := attribute(page, "data-next"); got != "/app/admin/start" {
+		t.Errorf("the sign-in form's default next is %q, want the landing", got)
+	}
+	_, page, _ = call(t, mount(t), http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
+	if got := attribute(page, "data-next"); got != "/app/note/notes" {
+		t.Errorf("an explicit next was not honoured: %q", got)
 	}
 }
