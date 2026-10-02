@@ -218,6 +218,9 @@ type TextProps struct {
 	Italic    bool   `json:"italic,omitempty"`
 	Underline bool   `json:"underline,omitempty"`
 	Lines     int    `json:"lines,omitempty"` // line clamp, 1-6
+	// Measure caps the line at the design system's reading width, for text that is
+	// a sentence rather than a label. See clTextMeasure.
+	Measure bool `json:"measure,omitempty"`
 }
 
 // HeadingProps defines properties for heading elements (H1-H6).

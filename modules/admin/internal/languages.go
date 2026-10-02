@@ -156,6 +156,7 @@ func (p pages) languagesView(ctx context.Context, r page.Request, detail string)
 			Content:        detail,
 			Color:          "danger",
 			Element:        "p",
+			Measure:        true,
 		}))
 	case justSaved:
 		body = append(body, components.Text(components.TextProps{
@@ -163,6 +164,7 @@ func (p pages) languagesView(ctx context.Context, r page.Request, detail string)
 			Content:        text("saved", "Languages saved."),
 			Color:          "success",
 			Element:        "p",
+			Measure:        true,
 		}))
 	}
 	fields := []g.Node{
@@ -194,6 +196,7 @@ func (p pages) languagesView(ctx context.Context, r page.Request, detail string)
 			Level:       2,
 			Title:       text("other", "Other languages"),
 			Description: text("remove_warning", "Removing a language can hide its content translations. Review them before saving."),
+			Measure:     true,
 		}),
 	}
 	fields = append(fields, others...)

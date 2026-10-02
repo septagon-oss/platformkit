@@ -59,6 +59,9 @@ func textWithContent(p TextProps, content g.Node, attrs ...g.Node) g.Node {
 	if p.NoWrap {
 		cl = cl.Merge(clTextNoWrap)
 	}
+	if p.Measure {
+		cl = cl.Merge(clTextMeasure)
+	}
 	var children []g.Node
 	children = append(children, baseAttrs(p.ComponentProps, attrs...)...)
 	children = append(children,

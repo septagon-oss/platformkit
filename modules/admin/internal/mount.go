@@ -273,7 +273,7 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 				Header:  header(ctx, deps, r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
+					Content: brand + " " + version(), Size: "sm", Color: "muted", Measure: true})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{
 				Title:       chrome(r, "dialog.title", "Are you sure?"),
