@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
+	"gorm.io/gorm/clause"
 )
 
 // Service is the tenant's site settings. It has no fields: everything it needs
@@ -26,7 +27,7 @@ var _ contracts.Service = (*Service)(nil)
 // Settings is what this tenant has configured, or the defaults. See
 // contracts.Service.
 func (s *Service) Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
-	stored, err := s.stored(tx)
+	stored, err := s.stored(tx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -40,10 +41,33 @@ func (s *Service) Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts
 	return out, out.Validate(ctx)
 }
 
+// SettingsForUpdate is Settings with the row locked FOR UPDATE.
+//
+// It is the read for a caller about to compare what it holds against what is
+// stored — which is the only kind of comparison that needs a lock to mean
+// anything: read unlocked, the row can move between the read and the write and
+// the answer was about a revision that no longer exists. apps/platformkit hands
+// this to modules/change as the subject's Lock; no other caller in this
+// repository needs it, and nothing in this module branches on who does.
+//
+// A tenant with no row gets the defaults, whose Revision is 0: the number counts
+// writes, and a row that does not exist has had none.
+func (s *Service) SettingsForUpdate(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
+	stored, err := s.stored(tx, true)
+	if err != nil {
+		return nil, err
+	}
+	if stored != nil {
+		return stored, nil
+	}
+	out := &contracts.SiteSettings{}
+	return out, out.Validate(ctx)
+}
+
 // Save writes the settings and says so, unless nothing changed. See
 // contracts.Service.
 func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.SiteSettings) (*contracts.SiteSettings, error) {
-	stored, err := s.stored(tx)
+	stored, err := s.stored(tx, false)
 	if err != nil {
 		return nil, err
 	}
@@ -52,6 +76,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 		// gives the row its id; the unique index is what keeps it a singleton
 		// if two requests arrive at once.
 		crud.Reset(in)
+		in.Revision = 1
 		if err := crud.Create(ctx, tx, in); err != nil {
 			return nil, err
 		}
@@ -71,22 +96,34 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.S
 	if same(stored, in) {
 		return stored, nil
 	}
+	// The write moves the count, and it moves it here rather than in a trigger or
+	// a returning clause because the number is the row's own answer to "how many
+	// times has this been saved" — a fact a diff is checked against.
+	in.Revision = stored.Revision + 1
 	if err := crud.Update(ctx, tx, in, columns...); err != nil {
 		return nil, err
 	}
 	return in, publish(ctx, tx, in)
 }
 
-// columns are the seven a save writes, and the stamp. They are written out
+// columns are the eight a save writes, and the stamp. They are written out
 // rather than left to a whole-row update so that a column added later has to be
 // added here too — the alternative is a field nobody can save and nobody
 // notices.
-var columns = []string{"title", "tagline", "home_slug", "theme", "primary_color", "logo_file_id", "nav", "updated_at"}
+var columns = []string{"title", "tagline", "home_slug", "theme", "primary_color", "logo_file_id", "nav", "revision", "updated_at"}
 
-// stored is the tenant's row, or nil when it has none.
-func (s *Service) stored(tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
+// stored is the tenant's row, or nil when it has none. lock takes the row
+// FOR UPDATE, which is what SettingsForUpdate asked for and what an unlocked
+// read must not do: the ordinary read runs inside the request's transaction too,
+// and a read of the settings form locking the row would queue every apply behind
+// every page view.
+func (s *Service) stored(tx db.Tx[db.Tenant], lock bool) (*contracts.SiteSettings, error) {
+	q := tx.DB()
+	if lock {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
 	var row contracts.SiteSettings
-	err := tx.DB().Where("deleted_at IS NULL").Take(&row).Error
+	err := q.Where("deleted_at IS NULL").Take(&row).Error
 	switch classified := crud.Classify(err); {
 	case classified == nil:
 		return &row, nil

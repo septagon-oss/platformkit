@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace modules/task/domain design ui/forms
+parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
@@ -86,7 +86,12 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # context of a request is stored with the event the request caused, and
         # the relay hands it to the envelope: an event that could not name the
         # call behind it would be a log line no event joins to.
-        outbox = identity " " delivery " " p "kit/db " p "kit/trace"
+        # kit/request is beside kit/trace for the same reason: the call that caused
+        # an event is stored with the event, because by relay time the request is
+        # gone. It is a value package — the standard library and kit/trace — and
+        # it parses no request, which is why net/http stays out of this closure and
+        # why the HTTP middleware is the only writer of these fields.
+        outbox = identity " " delivery " " p "kit/db " p "kit/trace " p "kit/request"
         # The recorded closure of the page composition layer (see the comment above parts).
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
@@ -107,6 +112,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The W3C trace context is a value: the standard library and nothing
         # else. It is a carrier, not a tracer, and its closure is the proof.
         check("kit/trace", "")
+        # Which call, from where, on which trace: a value the request leaves
+        # behind, so the standard library and kit/trace and nothing else. Reading
+        # net/http here would put a server in the closure of every worker.
+        check("kit/request", p "kit/trace")
         # kit/cache is the value every replica reads: the standard library, uuid and
         # singleflight. A store it talks to is a provider, not this core.
         check("kit/cache", uuid " golang.org/x/sync/singleflight")

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/request"
 	"github.com/septagon-oss/platformkit/kit/trace"
 )
 
@@ -25,10 +26,12 @@ const maxRequestID = 64
 // requestIDFrom returns the id of the request ctx belongs to, or "" outside a
 // request. It is the string the caller saw in the response header and in the
 // problem body's instance; every caller of it is in this package, which is why
-// it is not exported.
+// it is not exported. The value itself belongs to kit/request, which is why this
+// reads it rather than keeping a second copy under a second key: the id an event
+// carries and the id the caller was answered with have to be one string.
 func requestIDFrom(ctx context.Context) string {
-	id, _ := ctx.Value(requestIDKey{}).(string)
-	return id
+	r, _ := request.From(ctx)
+	return r.ID
 }
 
 // requestID gives every request an id: the caller's, when they sent one worth
@@ -55,8 +58,17 @@ func (a *API) requestID(next http.Handler) http.Handler {
 		} else if tc, ok := trace.FromRequestID(id); ok {
 			ctx = trace.With(ctx, tc)
 		}
+		// The call's three facts are recorded once, here, where all three are
+		// known: the id this call will be answered with, the address of the
+		// connection it arrived on, and the trace it opened. Everything that
+		// outlives the call — the outbox row, and through it the audit trail —
+		// reads them back from kit/request.
+		me := request.Context{ID: id, ClientAddr: ClientAddr(r)}
+		if tc, ok := trace.From(ctx); ok {
+			me.Trace = tc
+		}
 		w.Header().Set(RequestIDHeader, id)
-		next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, requestIDKey{}, id)))
+		next.ServeHTTP(w, r.WithContext(request.With(ctx, me)))
 	})
 }
 

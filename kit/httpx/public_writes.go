@@ -61,7 +61,7 @@ func (a *API) publicWrites(ctx huma.Context, next func(huma.Context)) {
 	// the difference between a bounded set of counters and one per slug anybody
 	// types into a public address.
 	t, _ := tenancy.FromContext(ctx.Context())
-	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + clientAddress(r)
+	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + ClientAddr(r)
 	ok, retryAfter, err := a.opts.WriteLimiter.Allow(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the public write limit could not be read; proceeding",
@@ -90,11 +90,17 @@ func routeOf(ctx huma.Context) string {
 	return ctx.URL().Path
 }
 
-// clientAddress is the peer address of the request, which is the only address
-// here that a caller cannot write: no X-Forwarded-For, for the reason the auth
-// module gives for the same rule. A deployment behind a proxy that rewrites
-// RemoteAddr gets the right one anyway.
-func clientAddress(r *http.Request) string {
+// ClientAddr is the peer address of the request, which is the only address here
+// that a caller cannot write: no X-Forwarded-For, for the reason the auth module
+// gives for the same rule. A deployment behind a proxy that rewrites RemoteAddr
+// gets the right one anyway.
+//
+// It is exported, and it is the only parser of an address in the tree, because
+// two were written to that rule independently (this one and
+// modules/auth/internal/kernel.go's) and a rule with two implementations is a
+// rule one of them will break. kit/request cannot own it: parsing net/http here
+// is what keeps net/http out of the closure of every worker that publishes.
+func ClientAddr(r *http.Request) string {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
