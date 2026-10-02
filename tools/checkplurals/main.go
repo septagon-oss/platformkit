@@ -83,7 +83,7 @@ func scanGo(path string) ([]string, error) {
 		case *ast.BasicLit:
 			if n.Kind == token.STRING {
 				value, err := strconv.Unquote(n.Value)
-				if err == nil && strings.Contains(value, "%"+"ss") {
+				if err == nil && pluralSuffixFormat(value) {
 					report(n.Pos(), `plural format suffix`)
 				}
 			}
@@ -91,6 +91,32 @@ func scanGo(path string) ([]string, error) {
 		return true
 	})
 	return problems, nil
+}
+
+// pluralSuffixFormat refuses a noun pluralised by appending a letter to a verb:
+// "%ss", and the numbered verb a gotext catalogue writes its forms with, "%[1]ss".
+// They are the same suffix; a checker that read only the unnumbered spelling would
+// let a translated catalogue pluralise in English while Go source stayed clean.
+func pluralSuffixFormat(value string) bool {
+	if strings.Contains(value, "%"+"ss") {
+		return true
+	}
+	for at := 0; at+1 < len(value); {
+		if value[at] != '[' || !strings.HasSuffix(value[:at], "%") {
+			at++
+			continue
+		}
+		end := strings.IndexByte(value[at:], ']')
+		if end < 0 {
+			return false
+		}
+		number := value[at+1 : at+end]
+		if number != "" && strings.Trim(number, "0123456789") == "" && strings.HasPrefix(value[at+end+1:], "s"+"s") {
+			return true
+		}
+		at += end + 1
+	}
+	return false
 }
 
 func literal(expr ast.Expr) string {
@@ -116,7 +142,7 @@ func scanJSON(path string) ([]string, error) {
 	visit = func(value any, key string) {
 		switch typed := value.(type) {
 		case string:
-			if strings.Contains(typed, "%"+"ss") {
+			if pluralSuffixFormat(typed) {
 				problems = append(problems, fmt.Sprintf("%s: %s: plural format suffix", path, key))
 			}
 		case map[string]any:

@@ -5,5 +5,23 @@
       "one": "Task",
       "other": "Tasks"
     }
+  },
+  "permission.task:read": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "read tasks",
+    "plural": {
+      "": "read tasks"
+    }
+  },
+  "permission.task:update": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "write tasks",
+    "plural": {
+      "": "write tasks"
+    }
   }
 }

@@ -11,5 +11,89 @@
     "plural": {
       "": "No %s yet."
     }
+  },
+  "screens.new": {
+    "translation": "New %s",
+    "plural": {
+      "": "New %s"
+    }
+  },
+  "screens.edit_item": {
+    "references": [
+      "ui/screens/screens.go"
+    ],
+    "translation": "Edit %s",
+    "plural": {
+      "": "Edit %s"
+    }
+  },
+  "screens.edit": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Edit",
+    "plural": {
+      "": "Edit"
+    }
+  },
+  "screens.delete": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Delete",
+    "plural": {
+      "": "Delete"
+    }
+  },
+  "screens.delete_this": {
+    "translation": "Delete this %s",
+    "plural": {
+      "": "Delete this %s"
+    }
+  },
+  "screens.delete_confirm": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "This deletes the %s. It cannot be undone.",
+    "plural": {
+      "": "This deletes the %s. It cannot be undone."
+    }
+  },
+  "screens.pagination": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Pagination",
+    "plural": {
+      "": "Pagination"
+    }
+  },
+  "screens.previous": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Previous page",
+    "plural": {
+      "": "Previous page"
+    }
+  },
+  "screens.next": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Next page",
+    "plural": {
+      "": "Next page"
+    }
+  },
+  "screens.breadcrumb": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Breadcrumb",
+    "plural": {
+      "": "Breadcrumb"
+    }
   }
 }
