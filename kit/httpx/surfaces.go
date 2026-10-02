@@ -439,8 +439,8 @@ func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() 
 //
 // However many hosts it names, the call is one Move of the host namespace, because
 // an invalidation that only deletes what is there loses the load that raced it. It
-// returns the store's error: an invalidation that could not be sent is worth a log
-// line, and it is not worth unwinding the write that is already committed.
+// returns the store's error: unwinding the committed write that precedes it is the
+// worse outage, and so is answering as though every replica had already forgotten.
 func (r *Router) InvalidateHost(hosts ...string) error { return r.api.InvalidateHost(hosts...) }
 
 // The two prefixes of the table. A surface with no document prefix refuses

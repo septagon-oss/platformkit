@@ -59,6 +59,13 @@ next request — which for a handful of operator actions a day over an indexed q
 `kit/cache`'s own comment on `Move`. `kit/httpx`'s `TestAnInvalidationDuringALoadLeavesNoResolutionBehind` runs the
 suspension route's own call in that interleaving.
 
+A `Move` the store refuses is an outcome the caller reports, not a line it logs and forgets. The write it follows
+has already committed — a tenant that has to stop being served must not depend on a cache answering, and unwinding
+a committed suspension because the store went quiet is the worse outage — but the entry that move was to close is
+still there, at every process reading that store, until it lands or the entry expires. So the route that could not
+close it answers 503 naming what stands and what may still be served (`modules/tenant`'s `invalidationUncertain`),
+and the retry that answer asks for is safe: the command is idempotent and the move runs again either way.
+
 The generation counter is written with no TTL and is read as generation 0 when it is absent, so the store must never
 evict it: under `allkeys-lru` or any other `allkeys-*` policy an idle counter is taken, and with it the record of
 every move. Entries written before the first `Move` are believed again. `maxmemory-policy noeviction` — or a store

@@ -83,11 +83,11 @@ const resolveTimeout = 2 * time.Second
 // one loader query on its next request — for a handful of operator actions a day
 // over an indexed query, the trade kit/cache names on Move.
 //
-// It returns the store's error, because the invalidation now crosses a network: the
-// caller logs it and leaves its committed write alone. A resolution that nobody
-// forgot expires by itself within hostTTL, and unwinding a committed suspension
-// because a cache stopped answering would be a worse outage than the one it
-// prevents.
+// It returns the store's error, because the invalidation crosses a network and a
+// failure there is a fact the caller has to answer for: the committed write stands —
+// unwinding a suspension because a cache stopped answering is the worse outage — but
+// the change is not yet true at every process reading that store, and the route that
+// made it says so rather than reporting an outcome it did not achieve.
 func (a *API) InvalidateHost(hosts ...string) error {
 	if len(hosts) == 0 {
 		return nil
