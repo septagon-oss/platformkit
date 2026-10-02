@@ -133,6 +133,12 @@ language, `account_language_test.go` that a chosen language renders the admin an
 survives signing out and back in, and `tenant_languages_page_test.go` that the
 tenant's administrator reaches their own languages from the dashboard.
 
+`e2e/account-language.spec.ts` is the browser journey: an English browser, the account
+control, `pt-PT`, and the dashboard that answers in Portuguese; the same browser signs
+out, signs in and is still Portuguese; then the empty option takes the choice back. It
+is the only case here that holds a real form, a real redirect and a real session, and
+it runs inside `make e2e`.
+
 ## Generated screens and a module's own pages
 
 The shell is composed last. It generates a register (list, new, row, commands) for every resource a module
