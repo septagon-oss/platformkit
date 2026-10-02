@@ -24,7 +24,10 @@ import (
 // where a customer's administrator holds the wildcard, and a wildcard does not
 // satisfy an operator grant. kit/app checks this against what the routes
 // declare, so the two cannot drift.
-var permissions = []module.Permission{{Key: contracts.PermissionTenantManage, Operator: true, Label: "manage tenants"}}
+var permissions = []module.Permission{
+	{Key: contracts.PermissionTenantManage, Operator: true, Label: "manage tenants"},
+	{Key: contracts.PermissionLocaleManage, Label: "set this tenant's languages"},
+}
 
 // Deps is what this module cannot make for itself.
 type Deps struct {
@@ -35,6 +38,14 @@ type Deps struct {
 	// runs when the worker gets to it, and the administrator this same
 	// transaction creates tries to sign in before that.
 	OnCreate []contracts.Hook
+
+	// LocaleManager answers whether the caller may set their own tenant's languages,
+	// which SetOwnLocale asks inside its own transaction. Wire it over the same
+	// authorizer the kernel enforces with — the route guard is the early refusal and
+	// this is the authoritative one. Nil is refused at composition: a door that
+	// cannot ask who is allowed would answer "nobody", which is a silent refusal
+	// dressed as a check.
+	LocaleManager contracts.LocaleManager
 
 	// Invite gives a tenant its first administrator. A composition that wires
 	// none does not mount the route, because a control plane that can create a
@@ -63,7 +74,7 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate, deps.Languages)
+	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.LocaleManager)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,

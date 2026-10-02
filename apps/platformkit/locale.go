@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -96,4 +98,31 @@ func (a accountLanguage) Preferred(ctx context.Context, tx db.Tx[db.Tenant], use
 func (a accountLanguage) Choose(ctx context.Context, tx db.Tx[db.Tenant], tag string) error {
 	_, err := a.users.SetPreferredLocale(ctx, tx, tag)
 	return err
+}
+
+// tenantLocaleManager is the tenant module's own question — may this caller set
+// this tenant's languages? — answered over the same authorizer the kernel
+// enforces with. The route guard asks first; this is the ask that happens inside
+// the transaction that writes, which is the one the command is authoritative about.
+//
+// auth is filled after the tenant module is constructed, beside the line that
+// fills roles.auth, because the authorizer is built from the modules and the
+// tenant module is one of them. Until it is filled the answer is an error rather
+// than false: "nobody may" and "we could not ask" are different facts, and the
+// second one is an outage somebody has to be able to see.
+type tenantLocaleManager struct{ auth httpx.Authorizer }
+
+func (m *tenantLocaleManager) MaySetOwnLocale(ctx context.Context, _ db.Tx[db.Tenant]) (bool, error) {
+	if m.auth == nil {
+		return false, errors.New("platformkit: the tenant language command ran before its authorizer was wired")
+	}
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn || principal.UserID == uuid.Nil {
+		return false, nil
+	}
+	who, ok := tenancy.FromContext(ctx)
+	if !ok {
+		return false, nil
+	}
+	return m.auth.Allowed(ctx, who, tenancy.Grant{Permission: tenantcontracts.PermissionLocaleManage})
 }

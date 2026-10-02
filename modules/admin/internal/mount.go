@@ -46,6 +46,12 @@ type Shell struct {
 	// user module has no account to speak of, and the header shows the sign-out it
 	// has always shown. See AccountLanguage.
 	Language AccountLanguage
+	// Installed are the languages this installation's copy is written in, which are
+	// the most a tenant may be served in. The composition read them off the
+	// catalogues it composed; the languages page offers them and no other, because a
+	// page offering a language no catalogue carries is a page that lies about its own
+	// text. Empty offers nothing, which is the truth about a composition with no copy.
+	Installed []string
 	// languagePath is languageRel composed onto this shell's own namespace, filled
 	// in by Mount: the account form's action, and nothing else.
 	languagePath string
@@ -81,6 +87,9 @@ type addresses struct {
 	login     route
 	health    route
 	gallery   route
+	// languages is the tenant's own settings page, written here and mounted in the
+	// tenant module's namespace for the same reason the switcher is.
+	languages route
 	// tenants and roles are pages this shell writes in another module's
 	// namespace, because that is where the workspace puts a module's screens.
 	tenants route
@@ -136,6 +145,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		health:    at(app, "/health"),
 		gallery:   at(app, "/_gallery"),
 		tenants:   inNamespace(app, "tenant", "/tenants"),
+		languages: inNamespace(app, "tenant", "/languages"),
 		roles:     inNamespace(app, "auth", "/roles"),
 	}
 	// Static files are outside every middleware chain: a stylesheet has no
@@ -155,7 +165,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	for _, r := range resources {
 		served = append(served, r.Screen, r.Screen+"/new")
 	}
-	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at, a.languages.at)
 	if sh.Language != nil {
 		served = append(served, sh.languagePath)
 	}
@@ -244,7 +254,16 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 		}
 		// One list of sections for both surfaces: the sidebar from the large breakpoint up, and the
 		// header's disclosure below it, where the sidebar is not shown.
-		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery)
+		// A tenant's own languages, offered to whoever the authorizer says may set
+		// them: the same question the page's guard asks, asked once here so the link
+		// and the door cannot disagree.
+		maySetLanguages := false
+		if r.SignedIn && deps.Authorize != nil {
+			allowed, err := deps.Authorize.Allowed(ctx, r.Tenant,
+				tenancy.Grant{Permission: tenantcontracts.PermissionLocaleManage})
+			maySetLanguages = err == nil && allowed
+		}
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery, maySetLanguages)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
 				Sidebar: []g.Node{components.Sidebar(navigation)},
@@ -263,10 +282,16 @@ func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 // two pages about the installation. What the caller may reach is decided
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
-func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) components.SidebarProps {
+func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery, maySetLanguages bool) components.SidebarProps {
 	items := []components.SidebarItem{{Label: chrome(r, "nav.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
+	}
+	// A tenant's own languages, in its own namespace, offered to whoever the
+	// authorizer says may set them — the same answer the page's guard gives, so the
+	// link and the door cannot disagree.
+	if maySetLanguages {
+		items = append(items, components.SidebarItem{Label: chrome(r, "nav.languages", "Languages"), Href: a.languages.at, Icon: "globe"})
 	}
 	items = append(items, components.SidebarItem{Label: chrome(r, "nav.health", "Health"), Href: a.health.at, Icon: "check-circle"})
 	// Use the same permission and composition selection as the direct routes.

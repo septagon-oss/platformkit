@@ -205,5 +205,77 @@
     "plural": {
       "": "Idioma guardado."
     }
+  },
+  "admin.nav.languages": {
+    "references": [
+      "modules/admin/internal/mount.go"
+    ],
+    "translation": "Idiomas",
+    "plural": {
+      "": "Idiomas"
+    }
+  },
+  "admin.languages.title": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Idiomas",
+    "plural": {
+      "": "Idiomas"
+    }
+  },
+  "admin.languages.default": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Idioma predefinido",
+    "plural": {
+      "": "Idioma predefinido"
+    }
+  },
+  "admin.languages.other": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Outros idiomas",
+    "plural": {
+      "": "Outros idiomas"
+    }
+  },
+  "admin.languages.available": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Idiomas que esta instalação pode servir.",
+    "plural": {
+      "": "Idiomas que esta instalação pode servir."
+    }
+  },
+  "admin.languages.save": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Guardar idiomas",
+    "plural": {
+      "": "Guardar idiomas"
+    }
+  },
+  "admin.languages.remove_warning": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Remover um idioma pode ocultar as traduções de conteúdo nesse idioma. Reveja-os antes de guardar.",
+    "plural": {
+      "": "Remover um idioma pode ocultar as traduções de conteúdo nesse idioma. Reveja-os antes de guardar."
+    }
+  },
+  "admin.languages.saved": {
+    "references": [
+      "modules/admin/internal/languages.go"
+    ],
+    "translation": "Idiomas guardados.",
+    "plural": {
+      "": "Idiomas guardados."
+    }
   }
 }
