@@ -85,10 +85,12 @@ already learned.
 `proposed → approved → applied`, `proposed → declined`, `proposed|approved →
 withdrawn`. Every transition publishes exactly one event
 (`change.proposal_proposed`, `_reviewed`, `_applied`, `_withdrawn`), and a command
-against a terminal state returns the row unchanged and publishes nothing — the
-kernel's idempotency law. Staleness is never stored: `Apply` re-reads the subject's
-revision under lock and refuses `ErrStaleBase` if it has moved, leaving the
-proposal `approved` and the subject untouched.
+that replays a finished transition *for the account that finished it* returns the
+row unchanged and publishes nothing — the kernel's idempotency law. The same call
+from an account the command refuses is a refusal with no row (Duties below).
+Staleness is never stored: `Apply` re-reads the subject's revision under lock and
+refuses `ErrStaleBase` if it has moved, leaving the proposal `approved` and the
+subject untouched.
 
 ## Authorization
 
@@ -120,10 +122,15 @@ refuses `ErrSelfReview` when the actor is the `proposer` — so an account holdi
 both `change:propose` and `change:decide` can put a change forward or decide
 somebody else's, but cannot complete its own. Both checks run inside the
 authoritative transaction, after `crud.GetForUpdate` has the row, and a refusal
-writes nothing, publishes nothing and returns no row. `Withdraw` refuses anybody
-but the proposer, and only while the proposal is open: a decision that has been
-made is not something its subject un-says. Every mutation rechecks the caller's
-`expectedRevision` against the row's own `revision` under that lock.
+writes nothing, publishes nothing and returns no row. Each of those actor rules is
+asked *before* the row's own state is answered, so retrying somebody else's withdraw
+or somebody else's apply is a refusal rather than that person's row. `Withdraw`
+refuses anybody but the proposer, and only while the proposal is open: a decision
+that has been made is not something its subject un-says. Every mutation rechecks the
+caller's `expectedRevision` against the row's own `revision` under that lock.
+`Propose` deduplicates an open diff for its own author only: a second account that
+submits the same bytes is answered `change:propose`'s conflict with no proposal in
+it, because the row that index keeps belongs to whoever holds `change:read`.
 
 ### Public faces
 
@@ -162,16 +169,18 @@ is `(subject_module, subject_entity, subject_id)` with no foreign key — the re
 `modules/task` already gives for `Source` — and the
 partial unique index over `(tenant, subject, diff_digest) WHERE state IN
 ('proposed','approved')` is what makes a second submit of the same diff the same
-proposal rather than a race. That index is enforced by Postgres, which means the
-loser of two simultaneous submits gets `23505` *and* an aborted transaction:
-`internal.Service.insert` therefore runs the insert inside a savepoint, so the
-loser can roll half of it back, read the winner's row and answer with it. Without
-the savepoint the recovery read would be a statement in a transaction that refuses
-statements, and the person who clicked twice would get a conflict and no proposal
-id. ENABLE / FORCE ROW LEVEL SECURITY plus `platformkit_tenant_match(tenant_id)` on
-both sides; the version is 38 and adopted by nobody, because it sits above the
-highest file the foundation itself shipped, so the legacy-layout fixture never
-claims it and there is no row for an adoption to re-own (see `migrations.go`).
+proposal rather than a race, which `internal.Service.oneOpinion` then answers as
+the row to its own author and as a conflict with no row to anybody else. That index
+is enforced by Postgres, which means the loser of two simultaneous submits gets
+`23505` *and* an aborted transaction: `internal.Service.insert` therefore runs the
+insert inside a savepoint, so the loser can roll half of it back, read the winner's
+answer with it. Without the savepoint the recovery read would be a statement in a
+transaction that refuses statements, and the person who clicked twice would get a
+conflict and no proposal id. ENABLE / FORCE ROW LEVEL SECURITY plus
+`platformkit_tenant_match(tenant_id)` on both sides; the version is 38 and adopted by
+nobody, because it sits above the highest file the foundation itself shipped, so the
+legacy-layout fixture never claims it and there is no row for an adoption to re-own
+(see `migrations.go`).
 
 `diff` is `text` and not `jsonb`, with a CHECK on `jsonb_typeof(diff::jsonb) =
 'object'`. jsonb stores a number as a numeric: it rewrites `1e2` as `100` on the
