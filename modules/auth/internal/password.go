@@ -289,6 +289,14 @@ const (
 // is still the tenant's own, from the host of record, never a configured port.
 var ResetPath = httpx.Workspace("/auth/reset")
 
+// VerifyEmailPath is the confirmation link a sign-up mail carries, and it is the
+// workspace screen the shell mounts for it — the same correction ResetPath got.
+// The bare "/auth/verify-email" this used to be an address no route answered:
+// the API door is /api/v1/public/auth/verify-email and the page sits under the
+// workspace prefix, so a person who signed up was mailed a link to a 404 and
+// could not activate the account they had just made.
+var VerifyEmailPath = httpx.Workspace("/auth/verify-email")
+
 // secret is 32 bytes of crypto/rand, base64url. It only has to be unguessable
 // and unique, and it is never stored: the row holds its hash.
 func secret() string {

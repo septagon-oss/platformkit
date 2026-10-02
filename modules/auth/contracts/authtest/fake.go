@@ -12,12 +12,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// resetPage is the set-password screen internal.ResetPath points its link at.
+// Asked of the kernel rather than written out, because the workspace prefix is
+// the kernel's to own.
+var resetPage = httpx.Workspace("/auth/reset")
 
 // Fake is contracts.Service over two maps: the same rules, no database, no
 // transaction. A consumer that wants to test what it does for a signed-in
@@ -262,7 +268,10 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 		// The path and no query: the notice is what a person sees in the
 		// application and it is not a credential.
 		_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: "Set your password", Link: "/auth/reset",
+			// The workspace address the real service links — httpx.Workspace of the
+			// same screen the auth module mails — so a consumer that reads a link
+			// out of this fake reads the address its pages answer at.
+			Recipient: user.ID, Title: "Set your password", Link: resetPage,
 		})
 		if err != nil {
 			return err
@@ -270,7 +279,7 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 	}
 	return f.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: "Set your password",
-		Body: "Follow the link\n\nhttps://acme.example.com/auth/reset?token=" + token,
+		Body: "Follow the link\n\nhttps://acme.example.com" + resetPage + "?token=" + token,
 	})
 }
 

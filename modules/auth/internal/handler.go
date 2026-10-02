@@ -212,8 +212,15 @@ func refusal(err error) error {
 		// three of the twelve apps that scored nothing stopped here. The advice is
 		// the same for all four, because the door that answers each of them is the
 		// one the sign-in card names.
+		//
+		// It names that link by what it is rather than by its label, and the
+		// difference is the language the person is reading in: this sentence is
+		// JSON from the API and is not translated, the card under it is, and a
+		// refusal that quoted "Forgot your password?" on a page whose link reads
+		// "Esqueceu a sua palavra-passe?" sends the person looking for a phrase
+		// that is not on the screen. What it is stays true in every language.
 		return problem.New(http.StatusUnauthorized,
-			"those credentials are not right. Check the address, or use \"Forgot your password?\" to be sent a link that sets one")
+			"those credentials are not right. Check the address, or use the forgotten-password link under this form to be sent a link that sets a new one")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
 	case errors.Is(err, contracts.ErrFactorRequired):

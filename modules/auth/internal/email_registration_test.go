@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	notificationmodule "github.com/septagon-oss/platformkit/modules/notification"
 	notification "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usermodule "github.com/septagon-oss/platformkit/modules/user"
@@ -57,7 +58,7 @@ func verificationSignup(t *testing.T, conn *db.Conn, router chi.Router, email st
 	}
 	worker(t, conn)
 	letters := mailbox.Sent()
-	if len(letters) != before+1 || letters[before].To != contracts.EmailKey(email) || !strings.Contains(letters[before].Body, "http://"+host+contracts.VerifyEmailPath+"?token=") {
+	if len(letters) != before+1 || letters[before].To != contracts.EmailKey(email) || !strings.Contains(letters[before].Body, "http://"+host+internal.VerifyEmailPath+"?token=") {
 		t.Fatal("worker did not send one verification link on this tenant's host")
 	}
 	token := authtest.TokenIn(letters[before].Body)

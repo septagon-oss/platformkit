@@ -53,6 +53,15 @@
       "": "Esqueceu a sua palavra-passe?"
     }
   },
+  "admin.login.register": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Criar uma conta",
+    "plural": {
+      "": "Criar uma conta"
+    }
+  },
   "admin.forgot.title": {
     "references": [
       "modules/admin/internal/pages.go"
@@ -107,6 +116,96 @@
       "": "Voltar ao início de sessão"
     }
   },
+  "admin.register.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Criar uma conta",
+    "plural": {
+      "": "Criar uma conta"
+    }
+  },
+  "admin.register.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Diga quem é. Se o endereço ainda não estiver aqui, é criada uma conta para ele.",
+    "plural": {
+      "": "Diga quem é. Se o endereço ainda não estiver aqui, é criada uma conta para ele."
+    }
+  },
+  "admin.register.email": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "admin.register.name": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Nome",
+    "plural": {
+      "": "Nome"
+    }
+  },
+  "admin.register.password": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Palavra-passe",
+    "plural": {
+      "": "Palavra-passe"
+    }
+  },
+  "admin.register.confirmation": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirmar a palavra-passe",
+    "plural": {
+      "": "Confirmar a palavra-passe"
+    }
+  },
+  "admin.register.terms": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Aceito os termos desta organização.",
+    "plural": {
+      "": "Aceito os termos desta organização."
+    }
+  },
+  "admin.register.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Criar a conta",
+    "plural": {
+      "": "Criar a conta"
+    }
+  },
+  "admin.register.sent": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Se este endereço puder receber emails da conta, será enviada uma ligação. Verifique a sua caixa de entrada.",
+    "plural": {
+      "": "Se este endereço puder receber emails da conta, será enviada uma ligação. Verifique a sua caixa de entrada."
+    }
+  },
+  "admin.register.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Voltar ao início de sessão",
+    "plural": {
+      "": "Voltar ao início de sessão"
+    }
+  },
   "admin.reset.title": {
     "references": [
       "modules/admin/internal/pages.go"
@@ -120,9 +219,9 @@
     "references": [
       "modules/admin/internal/pages.go"
     ],
-    "translation": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta.",
+    "translation": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta. A palavra-passe tem pelo menos doze caracteres.",
     "plural": {
-      "": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta."
+      "": "Esta ligação define uma palavra-passe uma vez. Ao guardá-la, termina todas as sessões abertas para esta conta. A palavra-passe tem pelo menos doze caracteres."
     }
   },
   "admin.reset.password": {
@@ -132,15 +231,6 @@
     "translation": "Nova palavra-passe",
     "plural": {
       "": "Nova palavra-passe"
-    }
-  },
-  "admin.reset.password.help": {
-    "references": [
-      "modules/admin/internal/pages.go"
-    ],
-    "translation": "Pelo menos doze caracteres.",
-    "plural": {
-      "": "Pelo menos doze caracteres."
     }
   },
   "admin.reset.submit": {
@@ -153,6 +243,42 @@
     }
   },
   "admin.reset.signIn": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Voltar ao início de sessão",
+    "plural": {
+      "": "Voltar ao início de sessão"
+    }
+  },
+  "admin.verify.title": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirmar o endereço de email",
+    "plural": {
+      "": "Confirmar o endereço de email"
+    }
+  },
+  "admin.verify.description": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Esta ligação confirma o endereço e ativa a conta. Funciona uma vez e expira ao fim de 24 horas.",
+    "plural": {
+      "": "Esta ligação confirma o endereço e ativa a conta. Funciona uma vez e expira ao fim de 24 horas."
+    }
+  },
+  "admin.verify.submit": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Confirmar o endereço",
+    "plural": {
+      "": "Confirmar o endereço"
+    }
+  },
+  "admin.verify.signIn": {
     "references": [
       "modules/admin/internal/pages.go"
     ],
