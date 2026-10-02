@@ -38,6 +38,21 @@ PLATFORMKIT_TEST_S3_ENDPOINT ?= localhost:$(PLATFORMKIT_S3_PORT)
 PLATFORMKIT_TEST_S3_BUCKET_PREFIX ?= platformkit-test
 PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
 PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
+
+# The development mail catcher compose.yaml's mailpit service publishes, and the
+# three names `make e2e` writes down with it: the SMTP host and port go into the
+# configuration file of the application it boots, and the HTTP API into the browser
+# journeys' environment, because a journey that cannot read the link it was mailed
+# has nothing to click. Derived from the two ports, so an operator who moves the
+# stack moves the journeys with it and says nothing twice.
+PLATFORMKIT_MAILPIT_SMTP_PORT ?= 1025
+PLATFORMKIT_MAILPIT_PORT ?= 8025
+PLATFORMKIT_E2E_MAIL_HOST ?= localhost
+PLATFORMKIT_E2E_MAIL_PORT ?= $(PLATFORMKIT_MAILPIT_SMTP_PORT)
+PLATFORMKIT_E2E_MAILPIT_URL ?= http://$(PLATFORMKIT_E2E_MAIL_HOST):$(PLATFORMKIT_MAILPIT_PORT)
+export PLATFORMKIT_E2E_MAIL_HOST
+export PLATFORMKIT_E2E_MAIL_PORT
+export PLATFORMKIT_E2E_MAILPIT_URL
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
@@ -268,7 +283,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
+up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
@@ -306,5 +321,5 @@ trace: ## Start the local OTLP collector that prints every span it receives
 # The profile is named here as well, because `down` is the file's teardown: a
 # goal that stopped two containers and left a third holding port 4317 would half
 # finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store and the collector, and drop their volumes
+down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
 	docker compose --profile telemetry down -v
