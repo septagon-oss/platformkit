@@ -98,11 +98,10 @@ func TestAMarkOnAFieldNoHeadingCanHoldIsRefusedByName(t *testing.T) {
 	}
 }
 
-// TestBothMountGatesAskTheQuestion is the pairing this gate shares with
-// widgetFault and presentationFault: Spec.check and Singleton.check each call
-// displayFieldFault at the site where they already call the other two. It is
-// asserted by the diff of the two call sites rather than by mounting, because a
-// mount with no router behind it panics for its own reasons and a recovered
-// panic that says the wrong thing is the evidence a reviewer cannot read — see
-// presentation_gate_test.go's own note on the shape. What is pinned here is the
-// sentence both sites panic with, above.
+// The pairing this gate shares with widgetFault and presentationFault — that
+// Spec.check and Singleton.check each call displayFieldFault at the site where
+// they already call the other two — is asserted by display_mount_gate_test.go:
+// it mounts both, on an entity that marks two fields, and refuses a recovered
+// panic that names anything but the second mark, which is what a mount with no
+// router behind it makes a bare recover() worth. What is pinned here is the
+// sentence both sites panic with.
