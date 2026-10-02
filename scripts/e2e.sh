@@ -16,7 +16,6 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-port="${PLATFORMKIT_E2E_PORT:-8099}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
 database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
@@ -54,6 +53,14 @@ if ! curl -fsS --max-time 5 "$mailpit_url/api/v1/info" >/dev/null 2>&1; then
 	echo "     PLATFORMKIT_E2E_MAIL_HOST, PLATFORMKIT_E2E_MAIL_PORT and PLATFORMKIT_E2E_MAILPIT_URL." >&2
 	exit 1
 fi
+
+# The address this run serves on, from the script that answers for it: an explicit
+# PLATFORMKIT_E2E_PORT honoured exactly, the familiar default kept while nothing listens
+# there, and stepped around the moment something does. Asked here, before the fixture is
+# created, because the answer is written into the served address, into the public host every
+# mailed link is built from, and into the journeys' own environment — a port decided twice is
+# three addresses that disagree.
+port="$(bash "$root/scripts/e2e_port.sh" 8099)" || exit 1
 
 # A URL with the database swapped for this run's own. Everything else — host,
 # port, credentials — is whatever the suite already uses.
@@ -162,11 +169,6 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
-	echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
-	exit 1
-fi
-
 echo "e2e: serving on $port"
 run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 app_pid=$!
@@ -225,6 +227,7 @@ if "$default_output"; then
 	output_args=(--output "$results")
 fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
+	PLATFORMKIT_E2E_PORT="$port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
