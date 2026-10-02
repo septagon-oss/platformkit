@@ -105,6 +105,15 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 //     like their role — see TestTheDashboardNamesTheScreensThisCallersRoleOpens
 //     for why the landing stays there, and what answers the walkthrough's zero
 //     scores once they arrive.
+//
+// The button beside the form is the same door without a password. It carries the
+// two ceremony addresses the auth module publishes, derived from the login
+// address the composition already handed this page — p.SignIn is that route, so
+// its passkey legs are the same path with the ceremony appended, and this page
+// invents no route and names no module. What the browser does with those
+// addresses is ui/assets/js/passkeys.js: hand the options to the platform, hand
+// the answer back. A tenant that never opened the usernameless door answers the
+// begin leg with the reason, and that sentence is what the page shows.
 func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
 	home := p.at.dashboard.at
 	locale := r.Locale
@@ -182,6 +191,16 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		// one. It is always offered, whatever the composition wires: forgetting a
 		// password is not an opt-in.
 		components.Flex(components.FlexProps{Direction: "row", Gap: "2"}, ways...),
+		components.Divider(components.DividerProps{Text: text("or", "or")}),
+		components.Button(components.ButtonProps{
+			Label: text("passkey", "Sign in with a passkey"), FullWidth: true,
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"data-passkey-signin": "",
+				"data-begin":          action + "/passkey/begin",
+				"data-verify":         action + "/passkey/verify",
+				"data-next":           next,
+			}},
+		}),
 	}}
 }
 
