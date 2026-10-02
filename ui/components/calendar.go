@@ -85,6 +85,11 @@ func (p CalendarProps) Validate() error {
 	if err := p.DateStrip.Validate(); err != nil {
 		return err
 	}
+	// The strip marks its selected day aria-current and the grid opens on it, so
+	// a day outside [start, end) is a detail from a range no longer displayed.
+	if p.DateStrip.SelectedDate < p.RangeStartDate || p.DateStrip.SelectedDate >= p.RangeEndDate {
+		return fmt.Errorf("Calendar: selected date must fall inside the displayed range")
+	}
 	ids := map[string]bool{}
 	for _, event := range p.Events {
 		if !required(event.ID, event.Title, event.TimeText, event.StatusLabel) || ids[event.ID] {
