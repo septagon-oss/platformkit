@@ -156,6 +156,79 @@ func OpenFor(t testing.TB, rawURL string) *sql.DB {
 	return pool
 }
 
+// Role creates a login role that owns nothing and holds nothing except what the
+// caller grants it, in the schema URLs made for t, and returns its name and a DSN
+// that lands in that schema.
+//
+// It exists because the tree has two roles and some rights belong to neither: the
+// owner is a superuser that row-level security does not bind, and the application
+// role must hold INSERT or it cannot write at all. A boundary that fences an
+// expiry away from the role that appends (modules/audit/migrations/00041) therefore
+// cannot be tested from either handle — the second tenant's rows would be visible
+// from the first's session as the owner, and invisible as the app role, and both
+// answers would be about the wrong role. Each grants argument is the privilege list
+// and the object, spelled the way GRANT spells it, so the test says what the
+// deployment would have to grant and nothing else.
+//
+// The password is the one the test cluster already uses, read from
+// PLATFORMKIT_TEST_DATABASE_URL rather than invented: the role is a fixture in a
+// disposable schema, dropped with it, and a second secret in the environment would
+// be a second thing to rotate for no gain.
+func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
+	t.Helper()
+	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
+	schema := DeploymentSchema(t, admin)
+	schemaSQL, appPassword := quote(schema), ""
+	if parsed, err := url.Parse(baseApp); err == nil && parsed.User != nil {
+		appPassword, _ = parsed.User.Password()
+	}
+	name = "r_" + strings.TrimPrefix(schema, "t_")
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	must := func(query string) {
+		t.Helper()
+		if _, err := admin.ExecContext(t.Context(), query); err != nil {
+			t.Fatalf("dbtest: %s: %v", query, err)
+		}
+	}
+	// A password is a string literal, not an identifier: double the quotes and
+	// single-quote it, which is what the standard says and what CREATE ROLE takes.
+	literal := "'" + strings.ReplaceAll(appPassword, "'", "''") + "'"
+	must("CREATE ROLE " + quote(name) + " LOGIN PASSWORD " + literal)
+	must("GRANT USAGE ON SCHEMA " + schemaSQL + " TO " + quote(name))
+	for _, g := range grants {
+		must("GRANT " + g + " TO " + quote(name))
+	}
+	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	t.Cleanup(func() {
+		cleaner, err := sql.Open("pgx", adminURL)
+		if err != nil {
+			return
+		}
+		defer cleaner.Close()
+		ctx := context.WithoutCancel(t.Context())
+		_, _ = cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name))
+		_, _ = cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name))
+	})
+	return name, withSchema(t, swapUser(t, baseApp, name), schema)
+}
+
+// swapUser returns rawURL with its login role replaced, password kept.
+func swapUser(t testing.TB, rawURL, role string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+	}
+	if u.User == nil {
+		t.Fatalf("dbtest: %q names no role", rawURL)
+	}
+	pw, _ := u.User.Password()
+	u.User = url.UserPassword(role, pw)
+	return u.String()
+}
+
 // RoleOf is the login role of a connection URL, so a test names the same role
 // the app connects as instead of hard-coding it a second time.
 func RoleOf(t *testing.T, rawURL string) string {

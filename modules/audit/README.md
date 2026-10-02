@@ -48,15 +48,38 @@ does not write twice. There are no ownership or separation-of-duties refusals. T
 only deletion is the retention job (`Retention` in
 `modules/audit/internal/retention.go`), which runs per tenant.
 
-Say what that does not include. The trail is not hash-chained and the role the
-application connects as still holds `UPDATE` and `TRUNCATE` on `audit_events`
-through the cluster's default privileges, so "append-only" is a statement about
-this module's code, not a property the database will refuse a rewrite of. The
-chain that would make it one — a per-tenant `seq` with a `prev_hash`/`hash` pair, a
-named advisory transaction lock over the append, a checkpoint row per retention
-batch, both grants revoked and a `BEFORE DELETE` trigger that admits only the
-retention transaction — is owed by decision 0013 and is not delivered here;
-`modules/audit/contracts/audit.go` carries the same sentence for the next author.
+That is now true of the database and not only of this module's code.
+`migrations/00041_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
+`REFERENCES` and `TRIGGER` from every grantee the catalog discovers (the shape
+`kit/db/migrate.go` uses for the runner's own ledger, because a module may name no
+role), and installs two row triggers: `audit_events_never_rewritten` refuses every
+`UPDATE`, from every role including the table's owner and a superuser, and
+`audit_events_expire_only_after` admits a `DELETE` only when the role holding it may
+delete and may **not** insert, and the row is past 365 days. The two halves refuse
+different things: the revoke is what refuses the application today, with
+PostgreSQL's own `42501`, and the triggers are what refuses it after an operator runs
+`GRANT ALL … TO <app role>`, and what refuses the owner, which no revoke reaches.
+
+`TestTrailPrivilegesRefuseARewrite` asks `has_table_privilege` what the application
+role holds and `TestTrailRefusesEveryWriteTheApplicationCanAttempt` runs the review's
+own three statements as that role inside an ordinary tenant transaction.
+
+The residual, in one sentence: the application role still *holds* `DELETE` on
+`audit_events` — `has_table_privilege` answers true — and cannot use it, because
+revoking it would leave the retention job, which is the application role, with no
+door, and the door that admits an expiry must not be a setting the fenced role can
+write. `TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer.
+
+Retention runs as a third role, `database.retain_url`: the job opens it for the
+length of one run (`kit/jobs/backfill.go` ignores the scheduler's connection the same
+way), deletes a batch per transaction, and writes one row per batch into
+`audit_retention_marks` — tenant, cutoff, count, instant — in the same transaction as
+the delete it describes, so the record and the removal commit together. It is a
+record and not an event: the manifest declares none, and an expiry event would be
+relayed into the table being trimmed. `kit/db`'s `Open` is what stops that DSN being a
+superuser's, because a `BYPASSRLS` sweep would see every tenant's rows inside the
+first tenant's transaction; `TestRetentionLeavesAnotherTrailsOwnerAlone` is the case
+that says so.
 
 What every row does answer now is who (`actor`), what (`name`, `payload`,
 `records`), when (`occurred_at`), from where (`client_ip`), and which call
@@ -75,4 +98,38 @@ None. `audit:read` is not marked `Operator: true`, and the module uses no `Opera
 
 ### Provisioning
 
+The expiry role is provisioned outside this module, because module SQL may name no
+role. An operator creates a login role that is neither a superuser nor `BYPASSRLS`,
+gives it `GRANT USAGE` on the namespace, then:
+
+```sql
+GRANT SELECT, DELETE ON TABLE audit_events TO <retain role>;
+GRANT SELECT, INSERT ON TABLE audit_retention_marks TO <retain role>;
+```
+
+and names its DSN as `database.retain_url`. Without it the trail never expires and
+the job says so at its first tick rather than deleting nothing and reporting success;
+`audit.retention_days` below 365 is refused at boot, because the trigger cannot read
+config and the tempting ways to tell it one are ways for the application to choose its
+own date for forgetting.
+
 The expected holders are tenant administrators and any role an administrator names `audit:read` in. The built-in `admin` role has the `*` wildcard (`SeedRoles` in `modules/auth/internal/seed.go`), which covers `audit:read`. A composition grants it to another role through the roles API (`PUT /api/v1/auth/roles/{name}`, guarded by `role:manage`) or through default roles passed to `auth.SeedRoles`. A role in a client's `client.yaml` is not shown by the code read for this section.
+
+## Reuse
+
+**Reused** — `kit/db/migrate.go`'s grantee-discovery sweep (`aclexplode`,
+`grantee = 0` → `PUBLIC`, `quote_ident`, `CASCADE`), `000010_audit.up.sql`'s
+table/RLS/policy shape, `kit/jobs/backfill.go`'s ignore-the-scheduler's-connection
+shape, `jobs.PerTenantConcurrent` and `jobs.TenantLister`, `kit/db`'s `Open`
+role check, and the `Service` interface and hand-written `httpx.Register` shape
+`internal/handler.go` already carries. **Added** — `00041_audit_history_append_only.up.sql`
+(the revoke and the two triggers) and `00042_audit_retention_marks.up.sql`, because
+nothing in the repository had ever revoked a privilege from a module table or written
+a trigger, and a trigger is the only thing that refuses the table's own owner;
+`Deps.RetainURL` and `database.retain_url`, because the expiry door must be a role the
+application is not; and `dbtest.Role`, because the two handles a test had — the
+superuser owner and the appending application role — cannot stand where a
+delete-only role stands. **Made reusable** — `dbtest.Role`, a generic "create the role
+this boundary needs and hand me its DSN" door for the next module that fences a table
+by capability, and the trigger pair plus the mark table as the pattern for any other
+append-only table this kernel takes over.

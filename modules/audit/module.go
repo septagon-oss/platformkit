@@ -49,8 +49,17 @@ type Deps struct {
 	// RetentionDays is how long a row is kept; zero means a year. It is a
 	// dependency rather than a constant because a retention period is a
 	// compliance obligation, and a module that chose one would be choosing
-	// somebody else's. config.Audit is where it comes from.
+	// somebody else's. config.Audit is where it comes from, and config.Validate is
+	// what refuses a period below the floor migrations/00041 spells.
 	RetentionDays int
+
+	// RetainURL is the role that may expire the trail: database.retain_url, a
+	// connection that may DELETE audit_events and may not INSERT them, which is the
+	// only shape the expiry trigger admits. Empty means this installation never
+	// expires history, and the job says so instead of deleting nothing quietly. The
+	// module names no role and its SQL never names one either — module SQL may name
+	// no role — so the composition hands over the DSN and grants it.
+	RetainURL string
 
 	// Feature is the plan feature the trail belongs to, or empty when this
 	// installation gives it to everybody. It is a dependency and not a constant
@@ -85,7 +94,7 @@ func New(deps Deps) module.Module {
 		Nav: []module.NavEntry{
 			{Label: "Audit", Screen: "audit/events", Permission: contracts.PermissionAuditRead},
 		},
-		Jobs: []jobs.Job{internal.Retention(deps.Tenants, days)},
+		Jobs: []jobs.Job{internal.Retention(deps.Tenants, days, deps.RetainURL)},
 		// One handler, and the kernel writes the names: SubscribeAll is
 		// expanded into one subscription per declared event after every
 		// manifest has been read, so a module added to the composition after

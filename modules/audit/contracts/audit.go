@@ -13,19 +13,17 @@
 // updates a row and nothing removes one but the retention job, which is also why
 // there is no rest.Spec — a Spec is five routes and three of them write.
 //
-// Say plainly what that does not include, because the sentence used to claim
-// more than the tree delivered (T-0118, decision 0013's integrity property). The
-// trail carries the request that caused each row — actor, request id, client
-// address, trace context (migrations/000035) — but it is not hash-chained, and
-// the role the application connects as still holds UPDATE and TRUNCATE on the
-// table through the cluster's default privileges. "Append-only" is therefore a
-// statement about this module's code, not a property the database will refuse a
-// rewrite of. The chain that would make it one — a per-tenant sequence and
-// prev_hash/hash pair, a named advisory lock per tenant over the append, a
-// checkpoint row for retention, the two grants revoked and a BEFORE DELETE
-// trigger that admits only the retention transaction — is the next delivery's,
-// and modules/audit/README.md's Limits section is where the shape is written
-// down so a second engineer builds the same thing.
+// Say plainly what that does not include. The trail carries the request that caused
+// each row — actor, request id, client address, trace context (migrations/000035) —
+// and the database refuses a rewrite of it: migrations/00041 revokes UPDATE and
+// TRUNCATE from every grantee the catalog discovers, and installs a BEFORE UPDATE
+// trigger that refuses every role, the table's owner included, beside a BEFORE DELETE
+// trigger that admits only a role that may delete and may not insert, and only past
+// 365 days. What it is still not is hash-chained: the per-tenant sequence and
+// prev_hash/hash pair decision 0013 owes is undelivered, so what this proves is that
+// nothing inside the application's reach rewrote a row, not that no row was ever
+// inserted. modules/audit/README.md's Duties section carries the same account with the
+// command that checks it.
 package contracts
 
 import (

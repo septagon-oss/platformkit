@@ -179,10 +179,21 @@ type Server struct {
 	ReadTimeout time.Duration `yaml:"read_timeout"`
 }
 
-// Database holds the two roles: the app connects as one, migrations as the other.
+// Database holds the three roles: the app appends as one, migrations run as
+// another, and expiring the audit trail happens as a third. The third is optional
+// and empty means the trail never expires — modules/audit's retention job refuses to
+// run rather than reaching for a role it was not handed, because the application role
+// cannot delete a trail row (migrations/00041_audit_history_append_only.up.sql fences it)
+// and the door that admits an expiry is a role that may delete and may not append.
+//
+// Which one does what: migrate_url migrates (and drains), url appends and reads,
+// retain_url expires. retain_url must not name a superuser or a BYPASSRLS role: the
+// job opens it with db.Open, which refuses such a role precisely because a trim run by
+// one would see every tenant's trail inside the first tenant's transaction.
 type Database struct {
 	URL        string `yaml:"url"`
 	MigrateURL string `yaml:"migrate_url"`
+	RetainURL  string `yaml:"retain_url"`
 	// Omitted values retain kit/db defaults; explicit zero idle/lifetime
 	// disables reuse/retirement. kit/app validates the resolved pool before IO.
 	MaxOpenConns    *int           `yaml:"max_open_conns"`
@@ -465,6 +476,7 @@ var keys = []key{
 	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, false},
 	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
 	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
+	{"database.retain_url", "PLATFORMKIT_DATABASE_RETAIN_URL", func(c *Config) *string { return &c.Database.RetainURL }, false},
 	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
 	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, false},
 	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
@@ -595,7 +607,14 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}{
 		{"database.url", c.Database.URL},
 		{"database.migrate_url", c.Database.MigrateURL},
+		// Optional, so an installation that never expires the trail can leave it
+		// empty; a value that is not a postgres URL is still a typo worth naming.
+		{"database.retain_url", c.Database.RetainURL},
 	} {
+		if u.value == "" {
+			// An optional key that is absent is absent, not malformed.
+			continue
+		}
 		parsed, err := url.Parse(u.value)
 		if err != nil {
 			return Config{}, fmt.Errorf("config %s: %s is not a URL: %w", path, u.key, err)
@@ -625,8 +644,18 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if c.Audit.RetentionDays == 0 {
 		c.Audit.RetentionDays = DefaultRetentionDays
 	}
+	// The floor is the trigger's, and the trigger cannot read this file: a shorter
+	// period configured is a job that would ask for deletes the database refuses, at
+	// three in the morning, forever. Saying so at boot is the correctable version of
+	// the same mistake — raise the period, or own a lower floor in a deployment
+	// migration that re-creates audit_events_expire_only_after and carries that
+	// decision in its own review.
 	if c.Audit.RetentionDays < 1 {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
+	if c.Audit.RetentionDays < DefaultRetentionDays {
+		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; the kernel's floor for forgetting audit history is %d days — modules/audit/migrations/00041_audit_history_append_only.up.sql refuses an earlier expiry and no configuration moves it",
+			path, c.Audit.RetentionDays, DefaultRetentionDays)
 	}
 	if c.Server.ReadTimeout == 0 {
 		c.Server.ReadTimeout = DefaultReadTimeout
