@@ -14,7 +14,9 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-port="${PLATFORMKIT_E2E_PORT:-8099}"
+# An explicit port is a request; the default is a preference. See pick_port.
+explicit_port="${PLATFORMKIT_E2E_PORT:-}"
+port="${explicit_port:-8099}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
 database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
@@ -35,6 +37,110 @@ swap() {
 	} catch { console.error("e2e: invalid PostgreSQL URL"); process.exit(1); }' "$1" "${2:-$database}"
 }
 psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; }
+
+# open_port is whether one process could listen on a port right now. node answers
+# it, because node is already required by this gate (the URL swap above and
+# Playwright itself) and a bind test says the thing that matters — that the port
+# can be listened on — rather than what one listing tool happens to show, which is
+# what the previous check depended on and why a run on a machine without `ss` got
+# no answer at all.
+open_port() {
+	node -e 'const s = require("node:net").createServer();
+		s.once("error", () => process.exit(1));
+		s.listen(Number(process.argv[1]), "127.0.0.1", () => s.close(() => process.exit(0)));' "$1"
+}
+
+# pick_port is which address this run serves at, answered before anything is
+# built or migrated rather than after, so a run that cannot have a port fails in
+# two seconds instead of after a database.
+#
+# An explicit PLATFORMKIT_E2E_PORT is honoured exactly and refused when it is
+# taken: whoever named one named it for a reason this script cannot see — a
+# forwarded port, a proxy, a URL already in a browser — and a run that quietly
+# moved would send the browser somewhere the operator did not aim it.
+#
+# The default is one number on a host that runs many worktrees at once, and the
+# gate is one command in a machine-wide queue; a run that could not have 8099
+# takes a port nothing is listening on and says so in the same breath. `start`
+# does exactly this for the database only it talks to
+# (apps/platformkit/start.go's freePort), and the browser is told which port it
+# got through PLATFORMKIT_E2E_PORT below — which e2e/session-recovery.spec.ts
+# reads as part of proving it drives this run's disposable fixture rather than
+# somebody else's server. What the guard has always refused, and still refuses in
+# both branches, is driving a build this run did not start.
+pick_port() {
+	if [ -n "$explicit_port" ]; then
+		open_port "$port" && return 0
+		echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
+		exit 1
+	fi
+	open_port "$port" && return 0
+	if ! port="$(node -e 'const s = require("node:net").createServer();
+		s.once("error", () => process.exit(1));
+		s.listen(0, "127.0.0.1", () => {
+			const taken = s.address().port;
+			s.close(() => process.stdout.write(String(taken)));
+		});')" || [ -z "$port" ]; then
+		echo "e2e: 8099 is taken and no free port could be opened; set PLATFORMKIT_E2E_PORT." >&2
+		exit 1
+	fi
+	echo "e2e: 8099 is taken by something else; serving on $port instead."
+}
+
+# wait_healthy answers whether the application the run started served its probe
+# within its bound. Two ways out, and both print the log: a process that died is
+# refused by the loop the moment `kill -0` fails — before the probe is asked,
+# because the probe can be answered by a process that is not this run's — and a process that stays alive
+# without ever answering is refused when the bound runs out. The second branch is
+# the one this script used to fall through — a run on a contended database can sit
+# in `pg_advisory_lock`'s queue (kit/db/migrate.go's holdCompositionLock, bounded
+# only by the caller's context) with a live process and no listener, and what that
+# used to produce was 112 Playwright failures against a URL that answers nothing,
+# with the reason in a file nobody printed. Here it costs seconds and says why.
+wait_healthy() {
+	local bound="$1" attempt owner listener pids hop
+	for attempt in $(seq 1 "$bound"); do
+		# The process first, and the probe second: the port is not this run's, and
+		# a /health answered there by another worktree's server, or by anything
+		# else, is not evidence that the application this run started is serving.
+		if ! kill -0 "$app_pid" 2>/dev/null; then
+			echo "e2e: the application stopped before it served:" >&2
+			cat "$work/app.log" >&2
+			return 1
+		fi
+		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
+			# A live process and a healthy answer are still two facts about two
+			# different things: an application blocked before its listen — in a
+			# contended lock's queue, or behind a slow migration — answers nothing
+			# while another listener on the same port answers for it. So the answer
+			# counts when the process that owns the listening socket is this one,
+			# found by walking each listener on the port up its parents (an
+			# application started through a wrapper is a child of the pid recorded).
+			pids="$(ss -ltnpH "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u)"
+			if [ -z "$pids" ]; then
+				pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)"
+			fi
+			for listener in $pids; do
+				owner="$listener"
+				for hop in 1 2 3 4 5 6 7 8 9 10 11 12; do
+					[ "$owner" = "$app_pid" ] && break
+					owner="$(cut -s -d')' -f2- "/proc/$owner/stat" 2>/dev/null | awk '{ print $2 }')"
+					[ -n "$owner" ] || break
+					[ "$owner" != 1 ] || break
+				done
+				if [ "$owner" = "$app_pid" ]; then return 0; fi
+			done
+			echo "e2e: something other than this run's application listens on port $port, and /health there is not ours:" >&2
+			ss -ltnp "sport = :$port" >&2 2>/dev/null
+			cat "$work/app.log" >&2
+			return 1
+		fi
+		sleep 1
+	done
+	echo "e2e: the application stayed alive for $bound seconds and never answered /health on port $port:" >&2
+	cat "$work/app.log" >&2
+	return 1
+}
 
 work="$(mktemp -d)"
 results=""
@@ -60,6 +166,9 @@ cleanup() {
 	return "$status"
 }
 trap cleanup EXIT
+
+echo "e2e: one port of its own"
+pick_port
 
 # The binary is built rather than `go run`: go run execs the compiled program as
 # a child, so killing it at the end of this script would leave the application
@@ -124,23 +233,10 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
-	echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
-	exit 1
-fi
-
 echo "e2e: serving on $port"
 run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 app_pid=$!
-for _ in $(seq 1 60); do
-	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
-	if ! kill -0 "$app_pid" 2>/dev/null; then
-		echo "e2e: the application stopped before it served:" >&2
-		cat "$work/app.log" >&2
-		exit 1
-	fi
-	sleep 1
-done
+wait_healthy 60 || exit 1
 
 cd e2e
 # npm ci and not npm install: ci installs exactly what package-lock.json pins
@@ -187,6 +283,7 @@ if "$default_output"; then
 	output_args=(--output "$results")
 fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
+	PLATFORMKIT_E2E_PORT="$port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \

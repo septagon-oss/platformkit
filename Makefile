@@ -199,7 +199,11 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
+check-run-owner: ## Refuse a browser run that would drive an application it did not start
+	bash scripts/e2e_health_owner_test.sh
+	bash scripts/e2e_health_requires_own_listener_test.sh
+
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh

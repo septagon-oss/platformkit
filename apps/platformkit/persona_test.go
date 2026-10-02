@@ -14,6 +14,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // journey is one thing a person comes to this application to do, driven over the wire as
@@ -167,24 +169,41 @@ func provisionAs(t *testing.T, cfg config.Config, c composition, tenantID uuid.U
 
 // TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose: a persona naming a
 // permission nothing composed declares, or the control plane's own, stops the
-// application at compose — before bootstrap seeds a role that would grant nothing or
-// hand every tenant the operator's surface.
+// application before bootstrap could seed a role that grants nothing or hands
+// every tenant the operator's surface.
+//
+// It stopped the application by panicking inside compose. Now the application is
+// composed in pkit's sentences (app.go), and the same two questions are answered
+// there as a refusal with words: pkit.App.Roles records what a tenant begins as,
+// and Plan reads the grants off the built manifests. Refused rather than crashed
+// is the stronger of the two, so the assertion is the same and the message is a
+// sentence a person can act on.
 func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	_, cfg := configure(t)
-	mods := compose(cfg).modules
+	plan := func() error {
+		_, err := sentences(cfg, compose(cfg)).Plan(pkit.Deployment{
+			Environment: pkit.Development,
+			Config:      cfg,
+			Transports:  transports(),
+		})
+		return err
+	}
 	saved := personas
 	t.Cleanup(func() { personas = saved })
 	for _, grant := range []string{"invoice:approve", "tenant:manage"} {
 		personas = []authcontracts.Role{{Name: "clerk", Grants: authcontracts.Permissions{grant}}}
-		func() {
-			defer func() {
-				if recover() == nil {
-					t.Errorf("a persona granting %q composed", grant)
-				}
-			}()
-			checkPersonas(mods)
-		}()
+		err := plan()
+		switch {
+		case err == nil:
+			t.Errorf("a persona granting %q composed", grant)
+		case !strings.Contains(err.Error(), grant):
+			t.Errorf("a persona granting %q was refused without naming it: %v", grant, err)
+		case !strings.Contains(err.Error(), "clerk"):
+			t.Errorf("a persona granting %q was refused without naming the role: %v", grant, err)
+		}
 	}
 	personas = saved
-	checkPersonas(mods) // the shipped personas compose
+	if err := plan(); err != nil {
+		t.Errorf("the shipped personas are refused: %v", err)
+	}
 }

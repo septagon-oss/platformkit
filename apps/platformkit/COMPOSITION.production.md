@@ -1,0 +1,80 @@
+# COMPOSITION — platformkit · production
+
+Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
+apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
+missing one, and `pkit.Server.Explain` is what writes the text.
+
+App `platformkit` · environment `production` · 13 modules · role `all`.
+
+## Composition
+
+pkit: platformkit in production builds 13 modules.
+pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
+pkit: a tenant of platformkit begins as observer, holding task:read.
+pkit: composition.Module needs no other module.
+pkit: user.Module needs no other module.
+pkit: user.Module defines the permission user:read, user:manage and user:approve.
+pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: content.Module needs no other module.
+pkit: content.Module defines the permission content:read and content:manage.
+pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
+pkit: site.Module needs no other module.
+pkit: site.Module defines the permission site:manage.
+pkit: site.Module emits site.settings_updated.
+pkit: file.Module needs no other module.
+pkit: file.Module defines the permission file:read, file:manage, file:erase and file:retain.
+pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released and file.erased.
+pkit: file.Module handles file.deleted.
+pkit: tenant.Module is built after user.Module.
+pkit: tenant.Module needs usercontracts.Service from user.Module.
+pkit: tenant.Module defines the permission tenant:manage.
+pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.oidc_set and tenant.oidc_cleared.
+pkit: web.Module is built after content.Module and site.Module.
+pkit: web.Module needs sitecontracts.Service from site.Module.
+pkit: web.Module needs contentcontracts.Service from content.Module.
+pkit: notification.Module is built after user.Module and tenant.Module.
+pkit: notification.Module needs usercontracts.Service from user.Module.
+pkit: notification.Module needs tenantcontracts.Service from tenant.Module.
+pkit: notification.Module emits notification.created, notification.email_requested and notification.read.
+pkit: notification.Module handles notification.email_requested.
+pkit: task.Module is built after tenant.Module.
+pkit: task.Module needs tenantcontracts.Service from tenant.Module.
+pkit: task.Module defines the permission task:read and task:update.
+pkit: task.Module emits task.task.created, task.task.updated, task.task.deleted, task.assigned, task.resolved and task.sla_breached.
+pkit: billing.Module is built after tenant.Module.
+pkit: billing.Module needs tenantcontracts.Service from tenant.Module.
+pkit: billing.Module defines the permission billing:read, billing:manage and billing:catalog.
+pkit: billing.Module emits billing.plan.created, billing.plan.updated, billing.plan.deleted, billing.subscribed, billing.cancelled, billing.renewed and billing.past_due.
+pkit: audit.Module is built after tenant.Module.
+pkit: audit.Module needs tenantcontracts.Service from tenant.Module.
+pkit: audit.Module defines the permission audit:read.
+pkit: audit.Module handles every event this application emits.
+pkit: auth.Module is built after user.Module, tenant.Module and notification.Module.
+pkit: auth.Module needs usercontracts.Service from user.Module.
+pkit: auth.Module needs notificationcontracts.Service from notification.Module.
+pkit: auth.Module needs tenantcontracts.Service from tenant.Module.
+pkit: auth.Module defines the permission role:manage.
+pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested and auth.verification_requested.
+pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified and auth.verification_requested.
+pkit: admin.Module is built after tenant.Module and auth.Module.
+pkit: admin.Module needs authcontracts.Auth from auth.Module.
+pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
+pkit: admin.Module defines the permission gallery:read.
+pkit: composition.Module provides httpx.TenantLoader; no module in platformkit needs it.
+pkit: composition.Module provides httpx.Authorizer; no module in platformkit needs it.
+pkit: composition.Module provides pkit.Authenticator; no module in platformkit needs it.
+pkit: composition.Module provides httpx.Entitler; no module in platformkit needs it.
+
+## What the application answers the kernel
+
+- which host is which tenant: composition.Module
+- what they may do: composition.Module
+- who is calling: composition.Module
+- what their plan includes: composition.Module
+- how a refusal looks: the application's own ErrorPage
+- how a person asks for what was refused: the ask door and its page
+- the installation itself, and the control plane: installation.platformkit.localhost (from `server.installation_host`)
+
+## Tenant hosts
+
+- platformkit — platformkit.localhost (claimed; the tenant rows decide who is served)

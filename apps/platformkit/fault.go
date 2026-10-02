@@ -31,6 +31,8 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
+
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // faultPage renders the refusal for this application's shell.
@@ -164,33 +166,26 @@ func workspaceCatalog() func(api *httpx.API) {
 	})
 }
 
-// appOptions is the composition every entry point of this binary shares. It exists so
-// that the line wiring the failure page is one line rather than two — an entry point
-// that spells its own options out drifts, and the drift is invisible until somebody is
-// refused in production and sees JSON, while the other entry point shows a page.
-//
-// It is also the reason a test can claim the application does this: the test composes
-// through here, so it exercises the wiring rather than a copy of it.
+// appOptions is the same composition app.go sentences, read as app.Options: the
+// in-process answer for a test that wants the handler rather than a process, and
+// the reason the two cannot disagree about who provides what. The three fields
+// that belong to a process rather than to a composition — the role, the
+// transports, the installation's host — are filled here, because pkit leaves
+// them to whoever is starting something.
 func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
-	return app.Options{
-		// The installation's own host, from the configuration. It is the only
-		// address that serves the control plane, and the console of the
-		// installation itself — /ops — answers there and nowhere else.
-		Installation: app.Installation{Host: cfg.Server.InstallationHost},
-		// The document a native shell reads; see workspaceCatalog.
-		WorkspaceCatalog: workspaceCatalog(),
-		Tenants:          c.tenants,
-		Authorize:        c.auth,
-		Entitle:          c.plans,
-		Authenticate:     c.auth.Authenticate,
-		Fault:            faultPage(c),
-		// Asking for access: the reach is this product's, the page is ui's, and
-		// the command behind both doors is the kernel's.
-		Access:     c.access,
-		AccessPage: func(router *httpx.Router) { page.MountAccess(router, faultShell(c)) },
-		Role:       role,
-		Transports: transports(),
+	p, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
+	if err != nil {
+		panic("platformkit: " + err.Error())
 	}
+	opts := p.Options()
+	opts.Role = role
+	// The three fields pkit leaves to whoever is starting something. Transports is
+	// one of them and is not decoration: kit/app refuses a role whose mode has no
+	// constructor, so a test that lost this line fails in app.New with a message
+	// about memory and jetstream rather than booting the wrong thing.
+	opts.Transports = transports()
+	opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
+	return opts
 }
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the

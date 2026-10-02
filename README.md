@@ -59,6 +59,31 @@ Email delivery likewise requires an SMTP configuration.
 [Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
 authorization and migrations in more detail.
 
+### Compose it in sentences
+
+`pkit` is the composition layer above the kernel: one application, named, with
+the modules it uses and the handful of things no kernel module can decide for
+itself.
+
+```go
+app := pkit.NewApp("collect").Use(uses...).Theme(pair).Languages(copy).
+	Home("/").ErrorPage(refusal).AskForAccess(reach, form).Roles(roles...)
+return app.Run(ctx, deployment, app.All)
+```
+
+  - **Reused** — `kit/app` stays the engine: it migrates, opens the connection,
+    builds the API and its gates, opens the transport and serves. `pkit` adds the
+    step before it and nothing after it.
+  - **Added** — the resolver over declared needs, provides and contributions, and
+    every answer given before the first effect: no connection is opened, no
+    migration runs and no port is listened on until the composition resolves and
+    its route gates have answered.
+  - **Made reusable** — the reference application is composed this way in
+    [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
+    committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)
+    and [COMPOSITION.production.md](apps/platformkit/COMPOSITION.production.md),
+    written by `pkit.Server.Explain` and refused when it drifts.
+
 ## Build a screen
 
 Start with the [entity and presentation map](ARCHITECTURE.md#entity-and-presentation-contracts)
