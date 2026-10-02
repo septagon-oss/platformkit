@@ -20,7 +20,11 @@ var schema embed.FS
 var Migrations = db.MigrationSource{
 	Owner:  "user",
 	Files:  db.Sub(schema, "migrations"),
-	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25, 30}}},
+	Adopts: []db.Adoption{{Owner: "platformkit", Versions: []int64{7, 25, 30, 32}}},
+	// 000032 joins the list for the reason the paragraph above gives: the upgrade
+	// fixture replays every file of this composition under the one old owner, so a
+	// module file not adopted here is a file an existing installation is refused at.
+	//
 	// 000025 indexes users twice in a file that does not create it. Applied, so
 	// unmarkable; the guard takes version 26 onwards.
 	RulesFrom: 26,
