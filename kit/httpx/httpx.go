@@ -142,7 +142,20 @@ type Options struct {
 	Tenants TenantLoader
 
 	// Conn is the application connection every request transaction opens on.
+	//
+	// It may be nil exactly when Declarations is set. Every other build of an
+	// API is a build that intends to serve, and serving without a connection is
+	// a request that panics instead of a composition that was refused.
 	Conn *db.Conn
+
+	// Declarations records that this API is a dry composition: the routes are
+	// registered so the gates can read them, and nothing will serve them.
+	// kit/app builds one before it migrates, so a route guarded by a permission
+	// nobody defines is refused with the schema still empty — see
+	// app.Declarations. Nothing serves the API it returns: kit/app reads its
+	// recorded operations and discards it, which is why the recorder needs no
+	// connection at all rather than a fake one.
+	Declarations bool
 
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
@@ -347,7 +360,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
-	case cfg.Conn == nil:
+	case cfg.Conn == nil && !cfg.Declarations:
 		panic("httpx.New: Options.Conn is required; every tenant request runs in a transaction")
 	case cfg.Authorize == nil:
 		panic("httpx.New: Options.Authorize is required; Permission declarations have nothing to ask otherwise")

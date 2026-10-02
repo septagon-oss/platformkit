@@ -48,6 +48,22 @@ type Runtime struct {
 	closed atomic.Bool
 }
 
+// Declarations answers the composition's route gates — every operation declared
+// an authorization, no operation is guarded by a permission no composed module
+// defines, no operation publishes an event no module promised, the workspace
+// mounts something, no address names a prefix — over a recorder, and opens
+// nothing: no pool, no migration, no listener, no broker. It is the same
+// registration and the same gates Start runs after the connection is open, which
+// is why a composition refused here is the same composition Start would have
+// refused, answered while nothing has been changed yet.
+//
+// Call it before Start. A caller that does is not unsafe, only late: Start runs
+// the gates again over the live connection and refuses the boot there.
+func (a *App) Declarations() error {
+	_, _, err := a.composeRoutes(nil, true)
+	return err
+}
+
 // Start migrates as the owner role, opens the application connection, builds the
 // API, runs every boot gate, and opens the transport the role names — in that
 // order, the order Run uses. Every failure returns a nil Runtime, nothing

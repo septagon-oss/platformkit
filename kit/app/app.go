@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -395,11 +396,18 @@ func useJetStream(mode string, role Role) (bool, error) {
 	}
 }
 
-// buildAPI builds the API, lets every module register its routes and checks,
-// and runs the boot gates. It returns before anything listens, so a composition
-// that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
+// composeRoutes builds the API, lets every module register its routes and runs
+// every gate that needs nothing but the routes. conn is what every request
+// transaction opens on and what /ready probes; it is nil only in the dry
+// composition, which registers, answers the gates, and is then thrown away.
+//
+// Two callers, one sequence: Declarations runs this before anything is migrated,
+// and buildAPI runs it again over the open connection on the way to serving. One
+// registration order and one set of gates, so the dry answer and the real one
+// cannot disagree about what a composition is.
+func (a *App) composeRoutes(conn *db.Conn, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
+		Declarations: declarations,
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
 		Tenants:      a.opts.Tenants,
@@ -452,7 +460,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		}
 	}
 	if err := a.composeGates(api); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
@@ -466,12 +474,23 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	// no deployment to migrate and no reason to run a build it knows is
 	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
+		return nil, nil, err
+	}
+	return api, router, nil
+}
+
+// buildAPI is composeRoutes over the open connection, plus what boot prints once
+// the composition is known to be good. It returns before anything listens, so a
+// composition that fails a gate never takes the port.
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
+	api, router, err := a.composeRoutes(conn, false)
+	if err != nil {
 		return nil, err
 	}
 	counts := api.MountedBySurface()

@@ -4,7 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
+	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
 
@@ -14,6 +20,33 @@ type App struct {
 	name   string
 	uses   []*Module
 	chosen []*Module
+
+	// What the application decides about how it looks and reads, and the two
+	// doors it owns. Recorded by skin.go and read by Plan; every field here is
+	// read by a phase, which is the test a recorded value has to pass to exist.
+	// The three counters say how many times a customisation was named, which is
+	// what Build refuses: a chain records, so a second Theme is not an error at
+	// the moment somebody types it, and it must not silently win either.
+	theme    design.Pair
+	themes   int
+	homes    []string
+	copy     Catalogue
+	copies   int
+	roles    []Role
+	refusal  func(Skin) httpx.Fault
+	refusals int
+	ask      httpx.AskForAccess
+	askPage  func(router *httpx.Router)
+	catalog  func(api *httpx.API)
+
+	// built says this App has handed its lifecycle to the engine. kit/app
+	// documents one Start per App; a chain that records cannot honestly be
+	// re-composed after one, so a second Build is refused rather than attempted.
+	// buildMu is what makes that refusal hold when the two Builds arrive at the
+	// same moment: one App is one lifecycle, and two calls that overlap must not
+	// both reach the engine.
+	buildMu sync.Mutex
+	built   bool
 }
 
 // NewApp starts an app.
@@ -36,11 +69,28 @@ const (
 )
 
 // Deployment is what the process supplies to a composition: where it runs, one
-// of the three environments above, and the inputs an implementation picked by
-// FromDeployment reads. Any other name is refused before anything is picked.
+// of the three environments above, the inputs an implementation picked by
+// FromDeployment reads, and the configuration the engine runs under. Any other
+// name is refused before anything is picked.
+//
+// Config belongs here rather than on App because there is no environment-free
+// truth about a composition (0074 rule 4): the same app is Stripe in one
+// environment and simulated in another, and Validate, Explain and Build all
+// answer about one named deployment. The two transport fields are here for the
+// same reason and are the process's rather than the app's: kit/app knows the
+// names memory and jetstream and the rule between them and builds neither, so
+// the process that links the provider packages names the constructors here and
+// nowhere else.
 type Deployment struct {
 	Environment Environment
 	Inputs      map[string]string
+	Config      config.Config
+
+	// Transports are the two constructors nats.transport's two names map to.
+	Transports app.Transports
+	// Transport is the explicit override: a process that already holds a
+	// transport hands it over instead of naming a constructor.
+	Transport events.Transport
 }
 
 // Wiring is what a module's build reads and writes: the values it declared it
@@ -158,11 +208,28 @@ func describesToKernel(man module.Module) string {
 		fmt.Fprintf(&b, "pkit: %s.Module emits %s.\n", man.Name, andList(emits))
 	}
 	var subs []string
-	for _, s := range man.Subscriptions {
-		subs = append(subs, s.Name)
+	takes := "every event this application emits"
+	if man.SubscribeAll {
+		// The manifest of a SubscribeAll module carries one subscription with no
+		// name — the wildcard, which module.Expand turns into one per event and
+		// which the built manifest still shows as it was written. Naming nothing
+		// here would print "handles ."
+		for _, s := range man.Subscriptions {
+			if s.Name != "" {
+				subs = append(subs, s.Name)
+			}
+		}
+	} else {
+		takes = ""
+		for _, s := range man.Subscriptions {
+			subs = append(subs, s.Name)
+		}
 	}
-	if len(subs) > 0 {
-		fmt.Fprintf(&b, "pkit: %s.Module handles %s.\n", man.Name, andList(subs))
+	if takes == "" && len(subs) > 0 {
+		takes = andList(subs)
+	}
+	if takes != "" {
+		fmt.Fprintf(&b, "pkit: %s.Module handles %s.\n", man.Name, takes)
 	}
 	return b.String()
 }
@@ -185,14 +252,14 @@ func (m *Module) declares(key any, kinds ...kind) bool {
 // while the composition still owes a sentence — the build of one module reads
 // what another put, so building a composition that does not resolve is how a
 // mistake turns into a crash instead of an answer.
-func (a *App) compose(d Deployment) (*plan, []module.Module, error) {
+func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, error) {
 	p, issues := a.resolve(d)
 	var errs []error
 	for _, in := range issues {
 		errs = append(errs, fmt.Errorf("pkit: %s: %s: %w", a.name, in.method, in.err))
 	}
 	if len(errs) > 0 {
-		return p, nil, errors.Join(errs...)
+		return p, nil, nil, errors.Join(errs...)
 	}
 	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}}
 	for _, m := range p.order {
@@ -218,34 +285,46 @@ func (a *App) compose(d Deployment) (*plan, []module.Module, error) {
 		w.built = append(w.built, manifest)
 	}
 	if len(errs) > 0 {
-		return p, nil, errors.Join(errs...)
+		return p, nil, nil, errors.Join(errs...)
 	}
-	return p, w.built, nil
+	// The kernel's own manifest gates, run over what the dry build produced
+	// rather than over a list somebody re-wrote: a module that subscribes to
+	// everything is given the names here, and a subscription to a name nobody
+	// emits is refused here — before a migration rather than at the first event.
+	// This is 0074 rule 1's "every problem before the first effect" for the two
+	// gates kit/app would otherwise answer after opening a connection.
+	expanded := module.Expand(append([]module.Module{}, w.built...))
+	if err := module.Validate(expanded); err != nil {
+		return p, nil, nil, errors.Join(append(errs, fmt.Errorf("pkit: %s: Build: %w", a.name, err))...)
+	}
+	return p, w.built, w.values, nil
 }
 
 // Validate answers every problem with the composition — duplicates, missing,
 // ambiguous or doubly-supplied providers, cycles, phase violations, an
-// environment the deployment did not name and the inputs an implementation is
-// missing — at once, each naming the method that caused it. The modules' build
-// functions run before the answer is given, because the value a module Puts is
-// only observable from inside its own build; a refused composition returns
-// nothing it built. It is the phase that runs before the app is served, not a
-// phase in which none of your code runs.
+// environment the deployment did not name, the inputs an implementation is
+// missing, a contribution nobody takes and a module's own build refusing — at
+// once, each naming the method that caused it. The modules' build functions run
+// before the answer is given, because the value a module Puts is only
+// observable from inside its own build; a refused composition returns nothing it
+// built. It is the phase that runs before the app is served, not a phase in
+// which none of your code runs. Build answers everything Validate answers, and
+// the ports and the recorded roles besides.
 func (a *App) Validate(d Deployment) error {
-	_, _, err := a.compose(d)
+	_, _, _, err := a.compose(d)
 	return err
 }
 
 // Explain reads the resolved composition, not the declared one, for one
 // named environment: the build order, who provides what to whom, the
 // contributions, the choices, the implementations the deployment picked, the
-// permissions and events each built module describes to the kernel, and what
-// each module describes about itself (decision 0074 rule 4). Routes and tenant
-// hosts are the two parts of rule 4 this cannot say yet: a manifest registers
-// its routes through a function rather than listing them, and the server that
-// would mount them is not composed here.
+// permissions and events each built module describes to the kernel, what each
+// module describes about itself (decision 0074 rule 4), and the roles the app
+// recorded. Routes and tenant hosts are the two parts of rule 4 this cannot say
+// yet: a manifest registers its routes through a function rather than listing
+// them, and the server that would mount them is not composed here.
 func (a *App) Explain(d Deployment) (string, error) {
-	p, built, err := a.compose(d)
+	p, built, puts, err := a.compose(d)
 	if err != nil {
 		return "", err
 	}
@@ -255,6 +334,13 @@ func (a *App) Explain(d Deployment) (string, error) {
 		noun = "module"
 	}
 	fmt.Fprintf(&b, "pkit: %s in %s builds %d %s.\n", a.name, d.Environment, len(built), noun)
+	for _, r := range a.roles {
+		held := "nothing"
+		if len(r.Grants) > 0 {
+			held = andList(r.Grants)
+		}
+		fmt.Fprintf(&b, "pkit: a tenant of %s begins as %s, holding %s.\n", a.name, r.Name, held)
+	}
 	for _, m := range p.order {
 		if m != p.last {
 			switch deps := p.deps[m]; len(deps) {
@@ -280,6 +366,16 @@ func (a *App) Explain(d Deployment) (string, error) {
 		}
 		for _, dl := range m.decls {
 			switch {
+			case dl.kind == contributes && len(p.takers[dl.key]) == 0:
+				// Decided here (0074 rule 4, and T-0225's open question): a
+				// contribution no composed module takes is a note, not a refusal.
+				// A taker declares Needs[[]E], which the resolver reads as zero or
+				// more, and an app that composes the contributor without the taker
+				// has made a composition with an unread contribution — a fact a
+				// reader has to be told, and not a mistake that stops the app: the
+				// fixture's wishlist and collectibles both contribute an extension
+				// to a cart that need not be composed at all.
+				fmt.Fprintf(&b, "pkit: %s.Module contributes one %s; no module in %s takes one.\n", m.name, contract(dl.key), a.name)
 			case dl.kind == contributes:
 				fmt.Fprintf(&b, "pkit: %s.Module contributes one %s to %s.\n", m.name, contract(dl.key), whoOrNobody(moduleNames(p.takers[dl.key])))
 			case dl.kind == fromDeployment:
@@ -295,6 +391,18 @@ func (a *App) Explain(d Deployment) (string, error) {
 	for _, c := range p.choices {
 		if len(c.passed) > 0 {
 			fmt.Fprintf(&b, "pkit: %s chose %s.Module over %s for %s.\n", a.name, c.picked.name, andList(c.passed), contract(c.key))
+		}
+	}
+	// A contract nobody needs is a note, never a refusal. It is sometimes
+	// exactly right: the ports the kernel asks the application are read by pkit
+	// rather than by a module, and a module that reads a built manifest takes no
+	// contract to do it. Silence is the state 0074 rule 4 refuses, so the line
+	// says who provides it and who does not need it, and the reader decides.
+	for _, m := range p.order {
+		for _, dl := range m.decls {
+			if dl.kind == provides && len(p.takers[dl.key]) == 0 && len(puts[m][dl.key]) > 0 {
+				fmt.Fprintf(&b, "pkit: %s.Module provides %s; no module in %s needs it.\n", m.name, contract(dl.key), a.name)
+			}
 		}
 	}
 	return b.String(), nil

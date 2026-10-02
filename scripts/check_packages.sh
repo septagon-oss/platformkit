@@ -46,7 +46,7 @@ parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy 
     ui/document ui/resource ui/page ui/screens
     kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
-    kit/flags/providers/ofrep kit/locale/providers/xtext)
+    kit/flags/providers/ofrep kit/locale/providers/xtext pkit)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
 printf '%s\n' "$metadata" | awk -F '|' '
     function contains(set, value) { return index(" " set " ", " " value " ") != 0 }
@@ -125,6 +125,18 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
         check("kit/app", kernel " " p "kit/health " p "kit/limit " p "migrations", web, "web")
+        # pkit is the composition vocabulary and the builder, so it is allowed the
+        # runner it drives and the design tokens it hands a composition, and
+        # nothing else. The falsifiable part is what is absent: no module package
+        # and no ui package appears in this closure. That is rule 6 of 0074, "core
+        # stays core", read off the link map instead of argued from a reading of
+        # the sources. pkit may not reach modules/, because a composition that
+        # imported the internals of a module could read a type the resolver never
+        # asked for, and may not reach ui/, because kit may not import ui at all,
+        # which is why AskForAccess and WorkspaceCatalog are mounts a composition
+        # hands in (pkit/skin.go). A bound a person can check with one command
+        # outlives a comment that asks for trust.
+        check("pkit", kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox, sql, "sql")
