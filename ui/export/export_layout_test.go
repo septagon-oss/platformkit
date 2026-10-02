@@ -123,7 +123,18 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
+	//
+	// Select's empty leading option now carries the caller's label and is disabled
+	// only when the field is Required: a placeholder is a prompt about an empty
+	// field, and where the field is optional an empty value is a value, so the
+	// option a person uses to take a choice back has to be reachable. Measured as a
+	// leaf-by-leaf diff of the v1 export at merge base ff1fd5a against this tree
+	// (`go run ./tools/designexport` on each, walked leaf by leaf): 2 of 6,406
+	// leaves move — /examples/95 (pk-ui.component.select/invalid, the one gallery
+	// example with a Placeholder and no Required) loses ` disabled` from its empty
+	// option, and /sha256. Tokens, icons, CSS, props, schemas and the other
+	// sixty-plus examples are byte-identical.
+	if legacy.SHA256 != "43437a9b515a65a116b679d809e31dfb63565426727f65f85447724d6c1b9846" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
