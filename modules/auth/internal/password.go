@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -278,10 +279,15 @@ const (
 	resetBody     = "Somebody asked to reset the password for this address. If it was not you, ignore this message and nothing changes."
 )
 
-// ResetPath is where the link points. It is a path within the application, so a
-// notice can never send a tenant's people somewhere else, and the host the mail
-// turns it into is that tenant's own.
-const ResetPath = "/auth/reset"
+// ResetPath is where the link points, and it is the workspace address rather than
+// a bare path: the page that reads the token lives under the workspace prefix the
+// kernel composes (httpx.Workspace), in the namespace this module's screens are
+// mounted at. The bare "/auth/reset" this constant used to carry was an address no
+// route answered — the API sits at /api/v1/auth/password/reset and the shell served
+// no page at all — so an invitation mail and a reset mail each carried a link that
+// opened nothing, which is the academy finding in one line. The host in front of it
+// is still the tenant's own, from the host of record, never a configured port.
+var ResetPath = httpx.Workspace("/auth/reset")
 
 // secret is 32 bytes of crypto/rand, base64url. It only has to be unguessable
 // and unique, and it is never stored: the row holds its hash.

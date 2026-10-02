@@ -84,6 +84,10 @@ type addresses struct {
 	// namespace, because that is where the workspace puts a module's screens.
 	tenants route
 	roles   route
+	// forgot is this shell's own page — it is the way in, and the way in is the
+	// shell's — and reset belongs to auth, whose link the person arrived by.
+	forgot route
+	reset  route
 	// sessions is another module's screen again, for the same reason: the auth
 	// module names it in its nav, and this is the module that can draw it.
 	sessions      route
@@ -137,6 +141,8 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		gallery:       at(app, "/_gallery"),
 		tenants:       inNamespace(app, "tenant", "/tenants"),
 		roles:         inNamespace(app, "auth", "/roles"),
+		forgot:        at(app, "/login/forgot"),
+		reset:         inNamespace(app, "auth", "/reset"),
 		sessions:      inNamespace(app, "auth", "/sessions"),
 		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
 		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
@@ -163,6 +169,12 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		}
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	if app.Known("auth") {
+		// Both are served only when the auth module is composed: a forgot page
+		// that posts to a route nobody mounted is a door painted on a wall, and
+		// the composition that has no auth module has no password to forget.
+		served = append(served, a.forgot.at, a.reset.at)
+	}
 	if sh.Roles != nil {
 		served = append(served, a.roles.at)
 	}

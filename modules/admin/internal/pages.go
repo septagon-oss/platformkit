@@ -46,7 +46,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	loginShell := p.shell
 	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn), nil
+			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at), nil
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
@@ -62,6 +62,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	p.mountGallery(app)
 	p.mountRoles(s.App)
 	p.mountSessions(s.App)
+	p.mountPasswordDoors(app)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -83,7 +84,7 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-func login(ctx context.Context, locale *page.Locale, next, action string) page.View {
+func login(ctx context.Context, locale *page.Locale, next, action, forgot string) page.View {
 	if r, ok := httpx.RequestFrom(ctx); ok {
 		// The kernel's rule, because this one used to be its own and was
 		// wrong: "/\\evil.example" has a leading slash and a second character
@@ -120,7 +121,144 @@ func login(ctx context.Context, locale *page.Locale, next, action string) page.V
 			components.FormActions(components.FormActionsProps{},
 				components.Button(components.ButtonProps{Label: title, Type: "submit", FullWidth: true})),
 		),
+		// The way in for everybody the password did not answer: the person whose
+		// address is not here, the one whose account is waiting to be verified, and
+		// the one who was invited and has not chosen a password yet. All three are
+		// refused the same sentence, and this link is what that sentence points at —
+		// asking for a link is the step that answers every one of them, because the
+		// door re-issues to an invited address and says the same thing to an unknown
+		// one. It is always offered, whatever the composition wires: forgetting a
+		// password is not an opt-in.
+		components.Flex(components.FlexProps{Direction: "row", Gap: "2"},
+			components.Link(components.LinkProps{Href: forgot, Variant: "text",
+				Label: text("forgot", "Forgot your password?")})),
 	}}
+}
+
+// mountPasswordDoors mounts the two pages a person who cannot sign in needs: the
+// one that asks for a link, and the one the link leads to.
+//
+// Both exist only when the auth module is composed. A "Forgot your password?"
+// that posts to a route nobody mounted is a door painted on a wall, and a
+// composition with no auth module has no password to forget — so that check is
+// also what decides whether the two addresses count as served.
+//
+// Both forms post JSON to the auth module's own routes rather than to a handler
+// here, for the sign-in page's reason: that module already mints and consumes the
+// credential, and a second path that did it differently is the duplicate worth not
+// having. ui/assets/js/session.js has known the forgot and reset form kinds since
+// it was written; what was missing was any page that rendered one.
+func (p pages) mountPasswordDoors(app *httpx.Router) {
+	if !app.Known("auth") {
+		return
+	}
+	// Unlike Deps.SignIn, which the composition names because it is the pinned
+	// session door, these are the plain composed addresses: the workspace puts a
+	// module's API under its own name, and asking the kernel where that is beats
+	// writing another module's prefix down here.
+	auth := namespace(app, "auth")
+	ask, set := auth.Path("/password/forgot"), auth.Path("/password/reset")
+
+	page.Serve(app, p.shell, page.Route{ID: "admin-forgot", Method: http.MethodGet, Path: p.at.forgot.rel,
+		Summary: "Ask for a link to set a new password"}, httpx.Public(),
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return forgotPassword(ctx, r.Locale, ask, p.at.login.at), nil
+		})
+
+	// The set-password page is mounted in auth's namespace, because it is the
+	// address the auth module mails: its ResetPath is this workspace screen, and a
+	// link that led anywhere else is a mail whose page answers nothing.
+	page.Serve(auth, p.shell, page.Route{ID: "admin-set-password", Method: http.MethodGet, Path: p.at.reset.rel,
+		Summary: "Choose a new password"}, httpx.Public(),
+		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return setPassword(ctx, r.Locale, set, p.at.login.at), nil
+		})
+}
+
+// forgot asks for one thing and promises the answer it can honestly make: the same
+// sentence whether or not the address is known here, which is the enumeration rule
+// the request route keeps for the same reason.
+func forgotPassword(ctx context.Context, locale *page.Locale, action, back string) page.View {
+	text := func(key, fallback string) string {
+		if locale == nil {
+			return fallback
+		}
+		return locale.Text("admin.forgot."+key, fallback)
+	}
+	title := text("title", "Forgot your password?")
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.Card(components.CardProps{Title: title, Description: text("description",
+			"Enter the address this tenant knows you by. If it can receive an account email, a link that sets a new password is sent to it. The link works once and stops working in an hour.")}),
+		components.Form(components.FormProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-auth-form": "forgot"}},
+			Action:         action, Label: title,
+		},
+			components.Alert(components.AlertProps{
+				ComponentProps: components.ComponentProps{
+					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
+				Tone: "danger", Message: "", Bordered: true,
+			}),
+			components.Alert(components.AlertProps{
+				ComponentProps: components.ComponentProps{
+					Hidden: true, Attrs: map[string]string{"data-auth-message": "", "role": "status", "lang": "en"}},
+				Tone: "success", Bordered: true,
+				Message: text("sent", "If this address can receive an account email, a link will be sent. Check your inbox."),
+			}),
+			components.Input(components.InputProps{
+				Name: "email", Type: "email", Label: text("email", "Email"), Required: true,
+				Autocomplete: "username", AutoFocus: true, FullWidth: true}),
+			components.FormActions(components.FormActionsProps{},
+				components.Button(components.ButtonProps{Label: text("submit", "Send me a link"), Type: "submit", FullWidth: true})),
+		),
+		backToSignIn(text, back),
+	}}
+}
+
+// setPassword is the other end of that link, for an invitation and a reset alike:
+// the person who was invited and the person who forgot both arrive here with a
+// token in the address, and both leave with a password they chose. The token stays
+// out of the form's fields — session.js reads it from the address and rewrites the
+// URL so it is not left in the location bar — because a token in a text input is
+// one a password manager offers to save.
+func setPassword(ctx context.Context, locale *page.Locale, action, back string) page.View {
+	text := func(key, fallback string) string {
+		if locale == nil {
+			return fallback
+		}
+		return locale.Text("admin.reset."+key, fallback)
+	}
+	title := text("title", "Choose a password")
+	return page.View{Title: title, Bare: true, Body: []g.Node{
+		components.Card(components.CardProps{Title: title, Description: text("description",
+			"This link sets a password once. Saving it ends every session already open for this account.")}),
+		components.Form(components.FormProps{
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"data-auth-form": "reset", "data-next": back}},
+			Action: action, Label: title,
+		},
+			components.Alert(components.AlertProps{
+				ComponentProps: components.ComponentProps{
+					Hidden: true, Attrs: map[string]string{"data-auth-error": "", "lang": "en"}},
+				Tone: "danger", Message: "", Bordered: true,
+			}),
+			components.Input(components.InputProps{
+				Name: "new", Type: "password", Label: text("password", "New password"), Required: true,
+				MinLength: 12, AutoFocus: true, FullWidth: true, Autocomplete: "new-password",
+				HelpText: text("password.help", "At least twelve characters.")}),
+			components.FormActions(components.FormActionsProps{},
+				components.Button(components.ButtonProps{Label: text("submit", "Save the password"), Type: "submit", FullWidth: true})),
+		),
+		backToSignIn(text, back),
+	}}
+}
+
+// backToSignIn is the way out of a bare page. A person who followed a link they
+// were not expecting, or whose address is not known here, is not trapped on the
+// page that refused them.
+func backToSignIn(text func(key, fallback string) string, back string) g.Node {
+	return components.Flex(components.FlexProps{Direction: "row", Gap: "2"},
+		components.Link(components.LinkProps{Href: back, Variant: "text",
+			Label: text("signIn", "Back to sign in")}))
 }
 
 // dashboard is what there is and how much of it: one card per resource the

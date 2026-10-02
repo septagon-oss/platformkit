@@ -949,3 +949,46 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 // way a composition names them at mount. The test keeps the *httpx.API
 // separately, because validating the composition is the composition's job and
 // holding a *Router would be holding one door of three.
+
+// TestTheDoorsBesideSignInAnswer is rule 2's page half. The sign-in card is not
+// the only way in: a person whose password is not right, who was invited and has
+// not chosen one, or whose address nobody has, is sent by the refusal itself to
+// "Forgot your password?", and that link has to lead to a page that asks for the
+// address and posts to the auth module's own request route. The set-password page
+// is the other end — the address the auth module mails — and it is mounted in
+// auth's namespace because it is where the workspace puts that module's screens.
+//
+// The two pages answer anonymously: a person with no session is exactly who they
+// are for.
+func TestTheDoorsBesideSignInAnswer(t *testing.T) {
+	router := mount(t)
+	for _, door := range []struct{ path, form, action string }{
+		{"/app/admin/login/forgot", "forgot", "/api/v1/auth/password/forgot"},
+		{"/app/auth/reset", "reset", "/api/v1/auth/password/reset"},
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+door.path, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s = %d, want the page for a person with no session: %s", door.path, w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `data-auth-form="`+door.form+`"`) {
+			t.Errorf("%s renders no %s form; ui/assets/js/session.js posts the JSON and the page is the only thing that can ask for the fields: %s",
+				door.path, door.form, body)
+		}
+		if got := attribute(body, "action"); got != door.action {
+			t.Errorf("%s posts to %q, want the auth module's own route %q", door.path, got, door.action)
+		}
+	}
+
+	// And the sign-in card names the first of them, in the same breath as the
+	// button: a link that exists at an address nobody can reach is no way in.
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+"/app/admin/login", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the sign-in page = %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `href="/app/admin/login/forgot"`) {
+		t.Errorf("the sign-in card names no way to be sent a link:\n%s", w.Body.String())
+	}
+}
