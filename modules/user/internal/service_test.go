@@ -39,7 +39,32 @@ func administering(context.Context, db.Tx[db.Tenant]) ([]string, error) {
 // service the application composes.
 func newService() *internal.Service {
 	return internal.NewService(&contracts.AdministrationFunc{Ask: administering}, allowGranting,
-		speaksEnglishAndPortuguese)
+		spoken)
+}
+
+// spoken is the conformance suite's LocalePolicy: the set a language choice is
+// checked against, held behind the switch the suite's Fixture.Serving writes. The
+// suite declares a set per case and the service reads whatever stands then, which
+// is how the fake's ServeLanguages works, and the difference between the two is
+// what the suite is for. It opens on the set this package's own cases are written
+// against.
+var spoken = &languageSwitch{set: speaksEnglishAndPortuguese.Languages}
+
+type languageSwitch struct {
+	mu  sync.Mutex
+	set tenancy.Languages
+}
+
+func (l *languageSwitch) CurrentLanguages(context.Context, db.Tx[db.Tenant]) (tenancy.Languages, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.set, nil
+}
+
+func (l *languageSwitch) serve(set tenancy.Languages) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.set = set
 }
 
 // grantSwitch is the Postgres harness's Granting: one answer a case flips. It is
@@ -76,10 +101,15 @@ func TestServiceConforms(t *testing.T) {
 			// switch that kept its last answer would make a case depend on the
 			// order the map was walked in.
 			allowGranting.allow(true)
+			spoken.serve(usertest.Served)
 			run(usertest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
 				Granting:  allowGranting.allow,
+				// The same two doors the fake is handed: the principal the kernel
+				// would have put on the request, and the set this tenant serves in.
+				As:      func(id uuid.UUID) context.Context { return tenancy.WithPrincipal(ctx, tenancy.Principal{UserID: id}) },
+				Serving: spoken.serve,
 				// What rest.Spec.deleteRow does, in the order it does it: the
 				// row read and locked, the soft delete, then the hook that
 				// carries the floor. The suite drives the same door the

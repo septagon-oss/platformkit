@@ -1,11 +1,13 @@
 package usertest_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts/usertest"
 )
 
@@ -21,7 +23,16 @@ func TestFakeConforms(t *testing.T) {
 		fake := usertest.NewFakeWithAdministration([]string{usertest.Administering})
 		run(usertest.Fixture{Ctx: t.Context(), Service: fake, Published: fake.Published,
 			Delete:   func(id uuid.UUID) error { return fake.Delete(t.Context(), id) },
-			Granting: fake.AllowGranting})
+			Granting: fake.AllowGranting,
+			// The two doors the language cases need: who the caller is, and the
+			// set a choice is checked against. Both are the same calls the
+			// composition makes — the principal kit/httpx puts on a context, the
+			// set the tenant module declares — so the suite asks the fake the
+			// same questions it asks the service over its real transaction.
+			As: func(id uuid.UUID) context.Context {
+				return tenancy.WithPrincipal(t.Context(), tenancy.Principal{UserID: id})
+			},
+			Serving: fake.ServeLanguages})
 	})
 }
 

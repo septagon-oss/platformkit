@@ -14,8 +14,15 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// Served is the set every language case declares before it acts: the default
+// first, in the order a negotiation reads. It is a name rather than a literal at
+// each call because the two implementations must be handed the same set to be
+// comparable, and a case that invented its own could pass by accident.
+var Served = tenancy.Languages{Default: "en", Others: []string{"pt-PT"}}
 
 // Fixture is one case's world: a Service, the transaction its commands take,
 // and a way to see what was published.
@@ -39,6 +46,20 @@ type Fixture struct {
 	// harness wires it, because a guard tested against one implementation is a
 	// guard the other can skip quietly. See contracts.Granting.
 	Granting func(allowed bool)
+	// As is the context of the person named. A self-only command — the one where
+	// a person changes their own language — reads who is asking from the request,
+	// so a case that wants to be somebody needs a way to become them, and the
+	// argument a command does not take cannot be passed by any case. The kernel
+	// puts a principal on a context in one place (kit/httpx after authentication);
+	// a harness that skipped this field would test the anonymous refusal only.
+	As func(userID uuid.UUID) context.Context
+	// Serving declares the languages this tenant is served in, which is the set a
+	// self-only language command checks its argument against at the moment the
+	// write lands. Both harnesses wire it because both decide membership: the
+	// service asks the tenant through contracts.LocalePolicy, the fake answers
+	// from what it was told. One answer here and not there is a fake that passes
+	// a choice its real service would refuse.
+	Serving func(l tenancy.Languages)
 }
 
 // Harness builds one Fixture and calls run with it.
@@ -52,6 +73,7 @@ func RunService(t *testing.T, h Harness) {
 	maps.Copy(all, registrationCases())
 	maps.Copy(all, grantingCases())
 	maps.Copy(all, verificationCases())
+	maps.Copy(all, languageCases())
 	for name, run := range all {
 		t.Run(name, func(t *testing.T) {
 			h(t, func(f Fixture) { run(t, f) })
@@ -695,4 +717,129 @@ func grantingCases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 	}
+}
+
+// languageCases is the person's own language: the only command in this contract
+// whose subject is the caller. It is in the shared suite rather than only in the
+// module's own Postgres tests because both implementations decide it — the service
+// asks the tenant through contracts.LocalePolicy and locks the row, the fake keeps
+// a map and copies the rules — and a fake that drifted would let every module that
+// tests against it pass a choice the shipped service refuses.
+func languageCases() map[string]func(*testing.T, Fixture) {
+	// The two doors a self-only command needs before it means anything: somebody
+	// to be and a set to be served in. A harness that wired neither would run
+	// every case below against an anonymous caller and an empty set, and the
+	// refusals would look like decisions.
+	ready := func(t *testing.T, f Fixture) {
+		t.Helper()
+		if f.As == nil || f.Serving == nil {
+			t.Fatal("this harness wired neither Fixture.As nor Fixture.Serving, so the language command is untested against this implementation")
+		}
+		f.Serving(Served)
+	}
+	return map[string]func(*testing.T, Fixture){
+		"a person chooses a language this tenant serves": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			ada := administrator(t, f, "language-choose@acme.test")
+			before := len(languageEvents(f))
+			got, err := f.Service.SetPreferredLocale(f.As(ada.ID), f.Tx, "pt-PT")
+			if err != nil {
+				t.Fatalf("SetPreferredLocale: %v", err)
+			}
+			if got.PreferredLocale != "pt-PT" {
+				t.Errorf("preferred locale is %q, want the tag that was asked for", got.PreferredLocale)
+			}
+			if len(languageEvents(f)) != before+1 {
+				t.Errorf("the choice published %v; it is a change and belongs in the trail", contracts.EventLanguageSet)
+			}
+		},
+
+		"a language this tenant does not serve is refused and nothing is written": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			ada := administrator(t, f, "language-refused@acme.test")
+			before := len(languageEvents(f))
+			_, err := f.Service.SetPreferredLocale(f.As(ada.ID), f.Tx, "de")
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("a tag outside the served set = %v, want ErrInvalid", err)
+			}
+			again, err := f.Service.Get(f.Ctx, f.Tx, ada.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if again.PreferredLocale != "" {
+				t.Errorf("the refused choice left %q behind; a refusal writes nothing", again.PreferredLocale)
+			}
+			if len(languageEvents(f)) != before {
+				t.Errorf("the refusal published; nothing changed, so nothing happened")
+			}
+		},
+
+		"the choice already held publishes nothing": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			ada := administrator(t, f, "language-held@acme.test")
+			who := f.As(ada.ID)
+			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+				t.Fatalf("first SetPreferredLocale: %v", err)
+			}
+			before := len(languageEvents(f))
+			got, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT")
+			if err != nil {
+				t.Fatalf("second SetPreferredLocale: %v", err)
+			}
+			if got.PreferredLocale != "pt-PT" {
+				t.Errorf("preferred locale is %q after the repeat", got.PreferredLocale)
+			}
+			if len(languageEvents(f)) != before {
+				t.Errorf("posting the choice the person already holds published again; an idempotent command says nothing the second time")
+			}
+		},
+
+		"an empty tag takes the choice back": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			ada := administrator(t, f, "language-clear@acme.test")
+			who := f.As(ada.ID)
+			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+				t.Fatalf("SetPreferredLocale: %v", err)
+			}
+			before := len(languageEvents(f))
+			got, err := f.Service.SetPreferredLocale(who, f.Tx, "")
+			if err != nil {
+				t.Fatalf("clearing the choice: %v", err)
+			}
+			if got.PreferredLocale != "" {
+				t.Errorf("preferred locale is %q, want the answer back to the browser and the tenant's default", got.PreferredLocale)
+			}
+			if len(languageEvents(f)) != before+1 {
+				t.Errorf("taking the choice back is a change and belongs in the trail")
+			}
+		},
+
+		"nobody signed in is refused": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			before := len(languageEvents(f))
+			_, err := f.Service.SetPreferredLocale(f.Ctx, f.Tx, "pt-PT")
+			if !errors.Is(err, contracts.ErrNoSignIn) {
+				t.Errorf("the command with no principal = %v, want ErrNoSignIn", err)
+			}
+			if len(languageEvents(f)) != before {
+				t.Errorf("a command refused for nobody asking published anyway")
+			}
+		},
+	}
+}
+
+// languageEvents counts the language events published so far, so a case reads its
+// own write rather than the invitation and role grant that built the person it is
+// about.
+func languageEvents(f Fixture) []string {
+	if f.Published == nil {
+		return nil
+	}
+	var got []string
+	for _, name := range f.Published() {
+		if name == contracts.EventLanguageSet {
+			got = append(got, name)
+		}
+	}
+	return got
 }
