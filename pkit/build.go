@@ -230,11 +230,14 @@ func (a *App) Build(ctx context.Context, d Deployment) (*Runtime, error) {
 // kit/app's Run: web serves, worker relays and consumes and ticks, all does both
 // in one process and owns the listener.
 func (a *App) Run(ctx context.Context, d Deployment, role app.Role) error {
-	engine, _, err := a.newEngine(ctx, d, role)
+	engine, _, claim, err := a.newEngine(ctx, d, role)
 	if err != nil {
 		return err
 	}
 	err = engine.Run(ctx)
+	// The claim is released as the boot's last act rather than the first: until
+	// Run returns this process still answers on this database as this application.
+	claim.release()
 	a.release(err)
 	return err
 }
@@ -253,18 +256,21 @@ func (a *App) MustBuild(ctx context.Context, d Deployment) *Runtime {
 
 // engine is Build's two halves: newEngine, then kit/app's Start. It returns the
 // started Runtime; Run keeps the engine and serves from it itself, which is why
-// that door asks for both.
+// that door asks for both. The database claim newEngine took travels into the
+// Runtime, whose Close is the release of both lifecycles, and is given back here
+// when there is no Runtime to travel into.
 func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime, error) {
-	engine, _, err := a.newEngine(ctx, d, role)
+	engine, _, claim, err := a.newEngine(ctx, d, role)
 	if err != nil {
 		return nil, err
 	}
 	rt, err := engine.Start(ctx)
 	if err != nil {
+		claim.release()
 		a.release(err)
 		return nil, err
 	}
-	return &Runtime{rt: rt}, nil
+	return &Runtime{rt: rt, claim: claim}, nil
 }
 
 // release settles what a call to the engine's effects left this App. A boot
@@ -290,6 +296,15 @@ func (a *App) release(err error) {
 // configuration reaches kit/app, which answers about the pool, the transport the
 // role would use and every manifest gate before anything is opened.
 //
+// It is also where this process records that the application is on this database
+// (claims.go), which is the last answer that can be given free of both effects: it
+// is read after Plan, so a composition that does not resolve is refused by the
+// sentences that caused it rather than by a process fact, and it is taken before
+// startEngine, so a boot refused here leaves the database it names undialed and
+// this App free to build a corrected composition. The held it returns belongs to
+// the lifecycle: a caller that starts nothing gives it back, and a Runtime carries
+// it to Close.
+//
 // Between the engine's constructor and the first effect sits one more answer:
 // the route gates, over three dry registrations (app.Declarations). They are
 // registration-time checks over httpx's recorder — an operation guarded by a
@@ -311,19 +326,24 @@ func (a *App) release(err error) {
 // and one that mounted differently between any of those runs would otherwise be a
 // composition that means two different things
 // (app.registrationsAgree).
-func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, error) {
+func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.App, *Planned, *held, error) {
 	p, err := a.Plan(d)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	a.buildMu.Lock()
 	defer a.buildMu.Unlock()
 	if a.built {
-		return nil, nil, fmt.Errorf("pkit: %s: Build: this app is already built; a new lifecycle needs a new App", a.name)
+		return nil, nil, nil, fmt.Errorf("pkit: %s: Build: this app is already built; a new lifecycle needs a new App", a.name)
+	}
+	claim, err := claimDatabase(d, a.name)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	engine, err := a.startEngine(ctx, p, d, role)
 	if err != nil {
-		return nil, nil, fmt.Errorf("pkit: %s: Build: %w", a.name, err)
+		claim.release()
+		return nil, nil, nil, fmt.Errorf("pkit: %s: Build: %w", a.name, err)
 	}
 	if err := engine.Declarations(); err != nil {
 		// Refused before the first effect: nothing was migrated and nothing was
@@ -332,10 +352,11 @@ func (a *App) newEngine(ctx context.Context, d Deployment, role app.Role) (*app.
 		// Start, still above the connection, and release gives this App back there
 		// too — the flag is set now because a Start that reaches the pool spends
 		// this App's lifecycle even when it comes back with no Runtime.
-		return nil, nil, fmt.Errorf("pkit: %s: Build: %w", a.name, err)
+		claim.release()
+		return nil, nil, nil, fmt.Errorf("pkit: %s: Build: %w", a.name, err)
 	}
 	a.built = true
-	return engine, p, nil
+	return engine, p, claim, nil
 }
 
 // startEngine is the engine's own constructor with the deployment's process
@@ -354,8 +375,12 @@ func (a *App) startEngine(ctx context.Context, p *Planned, d Deployment, role ap
 
 // Runtime is a built application whose listener belongs to its caller. Build is
 // its only constructor, and what it holds is kit/app's Runtime: the connection,
-// the handler and, for a role that runs a worker half, the transport.
-type Runtime struct{ rt *app.Runtime }
+// the handler and, for a role that runs a worker half, the transport — beside the
+// process's claim that this application is the one on this database.
+type Runtime struct {
+	rt    *app.Runtime
+	claim *held
+}
 
 // Handler is the application's HTTP surface, role by role, exactly as kit/app
 // answers it: tests drive this through httptest rather than a port of their own.
@@ -366,7 +391,14 @@ func (r *Runtime) Handler() http.Handler { return r.rt.Handler() }
 func (r *Runtime) Work(ctx context.Context) error { return r.rt.Work(ctx) }
 
 // Close releases the transport and the connection and is safe to call twice.
-func (r *Runtime) Close() error { return r.rt.Close() }
+// The database claim goes with them, and after them: the application this process
+// was on that database stops being this process's the moment the connection that
+// made it one is released.
+func (r *Runtime) Close() error {
+	err := r.rt.Close()
+	r.claim.release()
+	return err
+}
 
 // settings is P1: the recorded choices, read for contradiction. No method on App
 // answers anything while it is being called (0074 rule 2), so this is the first

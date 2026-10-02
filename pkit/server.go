@@ -39,9 +39,12 @@ type TenantValue struct {
 // enforces (decision 0052 §4). A second answer written here would be a second
 // question the same request has to reconcile, and the two would drift the first
 // time an operator adds a host. What a claim is for is three things: refusing one
-// host claimed by two tenants, refusing two applications on one database, and
-// writing the tenant-hosts section of the composition file, which nothing else
-// can say because nothing else knows what a deployment intends.
+// host claimed by two tenants, refusing two applications on one database — which
+// is half here, over the claims one process records, and half in claims.go, over
+// the database itself, because a second `Server` value names the same database as
+// far away as the first — and writing the tenant-hosts section of the composition
+// file, which nothing else can say because nothing else knows what a deployment
+// intends.
 func Tenant(name, host string) TenantValue { return TenantValue{Name: name, Host: host} }
 
 // Server is a process: the applications it hosts and the configuration, role and
@@ -232,6 +235,9 @@ func (s *Server) refusals() error {
 		}
 	}
 	if len(s.hosts) > 1 {
+		// One Server value's claims. A process that hosts two applications by naming
+		// itself twice is refused by the record of its databases rather than by this
+		// list — see claims.go.
 		errs = append(errs, fmt.Errorf("pkit: %s: Host: this process serves one app; %s would be the second on the same database. Many apps over one database wait for T-0231, which puts the app's name in every name two apps share and the check at every boundary (0074 rule 6)",
 			s.hosts[0].app.name, andList(s.hostedNames())))
 	}
@@ -245,7 +251,10 @@ func (s *Server) refusals() error {
 // once, and starts the one it can. The refusals are the process's own — nothing
 // hosted, no deployment named, an application hosted twice, two tenants claiming
 // one host, a second application on one database — and each is answered before
-// anything is opened, in the same phase order App.Build uses.
+// anything is opened, in the same phase order App.Build uses. The second
+// application is answered twice over, because it arrives two ways: hosted beside
+// the first, which refusals sees, or named by another Server value, which only the
+// process's record of its databases can see (claims.go).
 func (s *Server) assemble(ctx context.Context) ([]*Runtime, []*Planned, error) {
 	if err := s.refusals(); err != nil {
 		return nil, nil, err
@@ -363,27 +372,31 @@ func (s *Server) Explain() (string, error) {
 // refused above the connection leaves its App free to build a corrected
 // composition, and one that reached the pool does not.
 func (a *App) start(ctx context.Context, d Deployment, role app.Role, s *Server) (*Runtime, *Planned, error) {
-	engine, p, err := a.engineWith(ctx, d, role, s)
+	engine, p, claim, err := a.engineWith(ctx, d, role, s)
 	if err != nil {
 		return nil, nil, err
 	}
 	rt, err := engine.Start(ctx)
 	if err != nil {
+		claim.release()
 		a.release(err)
 		return nil, nil, err
 	}
-	return &Runtime{rt: rt}, p, nil
+	return &Runtime{rt: rt, claim: claim}, p, nil
 }
 
 // runStarted is Run's half: the engine this app resolves to, then whichever
 // halves role names — kit/app's Run is its own Start and the serving, which is
 // why the caller resolves an unset role to all before arriving here.
 func (a *App) runStarted(ctx context.Context, d Deployment, role app.Role, s *Server) error {
-	engine, _, err := a.engineWith(ctx, d, role, s)
+	engine, _, claim, err := a.engineWith(ctx, d, role, s)
 	if err != nil {
 		return err
 	}
 	err = engine.Run(ctx)
+	// Released as the run's last act rather than its first: while Run is in the
+	// stack this process is still the application that answers on this database.
+	claim.release()
 	a.release(err)
 	return err
 }
@@ -393,12 +406,12 @@ func (a *App) runStarted(ctx context.Context, d Deployment, role app.Role, s *Se
 // prefix on what the engine refused. It also returns the plan, because Server
 // explains the composition it hosted and the plan is the only reading of it that
 // names which module provided each contract.
-func (a *App) engineWith(ctx context.Context, d Deployment, role app.Role, s *Server) (*app.App, *Planned, error) {
-	engine, p, err := a.newEngine(ctx, d, role)
+func (a *App) engineWith(ctx context.Context, d Deployment, role app.Role, s *Server) (*app.App, *Planned, *held, error) {
+	engine, p, claim, err := a.newEngine(ctx, d, role)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
-	return engine, p, nil
+	return engine, p, claim, nil
 }
 
 // providerNames answers, for one contract, which composed module put it — the
