@@ -1902,8 +1902,7 @@ async function localFontFaces(page) {
   return faces.map(bytes => hash(Uint8Array.from(bytes))).sort()
 }
 
-
-// The wait for the panel's Local-fonts toggle to change state, named.
+// The waits for the panel's Local-fonts toggle to change state, named.
 //
 // Playwright's default expect timeout is 5 s, one number handed to every control in
 // a suite whose own measured duration on the CI runner is p50 92.7 s and p99 96.3 s
@@ -1913,13 +1912,34 @@ async function localFontFaces(page) {
 // costs: the toggle came back "not visible within 5s" on a runner at load, the case
 // was refused, and run 237 — same file, same step, same profile — passed it.
 //
-// The bound is a third of the measured p99 of the test that holds it (96.3 s / 3 ≈
-// 32 s, rounded down to a round 30 s), which is six times the default it replaces.
-// Nothing legitimate is refused by it: a boolean flip that needs a third of its own
-// test's slowest observed run is not slow, it is absent — and "absent" is the thing
-// this file cannot tell apart from "the runner reclaimed the browser" without the
-// death report the step that runs it prints.
+// What this bound is NOT is 10 × a measured p99 of the toggle. The toggle's own
+// duration is in no log anywhere — the job logs the file, not the wait inside it — and
+// this delivery cannot run the suite to measure it, because it needs the built editor
+// image. So the line below is a cap, not a fit, and it is priced from the one bound in
+// this file that is real: the test's own 120 s (`{ timeout: 120000 }` below). One
+// quarter of that, so that no single control can eat the test that holds it and leave
+// the reader with `test timed out after 120000ms` instead of the name of the control
+// that never appeared. Six times the 5 s default it replaces.
+//
+// `timed` under it is the measurement the number is waiting for: every wait below
+// prints what it took, into the step's own output, so the p99 no log holds today
+// arrives with the next run of the job and the next reader can put 10 × it here. Raising this
+// bound past a quarter of the test's own means raising that test timeout with it — and
+// at p50 92.7 s / p99 96.3 s the test is already inside 1.24 × of its own bound, which
+// is the design owner's arithmetic to do, not a share of this split.
 const localFontsToggle = 30_000
+
+// timed records what one wait took, whether it answered or ran out. The number goes to
+// stdout rather than into an assertion: nothing is measured against it here. It is the
+// sample the next pricing of localFontsToggle reads.
+async function timed(label, run) {
+  const started = Date.now()
+  try {
+    return await run()
+  } finally {
+    console.log(`local fonts: ${label} waited ${Date.now() - started}ms of the ${localFontsToggle}ms it is allowed`)
+  }
+}
 
 async function enableLocalFonts(page, fonts) {
   const expected = fonts.map(face => face.sha256).sort()
@@ -1929,18 +1949,22 @@ async function enableLocalFonts(page, fonts) {
   await page.keyboard.type('Font access')
   await page.keyboard.press('Escape')
   assert.deepEqual(await localFontFaces(page), expected, 'the cold enumeration carries the fixture faces')
-  await page.getByRole('button', { name: 'Font settings', exact: true }).click({ timeout: localFontsToggle })
+  await timed('opening Font settings', () =>
+    page.getByRole('button', { name: 'Font settings', exact: true }).click({ timeout: localFontsToggle }))
   const panel = page.locator('[data-test-id="font-settings-panel"]')
   // Online and local access are separate permissions, never interchangeable.
   const localFonts = panel.getByText('Local fonts', { exact: true }).locator('..')
   const onlineFonts = panel.getByText('Online fonts', { exact: true }).locator('..')
-  await expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle })
+  await timed('the online row reading Enabled', () =>
+    expect(onlineFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle }))
   await expect(localFonts.getByText('Enabled', { exact: true })).toHaveCount(0)
-  await panel.getByRole('button', { name: 'Allow', exact: true }).click({ timeout: localFontsToggle })
+  await timed('pressing Allow', () =>
+    panel.getByRole('button', { name: 'Allow', exact: true }).click({ timeout: localFontsToggle }))
   // The state the case reads is the panel's own: this waits on the row flipping from
   // its absent answer to "Enabled", not on a paint, and the bound above is the only
   // clock in it.
-  await expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle })
+  await timed('the local row reading Enabled', () =>
+    expect(localFonts.getByText('Enabled', { exact: true })).toBeVisible({ timeout: localFontsToggle }))
   await expect(panel.getByRole('button', { name: 'Allow', exact: true })).toBeDisabled({ timeout: localFontsToggle })
   await page.keyboard.press('Escape')
   assert.deepEqual(await localFontFaces(page), expected, 'the enabled toggle exposes the same faces')
