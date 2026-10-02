@@ -113,6 +113,17 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Detail(r, opts, row, true))
 		}, true
+	case "Operations":
+		// Which verbs the resource mounted decides which doors exist, and the
+		// adapter has to carry the answer: a shelf that offers no create renders
+		// with no New button, and the same shelf with the empty default — all five —
+		// renders with one. Both are rendered to a caller who may write, so what
+		// differs between the two pages is the mounted route and nothing else.
+		a, b := base(), base()
+		b.Operations = []httpx.CRUD{httpx.CRUDList, httpx.CRUDRead}
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
+		}, true
 	}
 	return httpx.Resource{}, httpx.Resource{}, nil, false
 }

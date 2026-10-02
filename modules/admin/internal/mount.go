@@ -156,7 +156,11 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	served := page.Served(s.Recorded())
 	own := ownScreens(served, resources)
 	for _, r := range resources {
-		served = append(served, r.Screen, r.Screen+"/new")
+		// A Spec that offers no list has no screen address, so it serves no path:
+		// recording "" and "/new" would call them addresses something answers.
+		if r.Screen != "" {
+			served = append(served, r.Screen, r.Screen+"/new")
+		}
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
 	if sh.Roles != nil {
@@ -336,6 +340,11 @@ func fallback(value, or string) string {
 func ownScreens(recorded []string, resources []httpx.Resource) map[string]bool {
 	own := map[string]bool{}
 	for _, r := range resources {
+		// No address of its own: beside an empty screen the prefix is "/", every
+		// recorded path starts with it, and the answer would be a lie.
+		if r.Screen == "" {
+			continue
+		}
 		for _, path := range recorded {
 			if path == r.Screen || strings.HasPrefix(path, r.Screen+"/") {
 				own[r.Screen] = true

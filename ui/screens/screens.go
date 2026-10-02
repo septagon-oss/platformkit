@@ -60,6 +60,13 @@ type (
 // operator boundary for private reads as well as writes. A customer's wildcard
 // must not open a screen whose corresponding API route refused it.
 // See docs/adr/0008.
+//
+// A page is mounted iff the resource mounted the route behind it — see
+// rest.Spec.Operations — and a resource with no collection page at all mounts no
+// generated page: every link a renderer writes is built from the screen address,
+// so a page of such a resource would link into an address that answers 404. A
+// module that wants pages for a resource the generator would leave bare writes
+// them, the way modules/admin writes its own.
 func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	// at is where the screens are: /app/<module>/<entity>, composed by the kernel
 	// when the resource was registered. Every link is built from it. rel is the
@@ -67,6 +74,11 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 	// the module wrote it, and it is the reason this shell never has to know
 	// where the workspace is mounted.
 	at, rel := res.Screen, res.Path
+	if at == "" && !res.Singleton {
+		// No address to link from, so nothing to mount. kit/rest composes this
+		// address only when it mounts the list route beside it.
+		return
+	}
 	id := "screen-" + res.Module + "-" + res.Entity + "-"
 	read, write := res.ReadAuth(), res.WriteAuth()
 	if res.Singleton {
@@ -74,79 +86,93 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 		return
 	}
 
-	page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list"}, read,
-		func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
-			pageNo := max(in.Page, 1)
-			rows, total, err := res.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
-			if err != nil {
-				return page.View{}, err
-			}
-			return listView(res, ctx, localized(o, req), at, rows, total, pageNo, in.Sort, res.Writable(ctx)), nil
-		})
-
-	page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
-		func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
-			o := localized(o, req)
-			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), nil, nil, "", true), nil
-		})
-
-	page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
-		func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
-			// Immutable is refused here rather than dropped: this form does not
-			// render those fields at all, so a value for one did not come from
-			// it. See rest.Values.
-			sent, err := rest.Values(in.RawBody, res.Schema.Fields, res.Immutable)
-			if err == nil {
-				var row map[string]any
-				if row, err = res.Create(ctx, sent); err == nil {
-					return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
+	if res.Offers(httpx.CRUDList) {
+		page.Serve(router, s, page.Route{ID: id + "list", Method: http.MethodGet, Path: rel, Summary: "The " + res.Entity + " list"}, read,
+			func(ctx context.Context, req page.Request, in *listInput) (page.View, error) {
+				pageNo := max(in.Page, 1)
+				rows, total, err := res.List(ctx, crud.Query{Limit: perPage, Offset: (pageNo - 1) * perPage, Sort: in.Sort})
+				if err != nil {
+					return page.View{}, err
 				}
-			}
-			o := localized(o, req)
-			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
-			return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
-		})
+				return listView(res, ctx, localized(o, req), at, rows, total, pageNo, in.Sort, res.Writable(ctx)), nil
+			})
+	}
 
-	page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
-		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-			row, err := res.Get(ctx, in.ID)
-			if err != nil {
-				return page.View{}, err
-			}
-			return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
-		})
+	if res.Offers(httpx.CRUDCreate) {
+		page.Serve(router, s, page.Route{ID: id + "new", Method: http.MethodGet, Path: rel + "/new", Summary: "The new-" + res.Entity + " form"}, write,
+			func(_ context.Context, req page.Request, _ *page.Empty) (page.View, error) {
+				o := localized(o, req)
+				return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), nil, nil, "", true), nil
+			})
+	}
 
-	page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
-		func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
-			row, err := res.Get(ctx, in.ID)
-			if err != nil {
-				return page.View{}, err
-			}
-			o := localized(o, req)
-			return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
-		})
-
-	page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
-		func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
-			item := at + "/" + in.ID.String()
-			sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
-			if err == nil {
-				if _, err = res.Update(ctx, in.ID, rest.Writable(sent, res.Immutable)); err == nil {
-					return page.View{}, httpx.SeeOther(item)
+	if res.Offers(httpx.CRUDCreate) {
+		page.Serve(router, s, page.Route{ID: id + "create", Method: http.MethodPost, Path: rel, Summary: "Create a " + res.Entity}, write,
+			func(ctx context.Context, req page.Request, in *formInput) (page.View, error) {
+				// Immutable is refused here rather than dropped: this form does not
+				// render those fields at all, so a value for one did not come from
+				// it. See rest.Values.
+				sent, err := rest.Values(in.RawBody, res.Schema.Fields, res.Immutable)
+				if err == nil {
+					var row map[string]any
+					if row, err = res.Create(ctx, sent); err == nil {
+						return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
+					}
 				}
-			}
-			o := localized(o, req)
-			errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
-			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
-		})
+				o := localized(o, req)
+				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
+				return Form(res, o, at, o.Text("screens.new", "New %s", res.Entity), sent, errs, detail, true), nil
+			})
+	}
 
-	page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
-		func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
-			if err := res.Delete(ctx, in.ID); err != nil {
-				return page.View{}, err
-			}
-			return page.View{}, httpx.SeeOther(at)
-		})
+	if res.Offers(httpx.CRUDRead) {
+		page.Serve(router, s, page.Route{ID: id + "read", Method: http.MethodGet, Path: rel + "/{id}", Summary: "One " + res.Entity}, read,
+			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
+				row, err := res.Get(ctx, in.ID)
+				if err != nil {
+					return page.View{}, err
+				}
+				return detailView(res, ctx, localized(o, req), at, row, res.Writable(ctx))
+			})
+	}
+
+	if res.Offers(httpx.CRUDUpdate) {
+		page.Serve(router, s, page.Route{ID: id + "edit", Method: http.MethodGet, Path: rel + "/{id}/edit", Summary: "The edit-" + res.Entity + " form"}, write,
+			func(ctx context.Context, req page.Request, in *itemInput) (page.View, error) {
+				row, err := res.Get(ctx, in.ID)
+				if err != nil {
+					return page.View{}, err
+				}
+				o := localized(o, req)
+				return Form(res, o, at+"/"+in.ID.String(), o.Text("screens.edit_item", "Edit %s", res.Entity), row, nil, "", false), nil
+			})
+	}
+
+	if res.Offers(httpx.CRUDUpdate) {
+		page.Serve(router, s, page.Route{ID: id + "update", Method: http.MethodPost, Path: rel + "/{id}", Summary: "Update a " + res.Entity}, write,
+			func(ctx context.Context, req page.Request, in *itemFormInput) (page.View, error) {
+				item := at + "/" + in.ID.String()
+				sent, err := rest.UpdateValues(in.RawBody, res.Schema.Fields, nil)
+				if err == nil {
+					if _, err = res.Update(ctx, in.ID, rest.Writable(sent, res.Immutable)); err == nil {
+						return page.View{}, httpx.SeeOther(item)
+					}
+				}
+				o := localized(o, req)
+				errs, detail := rest.FieldErrorsIn(err, res.Schema.Fields, words(o, req))
+				return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", res.Entity), sent, errs, detail, false), nil
+			})
+	}
+
+	if res.Offers(httpx.CRUDDelete) {
+		page.Serve(router, s, page.Route{ID: id + "delete", Method: http.MethodPost, Path: rel + "/{id}/delete", Summary: "Delete a " + res.Entity}, write,
+			func(ctx context.Context, _ page.Request, in *itemInput) (page.View, error) {
+				if err := res.Delete(ctx, in.ID); err != nil {
+					return page.View{}, err
+				}
+				return page.View{}, httpx.SeeOther(at)
+			})
+	}
 
 	mountCommands(router, s, o, res, at, rel, id)
 }

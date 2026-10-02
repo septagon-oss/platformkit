@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math/rand/v2"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -581,6 +583,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		// The installation is where the control plane is served, and this is the
@@ -709,6 +712,7 @@ func TestEveryNavEntryLeadsSomewhere(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	c := compose(cfg)
 	api, _ := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: cfg.Server.PublicHost, Docs: true, Tenants: c.tenants, Conn: conn,
 		Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate, Log: quiet(),
 		Installation: cfg.Server.InstallationHost,
@@ -1032,29 +1036,161 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
+// waitFor returns once the application this test started answers its own
+// liveness probe at addr.
+//
+// It asks a question rather than dialling, because a dial is answered by whoever
+// holds the port and not by this test's application. The address comes from
+// freeAddr, which releases the port it chose, and Run migrates before it
+// listens, so the application is seconds away from binding it; on a host with
+// several suites live somebody else can take the port inside that window, and
+// the bare dial used to be satisfied by whoever had it. Two cases here have
+// failed that way — the second with
+// `Post "http://127.0.0.1:46755/api/v1/auth/login": ... malformed HTTP response "0"`
+// from a process that speaks no HTTP at all, in a case about signing in.
+//
+// GET /health is what the wait ends on instead: both roles serve it (kit/health
+// and app.work), it runs no check of its own, so 200 says this application is up
+// and nothing else can. Anything that answers it with something else is whoever
+// holds the port, and the case says so in a second rather than after thirty of
+// waiting and one request that was never going to be answered here.
 func waitFor(t *testing.T, addr string) {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
+	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
-		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
-			_ = c.Close()
-			return
+		res, err := http.Get("http://" + addr + "/health")
+		if err != nil {
+			// Nobody is home, which is what it looks like while the application is
+			// still migrating. Keep waiting.
+			last = err.Error()
+		} else {
+			body, _ := io.ReadAll(res.Body)
+			_ = res.Body.Close()
+			if res.StatusCode == http.StatusOK {
+				return
+			}
+			// /health is liveness: it runs no check, and this process answers it with
+			// 200 from the moment it listens. Anything else that answers is somebody
+			// else's socket, and no amount of waiting will make this application own
+			// it — say so at once, and say who did.
+			t.Fatalf("the port %s belongs to something that is not this application: "+
+				"GET /health answered %d, Server %q, body %q",
+				addr, res.StatusCode, res.Header.Get("Server"), firstLine(string(body)))
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
+	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
 }
 
-// freeAddr picks a port the kernel has just confirmed is free.
+// The band freeAddr picks from. The kernel allocates nothing below
+// ip_local_port_range — an :0 bind and the source port of an outbound
+// connection both come out of that range — and 20000 keeps the choice clear of
+// the well-known services a development host runs. What is left is ports some
+// program named on purpose, which is the point: the ceiling is 30000 rather than
+// the kernel's floor because a preview proxy publishing a container answered this
+// suite at 30082 on 2026-10-01, and it names ports from 30000 up.
+const (
+	firstChosenPort = 20000
+	lastChosenPort  = 29999
+	chosenPortTries = 24
+)
+
+// chosenPorts remembers what this test binary has already served at, so that two
+// of its cases never stand on one port. The transport every case shares pools
+// connections by address, and a case that reuses a port its predecessor served
+// inherits a connection to a process that has gone away.
+var (
+	chosenPortsMu sync.Mutex
+	chosenPorts   = map[int]bool{}
+)
+
+// freeAddr picks a port the kernel cannot hand to somebody else while this test
+// is on its way to binding it.
+//
+// Asking the kernel for one and closing the listener, which is what this did,
+// picks out of the ephemeral range and then gives it back: every other process on
+// the host draws its :0 binds and its outbound source ports from that same range,
+// so the port was free at the moment it was named and possibly not one later.
+// The application migrates before it listens, so "later" is seconds, and the case
+// that noticed was speaking to whoever had taken it (waitFor carries what that
+// looked like). Below the ephemeral range a port is only ever held by something
+// that asked for that number, which is the closest thing to a guarantee this
+// shared host has. The bind is what says nobody holds it at the moment of
+// choosing, the candidate after it is what a port somebody does hold costs, and
+// the random start is what keeps two suites running at once reaching for the same
+// one.
+//
+// Even a bind is not ownership here: a container published at a host port is
+// reached there whatever socket stands underneath, so the candidate has to answer
+// the connection this test is about to make. One dial into the listener, accepted
+// on the other side, is that check, and it costs a millisecond once per case.
 func freeAddr(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("reserve a port: %v", err)
+	low := min(ephemeralLow()-1, lastChosenPort)
+	first := rand.IntN(low - firstChosenPort + 1)
+	chosenPortsMu.Lock()
+	defer chosenPortsMu.Unlock()
+	for i := range chosenPortTries {
+		port := firstChosenPort + (first+i)%(low-firstChosenPort+1)
+		if chosenPorts[port] {
+			continue
+		}
+		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
+		if err != nil {
+			continue
+		}
+		addr := l.Addr().String()
+		if !loopbackReaches(l) {
+			_ = l.Close()
+			continue
+		}
+		_ = l.Close()
+		chosenPorts[port] = true
+		return addr
 	}
-	addr := l.Addr().String()
-	_ = l.Close()
-	return addr
+	t.Fatalf("every port between %d and %d is held by something else",
+		firstChosenPort, low)
+	return ""
+}
+
+// loopbackReaches reports whether a connection to l arrives at l. The dial is
+// what a case will do; the accept is what this process has to be able to get.
+func loopbackReaches(l net.Listener) bool {
+	accepted := make(chan bool, 1)
+	go func() {
+		c, err := l.Accept()
+		if err == nil {
+			_ = c.Close()
+		}
+		accepted <- err == nil
+	}()
+	c, err := net.Dial("tcp", l.Addr().String())
+	if err != nil {
+		return false
+	}
+	_ = c.Close()
+	select {
+	case ok := <-accepted:
+		return ok
+	case <-time.After(time.Second):
+		return false
+	}
+}
+
+// ephemeralLow is the first port the kernel allocates for a socket nobody named.
+func ephemeralLow() int {
+	const fallback = 32768 // Linux's own default, and the answer without the file
+	body, err := os.ReadFile("/proc/sys/net/ipv4/ip_local_port_range")
+	if err != nil {
+		return fallback
+	}
+	low, _, _ := strings.Cut(strings.TrimSpace(string(body)), "\t")
+	n, err := strconv.Atoi(low)
+	if err != nil || n <= firstChosenPort {
+		return fallback
+	}
+	return n
 }
 
 // do sends one request to the running application at the given Host header,

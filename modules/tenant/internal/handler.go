@@ -3,6 +3,7 @@ package internal
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -54,6 +55,21 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		return db.RunSystem(db.Detached(ctx), conn, token, fn)
 	}
 
+	// invalidate closes the namespace of host resolutions after a route has written
+	// what those resolutions carry: which tenant a host is, and the languages served
+	// at it. The write commits first, and that order is the one this function cannot
+	// change — see invalidationUncertain for why the other order is the worse outage.
+	// What a failure does change is the answer: it comes back as the fault the route
+	// answers with, because the route may not report an effect it did not achieve.
+	invalidate := func(ctx context.Context, what string, t *contracts.Tenant) error {
+		if ierr := r.InvalidateHost(t.Hosts...); ierr != nil {
+			slog.ErrorContext(ctx, "tenant: the write is committed but its host resolutions were not forgotten",
+				"tenant", t.ID, "change", what, "error", ierr)
+			return invalidationUncertain(what)
+		}
+		return nil
+	}
+
 	httpx.Register(r, op("list", http.MethodGet, path, 0, "List the tenants",
 		"Every tenant of this installation, suspended ones included.", nil),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
@@ -94,7 +110,7 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 		})
 
 	httpx.Register(r, op("suspend", http.MethodPost, path+"/{id}/suspend", 0, "Suspend a tenant",
-		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing.",
+		"Stops the tenant being served: its hosts answer as though no site were there. Suspending it again changes nothing. When the installation's shared store does not accept the invalidation this route answers 503: the suspension stands in the record, but a process that had already resolved these hosts may serve them until those resolutions expire, and repeating the request finishes the change.",
 		[]string{contracts.EventSuspended}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *idInput) (*itemOutput, error) {
@@ -104,19 +120,18 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
+			// One Move closes every host resolution this process and its replicas
+			// hold, including the load a replica is mid-way through; a suspension that
+			// took effect in half a minute would be a suspension somebody has to
+			// explain. A store that will not take it is a 503, not a log line.
 			if err == nil {
-				// The resolution cache believes a host for half a minute, and
-				// a suspension that takes effect in half a minute is a
-				// suspension somebody has to explain.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
-				}
+				err = invalidate(ctx, "the tenant is suspended", out.Body)
 			}
 			return out, rest.Fault(err)
 		})
 
 	httpx.Register(r, op("set-locale", http.MethodPost, path+"/{id}/locale", 0, "Say which languages a tenant is served in",
-		"Sets the language a request with no usable preference is answered in, and the set the browser's list is intersected with. Setting the same pair again changes nothing and publishes nothing. The languages a tenant may be answered in are a declaration about a customer, which is why this is the operator's route and not the tenant's: a tenant's own copy is a different capability, in a table a tenant can write.",
+		"Sets the language a request with no usable preference is answered in, and the set the browser's list is intersected with. Setting the same pair again changes nothing and publishes nothing. The languages a tenant may be answered in are a declaration about a customer, which is why this is the operator's route and not the tenant's: a tenant's own copy is a different capability, in a table a tenant can write. When the installation's shared store does not accept the invalidation this route answers 503 rather than promising the next page in the new languages: the row stands, and a process holding an older resolution serves the page it names.",
 		[]string{contracts.EventLocaleSet}),
 		httpx.OperatorPermission(contracts.PermissionTenantManage),
 		func(ctx context.Context, in *localeInput) (*itemOutput, error) {
@@ -126,14 +141,14 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 				out.Body = t
 				return err
 			})
+			// The cached resolution carries the tenant's languages with it, so the
+			// languages of a page are half a minute stale unless the resolution is
+			// closed here — the same reason a suspension closes it, and the same one
+			// command this route already made. Stale languages are a lesser wrong than
+			// a suspended host still served, but the answer that hides which of the two
+			// happened is the same one, so this route does not give it either.
 			if err == nil {
-				// The cached resolution carries the tenant's languages with it, so
-				// the languages of a page are half a minute stale unless the
-				// resolution is forgotten here — the same reason a suspension does
-				// it, and the same one query this route already made.
-				for _, host := range out.Body.Hosts {
-					r.InvalidateHost(host)
-				}
+				err = invalidate(ctx, "the tenant's languages are set", out.Body)
 			}
 			return out, rest.Fault(err)
 		})
@@ -220,6 +235,29 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			})
 			return out, rest.Fault(err)
 		})
+}
+
+// invalidationUncertain is what a route answers when its write committed and the
+// installation's shared store refused to close the host resolutions that write
+// changes.
+//
+// The record stands, and the two alternatives are worse. Rolling it back makes a
+// cache outage undo a decision somebody took to stop a tenant being served; so does
+// refusing the write before it happens, with the addition of a period in which the
+// operator cannot make that decision at all — a store is often unreachable in the
+// very incident a suspension is the answer to. But the truth is not fully told
+// either: another process holds its own resolution of the host and serves what it
+// says until the move lands or the entry expires, so what this route promises is not
+// yet true everywhere. Answering 200 reports an outcome as settled when the
+// installation could not finish it; 503 says it could not, and the detail says what
+// already stands. The retry that answer asks for is safe: the command is idempotent —
+// suspending a suspended tenant changes nothing and publishes nothing — and the move
+// runs again either way.
+func invalidationUncertain(what string) error {
+	return problem.New(http.StatusServiceUnavailable,
+		fmt.Sprintf("%s in this installation's record, but its shared store did not accept the invalidation, "+
+			"so a process that had already resolved these hosts may keep serving them as before until those "+
+			"resolutions expire. Repeat this request once the store answers again.", what))
 }
 
 // op builds one operation, including the events its handler will publish, which

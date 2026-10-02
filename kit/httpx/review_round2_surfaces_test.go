@@ -19,6 +19,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/entity"
@@ -34,6 +35,7 @@ func anonymousAPI(t *testing.T) http.Handler {
 	who := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	_, conn := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(context.Context, db.Tx[db.System], string) (tenancy.Tenant, error) {
@@ -185,6 +187,7 @@ func TestThePublicWriteLimitCountsTwoTenantsApartInTheCounterItWritesTo(t *testi
 	acme := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {

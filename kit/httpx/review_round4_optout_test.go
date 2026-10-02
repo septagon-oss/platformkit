@@ -30,6 +30,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -60,6 +61,7 @@ func declineKernel(t *testing.T) (*httpx.API, http.Handler, *decliningFault) {
 	_, conn := dbtest.Schema(t)
 	fault := &decliningFault{}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Installation: installationHost, Conn: conn,
 		Tenants: loaderFunc(func(context.Context, db.Tx[db.System], string) (tenancy.Tenant, error) {
 			return tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}, nil

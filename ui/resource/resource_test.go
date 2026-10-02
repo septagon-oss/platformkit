@@ -92,6 +92,33 @@ func TestDetailShowsEveryFieldAndTheWriteAffordances(t *testing.T) {
 	}
 }
 
+// TestAnAbsentVerbDrawsNoDoor is the renderer's own half of the operation set:
+// `writable` says who is asking and Operations says what this resource mounted,
+// and the two are different questions — a New button over an address that mounts
+// no POST is the same lie as a door over a 404. The empty set is the silence
+// every Spec written before the field existed speaks: all five routes, so all
+// three doors, exactly as they drew the day before.
+func TestAnAbsentVerbDrawsNoDoor(t *testing.T) {
+	t.Parallel()
+	row := map[string]any{"id": "1", "title": "Buy milk", "status": "open"}
+	reads := note()
+	reads.Operations = []string{"list", "read"}
+	if out := render(t, resource.List(reads, opts, []map[string]any{row}, 1, 1, "", true).Body); strings.Contains(out, `href="/app/note/notes/new"`) {
+		t.Errorf("a resource that mounted no create draws New for a caller who may write:\n%s", out)
+	}
+	if out := render(t, resource.Detail(reads, opts, row, true).Body); strings.Contains(out, "/edit") || strings.Contains(out, "data-confirm") {
+		t.Errorf("a resource that mounted no update and no delete draws Edit or Delete:\n%s", out)
+	}
+	// The same two pages from the resource that names nothing: every door it ever drew.
+	if out := render(t, resource.List(note(), opts, []map[string]any{row}, 1, 1, "", true).Body); !strings.Contains(out, `href="/app/note/notes/new"`) {
+		t.Errorf("an empty operation set draws no New:\n%s", out)
+	}
+	out := render(t, resource.Detail(note(), opts, row, true).Body)
+	if !strings.Contains(out, `href="/app/note/notes/1/edit"`) || !strings.Contains(out, "data-confirm") {
+		t.Errorf("an empty operation set draws neither Edit nor Delete:\n%s", out)
+	}
+}
+
 func TestFormDerivesControlsFromTheSchema(t *testing.T) {
 	t.Parallel()
 	v := resource.Form(note(), opts, "/app/note/notes", "New note", nil, nil, "", true)
