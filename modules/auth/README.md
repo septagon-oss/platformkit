@@ -185,12 +185,32 @@ refusal and the record in one statement.
   meaning the same thing as the first is two knobs for one policy. Six digits
   across three steps is 3×10⁶ guesses per window, which is nothing to a script,
   so this route needs a rate limit and not only a wide space.
-* **No passkeys.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
-  CBOR/COSE tree — a new module dependency, priced in its own `build(budget)`
-  commit, and a `webauthn.Config` built per request from the resolved host. That
-  is a round of its own and this one did not take it; the `Kind` field on
-  `Factor` and on the two factor events is where it lands when it does, and
-  nothing above has to change for it.
+* **Passkeys are in.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
+  CBOR/COSE tree, priced as a module dependency in its own `build(budget)`
+  commit. A passkey is a
+  second factor whose proof is a signature over a nonce this server minted, and so
+  it is a ceremony rather than a code: `contracts.Passkeys` is beside `Factors`
+  because the only enrolment pair `Factors` offers is shaped by a secret the server
+  hands out, and nothing in that shape is a parameter of a ceremony. Its own
+  `internal/passkeys.go` is the only file in the repository that imports the SDK
+  (`contracts/passkeys.go` names no SDK type, so CBOR and COSE never reach a
+  handler, an event or the contract) and its own `000035_passkeys.up.sql` the only
+  one that adds a challenge table — 000031 declined one for TOTP because RFC 6238
+  already is a challenge, and WebAuthn has no such built-in nonce. Nothing there is
+  sealed: a public key is public, so a deployment with no `auth.factor_key` enrols
+  passkeys and answers both sign-in doors. The two things the library leaves to the
+  relying party are decided where they are enforced: the relying party is built per
+  request from the host that already chose the tenant (so a passkey minted at one
+  tenant's host cannot answer at another's, by construction), and the clone rule —
+  a counter going backwards retires the credential for good and publishes
+  `auth.factor_suspect` — because the library only flags it. `auth.factor_used`
+  names the quieter half: which factor answered. Whether a passkey may be the whole
+  sign-in, with no password offered first, is the tenant's own row in
+  `passkey_settings`, read per request; `TestTheUsernamelessDoorIsTheTenantsOwnRow`
+  is that read. What is *not* here is the administrator's control for that row (the
+  product's), any page, and any attestation policy: this module holds no
+  manufacturer registry, so which AAGUID made an authenticator stays a specialist
+  fact rather than a shared module's table.
 * **Bearer tokens are in** (the brief's item 4) — see the next section, and its
   own list of what is still open there.
 * **No factor page, and the sign-in page has no second step.** `ui` and the

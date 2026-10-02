@@ -57,6 +57,8 @@ var Events = []events.Declared{
 	events.Declare[FactorWithdrawn](EventFactorWithdrawn),
 	events.Declare[RecoveryCodesIssued](EventRecoveryCodesIssued),
 	events.Declare[RecoveryCodeUsed](EventRecoveryCodeUsed),
+	events.Declare[FactorUsed](EventFactorUsed),
+	events.Declare[FactorSuspect](EventFactorSuspect),
 	events.Declare[APITokenIssued](EventAPITokenIssued),
 	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
@@ -106,8 +108,10 @@ type LoggedIn struct {
 	UserID uuid.UUID `json:"userId"`
 	// SessionRef(id), never the id: the id is the cookie credential (review 2026-09-29).
 	SessionRef string `json:"sessionRef"`
-	// Method is "password" or "oidc", because "somebody signed in with a
-	// password after we turned single sign-on on" is a question with an answer.
+	// Method names how the door was opened: "password", "oidc", or "passkey".
+	// It is the field an owner reads when they want to know whether a sign-in
+	// came through the tenant's provider, from a password, or from a device the
+	// person owns and nothing else.
 	Method string    `json:"method"`
 	IP     string    `json:"ip,omitempty"`
 	At     time.Time `json:"at"`
@@ -180,13 +184,26 @@ const (
 	// rather than with the device — which is why the use is an event even though
 	// the sign-in itself is a session row and a logged_in event.
 	EventRecoveryCodeUsed = "auth.recovery_code_used"
+	// EventFactorUsed is a factor that answered a sign-in, whichever kind it was
+	// and whichever door asked. Until this file the trail could say that a factor
+	// was made and that it was stopped, and nothing said it was used: the
+	// recovery-code event covers the one kind whose spend was not also a login
+	// method. An owner asking "when did anybody last prove something beside the
+	// password on this account" is asking a question the trail could not answer.
+	EventFactorUsed = "auth.factor_used"
+	// EventFactorSuspect is an assertion that reported a counter going backwards
+	// on a credential that had one: the same private key answered twice, which is
+	// a cloned or duplicated authenticator. The credential is refused from that
+	// moment on and the person is refused as they are for any wrong answer, so
+	// this event is the only place the fact is written down.
+	EventFactorSuspect = "auth.factor_suspect"
 )
 
 // FactorEnrolled is the payload of EventFactorEnrolled.
 type FactorEnrolled struct {
 	UserID   uuid.UUID `json:"userId"`
 	FactorID uuid.UUID `json:"factorId"`
-	Kind     string    `json:"kind" enums:"totp" example:"totp"`
+	Kind     string    `json:"kind" enums:"totp,passkey" example:"passkey"`
 	At       time.Time `json:"at"`
 }
 
@@ -194,9 +211,40 @@ type FactorEnrolled struct {
 type FactorWithdrawn struct {
 	UserID    uuid.UUID `json:"userId"`
 	FactorID  uuid.UUID `json:"factorId"`
-	Kind      string    `json:"kind" enums:"totp" example:"totp"`
+	Kind      string    `json:"kind" enums:"totp,passkey" example:"passkey"`
 	Remaining int       `json:"remaining" example:"1"`
 	At        time.Time `json:"at"`
+}
+
+// FactorUsed is the payload of EventFactorUsed: one factor answered one door.
+// It carries no byte of what was offered — not six digits, not a signature, not
+// a credential id — for the reason the four above carry none: an event is copied
+// into the audit trail and delivered to whatever subscribed, and a spendable
+// thing in it is a bag of spare factors.
+type FactorUsed struct {
+	UserID   uuid.UUID `json:"userId"`
+	FactorID uuid.UUID `json:"factorId"`
+	Kind     string    `json:"kind" enums:"totp,recovery,passkey" example:"passkey"`
+	// Door says whether this answer finished a sign-in on its own or came after
+	// a password, which is the difference an owner reads after an incident.
+	Door string    `json:"door" enums:"sign-in,second-factor" example:"second-factor"`
+	At   time.Time `json:"at"`
+}
+
+// FactorSuspect is the payload of EventFactorSuspect. The two counters are the
+// whole of its evidence and they are a monotonic integer, not credential
+// material: "the device reported 4 after having reported 41" is the sentence an
+// investigator needs and it spends nothing.
+type FactorSuspect struct {
+	UserID uuid.UUID `json:"userId"`
+	// FactorID is the passkey this module has stopped accepting. A cloned
+	// credential is refused from that assertion onwards, and the trail is the
+	// only place a person can see why their phone stopped working.
+	FactorID      uuid.UUID `json:"factorId"`
+	Kind          string    `json:"kind" enums:"passkey" example:"passkey"`
+	PreviousCount int64     `json:"previousCount" example:"41"`
+	ObservedCount int64     `json:"observedCount" example:"4"`
+	At            time.Time `json:"at"`
 }
 
 // RecoveryCodesIssued is the payload of EventRecoveryCodesIssued.

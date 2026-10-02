@@ -1,0 +1,669 @@
+package internal
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+
+	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/webauthn"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
+
+	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
+)
+
+// The passkey half of the second factor: the ceremony where this server mints a
+// nonce and receives a signature over it, instead of minting a secret and
+// receiving a code derived from it.
+//
+// This is the only file in the repository that imports the WebAuthn SDK, the way
+// oidc.go is the only one that imports go-oidc: contracts/passkeys.go names no SDK
+// type, so CBOR, COSE and the protocol structs never reach a handler, an event or
+// the contract. Two things are decided here that the library deliberately leaves
+// to the relying party, and both are stated where they are enforced.
+//
+// The first is the relying party itself: it is built per request, from the host
+// this request arrived at, because that host is what already chose the tenant
+// (httpx.withHostTenant resolves HostOnly(r.Host)) — so a passkey minted at one
+// tenant's host cannot answer at another's by construction, and there is no
+// package-level WebAuthn value holding one tenant's id for everybody (pillar 2).
+// The library also writes into the Config it is handed — validate() fills the
+// default timeouts and latches `validated` through the pointer — so a cached one
+// would be a data race between two concurrent ceremonies, which is a second and
+// less charitable reason for the same line.
+//
+// The second is the clone rule. The library's Authenticator.UpdateCounter sets a
+// flag rather than returning an error, and it carries the exception the standard
+// asks for: both counters zero is not a clone, because an authenticator that
+// reports no counter at all is legal and most phones are one. The flag is read
+// here, the columns of 000035 record it, and the refusal — this credential never
+// signs anybody in again, and the trail says why — is this module's decision.
+
+// passkeyCredentialRow is one enrolled passkey. Nothing in it is sealed, because
+// nothing in it is secret: the credential id identifies a public key and the
+// public key is public. Compare totpRow, every row of which needs auth.factor_key.
+type passkeyCredentialRow struct {
+	ID           uuid.UUID `gorm:"primaryKey"`
+	TenantID     uuid.UUID
+	UserID       uuid.UUID
+	CredentialID []byte
+	PublicKey    []byte
+	// BackupEligible is the one flag the standard says cannot change and the
+	// library checks on every assertion; see the migration for why it and no
+	// other flag is kept.
+	BackupEligible bool
+	SignCount      int64
+	CloneWarning   bool
+	Name           string
+	CreatedAt      time.Time
+}
+
+func (passkeyCredentialRow) TableName() string { return "passkey_credentials" }
+
+var _ contracts.Passkeys = (*Service)(nil)
+
+// EnablePasskeys sets the relying party's fallback display name; module.go calls
+// it from the composition path. It takes no policy, and that is the point: whether
+// a passkey may be the whole sign-in is a tenant's own decision, not a deployment
+// setting, and it is read from that tenant's own row in passkey_settings per
+// request (passkeySignInEnabled). A composition whose installation never writes
+// that row answers ErrPasskeySignInOff at the usernameless door while enrolment
+// and the second factor work normally — which is how every deployment that exists
+// today behaves.
+func (s *Service) EnablePasskeys(displayName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.passkeyName = displayName
+}
+
+func (s *Service) passkeyDisplayName() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.passkeyName
+}
+
+// passkeyUser is one person and their passkeys, in the shape the SDK asks for.
+// The user handle is the person's id — the same 16 bytes the row's primary key
+// holds — so the handle baked into a discoverable credential is the account, and
+// no second identifier for the same person is written anywhere (rule 7).
+type passkeyUser struct {
+	user  *usercontracts.User
+	holds []webauthn.Credential
+}
+
+func (u passkeyUser) WebAuthnID() []byte {
+	id := u.user.ID
+	return id[:]
+}
+
+func (u passkeyUser) WebAuthnName() string { return u.user.Email }
+
+func (u passkeyUser) WebAuthnDisplayName() string {
+	if u.user.DisplayName != "" {
+		return u.user.DisplayName
+	}
+	return u.user.Email
+}
+
+func (u passkeyUser) WebAuthnCredentials() []webauthn.Credential { return u.holds }
+
+// credential rebuilds the SDK's view of this row, which is what verification
+// needs: the id, the public key, the flag the standard says cannot change, and
+// the counter as the last accepted answer reported it.
+func (r passkeyCredentialRow) credential() webauthn.Credential {
+	var count uint32
+	if r.SignCount > 0 {
+		count = uint32(min(r.SignCount, int64(^uint32(0))))
+	}
+	return webauthn.Credential{
+		ID:        r.CredentialID,
+		PublicKey: r.PublicKey,
+		Flags:     webauthn.NewCredentialFlags(backupEligibleFlag(r.BackupEligible)),
+		Authenticator: webauthn.Authenticator{
+			SignCount:    count,
+			CloneWarning: r.CloneWarning,
+		},
+	}
+}
+
+// backupEligibleFlag puts the one stored flag back into the flag word the library
+// compares the next assertion against.
+func backupEligibleFlag(eligible bool) protocol.AuthenticatorFlags {
+	if eligible {
+		return protocol.FlagBackupEligible
+	}
+	return 0
+}
+
+func credentialsOf(rows []passkeyCredentialRow) []webauthn.Credential {
+	out := make([]webauthn.Credential, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.credential())
+	}
+	return out
+}
+
+// passkeyRelyingParty builds the relying party for one request. See the header.
+//
+// The display name is the tenant's own — the string a platform shows somebody
+// deciding whether to trust a prompt — falling back to what the composition
+// supplied. No constant in this module names one (rule 4).
+func (s *Service) passkeyRelyingParty(r *http.Request, tx db.Tx[db.Tenant]) (*webauthn.WebAuthn, error) {
+	if r == nil {
+		return nil, errors.New("auth: a passkey ceremony answers an HTTP request")
+	}
+	rpID := httpx.HostOnly(r.Host)
+	if rpID == "" {
+		return nil, errors.New("auth: a passkey ceremony needs the host it was asked at")
+	}
+	fallback := s.passkeyDisplayName()
+	name := db.TenantOf(tx).Name
+	if name == "" {
+		name = fallback
+	}
+	rp, err := webauthn.New(&webauthn.Config{
+		RPID:          rpID,
+		RPDisplayName: name,
+		RPOrigins:     []string{requestOrigin(r)},
+		// What the browser is promised is what the row keeps: the library's own
+		// default is five minutes, and a platform still holding a prompt the
+		// server has already swept is a refusal nobody can act on.
+		Timeouts: webauthn.TimeoutsConfig{
+			Registration: webauthn.TimeoutConfig{Timeout: contracts.PasskeyChallengeWindow},
+			Login:        webauthn.TimeoutConfig{Timeout: contracts.PasskeyChallengeWindow},
+		},
+		// Enrolment asks for a discoverable credential — a passkey, not a
+		// security-key-shaped factor bound to an allow list — and for the
+		// platform's own user verification. Attestation is declined: this module
+		// holds no manufacturer registry to check one against (rule 4), so a
+		// statement about who made an authenticator is a specialist fact.
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			ResidentKey:        protocol.ResidentKeyRequirementRequired,
+			RequireResidentKey: protocol.ResidentKeyRequired(),
+			UserVerification:   protocol.VerificationRequired,
+		},
+		AttestationPreference: protocol.PreferNoAttestation,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("auth: build the relying party for %s: %w", rpID, err)
+	}
+	return rp, nil
+}
+
+// requestOrigin is the origin the browser collected the ceremony at, port kept:
+// the standard strips the port from the RP ID and not from the origin, so an
+// installation served on a non-standard port has both. The scheme follows the one
+// rule that decides the session cookie's Secure flag, stated once here rather than
+// held twice.
+func requestOrigin(r *http.Request) string {
+	scheme := "https"
+	if r.TLS == nil && config.Local(r.Host) {
+		scheme = "http"
+	}
+	return scheme + "://" + r.Host
+}
+
+// BeginPasskeyRegistration asks this person's device for a passkey. Beyond the
+// nonce it writes nothing: the credential exists only when FinishPasskeyRegistration
+// has seen a signature nobody else could have produced, so a tab closed mid-enrolment
+// leaves no factor, publishes no event and changes nothing about how this person
+// signs in. No factor key is involved — a public key needs no envelope — so this
+// never answers ErrNoFactorKey.
+func (s *Service) BeginPasskeyRegistration(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (*contracts.PasskeyChallenge, error) {
+	user, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !user.CanSignIn() {
+		return nil, contracts.ErrCredentials
+	}
+	r, _ := httpx.RequestFrom(ctx)
+	rp, err := s.passkeyRelyingParty(r, tx)
+	if err != nil {
+		return nil, err
+	}
+	holds, err := s.passkeyCredentials(ctx, tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	creation, session, err := rp.BeginRegistration(passkeyUser{user: user, holds: credentialsOf(holds)})
+	if err != nil {
+		return nil, fmt.Errorf("auth: begin a passkey enrolment: %w", err)
+	}
+	return s.storeCeremony(ctx, tx, contracts.PasskeyCeremonyRegister, &user.ID, session, creation)
+}
+
+// FinishPasskeyRegistration enrols what the ceremony answered, bound to the person
+// the ceremony was begun for — which is the caller, rechecked here rather than
+// assumed from the credential that got them to the route (rule 9).
+func (s *Service) FinishPasskeyRegistration(ctx context.Context, tx db.Tx[db.Tenant], userID, ceremony uuid.UUID, response json.RawMessage, name string) (*contracts.Factor, error) {
+	r, _ := httpx.RequestFrom(ctx)
+	rp, err := s.passkeyRelyingParty(r, tx)
+	if err != nil {
+		return nil, err
+	}
+	name = trimFactorName(name)
+	// The nonce first, in a transaction of its own: an enrolment refused after it
+	// was answered must not leave an answer that stays answerable.
+	session, _, spent, err := s.spendCeremony(ctx, tx, ceremony, contracts.PasskeyCeremonyRegister, &userID)
+	if err != nil {
+		return nil, err
+	}
+	if !spent {
+		return nil, contracts.ErrPasskeyExpired
+	}
+	user, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if !user.CanSignIn() {
+		return nil, contracts.ErrCredentials
+	}
+	parsed, err := protocol.ParseCredentialCreationResponseBytes(response)
+	if err != nil {
+		return nil, contracts.ErrCredentials
+	}
+	holds, err := s.passkeyCredentials(ctx, tx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := rp.CreateCredential(passkeyUser{user: user, holds: credentialsOf(holds)}, *session, parsed)
+	if err != nil {
+		return nil, contracts.ErrCredentials
+	}
+	at := db.Now()
+	row := passkeyCredentialRow{
+		ID: uuid.New(), TenantID: db.TenantOf(tx).ID, UserID: user.ID,
+		CredentialID: cred.ID, PublicKey: cred.PublicKey,
+		BackupEligible: cred.Flags.BackupEligible,
+		SignCount:      int64(cred.Authenticator.SignCount),
+		Name:           name, CreatedAt: at,
+	}
+	// One authenticator is one person's factor: the conflict target is the
+	// tenant-scoped unique index, and DO NOTHING rather than DO UPDATE makes a
+	// race between two tabs one row and one refusal rather than whichever tab
+	// wrote last.
+	res := tx.DB().Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "tenant_id"}, {Name: "credential_id"}},
+		DoNothing: true,
+	}).Create(&row)
+	if res.Error != nil {
+		return nil, fmt.Errorf("auth: enrol a passkey: %w", res.Error)
+	}
+	if res.RowsAffected != 1 {
+		return nil, contracts.ErrPasskeyExists
+	}
+	if err := events.Publish(ctx, tx, contracts.EventFactorEnrolled, contracts.FactorEnrolled{
+		UserID: user.ID, FactorID: row.ID, Kind: "passkey", At: at,
+	}); err != nil {
+		return nil, err
+	}
+	return &contracts.Factor{ID: row.ID, Kind: "passkey", Name: name, EnrolledAt: at}, nil
+}
+
+// BeginPasskeyAssertion begins the second half of a sign-in a password earned. It
+// learns nothing, writes nothing but the nonce, and costs the same whether or not
+// the address holds a passkey: the allow list is empty on purpose, so the request
+// the browser sends is the same request either way and this leg cannot be an
+// account-enumeration oracle handed out for free. An unknown address still pays the
+// argon2id the login path pays, so the three doors cannot be told apart by a
+// stopwatch.
+func (s *Service) BeginPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], email string) (*contracts.PasskeyChallenge, error) {
+	if _, err := s.users.ByEmail(ctx, tx, email); err != nil {
+		if !errors.Is(err, crud.ErrNotFound) {
+			return nil, err
+		}
+		usercontracts.EqualWork(email)
+	}
+	r, _ := httpx.RequestFrom(ctx)
+	rp, err := s.passkeyRelyingParty(r, tx)
+	if err != nil {
+		return nil, err
+	}
+	assertion, session, err := rp.BeginDiscoverableLogin()
+	if err != nil {
+		return nil, fmt.Errorf("auth: begin a passkey assertion: %w", err)
+	}
+	return s.storeCeremony(ctx, tx, contracts.PasskeyCeremonySecondFactor, nil, session, assertion)
+}
+
+// BeginPasskeySignIn begins the usernameless ceremony, for a tenant that enabled
+// the door. No address is offered and none is learned.
+func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.PasskeyChallenge, error) {
+	enabled, err := s.passkeySignInEnabled(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return nil, contracts.ErrPasskeySignInOff
+	}
+	r, _ := httpx.RequestFrom(ctx)
+	rp, err := s.passkeyRelyingParty(r, tx)
+	if err != nil {
+		return nil, err
+	}
+	assertion, session, err := rp.BeginDiscoverableLogin()
+	if err != nil {
+		return nil, fmt.Errorf("auth: begin a passkey sign-in: %w", err)
+	}
+	return s.storeCeremony(ctx, tx, contracts.PasskeyCeremonySignIn, nil, session, assertion)
+}
+
+// FinishPasskeyAssertion is the answer to either sign-in door, and the order of its
+// steps is the whole of its security.
+//
+// The nonce is spent before anything is read about a factor, so every refusal
+// below — a wrong signature, an unknown credential, a person who cannot sign in, a
+// clone — costs the attempt. A refusal that left the row alive would leave a
+// captured assertion replayable until it expired, which is a sign-in for anybody
+// who can POST one body twice, with no biometric and no new ceremony.
+//
+// The first-factor proof is spent after that and before the session, when and only
+// when the row says the ceremony was begun at the second-factor door. That is the
+// line that keeps a passkey from weakening the pair: a valid signature over a
+// challenge this server minted is still not a sign-in for an account that never
+// offered its password. Which door it was is the row's fact and never the caller's
+// argument, which is what stops a second-factor ceremony being answered at the door
+// that expects no password — the refusal for that mix-up is the same 401 at the
+// same cost as a bad signature, and it spends nothing.
+func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, response json.RawMessage, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+	if !s.MayRedeem(ctx, from.IP) {
+		return nil, nil, contracts.ErrTooManyAttempts
+	}
+	r, _ := httpx.RequestFrom(ctx)
+	rp, err := s.passkeyRelyingParty(r, tx)
+	if err != nil {
+		return nil, nil, err
+	}
+	parsed, err := protocol.ParseCredentialRequestResponseBytes(response)
+	if err != nil {
+		return nil, nil, contracts.ErrCredentials
+	}
+	session, door, spent, err := s.spendCeremony(ctx, tx, ceremony, "", nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !spent {
+		return nil, nil, contracts.ErrCredentials
+	}
+	owner := func(rawID, userHandle []byte) (webauthn.User, error) {
+		user, holds, err := s.passkeyOwner(ctx, tx, rawID, userHandle)
+		if err != nil {
+			return nil, err
+		}
+		return passkeyUser{user: user, holds: holds}, nil
+	}
+	user, cred, err := rp.ValidatePasskeyLogin(owner, *session, parsed)
+	if err != nil {
+		return nil, nil, contracts.ErrCredentials
+	}
+	who, ok := user.(passkeyUser)
+	if !ok || !who.user.CanSignIn() {
+		return nil, nil, contracts.ErrCredentials
+	}
+	factor, err := s.recordPasskeyUse(ctx, tx, who.user.ID, cred)
+	if err != nil {
+		return nil, nil, err
+	}
+	if door == contracts.PasskeyCeremonySecondFactor {
+		if err := s.RequireFirstFactorProof(ctx, tx, who.user.Email, from); err != nil {
+			return nil, nil, err
+		}
+	}
+	session_, identity, err := s.open(ctx, tx, who.user, from, "passkey")
+	if err != nil {
+		return nil, nil, err
+	}
+	return session_, identity, events.Publish(ctx, tx, contracts.EventFactorUsed, contracts.FactorUsed{
+		UserID: who.user.ID, FactorID: factor, Kind: "passkey", Door: door, At: db.Now(),
+	})
+}
+
+// passkeyOwner answers the SDK's discoverable lookup: whose credential is this, and
+// what else do they hold. The credential id is public and spends nothing, so
+// reading it before the signature is checked is not a lookup an attacker drives —
+// and the RLS policy makes another tenant's row invisible here, which is the
+// database half of "a passkey for tenant A never answers at tenant B".
+//
+// The user handle is checked to be this credential's owner's id rather than merely
+// present: the library compares it against the user it is given, and the row is the
+// only thing that could tie a key to a person.
+func (s *Service) passkeyOwner(ctx context.Context, tx db.Tx[db.Tenant], rawID, userHandle []byte) (*usercontracts.User, []webauthn.Credential, error) {
+	userID, err := uuid.FromBytes(userHandle)
+	if err != nil {
+		return nil, nil, crud.ErrNotFound
+	}
+	var rows []passkeyCredentialRow
+	if err := tx.DB().Where("credential_id = ? AND user_id = ?", rawID, userID).
+		Find(&rows).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(rows) == 0 {
+		return nil, nil, crud.ErrNotFound
+	}
+	user, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	holds, err := s.passkeyCredentials(ctx, tx, userID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return user, credentialsOf(holds), nil
+}
+
+// recordPasskeyUse is the clone rule and the counter, in that order, with the
+// decision inside the statement that makes it.
+//
+// The library's UpdateCounter already set CloneWarning on the credential it handed
+// back, applying the standard's own exception that two zero counters are not a
+// clone — a credential that reports no counter is legal, and refusing it would lock
+// out the first large cohort of real passkeys on day one. What the library cannot
+// decide is what to do about one, so this does: the credential is put out of use
+// permanently, the trail records the two counters, and the person is refused as
+// they are for any wrong answer. "Your passkey was flagged as cloned" is a sentence
+// that helps whoever cloned it more than the person it was cloned from.
+//
+// It reports the factor's id so the successful use can name what answered.
+func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, cred *webauthn.Credential) (uuid.UUID, error) {
+	var row passkeyCredentialRow
+	if err := tx.DB().Where("credential_id = ? AND user_id = ?", cred.ID, userID).
+		First(&row).Error; err != nil {
+		if errors.Is(err, crud.ErrNotFound) {
+			return uuid.Nil, contracts.ErrCredentials
+		}
+		return uuid.Nil, err
+	}
+	if cred.Authenticator.CloneWarning {
+		res := tx.DB().Model(&passkeyCredentialRow{}).Where("id = ?", row.ID).
+			Update("clone_warning", true)
+		if res.Error != nil {
+			return row.ID, fmt.Errorf("auth: record a suspect passkey: %w", res.Error)
+		}
+		if err := events.Publish(ctx, tx, contracts.EventFactorSuspect, contracts.FactorSuspect{
+			UserID: userID, FactorID: row.ID, Kind: "passkey",
+			PreviousCount: row.SignCount, ObservedCount: int64(cred.Authenticator.SignCount),
+			At: db.Now(),
+		}); err != nil {
+			return row.ID, err
+		}
+		// The one log line this delivery writes, and it names two ids: no
+		// credential material is ever logged, in an event or a line.
+		slog.WarnContext(ctx, "auth: a passkey reported a counter going backwards",
+			"user", userID, "factor", row.ID)
+		return row.ID, contracts.ErrCredentials
+	}
+	// The guard is in the UPDATE rather than in a comparison: two tabs answering
+	// with one credential settle on one accepted counter, and a credential whose
+	// clone warning was set between the read and the write is refused by the
+	// predicate rather than by whoever got there first.
+	res := tx.DB().Model(&passkeyCredentialRow{}).
+		Where("id = ? AND clone_warning = false", row.ID).
+		Update("sign_count", int64(cred.Authenticator.SignCount))
+	if res.Error != nil {
+		return row.ID, fmt.Errorf("auth: record a passkey use: %w", res.Error)
+	}
+	if res.RowsAffected != 1 {
+		return row.ID, contracts.ErrCredentials
+	}
+	return row.ID, nil
+}
+
+// passkeySignInEnabled reads the tenant this request resolved to: may a passkey
+// be the whole sign-in here? No row is "off", because a row exists only because
+// somebody turned the door on, so a tenant that never asked for usernameless
+// sign-in carries nothing and is refused with the reason rather than with
+// ErrCredentials.
+//
+// The read is inside the transaction the host already resolved the tenant in and
+// is never cached on the process — one tenant's answer becoming another tenant's
+// is the failure this whole module spends its per-request relying party avoiding
+// — and RLS restricts it to this tenant's row even with the predicate misspelled.
+func (s *Service) passkeySignInEnabled(_ context.Context, tx db.Tx[db.Tenant]) (bool, error) {
+	tenant := db.TenantOf(tx)
+	var rows []struct {
+		SignIn bool
+	}
+	res := tx.DB().Table("passkey_settings").Select("sign_in").
+		Where("tenant_id = ?", tenant.ID).Limit(1).Find(&rows)
+	if res.Error != nil {
+		return false, fmt.Errorf("auth: read the passkey settings of %s: %w", tenant.ID, res.Error)
+	}
+	return len(rows) > 0 && rows[0].SignIn, nil
+}
+
+// passkeyCredentials is what one person holds, in the order the list shows it.
+func (s *Service) passkeyCredentials(_ context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]passkeyCredentialRow, error) {
+	var rows []passkeyCredentialRow
+	if err := tx.DB().Where("user_id = ?", userID).Order("created_at DESC").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("auth: read the passkeys of %s: %w", userID, err)
+	}
+	return rows, nil
+}
+
+// ceremonyRow is one in-flight ceremony as the table holds it.
+type ceremonyRow struct {
+	Kind      string
+	UserID    *uuid.UUID
+	Session   []byte
+	ExpiresAt time.Time
+}
+
+// storeCeremony writes the nonce the answer must match. session is the library's
+// own record of the ceremony — the challenge, the relying-party id it was begun
+// under, the origin — and it is stored rather than rebuilt so a response collected
+// at another origin, or under another id, fails verification against what was
+// actually promised rather than against what this request happens to configure now.
+func (s *Service) storeCeremony(ctx context.Context, tx db.Tx[db.Tenant], kind string, userID *uuid.UUID, session *webauthn.SessionData, options any) (*contracts.PasskeyChallenge, error) {
+	blob, err := json.Marshal(session)
+	if err != nil {
+		return nil, fmt.Errorf("auth: encode a passkey ceremony: %w", err)
+	}
+	body, err := json.Marshal(options)
+	if err != nil {
+		return nil, fmt.Errorf("auth: encode a passkey ceremony's options: %w", err)
+	}
+	id, at := uuid.New(), db.Now()
+	res := tx.DB().Exec(
+		"INSERT INTO passkey_challenges (id, tenant_id, user_id, kind, session, expires_at, created_at)"+
+			" VALUES (?, ?, ?, ?, ?::jsonb, ?, ?)",
+		id, db.TenantOf(tx).ID, userID, kind, blob, at.Add(contracts.PasskeyChallengeWindow), at)
+	if res.Error != nil {
+		return nil, fmt.Errorf("auth: begin a passkey ceremony: %w", res.Error)
+	}
+	return &contracts.PasskeyChallenge{Ceremony: id, Options: body}, nil
+}
+
+// spendCeremony deletes the row a ceremony answer is being made against and reports
+// whether this request is the one that got it, with the door the row names.
+//
+// An empty wantKind matches either sign-in door and a nil wantUser any owner; the
+// caller still cannot answer somebody else's enrolment, because that check is part
+// of what the DELETE is asked for. A body aimed at the wrong door consumes nothing
+// — the DELETE carries the kind, and the row survives for the door it was minted
+// at.
+//
+// The delete is a transaction of its own, which is the one new write outside the
+// request's transaction in this delivery, and markFirstFactorProved's reasoning is
+// the reason: kit/httpx does not commit a request that answers 401, and 401 is the
+// ordinary answer at a public ceremony leg, so a DELETE in the caller's transaction
+// would be undone by the refusal it was meant to consume. A nonce is not account
+// state — consuming it changes nothing about anybody's factors, writes no event and
+// returns no session — so "a refused mutation writes nothing" still holds.
+//
+// A failure is logged and the answer is unchanged: the person is refused and begins
+// again, which costs one tap.
+func (s *Service) spendCeremony(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, wantKind string, wantUser *uuid.UUID) (*webauthn.SessionData, string, bool, error) {
+	var row ceremonyRow
+	err := tx.DB().Raw(
+		"SELECT kind, user_id, session, expires_at FROM passkey_challenges WHERE id = ?", ceremony,
+	).Scan(&row).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, "", false, fmt.Errorf("auth: read a passkey ceremony: %w", err)
+	}
+	if row.Kind == "" || (wantKind != "" && row.Kind != wantKind) {
+		return nil, "", false, nil
+	}
+	if wantUser != nil && (row.UserID == nil || *row.UserID != *wantUser) {
+		return nil, "", false, nil
+	}
+	if !row.ExpiresAt.After(db.Now()) {
+		return nil, "", false, nil
+	}
+	if !spendCeremonyRow(ctx, ceremony, wantKind, wantUser) {
+		return nil, "", false, nil
+	}
+	session := &webauthn.SessionData{}
+	if err := json.Unmarshal(row.Session, session); err != nil {
+		return nil, "", false, fmt.Errorf("auth: decode a passkey ceremony: %w", err)
+	}
+	return session, row.Kind, true, nil
+}
+
+// spendCeremonyRow is the consuming DELETE, outside the request's transaction.
+func spendCeremonyRow(ctx context.Context, ceremony uuid.UUID, wantKind string, wantUser *uuid.UUID) bool {
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return false
+	}
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	var spent int64
+	err := db.Run(detached, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		q := tx.DB().Exec(
+			"DELETE FROM passkey_challenges WHERE id = ? AND kind = ? AND user_id IS NOT DISTINCT FROM ?"+
+				" AND expires_at > now()",
+			ceremony, wantKind, wantUser)
+		spent = q.RowsAffected
+		return q.Error
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: could not spend a passkey ceremony", "ceremony", ceremony, "error", err)
+		return false
+	}
+	return spent == 1
+}
+
+// trimFactorName is the whole of the name policy at the module: the schema also
+// refuses an untrimmed or control-character name, and a human-readable 40 characters
+// is what the list and the removal dialog can show. Refusing an over-long name is
+// huma's maxLength; a name that merely needs trimming is trimmed.
+func trimFactorName(name string) string {
+	if len(name) > 40 {
+		name = name[:40]
+	}
+	return strings.TrimSpace(name)
+}

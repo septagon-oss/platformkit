@@ -158,9 +158,10 @@ func (s *Service) FinishTOTP(ctx context.Context, tx db.Tx[db.Tenant], userID uu
 	return &contracts.Factor{ID: factor.ID, Kind: "totp", EnrolledAt: at}, codes, nil
 }
 
-// ListFactors is what this person holds. Enrolled factors only: a secret that
-// has proved nothing is not in the database to be listed.
-func (s *Service) ListFactors(_ context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]*contracts.Factor, error) {
+// ListFactors is what this person holds, both kinds in one list ordered by when
+// they were enrolled. A passkey carries the name its owner gave it; a TOTP row has
+// no name column, so its Factor.Name is empty rather than invented (rule 7).
+func (s *Service) ListFactors(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]*contracts.Factor, error) {
 	var rows []totpRow
 	if err := tx.DB().Where("user_id = ?", userID).Order("created_at DESC").Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("auth: list the factors of %s: %w", userID, err)
@@ -169,16 +170,28 @@ func (s *Service) ListFactors(_ context.Context, tx db.Tx[db.Tenant], userID uui
 	for _, row := range rows {
 		out = append(out, &contracts.Factor{ID: row.ID, Kind: "totp", EnrolledAt: row.CreatedAt})
 	}
+	keys, err := s.passkeyCredentials(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range keys {
+		out = append(out, &contracts.Factor{ID: row.ID, Kind: "passkey", Name: row.Name, EnrolledAt: row.CreatedAt})
+	}
 	return out, nil
 }
 
-// WithdrawFactor ends one factor, and refuses to end the last.
+// WithdrawFactor ends one factor of either kind, and refuses to end the last.
 //
-// The count and the delete are one decision under one lock: SELECT ... FOR
-// UPDATE over this person's factor rows takes every row a concurrent withdrawal
-// could be deciding about, so two tabs each holding a different factor cannot
-// both see "there are two" and leave the account with none. That is rule 8
-// enforced by the database rather than by whoever wrote this function last.
+// The count and the delete are one decision under one lock: SELECT ... FOR UPDATE
+// over this person's factor rows takes every row a concurrent withdrawal could be
+// deciding about, so two tabs each holding a different factor cannot both see
+// "there are two" and leave the account with none. That is rule 8 enforced by the
+// database rather than by whoever wrote this function last.
+//
+// Since passkeys landed there are two tables to lock, and the order is a rule
+// rather than an accident: totp_factors first, passkey_credentials second,
+// everywhere. Two locks taken in an order nobody wrote down invert as soon as a
+// second call site appears, and two tabs then deadlock rather than race.
 func (s *Service) WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userID, factor uuid.UUID) error {
 	var held []totpRow
 	err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -186,13 +199,27 @@ func (s *Service) WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userI
 	if err != nil {
 		return fmt.Errorf("auth: read the factors of %s: %w", userID, err)
 	}
-	if !slices.ContainsFunc(held, func(row totpRow) bool { return row.ID == factor }) {
+	var keys []passkeyCredentialRow
+	err = tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("user_id = ?", userID).Find(&keys).Error
+	if err != nil {
+		return fmt.Errorf("auth: read the passkeys of %s: %w", userID, err)
+	}
+	kind, found := "totp", slices.ContainsFunc(held, func(row totpRow) bool { return row.ID == factor })
+	if !found {
+		kind, found = "passkey", slices.ContainsFunc(keys, func(row passkeyCredentialRow) bool { return row.ID == factor })
+	}
+	if !found {
 		return crud.ErrNotFound
 	}
-	if len(held) <= 1 {
+	if len(held)+len(keys) <= 1 {
 		return contracts.ErrLastFactor
 	}
-	res := tx.DB().Where("id = ?", factor).Delete(&totpRow{})
+	target := any(&totpRow{})
+	if kind == "passkey" {
+		target = &passkeyCredentialRow{}
+	}
+	res := tx.DB().Where("id = ?", factor).Delete(target)
 	if res.Error != nil {
 		return fmt.Errorf("auth: withdraw factor %s: %w", factor, res.Error)
 	}
@@ -200,7 +227,7 @@ func (s *Service) WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userI
 		return crud.ErrNotFound
 	}
 	return events.Publish(ctx, tx, contracts.EventFactorWithdrawn, contracts.FactorWithdrawn{
-		UserID: userID, FactorID: factor, Kind: "totp", Remaining: len(held) - 1, At: db.Now(),
+		UserID: userID, FactorID: factor, Kind: kind, Remaining: len(held) + len(keys) - 1, At: db.Now(),
 	})
 }
 
@@ -215,7 +242,11 @@ func (s *Service) RotateRecoveryCodes(ctx context.Context, tx db.Tx[db.Tenant], 
 	if err := tx.DB().Model(&totpRow{}).Where("user_id = ?", userID).Count(&held).Error; err != nil {
 		return nil, fmt.Errorf("auth: count the factors of %s: %w", userID, err)
 	}
-	if held == 0 {
+	var keys int64
+	if err := tx.DB().Model(&passkeyCredentialRow{}).Where("user_id = ?", userID).Count(&keys).Error; err != nil {
+		return nil, fmt.Errorf("auth: count the passkeys of %s: %w", userID, err)
+	}
+	if held+keys == 0 {
 		return nil, contracts.ErrNoFactor
 	}
 	if err := tx.DB().Model(&recoveryCodeRow{}).
@@ -400,6 +431,12 @@ func (s *Service) markFirstFactorProved(ctx context.Context, userID uuid.UUID) {
 // recovery code; anything else is ErrCredentials without a query. A TOTP is
 // spent by moving last_step, which refuses a replay of the same step including
 // from a second concurrent request, because the guard is in the UPDATE itself.
+//
+// It dispatches on the shape of *text*, and a passkey answer is never text: an
+// assertion is a couple of hundred bytes of CBOR and has its own command, its own
+// route and its own spend (passkeys.go). The two kinds share the list, the last-
+// one refusal and the audit trail; they do not share a dispatcher, and this
+// sentence is the difference between that and a trap.
 func (s *Service) spendFactor(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, answer string, at time.Time) (string, error) {
 	code := normalizeCode(answer)
 	switch {
@@ -543,18 +580,27 @@ func isHex(s string) bool {
 }
 
 // factorEnrolled is Login's question: does signing this person in need the
-// second thing as well as the first? One indexed count, asked after the password
+// second thing as well as the first? Two indexed counts, asked after the password
 // checked out and before anything was written.
+//
+// The passkey count is here, and so the "no factor key, so no factor" shortcut
+// this function used to answer with is gone. A passkey writes no sealed secret, so
+// a keyless deployment can and does hold passkeys, and an answer that stopped
+// looking at the first table it cannot read would have told a person holding only
+// passkeys that they needed no second factor — a silent lockout's twin, an open
+// door. A deployment with no key and no rows still answers no, after one count over
+// two empty indexed tables.
 func (s *Service) factorEnrolled(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
-	if len(s.factorKeyBytes()) == 0 {
-		// No key, so no factor was ever written and none can be: the answer is
-		// no without a query, and a deployment that set no key signs in exactly
-		// as it did before this table existed.
-		return false, nil
-	}
 	var held int64
 	if err := tx.DB().Model(&totpRow{}).Where("user_id = ?", userID).Count(&held).Error; err != nil {
 		return false, fmt.Errorf("auth: ask whether %s has a factor: %w", userID, err)
 	}
-	return held > 0, nil
+	if held > 0 {
+		return true, nil
+	}
+	var keys int64
+	if err := tx.DB().Model(&passkeyCredentialRow{}).Where("user_id = ?", userID).Count(&keys).Error; err != nil {
+		return false, fmt.Errorf("auth: ask whether %s has a passkey: %w", userID, err)
+	}
+	return keys > 0, nil
 }

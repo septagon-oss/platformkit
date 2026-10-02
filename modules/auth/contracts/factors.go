@@ -45,6 +45,12 @@ var (
 	// ErrNoFactorKey says this deployment set no auth.factor_key, so a secret
 	// could be written only as plaintext. The enrolment routes answer 503 and
 	// write nothing; verification of an already-enrolled factor is unaffected.
+	//
+	// It covers the enrolment of a shared secret and nothing else. A passkey
+	// writes no secret — its credential material is a public key — so a
+	// deployment with no factor key enrols passkeys and answers both passkey
+	// sign-in doors normally, and a person holding only passkeys is still held
+	// at the door by ErrFactorRequired.
 	ErrNoFactorKey = errors.New("auth: no factor key is configured")
 )
 
@@ -87,8 +93,13 @@ const (
 // proves something beside the password"), and the proof itself never leaves the
 // database sealed.
 type Factor struct {
-	ID         uuid.UUID `json:"id"`
-	Kind       string    `json:"kind" enums:"totp" example:"totp"`
+	ID   uuid.UUID `json:"id"`
+	Kind string    `json:"kind" enums:"totp,passkey" example:"passkey"`
+	// Name is what this person called it. Only a passkey has one to give: an
+	// authenticator app holds one secret per account and needs no label to tell
+	// two of them apart, so the field is empty for a TOTP row rather than
+	// invented for it.
+	Name       string    `json:"name,omitempty" maxLength:"40" doc:"What this person called this passkey; empty for a TOTP, which has no name to give"`
 	EnrolledAt time.Time `json:"enrolledAt"`
 }
 

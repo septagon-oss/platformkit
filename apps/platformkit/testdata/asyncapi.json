@@ -133,6 +133,98 @@
       "summary": "Every tenant's delivery of auth.factor_enrolled.",
       "title": "auth.factor_enrolled"
     },
+    "auth.factor_suspect": {
+      "address": "platformkit.*.auth.factor_suspect",
+      "description": "Published at platformkit.{tenantId}.auth.factor_suspect; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.factor_suspect": {
+          "contentType": "application/json",
+          "name": "auth.factor_suspect",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "factorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "observedCount": {
+                "type": "integer"
+              },
+              "previousCount": {
+                "type": "integer"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "factorId",
+              "kind",
+              "previousCount",
+              "observedCount",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.factor_suspect",
+          "title": "auth.factor_suspect"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.factor_suspect.",
+      "title": "auth.factor_suspect"
+    },
+    "auth.factor_used": {
+      "address": "platformkit.*.auth.factor_used",
+      "description": "Published at platformkit.{tenantId}.auth.factor_used; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.factor_used": {
+          "contentType": "application/json",
+          "name": "auth.factor_used",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "door": {
+                "type": "string"
+              },
+              "factorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "factorId",
+              "kind",
+              "door",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.factor_used",
+          "title": "auth.factor_used"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.factor_used.",
+      "title": "auth.factor_used"
+    },
     "auth.factor_withdrawn": {
       "address": "platformkit.*.auth.factor_withdrawn",
       "description": "Published at platformkit.{tenantId}.auth.factor_withdrawn; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3401,6 +3493,40 @@
         }
       ],
       "summary": "The auth module publishes auth.factor_enrolled.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.factor_suspect": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.factor_suspect"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.factor_suspect/messages/auth.factor_suspect"
+        }
+      ],
+      "summary": "The auth module publishes auth.factor_suspect.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.factor_used": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.factor_used"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.factor_used/messages/auth.factor_used"
+        }
+      ],
+      "summary": "The auth module publishes auth.factor_used.",
       "tags": [
         {
           "name": "auth"
