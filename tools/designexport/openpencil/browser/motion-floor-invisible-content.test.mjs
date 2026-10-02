@@ -50,7 +50,7 @@ async function observe(snapshot, exampleId, mode, reducedMotion) {
 for (const language of ['en', 'pt-PT']) for (const mode of ['light', 'dark']) {
   const exampleId = `pk-ui.component.plan-comparison/pending-${language}`
 
-  test(`review 7: reduced motion settles a stylesheet animation beside closed plan content (${language}, ${mode})`, async () => {
+  test(`reduced motion settles a stylesheet animation beside closed plan content (${language}, ${mode})`, async () => {
     const snapshot = animatedSummary(exampleId, false)
     const beforeSnapshot = structuredClone(snapshot)
     const ordinary = await observe(snapshot, exampleId, mode, 'no-preference')
@@ -67,7 +67,7 @@ for (const language of ['en', 'pt-PT']) for (const mode of ['light', 'dark']) {
     assert.deepEqual(snapshot, beforeSnapshot, 'settling does not change caller-owned source')
   })
 
-  test(`review 7: a truly infinite visible plan summary still refuses capture (${language}, ${mode})`, async () => {
+  test(`a truly infinite visible plan summary still refuses capture (${language}, ${mode})`, async () => {
     const snapshot = animatedSummary(exampleId, true)
     const beforeSnapshot = structuredClone(snapshot)
     const measured = await observe(snapshot, exampleId, mode, 'reduce')

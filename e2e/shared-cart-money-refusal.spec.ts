@@ -8,7 +8,7 @@ const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], 
 
 for (const language of ['en', 'pt-PT']) {
   for (const theme of ['light', 'dark']) {
-    test(`review 5: cart refuses inconsistent money and suppresses stale checkout (${language}, ${theme})`, async ({ page }) => {
+    test(`cart refuses inconsistent money and suppresses stale checkout (${language}, ${theme})`, async ({ page }) => {
       await page.goto('/app/admin/login');
       await page.getByLabel('Email').fill(process.env.PLATFORMKIT_E2E_EMAIL!);
       await page.getByLabel('Password').fill(process.env.PLATFORMKIT_E2E_PASSWORD!);

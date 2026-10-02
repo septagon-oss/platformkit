@@ -10,7 +10,7 @@ import (
 	g "maragu.dev/gomponents"
 )
 
-func TestReviewRefusedDetailCaptureDoesNotExportOmittedProtectedChildren(t *testing.T) {
+func TestRefusedDetailCaptureDoesNotExportOmittedProtectedChildren(t *testing.T) {
 	const secret = "private-body-from-the-previous-selection"
 	child := examples.ExampleOf(examples.ExampleInfo{ID: "review/previous-body", ComponentID: "pk-ui.component.text"},
 		c.TextProps{Content: secret}, c.Text)
