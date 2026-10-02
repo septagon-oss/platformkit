@@ -44,6 +44,7 @@ func TestATenantNobodyChoseALanguageForIsServedInTheOneItsCopyIsWrittenIn(t *tes
 	// The installation speaks two languages, which is what apps/platformkit hands
 	// it: `xtext.Catalog.Languages()` of the reference composition.
 	svc := internal.NewService(nil, []string{"en", "pt-PT"})
+	installed(t, conn, svc)
 
 	var created *contracts.Tenant
 	var stored []string

@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+**A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
+`POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
+`POST …/delete` — until them a suspended customer had no way back, a wrong name could not be corrected,
+a name a tenant answers at could not be taken away, and ending a customer was not something the control
+plane offered. Each publishes its own event (`tenant.renamed`, `tenant.reactivated`,
+`tenant.host_removed`, `tenant.deleted`), and each of the seven verbs that move a lifecycle now writes
+*two* audit rows in the transaction that wrote the column: one in the customer's own trail and one
+`tenant.lifecycle_recorded` mirror in the installation's, so "who suspended Acme, and when" is answered
+without reading a tenant's rows. `audit_events.traceparent` carries the request's W3C trace into both
+(`modules/audit`'s `000035_audit_context.up.sql` — expand-only, nullable, no backfill),
+which is what makes them one act rather than two rows that happen to share a second. A refusal writes
+none of it: no column, no event, no stale row read back. Four refusals are the module's own and are
+asked before the write — this installation's tenant is not deletable, the primary host and the last host
+are not removable, and a request that ends a customer repeats the slug in its body. **No `export`, and
+so no `restore`**: the pair has to agree on a format for a customer's rows leaving and coming back, it is
+not in this change, and a retired tenant stays retired — `Reactivate` answers it not-found. See
+[modules/tenant](modules/tenant/README.md) and [modules/audit](modules/audit/README.md), each under *The
+operator boundary*.
+
 **A tenant signs its people in at its own issuer.** The installation had one issuer, one client and
 one secret for the whole process (`kit/config.OIDC`, one `*oidc.Provider` behind a mutex): two
 companies with two directories were one deployment, and one of them was wrong. The fact moves to the
