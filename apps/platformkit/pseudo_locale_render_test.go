@@ -27,7 +27,12 @@ func TestEveryAdminPagePseudoLocalisesEveryWord(t *testing.T) {
 		`{"default":"en","supported":["en-XA","pt-PT"]}`)
 	data := map[string]bool{"Acme Corporation": true, "PlatformKit (development)": true,
 		"admin": true, "en": true, "en-XA": true, "pt-PT": true}
-	account := regexp.MustCompile(`^[0-9a-f]{8} · \S+$`)
+	// An account label is a short id and a role name, and a row whose entity declares
+	// no readable column is linked by its uuid. Both are identifiers, which the brief
+	// names as data rather than copy — and a uuid is hex, so a three-letter letter run
+	// inside one ("…-bced-…") is a fact about the random id, not a word no catalogue
+	// was asked for. Anchored on the whole segment, so no sentence can hide here.
+	identifier := regexp.MustCompile(`^(?:[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}|[0-9a-f]{8} · \S+)$`)
 	unaccented := regexp.MustCompile(`\b[A-Za-z]{3,}\b`)
 	hidden := regexp.MustCompile(`(?s)<(script|style|svg)\b.*?</(script|style|svg)>`)
 	tag := regexp.MustCompile(`(?s)<[^>]*>`)
@@ -46,7 +51,7 @@ func TestEveryAdminPagePseudoLocalisesEveryWord(t *testing.T) {
 		body := hidden.ReplaceAllString(page[strings.Index(page, "<body"):], " ")
 		for _, segment := range tag.Split(body, -1) {
 			segment = strings.Join(strings.Fields(html.UnescapeString(segment)), " ")
-			if segment == "" || data[segment] || endonyms[segment] || account.MatchString(segment) || strings.Contains(segment, "@") {
+			if segment == "" || data[segment] || endonyms[segment] || identifier.MatchString(segment) || strings.Contains(segment, "@") {
 				continue
 			}
 			if word := unaccented.FindString(segment); word != "" {
