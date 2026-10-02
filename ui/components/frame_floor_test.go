@@ -5,8 +5,10 @@ package components
 // the inverse column names the colour that reads on it, the sentence in the
 // footer is bounded, a heading breaks a token no dictionary has, and so does
 // the breadcrumb carrying a record's name. Each is also a rule the sheet must
-// carry — the sheet side is
-// ui/frame_floor_test.go, because Compose lives above this package.
+// carry: ui/style/emission_test.go asserts that every enumerable class —
+// BreakAnywhere with them — compiles to a declaration. What that sheet paints
+// on a real element is read in the browser by e2e/frame-floor.spec.ts, because
+// Compose lives above this package.
 
 import (
 	"strings"

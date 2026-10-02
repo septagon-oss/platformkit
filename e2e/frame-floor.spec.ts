@@ -27,11 +27,11 @@ const admin = {
 // come from anywhere else. The bootstrap administrator's own display name is what the bootstrap set,
 // and a row found by sorting is a case that depends on sorting.
 const member = {
-  email: `t0234-frame-${Date.now()}@e2e.test`,
+  email: `frame-floor-${Date.now()}@e2e.test`,
   password: 'the-frame-floor-chooses-this-1',
   name: 'Floored Member',
 };
-const role = `t0234_frame_${Date.now()}`;
+const role = `frame_floor_${Date.now()}`;
 // One token, no break opportunity: 152 characters, under the schema's own maxLength of 200 so the
 // write is accepted and the heading is what fails. This is the shape of a UUID pasted into a title,
 // a commit hash, or a URL — all of which a real tenant has in its task list.
@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
   await page.goto('/app/admin/login');
   await signIn(page);
 
-  // The member, through the same three calls review-r3 makes: a role of its own (so no other
+  // The member, through the same three calls `review-r3-refusal-floor.spec.ts` makes: a role of its own (so no other
   // spec's grant changes what this person can see), an invitation carrying the name, and a password.
   const created = await page.request.put(`/api/v1/auth/roles/${role}`, { data: { permissions: ['task:read'] } });
   expect(created.status(), await created.text()).toBe(200);
@@ -193,18 +193,11 @@ test('a heading breaks a token nothing can hyphenate', async ({ browser }) => {
 
 // The whole floor, on the two generated surfaces the clients measure. The four assertions above name
 // the causes this brief fixes; this one is the claim the acceptance makes — a generated page in the
-// kernel's own frame passes, at both widths the brief names, with the gate's eight rules unchanged.
-//
-// One refusal is scoped out, printed rather than hidden, because it belongs to a paragraph this
-// brief draws nowhere: the generated *record* page's own section paragraph is a `components.Text`
-// at sm/muted whose box spans the main column — measured 189ch at 1440px in this spec's own line
-// (`widest={"ch":189,"text":"The user who becomes responsible"}`). Item 3 bounds the *footer*
-// sentence, which is the frame's, and SPECIFY §11 assigns page-level copy inside `<main>` to the
-// page. It is printed as a KNOWN refusal on every run and named as a follow-up in IMPLEMENT.md, so
-// the next round inherits a number and not a silence. Everything else — sideways scroll, contrast,
-// body sizes, left edges, gaps, CTA count — is asserted on both surfaces at both widths.
-const OUTSIDE_MAIN = ['body measure up to'];
-
+// kernel's own frame passes, at both widths the brief names, with the gate's eight rules unchanged and
+// nothing filtered out. Until this run the record page carried one refusal of its own: the field help
+// sentence, 189ch under a full-width control, which `components.clHelp` now bounds. Nothing is scoped
+// out below, because the gate the clients run names no element and no cause — it reads the sentence
+// `body measure up to 189ch`, and a rule switched off on one surface stays red on every client's.
 test('a generated list and a generated record hold the whole design floor', async ({ browser }) => {
   test.setTimeout(120_000);
   for (const width of [390, 1440]) {
@@ -214,10 +207,6 @@ test('a generated list and a generated record hold the whole design floor', asyn
     await page.goto(`${tasks}/${unbreakableId}`);
     const m = await probe(page, width);
     console.log(report(`generated record ${unbreakableId}`, m));
-    const all = refusals(m);
-    const known = all.filter((r) => OUTSIDE_MAIN.some((rule) => r.includes(rule)));
-    if (known.length) console.log(`  KNOWN refusal this brief does not own (page copy inside <main>): ${known.join(' | ')}`);
-    const outstanding = all.filter((r) => !known.includes(r));
-    expect(outstanding, diagnosed(m, `generated record ${unbreakableId} at ${width}px fails the design floor`)).toEqual([]);
+    expect(refusals(m), diagnosed(m, `generated record ${unbreakableId} at ${width}px fails the design floor`)).toEqual([]);
   }
 });
