@@ -215,9 +215,9 @@ batch has not reached the state the question is about. Without that correction t
 number would answer "how far behind is this tenant's queue now" with the wait of a row
 that went out yesterday, for as long as nobody published that name again. The ledger
 that owes the correction is per process, which is the scope the instrument has: a
-restart starts its collections from nothing. 82 of the 83
+restart starts its collections from nothing. 102 of the 103
 boundaries the reference application registers as operations and module declarations —
-71 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
+91 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
 of those that does not is `file-reconcile`, a sweep whose question crosses every tenant
 by construction. Both terms are counted over this composition rather than remembered:
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
