@@ -74,7 +74,10 @@ type Deps struct {
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
 func Module(deps Deps) (contracts.Service, module.Module) {
-	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.LocaleManager)
+	if deps.LocaleManager == nil {
+		panic("tenant.Module: Deps.LocaleManager is nil; the self-service language command would have no authorizer to ask")
+	}
+	svc := internal.NewServiceWithLocaleManager(deps.OnCreate, deps.Languages, deps.LocaleManager)
 	return svc, module.Module{
 		Name:        "tenant",
 		Permissions: permissions,

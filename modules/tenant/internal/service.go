@@ -41,11 +41,30 @@ type Service struct {
 
 // NewService returns the control plane. module.go constructs it, passing the
 // languages the composition's catalogues answer in.
-func NewService(hooks []contracts.Hook, langs []string, may contracts.LocaleManager) *Service {
+func NewService(hooks []contracts.Hook, langs []string) *Service {
+	return NewServiceWithLocaleManager(hooks, langs, nil)
+}
+
+// NewServiceWithLocaleManager is NewService for the composition that means to
+// mount the self-service door: the third dependency is the authorizer the command
+// asks inside its own transaction, named where it is wired rather than defaulted.
+func NewServiceWithLocaleManager(hooks []contracts.Hook, langs []string, may contracts.LocaleManager) *Service {
 	if may == nil {
-		panic("tenant.Module: Deps.LocaleManager is nil; the self-service language command would answer \"nobody may\" and refuse every administrator")
+		// Not a door that answers "nobody may": that would read as a narrow policy
+		// and behave as one, which is the quiet version of a broken wiring. The
+		// answer is an error, so a composition that forgot the port finds out on the
+		// first attempt to use the door rather than at a review. module.Module also
+		// refuses nil outright, at composition, beside the other checks.
+		may = refusedLocales{}
 	}
 	return &Service{hooks: hooks, langs: langs, may: may}
+}
+
+// refusedLocales is what a Service with no LocaleManager answers with.
+type refusedLocales struct{}
+
+func (refusedLocales) MaySetOwnLocale(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	return false, errors.New("tenant: no LocaleManager is wired, so a tenant's languages cannot be checked against its administrator's grant")
 }
 
 var _ contracts.Service = (*Service)(nil)
