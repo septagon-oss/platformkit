@@ -11,10 +11,18 @@ const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-test('a fresh site says nothing is published, and the home page appears once one is', async ({ page }) => {
+// The first four lines are the tenant's first day: `platformkit bootstrap` created
+// the tenant through the tenant module, whose creation hook applied the starter seed
+// (apps/platformkit/seed/starter), so the visitor lands on a page and not on an
+// apology. The empty state this case used to assert is still what a site with a home
+// slug that names nothing published shows — modules/web's own
+// TestSiteRefusesWhatItCannotServe covers those words — but it is no longer what a
+// new installation shows.
+test('a new tenant opens on its starter home, and a published page takes its place', async ({ page }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
 
   await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(email);
