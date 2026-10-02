@@ -13,6 +13,9 @@ type SectionHeaderProps struct {
 	Description string `json:"description,omitempty"`
 	Level       int    `json:"level,omitzero" enum:"0,1,2,3,4,5,6"`
 	Size        int    `json:"size,omitzero" enum:"0,1,2,3,4,5,6"`
+	// Measure caps the description at the reading width, for the section whose
+	// copy is a sentence a person reads rather than a caption over a control.
+	Measure bool `json:"measure,omitempty"`
 }
 
 // SectionHeader is shared by page introductions and sections within a page.
@@ -23,7 +26,7 @@ func SectionHeader(p SectionHeaderProps) g.Node {
 	}
 	content = append(content, Heading(HeadingProps{Text: p.Title, Level: p.Level, Size: p.Size}))
 	if p.Description != "" {
-		content = append(content, Text(TextProps{Content: p.Description, Color: "muted"}))
+		content = append(content, Text(TextProps{Content: p.Description, Color: "muted", Measure: p.Measure}))
 	}
 	return h.Header(append(baseAttrs(p.ComponentProps), Stack(StackProps{Gap: "3"}, content...))...)
 }

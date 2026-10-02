@@ -395,6 +395,14 @@ var (
 		"none": {}, "uppercase": style.New().Uppercase(),
 		"lowercase": style.New().Lowercase(), "capitalize": style.New().Capitalize(),
 	}
+	// clTextMeasure is the running measure of a sentence a person is meant to
+	// read: as wide as the design system's own `lg` container and no wider, which
+	// is sixty-four characters of body copy. A paragraph in a block gets the width
+	// of its container, so an admin page whose main region is the width of the
+	// window gets a paragraph the width of the window, and nobody reads a hundred
+	// and eighty nine characters per line. It is opt-in because not every piece of
+	// text is a sentence: a label, a cell, a caption is a thing beside a thing.
+	clTextMeasure   = style.New().MaxWScaled(style.MaxWLG)
 	clTextItalic    = style.New().Italic()
 	clTextUnderline = style.New().Underline()
 	clTextNoWrap    = style.New().WhitespaceNowrap()
@@ -648,10 +656,17 @@ var (
 	clSidebarWidthExpanded = style.New().Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
 		return c.Width(style.S64)
 	})
-	clSidebarDisabled    = style.New().Opacity(style.Opacity50)
-	clSidebarInner       = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	clSidebarDisabled = style.New().Opacity(style.Opacity50)
+	clSidebarInner    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	// TextColor on the inverse column is not decoration: the column owns an
+	// inverted surface, and everything inside it that names no colour of its own —
+	// a list item, a brand link that styles only its child — inherited the
+	// *page's* foreground, which is a dark ink on a dark panel. The block that
+	// inverts the surface states the foreground that goes with it, once, and the
+	// descendants that want something else still say so.
 	clSidebarColumnAdmin = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
-				Bg(style.SurfaceInverse).PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
+				Bg(style.SurfaceInverse).TextColor(style.FgOnInverse).
+				PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
 	clSidebarColumnContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
 				Bg(style.SurfacePrimary).OverflowY(style.OverflowVisible)
 	clSidebarBrandAdmin = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexShrink0().
@@ -834,7 +849,7 @@ func ShellClassLists() []style.ClassList {
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
 		clCheckboxIndicatorActive, clCheckboxCheckmark, clCheckboxBar, clCheckboxLabel,
 		clHeadingBase, clSpinner, clVideo,
-		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
+		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTextMeasure, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
 		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clDetailList, clDetailHeader, clDetailTitle, clDetailDescription,
 		clDetailItems, clDetailRow, clDetailRowSeparated, clDetailTerm,

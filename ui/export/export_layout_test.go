@@ -134,7 +134,25 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// example with a Placeholder and no Required) loses ` disabled` from its empty
 	// option, and /sha256. Tokens, icons, CSS, props, schemas and the other
 	// sixty-plus examples are byte-identical.
-	if legacy.SHA256 != "43437a9b515a65a116b679d809e31dfb63565426727f65f85447724d6c1b9846" {
+	// A sentence a person is meant to read now has a reading width. Text gains
+	// `measure`, which caps the line at the design system's own `md` container, and
+	// SectionHeader passes it to its description: a paragraph in a block gets the
+	// width of its container, and the admin shell's main region is the width of the
+	// window, so a page introduction measured 142 characters to the line and the
+	// shell's own footer 189. The inverse sidebar column also names the foreground
+	// that goes with it, because everything inside it that styles no colour of its
+	// own — a list item, the brand link, which styles only its child — inherited the
+	// page's dark ink onto a dark panel and measured 1.02 against it. Measured as a
+	// leaf-by-leaf diff of the export at 1e42cee against this tree
+	// (`go run ./tools/designexport` on each, walked leaf by leaf): 6,406 leaves
+	// become 6,415 and twelve move — nine `measure` property types on the Text,
+	// SectionHeader, Hero and Grid examples' schemas, two Sidebar examples' HTML
+	// (the inverse column's class list gains `text-fg-on-inverse`, twice on
+	// `pk-ui.component.sidebar/default` and three times on `.../collapsed`, which
+	// renders the column twice), and /sha256. Tokens, icons, props and `/css` are
+	// byte-identical: the utility is already emitted, for the sidebar's brand text,
+	// and the reading width is the `max-w-md` a Container already uses.
+	if legacy.SHA256 != "2b104aeb38994f3e632cc3b98cc300c17061bd039eaa42a6fef44a4ac78e5644" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)
