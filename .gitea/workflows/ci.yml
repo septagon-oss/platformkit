@@ -50,7 +50,7 @@ jobs:
     timeout-minutes: 18
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:postgres:5432/platformkit?sslmode=disable
+      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
       # The object store the S3 adapter's cases dial. It is this job's own concern
       # because it is the only job that runs them; the step below starts the store
