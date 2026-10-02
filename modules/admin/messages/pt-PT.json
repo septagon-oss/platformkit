@@ -486,6 +486,78 @@
       "": "Componentes"
     }
   },
+  "admin.gallery.skip_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Os links de salto aparecem quando recebem o foco. Use Tab nesta pré-visualização para revelar o link e prima Enter para saltar a navegação de exemplo.",
+    "plural": {
+      "": "Os links de salto aparecem quando recebem o foco. Use Tab nesta pré-visualização para revelar o link e prima Enter para saltar a navegação de exemplo."
+    }
+  },
+  "admin.gallery.focus_skip": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Focar o link de salto",
+    "plural": {
+      "": "Focar o link de salto"
+    }
+  },
+  "admin.gallery.sample_nav": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Navegação de exemplo",
+    "plural": {
+      "": "Navegação de exemplo"
+    }
+  },
+  "admin.gallery.sample_nav_link": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Link de navegação de exemplo",
+    "plural": {
+      "": "Link de navegação de exemplo"
+    }
+  },
+  "admin.gallery.sample_content": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Conteúdo de exemplo",
+    "plural": {
+      "": "Conteúdo de exemplo"
+    }
+  },
+  "admin.gallery.sample_field_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "O link de salto move o foco do teclado para aqui. Prima Tab novamente para chegar ao campo.",
+    "plural": {
+      "": "O link de salto move o foco do teclado para aqui. Prima Tab novamente para chegar ao campo."
+    }
+  },
+  "admin.gallery.sample_field": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "Campo de conteúdo de exemplo",
+    "plural": {
+      "": "Campo de conteúdo de exemplo"
+    }
+  },
+  "admin.gallery.sidebar_hint": {
+    "references": [
+      "modules/admin/internal/gallery.go"
+    ],
+    "translation": "A barra lateral de administração está oculta nesta largura de janela. Escolha Desktop no menu de janela do Storybook ou alargue a pré-visualização.",
+    "plural": {
+      "": "A barra lateral de administração está oculta nesta largura de janela. Escolha Desktop no menu de janela do Storybook ou alargue a pré-visualização."
+    }
+  },
   "admin.dialog.cancel": {
     "references": [
       "modules/admin/internal/mount.go"

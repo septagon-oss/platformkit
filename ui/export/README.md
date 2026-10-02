@@ -10,7 +10,12 @@ captured example's Props, schema, slots and observed HTML — and
 and return the projected snapshot; [ui/source](../source/source.go) persists
 an accepted one into Go. `Storybook` is one application's authorized
 composition, which [modules/admin](../../modules/admin/README.md) serves at
-`/app/admin/_gallery`.
+`/app/admin/_gallery`. `StorybookPage(book, Options{Locale: …}, …)` renders the
+index and one example, and `Options` carries that request's selected language: the
+words around a specimen — its landmark, the preview menus, the button that applies
+a preview — are this layer's own copy, in `messages/` beside this file. The
+sentences inside a specimen belong to whoever wrote the example and stay in the
+language they were written in.
 
 Nothing here is needed to serve a page: `ui/page` depends on [ui](../ui.go),
 and the package gate refuses this package in its closure. Start with

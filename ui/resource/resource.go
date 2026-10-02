@@ -202,7 +202,7 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 	body := []g.Node{
 		breadcrumb(o, o.noun(r, 2), at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
-		details(r, row),
+		details(o, r, row),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
@@ -308,14 +308,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			shown := display.Display(f, row[f.Name])
-			if len(f.Enum) > 0 {
-				// The value is data; the *word* for it is vocabulary. A task whose
-				// state is "resolved" is data nobody wrote as copy, and the screen
-				// that prints "Resolved" wrote that word, so the screen is asked.
-				shown = o.Label("enum."+display.Text(row[f.Name]), shown)
-			}
-			cells[f.Name] = shown
+			cells[f.Name] = fieldValue(o, f, row[f.Name])
 		}
 		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
 	}
@@ -364,12 +357,36 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 // list. There is no hiding here — hide:list is about a table being readable,
 // not about a field being secret, and a field a caller may not see is a field
 // the entity's JSON does not carry.
-func details(r Resource, row map[string]any) g.Node {
+//
+// The words are the ones the table and the form already ask for, at the same keys:
+// a field label is the catalogue's, and a value whose field enumerates is data
+// wearing a word this package chose. Reading display.FieldLabel and
+// display.Display here instead — which is what this function used to do — made the
+// one screen that shows a whole row answer in the language the schema was written
+// in, so a tenant served in Portuguese read its record in English while the list
+// above it, which asks, read in Portuguese.
+func details(o Options, r Resource, row map[string]any) g.Node {
 	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
 	for _, f := range r.Schema.Fields {
-		items = append(items, components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])})
+		items = append(items, components.DetailItem{
+			Label: o.Label("field."+f.Name, display.FieldLabel(f)),
+			Value: fieldValue(o, f, row[f.Name])})
 	}
 	return components.DetailList(components.DetailListProps{Items: items})
+}
+
+// fieldValue is one field of one row as a reader of this request's language reads
+// it. The value itself is data; the word for it may be vocabulary. A task whose
+// state is "resolved" is data nobody wrote as copy, and the screen that prints
+// "Resolved" wrote that word, so the screen is asked for it — at the same key the
+// form's option list and the table's cell are asked, because the same value in the
+// same tenant must not be two different words on two screens.
+func fieldValue(o Options, f entity.Field, value any) string {
+	shown := display.Display(f, value)
+	if len(f.Enum) > 0 {
+		shown = o.Label("enum."+display.Text(value), shown)
+	}
+	return shown
 }
 
 // deleteForm is the destructive action: a real form, so it works without

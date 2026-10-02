@@ -14,6 +14,12 @@ to the browser's weighted `Accept-Language`, then the catalog's configured defau
 Preference storage and locale-preserving links belong to the application. A
 language preference never selects a tenant or grants access.
 
+A handler that renders a document of its own instead of a `View` — a page that
+cannot arrive inside the shell's frame, such as a gallery preview whose modal owns
+the frame's focus — asks `Shell.Request(ctx)` for the same value `Serve` builds, so
+one tenant ceiling, one account preference and one caller ranking decide the
+language of one screen.
+
 Start with `catalog.NewBuilder(catalog.Fallback(language.English))` and add the
 module's messages using `SetString` or `Set`. For example, these calls define an
 action and its count without another interpolation or plural engine:

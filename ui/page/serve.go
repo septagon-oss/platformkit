@@ -89,17 +89,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 		httpx.SignIn(&op, s.Chrome.SignIn)
 	}
 	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
-		r := read(ctx, s.Chrome)
-		if s.Messages != nil {
-			var preferred, accepted string
-			if s.Locale != nil {
-				preferred = s.Locale(ctx, r)
-			}
-			if req, ok := httpx.RequestFrom(ctx); ok {
-				accepted = req.Header.Get("Accept-Language")
-			}
-			r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
-		}
+		r := s.Request(ctx)
 		v, err := handler(ctx, r, in)
 		if err != nil {
 			if to, ok := errors.AsType[httpx.SeeOther](err); ok {
@@ -177,6 +167,30 @@ func applyPrivacy(out *httpx.Page, sensitive bool) {
 		out.CacheControl = "no-store"
 		out.ReferrerPolicy = "no-referrer"
 	}
+}
+
+// Request is the caller of one request as every page through this shell sees
+// them: the tenant, the principal, the path, and the language the shell answers
+// in. Serve builds it for every page it mounts; a handler that renders a document
+// of its own rather than a View — the gallery preview, which cannot arrive inside
+// the shell's frame because a modal in an iframe owns that frame's focus — asks
+// for the same value. It is exported because a second negotiation, written where
+// the first one is not visible, is how one screen starts answering in two
+// languages: the tenant's ceiling, the account preference and the order of the
+// caller's own quality values are all decided here and nowhere else.
+func (s Shell) Request(ctx context.Context) Request {
+	r := read(ctx, s.Chrome)
+	if s.Messages != nil {
+		var preferred, accepted string
+		if s.Locale != nil {
+			preferred = s.Locale(ctx, r)
+		}
+		if req, ok := httpx.RequestFrom(ctx); ok {
+			accepted = req.Header.Get("Accept-Language")
+		}
+		r.Locale = new(SelectLocale(s.Messages, TenantPreferences(r, preferred, accepted)...))
+	}
+	return r
 }
 
 // read is the one place a page learns about its caller.
