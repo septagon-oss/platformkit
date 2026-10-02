@@ -576,11 +576,13 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 	err = db.Run(tenancy.WithTenant(ctx, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		// The first two links are dead and the last one works.
 		for _, stale := range sent[:2] {
-			if err := svc.Reset(ctx, tx, authtest.TokenIn(stale.Body), "a different passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+			if _, err := svc.Reset(ctx, tx, authtest.TokenIn(stale.Body), "a different passphrase",
+				contracts.Client{}); !errors.Is(err, contracts.ErrCredentials) {
 				t.Errorf("a superseded link = %v, want ErrCredentials", err)
 			}
 		}
-		return svc.Reset(ctx, tx, authtest.TokenIn(sent[2].Body), "a different passphrase")
+		_, err := svc.Reset(ctx, tx, authtest.TokenIn(sent[2].Body), "a different passphrase", contracts.Client{})
+		return err
 	})
 	if err != nil {
 		t.Fatalf("the transaction: %v", err)

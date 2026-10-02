@@ -283,23 +283,31 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 	})
 }
 
-// Reset mirrors internal.Service.Reset: one use, every session ended, one event.
-func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Reset mirrors internal.Service.Reset: one use, every session that existed ended,
+// one opened for the browser that spent the link, two events. The fake keeps no
+// second factors, so the account that would be left signed out has no shape here.
+func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	f.mu.Lock()
 	userID, ok := f.tokens[token]
 	delete(f.tokens, token)
 	f.mu.Unlock()
 	if !ok {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	if err := f.Users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
 	f.record(contracts.EventPasswordReset)
-	return nil
+	user, err := f.Users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := f.open(ctx, tx, user, from)
+	return session, err
 }
 
 // Roles mirrors internal.Service.Roles.

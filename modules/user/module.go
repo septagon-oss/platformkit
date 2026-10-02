@@ -202,8 +202,10 @@ func refuseLifecycleOnCreate(ctx context.Context, tx db.Tx[db.Tenant], u *contra
 		return fmt.Errorf("%w: the collection creates the person it invites; %s is a state some other door brings somebody to",
 			crud.ErrInvalid, u.Status)
 	}
+	askedAt, _ := httpx.RequestFrom(ctx)
 	if err := events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedAuthority(askedAt),
 	}); err != nil {
 		return err
 	}
