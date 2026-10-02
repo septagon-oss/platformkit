@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/app"
@@ -18,6 +20,14 @@ import (
 // wires EmailRegistration) is mailed a confirmation link; following it in a browser
 // has to answer a page that can confirm the address — the page the reset link
 // gained in this delivery, for the other mail.
+//
+// And the link has to lead back to the address the sign-up was answered at, port
+// included. The mail is rendered in the worker, after the request is gone, so the
+// port only reaches the link if the event carries it: a confirmation built from the
+// tenant's name alone opens port 80 on a development installation that serves its
+// tenants behind a port, which is the academy bug rule 4 was written against and,
+// measured in e2e/mailed-links.spec.ts, the sign-up mail still had while the
+// invitation mail did not.
 func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
@@ -31,6 +41,11 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 	if !ok {
 		t.Fatalf("the reference application mails through %T; this case reads the link out of it", c.mail)
 	}
+	_, port, err := net.SplitHostPort(cfg.Server.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	served := acmeHost + ":" + port
 	const email = "signs.up@acme.localhost"
 	signup, err := json.Marshal(map[string]any{
 		"email": email, "displayName": "Signs Up", "password": "a password of their own",
@@ -39,8 +54,8 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/public/auth/register", string(signup)); code != http.StatusAccepted {
-		t.Fatalf("signup = %d %s, want 202", code, body)
+	if code, body := do(t, cfg, nil, http.MethodPost, served, "/api/v1/public/auth/register", string(signup)); code != http.StatusAccepted {
+		t.Fatalf("signup at %s = %d %s, want 202", served, code, body)
 	}
 	var link string
 	eventually(t, "the confirmation link reaches the mailbox", func() bool {
@@ -55,6 +70,9 @@ func TestTheSignUpMailsLinkOpensAPage(t *testing.T) {
 		}
 		return false
 	})
+	if want := "http://" + served + "/app/auth/verify-email?token="; !strings.HasPrefix(link, want) {
+		t.Errorf("the confirmation asked for at %s leads elsewhere: %s, want a link beginning %s", served, link, want)
+	}
 	u, err := url.Parse(link)
 	if err != nil {
 		t.Fatalf("the mailed link %q: %v", link, err)
