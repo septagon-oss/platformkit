@@ -143,17 +143,6 @@ type Deps struct {
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
-
-	// PasskeyName is the relying party's display name for a tenant that has no
-	// name of its own: the string a platform shows beside the host when it asks
-	// somebody to trust a prompt. Empty falls back to the tenant's own Name.
-	//
-	// There is no Deps field for whether a passkey may be the whole sign-in, and
-	// that is deliberate: it is a tenant's decision rather than an installation's,
-	// so the module reads it from its own passkey_settings row inside the request
-	// transaction. A composition therefore wires no policy closure over another
-	// module's row, and no installation-wide switch exists to branch on.
-	PasskeyName string
 }
 
 // Module is the manifest, and the service it is built on: main hands the same
@@ -270,8 +259,9 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// never a module list and never a deployment setting. With no row
 			// anywhere, which is every installation until somebody writes one, that
 			// door answers 403 with the reason and every other door behaves as it did
-			// before this file existed.
-			svc.EnablePasskeys(deps.PasskeyName)
+			// before this file existed. The relying party's display name is the tenant's
+			// own row's Name, so Deps carries no installation-wide name for a platform
+			// prompt and nothing here is a fact about one customer.
 			internal.RegisterPasskeyRoutes(s, svc, cookies)
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)

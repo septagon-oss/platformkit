@@ -58,13 +58,6 @@ type Service struct {
 	// for the reason catalogue is — module.go sets it from the wiring path while
 	// requests are already reading it.
 	factorKey []byte
-
-	// passkeyName is the relying party's fallback display name, shown by a
-	// platform when the tenant has no name of its own. Whether the usernameless
-	// door is open at all is not held here: it is the tenant's own row, read per
-	// request. The name is set once from the wiring path while requests are
-	// already reading it, so the mutex above guards it.
-	passkeyName string
 }
 
 // Declare records the permissions the composition defines. module.go calls it

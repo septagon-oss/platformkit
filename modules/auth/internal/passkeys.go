@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"slices"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,26 +75,6 @@ type passkeyCredentialRow struct {
 func (passkeyCredentialRow) TableName() string { return "passkey_credentials" }
 
 var _ contracts.Passkeys = (*Service)(nil)
-
-// EnablePasskeys sets the relying party's fallback display name; module.go calls
-// it from the composition path. It takes no policy, and that is the point: whether
-// a passkey may be the whole sign-in is a tenant's own decision, not a deployment
-// setting, and it is read from that tenant's own row in passkey_settings per
-// request (passkeySignInEnabled). A composition whose installation never writes
-// that row answers ErrPasskeySignInOff at the usernameless door while enrolment
-// and the second factor work normally — which is how every deployment that exists
-// today behaves.
-func (s *Service) EnablePasskeys(displayName string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.passkeyName = displayName
-}
-
-func (s *Service) passkeyDisplayName() string {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.passkeyName
-}
 
 // passkeyUser is one person and their passkeys, in the shape the SDK asks for.
 // The user handle is the person's id — the same 16 bytes the row's primary key
@@ -180,18 +160,22 @@ func (s *Service) mayPrompt(ctx context.Context, r *http.Request) bool {
 
 // passkeyRelyingParty builds the relying party for one request. See the header.
 //
-// The display name is the tenant's own — the string a platform shows somebody
-// deciding whether to trust a prompt — falling back to what the composition
-// supplied. No constant in this module names one (rule 4).
+// The name it hands the platform is read from the tenant this request resolved to,
+// beside the host that resolved it, so neither is a value one tenant could leave
+// baked into a process.
 func (s *Service) passkeyRelyingParty(r *http.Request, tx db.Tx[db.Tenant]) (*webauthn.WebAuthn, error) {
 	rpID := httpx.HostOnly(r.Host)
 	if rpID == "" {
 		return nil, errors.New("auth: a passkey ceremony needs the host it was asked at")
 	}
-	fallback := s.passkeyDisplayName()
+	// The display name is the tenant's own — the string a platform shows somebody
+	// deciding whether to trust a prompt — and the host this request arrived at is
+	// what stands in for a tenant row that carries no name. No constant in this
+	// module names one, and no installation-wide string stands in for a customer's
+	// name (rule 4).
 	name := db.TenantOf(tx).Name
 	if name == "" {
-		name = fallback
+		name = rpID
 	}
 	rp, err := webauthn.New(&webauthn.Config{
 		RPID:          rpID,
