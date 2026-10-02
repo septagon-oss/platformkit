@@ -299,7 +299,20 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 		t.Fatal("migration ignored cancellation")
 	}
 	files["1_slow.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE slow (value int); INSERT INTO slow VALUES (1)")}
-	retry, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	// The retry queues for the composition lock the way every other migration run in
+	// this database does, so its bound is the patient one, not a taste. Advisory locks
+	// are per-database (kit/db/lock.go) and the key is one for the whole composition
+	// (kit/db/migrate.go:571), while dbtest gives a test its own *schema* — so another
+	// package's migration, or a second suite sharing the cluster, can be holding the key
+	// at this line. Five seconds read as a defect when this case shared its Postgres with
+	// a concurrent `make check` on 2026-10-01 (`retry after cancellation: db: migrate:
+	// lock: timeout: context deadline exceeded`, while 20 runs of the same case with the
+	// cluster to itself passed in 3.8s). The bound is the same one
+	// TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget queues behind for the
+	// same key, and it is a bound on a lock that must come back, not on how long the file
+	// takes: a session that never gives the lock up still fails the case, in five minutes
+	// rather than in five seconds.
+	retry, stop := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer stop()
 	if err := db.Migrate(retry, migrateURL, source); err != nil {
 		t.Fatalf("retry after cancellation: %v", err)
