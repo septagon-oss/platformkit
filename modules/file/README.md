@@ -89,7 +89,7 @@ All are `httpx.Permission(...)` declarations in `modules/file/internal/handler.g
 ### Object scope
 
 None. A search of the module finds no call to `tenancy.Policy` and no `Resource.Kind`.
-Scope is the tenant, through row-level security, and it is carried in the type before it is carried in the SQL: `contracts.Scope` names one tenant, `Scope.ObjectName` is the only place a prefix and a key are joined, and both new tables (`file_holds`, `file_erasures`) are `ENABLE`+`FORCE ROW LEVEL SECURITY` under `platformkit_tenant_match(tenant_id)` (migrations/000034). The per-object rule is visibility, described under Public faces below.
+Scope is the tenant, through row-level security, and it is carried in the type before it is carried in the SQL: `contracts.Scope` names one tenant, `Scope.ObjectName` is the only place a prefix and a key are joined, and both new tables (`file_holds`, `file_erasures`) are `ENABLE`+`FORCE ROW LEVEL SECURITY` under `platformkit_tenant_match(tenant_id)` (migrations/000040). The per-object rule is visibility, described under Public faces below.
 
 The one read that is not a tenant's own is the orphan sweep: a blob no row names cannot be found from the rows, so `internal/reconcile.go` lists the store under `db.Tx[System]` and asks which keys no tenant's rows claim. It is a job with the ops surface's system token (`sweep.Use(s.Ops.SystemToken())` in `module.go`), reached from no route, and its delete is the one place this module removes bytes by tenant id rather than by a `Scope` a request brought.
 
