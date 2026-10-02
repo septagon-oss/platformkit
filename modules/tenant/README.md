@@ -28,11 +28,71 @@ It imports no other module; the modules above reach it through
 [fake](contracts/tenanttest/), never `internal/`. See
 [ADR 0006](../../docs/adr/0006-system-access-is-a-token.md) for the system token.
 
+## The tenant's own languages
+
+`tenant:locale_manage` (constant `PermissionLocaleManage` in
+`modules/tenant/contracts/permissions.go`) lets a tenant's administrator say which
+languages that one tenant is answered in. It is a tenant permission, not an operator
+one: `Deps.LocaleManager` answers the question inside the write, and the reference
+composition wires it over the same authorizer the route guard consulted
+(`tenantLocaleManager` in `apps/platformkit/locale.go`), so a link and a door cannot
+disagree about who may use it.
+
+`Service.SetOwnLocale` (`modules/tenant/internal/service.go`) takes no tenant id — a
+tenant cannot be shown a door it could point at a neighbour — and inside its own
+transaction rechecks the actor's grant, locks its own row `FOR UPDATE` under
+row-level security, normalises the pair with the operator's own rules, compares the
+expected revision, writes `default_locale`, `locale_revision` and `updated_at` in one
+statement, replaces the `tenant_locales` rows, and publishes `tenant.locale_set` in
+the same transaction. A refusal returns no row, writes nothing and emits nothing; a
+declaration that changes nothing publishes nothing, however stale the revision it
+came with. `SetLocale`, the operator's door, moves the same counter so the two
+writers cannot each believe they are first.
+
+### Interface
+
+- The page is `/app/tenant/languages`, written by `modules/admin` and mounted in the
+  tenant's own namespace, offered in the sidebar only to somebody the authorizer
+  says holds `tenant:locale_manage`. It offers the languages this installation's
+  catalogues carry and no others, and posts the pair with the revision the page was
+  drawn at.
+- `tenants.locale_revision` is read: `SetOwnLocale` refuses a declaration read at a
+  revision the row has left behind with `crud.ErrConflict`, so the person sees which
+  declaration they overwrote rather than losing it.
+- `migrations/000031_tenant_locale_self_service.up.sql` splits `tenants_scope` into
+  read-your-own-row and change-your-own-languages, grants `tenant_locales` self
+  insert/update/delete scoped to this tenant, and adds a `BEFORE UPDATE` trigger for
+  the column rule a policy cannot state. PostgreSQL applies `WITH CHECK` to
+  inserted and updated rows and never to a `DELETE`, which is why the old policy —
+  written `WITH CHECK (system)` with no `USING` clause — was a self-delete grant on
+  the row that says whether a customer exists.
+
+### Limits
+
+There is no JSON door of its own: the page is the door, and a `PUT
+/api/v1/tenant/languages` is the product's share, not this module's. The removal
+warning the page shows is the truthful generic one — this module keeps no inventory
+of what content exists in which language, and a count invented here would be a
+number nothing can check. The last language cannot be removed by construction: every
+declaration names a default, and an empty default is refused.
+
+### Verification
+
+`apps/platformkit/tenant_languages_command_test.go`
+(`TestAnAdministratorSetsTheTenantsLanguagesAndTheTrailHoldsIt`) sets the languages
+through the composed service and reads back the row, the `tenant.locale_set` row in
+the outbox, and the `audit_events` row with a non-null actor; it then posts the same
+form against the revision it moved and shows none of the three changed.
+`apps/platformkit/tenant_languages_page_test.go` follows the link a dashboard gives
+the administrator and expects a page with controls for each served language.
+`modules/tenant/internal` covers the operator's door and the floor under the last
+language.
+
 ## Authorization
 
 ### Permissions
 
-The manifest in `modules/tenant/module.go` (`permissions`) declares one key: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`). It guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts six routes with it: `list`, `create`, `read`, `suspend`, `add-host` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set.
+The manifest in `modules/tenant/module.go` (`permissions`) declares two keys: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`), which guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts six routes with it: `list`, `create`, `read`, `suspend`, `add-host` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. The second key, `tenant:locale_manage`, guards nothing in `modules/tenant/internal/handler.go`: it is what the section above asks inside its own transaction, and what the admin page's sidebar link is offered on.
 
 ### Object scope
 

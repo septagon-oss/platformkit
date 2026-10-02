@@ -73,6 +73,50 @@ checks in both themes. These checks do not establish native editor fidelity or
 replace a screen-reader review. New product integrations must supply their selector
 and repeat these checks against their own examples and private asset routes.
 
+## The shell's own copy, and the two language controls
+
+Everything the shell itself writes — sidebar, header, theme toggle, the confirm
+dialog, the account form — goes through `chrome(r, key, fallback)` in
+`modules/admin/internal/mount.go` and `account.go`, with the keys in
+`modules/admin/messages/en.json` and `pt-PT.json`. A literal that skips it is a
+sentence an implementation of a different language can never say.
+
+### Interface
+
+- `admin.Deps.Language` (`internal.AccountLanguage`) is the account command:
+  `Preferred` reads the person's own choice and `Choose` writes it, both on the
+  request's transaction. The header renders a `components.Select` named `locale`
+  posting to `/app/admin/language` — the shell's own path, so no module owns a route
+  on this page — offering the languages the request's tenant declared, its default
+  first, and an empty option that takes the choice back. `Deps.Language` is nil
+  draws no control: a composition with nobody to ask renders no promise.
+- The tenant's own languages are `/app/tenant/languages` (GET and POST), offered in
+  the sidebar to whoever `Authorizer` says holds `tenant:locale_manage` — the same
+  question `Service.SetOwnLocale` asks inside its transaction, so the link and the
+  door cannot disagree. The page offers the languages `admin.Deps.Installed` names,
+  which is the set this installation's catalogues carry: a page offering a language
+  no catalogue carries is a page that lies about its own copy.
+- `<html>` carries `lang` **and** `dir`, both from the language the page is written
+  in. The declaration is what a screen reader and a translation tool read.
+
+### Limits
+
+No pseudo-locale exists in this repository and nothing claims one: `catalogue.go`
+says what the English file is for, which is the loader's source language and the
+parity check, not a transform. The module writes no page of its own about content
+translation and knows nothing about which content exists in which language.
+
+### Verification
+
+`modules/admin/internal/mount_test.go` and `modules/admin/module_test.go` cover the
+shell copy and the routes. The composed cases are in `apps/platformkit`:
+`admin_shell_chrome_language_test.go` refuses any English chrome on a `pt-PT` page,
+`account_menu_language_test.go` that the account control offers only the tenant's
+languages, `page_direction_test.go` that `<html>` declares the direction with the
+language, `account_language_test.go` that a chosen language renders the admin and
+survives signing out and back in, and `tenant_languages_page_test.go` that the
+tenant's administrator reaches their own languages from the dashboard.
+
 ## Generated screens and a module's own pages
 
 The shell is composed last. It generates a register (list, new, row, commands) for every resource a module

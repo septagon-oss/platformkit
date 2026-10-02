@@ -101,6 +101,59 @@ Signing in by handle is a separate decision and is not implemented here: it belo
 to the auth module, which owns what a failed attempt costs, and it has an enumeration
 surface of its own.
 
+## The language a person is answered in
+
+`POST /api/v1/user/users/language` with `{"locale": "pt-PT"}` writes the signed-in
+person's own language (`Service.SetPreferredLocale`,
+`modules/user/internal/service.go`). It is a command rather than a field on a PATCH
+for two reasons: it publishes `user.language_set`, so "when did they ask for
+Portuguese, and what were they answered in before" is answerable from the trail; and
+its argument is checked against the set the tenant is served in at the moment the
+write lands, which a form's select box cannot promise. An empty locale takes the
+choice back — the answer goes to the browser and the tenant's default — and a tag
+outside the served set is refused with `crud.ErrInvalid`, no row and no event.
+
+### Interface
+
+- Guard `httpx.SignedIn()`, and `rest.CommandOptions{Collection: true}`: the route is
+  on the collection, not on a row, because the command takes no id. A door that takes
+  an id is a door that can be pointed at a colleague, so the subject is the
+  transaction's principal (`tenancy.PrincipalFrom`) and there is nothing here to lie
+  about. Tenant scope is the same transaction row-level security already enforces.
+- One required dependency: `user.Deps{LocalePolicy: ...}` (`contracts.LocalePolicy`),
+  which answers which languages this tenant is served in. The reference composition
+  wires `tenant.Service.CurrentLanguages` (`apps/platformkit/modules.go`); a
+  composition that wires nothing is refused by `module.Module` at startup.
+- The tenant's row is locked before the person's — the order every write touching
+  both takes — so the read and the write below are one decision.
+- `preferredLocale` is in `spec.Immutable` (`modules/user/module.go`): neither the
+  create door nor PATCH writes it; the command above is the only door that does.
+
+### Limits
+
+No expected revision, and no revision column. The command has one writer — the
+person signed in, on their own row, about one field — so what a revision would
+arbitrate is one person's two tabs choosing twice, and the losing tab is told which
+language they now hold the moment the page answers. The migration says the same
+thing at the table (`modules/user/migrations/000030_preferred_locale.up.sql`): a
+column no command consults is a fact nobody reads. If this preference grows a second
+writer, it grows the column and the expected argument in that commit.
+
+What is *not* here: the set a choice is checked against, and who may change it,
+belong to the tenant module (`modules/tenant`) and its
+`tenant:locale_manage` command. This module keeps no copy of either.
+
+### Verification
+
+`modules/user/internal/locale_test.go` decides the writes that land, the tags
+refused, and what each refusal leaves behind, against Postgres. The same decisions
+run against the fake and the service together as `languageCases()` in
+`modules/user/contracts/usertest/conformance.go` — a person chooses a served tag, a tag
+outside the set is refused with nothing written, the choice already held publishes
+nothing, an empty tag takes it back, and nobody signed in is refused — so a fake that
+drifted from the service fails the suite the other modules test against
+(`go test ./modules/user/...`).
+
 ## Authorization
 
 ### Permissions
