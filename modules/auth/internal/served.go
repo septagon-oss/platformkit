@@ -51,9 +51,10 @@ func WithServed(ctx context.Context, askedFor string) context.Context {
 //
 // Only the port is ever taken. The name in the address the request arrived at has
 // to be the host of record this link is already built on, and a host of record
-// that spells its own port is left exactly as the row spells it. So the most a
-// caller can put into a mailed link is the port of a request that already proved,
-// by being served at all, that it belonged to that tenant.
+// that spells its own port is left exactly as the row spells it. The port itself is
+// the one this process accepted the connection on, which httpx.ServedAuthority read
+// off the socket where the event was published: a caller who writes a port we do not
+// serve is answered at the port we do, and that is the port the link carries.
 func servedPort(ctx context.Context, host string) string {
 	askedFor, _ := ctx.Value(servedKey{}).(string)
 	if !isAuthority(askedFor) {
