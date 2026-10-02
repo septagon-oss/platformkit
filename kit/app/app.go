@@ -271,6 +271,19 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == "" {
 		opts.Role = All
 	}
+	if opts.App.Named() {
+		// The type is not the check: a Name built by conversion bypasses Parse, and
+		// from here the slug is a label and nothing else. Every name kit/appname
+		// forms for it survives an ungrammatical spelling — the durable, the job
+		// lock, the cookie — so such an app boots, serves and emits while no tenant's
+		// tenants.app can ever equal it: it reads as nobody's app, and the payload
+		// contract it declared checks nobody, which is the coverage the catalog
+		// exists to make visible rather than lose. Consume refuses the same spelling
+		// per subscription; this refuses it once, where the composition is.
+		if _, err := appname.Parse(string(opts.App)); err != nil {
+			return nil, fmt.Errorf("app: Options.App %q: %w", string(opts.App), err)
+		}
+	}
 	switch opts.Role {
 	case Web, Worker, All:
 	default:
@@ -320,10 +333,12 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	// Every event this composition can emit, with the payload type its module
 	// promised, goes to the outbox: a payload that is not one is refused at the
-	// INSERT rather than published and discovered by a subscriber. One list,
-	// built from the manifests nobody else re-declares. See kit/events/catalog.go
+	// INSERT rather than published and discovered by a subscriber. One list per
+	// app, built from the manifests nobody else re-declares — a second composition
+	// in this process adds its own list and leaves this one standing, because the
+	// check acme's event is measured against is acme's. See kit/events/catalog.go
 	// and kit/app/asyncapi.go, which emits the same list as a document.
-	events.DeclareAll(declaredEvents(mods))
+	events.DeclareApp(opts.App, declaredEvents(mods))
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is

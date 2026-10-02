@@ -105,9 +105,21 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
 	// The promise the emitting module made in its manifest is checked here, at
-	// the one door, before anything is written. See catalog.go.
-	if err := checkPayload(name, body); err != nil {
-		return err
+	// the one door, before anything is written. Whose promise it is, is which app
+	// holds the tenant this row belongs to: one process may hold two compositions,
+	// and the check academy's boot declared must not be the one acme's event is
+	// measured against, nor acme's be missing when academy's own event is written.
+	// The read is asked only when some app typed this event — an event no app
+	// described has no contract to consult in any app — so an unchecked publish
+	// still costs exactly the INSERT it always cost. See catalog.go.
+	if payloadTyped(name) {
+		app, err := appOfTenant(gdb, tenantID)
+		if err != nil {
+			return fmt.Errorf("events: %s: %w", name, err)
+		}
+		if err := checkPayload(app, name, body); err != nil {
+			return err
+		}
 	}
 	var actor any
 	if id, ok := tenancy.ActorFrom(ctx); ok {
