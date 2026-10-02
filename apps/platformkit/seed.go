@@ -14,6 +14,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -319,16 +320,29 @@ func (siteSeeder) Resource() seed.Resource {
 	return seed.Resource{
 		Alias: "sites", Module: "site", Entity: "site",
 		NaturalKey: "settings", WriteGrant: sitecontracts.PermissionSiteManage,
+		// The home page is a reference to content, said as one: the seed orderer
+		// resolves it, so the page is written before the site points at it, and a
+		// target that exists in neither the files nor this tenant refuses at the
+		// file's own line. Declaring nothing here would leave site.Save — which
+		// checks that a slug is a slug, not that a page wears it — accepting a
+		// home page that has never existed, and a visitor at "/" reading a
+		// settings row about a row nobody can write.
+		References: []seed.Reference{{Resource: "sites", Path: "fields/homeSlug", Target: "contents"}},
 		// No delete path: the module offers no way to un-have a site, and
 		// blanking a tenant's home slug is a change a person decides.
 		Prunable: false,
 	}
 }
 
+// Target reads the declared home as the reference it is: `contents/<slug>`. The
+// value the site module stores is the slug alone, so the alias is what this
+// takes off — the reference is how the record is addressed in a file, and the
+// orderer has already refused a value that names no page.
 func (siteSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
-	slug := seedText(r.Fields["homeSlug"])
-	if slug == "" {
-		return seed.Target{}, errors.New("a site record names the slug it opens on")
+	ref := seedText(r.Fields["homeSlug"])
+	alias, slug, found := strings.Cut(ref, "/")
+	if !found || alias != "contents" || slug == "" {
+		return seed.Target{}, fmt.Errorf("homeSlug names the page a site opens on as contents/<slug>, not %q", ref)
 	}
 	return seed.Target{Fields: map[string]any{"homeSlug": slug}}, nil
 }
@@ -392,14 +406,18 @@ func (w *siteSeeder) write(ctx context.Context, tx db.Tx[db.Tenant], slug string
 type userSeeder struct {
 	users usercontracts.Service
 	// demoPassword is config's Demo.Password: the one password a demonstration's
-	// people sign in with. Empty means this installation offers no demo sign-in,
-	// the record's signIn field is then neither asked for nor compared, and the
-	// people arrive invited rather than active — see Limits in kit/seed/README.md.
+	// people sign in with. It is the deployment's answer to a record that asks for
+	// a credential, and an empty one asks the run to mint a per-person password
+	// and print it once — see commands. The loader refuses any seed field named
+	// for a password, so this value has exactly one door into a seed run.
 	demoPassword string
 }
 
-// signInDeclared is the value a demo record names for its signIn field. The
-// word, and not a secret, is what the plan and the snapshot compare.
+// signInDeclared is the one word a demo record and the person it names agree on.
+// In the file it is the ask — this person is one the demonstration signs in as.
+// In the snapshot it is the answered fact — that person holds a sign-in
+// credential. The same word on both sides is what makes a rerun of a person who
+// has one read as unchanged, and it names neither a secret nor a hash.
 const signInDeclared = "demo"
 
 func (userSeeder) Resource() seed.Resource {
@@ -420,10 +438,33 @@ func (w userSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.U
 		return seed.Target{}, err
 	}
 	fields["roles"] = roles
-	if w.demoPassword != "" {
+	// The ask comes from the file, and not from whether this deployment happens to
+	// name a demo password: a record that asks for a sign-in asks whether or not
+	// the answer has arrived yet, which is what makes a deployment that sets
+	// PLATFORMKIT_DEMO_PASSWORD after provisioning a tenant still able to give its
+	// demo people a credential. See signInHeld for the other side.
+	if seedText(r.Fields["signIn"]) == signInDeclared {
 		fields["signIn"] = signInDeclared
 	}
 	return seed.Target{Fields: fields}, nil
+}
+
+// signInHeld is the snapshot's whole answer about sign-in: does this person hold
+// a credential at all. It reads only whether the module has a hash, and never
+// the hash, a comparison against one, or anything that leaves this function
+// other than one word — the same shape the plan prints and no more.
+//
+// "Any credential", and not "the demo credential", is the point. A person who
+// chose their own password holds a credential, so the record reads as settled
+// and the run that comes round again writes no password at all: docs/seed.md
+// promises that a rerun never resets a person's password, and the only way to
+// keep that promise without a second record of who set what is to ask the row
+// whether anybody has.
+func signInHeld(row *usercontracts.User) string {
+	if row.PasswordHash != "" {
+		return signInDeclared
+	}
+	return ""
 }
 
 func (w userSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _ bool) (seed.Snapshot, error) {
@@ -447,16 +488,7 @@ func (w userSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key,
 		// The stored answer, sorted the same way the declared one is, so a file
 		// that lists roles in another order is the same declaration.
 		"roles": seedRolesSorted(row.Roles),
-	}
-	if w.demoPassword != "" {
-		// A fact about the row, told in one word: can this person sign in with
-		// the demo password the deployment named. The password itself and its
-		// hash never leave the module that holds them.
-		if row.CheckPassword(w.demoPassword) {
-			fields["signIn"] = signInDeclared
-		} else {
-			fields["signIn"] = ""
-		}
+		"signIn": signInHeld(row),
 	}
 	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
 }
@@ -495,29 +527,50 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 	if err != nil {
 		return seed.Snapshot{}, err
 	}
-	if len(roles) > 0 && !slices.Equal([]string(row.Roles), roles) {
+	// The set the file declares, whenever it differs from the set the person
+	// holds — including when what it declares is nothing. A file that takes a
+	// role back says `roles: []`, and a writer that skipped an empty list would
+	// keep the grant the declaration removed, forever, and call it unchanged.
+	// Taking the last administrator away is the user module's own refusal, and
+	// this run commits nothing when it says so.
+	if !slices.Equal([]string(row.Roles), roles) {
 		if row, err = w.users.SetRoles(ctx, tx, row.ID, roles); err != nil {
 			return seed.Snapshot{}, err
 		}
 	}
-	if seedText(t.Fields["signIn"]) == signInDeclared && !row.CheckPassword(w.demoPassword) {
-		if err := w.users.SetPassword(ctx, tx, row.ID, w.demoPassword); err != nil {
+	// The credential a seed gives is the one a person does not have yet. Once a
+	// row holds a hash the answer is settled — see signInHeld — so the deployment
+	// password reaches an invited person and never overwrites a chosen one.
+	if seedText(t.Fields["signIn"]) == signInDeclared && row.PasswordHash == "" {
+		password, generated := w.demoPassword, false
+		if password == "" {
+			// No deployment answer means this demonstration names its people but
+			// not their credential, and an invited person who cannot be signed in
+			// as is not a walkthrough. So the run mints one for this person and
+			// prints it once, the way bootstrap does for the first administrator.
+			if password, err = generatePassword(); err != nil {
+				return seed.Snapshot{}, err
+			}
+			generated = true
+		}
+		if err := w.users.SetPassword(ctx, tx, row.ID, password); err != nil {
 			return seed.Snapshot{}, err
 		}
 		if row, err = w.users.Get(ctx, tx, row.ID); err != nil {
 			return seed.Snapshot{}, err
 		}
+		// To stderr, once, and never to a log: it is a password, and after this
+		// line nothing holds it but the hash. A create transaction that rolls back
+		// after printing discards the person it was minted for, and the line then
+		// names a credential that belongs to nobody.
+		if generated {
+			fmt.Fprintf(os.Stderr, "\n  password for %s: %s\n  It is not stored and will not be shown again.\n\n", row.Email, password)
+		}
 	}
 	fields := map[string]any{
 		"email": row.Email, "displayName": row.DisplayName,
 		"roles": seedRolesSorted(row.Roles),
-	}
-	if w.demoPassword != "" {
-		if row.CheckPassword(w.demoPassword) {
-			fields["signIn"] = signInDeclared
-		} else {
-			fields["signIn"] = ""
-		}
+		"signIn": signInHeld(row),
 	}
 	return seed.Snapshot{Present: true, ID: row.ID, Fields: fields}, nil
 }

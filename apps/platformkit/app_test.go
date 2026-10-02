@@ -85,6 +85,13 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // the loaded value. The database is empty: no tables, no ledger, nothing.
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
+	// The seed command's operator proves themselves the way every deployment
+	// does — through the environment, never argv — and the person they prove they
+	// are is the administrator install below creates, in the installation tenant
+	// this configuration names at acme's host. The case that checks the refusal of
+	// an absent credential empties both variables for itself.
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
 	migrateURL, appURL := dbtest.URLs(t)
 	path := t.TempDir() + "/config.yaml"
 	// The file module keeps its bytes under a directory of this test's own, so

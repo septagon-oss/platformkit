@@ -16,4 +16,7 @@ resource: sites
 records:
   - key: site
     fields:
-      homeSlug: home
+      # A reference, not a bare slug: contents/<slug>. The orderer resolves it, so
+      # the home page exists before this row points at it, and a slug no page
+      # wears refuses here rather than saving a site whose home page is nowhere.
+      homeSlug: contents/home

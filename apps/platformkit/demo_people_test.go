@@ -14,6 +14,16 @@ import (
 // Their roles and password come through the user owner's commands, not from
 // fields the seed inserts directly into the users table.
 func TestDemoPeopleHaveTheirRolesAndPassword(t *testing.T) {
+	// The demo credential is a deployment's answer, and it has to be named before
+	// the configuration is read, because the people it names arrive with the
+	// tenant. A demo tenant created while the deployment named no password gets
+	// people the seed minted a credential for, and a rerun never overwrites the
+	// credential a row already holds — which is what
+	// TestSeedRerunPreservesAPersonsOwnPassword exists to prove. Every assertion
+	// below is unchanged by saying the password first: the three people still sign
+	// in with this one.
+	const password = "demo walkthrough password 2026"
+	t.Setenv("PLATFORMKIT_DEMO_PASSWORD", password)
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
@@ -36,8 +46,6 @@ func TestDemoPeopleHaveTheirRolesAndPassword(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	const password = "demo walkthrough password 2026"
-	t.Setenv("PLATFORMKIT_DEMO_PASSWORD", password)
 	if err := seedCommand([]string{"--config", path, "--tenant", "demo", "--as", "root@demo.localhost", "--demo"}); err != nil {
 		t.Fatalf("seed the demo tenant: %v", err)
 	}
