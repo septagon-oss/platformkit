@@ -277,6 +277,12 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# catcher it had been given answered on another one, and the journey blamed
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
+	# Which port the run serves on. 8099 is the one journey port nothing allocates per
+	# checkout, so two `make e2e` runs on one machine used to be one red gate: the loser died
+	# on a bound port, and the winner drove a browser that the loser's application could answer.
+	# These cases hold a port of their own and ask the script about it, which no browser can
+	# tell them apart from one that never asked at all.
+	bash scripts/e2e_port_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
