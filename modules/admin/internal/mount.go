@@ -40,6 +40,15 @@ type Shell struct {
 	// SignIn is the auth module's session route, which the sign-in form posts
 	// to. The composition names it; this module only fills the form's action.
 	SignIn string
+	// Language is the account command's other half: the shell reads a person's
+	// own language to draw the control in the chrome and hands their choice to the
+	// module that owns people. Nil mounts no control at all — a composition with no
+	// user module has no account to speak of, and the header shows the sign-out it
+	// has always shown. See AccountLanguage.
+	Language AccountLanguage
+	// languagePath is languageRel composed onto this shell's own namespace, filled
+	// in by Mount: the account form's action, and nothing else.
+	languagePath string
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
@@ -106,6 +115,10 @@ func namespace(app *httpx.Router, module string) *httpx.Router {
 func Mount(s httpx.Surfaces, sh Shell) {
 	sheet := ui.Compose(sh.Theme)
 	app := s.App
+	// The account form's action, composed here rather than written: the shell owns
+	// its own prefix and nothing above it (see addresses).
+	sh.languagePath = at(app, languageRel).at
+
 	// The workspace has one home. This module is composed last, so it takes the
 	// claim when no product module wanted the root and the generated dashboard
 	// is what a person lands on; a product that claimed it first moves the
@@ -143,6 +156,9 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		served = append(served, r.Screen, r.Screen+"/new")
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	if sh.Language != nil {
+		served = append(served, sh.languagePath)
+	}
 	if sh.Roles != nil {
 		served = append(served, a.roles.at)
 	}
@@ -160,7 +176,10 @@ func Mount(s httpx.Surfaces, sh Shell) {
 			Brand: brand, Assets: a.assets.at, Stylesheet: sheet,
 			Scripts: ui.Controllers, SignIn: a.login.at,
 		},
-		Frame:     frame(a, nav, sh.Authorize, sh.storybook),
+		Frame: frame(a, nav, frameDeps{
+			Authorize: sh.Authorize, Storybook: sh.storybook,
+			Language: sh.Language, LanguagePath: sh.languagePath,
+		}),
 		Tag:       "admin",
 		Back:      a.dashboard.at,
 		BackLabel: "Back to the dashboard",
@@ -201,28 +220,41 @@ func Mount(s httpx.Surfaces, sh Shell) {
 // stylesheet's dark rules are behind prefers-color-scheme, so a person whose
 // system is dark gets dark, and the inline snippet page.Serve adds sets the
 // attribute only when they have chosen one for themselves.
-func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybook func(context.Context) (export.Storybook, error)) page.Frame {
+// frameDeps is what the frame closes over, as values: who may be asked whether a
+// caller is in, which composition the gallery link is worth offering for, and the
+// account command the language control reads and writes. A bag rather than four
+// parameters because the frame is built once and read on every request, and a
+// fifth positional argument past a navigation value is a call nobody can read.
+type frameDeps struct {
+	Authorize    httpx.Authorizer
+	Storybook    func(context.Context) (export.Storybook, error)
+	Language     AccountLanguage
+	LanguagePath string
+}
+
+func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
 	return func(ctx context.Context, r page.Request, body []g.Node) g.Node {
 		gallery := false
-		if r.SignedIn && authorize != nil {
-			allowed, err := authorize.Allowed(ctx, r.Tenant, tenancy.Grant{Permission: "gallery:read"})
+		if r.SignedIn && deps.Authorize != nil {
+			allowed, err := deps.Authorize.Allowed(ctx, r.Tenant, tenancy.Grant{Permission: "gallery:read"})
 			if err == nil && allowed {
-				_, err = storybook(ctx)
+				_, err = deps.Storybook(ctx)
 				gallery = err == nil
 			}
 		}
 		// One list of sections for both surfaces: the sidebar from the large breakpoint up, and the
 		// header's disclosure below it, where the sidebar is not shown.
-		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, authorize), r, gallery)
+		navigation := sidebar(a, nav.Visible(ctx, r.Tenant, deps.Authorize), r, gallery)
 		return g.Group([]g.Node{
 			components.Shell(components.ShellProps{SkipTarget: "content"}, components.ShellSlots{
 				Sidebar: []g.Node{components.Sidebar(navigation)},
-				Header:  header(r, navigation),
+				Header:  header(ctx, deps, r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
 					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
 			}),
-			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
+			components.ConfirmDialog(components.ConfirmDialogProps{
+				Title: chrome(r, "dialog.title", "Are you sure?")}),
 		})
 	}
 }
@@ -232,44 +264,65 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 // before this is called — see page.Navigation.Visible — so this renders a
 // list and hides nothing of its own.
 func sidebar(a addresses, visible []module.NavEntry, r page.Request, gallery bool) components.SidebarProps {
-	items := []components.SidebarItem{{Label: "Dashboard", Href: a.dashboard.at, Icon: "gear"}}
+	items := []components.SidebarItem{{Label: chrome(r, "nav.dashboard", "Dashboard"), Href: a.dashboard.at, Icon: "gear"}}
 	for _, entry := range visible {
 		items = append(items, components.SidebarItem{Label: entry.Label, Href: entry.Screen, Icon: "file-text"})
 	}
-	items = append(items, components.SidebarItem{Label: "Health", Href: a.health.at, Icon: "check-circle"})
+	items = append(items, components.SidebarItem{Label: chrome(r, "nav.health", "Health"), Href: a.health.at, Icon: "check-circle"})
 	// Use the same permission and composition selection as the direct routes.
 	if gallery {
-		items = append(items, components.SidebarItem{Label: "Components", Href: a.gallery.at, Icon: "info"})
+		items = append(items, components.SidebarItem{Label: chrome(r, "nav.components", "Components"), Href: a.gallery.at, Icon: "info"})
 	}
 	// BrandLabel rather than the Brand slot: the sidebar is inverted, and the
 	// colour that is legible on it is one the component owns.
 	return components.SidebarProps{
-		Current: r.Path, NavigationLabel: "Admin navigation", Items: items,
+		Current: r.Path, NavigationLabel: chrome(r, "nav.label", "Admin navigation"), Items: items,
 		BrandLabel: fallback(r.Tenant.Name, brand), BrandHref: a.workspace.at,
 	}
 }
 
+// chrome is a word of the shell's own copy, in the language this request is being
+// answered in. Every string the frame, the sidebar and the header write used to be
+// a Go literal, which meant a tenant served in Portuguese got a page that declared
+// pt-PT — because the pages inside the frame read their labels from the catalogue —
+// while its navigation, its sign-out and its confirmation dialog stayed English.
+// That is worse than an English page, which at least declares English: the
+// document promises one language to a screen reader and a translation tool and
+// speaks another. The fallback is the source English, so a composition with no
+// catalogue still says what it always said, and the key list belongs to
+// modules/admin/messages, in both of its files.
+func chrome(r page.Request, key, fallback string) string {
+	if r.Locale == nil {
+		return fallback
+	}
+	return r.Locale.Text("admin."+key, fallback)
+}
+
 // header is the tenant, the caller, the theme switch and the way out — and, below the large
 // breakpoint where the sidebar is not shown, the disclosure that lists the same sections.
-func header(r page.Request, navigation components.SidebarProps) []g.Node {
+func header(ctx context.Context, deps frameDeps, r page.Request, navigation components.SidebarProps) []g.Node {
 	right := []g.Node{
 		components.ButtonWithSlots(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{
 				"data-theme-toggle": "", "aria-pressed": "false"}},
 			Variant: "ghost", Size: "sm", IconOnly: true,
-			AriaLabel: "Switch between the light and dark theme",
+			AriaLabel: chrome(r, "theme.toggle", "Switch between the light and dark theme"),
 		}, components.ButtonSlots{Content: []g.Node{
 			components.Icon(components.IconProps{Name: "moon", Size: "sm"})}}),
+	}
+	if control := languageControl(ctx, deps, r); control != nil {
+		right = append(right, control)
 	}
 	if r.SignedIn {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
-				Content: short(r.Principal.UserID.String()) + " · " + fallback(strings.Join(r.Principal.Roles, ", "), "no roles"),
-				Size:    "sm", Color: "muted"}),
+				Content: short(r.Principal.UserID.String()) + " · " +
+					fallback(strings.Join(r.Principal.Roles, ", "), chrome(r, "account.no_roles", "no roles")),
+				Size: "sm", Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
-			Label:          "Sign out", Variant: "secondary", Size: "sm",
+			Label:          chrome(r, "account.sign_out", "Sign out"), Variant: "secondary", Size: "sm",
 		}))
 	}
 	return []g.Node{

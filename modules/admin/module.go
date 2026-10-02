@@ -31,6 +31,11 @@ import (
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
+// AccountLanguage is the shell's port for a person's own language. See
+// internal.AccountLanguage: the alias keeps the declaration beside its one
+// implementation and the name beside the Deps field that takes it.
+type AccountLanguage = internal.AccountLanguage
+
 // Roles is what the shell needs of the auth module to administer roles. See
 // internal.Roles: the alias keeps the declaration beside its one implementation
 // and the name beside the Deps field that takes it.
@@ -70,6 +75,11 @@ type Deps struct {
 	// nav entry either, so the two agree; a composition that has one and wires
 	// nothing here is told at boot that the entry leads nowhere.
 	Roles Roles
+
+	// Language is the account command, for the language control in the header: the
+	// person's own choice, read to draw it and written through the module that owns
+	// people. Nil draws no control. See AccountLanguage.
+	Language AccountLanguage
 
 	// Theme is the installation's two palettes. The zero value is the palette
 	// this repository ships; a client with its own colours sets this and
@@ -114,6 +124,7 @@ func Module(deps Deps) module.Module {
 				Authorize: deps.Authorize,
 				Tenants:   deps.Tenants,
 				Roles:     deps.Roles,
+				Language:  deps.Language,
 				Theme:     theme(deps.Theme),
 				Storybook: deps.Storybook,
 				Messages:  deps.Messages,

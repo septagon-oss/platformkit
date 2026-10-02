@@ -254,6 +254,9 @@ func compose(cfg config.Config) composition {
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: accountLocale{users: users}.Locale,
+		// The account control in the shell's header, wired to the same service the
+		// page language reads: read to draw the select, written by the command.
+		Language: accountLanguage{users: users},
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI}))
 
