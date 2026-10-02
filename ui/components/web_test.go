@@ -1161,7 +1161,7 @@ func TestCheckboxOwnsIndeterminateControllerProjection(t *testing.T) {
 	}
 	html := output.String()
 	for _, fragment := range []string{
-		`class="flex flex-col gap-1.5"`,
+		`class="flex flex-col gap-1.5 max-w-sm"`,
 		`class="relative inline-flex items-start min-h-6 min-w-6 max-w-full gap-3 cursor-pointer w-fit"`,
 		`data-controller="checkbox"`,
 		`data-checkbox-indeterminate-value="true"`,

@@ -246,12 +246,26 @@ var (
 			Transition(style.TransitionColors).Merge(clFocusRing)
 
 	// Inputs.
-	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
-	clFieldWrapFull = style.New().Width(style.SFull)
+	// A field is a column of copy with a control in it — label, control, help sentence, error — and the
+	// design floor refuses a body measure above 75 characters. A field takes the frame's measure by
+	// default: the same 24rem the footer's sentence and document.Bare's container take (64ch at the 12px
+	// a help line sets, 55ch at the 14px a label sets). A field that asks to span its grid column takes
+	// the other list and with it a control as wide as the column, which is why the two sentences below
+	// hold a bound of their own: on a full-width field the only thing between a 1100px paragraph and the
+	// floor is that bound. The two lists are alternatives rather than a merge because the sheet emits
+	// classes in sorted order, so a `max-w-none` could never override a `max-w-sm` on one element.
+	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).MaxWScaled(style.MaxWSM)
+	clFieldWrapFull = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).Width(style.SFull)
 	clLabel         = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
-	clHelp          = style.New().FontSize(style.TextXS).TextColor(style.FgMuted)
-	clFieldErr      = style.New().FontSize(style.TextXS).TextColor(style.FgDanger)
-	clRequired      = style.New().TextColor(style.FgDanger)
+	// clHelp bounds the sentence the way clShellFooterMeasure bounds the frame's own: the floor divides a
+	// paragraph's box by half its font size and refuses anything above 75 characters, and a help line
+	// under a full-width control on a generated record page measured 189ch at 1440px — a short sentence
+	// in a block that spans the column is still a 189-character measure to the probe, and every client's
+	// gate reads that sentence on every record page that documents a field.
+	clHelp = style.New().FontSize(style.TextXS).TextColor(style.FgMuted).MaxWScaled(style.MaxWSM)
+	// The error line is the same sentence in the same place, one state later, and is bounded with it.
+	clFieldErr = style.New().FontSize(style.TextXS).TextColor(style.FgDanger).MaxWScaled(style.MaxWSM)
+	clRequired = style.New().TextColor(style.FgDanger)
 
 	clInputDisabled = style.New().Bg(style.SurfaceDisabled).Cursor(style.CursorNotAllowed)
 	clInput         = style.New().
@@ -282,7 +296,6 @@ var (
 	}
 	clTextareaManual = style.New().ResizeY()
 	clTextareaAuto   = style.New().ResizeNone().Overflow(style.OverflowHidden)
-	clTextareaFull   = style.New().Width(style.SFull)
 	clTextareaMeta   = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
 				Justify(style.JustifyBetween).Gap(style.S2)
 	clTextareaSupporting = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1)
@@ -861,7 +874,7 @@ func ShellClassLists() []style.ClassList {
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
 		clSelectGrid, clSelectSize, clSelectIndicator,
-		clTextareaManual, clTextareaAuto, clTextareaFull, clTextareaMeta,
+		clTextareaManual, clTextareaAuto, clTextareaMeta,
 		clTextareaSupporting, clTextareaCounter,
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,

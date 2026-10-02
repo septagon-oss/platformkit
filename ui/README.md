@@ -91,7 +91,10 @@ were drawn here, so the cure is here too.
   sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
   `document.Bare` and the reference app's fault page already chose),
   `components.Text`'s own size vocabulary, and the gate's own probe as
-  `e2e/review-r3-refusal-floor.spec.ts` transcribes it.
+  `e2e/review-r3-refusal-floor.spec.ts` transcribes it. That bound is now
+  carried by a field itself (`clFieldWrap`, released by `FullWidth`) and by the
+  two sentences under its control (`clHelp`, `clFieldErr`): an unbounded help
+  line measured 189ch on every generated record page that documents a field.
 - **Added** — `BreakAnywhere` (`overflow-wrap: anywhere`), which the vocabulary
   lacked and `break-words` is not: it is the value that takes part in intrinsic
   min-content sizing, so a name that is one token stops setting the width of the
