@@ -36,7 +36,8 @@ func (s *Service) Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts
 	}
 	// Not a row, and not an error either: every tenant has a site from the
 	// moment it exists, and this is what it says before anybody has said
-	// anything. Validate fills in the theme and the colour.
+	// anything. Validate names the theme and leaves the colour none: a tenant
+	// that has not chosen one has not chosen a colour either.
 	out := &contracts.SiteSettings{}
 	return out, out.Validate(ctx)
 }

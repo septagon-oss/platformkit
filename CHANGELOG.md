@@ -195,10 +195,21 @@ that reads in the one they are in. The shipped default is the measurement that s
 wide the hole was: `#2563eb`, what the column default and every installation that never
 opened the settings screen paints, reads 4.4981:1 on the light canvas — under the 4.5:1
 floor by two thousandths — and 3.2618:1 as `fg-brand` on a dark card. It is now
-painted as `#4164b0` and `#618ef1`, which read; the column's default and
-`migrations/000018` are left for the product to move, since a repair that runs at the
-paint reaches every row that already exists and a default that moves reaches only the
-ones that follow. `SiteSettings.Validate` still refuses only what is not six hex digits:
+painted as `#4164b0` and `#618ef1`, which read. The default then moved. A `char(7)`
+that defaults to a colour the paint refuses leaves the row, the settings form and the
+page disagreeing about every tenant that never opened the form, and no `#rrggbb` can be
+that default: the accent is body copy on a light canvas in one mode and on a dark canvas
+in the other, which needs those two grounds 4.5 x 4.5 = 20.25:1 apart, and
+`design.Default()` puts them 18.28:1 apart — of 32768 colours sampled on a step of 8 in
+each channel it issues none unchanged in both modes. So `DefaultPrimaryColor`, the
+column default (`000019`) and the form now name *no colour*, `Validate` fills in
+nothing, and a site that holds none is painted the accent of the palette its own sheet
+links, mode by mode, which is the colour that palette's gate certified. A row that
+already carries a colour keeps it: `000019` moves the default and runs no `UPDATE`,
+because a migration cannot tell the colour somebody typed from the default that used to
+be there. What stays open is the wire — the field's `pattern` still refuses an empty
+string, so a client says "none" by leaving the field out, and widening that pattern is a
+B3 change to the device contract. `SiteSettings.Validate` still refuses only what is not six hex digits:
 legibility is decided where the colour is painted, because a row saved before this gate
 existed is painted by whichever code answers the page, not by the one that wrote it.
 

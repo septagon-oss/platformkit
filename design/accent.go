@@ -34,10 +34,17 @@ const accentToken = "accent-default"
 // LegibleAccent returns the colour this pair can paint where accent-default is
 // painted in the named theme, given the colour somebody asked for.
 //
-// Two answers, in this order:
+// Three answers, in this order:
+//
+//  0. the empty string, for an empty value: a caller that asks about no colour is
+//     told to paint no colour, which is the palette's own accent. This is the
+//     answer a site whose tenant never chose one gets (modules/site/contracts
+//     /.DefaultPrimaryColor names no colour because no #rrggbb reads as text on a
+//     light canvas and on a dark one);
 //
 //  1. the colour itself, when the finished theme clears both halves of the gate
 //     with it, which is how a brand colour keeps all of itself;
+//
 //  2. otherwise the nearest colour along the line settle walks — its own hue,
 //     saturation lost as it moves toward the pole that reads on this theme's
 //     surfaces — that clears them, which is the same walk FromSeed repairs a
@@ -60,6 +67,9 @@ const accentToken = "accent-default"
 // The value comes back as the #rrggbb literal a theme stores, lower-case, which
 // is the spelling a caller writes into a stylesheet and the one the gate re-reads.
 func (p Pair) LegibleAccent(theme, value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
 	var target Theme
 	switch theme {
 	case "light":

@@ -78,11 +78,19 @@ func TestLegibleAccentRefusesWhatNamesNoColourOrNoTheme(t *testing.T) {
 			t.Errorf("theme %q returned %q, %v", theme, got, err)
 		}
 	}
-	for _, value := range []string{"red", "#0f5d4e80", "rgba(0,0,0,1)", "", "#0f5d4e;"} {
+	for _, value := range []string{"red", "#0f5d4e80", "rgba(0,0,0,1)", "#0f5d4e;"} {
 		got, err := pair.LegibleAccent("light", value)
 		if err == nil || got != "" {
 			t.Errorf("value %q returned %q, %v", value, got, err)
 		}
+	}
+	// The empty value is not among the refusals: it names no colour, and the answer
+	// to "what may I paint where nobody asked for a colour" is none — the palette's
+	// own. That is the question a site whose tenant never chose one asks, which is
+	// why modules/site names no colour as its default: no #rrggbb reads as text on a
+	// light canvas and on a dark one at once.
+	if got, err := pair.LegibleAccent("light", ""); err != nil || got != "" {
+		t.Errorf("an empty value returned %q, %v: no colour asked for answers \"paint the palette's own\"", got, err)
 	}
 	// Shorthand is a colour this package reads and the gate can measure, so it is
 	// answered rather than refused: the strict six-digit grammar is the caller's

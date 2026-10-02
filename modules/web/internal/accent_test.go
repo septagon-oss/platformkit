@@ -131,3 +131,39 @@ func TestTheSiteDeclaresNoAccentItsPaletteCannotCarry(t *testing.T) {
 		t.Error("the dark half of the palette reads and was refused its tenant's colour too")
 	}
 }
+
+// TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent: what a site with no
+// colour of its own wears. site contracts' DefaultPrimaryColor names no colour —
+// no #rrggbb reads as text on a light canvas and on a dark one, so a stored default
+// could only ever be repainted before it reached the page — and a site holding it is
+// painted the accent of the palette its own sheet links, mode by mode. That is the
+// colour the palette's own gate issued, so the row, the form and the page agree, and
+// the page agrees in the colour it actually wears.
+func TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent(t *testing.T) {
+	t.Parallel()
+	if design.Default().Light.AccentDefault == design.Default().Dark.AccentDefault {
+		t.Fatal("the shipped palette paints one accent in both modes, so this case compares nothing")
+	}
+	settings := &sitecontracts.SiteSettings{Title: "Acme"}
+	if err := settings.Validate(t.Context()); err != nil {
+		t.Fatalf("Validate refused the settings of a site whose tenant chose no colour: %v", err)
+	}
+	for _, theme := range []string{"light", "dark", "system"} {
+		settings.Theme = theme
+		head := render(t, Site{}.view(settings, page.Request{}, "Welcome", nil).Head)
+		got := accents(t, head, theme)
+		// A site that pinned no mode writes its :root rule for the light mode, and
+		// accents() labels that rule with the mode it stands for: "system".
+		if pinned, ok := got["system"]; ok {
+			got["light"] = pinned
+		}
+		for mode, want := range map[string]string{
+			"light": design.Default().Light.AccentDefault,
+			"dark":  design.Default().Dark.AccentDefault,
+		} {
+			if got[mode] != want {
+				t.Errorf("%s theme, %s mode: a site with no colour of its own paints %s, want the palette's own %s", theme, mode, got[mode], want)
+			}
+		}
+	}
+}

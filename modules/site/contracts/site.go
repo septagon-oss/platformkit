@@ -37,26 +37,25 @@ const (
 
 var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 
-// DefaultPrimaryColor is the colour a site that has chosen none holds. It is here
-// rather than in a theme because a theme may be replaced and this is what a
-// tenant's settings say when they say nothing.
+// DefaultPrimaryColor is what a site that has chosen none holds: no colour of its
+// own. The column default, the settings form and the paint read this one constant,
+// so the three cannot disagree, and such a site wears the accent of the palette it
+// links — which that palette's own gate issued for both modes, which is why the
+// paint needs no measurement to make it legible.
 //
-// It is not the colour such a site is *rendered* in, and cannot be one for both
-// modes: the paint measures the stored value through design.Pair.LegibleAccent for
-// each mode it declares (modules/web/internal/mount.go), because the accent is body
-// copy — fg-link, fg-brand — on a light card in the light theme and on a dark canvas
-// in the dark one, so the two modes need colours at opposite ends of the luminance
-// scale and no single #rrggbb clears both gates. Measured over the colours a
-// #rrggbb can name, the ones design.Default() issues unchanged in light have
-// relative luminance at most 0.134 and the ones it issues unchanged in dark at least
-// 0.269: the bands do not meet. The value below is refused by the gate in both modes
-// (#2563eb measures 4.50:1 against the light canvas, where the floor is 4.5), so a
-// site that never opened the settings screen is painted the nearest colour that reads
-// — #4164b0 in light, #618ef1 in dark — and the row, the form and the page agree only
-// about what the tenant stored. Narrowing that gap is a colour decision (file the
-// measured colour where the stored one is shown, or let the column say "none"), and
-// review 21's case in modules/web/internal names it.
-const DefaultPrimaryColor = "#2563eb"
+// It cannot be a #rrggbb, and that is arithmetic rather than a colour choice. The
+// gate measures the accent as body copy on each mode's own canvas (design/contrast
+// .go: accent-default on surface-canvas at MinContrast), so one stored colour would
+// have to read at 4.5:1 on a light canvas and on a dark one, which needs those two
+// grounds 4.5 × 4.5 = 20.25:1 apart. design.Default() puts them 18.28:1 apart: light
+// surface-canvas #f2efe7 at relative luminance 0.864, where an accent must be at most
+// 0.153, against dark surface-canvas #0e1614 at 0.007, where it must be at least
+// 0.207. The bands do not meet and no constant of that type can meet them — of 32768
+// colours sampled on a step of 8 in each channel, design.Default() issued none
+// unchanged in both modes. What this constant used to be, #2563eb, reads in neither
+// (4.50:1 on the light canvas against a floor of 4.5), so the colour a tenant that
+// never opened the form was rendered in was never the colour its row held.
+const DefaultPrimaryColor = ""
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
 // and a label longer than a few words is a sentence in a menu.
@@ -131,7 +130,7 @@ type SiteSettings struct {
 	// their site looks. A theme that needed more would be a theme with a
 	// stylesheet editor in it.
 	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
-	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#2563eb'" pattern:"^#[0-9a-fA-F]{6}$" doc:"Brand colour, #rrggbb" default:"#2563eb" required:"false" example:"#2563eb"`
+	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:''" pattern:"^#[0-9a-fA-F]{6}$" doc:"Brand colour, #rrggbb. Empty says the site has none of its own and wears the palette's accent" required:"false" example:"#2563eb"`
 
 	// LogoFileID is a file id with no foreign key behind it, which is what
 	// "cross-module dependencies are Go interfaces" costs at the database: this
@@ -195,11 +194,12 @@ func (s *SiteSettings) Validate(context.Context) error {
 	s.Tagline = strings.TrimSpace(s.Tagline)
 	s.HomeSlug = strings.ToLower(strings.TrimSpace(s.HomeSlug))
 	s.PrimaryColor = strings.ToLower(strings.TrimSpace(s.PrimaryColor))
+	// An empty colour is the choice, not a missing value: it says this site has no
+	// colour of its own and wears the palette's accent. Nothing fills it in here —
+	// filling it in would store a colour nobody chose — which is why
+	// DefaultPrimaryColor names no colour at all.
 	if s.Theme == "" {
 		s.Theme = ThemeSystem
-	}
-	if s.PrimaryColor == "" {
-		s.PrimaryColor = DefaultPrimaryColor
 	}
 	switch {
 	// Characters, not bytes, here and below: len() counts bytes, so a title of
@@ -218,7 +218,7 @@ func (s *SiteSettings) Validate(context.Context) error {
 		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
 	case !slices.Contains(themes, s.Theme):
 		return fmt.Errorf("theme %q is not one of %v", s.Theme, themes)
-	case !hexColor.MatchString(s.PrimaryColor):
+	case s.PrimaryColor != "" && !hexColor.MatchString(s.PrimaryColor):
 		return fmt.Errorf("%q is not a colour; a primary colour is #rrggbb", s.PrimaryColor)
 	case len(s.Nav) > MaxNav:
 		return fmt.Errorf("a navigation is at most %d links", MaxNav)

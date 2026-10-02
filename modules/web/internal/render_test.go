@@ -6,6 +6,7 @@ import (
 
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -36,11 +37,18 @@ func TestTheDocumentPinsOnlyAThemeAndAColourItRecognises(t *testing.T) {
 	if head := render(t, pinned.Head); !strings.Contains(head, ":root{--pk-color-accent-default:#c0ffee}") {
 		t.Errorf("head = %s", head)
 	}
-	for _, colour := range []string{"red", "#fff", "#c0ffee}body{display:none", "#C0FFEE;", "", "url(x)"} {
+	for _, colour := range []string{"red", "#fff", "#c0ffee}body{display:none", "#C0FFEE;", "url(x)"} {
 		v := site.view(&sitecontracts.SiteSettings{Theme: "sepia", PrimaryColor: colour}, page.Request{}, "Welcome", nil)
 		if v.Theme != "" || len(v.Head) != 0 {
 			t.Errorf("colour %q / theme sepia was pinned: theme=%q head=%d", colour, v.Theme, len(v.Head))
 		}
+	}
+	// An empty colour is not one of the malformed values: it is what a site whose
+	// tenant chose none holds — site contracts' DefaultPrimaryColor names no colour
+	// — and such a page wears the accent of the palette it links. The theme is still
+	// unrecognised, so it stays unpinned.
+	if v := site.view(&sitecontracts.SiteSettings{Theme: "sepia"}, page.Request{}, "Welcome", nil); v.Theme != "" || !strings.Contains(render(t, v.Head), design.Default().Light.AccentDefault) {
+		t.Errorf("theme=%q head=%d: a site with no colour of its own keeps the palette's accent and no theme", v.Theme, len(v.Head))
 	}
 	if v := site.view(&sitecontracts.SiteSettings{Theme: "light", PrimaryColor: "#C0FFEE"}, page.Request{}, "Welcome", nil); v.Theme != "light" || len(v.Head) != 1 {
 		t.Error("upper-case hex and the light theme are valid and were refused")
