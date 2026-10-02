@@ -130,7 +130,15 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the breadcrumb a break rule. A leaf-by-leaf diff before and after those two
 	// commits changes /css and /sha256 and nothing else — no token, icon, example or
 	// schema — which is what this assertion has always had to be re-measured for.
-	if legacy.SHA256 != "74125ab38cc97b15b07025811741a6670f217d9e124b0c3991fccb3ef23ce144" {
+	//
+	// The field's own measure moves it a third time, and this time the sheet does
+	// not: `max-w-sm` was already in it, bought by the footer's bound, so /css is
+	// byte-identical and what differs is 17 of the 6,406 leaves under `examples` —
+	// the rendered HTML of the thirteen input, select, textarea, form and
+	// table-empty examples, plus the four child span offsets the form example
+	// carries. No token, icon, schema or css leaf moves. Measured by exporting the
+	// tree before and after the four edited component files and walking both JSONs.
+	if legacy.SHA256 != "80454979b693ea804cc402676632b13d6dac2fbcd82c994907b629f32690df95" {
 		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
 	}
 	before, _ := json.Marshal(legacy)

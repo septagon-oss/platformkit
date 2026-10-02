@@ -111,7 +111,7 @@ func Textarea(p TextareaProps) g.Node {
 
 	rootClass := clFieldWrap
 	if p.FullWidth {
-		rootClass = rootClass.Merge(clTextareaFull)
+		rootClass = clFieldWrapFull
 	}
 	field := []g.Node{
 		h.Class(rootClass.Compile()),
