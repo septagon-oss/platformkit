@@ -122,8 +122,11 @@ Browser checks also require Node, npm, `psql`, `curl` and Playwright Chromium.
 The journeys that open a link the application mails read it from compose.yaml's
 mailpit catcher, so [scripts/e2e.sh](scripts/e2e.sh) refuses a run with nothing
 answering that address rather than letting the journey time out on a mail nobody
-received; `make up` starts it, and [Makefile](Makefile) derives the addresses the
-run and its journeys use from the two catcher ports. Install the browser
+received; `make up` starts it. The two catcher ports name everything else:
+[scripts/e2e.sh](scripts/e2e.sh) derives the address the application dials and the
+address its journeys read from `PLATFORMKIT_MAILPIT_SMTP_PORT` and
+`PLATFORMKIT_MAILPIT_PORT`, so a caller that runs one spec directly reaches the
+catcher its own stack publishes rather than the default port. Install the browser
 dependencies once, then run with the same service ports:
 
 ```sh

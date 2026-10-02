@@ -23,9 +23,18 @@ database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
 # The development mail catcher: compose.yaml's mailpit service. The application is
 # pointed at its SMTP port and the journeys are pointed at its HTTP API, because a
 # mailed link nobody can read is the failure the front-door journeys exist for.
+#
+# The three names are derived here, from the two ports compose.yaml publishes, rather
+# than by the `e2e` recipe. The reason is who else calls this script: `./scripts/e2e.sh
+# some-spec.spec.ts` is how somebody runs one journey, and that caller carries the
+# stack's ports in its environment but none of the recipe's derived names, so a
+# recipe-side derivation left the direct call dialling the default 8025 while the
+# catcher it was given answered on another port. A caller that reaches a catcher at some
+# other address - a CI job whose services answer by container name, not on localhost -
+# sets the three names itself, and wins over the derivation.
 mail_host="${PLATFORMKIT_E2E_MAIL_HOST:-localhost}"
-mail_port="${PLATFORMKIT_E2E_MAIL_PORT:-1025}"
-mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://localhost:8025}"
+mail_port="${PLATFORMKIT_E2E_MAIL_PORT:-${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}}"
+mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MAILPIT_PORT:-8025}}"
 
 if ! command -v node >/dev/null; then
 	echo "e2e: node is not installed; gate 10 needs it. See e2e/package.json." >&2
@@ -39,9 +48,10 @@ fi
 # nobody answered, pointing at Playwright rather than at the stack that is missing.
 if ! curl -fsS --max-time 5 "$mailpit_url/api/v1/info" >/dev/null 2>&1; then
 	echo "e2e: no Mailpit API at $mailpit_url, and the mailed-link journeys read the link a run sends out of it." >&2
-	echo "     docker compose up -d --wait starts compose.yaml's mailpit service; to move it, set PLATFORMKIT_MAILPIT_SMTP_PORT" >&2
-	echo "     and PLATFORMKIT_MAILPIT_PORT for the stack and PLATFORMKIT_E2E_MAIL_HOST, PLATFORMKIT_E2E_MAIL_PORT and" >&2
-	echo "     PLATFORMKIT_E2E_MAILPIT_URL for this run (the Makefile derives the last three from the first two)." >&2
+	echo "     docker compose up -d --wait mailpit starts compose.yaml's catcher on the ports this run reads:" >&2
+	echo "     PLATFORMKIT_MAILPIT_SMTP_PORT=${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025} is the server the application dials," >&2
+	echo "     PLATFORMKIT_MAILPIT_PORT=${PLATFORMKIT_MAILPIT_PORT:-8025} is this API. A catcher elsewhere is named by" >&2
+	echo "     PLATFORMKIT_E2E_MAIL_HOST, PLATFORMKIT_E2E_MAIL_PORT and PLATFORMKIT_E2E_MAILPIT_URL." >&2
 	exit 1
 fi
 
