@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/seed"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
+	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -29,24 +30,27 @@ func counts(plan seed.Plan, action seed.Action, kind string) map[string]int {
 
 // TestTheReferenceSeedWritesEachRecordThroughItsOwner runs the application's own
 // seed over the composition it is declared in, against a bootstrapped
-// installation. Four things are settled here and nowhere else: that a seeded page
-// is a page — created, published and read back through the content module, with
-// the slug and title the module stored rather than the ones the file typed; that
-// a record a file names that is not there yet is created through its owner's write
-// path and not inserted; that applying files the tenant already holds writes
-// nothing at all, whether they arrived through the creation hook or a command; and
-// that a demo request for a tenant whose row says false costs the run.
+// installation. Five things are settled here and nowhere else: that a record a file
+// names which is not there yet is created through its owner's write path rather
+// than inserted; that a seeded page is a page — created, published, and read back
+// through the content module with the title the module stored rather than the one
+// the file typed; that a seeded person holds the role the file named, through
+// user.SetRoles; that applying files a tenant already holds writes nothing at all,
+// whether they arrived through the creation hook or through this command; and that
+// a demo request for a tenant whose row says false costs the run.
 //
 // The person the run acts as is the bootstrap administrator, and the authorizer
 // asks the auth module about that person: a run that could not pass the same
 // question as a request would not reach this far.
 //
-// The records this case creates are its own — an fstest tree with two records the
-// reference files do not name — because the reference application's own starter
-// now exists before any command runs: the tenant creation hook applied it (see
-// starter_on_create_test.go), so a run over seed/starter/ proves the reconciliation
-// and not the creation. Creation is proven here, against the same owners, with the
-// same writers and the same authorizer.
+// The records this case *creates* are its own — an fstest tree holding two records
+// the reference files do not name — because the reference application's starter now
+// exists before any command runs: the tenant creation hook applied it, and
+// TestNewTenantOpensWithStarterAndDemoContent pins that. What the reference files
+// themselves do is proven here as reconciliation, and their demo half — three
+// people with roles and a password, five pages — is pinned by
+// TestDemoPeopleHaveTheirRolesAndPassword and the eight demo keys of the first
+// case. Same owners, same writers, same authorizer either way.
 func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
@@ -169,6 +173,78 @@ records:
 	}
 	if !ada.Roles.Has("observer") {
 		t.Errorf("the seeded person holds %v; the file named observer, through user.SetRoles", ada.Roles)
+	}
+}
+
+// TestAProvisioningRunRefusesATenantThatIsNotBeingCreated runs the creation seed
+// against acme, which already has an administrator and already holds its starter
+// records. A seed run with no person in it has no authorisation to ask for, so its
+// whole claim must be that the tenant came into being around it — and acme fails
+// that claim twice over, in the tenant's own transaction: the hook refuses because
+// the tenant has people, and the seed service refuses because the tenant already
+// holds seeded records. Neither refusal writes: the check is the run's first
+// statement inside the tenant, before any owner is asked for anything.
+func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
+	path, cfg := configure(t)
+	install(t, path)
+	c := compose(cfg)
+	service, err := seedService(c)
+	if err != nil {
+		t.Fatalf("the composition's own seed service: %v", err)
+	}
+	provision := &seedProvisioner{
+		users: c.users, contents: c.contents, sites: c.sites,
+		auth: c.auth, demoPassword: cfg.Demo.Password,
+	}
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+
+	answers := map[string]string{}
+	// Two transactions, because a system handle that has lent a tenant view ends
+	// with it (kit/db's sealed check): the two refusals are one statement each in
+	// the transaction they would really run in, not two views on one handle.
+	// The refusal travels out of the transaction rather than being read back
+	// inside it, which is what a create does with it and what a tenant view that
+	// ended in a refusal asks for: the statement is the last one the transaction
+	// made, and everything before it rolls back with it.
+	hook := func(ctx context.Context, system db.Tx[db.System]) error {
+		row, err := c.tenants.ByHost(ctx, system, acmeHost)
+		if err != nil {
+			return err
+		}
+		return provision.OnTenantCreate(ctx, system,
+			&tenantcontracts.Tenant{ID: row.ID, Slug: row.Slug, Name: row.Name, Demo: row.Demo})
+	}
+	apply := func(ctx context.Context, system db.Tx[db.System]) error {
+		row, err := c.tenants.ByHost(ctx, system, acmeHost)
+		if err != nil {
+			return err
+		}
+		return db.InTenant(ctx, system, row, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			if _, err := service.ApplyProvisioned(ctx, tx, seed.Selection{}); err != nil {
+				answers["service"] = err.Error()
+			} else {
+				answers["service"] = ""
+			}
+			return nil
+		})
+	}
+	if err := dbtest.System(t.Context(), conn, hook); err != nil {
+		answers["hook"] = err.Error()
+	} else {
+		answers["hook"] = ""
+	}
+	if err := dbtest.System(t.Context(), conn, apply); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(answers["hook"], "already has people") {
+		t.Errorf("the creation seed on a tenant with people: %q; want the hook to refuse it", answers["hook"])
+	}
+	if !strings.Contains(answers["service"], "not being provisioned") {
+		t.Errorf("ApplyProvisioned on a tenant with seeded records: %q; want the service to refuse it", answers["service"])
 	}
 }
 
