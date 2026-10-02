@@ -15,6 +15,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -46,7 +47,8 @@ type surfaces struct {
 
 func newSurfaces(t *testing.T) *surfaces {
 	t.Helper()
-	return newSurfacesWith(t, httpx.Options{})
+	return newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit")})
 }
 
 func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
@@ -55,6 +57,7 @@ func newSurfacesWith(t *testing.T, extra httpx.Options) *surfaces {
 	_ = admin
 	s := &surfaces{who: tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}}
 	opts := httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		PublicHost:   host,
 		Installation: installationHost,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
@@ -503,7 +506,8 @@ func TestAPublicSurfaceTakesNobodiesSessionAndSetsNobodiesCookie(t *testing.T) {
 // lock out. A workspace write has one, and is not counted here.
 func TestAnAnonymousWriteIsTheOnlyThingThePublicSurfaceLimits(t *testing.T) {
 	limiter := &window{allow: 2}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: limiter})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: limiter})
 	ran := 0
 	// The public write carries no session: there is none to carry.
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
@@ -715,7 +719,8 @@ func (p *perKey) Forget(context.Context, string) error { return nil }
 // refused, and the other tenant's first is not.
 func TestTwoTenantsBehindOneAddressAreCountedApart(t *testing.T) {
 	counted := &perKey{}
-	s := newSurfacesWith(t, httpx.Options{WriteLimiter: counted})
+	s := newSurfacesWith(t, httpx.Options{
+		Cache: cache.Memory("pkit"), WriteLimiter: counted})
 	httpx.Register(s.api.Surfaces("auth").Public, huma.Operation{
 		OperationID: "register", Method: http.MethodPost, Path: "/register",
 	}, httpx.Public(), func(context.Context, *struct{}) (*body, error) { return &body{}, nil })

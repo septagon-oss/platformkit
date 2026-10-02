@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -128,6 +129,7 @@ func mountAs[T crud.Entity](t *testing.T, s rest.Spec[T], authorize httpx.Author
 		loader = l
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: loader, Conn: app, Authorize: authorize,
 		// The installation is reached at the same host the customer is, in this
 		// harness, so a control-plane route is mounted and reachable and the

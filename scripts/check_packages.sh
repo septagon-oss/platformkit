@@ -44,7 +44,7 @@ done
 # would leave the assertion resting on a caller that may stop calling tomorrow.
 parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
-    kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
+    kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
     kit/flags/providers/ofrep kit/locale/providers/xtext)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
@@ -98,7 +98,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
         # the bound that matters is the other direction, refused by check("kit/fault", "").
-        kernel = p "kit/config " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module"
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3"
@@ -117,6 +117,17 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The one door for shared names: stdlib and UUID, or the package that is
         # supposed to name nothing but a slug would be holding a runner.
         check("kit/appname", uuid)
+        # kit/cache is the value every replica reads: the standard library, uuid and
+        # singleflight. A store it talks to is a provider, not this core.
+        check("kit/cache", uuid " golang.org/x/sync/singleflight")
+        # The one store kit/cache speaks to: the port package and one client, and
+        # the four commands the adapter issues are asserted in its own test rather
+        # than here — this line is what the provider may link, which is the only
+        # direction the compiler cannot refuse. kit/appname rides in with kit/config:
+        # the config decodes its own app slug through the door, so a provider that
+        # reads configuration reaches the slug values and nothing else.
+        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config " appname,
+            uuid " github.com/redis/go-redis/v9 github.com/cespare/xxhash/v2 go.uber.org/atomic golang.org/x/sync golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("modules/task/domain", "")
         check("design", "")
         check("ui/forms", uuid " " p "kit/entity " p "design " p "ui/icon " p "ui/css " p "ui/style " p "ui/components " p "ui/components/examples " markup)

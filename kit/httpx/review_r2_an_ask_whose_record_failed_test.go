@@ -32,6 +32,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -49,6 +50,7 @@ func askSetupRecord(t *testing.T, recErr error) (http.Handler, string, *fixture,
 	}
 	attempted := new(int)
 	api, router := httpx.New(httpx.Options{
+		Cache:        cache.Memory("pkit"),
 		Installation: host,
 		PublicHost:   host,
 		Tenants:      f,

@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -64,6 +65,7 @@ func TestOperatorReadBoundary(t *testing.T) {
 					t.Fatal(err)
 				}
 				api, router := httpx.New(httpx.Options{
+					Cache:      cache.Memory("pkit"),
 					PublicHost: host, Tenants: f, Conn: app, Authorize: f,
 					// The operator's tenant is the installation's, and the
 					// installation is reached at host: both facts are what makes
