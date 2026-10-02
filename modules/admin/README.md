@@ -106,14 +106,12 @@ says what the English file is for, which is the loader's source language and the
 parity check, not a transform. The module writes no page of its own about content
 translation and knows nothing about which content exists in which language.
 
-The account control's empty option — the one that takes the choice back — is labelled
-by `ui/components`'s own placeholder fallback, "Choose…", and not by
-`admin.account.unset`: the component renders a caller's `Placeholder` disabled, so a
-translated placeholder would be an unselectable one and the choice could never be
-withdrawn. The word is the design layer's, not this module's, and it is the
-foundation's to decide; what is on offer is a `PlaceholderSelectable` prop or its
-equivalent, which no consumer here asks for yet. `e2e/account-language.spec.ts`
-selects the empty option by value for that reason.
+The account control's empty option — the one that takes the choice back — carries this
+module's words, `admin.account.unset`, and is selectable: `ui/components` disables an
+empty option only when the field is `Required`, which is what "a prompt, not a value"
+always meant, and no language chosen *is* a value here. The component still falls back
+to its own "Choose…" for a caller that passes no `Placeholder`; no caller in this
+repository does. `e2e/account-language.spec.ts` selects the empty option by value.
 
 Because the account form is a `Form` with its own submit control, every signed-in page
 carries two submit buttons: the page's own and `Save language`. They are distinct

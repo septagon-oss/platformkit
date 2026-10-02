@@ -74,7 +74,9 @@ There is no JSON door of its own: the page is the door, and a `PUT
 warning the page shows is the truthful generic one — this module keeps no inventory
 of what content exists in which language, and a count invented here would be a
 number nothing can check. The last language cannot be removed by construction: every
-declaration names a default, and an empty default is refused.
+declaration names a default, and an empty default is refused. The page keeps one copy
+column: its review step is the heading-and-description block above the ticks it warns
+about, not a boxed Alert whose icon would move that sentence 68px away.
 
 ### Verification
 
