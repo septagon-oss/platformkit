@@ -89,7 +89,7 @@ func Changes[T any](before, after *T, fields ...string) ([]Change, error) {
 			if tag == "digest" {
 				beforeJSON = digested(beforeJSON)
 			}
-			if string(beforeJSON) == string(afterJSON) {
+			if string(beforeJSON) == string(afterJSON) || (zeroJSON(beforeJSON) && zeroJSON(afterJSON)) {
 				continue
 			}
 			// A json null is an absence, not a value: an omitted pointer or an absent
@@ -147,8 +147,15 @@ func digested(value []byte) json.RawMessage {
 	return out
 }
 
-// zeroJSON reports the marshalled value as an absence: "", 0, false, null, [] or {}. A
-// create carries no news in a field the new row does not fill.
+// zeroJSON reports the marshalled value as an absence: "", 0, false, null, [] or {}.
+//
+// It answers two questions with one rule, because they are the same question. A create
+// carries no news in a field the new row does not fill. And on an update, a field whose
+// two halves are both absences did not move: the row that stored its navigation as []
+// and the body that sent no navigation at all differ in json — [] against null — and
+// not in fact, and a trail row saying "the navigation went from nothing to nothing" is
+// a change nobody made. Nothing else is compared loosely: two values that are both
+// present are compared byte for byte.
 func zeroJSON(v []byte) bool {
 	switch s := string(v); s {
 	case `""`, `0`, `false`, `null`, `[]`, `{}`:
