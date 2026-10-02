@@ -64,37 +64,43 @@ type Runtime struct {
 // modules' Routes callbacks mounted the same surface — over a recorder, and opens
 // nothing: no pool, no migration, no listener, no broker, and no connection to
 // the store the deployment names (see the body for the store it does build, and
-// why that one opens nothing). It registers the routes twice and runs the same
-// gates over both, which is why a composition refused here is the same
+// why that one opens nothing). It registers the routes three times and runs the
+// same gates over each, which is why a composition refused here is the same
 // composition Start would have refused, answered while nothing has been spent.
 //
-// Call it before Start. Start answers the pair itself for a caller that does not,
+// Call it before Start. Start answers all of it itself for a caller that does not,
 // so the order is a caller's convenience and not a safety condition: the gates are
-// answered over two dry registrations before either opens a pool or dials the store
+// answered over three dry registrations before either opens a pool or dials the store
 // the deployment names, and Start then runs them again over the live connection and
 // refuses the boot there — before it migrates, and with one more answer, which is
-// whether the routes the modules mounted a third time are the routes they mounted
-// the first two.
+// whether the routes the modules mounted a fourth time are the routes they mounted
+// the first three.
 func (a *App) Declarations() error {
 	// The recorder needs a store because httpx requires one — a belief about which
 	// tenant a host is has to be something every replica can forget — and this
 	// composition serves nothing, so the store it is handed is named for the option
 	// and thrown away with the recorder. The shared one is built by Start: dialing a
 	// server the deployment named would be an effect, and this method's whole claim
-	// is that it answers before any effect happens.
+	// is that it answers before any effect happens. A Routes callback sees almost
+	// none of the difference: httpx.Surfaces hands back the composition's recorded
+	// shape, a SystemToken — a capability, not a connection — and InvalidateHost,
+	// which moves this pass's own store. Nothing on it queries the pool.
 	segment, err := a.cacheSegment()
 	if err != nil {
 		return err
 	}
-	// Twice, and the second pass is the reason there are two. Every other gate
-	// below reads one registration and answers about it; the agreement between two
-	// registrations can only be answered by registering twice, and the alternative
-	// — comparing the dry registration with the one Start builds over the open
-	// connection — leaves that answer sitting behind the pool and the store Start
-	// opens on its way there, so a boot refuses its composition after dialing the
-	// server the deployment named. The first pass records the standard and the
-	// second is judged against it; see registrationsAgree.
-	for pass := 1; pass <= 2; pass++ {
+	// Three times, and the second and third are the reason there are three. Every
+	// other gate below reads one registration and answers about it; the agreement
+	// between registrations can only be answered by registering more than once, and
+	// the alternative — comparing the dry registration with the one Start builds
+	// over the open connection — leaves that answer sitting behind the pool and the
+	// store Start opens on its way there, so a boot refuses its composition after
+	// dialing the server the deployment named. Two passes are what a callback behind
+	// an idempotent mount guard needs; a third is what a callback that answers
+	// differently on its third call needs, and it costs the same recorder nothing.
+	// The first pass records the standard and every later one is judged against it;
+	// see registrationsAgree.
+	for pass := 1; pass <= 3; pass++ {
 		dry := cache.Memory(segment)
 		_, _, err := a.composeRoutes(nil, dry, true)
 		// Each recorder store is released as soon as its recorder has answered:
@@ -108,7 +114,7 @@ func (a *App) Declarations() error {
 	return nil
 }
 
-// Start answers the composition's route gates over two dry registrations, opens
+// Start answers the composition's route gates over three dry registrations, opens
 // the application connection, builds the API, runs every boot gate, migrates as the
 // owner role, and opens the transport the role names — in that order, the order Run
 // uses. The gates come before the connection because a gate is an answer about the
@@ -117,7 +123,9 @@ func (a *App) Declarations() error {
 // pointed at is still undialed. The migration comes after the gates for the same
 // reason one gate down. Nothing serves before the migration, so a
 // composition that reaches a listener has its schema. Every failure returns a nil
-// Runtime, nothing listening, and everything it opened already released.
+// Runtime, nothing listening, and everything it opened already released. The one
+// thing a successful Start leaves behind in the process is the composition's
+// declared event shapes, put up as its last act — see below.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -130,10 +138,10 @@ func (a *App) Declarations() error {
 // an injected transport is the same instance both Runtimes then share, so closing
 // either releases what the other is still using. A new lifecycle needs a new App.
 func (a *App) Start(ctx context.Context) (*Runtime, error) {
-	// The route gates first, because two of the three registrations they are read
+	// The route gates first, because three of the four registrations they are read
 	// from need nothing and the comparison between them can be answered no other
 	// way: a boot that opens the pool and dials the shared store before it has
-	// compared two registrations has spent what its refusal says it did not spend.
+	// compared its registrations has spent what its refusal says it did not spend.
 	// A caller that already asked — pkit.Build, which says so in its own words —
 	// is not asked again; what is left to answer is the live registration below.
 	if a.declaredRoutes == nil {
@@ -174,6 +182,19 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 			return nil, err
 		}
 	}
+	// Last, and the only piece of process state this boot changes. The catalog
+	// behind events.Publish is what refuses a payload that is not the one a
+	// module declared, and it belongs to the process rather than to a
+	// composition, so putting it up here rather than in New is the difference
+	// between two claims: "a build this one refused costs the running
+	// application nothing" and "a build this one refused replaced its event
+	// shapes on the way out". Everything above still refuses boots — the gates,
+	// the pool, the store, the migration, the transport — and each of those
+	// refusals now leaves the shapes a serving application is answering under
+	// exactly where they were. Nothing between here and the end of this function
+	// publishes: the first outbox row this composition can write is a request or
+	// a job tick, both of which need the Runtime this call returns.
+	events.DeclareAll(a.declared)
 	return rt, nil
 }
 

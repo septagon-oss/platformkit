@@ -61,19 +61,22 @@ func (d Declared) Schema() *Schema { return SchemaOf(d.Payload) }
 
 // catalog is the composition's declared events, resolved name to schema.
 //
-// It is a process fact, set once by kit/app from the module list it validated,
-// and not a per-tenant or per-request one: what shape user.invited has is a
-// property of the build, in the same way its route table is. A tenant, an
+// It is a process fact, set by kit/app from the module list it validated once that
+// list had started, and not a per-tenant or per-request one: what shape
+// user.invited has is a property of the build, in the same way its route table is. A tenant, an
 // actor, a locale or a feature flag never enters it, so there is nothing for a
 // shared-instance run to unpick. The pointer swap makes install safe beside
 // concurrent publishes; readers take no lock.
 var catalog atomic.Pointer[map[string]*Schema]
 
 // DeclareAll installs the composition's declared events, so that every Publish
-// can check a payload against its own event's schema. kit/app calls it with the
-// union of every module manifest; a test that publishes a declared name installs
-// what it needs. An empty list leaves the check off, which is what a process
-// with no modules composed has always done.
+// can check a payload against its own event's schema. kit/app's Start installs it
+// with the union of every module manifest, as the last act of a boot that has
+// nothing left to refuse: a composition the kernel refused then leaves the shapes
+// a running application is already answering under exactly where they were, rather
+// than replacing them on the way out. A test that publishes a declared name
+// installs what it needs. An empty list leaves the check off, which is what a
+// process with no modules composed has always done.
 func DeclareAll(list []Declared) {
 	m := make(map[string]*Schema, len(list))
 	for _, d := range list {

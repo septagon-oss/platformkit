@@ -226,6 +226,14 @@ type App struct {
 	// registeredRoutes and registrationsAgree are its whole life: the first
 	// registration writes it and the next one is judged against it.
 	declaredRoutes []string
+
+	// declared is every event these manifests promise, with the payload type each
+	// one named. New works it out and installs nothing: the catalog behind it is
+	// process state that events.Publish reads on every outbox write, and a build
+	// this kernel refuses after New would otherwise leave an application that is
+	// still serving answering under the refused composition's shapes. Start puts
+	// it up once, at the end of a boot with nothing left to refuse.
+	declared []events.Declared
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -317,11 +325,17 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		return nil, err
 	}
 	// Every event this composition can emit, with the payload type its module
-	// promised, goes to the outbox: a payload that is not one is refused at the
-	// INSERT rather than published and discovered by a subscriber. One list,
+	// promised, is carried to the Runtime: a payload that is not one is refused at
+	// the INSERT rather than published and discovered by a subscriber. One list,
 	// built from the manifests nobody else re-declares. See kit/events/catalog.go
 	// and kit/app/asyncapi.go, which emits the same list as a document.
-	events.DeclareAll(declaredEvents(mods))
+	//
+	// It is worked out here and installed by Start. The catalog is the one piece of
+	// process state a boot changes, and New is not the end of what a boot answers:
+	// the route gates, the pool, the store and the migration all still refuse, and a
+	// refusal that had already overwritten the catalog would take the payload guard
+	// away from an application this composition was never allowed to become.
+	declared := declaredEvents(mods)
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is
@@ -338,7 +352,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
+	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared}, nil
 }
 
 // Run answers every gate, migrates, then serves or works or both, and returns
@@ -511,12 +525,20 @@ func useJetStream(mode string, role Role) (bool, error) {
 // same reason it requires the connection; the dry composition is handed an
 // in-process store it never writes, because nothing serves the API it returns.
 //
-// Three callers in one boot, one sequence: Declarations runs this twice on a
+// Three callers in one boot, one sequence: Declarations runs this three times on a
 // recorder before anything is opened, and buildAPI runs it again over the open
 // connection on the way to serving. One registration order and one set of gates,
 // and one check — registrationsAgree — because a module's callback is the one part
 // of a composition those calls can run differently, and what it wrote first is
 // what every later one is judged to.
+//
+// The recorder passes see what the live mount will, because a module's Routes is
+// handed httpx.Surfaces and nothing else: the composition's recorded shape —
+// Resources, Permissions, Recorded, Mounted — a SystemToken, which is a capability
+// and not a connection, and InvalidateHost, a move in whichever store this pass
+// holds. No door on it runs a query or hands out the connection, so what a recorder
+// cannot see is a callback reading process state nobody handed it, and the live
+// registration is the net under that.
 func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
 		Declarations: declarations,
@@ -620,8 +642,8 @@ func (a *App) composeRoutes(conn *db.Conn, store cache.Cache, declarations bool)
 // what validateEvents and validatePermissions read — and names the kernel's own
 // routes, which no module mounted and which the kernel mounts alike on both
 // sides. A module's Routes callback writes both readings, and the kernel and the
-// manifests write them the same way in both registrations, which makes them the
-// whole of what the two registrations can disagree about.
+// manifests write them the same way in every registration, which makes them the
+// whole of what any two registrations can disagree about.
 func registeredRoutes(api *httpx.API) []string {
 	recorded, mounted := api.Recorded(), api.Mounted()
 	lines := make([]string, 0, len(recorded)+len(mounted))
@@ -642,15 +664,16 @@ func registeredRoutes(api *httpx.API) []string {
 }
 
 // registrationsAgree makes every registration of one composition's routes one
-// claim rather than a hope. They are registered three times: twice on the dry
+// claim rather than a hope. They are registered four times: three times on the dry
 // recorder, where Declarations answers the gates before any effect, and once over
 // the live connection on the way to serving. kit/module.Module.Routes never asked
 // a callback to answer the same way twice — kit/app called each one exactly once
 // before the dry registration existed — so a callback behind an idempotent guard
 // answers differently and one dry pass cannot see it. The first registration
 // therefore sets the standard and every later one is judged against it, naming the
-// side that differs: the second answers before the pool or the shared store is
-// opened, the third before the migration runs.
+// side that differs: the second and the third answer before the pool, the shared
+// store and the migration are touched, and the fourth refuses a boot that would
+// otherwise serve a surface no gate ever read.
 func (a *App) registrationsAgree(api *httpx.API, dry bool) error {
 	if a.declaredRoutes == nil {
 		if !dry {
@@ -665,17 +688,17 @@ func (a *App) registrationsAgree(api *httpx.API, dry bool) error {
 	live := registeredRoutes(api)
 	var bad []string
 	for _, gone := range onlyIn(first, live) {
-		bad = append(bad, "mounted by the first registration and not the second: "+gone)
+		bad = append(bad, "mounted by the first registration and not by this one: "+gone)
 	}
 	for _, added := range onlyIn(live, first) {
-		bad = append(bad, "mounted by the second registration and not the first: "+added)
+		bad = append(bad, "mounted by this registration and not by the first: "+added)
 	}
 	if len(bad) == 0 {
 		return nil
 	}
 	return errors.New("app: invalid composition:\n  this composition registered its routes more than once and answered more than once:\n    " +
 		strings.Join(bad, "\n    ") +
-		"\n  a module's Routes callback runs three times in one boot — twice while the gates are answered, once on the way to serving; a callback that mounts differently on any two of those runs serves a surface no gate ever read — mount the same routes every time Routes is called")
+		"\n  a module's Routes callback runs four times in one boot — three times while the gates are answered, once on the way to serving; a callback that mounts differently on any two of those runs serves a surface no gate ever read — mount the same routes every time Routes is called")
 }
 
 // onlyIn is every line the first registration carries that the second does not,
