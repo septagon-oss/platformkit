@@ -41,6 +41,19 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Demo is read by the seed alone. A demonstration needs people a person can
+	// sign in as, and the password they sign in with is a deployment's answer,
+	// not a fact in a file: nothing under seed/ holds a secret, and the loader
+	// refuses a field that looks like one.
+	Demo Demo `yaml:"demo"`
+}
+
+// Demo is what the demo seed cannot decide for itself: the one password every
+// demo person signs in with. Empty means the seed generates a password per
+// person and prints each once, the way bootstrap does with the administrator's.
+// Supply PLATFORMKIT_DEMO_PASSWORD.
+type Demo struct {
+	Password string `yaml:"password"`
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
@@ -290,6 +303,7 @@ var keys = []key{
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
+	{"demo.password", "PLATFORMKIT_DEMO_PASSWORD", func(c *Config) *string { return &c.Demo.Password }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.

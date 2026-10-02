@@ -47,6 +47,64 @@ type Event struct {
 	// inherit. kit/trace owns the format; nothing here parses it.
 	TraceParent string
 	TraceState  string
+
+	// Attribution says what caused this when the cause was not a session: a
+	// seed run applying a file, a job reconciling a record. ActorKind names the
+	// sort of cause, SourceFile and SourceLine cite the instruction, and
+	// Initiator names the person the run served — who is not the Actor, because
+	// nobody signed in to write this. kit/events.Attribution owns the meaning;
+	// this carries it. Empty is the normal case: a person's request, which the
+	// Actor already names.
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	Initiator  uuid.UUID
+}
+
+// Attribution is the cause of an event when the cause was not a session: which
+// kind of cause, which instruction it came from, and on whose behalf. kit/events
+// owns the rules (its kind constants and Valid); this is the carried form, and
+// kit/events aliases it, the way it aliases Event.
+type Attribution struct {
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	// InitiatorID is the person the run named — for a seed, the address
+	// `--as` resolved to. It is not the Actor: no session of theirs wrote this.
+	InitiatorID uuid.UUID
+}
+
+// MaxSourceFile bounds the citation. The outbox column repeats the ceiling: a
+// source is a path inside the publisher's own module, and a longer string is not
+// a path but a payload wearing one.
+const MaxSourceFile = 512
+
+// Actor kinds, spelled the way the outbox column stores them. kit/tenancy names
+// the two a request can be; a seed and a job are the two an application's own
+// background work adds. migrations/000032 repeats the four as a CHECK.
+const (
+	ActorUser   = "user"
+	ActorSystem = "system"
+	ActorSeed   = "seed"
+	ActorJob    = "job"
+)
+
+// Valid reports whether this can be stored. The checks are the outbox table's
+// CHECK constraints, said here too so a publisher hears about it in Go, at the
+// call, rather than as a failed INSERT deep inside somebody else's write path.
+func (a Attribution) Valid() bool {
+	switch a.ActorKind {
+	case ActorUser, ActorSystem, ActorSeed, ActorJob:
+	default:
+		return false
+	}
+	// A source is a place, so it is cited in whole: a line with no file, or a
+	// file with no line, is a citation nothing could follow.
+	if (a.SourceFile == "") != (a.SourceLine == 0) || a.SourceLine < 0 ||
+		len(a.SourceFile) > MaxSourceFile {
+		return false
+	}
+	return true
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a

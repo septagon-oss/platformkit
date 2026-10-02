@@ -9,9 +9,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/seed"
-	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
-	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 // counts is a plan reduced to what a case can assert on: how many records of one
@@ -33,13 +32,21 @@ func counts(plan seed.Plan, action seed.Action, kind string) map[string]int {
 // installation. Four things are settled here and nowhere else: that a seeded page
 // is a page — created, published and read back through the content module, with
 // the slug and title the module stored rather than the ones the file typed; that
-// applying the same files again writes nothing; that a demo request for a tenant
-// whose row says false costs the run, and that the same files applied to a tenant
-// whose row says true invite three people and write five pages.
+// a record a file names that is not there yet is created through its owner's write
+// path and not inserted; that applying files the tenant already holds writes
+// nothing at all, whether they arrived through the creation hook or a command; and
+// that a demo request for a tenant whose row says false costs the run.
 //
 // The person the run acts as is the bootstrap administrator, and the authorizer
 // asks the auth module about that person: a run that could not pass the same
 // question as a request would not reach this far.
+//
+// The records this case creates are its own — an fstest tree with two records the
+// reference files do not name — because the reference application's own starter
+// now exists before any command runs: the tenant creation hook applied it (see
+// starter_on_create_test.go), so a run over seed/starter/ proves the reconciliation
+// and not the creation. Creation is proven here, against the same owners, with the
+// same writers and the same authorizer.
 func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
@@ -48,15 +55,38 @@ func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the composition's own seed service: %v", err)
 	}
+	fresh, err := seed.New(seed.Deps{
+		Files: fstest.MapFS{
+			"seed/starter/contents.yaml": {Data: []byte(`apiVersion: platformkit.seed/v1
+resource: contents
+records:
+  - key: hand-off
+    fields: {kind: page, title: "  Hand off  ", body: "Who takes this over?"}
+    commands: [{name: publish}]
+`)},
+			"seed/starter/users.yaml": {Data: []byte(`apiVersion: platformkit.seed/v1
+resource: users
+records:
+  - key: ada@example.test
+    fields: {displayName: Ada Lovelace, roles: [observer]}
+`)},
+		},
+		Root: "seed", Clock: seedClock{},
+		Writers:   []seed.Writer{&contentSeeder{svc: c.contents}, &userSeeder{users: c.users}},
+		Authorize: seedGrants{auth: c.auth},
+	})
+	if err != nil {
+		t.Fatalf("the seed this case writes with: %v", err)
+	}
 	conn, err := db.Open(t.Context(), cfg.Database.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 
-	var first, again seed.Plan
-	var demoPlan seed.Plan
-	var home *contentcontracts.Content
+	var created, again, own, ownAgain seed.Plan
+	var home, hand *contentcontracts.Content
+	var ada *usercontracts.User
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
 		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
 		if err != nil {
@@ -66,16 +96,31 @@ func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 			if ctx, err = seedActor(ctx, c.users, tx, adminEmail); err != nil {
 				return err
 			}
-			if first, err = service.Apply(ctx, tx, seed.Selection{}); err != nil {
+			if created, err = fresh.Apply(ctx, tx, seed.Selection{}); err != nil {
 				return err
 			}
-			if again, err = service.Apply(ctx, tx, seed.Selection{}); err != nil {
+			if again, err = fresh.Apply(ctx, tx, seed.Selection{}); err != nil {
+				return err
+			}
+			// The application's own files, applied by hand to the tenant the
+			// creation hook already seeded: reconciliation over rows this run did
+			// not write, through the same keys the hook wrote them under.
+			if own, err = service.Apply(ctx, tx, seed.Selection{}); err != nil {
+				return err
+			}
+			if ownAgain, err = service.Apply(ctx, tx, seed.Selection{}); err != nil {
 				return err
 			}
 			// The starter's home declares publish, so the page the module serves to
 			// anybody is the seeded row or this fails: an unowned status write could
 			// not have moved both status and publication time through the command.
 			if home, err = c.contents.Public(ctx, tx, "home"); err != nil {
+				return err
+			}
+			if hand, err = c.contents.Public(ctx, tx, "hand-off"); err != nil {
+				return err
+			}
+			if ada, err = c.users.ByEmail(ctx, tx, "ada@example.test"); err != nil {
 				return err
 			}
 			// Acme's row says false, so demo records are refused for it. The command
@@ -90,53 +135,40 @@ func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 		t.Fatalf("seed acme: %v", err)
 	}
 
-	if got := counts(first, seed.Create, "starter"); got["contents"] != 2 {
-		t.Errorf("the first run created %v; want the starter's two pages", got)
+	if got := counts(created, seed.Create, "starter"); got["contents"] != 1 || got["users"] != 1 {
+		t.Errorf("the run created %v; a record that is not there yet goes through its owner", got)
 	}
 	if got := counts(again, seed.Create, "starter"); got["contents"] != 0 {
 		t.Errorf("the second run created %v; an unchanged record costs no write", got)
 	}
-	if again.Items != nil {
-		changed := 0
-		for _, item := range again.Items {
-			if item.Action != seed.Unchanged {
-				changed++
-			}
+	changed := 0
+	for _, item := range again.Items {
+		if item.Action != seed.Unchanged {
+			changed++
 		}
-		if changed != 0 || !strings.Contains(again.String(), "0 created, 0 updated, 2 unchanged") {
-			t.Errorf("the second run wrote something: %s", again)
-		}
+	}
+	if changed != 0 || !strings.Contains(again.String(), "0 created, 0 updated, 2 unchanged") {
+		t.Errorf("the second run wrote something: %s", again)
+	}
+	// The application's own files, a second time, over a tenant that got them from
+	// the create hook rather than from a command: the same provenance keys answer
+	// both paths, so neither run has anything to write.
+	if got := counts(own, seed.Create, "starter"); got["contents"] != 0 || got["sites"] != 0 {
+		t.Errorf("the reference starter created %v over a tenant the hook seeded; %s", got, own)
+	}
+	if got := counts(ownAgain, seed.Unchanged, "starter"); got["contents"] != 2 || got["sites"] != 1 {
+		t.Errorf("the reference starter reads back as %v; want its two pages and its site record", got)
+	}
+	// What the module stored, not what the file typed: the title has lost the
+	// spaces around it, and the row is a page because the module said so.
+	if hand.Title != "Hand off" || hand.Kind != contentcontracts.KindPage {
+		t.Errorf("the seeded page reads back as %+v", hand)
 	}
 	if home.Title != "Home" || home.Kind != contentcontracts.KindPage {
 		t.Errorf("the seeded home reads back as %+v", home)
 	}
-
-	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
-		created, err := c.tenants.Create(ctx, system, tenantcontracts.NewTenant{
-			Slug: "demo", Name: "Demo Walkthrough", Host: "demo.localhost", Demo: true,
-		})
-		if err != nil {
-			return err
-		}
-		if _, err := c.users.Provision(ctx, system, created.ID, "root@demo.localhost", "Root",
-			adminPass, []string{authcontracts.RoleAdmin}); err != nil {
-			return err
-		}
-		return db.InTenant(ctx, system, created.Tenancy(), func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			if ctx, err = seedActor(ctx, c.users, tx, "root@demo.localhost"); err != nil {
-				return err
-			}
-			demoPlan, err = service.Apply(ctx, tx, seed.Selection{Demo: true})
-			return err
-		})
-	}); err != nil {
-		t.Fatalf("seed the demo tenant: %v", err)
-	}
-	if got := counts(demoPlan, seed.Create, "demo"); got["users"] != 3 || got["contents"] != 5 {
-		t.Errorf("the demo records created %v; the brief asks for three people and five pages", got)
-	}
-	if got := counts(demoPlan, seed.Create, "starter"); got["contents"] != 2 {
-		t.Errorf("the demo tenant's starter records created %v; a run always includes the starter", got)
+	if !ada.Roles.Has("observer") {
+		t.Errorf("the seeded person holds %v; the file named observer, through user.SetRoles", ada.Roles)
 	}
 }
 

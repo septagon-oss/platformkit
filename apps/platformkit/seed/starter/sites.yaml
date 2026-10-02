@@ -1,0 +1,19 @@
+# Which page this tenant's public site opens on.
+#
+# The starter's other file writes two pages; this file points the site at one of
+# them. Without it a visitor at "/" reads an empty site while a published home
+# page sits at /home with nothing leading there — the half of "the app opens on
+# something" a content file cannot deliver by itself. It goes through the site
+# module's own Save, the door the settings screen uses, so the record below is a
+# person's change of home page in every way that the trail can see.
+#
+# One record per tenant: a site is a settings row, not a list, and the key names
+# it. Only the home slug is declared — a site's title, tagline and theme are
+# answers a person gives, and a deploy that rewrote them would be a deploy that
+# undid them.
+apiVersion: platformkit.seed/v1
+resource: sites
+records:
+  - key: site
+    fields:
+      homeSlug: home

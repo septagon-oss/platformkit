@@ -33,6 +33,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
+	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
@@ -60,9 +61,16 @@ type composition struct {
 	// runs the lifecycle half of it through the content service. Everything that
 	// serves a page reaches it through its routes.
 	contents contentcontracts.Service
-	auth     authcontracts.Auth
-	notify   notificationcontracts.Service
-	mail     notificationcontracts.Mailer
+	// sites is carried for the seed too: which page a public site opens on is a
+	// setting, and a seed that wrote pages but never named one would leave a
+	// visitor at "/" reading an empty site.
+	sites sitecontracts.Service
+	// demoPassword is the password the demo seed's people sign in with, empty
+	// when this installation offers no demo sign-in at all.
+	demoPassword string
+	auth         authcontracts.Auth
+	notify       notificationcontracts.Service
+	mail         notificationcontracts.Mailer
 	// plans answers what a tenant's subscription includes, for the operations
 	// that declare a feature.
 	plans httpx.Entitler
@@ -110,9 +118,16 @@ func compose(cfg config.Config) composition {
 		Granting: roles,
 	})
 
+	// The second tenant-creation hook, and the reason it is a value with
+	// late-filled fields rather than a function like seedRoles above: seeding a
+	// new tenant means asking its owners to write, and the owners are composed
+	// below the tenant module. The list stays literal and the order stays the
+	// one that works — roles first, because the people the seed invites hold
+	// roles those lines just created.
+	provision := &seedProvisioner{users: users}
 	installed := catalogues()
 	tenants, tenantModule := tenant.Module(tenant.Deps{
-		OnCreate: []tenantcontracts.Hook{seedRoles},
+		OnCreate: []tenantcontracts.Hook{seedRoles, provision.OnTenantCreate},
 		Invite:   firstAdmin{users: users},
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
@@ -278,8 +293,11 @@ func compose(cfg config.Config) composition {
 		SignIn: pinnedSignInAPI}))
 
 	roles.auth = auths
+	provision.contents, provision.sites, provision.auth = contents, sites, auths
+	provision.demoPassword = cfg.Demo.Password
 	checkPersonas(mods)
-	return composition{modules: mods, tenants: tenants, users: users, contents: contents, auth: auths,
+	return composition{modules: mods, tenants: tenants, users: users, contents: contents,
+		sites: sites, demoPassword: cfg.Demo.Password, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,
 		access: accessReach{users: users, notify: notify, may: roles.May},
 		// The words a refusal is allowed to use: the label of the grant that gates

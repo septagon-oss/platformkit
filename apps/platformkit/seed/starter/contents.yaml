@@ -23,3 +23,9 @@ records:
         # About us
 
         Tell the people who arrive here who you are.
+    # Published, like home: an about page nobody can read is a draft, and a
+    # tenant's first day is not the day to explain why its own site has a draft
+    # in it. Publish is the module's command, so this moves the status through the
+    # same transition and the same content.published event a person uses.
+    commands:
+      - name: publish

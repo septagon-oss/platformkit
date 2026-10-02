@@ -1,16 +1,35 @@
 # Three people, so a demonstration has somebody to assign work to and somebody
-# to refuse. An invited user holds no password: the auth module's own invitation
-# carries the link that sets one, which is why no secret appears in this file and
-# why the loader refuses a field that would look like one.
+# to refuse. An invitation carries no password — the loader refuses a field named
+# for one — so what this file declares is each person's roles, and the one word
+# `signIn` says whether they can sign in at all.
+#
+# "demo" is not a secret and never one: it asks the application to give this
+# person the demo password the deployment holds (config `demo.password`,
+# PLATFORMKIT_DEMO_PASSWORD). Where a deployment names none, the writer asks for
+# nothing and compares nothing, the three arrive invited, and the walkthrough
+# stops at the sign-in page. What arrives through SetPassword is the module's own
+# command, hashed by the module and announced by its own user.password_set event.
+#
+# The roles are the ones this application composes: auth's member, which grants
+# nothing until somebody grants it, and the two personas every tenant is created
+# with. They arrive through user.SetRoles, so the trail says which command gave
+# them, and a person can be shown the difference between the three at the task
+# desk without anybody editing a table.
 apiVersion: platformkit.seed/v1
 resource: users
 records:
   - key: marta@example.test
     fields:
       displayName: Marta Oliveira
+      roles: [coordinator]
+      signIn: demo
   - key: devin@example.test
     fields:
       displayName: Devin Ali
+      roles: [observer]
+      signIn: demo
   - key: amara@example.test
     fields:
       displayName: Amara Bock
+      roles: [member]
+      signIn: demo

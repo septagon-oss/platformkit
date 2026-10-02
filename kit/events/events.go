@@ -101,9 +101,21 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err := checkPayload(name, body); err != nil {
 		return err
 	}
+	// An attribution says the cause was not a session. The person on the context
+	// then belongs in `initiator`, not `actor`: a seed run names whom it served,
+	// and nobody signed in as them. With no attribution the actor is the signed-in
+	// person, exactly as it was before this column existed.
+	attr, hasAttr := AttributionFrom(ctx)
+	if hasAttr && !attr.Valid() {
+		return fmt.Errorf("events: %s: attribution %q is not a kind, file and line this kernel can store", name, attr.ActorKind)
+	}
 	var actor any
-	if id, ok := tenancy.ActorFrom(ctx); ok {
+	if id, ok := tenancy.ActorFrom(ctx); ok && (!hasAttr || attr.ActorKind == ActorUser) {
 		actor = id
+	}
+	kind, file, line, initiator := any(nil), any(nil), any(nil), any(nil)
+	if hasAttr {
+		kind, file, line, initiator = attr.ActorKind, nilIfEmpty(attr.SourceFile), nilIfZero(attr.SourceLine), nilUUID(attr.InitiatorID)
 	}
 	// The trace context is stored beside the actor for the same reason the
 	// actor is: the relay publishes later, in a transaction of its own and with
@@ -115,13 +127,25 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 		parent, state = tc.Parent(), tc.TraceState
 	}
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?)",
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate,"+
+			" actor_kind, source_file, source_line, initiator)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?)",
 		uuid.New(), tenantID, name, string(body), actor, nilIfEmpty(parent), nilIfEmpty(state),
+		kind, file, line, initiator,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// nilIfZero stores a count that did not happen as NULL rather than 0, for the
+// same reason nilIfEmpty stores an absent string as NULL: two words for one fact
+// is one word too many, and the column's CHECK refuses a source line of 0.
+func nilIfZero(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }
 
 // nilIfEmpty stores an absent value as NULL rather than the empty string: the

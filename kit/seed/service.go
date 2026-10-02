@@ -13,6 +13,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // Clock makes a run's relative dates deterministic.
@@ -137,20 +139,94 @@ const Prune Action = "prune"
 // Plan reads owner rows and provenance under RLS but never writes. Its answer
 // is informational; Apply reloads and re-decides inside its own transaction.
 func (s *Service) Plan(ctx context.Context, tx db.Tx[db.Tenant], selection Selection) (Plan, error) {
-	return s.run(ctx, tx, selection, false)
+	return s.run(ctx, tx, selection, false, false)
 }
 
 // Apply takes a transaction advisory lock, rechecks each owner grant and row,
 // then writes through owners. The caller must roll back the transaction on any
 // error; Run or InTenant does that when the error is propagated.
 func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], selection Selection) (Plan, error) {
-	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "platformkit:seed:"+db.TenantOf(tx).ID.String()).Error; err != nil {
-		return Plan{}, fmt.Errorf("seed: lock run: %w", err)
+	if err := lockRun(tx); err != nil {
+		return Plan{}, err
 	}
-	return s.run(ctx, tx, selection, true)
+	return s.run(ctx, tx, selection, false, true)
 }
 
-func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Selection, apply bool) (Plan, error) {
+// ApplyProvisioned is the run a tenant's own creation makes, and the only way a
+// seed reaches an owner without a person on the context.
+//
+// The gap it answers is real: a brand-new tenant has no people, so there is no
+// address `--as` could name, and "your app opens empty until somebody runs a
+// command" is not an application. Refusing a personless run outright would keep
+// the authorizer honest and lose the feature. So the provisioning run carries
+// its own proof, and the proof is state rather than a claim: the tenant has no
+// seed provenance at all, and every record the files declare is still absent
+// (see run). A tenant that has been seeded, or that already holds records the
+// files name, is not being provisioned, and this refuses it.
+//
+// What this cannot prove is that the call came from a create transaction — only
+// the composition knows that, and it is the composition's authorizer that decides
+// what a personless run may write. apps/platformkit's hook answers the rest with
+// the tenant's own people table: a tenant with anybody in it is not new.
+func (s *Service) ApplyProvisioned(ctx context.Context, tx db.Tx[db.Tenant], selection Selection) (Plan, error) {
+	if err := lockRun(tx); err != nil {
+		return Plan{}, err
+	}
+	var keys int
+	if err := tx.DB().Raw(`SELECT count(*) FROM seed_keys WHERE tenant_id = ?`, db.TenantOf(tx).ID).Row().Scan(&keys); err != nil {
+		return Plan{}, fmt.Errorf("seed: provision: read provenance: %w", err)
+	}
+	if keys != 0 {
+		return Plan{}, errors.New("seed: this tenant already holds seeded records, so it is not being provisioned")
+	}
+	return s.run(withProvisioning(ctx), tx, selection, true, true)
+}
+
+// lockRun is the one advisory lock every write run takes, so a concurrent run on
+// the same tenant reconciles against the same rows rather than against each
+// other's half-written provenance.
+func lockRun(tx db.Tx[db.Tenant]) error {
+	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", "platformkit:seed:"+db.TenantOf(tx).ID.String()).Error; err != nil {
+		return fmt.Errorf("seed: lock run: %w", err)
+	}
+	return nil
+}
+
+// provisioningKey is what ApplyProvisioned puts on the context and what
+// Provisioning reads back. It is unexported because the only way to obtain it is
+// the run that checked the tenant's provenance was empty.
+type provisioningKey struct{}
+
+func withProvisioning(ctx context.Context) context.Context {
+	return context.WithValue(ctx, provisioningKey{}, true)
+}
+
+// Provisioning reports whether this context belongs to a provisioning run. A
+// composition's Authorizer is what decides whether such a run may write, and it
+// should ask something about the tenant rather than take the marker at face
+// value — see the doc on ApplyProvisioned.
+func Provisioning(ctx context.Context) bool {
+	ok, _ := ctx.Value(provisioningKey{}).(bool)
+	return ok
+}
+
+// seedAttribution is the provenance every write of this run leaves on the events
+// its owners publish: the kind of cause, the file and line that asked for the
+// record, and the person the run named. kit/events owns the type and the outbox
+// columns; see migrations/000032.
+func seedAttribution(ctx context.Context, source Source) events.Attribution {
+	a := events.Attribution{
+		ActorKind:  events.ActorSeed,
+		SourceFile: source.File,
+		SourceLine: source.Line,
+	}
+	if p, ok := tenancy.PrincipalFrom(ctx); ok {
+		a.InitiatorID = p.UserID
+	}
+	return a
+}
+
+func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Selection, provisioning, apply bool) (Plan, error) {
 	var plan Plan
 	plan.TenantID = db.TenantOf(tx).ID
 	plan.At = s.clock.Now().UTC()
@@ -209,6 +285,11 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 	for _, entry := range ordered {
 		writer := s.writers[entry.Resource]
 		r := writer.Resource()
+		// Every owner write this record causes carries the record's own address
+		// onto the event the owner publishes. It is on the context rather than an
+		// argument because the code that publishes is the owner's write path,
+		// several calls away from this loop.
+		wctx := events.WithAttribution(ctx, seedAttribution(ctx, entry.Record.Source))
 		if err := s.authorize.Check(ctx, tx, r, Update); err != nil {
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 		}
@@ -225,6 +306,10 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 		}
 		decision := Decide(current, target)
+		if provisioning && decision.Action != Create {
+			return Plan{}, fmt.Errorf("seed: %s: %s/%s already exists, so this tenant is not being provisioned",
+				entry.Record.Source, entry.Resource, entry.Record.Key)
+		}
 		if current.Present && !owned && decision.Action == Update {
 			return Plan{}, fmt.Errorf("seed: %s: %s/%s is an unowned natural-key row", entry.Record.Source, entry.Resource, entry.Record.Key)
 		}
@@ -235,9 +320,9 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 				if err := s.authorize.Check(ctx, tx, r, Create); err != nil {
 					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 				}
-				current, err = writer.Create(ctx, tx, target)
+				current, err = writer.Create(wctx, tx, target)
 			case Update:
-				current, err = writer.Update(ctx, tx, current, target)
+				current, err = writer.Update(wctx, tx, current, target)
 			}
 			if err != nil {
 				return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
@@ -315,6 +400,8 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 			if err != nil {
 				return fmt.Errorf("seed: %s: %w", doc.Source, err)
 			}
+			// A prune is a write the file caused, so its event cites the file too.
+			dctx := events.WithAttribution(ctx, seedAttribution(ctx, doc.Source))
 			for _, key := range keys {
 				if keep[key.Value] {
 					continue
@@ -322,7 +409,7 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 				if err := s.authorize.Check(ctx, tx, resource, Prune); err != nil {
 					return fmt.Errorf("seed: %s: %w", doc.Source, err)
 				}
-				row, err := writer.Read(ctx, tx, key, apply)
+				row, err := writer.Read(dctx, tx, key, apply)
 				if err != nil {
 					return fmt.Errorf("seed: %s: %w", doc.Source, err)
 				}
@@ -340,7 +427,7 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 					continue
 				}
 				if apply {
-					if err := writer.Delete(ctx, tx, row); err != nil {
+					if err := writer.Delete(dctx, tx, row); err != nil {
 						return fmt.Errorf("seed: %s: %w", doc.Source, err)
 					}
 					if err := deleteKey(tx, resource, key.Value); err != nil {

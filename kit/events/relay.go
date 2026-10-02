@@ -35,6 +35,13 @@ type row struct {
 	Actor       *uuid.UUID
 	TraceParent *string
 	TraceState  *string
+	// The attribution columns, pointers for the same reason Actor is: an event
+	// with no attribution is a person's request, and the envelope says so by
+	// leaving the attributes out.
+	ActorKind  *string
+	SourceFile *string
+	SourceLine *int
+	Initiator  *uuid.UUID
 }
 
 // Relay moves every unpublished row to the transport, a batch at a time, and
@@ -74,7 +81,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		// trace_parent. Naming the alias after the column and letting the field
 		// go nil is how a carried fact silently stops being carried.
 		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
-			traceparent AS trace_parent, tracestate AS trace_state FROM ` + table + `
+			traceparent AS trace_parent, tracestate AS trace_state,
+			actor_kind, source_file, source_line, initiator FROM ` + table + `
 			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
 		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
@@ -87,6 +95,20 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 			ev := Event{ID: r.ID, Name: r.Name, TenantID: r.TenantID, Payload: r.Payload, At: r.CreatedAt}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
+			}
+			// The attribution the publisher stored, carried onto the envelope so a
+			// subscriber three hops away can still say which file asked for this.
+			if r.ActorKind != nil {
+				ev.ActorKind = *r.ActorKind
+			}
+			if r.SourceFile != nil {
+				ev.SourceFile = *r.SourceFile
+			}
+			if r.SourceLine != nil {
+				ev.SourceLine = *r.SourceLine
+			}
+			if r.Initiator != nil {
+				ev.Initiator = *r.Initiator
 			}
 			// The trace the request left in the row, carried onto the envelope
 			// the relay publishes. This transaction has no request of its own

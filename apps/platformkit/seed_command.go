@@ -10,6 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/seed"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 )
 
 // seedCommand applies this application's embedded seed to one tenant.
@@ -58,6 +59,14 @@ func seedCommand(args []string) error {
 
 	var plan seed.Plan
 	err = app.RunCommand(context.Background(), cfg, func(ctx context.Context, system db.Tx[db.System]) error {
+		// One trace for the run, minted here because a command line inherits no
+		// request to inherit one from. Every owner event the run causes carries
+		// it into the outbox (kit/events reads it there), which is what lets a
+		// later reader join twenty rows of writes and one plan print-out back to
+		// one invocation. docs/seed.md's audit contract asks for the same id.
+		if _, ok := trace.From(ctx); !ok {
+			ctx = trace.With(ctx, trace.New())
+		}
 		tenants, err := c.tenants.List(ctx, system)
 		if err != nil {
 			return err

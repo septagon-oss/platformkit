@@ -60,6 +60,13 @@ type envelope struct {
 	// periodic job and a relay always are.
 	TraceParent string `json:"traceparent,omitempty"`
 	TraceState  string `json:"tracestate,omitempty"`
+	// The attribution, in the extension's lower-case spelling: what caused this
+	// when the cause was not a session. All four are absent for a person's
+	// request, which the `actor` attribute already names.
+	ActorKind  string `json:"actorkind,omitempty"`
+	SourceFile string `json:"sourcefile,omitempty"`
+	SourceLine int    `json:"sourceline,omitempty"`
+	Initiator  string `json:"initiator,omitempty"`
 }
 
 // MarshalJSON writes the CloudEvents form of the event.
@@ -84,6 +91,10 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	// Same rule, and the reason is the same: an event with no trace is the
 	// normal case, not a trace with an empty parent.
 	doc.TraceParent, doc.TraceState = e.TraceParent, e.TraceState
+	doc.ActorKind, doc.SourceFile, doc.SourceLine = e.ActorKind, e.SourceFile, e.SourceLine
+	if e.Initiator != uuid.Nil {
+		doc.Initiator = e.Initiator.String()
+	}
 	return json.Marshal(doc)
 }
 
@@ -181,8 +192,16 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 			return err
 		}
 	}
+	initiator := uuid.Nil
+	if doc.Initiator != "" {
+		if initiator, err = parseUUID("initiator", doc.Initiator); err != nil {
+			return err
+		}
+	}
 	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
-		TraceParent: doc.TraceParent, TraceState: doc.TraceState}
+		TraceParent: doc.TraceParent, TraceState: doc.TraceState,
+		ActorKind: doc.ActorKind, SourceFile: doc.SourceFile, SourceLine: doc.SourceLine,
+		Initiator: initiator}
 	return nil
 }
 
