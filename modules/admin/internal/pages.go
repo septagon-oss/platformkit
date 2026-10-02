@@ -47,12 +47,12 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	loginShell := p.shell
 	page.Serve(app, loginShell, page.Route{ID: "admin-login", Method: http.MethodGet, Path: p.at.login.rel, Summary: "Sign in"},
 		httpx.Public(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return login(ctx, r.Locale, p.at.start.at, p.SignIn, p.at.forgot.at), nil
+			return login(ctx, r.Locale, p.at.dashboard.at, p.SignIn, p.at.forgot.at), nil
 		})
 
 	page.Serve(home, p.shell, page.Route{ID: "admin-dashboard", Method: http.MethodGet, Path: p.at.dashboard.rel, Summary: "The dashboard"},
-		httpx.SignedIn(), func(ctx context.Context, _ page.Request, _ *page.Empty) (page.View, error) {
-			return p.dashboard(ctx), nil
+		httpx.SignedIn(), func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
+			return p.dashboard(ctx, r.Tenant), nil
 		})
 
 	page.Serve(app, p.shell, page.Route{ID: "admin-health", Method: http.MethodGet, Path: p.at.health.rel, Summary: "Health"},
@@ -64,7 +64,6 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 	p.mountRoles(s.App)
 	p.mountSessions(s.App)
 	p.mountPasswordDoors(app)
-	p.mountLanding(app)
 
 	// The switcher lives at the path the tenant module's nav entry already
 	// names, so that entry leads somewhere. It is the one page here that reads
@@ -135,42 +134,6 @@ func login(ctx context.Context, locale *page.Locale, next, action, forgot string
 			components.Link(components.LinkProps{Href: forgot, Variant: "text",
 				Label: text("forgot", "Forgot your password?")})),
 	}}
-}
-
-// mountLanding mounts the address a person arrives at when the sign-in form has
-// answered: the first screen their role can actually use.
-//
-// The answer is read from page.Navigation.Visible, which is the list the sidebar
-// renders and asks the same Authorizer the routes enforce with — so the landing and
-// the menu cannot disagree, and no second notion of "where they should be" exists to
-// drift. With nothing visible it is the dashboard, which for that person is the truth
-// rather than a placeholder: they may see what there is and nothing else.
-//
-// A person who is refused every screen is not sent to a screen they are refused. That
-// is the whole of rule 5, and the twelve apps that scored nothing in the walkthrough
-// of record failed before it: signed in, they were shown a dashboard whose only links
-// were Dashboard and Health.
-func (p pages) mountLanding(app *httpx.Router) {
-	page.Serve(app, p.shell, page.Route{ID: "admin-start", Method: http.MethodGet, Path: p.at.start.rel,
-		Summary: "Where a person who has just signed in belongs"}, httpx.SignedIn(),
-		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			if first, ok := p.firstScreen(ctx, r.Tenant); ok {
-				return page.View{}, httpx.SeeOther(first)
-			}
-			return page.View{}, httpx.SeeOther(p.at.dashboard.at)
-		})
-}
-
-// firstScreen is the first nav entry that is served, that this tenant's caller is
-// allowed to follow, and that this shell can name an address for. Visible already
-// returns entries carrying their resolved workspace address, which is why no
-// translation from "module/entity" to a URL happens here.
-func (p pages) firstScreen(ctx context.Context, t tenancy.Tenant) (string, bool) {
-	visible := p.nav.Visible(ctx, t, p.Authorize)
-	if len(visible) == 0 {
-		return "", false
-	}
-	return visible[0].Screen, true
 }
 
 // mountPasswordDoors mounts the two pages a person who cannot sign in needs: the
@@ -305,7 +268,11 @@ func backToSignIn(text func(key, fallback string) string, back string) g.Node {
 //
 // The guarded count makes one authorization decision and loads no entity rows.
 // A refused or unavailable count produces no card, including its resource name.
-func (p pages) dashboard(ctx context.Context) page.View {
+//
+// A caller who may read no counts gets what their role opens rather than an
+// empty grid — see contents. This page is where a signed-in person arrives, so it
+// is the page that has to have something to offer them.
+func (p pages) dashboard(ctx context.Context, t tenancy.Tenant) page.View {
 	cards := make([]g.Node, 0, len(p.resources))
 	for _, r := range p.resources {
 		if r.Count == nil {
@@ -344,8 +311,43 @@ func (p pages) dashboard(ctx context.Context) page.View {
 		components.Toolbar(components.ToolbarProps{
 			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
-		components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...),
+		p.contents(ctx, t, cards),
 	}}
+}
+
+// contents is the body under the two headings: the counts, or — for the caller
+// the tenant holds no counts for — the screens their role actually opens.
+//
+// The grid alone is the page twelve of the eighteen apps in the walkthrough of
+// record scored nothing on: a person signed in, was welcomed by a heading, an
+// alert and a grid with no card in it, and had nothing on that page to do. Their
+// role does open something, usually — a screen a module writes by hand, like the
+// role list, carries no count to draw — so the page names those screens. They come
+// from page.Navigation.Visible, the same read the sidebar renders and the one that
+// asks the Authorizer the routes enforce with, so a page cannot name a door that
+// answers 403. Where the role opens nothing at all the page says so, and says who
+// can change it, which is a fact a person can act on; an empty grid is not.
+func (p pages) contents(ctx context.Context, t tenancy.Tenant, cards []g.Node) g.Node {
+	if len(cards) > 0 {
+		return components.Grid(components.GridProps{Columns: "3", Gap: "4"}, cards...)
+	}
+	visible := p.nav.Visible(ctx, t, p.Authorize)
+	if len(visible) == 0 {
+		return components.EmptyState(components.EmptyStateProps{
+			Title:       "No screens open yet",
+			Description: "Your role in this tenant opens no page. An administrator can grant it the permissions you need.",
+			Bordered:    true,
+		})
+	}
+	ops := make([]g.Node, 0, len(visible))
+	for _, e := range visible {
+		ops = append(ops, components.Link(components.LinkProps{Href: e.Screen, Label: e.Label}))
+	}
+	return components.EmptyStateWithSlots(components.EmptyStateProps{
+		Title:       "What your role opens",
+		Description: "This tenant holds nothing this role can count. These screens are yours.",
+		Bordered:    true,
+	}, components.EmptyStateSlots{Actions: ops})
 }
 
 // healthPage is the readiness probe with names on it. /ready answers 200 or 503
