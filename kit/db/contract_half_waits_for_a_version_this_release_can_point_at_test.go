@@ -41,8 +41,8 @@ func TestAContractHalfWaitsForAVersionThisReleaseCanPointAt(t *testing.T) {
 		files fstest.MapFS
 	}{
 		{
-			// The case an earlier review wrote, unpinned, and left for this case to
-			// answer. The run applies a release's files in version order, so the half at
+			// The ordering the brief left unpinned on purpose, answered here. The
+			// run applies a release's files in version order, so the half at
 			// version 2 runs before the expansion at version 3 — the release that adds
 			// the thing and takes it away in one go, which is the thing the guard is for.
 			name: "the expansion the same release runs after the half",

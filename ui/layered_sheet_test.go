@@ -15,9 +15,9 @@
 // rules for classes app.css does not carry, the same page links both
 // (modules/admin/internal/gallery.go:101), and ui.Assets serves it for every
 // composition, including one that never passed components.GalleryClassLists in
-// Extra.Lists. Nothing in the tree read its class set against the gate: an earlier round
-// read app.css's components block, the sibling case pinned only that gallery's rules landing
-// inside a layer.
+// Extra.Lists. Nothing in the tree read its class set against the gate: the served-sheet
+// files read app.css's components block, and the sibling case pinned only that gallery's
+// rules landing inside a layer.
 package ui_test
 
 import (
@@ -31,7 +31,7 @@ import (
 )
 
 // gallerySheet reads one file out of the asset tree the shell serves, in the
-// bytes a browser downloads — the read an earlier round's servedLayeredSheet owns, reused.
+// bytes a browser downloads — the read servedLayeredSheet in served_sheet_layers_test.go makes.
 func gallerySheet(t *testing.T, name string) string {
 	t.Helper()
 	return servedLayeredSheet(t, ui.Assets(ui.Compose(design.Default())), name)

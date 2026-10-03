@@ -111,7 +111,7 @@ func TestTheGateRefusesAConsumerRuleThatNamesAKernelClass(t *testing.T) {
 			impact: "sr.position=static, the hidden text of every page on screen",
 		},
 		{
-			name:     "a role utility, the class round 10's finding was about",
+			name:     "a role utility, which no consumer rule may name",
 			selector: ".bg-surface-brand", kernel: ".bg-surface-brand {", key: "bg-surface-brand",
 			impact: "every element painted by the brand surface role",
 		},

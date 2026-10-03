@@ -23,7 +23,7 @@ package ui_test
 //
 // The third is what blanking does not reach: the `--pk-` read asks only where a part
 // begins, so a kernel property after a `;` inside a quoted string stays the
-// declaration the split exposed. An earlier round pinned the smuggle through the
+// declaration the split exposed. The sibling case pinned the smuggle through the
 // property field of a declaration; this is the same channel through the value, read
 // by the read that blanks nothing.
 

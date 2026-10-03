@@ -300,7 +300,7 @@ func proofSessions(t *testing.T, conn *db.Conn, person uuid.UUID) int {
 // transactions, one session. Both callers are past every door — the spend is
 // decided by the row, and the row has to refuse one of them.
 //
-// What it pins is the outcome review 5 asked for, and no more than that. The
+// What it pins is the outcome, and no more than that. The
 // losing caller is refused either by the guarded UPDATE, when it reaches a row the
 // winner has already written, or by the comparison in totpMatches a line earlier,
 // when it read the row before that write landed; which of the two happens is the

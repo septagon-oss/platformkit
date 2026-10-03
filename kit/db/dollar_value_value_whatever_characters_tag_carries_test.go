@@ -13,7 +13,7 @@ package db_test
 // 	=> select length($é$abc$é$);  → 3
 //
 // So `$atualização$ … $atualização$` is one value to the server and not a tag to the
-// reader. That is the round's own the finding — a body whose only window reference is
+// reader. That is the claim in full — a body whose only window reference is
 // data it writes is wrapped anyway, and its one whole-table statement runs once per
 // window over every row — through a spelling its Limits names as "conservatively not a
 // tag" without noticing which way the conservatism fails: not reading a tag leaves the

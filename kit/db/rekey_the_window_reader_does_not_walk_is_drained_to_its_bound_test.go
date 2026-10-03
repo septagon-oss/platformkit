@@ -7,8 +7,8 @@ package db_test
 // one assumption is "refused rather than trusted": the cursor is a key, so every conclusion
 // the drain draws from it (a short window is the end because nothing is left above that key,
 // a resumed cursor has rows behind it and not in front of it, a committed row is never taken
-// again) holds only of a key that stays where it was. one finding was that the body
-// that writes the key; the executor refuses it by name, reading "the assignment targets of the
+// again) holds only of a key that stays where it was. A body that writes the key is
+// refused by name, on the reading "the assignment targets of the
 // statements that name the drained table" (`migrations/README.md`).
 //
 // Two bodies still move the key past that reader:

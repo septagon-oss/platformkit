@@ -12,8 +12,8 @@ package ui_test
 // as text and ends the element at the sequence `</style`, whatever the CSS around
 // it says, so client text carrying that sequence does not merely leave the block
 // it sits in — it leaves the stylesheet, and the bytes after it are markup in a
-// page a signed-in reader opens. That is a wider reach than the brace round 5
-// filed (out of a layer) and the at-keyword round 7 filed (into a nested block of
+// page a signed-in reader opens. That is a wider reach than the brace refusal
+// (out of a layer) and the at-keyword refusal (into a nested block of
 // the same sheet), by one document.
 //
 // css.Literal validates nothing and g.Raw writes what it is handed, so the gate is

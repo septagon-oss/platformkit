@@ -562,8 +562,8 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 // most two may be stored and eighteen must be refused.
 //
 // It is the mutation test for the one line in internal.charge that takes
-// pg_advisory_xact_lock: without it this fails, and it fails by exactly the
-// amount the review reported.
+// pg_advisory_xact_lock: without it this fails, and it fails by an over-run of
+// exactly the concurrency the case drives.
 func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 	const (
 		uploads = 20

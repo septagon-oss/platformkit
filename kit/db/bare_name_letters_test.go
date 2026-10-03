@@ -15,7 +15,7 @@ package db_test
 // (with a ç and an ã) is a name this reader cannot reach at all, and the three rules that
 // find their operation in the name read no action for it.
 //
-// The round already accepted that domain one function away. `dollarTag` now takes "any
+// The same domain was already accepted one function away. `dollarTag` now takes "any
 // byte ≥ 0x80" because "a tag is a name and a name takes the database's own letters, not
 // ASCII alone" (migrations/README.md), and the reason it gives for not stopping at ASCII
 // is the reason this case gives — the safe side of the guess is the side that reads too

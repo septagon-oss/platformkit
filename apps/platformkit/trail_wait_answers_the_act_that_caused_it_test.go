@@ -4,7 +4,7 @@ package main
 // in eight runs: `waitForAudit` returned the first row carrying an event name the
 // moment any such row existed, and an event name is not a row.
 // `tenant.lifecycle_recorded` is the mirror name every lifecycle verb publishes, so
-// the case review 1 pinned — which creates a customer, then suspends it, then reads
+// the earlier case — which creates a customer, then suspends it, then reads
 // the operator's trail — was answered by its own create, twenty round-trips early,
 // and read `verb: create` where it meant to see `verb: suspend`. Whether it landed
 // that way was decided by where the relay's one-second tick fell between the two
