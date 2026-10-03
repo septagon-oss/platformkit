@@ -40,7 +40,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-const review11Seed = "CREATE TABLE probe (id bigint PRIMARY KEY, note text NOT NULL DEFAULT '');\nINSERT INTO probe (id) SELECT g FROM generate_series(1, 25) g"
+const probeSeed = "CREATE TABLE probe (id bigint PRIMARY KEY, note text NOT NULL DEFAULT '');\nINSERT INTO probe (id) SELECT g FROM generate_series(1, 25) g"
 
 // backfillBody is the same one-windowed-update body spelled three ways: with the words of
 // an index build inside a dollar-quoted value, with them in an ordinary literal, and without
@@ -70,7 +70,7 @@ func TestADataValueThatSpellsConcurrentlyIsStillOneWindowedStatement(t *testing.
 		t.Run(spelling, func(t *testing.T) {
 			migrateURL, _ := dbtest.URLs(t)
 			files := fstest.MapFS{
-				"000001_probe.up.sql": {Data: []byte(review11Seed)},
+				"000001_probe.up.sql": {Data: []byte(probeSeed)},
 				"000002_note.up.sql":  {Data: []byte(backfillBody[spelling])},
 			}
 			err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "word", Files: files})
