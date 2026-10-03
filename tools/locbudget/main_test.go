@@ -107,7 +107,7 @@ func TestWriteOnlyRatchetsDown(t *testing.T) {
 }
 
 // TestBaselineReservesTheAcceptanceRound prices what an acceptance round costs
-// the bucket it lands in. T-0031's own round measured it: the branch re-baselined
+// the bucket it lands in. A real branch measured it: it re-baselined
 // to the next hundred of a count ending in 79, which left 21 lines, and the
 // review file that round brought measured 139 — the gate that is supposed to read
 // a delivery refused to commit the file reading it. The reservation is measured

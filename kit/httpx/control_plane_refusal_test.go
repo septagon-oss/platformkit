@@ -1,15 +1,12 @@
 package httpx_test
 
-// Reviewer's own cases for T-0024 (three surfaces by path), written to falsify
-// what the change asserts about itself in kit/httpx/README.md, in aliases.go, in
-// docs/adr/0017 and in the commit body. Each case asserts behaviour the change
-// promises and has a branch that passes once the promise is kept; none asserts
-// an impossibility. Where a case's reachability matters it is proved with what
-// correct behaviour prints (a status, a header the kernel always sets, the body
-// of the 404 a never-mounted address gives), never with the defect's own output.
-//
-// Reviewer: a fresh pi session, 2026-09-21. REVIEW.md in the state directory
-// carries the reproduction of each and the assertion it falsifies.
+// Cases against the three surfaces by path, written to falsify what the change
+// asserts about itself in kit/httpx/README.md, in aliases.go, in docs/adr/0017 and in
+// the commit body. Each case asserts behaviour the change promises and has a branch
+// that passes once the promise is kept; none asserts an impossibility. Where a case's
+// reachability matters it is proved with what correct behaviour prints (a status, a
+// header the kernel always sets, the body of the 404 a never-mounted address gives),
+// never with the defect's own output.
 
 import (
 	"context"

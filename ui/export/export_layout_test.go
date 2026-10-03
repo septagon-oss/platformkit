@@ -112,7 +112,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Cascade layers: Compose now emits `@layer tokens, base, components,
 	// client;` and wraps each layer's rules in a block, so the exported sheet is
-	// the same declarations at one more level of nesting, and review round 1 of
+	// the same declarations at one more level of nesting, and the first pass of
 	// that change moved the kernel's own component-state rules out of @layer base
 	// into @layer components, ahead of the class lists, because a layer ranks
 	// before specificity and a dismissed modal was losing to the `flex` on its

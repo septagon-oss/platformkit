@@ -111,7 +111,7 @@ func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *
 		t.Errorf("the page a refused person is shown carries no code to read back: %s", body)
 	}
 
-	// And the refusal is on the record (T-0116): kit/app publishes security.denied for an
+	// And the refusal is on the record: kit/app publishes security.denied for an
 	// attributable denial, and modules/audit keeps it — one row, carrying the reason, the
 	// path and the refused person as its actor.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)

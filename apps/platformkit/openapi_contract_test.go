@@ -48,9 +48,9 @@ const contractHost = "platformkit.example"
 // into a 404 with an application behind it that cannot be fixed, which is what
 // kit/httpx/aliases.go refuses for a route.
 //
-// The push registration (T-0113) is not in the list because nothing answers at that
+// The push registration is not in the list because nothing answers at that
 // address yet; it joins in the same commit that mounts its door. The bearer key
-// (T-0117) answered from the round that mounted it, so it is in the list below.
+// answered from the commit that mounted it, so it is in the list below.
 // That is what makes this list a gate and not a wish list.
 var deviceContractPaths = []struct {
 	operation string // the operationId the golden publishes
@@ -71,7 +71,7 @@ var deviceContractPaths = []struct {
 	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
 	{operation: "audit-event-list", method: http.MethodGet, path: "/api/v1/audit/events"},
 	// The bearer key a shell presents instead of a session cookie. It joined this
-	// list in the round that mounted its door (T-0117's auth-token-issue): a device
+	// list in the commit that mounted its door (auth-token-issue): a device
 	// that authenticates with a key has to mint one somewhere first, and the address
 	// it mints it at is part of what a generated client needs to exist at.
 	{operation: "auth-token-issue", method: http.MethodPost, path: "/api/v1/auth/tokens",
@@ -294,7 +294,7 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		{"the catalog door narrows back to a browser's credential", "B6", nil, func(t *testing.T, doc map[string]any) {
 			// The widening the rule allows, run backwards: any_credential is the door
 			// as mounted (httpx.AnyCredential), and signed_in is what it was before
-			// T-0117 widened it. Read as a change from the golden to this, it is a door
+			// any bearer key was admitted. Read as a change from the golden to this, it is a door
 			// that stops admitting a bearer key, which is exactly what an installed
 			// client holding one was promised. B6 refuses it, and refuses it whichever
 			// way the pair is read.

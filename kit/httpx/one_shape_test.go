@@ -112,11 +112,11 @@ func TestAGuardRefusalIsAnsweredWithTheKernelsOneProblemDocumentAndNoSchemaLink(
 func TestARefusalAHandlerReturnsCarriesTheRequestTheTransformerStamps(t *testing.T) {
 	api, router := guardKernel(t, guardSetup{allow: true}, nil)
 	httpx.Register(api.Surfaces(probe).App, huma.Operation{
-		OperationID: "round6-conflict", Method: http.MethodGet, Path: "/round6-conflict",
+		OperationID: "caller-conflict", Method: http.MethodGet, Path: "/caller-conflict",
 	}, httpx.Permission("billing:read"), func(context.Context, *struct{}) (*body, error) {
 		return nil, problem.New(http.StatusConflict, "ROUND6: this row is not in that state")
 	})
-	asked := callerIDAsk(t, router, http.MethodGet, at(api, "/round6-conflict"), "application/json")
+	asked := callerIDAsk(t, router, http.MethodGet, at(api, "/caller-conflict"), "application/json")
 	if asked.Code != http.StatusConflict {
 		t.Fatalf("the handler's own refusal answered %d, want 409: the stamp is asserted nowhere else (%s)",
 			asked.Code, asked.Body.String())

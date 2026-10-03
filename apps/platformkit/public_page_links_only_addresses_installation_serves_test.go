@@ -1,13 +1,10 @@
 package main
 
-// The reviewer's own cases for T-0024 against the reference composition. Each
-// asserts something the change promises in a comment or in a commit body, and has
-// a branch that passes once the promise is kept. Where a case's reachability
-// matters it is proved with what correct behaviour prints (a status, the door that
-// answers, the page the settings name), never with the defect's own output.
-//
-// Reviewer: a fresh pi session, 2026-09-21. the record in the state directory
-// carries the reproduction of each and the assertion it falsifies.
+// These cases run against the reference composition. Each asserts something the
+// kernel promises in a comment or in a README, and has a branch that passes once the
+// promise is kept. Where a case's reachability matters it is proved with what correct
+// behaviour prints (a status, the door that answers, the page the settings name),
+// never with the defect's own output.
 
 import (
 	"encoding/json"

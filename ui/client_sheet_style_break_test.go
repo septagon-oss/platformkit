@@ -1,8 +1,8 @@
 package ui_test
 
-// Round 17 of T-0108. The gate refuses the boundary the emitter owns inside the
+// The gate refuses the boundary the emitter owns inside the
 // stylesheet — a brace, a comment start, an at-rule prelude — and this file is
-// the boundary one level up, which no earlier round read.
+// the boundary one level up, which nothing read before it.
 //
 // A composed sheet is not only served as app.css. modules/admin/internal/gallery.go
 // renders the composed sheet for the gallery preview as
