@@ -337,17 +337,23 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// built from the manifests nobody else re-declares. See kit/events/catalog.go
 	// and kit/app/asyncapi.go, which emits the same list as a document.
 	//
-	// It is worked out here and installed by Start. The catalog is the one piece of
-	// process state a boot changes, and New is not the end of what a boot answers:
-	// the route gates, the pool, the store and the migration all still refuse, and a
-	// refusal that had already overwritten the catalog would take the payload guard
-	// away from an application this composition was never allowed to become.
+	// It is worked out here and claimed by Start, above the connection. The catalog is
+	// the one piece of process state a boot changes, and New is not the end of what a
+	// boot answers: the route gates, the store the deployment names and the transport
+	// all still refuse, and a refusal that had already overwritten the catalog would
+	// take the payload guard away from an application this composition was never
+	// allowed to become — so the claim installs beside the standing shapes, and every
+	// refusal after it gives back what it added, including the ones that come back
+	// with no Runtime.
 	//
-	// What is answered here, rather than installed, is the one thing about the
-	// catalog a boot can answer free of effects: whether this composition spells an
-	// event name another live composition already chose another way. Refusing that
-	// at Start would dial the pool, migrate and open a transport on the way to a
-	// sentence about two manifests (0074 rule 1).
+	// What is answered here, rather than claimed, is the one thing about the catalog a
+	// boot can answer free of effects: whether this composition spells an event name
+	// another live composition already chose another way. Refusing that at Start would
+	// spend the three dry registrations and the API built to serve on the way to a
+	// sentence about two manifests (0074 rule 1); refusing it after the connection
+	// would spend the deployment too. Two boots that both read the catalog before
+	// either wrote it are answered by the claim, which is taken before the first
+	// effect and refuses whichever one reaches it second.
 	declared := declaredEvents(mods)
 	if err := events.CheckDeclared(declared); err != nil {
 		return nil, err

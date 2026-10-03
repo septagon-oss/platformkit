@@ -127,8 +127,9 @@ func CheckDeclared(list []Declared) error {
 }
 
 // DeclareMore installs a composition's declared events beside the ones this process
-// already holds, as the last act of a boot that has nothing left to refuse, and
-// returns the release of what it added. It refuses, installing nothing, when the
+// already holds, as the last answer a boot gives before it opens anything (kit/app
+// Start takes it above the connection and releases it on every refusal after it),
+// and returns the release of what it added. It refuses, installing nothing, when the
 // list spells an event this process already answers under with a different payload
 // shape: one process holds one shape per event name, so the shapes a live
 // application is answering publish under are neither replaced on the way in nor

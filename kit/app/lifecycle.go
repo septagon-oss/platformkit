@@ -65,12 +65,12 @@ type Runtime struct {
 
 // refusedBeforeEffects marks the refusals a boot answers before the deployment
 // pays for anything: the cache segment the configuration names, the route gates,
-// the three dry registrations and the fourth one whose surface would serve are all
-// answers about the composition, given over an in-process store with no pool
-// dialled, nothing migrated, nothing listened on and nothing served. Everything
-// from openConn onward — the connection, the store the deployment names, the
-// migration and the transport — is spent, even when the boot comes back with no
-// Runtime and everything it opened already released.
+// the three dry registrations, the fourth registration whose surface would serve
+// and the claim on the event shapes this composition declares — all answers about
+// the composition, given over an in-process store with no pool dialled, nothing
+// migrated, nothing listened on and nothing served. Everything from openConn
+// onward — the connection, the store the deployment names, the migration and the
+// transport — is spent, even when the boot gives back what it opened.
 //
 // The line belongs to kit/app because kit/app is where the deployment starts to
 // pay, and nothing in the error's text says which side of it a refusal came from.
@@ -167,9 +167,10 @@ func (a *App) Declarations() error {
 // Runtime, nothing listening, and everything it opened already released. Which of
 // those failures cost a caller its own lifecycle is what RefusedBeforeEffects
 // answers: a refusal above the connection was answered with nothing spent, and one
-// below it reached the deployment. The one thing a successful Start leaves behind
-// in the process is the composition's declared event shapes, put up as its last
-// act and given back by Close — see below.
+// below it reached the deployment. The one piece of process state a Start changes is
+// the composition's declared event shapes, claimed above the connection and given
+// back by Close — see below, because where the claim sits is the whole answer about
+// what a refused composition costs.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -214,15 +215,43 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 		_ = build.Close() // a composition that failed a gate is never mounted
 		return nil, beforeEffects(err)
 	}
+	// The composition's event shapes are claimed here, above the connection, and not
+	// put up as the boot's last act. The catalog behind events.Publish is what refuses
+	// a payload that is not the one a module declared, and it belongs to the process
+	// rather than to a composition, so two claims have to hold at once: a build this
+	// process refused leaves the shapes a serving application answers under exactly
+	// where they were, and a refusal about those shapes costs the database it named
+	// nothing. Only a claim taken before the first effect holds both. New answers the
+	// disagreement already visible when a boot starts — a name another live
+	// composition chose another way — but two boots can both read the catalog before
+	// either writes it and still disagree, and the one that reaches this claim second
+	// is then refused with its pool undialed, its schema unmigrated and its own App
+	// free to build a corrected composition, which is what beforeEffects marks.
+	//
+	// Beside, not over: another composition can be live in this process — one
+	// application under two roles, or two applications on two databases — and what a
+	// publish is checked against is then what the live compositions declared
+	// together, counted by grip and given back by the Close of the Runtime that took
+	// it. Claiming early checks no payload that would otherwise have passed: nothing
+	// between here and the end of this function publishes — the first outbox row this
+	// composition can write is a request or a job tick, both of which need the
+	// Runtime this call returns — and every refusal below releases the claim.
+	declaredRelease, err := events.DeclareMore(a.declared)
+	if err != nil {
+		_ = build.Close()
+		return nil, beforeEffects(err)
+	}
 	// The first two things a deployment spends, and they are spent only once every
-	// answer about this composition has been given.
+	// answer about this composition has been given — this claim among them.
 	conn, err := a.openConn(ctx)
 	if err != nil {
+		declaredRelease()
 		_ = build.Close()
 		return nil, err
 	}
 	store, err := a.cache(ctx)
 	if err != nil {
+		declaredRelease()
 		_ = conn.Close()
 		_ = build.Close()
 		return nil, err
@@ -236,6 +265,7 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// — /ready, the anonymous write limit and the record of a refusal — were built
 	// against the same value being there (see heldConn).
 	if err := api.Connect(conn, store); err != nil {
+		declaredRelease()
 		_ = conn.Close()
 		_ = store.Close()
 		_ = build.Close()
@@ -244,11 +274,13 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	a.held.fill(conn)
 	_ = build.Close()
 	if err := a.migrate(ctx); err != nil {
+		declaredRelease()
 		_ = conn.Close()
 		_ = store.Close()
 		return nil, err
 	}
-	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store}
+	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store,
+		declaredRelease: declaredRelease}
 	if a.opts.Role == Worker {
 		// The routes were built and gated above and are then set aside: the two
 		// probes are the whole surface Run gives a worker today.
@@ -256,38 +288,16 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	}
 	if a.opts.Role != Web {
 		if rt.transport, err = a.transport(); err != nil {
-			_ = conn.Close()
-			_ = rt.cache.Close()
+			// Close, and not the two fields by hand: this Runtime holds the claim
+			// this boot took, and a refusal that released everything else and kept
+			// the shapes would leave them named by a composition that never started.
+			_ = rt.Close()
 			return nil, err
 		}
 	}
-	// Last, and the only piece of process state this boot changes. The catalog
-	// behind events.Publish is what refuses a payload that is not the one a
-	// module declared, and it belongs to the process rather than to a
-	// composition, so putting it up here rather than in New is the difference
-	// between two claims: "a build this one refused costs the running
-	// application nothing" and "a build this one refused replaced its event
-	// shapes on the way out". Everything above still refuses boots — the gates,
-	// the pool, the store, the migration, the transport — and each of those
-	// refusals now leaves the shapes a serving application is answering under
-	// exactly where they were. Nothing between here and the end of this function
-	// publishes: the first outbox row this composition can write is a request or
-	// a job tick, both of which need the Runtime this call returns.
-	//
-	// Beside, not over: another composition can be live in this process — one
-	// application under two roles, or two applications on two databases — and what a
-	// publish is checked against is then what the live compositions declared
-	// together. New refused the one disagreement that can be refused for free, a
-	// name this composition spells with another payload than a live one chose, so
-	// the only way left to reach this refusal is the race in which that other
-	// composition installed its own shapes in the meantime: everything this boot
-	// opened is released and no Runtime comes back.
-	declaredRelease, err := events.DeclareMore(a.declared)
-	if err != nil {
-		_ = rt.Close()
-		return nil, err
-	}
-	rt.declaredRelease = declaredRelease
+	// The claim this boot took is the Runtime's to give back, after its connection,
+	// its transport and whatever else this call opened: a refusal between the claim
+	// and here released it on the way out, so this is the only path that keeps one.
 	return rt, nil
 }
 

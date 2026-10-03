@@ -275,8 +275,9 @@ func (a *App) engine(ctx context.Context, d Deployment, role app.Role) (*Runtime
 
 // release settles what a call to the engine's effects left this App. A boot
 // kit/app refused above the connection — a route gate, the fourth registration,
-// an operation gate, the cache segment the configuration names — was answered
-// over an in-process store: nothing was dialled, migrated or listened on, so the
+// an operation gate, the cache segment the configuration names, the claim on an
+// event name this process already answers under — was answered over an in-process
+// store: nothing was dialled, migrated or listened on, so the
 // App never had a lifecycle and the composition can be corrected and built again
 // (README: a build refused before the first effect "changes nothing in the process
 // it was asked in"). Any other refusal reached the pool, the store the deployment
