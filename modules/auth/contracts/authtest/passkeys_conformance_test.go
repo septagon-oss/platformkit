@@ -56,9 +56,17 @@ func TestFakeConformsToThePasskeyRules(t *testing.T) {
 				body, _ := json.Marshal(map[string]string{"id": credential})
 				return body
 			},
-			AddFactor:           fake.AddFactor,
-			ExpireCeremony:      fake.ExpireCeremony,
-			EnablePasskeySignIn: fake.SetPasskeySignIn,
+			AddFactor:      fake.AddFactor,
+			ExpireCeremony: fake.ExpireCeremony,
+			// The seam drives the command, not the boolean behind it: what the
+			// suite asks of an implementation is "open the door", which is the
+			// caller's question, and a case that reached for the field would be
+			// testing the fake's own bookkeeping.
+			EnablePasskeySignIn: func(enabled bool) {
+				if _, err := fake.SetPasskeySignIn(ctx, tx, enabled); err != nil {
+					t.Fatalf("SetPasskeySignIn(%v): %v", enabled, err)
+				}
+			},
 		})
 	})
 }

@@ -10,7 +10,7 @@ package internal_test
 // because the record is made by the mount and not by a file name.
 //
 // That is the guarantee a route count has to have to be worth pinning: the
-// module answers with these 23 operations and nothing else, guard included.
+// module answers with these 24 operations and nothing else, guard included.
 // An operation that appears here unannounced is a new door on a signed-in
 // surface, and the person reviewing the diff is the one who has to have
 // written its row.
@@ -81,6 +81,7 @@ var wholeSurface = []route{
 	{"app", "POST", "/api/v1/auth/challenge/passkey/verify", "public"},
 	{"app", "POST", "/api/v1/auth/login/passkey/begin", "public"},
 	{"app", "POST", "/api/v1/auth/login/passkey/verify", "public"},
+	{"app", "POST", "/api/v1/auth/settings/passkey-sign-in", "permission passkey:signin"},
 	// registration.go — the one register door this composition chose.
 	{"public", "POST", "/api/v1/public/auth/register", "public"},
 	// oidc.go — the two legs, mounted because the installation has an issuer.

@@ -383,6 +383,40 @@
       "summary": "Every tenant's delivery of auth.login_failed.",
       "title": "auth.login_failed"
     },
+    "auth.passkey_sign_in_set": {
+      "address": "platformkit.*.auth.passkey_sign_in_set",
+      "description": "Published at platformkit.{tenantId}.auth.passkey_sign_in_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.passkey_sign_in_set": {
+          "contentType": "application/json",
+          "name": "auth.passkey_sign_in_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "type": "boolean"
+              },
+              "was": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.passkey_sign_in_set",
+          "title": "auth.passkey_sign_in_set"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.passkey_sign_in_set.",
+      "title": "auth.passkey_sign_in_set"
+    },
     "auth.password_reset": {
       "address": "platformkit.*.auth.password_reset",
       "description": "Published at platformkit.{tenantId}.auth.password_reset; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3595,6 +3629,23 @@
         }
       ],
       "summary": "The auth module publishes auth.login_failed.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.passkey_sign_in_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.passkey_sign_in_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.passkey_sign_in_set/messages/auth.passkey_sign_in_set"
+        }
+      ],
+      "summary": "The auth module publishes auth.passkey_sign_in_set.",
       "tags": [
         {
           "name": "auth"

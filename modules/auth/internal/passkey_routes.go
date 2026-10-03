@@ -106,6 +106,34 @@ func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys,
 			contracts.EventLoggedIn, contracts.EventFactorUsed, contracts.EventFactorSuspect,
 		}},
 	}, httpx.Public(), handleFinishPasskeyAssertion(passkeys, cookies))
+
+	httpx.Register(app, huma.Operation{
+		OperationID: "auth-passkey-sign-in-set",
+		Method:      http.MethodPost,
+		Path:        "/settings/passkey-sign-in",
+		Summary:     "Say whether a passkey may be the whole sign-in here",
+		Description: "Opens or shuts this tenant's usernameless door. A passkey is a second factor from the moment it is enrolled and this route changes nothing about that: what it decides is whether a password is ever offered first, which is a different promise about what a stolen password costs, and the tenant's own administrator makes it. Says the state the tenant is in afterwards: setting the value that is already set changes nothing and publishes nothing.",
+		Tags:        []string{"auth"},
+		Extensions: map[string]any{httpx.EventsExtension: []string{
+			contracts.EventPasskeySignInSet,
+		}},
+	}, httpx.Permission(contracts.PermissionPasskeySignIn), handleSetPasskeySignIn(passkeys))
+}
+
+func handleSetPasskeySignIn(passkeys contracts.Passkeys) func(context.Context, *passkeySignInSettingInput) (*passkeySignInSettingOutput, error) {
+	return func(ctx context.Context, in *passkeySignInSettingInput) (*passkeySignInSettingOutput, error) {
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		enabled, err := passkeys.SetPasskeySignIn(ctx, tx, in.Body.Enabled)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		out := &passkeySignInSettingOutput{}
+		out.Body.Enabled = enabled
+		return out, nil
+	}
 }
 
 func handleBeginPasskeyRegistration(passkeys contracts.Passkeys) func(context.Context, *struct{}) (*passkeyChallengeOutput, error) {
@@ -253,6 +281,22 @@ func passkeyChallenge(challenge *contracts.PasskeyChallenge) *passkeyChallengeOu
 
 type passkeyChallengeOutput struct {
 	Body contracts.PasskeyChallenge
+}
+
+// passkeySignInSettingInput is the tenant's own answer, and the output is the
+// state the row holds afterwards rather than an echo of the body: the two differ
+// for no call today, and a route that promised the second could not be believed
+// about the first.
+type passkeySignInSettingInput struct {
+	Body struct {
+		Enabled bool `json:"enabled" doc:"Whether a passkey may be the whole sign-in at this tenant"`
+	} `required:"true"`
+}
+
+type passkeySignInSettingOutput struct {
+	Body struct {
+		Enabled bool `json:"enabled" doc:"The state the tenant is in now; a call that changed nothing reports the value that was already set"`
+	} `required:"true"`
 }
 
 type passkeyFinishInput struct {

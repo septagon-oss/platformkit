@@ -58,13 +58,17 @@ const (
 )
 
 // SetPasskeySignIn is the tenant's own row at the usernameless door — the fact
-// BeginPasskeySignIn reads. The real service keeps it in passkey_settings, written
-// today only by an operator's SQL; the fake holds the same one boolean so a
-// consumer can test the door either way without a database.
-func (f *Fake) SetPasskeySignIn(enabled bool) {
+// BeginPasskeySignIn reads. The real service keeps it in passkey_settings and
+// publishes auth.passkey_sign_in_set beside the row; the fake holds the same one
+// boolean, so a consumer can test the door either way without a database, and
+// publishes nothing because it has no outbox to put it in (the suite's own
+// published list is the seam for what a command emits, and this command's event
+// is pinned where the row and the outbox are one transaction: modules/auth/internal).
+func (f *Fake) SetPasskeySignIn(_ context.Context, _ db.Tx[db.Tenant], enabled bool) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.passkeySignIn = enabled
+	return enabled, nil
 }
 
 // AddFactor stands in for a factor row this person holds without running the

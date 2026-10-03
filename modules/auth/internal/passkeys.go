@@ -355,6 +355,45 @@ func (s *Service) BeginPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant]
 	return s.storeCeremony(ctx, tx, contracts.PasskeyCeremonySecondFactor, nil, session, assertion)
 }
 
+// SetPasskeySignIn writes the tenant's own row at the usernameless door.
+//
+// The read and the write are one step because they are one transaction, and the
+// row's only predicate is the tenant the request already resolved: RLS holds it
+// to this tenant's row, so there is no argument here for a caller to point at
+// another tenant with, and no tenant id to check a caller was given honestly.
+// The authority is the route's own permission check — PermissionPasskeySignIn,
+// asked by the kernel in this same transaction — which is how every other
+// permission-guarded write in this module is arranged; the ceremony commands
+// recheck something narrower (whose ceremony is this) because the route cannot.
+//
+// Writing the value that is already written is not a change: no row is touched,
+// no event is published, and the answer is the state either way. An event for a
+// write that wrote nothing would put a door-opening in the trail that nobody
+// opened, and modules/audit would copy the lie faithfully.
+func (s *Service) SetPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant], enabled bool) (bool, error) {
+	was, err := s.passkeySignInEnabled(ctx, tx)
+	if err != nil {
+		return false, err
+	}
+	if was == enabled {
+		return was, nil
+	}
+	tenant := db.TenantOf(tx)
+	res := tx.DB().Exec(
+		"INSERT INTO passkey_settings (tenant_id, sign_in) VALUES (?, ?) "+
+			"ON CONFLICT (tenant_id) DO UPDATE SET sign_in = EXCLUDED.sign_in",
+		tenant.ID, enabled)
+	if res.Error != nil {
+		return false, fmt.Errorf("auth: set the passkey sign-in door of %s: %w", tenant.ID, res.Error)
+	}
+	if err := events.Publish(ctx, tx, contracts.EventPasskeySignInSet, contracts.PasskeySignInSet{
+		Was: was, Now: enabled, At: db.Now(),
+	}); err != nil {
+		return false, err
+	}
+	return enabled, nil
+}
+
 // BeginPasskeySignIn begins the usernameless ceremony, for a tenant that enabled
 // the door. No address is offered and none is learned.
 func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.PasskeyChallenge, error) {

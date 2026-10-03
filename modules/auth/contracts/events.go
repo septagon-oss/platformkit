@@ -59,6 +59,7 @@ var Events = []events.Declared{
 	events.Declare[RecoveryCodeUsed](EventRecoveryCodeUsed),
 	events.Declare[FactorUsed](EventFactorUsed),
 	events.Declare[FactorSuspect](EventFactorSuspect),
+	events.Declare[PasskeySignInSet](EventPasskeySignInSet),
 	events.Declare[APITokenIssued](EventAPITokenIssued),
 	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
@@ -197,6 +198,12 @@ const (
 	// moment on and the person is refused as they are for any wrong answer, so
 	// this event is the only place the fact is written down.
 	EventFactorSuspect = "auth.factor_suspect"
+	// EventPasskeySignInSet is the usernameless door being opened or shut for a
+	// whole tenant. It is the trail's answer to "when did a password stop being
+	// enough on its own here, and when did that stop", and the only place the
+	// change is written down: migrations/000035 keeps no timestamp on the settings
+	// row precisely because this record is where the fact lives.
+	EventPasskeySignInSet = "auth.passkey_sign_in_set"
 )
 
 // FactorEnrolled is the payload of EventFactorEnrolled.
@@ -245,6 +252,17 @@ type FactorSuspect struct {
 	PreviousCount int64     `json:"previousCount" example:"41"`
 	ObservedCount int64     `json:"observedCount" example:"4"`
 	At            time.Time `json:"at"`
+}
+
+// PasskeySignInSet is the payload of EventPasskeySignInSet. Two booleans and a
+// moment: what the door was, what it is now, and when. It names no person, the
+// way RoleSet names none — the actor is the envelope's business, and a payload
+// that repeated it would be a second record of who did it for two owners to
+// disagree about.
+type PasskeySignInSet struct {
+	Was bool      `json:"was"`
+	Now bool      `json:"now"`
+	At  time.Time `json:"at"`
 }
 
 // RecoveryCodesIssued is the payload of EventRecoveryCodesIssued.

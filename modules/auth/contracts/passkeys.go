@@ -121,6 +121,23 @@ type Passkeys interface {
 	// which is the only thing it refuses on its own.
 	BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (*PasskeyChallenge, error)
 
+	// SetPasskeySignIn is the tenant's own answer to whether a passkey may be the
+	// whole sign-in. A passkey is a second factor the moment one is enrolled;
+	// what this switches is the wider promise — that no password is offered first
+	// — and the person who decides it is this tenant's administrator, which is
+	// why the route that reaches it is guarded by PermissionPasskeySignIn rather
+	// than left to whoever is standing at the door.
+	//
+	// It writes one row and publishes one event in the caller's own transaction,
+	// and refuses without either: setting the value that is already set changes
+	// nothing and publishes nothing, so the trail says that the door was turned,
+	// and not that somebody pressed a button.
+	//
+	// It returns the state the tenant is in afterwards, which is the same answer
+	// for a call that changed it and for a call that found it already so — the
+	// route renders what the row says rather than what the caller asked for.
+	SetPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant], enabled bool) (bool, error)
+
 	// FinishPasskeyAssertion is the answer to either sign-in door. It spends the
 	// ceremony nonce before it reads anything about a factor, so a refusal
 	// consumes the attempt rather than leaving a captured signature spendable;
