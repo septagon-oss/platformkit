@@ -1,7 +1,6 @@
 package db_test
 
-// data_body_that_binds_the_windows_own_name_is_refused_test.go is the third review's case for the one refusal
-// of a phase=data file that the rule table does not make.
+// The one refusal of a phase=data file that the rule table does not make.
 //
 // The guard is what refuses "before the runner connects: an invalid later file
 // must not let an earlier one change the schema" (kit/db/migration_files.go). A

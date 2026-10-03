@@ -117,7 +117,7 @@ INSERT INTO probe (id) SELECT g FROM generate_series(1,25) g`)},
 }
 
 // TestAReasonThatNamesADeclarationLeavesTheColumnWhereItIs pins the trade the
-// sixth round recorded: the grammar reads a `-- pkit:` pair written after a
+// grammar makes: the grammar reads a `-- pkit:` pair written after a
 // `reason=` sentence, so a file whose sentence quotes a declaration becomes that
 // declaration, and the exception written beside it stops being one. The column has
 // to be where it was either way.

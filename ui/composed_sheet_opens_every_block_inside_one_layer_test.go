@@ -1,32 +1,9 @@
 package ui_test
 
-// This case. Two things, one file.
-//
-// 1. The defect. refuseClientSheet reads the text a rule emits for a brace, a
-// comment start, a kernel attribute name, `:root`, a `--pk-` property and a raw
-// colour — and never asks whether the text is a selector at all. The emitter
-// writes `selector { prop: value; }` (ui/css, Rule.CSS), so text that begins
-// with `@` is not a selector to the browser but an at-rule prelude, and the
-// block after it is the at-rule's body: a consumer sheet that hands Select an
-// at-rule prelude *does* declare an @layer of its own, which is the first thing
-// the gate says it refuses ("a client sheet declares its own @layer; Compose
-// places every client rule in the client layer"). sheet.UsesLayers cannot see
-// it: it walks the at-rules the Sheet type carries, and a prelude arriving in
-// a selector string is not one of those. The three cases below are accepted
-// today and emit an at-rule inside @layer client; each must be refused, by the
-// text it reads, the way the brace case already is. The nested layer gains no
-// rank (it becomes `client.tokens`, inside the client subtree), so this is
-// refused — but it is the gate's own first promise, and the sibling of
-// the escape filed before it: text that changes what block the emitter is
-// in, arriving where a selector belongs.
-//
-// 2. The pin. The whole delivery rests on one structural fact nobody measured
-// independently at these bytes: the order statement ranks the four layers, and
-// every block the composed sheet opens is opened inside one of them. That is
-// asserted here from the bytes, with a brace scanner of this file's own — not
-// from a fingerprint, a byte count or a line index, all of which are figures
-// other branches write. It says nothing about which rules are in which layer;
-// ui_test.go and the earlier cases' files own that.
+// The at-rule-prelude refusal that used to share this file is not repeated here:
+// ui_test.go's TestTheGateRefusesASelectorThatIsAnAtRulePreludeAndReadsAnAtSignAsData
+// already refuses `@layer tokens`, `@layer client` and `@media all` where a selector
+// belongs, and reads `@` as data in the three positions a browser cannot act on it.
 
 import (
 	"fmt"

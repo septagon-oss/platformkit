@@ -9,21 +9,23 @@ import (
 	"testing"
 )
 
-// TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds applies the guide
-// guard to every public document. ADR 0009
-// keeps a private catalog's capabilities out of a public document; the guard this
-// package first wrote reads `../../kit/*/README.md` and nothing else, so a name in
-// ARCHITECTURE.md, in the release note, in an ADR, or in a guide one directory
-// deeper (kit/flags/providers/ofrep, kit/locale/providers/xtext, kit/tenancy/
-// providers/topaz, kit/flags/providers/openfeature) is invisible to it.
-// Reproduced against a copy of this tree: appending a line naming
-// `calendar/contracts` to CHANGELOG.md left
-// TestAGuideNamesOnlyAModuleThisRepositoryHolds green, while the same line added
-// to kit/fault/README.md failed it. This case applies the same `capability` rule to
-// every markdown document the repository publishes, so the disclosure the rule
-// refuses is refused wherever it can be published.
+// capability is how a document names another module's value package:
+// "auth/contracts", "calendar/contracts". The prefix is what has to exist here.
+var capability = regexp.MustCompile(`([a-z][a-z0-9_-]*)/(contracts|events|domain)`)
+
+// ADR 0009 keeps a private catalog's capabilities out of a public document: a
+// published document may say "a module's value package", but naming a package in a
+// catalog this repository does not publish is a disclosure the foundation cannot
+// undo. The rule is mechanical, so the case is too — every "<capability>/…" in every
+// markdown document the repository publishes has to name a module this tree holds.
+// The scope is every document and not only the kit guides, because the narrower read
+// was reproduced as a hole: a line naming `calendar/contracts` written into
+// CHANGELOG.md, an ADR or a provider guide one directory deeper was invisible to a
+// read of `kit/*/README.md` alone. Both halves of that are guards of this case: a
+// walk that opened no kit guide, or fewer than thirty documents, proves nothing and
+// says so rather than passing.
 func TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds(t *testing.T) {
-	docs := 0
+	docs, kitGuides := 0, 0
 	err := filepath.WalkDir("../..", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -42,6 +44,9 @@ func TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds(t *testing.T) {
 			return err
 		}
 		docs++
+		if strings.Count(path, "/") == 4 && strings.HasPrefix(path, "../../kit/") && d.Name() == "README.md" {
+			kitGuides++
+		}
 		for _, match := range capability.FindAllStringSubmatch(string(text), -1) {
 			owner := match[1]
 			if strings.Contains(" kit ui design modules apps tools ", " "+owner+" ") {
@@ -49,7 +54,7 @@ func TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join("../..", "modules", owner)); err != nil {
 				t.Errorf("%s names %q, a capability this repository does not hold; ADR 0009 keeps a private "+
-					"catalog's names out of a public document, and the kit-guide guard above never opens this file",
+					"catalog's names out of a document this repository publishes",
 					path, match[0])
 			}
 		}
@@ -57,6 +62,9 @@ func TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("walking the published documents: %v", err)
+	}
+	if kitGuides == 0 {
+		t.Fatal("no kit guide was read, so this case proves nothing about a kit guide")
 	}
 	if docs < 30 {
 		t.Fatalf("only %d markdown documents were read, so this case proves nothing", docs)

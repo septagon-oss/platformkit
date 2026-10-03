@@ -1,7 +1,7 @@
 package rest_test
 
-// The delete door's turn at the question the fifth review asked of the patch
-// door. Row-level security filters a DELETE by a policy's USING clause alone —
+// The delete door's turn at the question the patch door asks. Row-level security
+// filters a DELETE by a policy's USING clause alone —
 // a WITH CHECK clause inspects the row a write produces, and a delete produces
 // none — so on the catalogue shape, whose USING is deliberately true for every
 // tenant, GetForUpdate answers a row the request may read and may not remove,

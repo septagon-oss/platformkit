@@ -190,7 +190,7 @@ func TestModuleSchemaIsOneCallPerOwner(t *testing.T) {
 // function read out of pg_default_acl is the only thing holding the line. The
 // catalog questions are the operational ones — may this role read this table,
 // may this role call nextval — and the effect side, one INSERT refused at a
-// table, is the second review's pin beside this one.
+// table, is the pin beside this one.
 func TestModuleSchemaHandsAGranteeJustThePrivilegesItsOwnRowNames(t *testing.T) {
 	ctx := t.Context()
 	admin, _ := dbtest.Schema(t)

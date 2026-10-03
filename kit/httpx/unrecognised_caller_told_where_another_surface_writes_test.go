@@ -248,6 +248,6 @@ func TestThePublicWriteLimitCountsTwoTenantsApartInTheCounterItWritesTo(t *testi
 	if rows != 2 || owned != 2 {
 		t.Errorf("platformkit_limits holds %d rows of which %d name one of the two tenants; the promise is one "+
 			"row per tenant for one visitor address, and a row keyed by nothing but the address is what the "+
-			"first review found", rows, owned)
+			"refusal refuses", rows, owned)
 	}
 }

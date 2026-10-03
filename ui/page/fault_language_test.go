@@ -40,8 +40,8 @@ type refusal struct {
 // refusals is every refusal the page can be shown: the nine codes kit/httpx
 // publishes and has a row in fault.go's table for, and the three verdicts that
 // carry no code because the router, the recoverer or chi wrote the sentence
-// themselves. A code with no page is not in it — that is the condition F1 of the
-// third review made a rule: the table carries exactly what a person is shown, so
+// themselves. A code with no page is not in it — that is the condition F1 states
+// as a rule: the table carries exactly what a person is shown, so
 // every row of it gets a case here, in both of the shell's languages.
 var refusals = []refusal{
 	{

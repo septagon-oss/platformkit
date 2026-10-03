@@ -1,10 +1,10 @@
 package crud_test
 
-// The fourth review's case against the one exported name this branch adds.
+// The case against the one exported name this branch adds.
 //
 // Before 762a724 the tenant compare lived inside Update, behind Update's own
-// `isNil` guard, and nothing could reach it without passing that guard. Round 5
-// extracted it and exported it — `crud.RecheckTenant` — so that a caller which
+// `isNil` guard, and nothing could reach it without passing that guard. It was
+// extracted and exported — `crud.RecheckTenant` — so that a caller which
 // read a row under the lock and then decided to write nothing could ask the
 // question without writing. The guard stayed behind, and the doc comment took
 // over its job with a sentence: "As everywhere entity.BaseOf is reached
