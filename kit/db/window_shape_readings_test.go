@@ -1,15 +1,15 @@
 package db_test
 
-// window_shape_readings_test.go pins the two readings the window makes of a body by its
-// *constructs* rather than by one spelling of them, and the bound that ends a tick whose drain
-// neither reading stopped — which, since the fourteenth round, is a drain that reaches the drained
-// table through a view rather than one that names it and appends.
+// The two readings the window makes of a body are pinned here by their
+// *constructs* rather than by one spelling of them, with the bound that ends a tick whose drain
+// neither reading stopped — a drain that reaches the drained table through a view rather than one
+// that names it and appends.
 //
-// The thirteenth review's first finding was that `batch` as a *binding* was refused by asking
+// `batch` as a *binding* used to be refused by asking
 // the shape for the four characters `batch as (` — so a quoted lower-case name (the same
 // identifier to the server, and a name whose contents the shape puts away) and a name carrying
 // its own column list both reached the server with two CTEs of one name, behind a progress row.
-// Its third finding was a `phase=data` body that writes the column the cursor is ordered by: the
+// The other half is a `phase=data` body that writes the column the cursor is ordered by: the
 // rows it touches land above that cursor, so the table never empties and every window behind the
 // first re-commits rows an earlier one wrote. Both are the same mistake — a rule that reads one
 // spelling of a construct is a rule that reads the spellings it enumerated — and the answer
@@ -79,6 +79,16 @@ UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`,
 UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id NOT IN (SELECT id FROM stale)`,
 		},
 		{
+			// The same binding answered by a body that keeps the rows its own list
+			// names rather than excluding them — the file its author meant, which is
+			// a different correction from the one above and drains the same 6 rows.
+			name: "the name carrying its own column list, corrected by a body that keeps what its list names",
+			refused: `WITH batch (id) AS (SELECT id FROM probe WHERE id < 7)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`,
+			corrected: `WITH stale (id) AS (SELECT id FROM probe WHERE id < 7)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id IN (SELECT id FROM stale)`,
+		},
+		{
 			name: "the name as the second member of the list",
 			refused: `WITH one AS (SELECT 1 AS n), batch AS (SELECT id FROM probe WHERE id < 7)
 UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`,
@@ -133,6 +143,9 @@ UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id NOT IN 
 			}
 			if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'done'"); n != 6 {
 				t.Errorf("%d rows written by the corrected body, want the 6 its own list bounds off", n)
+			}
+			if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'spellings' AND version = 2"); n != 1 {
+				t.Errorf("%d history rows for the drained file, want 1: the refusal above wrote none, so this run is the only one that could have written this one", n)
 			}
 		})
 	}
@@ -270,7 +283,7 @@ func TestOnlyTheWindowKeyIsRefusedAmongWhatABodyWrites(t *testing.T) {
 		},
 		{
 			// The same alias without the word PostgreSQL does not require: one word away
-			// from the leg above, and the re-key the fourteenth round met.
+			// from the leg above, and the re-key a body reaches by the same road.
 			name:   "the alias written without its AS",
 			body:   `UPDATE probe p SET id = id + 1 WHERE p.id IN (SELECT id FROM batch)`,
 			writes: true,
@@ -392,7 +405,7 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 
 // TestTheWorkersDrainEndsAtTheBoundATickGivesItself asks what stops a drain that runs forever for
 // a reason the key reading cannot see. It used to be an append to the drained table, which the
-// fourteenth round showed is the same harm as writing the key and is now refused; what is left is
+// key reading cannot see is the same harm as writing the key and is now refused; what is left is
 // the append the body never names — rows put into the table through a view over it, which the
 // server routes wherever the view says. The cursor is right that nothing above it was written yet,
 // and the answer has to be a number, because the alternative is a tick that repeats work and never

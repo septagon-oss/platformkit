@@ -1,6 +1,5 @@
 package db_test
 
-// refusal_names_test.go is the ninth round's case for the eighth review's fourth finding.
 // Two of the runner's runtime refusal ids — `data-table-missing` and
 // `data-key-not-primary-key` — were written down only in the task's own specification:
 // `grep -rn "data-table-missing" --include=*.go --include=*.md .` found the string in one
@@ -20,7 +19,7 @@ package db_test
 // the same list, and a doc a test cannot disbelieve is a list rather than a gate. The
 // paragraph under that table promises both halves — an id named there that nothing prints,
 // and a printed id nothing names — and one case holding both meant writing the ids out a
-// third time, which is what the ninth review measured: a literal list of four pinned the
+// third time, and a literal list of four pinned the
 // four names in both directions and the *set* in neither, so a fifth id added to either side
 // passed. The ids are therefore read out of the places they come from rather than repeated:
 // `refusalDoors` below is counted against every refusal constant this package's non-test files

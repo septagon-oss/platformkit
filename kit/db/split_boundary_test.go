@@ -1,10 +1,9 @@
 package db_test
 
-// split_boundary_test.go is the ninth round's case for the class the eighth review's
-// second finding belongs to: a construct the statement splitter mis-reads moves the
+// The class of bug where a construct the statement splitter mis-reads moves the
 // boundary of every statement after it, and a rule anchored at the front of a statement
 // (`^alter table`) then reads no action at all — no refusal, no marker offered, and the
-// drop or the rewrite in the ledger. The review's own file,
+// drop or the rewrite in the ledger. The sibling file,
 // dollar_body_moves_neither_statement_boundary_nor_test.go, pins the spelling it found: one lone double quote inside a
 // `$tag$ … $tag$` body, which the splitter had begun counting as the start of a name.
 //
