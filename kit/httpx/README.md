@@ -122,10 +122,8 @@ surface a route was on lived in prose. **Made reusable:** `Router.Prefix`,
 `Router.Path` and `Router.PagePath`, so a module composes an address instead of
 spelling one; `SurfaceExtension`, the `x-platformkit-surface` key every recorded
 operation carries; `LegacySessionCookies`, which the auth module needs to clear
-what the kernel still reads.
-
-Behaviour-named files are the whole test set: a case says what it protects in its
-name and in the comment above it, never in the name of the round that asked for it.
+what the kernel still reads. A test says what it protects in its own name and in the
+comment above it, never in the name of the round that asked for it.
 
 ### One release of the old addresses
 
