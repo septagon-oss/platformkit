@@ -172,11 +172,11 @@ UPDATE probe SET passes = passes + 1 WHERE id IN (SELECT id FROM BATCH)`,
 	}
 }
 
-// TestAnExceptionsReasonSaysSomething. The grammar table this task's specification
-// states gives `reason` the domain "free text, ≥ 3 characters": the sentence is the
+// TestAnExceptionsReasonSaysSomething. The grammar table in migrations/README.md
+// gives `reason` the domain "free text, ≥ 3 characters": the sentence is the
 // whole content of an exception, and the parser already refuses a reason that is
-// empty or all spaces. One character passes, which is the marker's claim of a
-// review with nothing under it.
+// empty or all spaces. One character passes, which is a marker claiming an
+// exception with nothing under it.
 func TestAnExceptionsReasonSaysSomething(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	err := db.Migrate(t.Context(), migrateURL, probeSource(
