@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -312,13 +313,22 @@ func (o OIDC) Enabled() bool { return o.Issuer != "" }
 
 // Mail is the one outgoing mail server, and there is one sender behind it: SMTP
 // is what every service worth naming speaks. An empty host means there is none,
-// and then main wires the in-memory mailbox and says so at boot — a deployment
-// without mail still records every notification and simply sends none.
+// and there is no default stand-in for one: a command whose promise is a message
+// (an emailed verification link) refuses with a reasoned 503 and writes nothing,
+// and a notice that asks for mail is recorded as suppressed. The way to ask for
+// the in-memory sink anyway is mail.sink below, said by name.
 //
 // Username and Password are optional, because a relay on a private network
 // authenticates by being unreachable from anywhere else. From is not: a message
 // with no sender is refused by the far end, hours later, in somebody else's log.
 type Mail struct {
+	// Sink is the one way to name a mail transport that is not a server.
+	// MailSinkMailbox keeps every message in this process's memory and sends
+	// nothing: what a test that has to read a message, or a screen that has to
+	// show one, asks for by name. It is never the default — a sink wired
+	// because nothing else was configured is how an installation ends up
+	// accepting a sign-up whose confirmation nobody will ever receive.
+	Sink     string `yaml:"sink"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
@@ -326,8 +336,15 @@ type Mail struct {
 	From     string `yaml:"from"`
 }
 
+// MailSinkMailbox is the only value mail.sink takes: this process's memory.
+const MailSinkMailbox = "mailbox"
+
 // Enabled reports whether a mail server is configured.
 func (m Mail) Enabled() bool { return m.Host != "" }
+
+// Mailbox reports whether the configuration asked, by name, for mail to be kept
+// in this process instead of sent.
+func (m Mail) Mailbox() bool { return m.Sink == MailSinkMailbox }
 
 // Audit is how long the audit trail is kept: the one thing modules/audit cannot
 // decide for itself, because a retention period is a compliance obligation and
@@ -398,53 +415,89 @@ const DefaultReadTimeout = 30 * time.Second
 // exactly the keys the environment reaches, and an unknown name is refused
 // against this list rather than ignored.
 type key struct {
-	name     string
-	env      string
+	name string
+	env  string
+	// Exactly one of field and intField is set, and it is the one place the key
+	// reaches the struct. Port is a number in the file (`port: 587`) and a string
+	// in the environment, so the second accessor is not a flourish: a key whose
+	// value type the table cannot name is a key the environment cannot reach, and
+	// PLATFORMKIT_MAIL_PORT is in the brief by name.
 	field    func(*Config) *string
+	intField func(*Config) *int
 	required bool
 }
 
+// assign writes one value into the field this key names, parsing it first when
+// the field holds a number. A value that will not parse is refused with the key
+// named, because an environment variable that silently leaves a port at zero is
+// a deployment that cannot send mail and says nothing about why.
+func (k key) assign(c *Config, value string) error {
+	if k.intField == nil {
+		*k.field(c) = value
+		return nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		return fmt.Errorf("%s must be a whole number, and %q is not", k.name, value)
+	}
+	*k.intField(c) = n
+	return nil
+}
+
 var keys = []key{
-	{"server.addr", "PLATFORMKIT_SERVER_ADDR", func(c *Config) *string { return &c.Server.Addr }, true},
-	{"server.public_host", "PLATFORMKIT_SERVER_PUBLIC_HOST", func(c *Config) *string { return &c.Server.PublicHost }, true},
-	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, false},
-	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
-	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
-	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
-	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, false},
-	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
-	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, false},
-	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, false},
-	{"cache.adapter", "PLATFORMKIT_CACHE_ADAPTER", func(c *Config) *string { return &c.Cache.Adapter }, false},
-	{"cache.app", "PLATFORMKIT_CACHE_APP", func(c *Config) *string { return &c.Cache.App }, false},
-	{"cache.url", "PLATFORMKIT_CACHE_URL", func(c *Config) *string { return &c.Cache.URL }, false},
+	{"server.addr", "PLATFORMKIT_SERVER_ADDR", func(c *Config) *string { return &c.Server.Addr }, nil, true},
+	{"server.public_host", "PLATFORMKIT_SERVER_PUBLIC_HOST", func(c *Config) *string { return &c.Server.PublicHost }, nil, true},
+	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, nil, false},
+	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, nil, true},
+	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, nil, true},
+	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, nil, true},
+	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, nil, false},
+	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, nil, false},
+	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, nil, false},
+	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, nil, false},
+	{"cache.adapter", "PLATFORMKIT_CACHE_ADAPTER", func(c *Config) *string { return &c.Cache.Adapter }, nil, false},
+	{"cache.app", "PLATFORMKIT_CACHE_APP", func(c *Config) *string { return &c.Cache.App }, nil, false},
+	{"cache.url", "PLATFORMKIT_CACHE_URL", func(c *Config) *string { return &c.Cache.URL }, nil, false},
 	// A secret, so it earns an override for the reason rule 7 gives and earns no
 	// place in config.example.yaml with a value in it.
-	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
-	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
+	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, nil, false},
+	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, nil, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
 	// file somebody will commit.
-	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
+	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, nil, false},
 	// The second secret, for the same reason as the first.
 	// The factor key, for the same reason as the other three: it seals a
 	// credential, and config.yaml is a file somebody will commit.
-	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
-	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, nil, false},
+	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, nil, false},
+	// Where the mail server is, and on which port. Both are here for the same
+	// reason the database URL is: they are facts about the machine the process is
+	// running on, not about the software. A development machine has Mailpit on a
+	// port this worktree was given; a deployment has a relay. Neither belongs in
+	// the one example file every installation copies (see config.example.yaml's
+	// mail block), which is why the example keeps host empty and these two lines
+	// are how a mail host arrives at all.
+	{"mail.host", "PLATFORMKIT_MAIL_HOST", func(c *Config) *string { return &c.Mail.Host }, nil, false},
+	{"mail.port", "PLATFORMKIT_MAIL_PORT", nil, func(c *Config) *int { return &c.Mail.Port }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
-	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
-	// No environment override, and still overridable: the sender is a value a
-	// composition knows — one client, one from address — and a deployment that
-	// wrote it in the file wrote it once.
-	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
+	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, nil, false},
+	// The sender, overridable like the host beside it. It used to have no
+	// environment name, on the argument that one client has one from address and
+	// writes it once — true of a deployment, and the reason the example file's
+	// value stays empty. It is not true of the machine that sets mail.host from
+	// the environment: the all-or-none rule below refuses a mail server with no
+	// sender, so a development instance that names a host without a sender does
+	// not boot, and the only way it could was a second file.
+	{"mail.from", "PLATFORMKIT_MAIL_FROM", func(c *Config) *string { return &c.Mail.From }, nil, false},
 	// The collector is an endpoint, and an endpoint is a deployment's fact about
 	// its own network, which is what an environment variable is for.
-	{"telemetry.otlp_endpoint", "PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT", func(c *Config) *string { return &c.Telemetry.OTLPEndpoint }, false},
-	{"telemetry.service_name", "PLATFORMKIT_TELEMETRY_SERVICE_NAME", func(c *Config) *string { return &c.Telemetry.ServiceName }, false},
+	{"telemetry.otlp_endpoint", "PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT", func(c *Config) *string { return &c.Telemetry.OTLPEndpoint }, nil, false},
+	{"telemetry.service_name", "PLATFORMKIT_TELEMETRY_SERVICE_NAME", func(c *Config) *string { return &c.Telemetry.ServiceName }, nil, false},
 	// The fourth secret-shaped key, and not a secret: which customer a shared
 	// installation is serving is not sensitive, but a fleet sets it per deployment.
-	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, false},
+	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, nil, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -498,19 +551,26 @@ func Load(path string, overrides ...Override) (Config, error) {
 			return Config{}, fmt.Errorf("config %s: %q is not an overridable key; they are %s",
 				path, o.key, strings.Join(names, ", "))
 		}
-		*keys[i].field(&c) = o.value
+		if err := keys[i].assign(&c, o.value); err != nil {
+			return Config{}, fmt.Errorf("config %s: the override %s: %w", path, o.key, err)
+		}
 	}
 	for _, k := range keys {
 		if k.env == "" {
 			continue
 		}
 		if v, ok := os.LookupEnv(k.env); ok {
-			*k.field(&c) = v
+			if err := k.assign(&c, v); err != nil {
+				return Config{}, fmt.Errorf("config %s: the environment's %s: %w", path, k.env, err)
+			}
 		}
 	}
 
 	for _, k := range keys {
-		if k.required && *k.field(&c) == "" {
+		// Only a key that holds a string can be missing: a port that arrived as 0
+		// is a port that was not written down at all, and Mail.validate says so in
+		// the all-or-none terms the mail block is checked in.
+		if k.required && k.field != nil && *k.field(&c) == "" {
 			return Config{}, fmt.Errorf("config %s: %s is empty", path, k.name)
 		}
 	}
@@ -629,6 +689,14 @@ const defaultSMTPPort = 587
 // identity provider follows: a host with no sender is a mailer that exists and
 // cannot send, which is worse than no mailer.
 func (m *Mail) validate(path string) error {
+	if m.Sink != "" {
+		if m.Sink != MailSinkMailbox {
+			return fmt.Errorf("config %s: mail.sink is %q; the only sink that is not a mail server is %q", path, m.Sink, MailSinkMailbox)
+		}
+		if m.Enabled() {
+			return fmt.Errorf("config %s: mail.sink %q keeps every message in this process and mail.host %q names a server to send them to; say one", path, m.Sink, m.Host)
+		}
+	}
 	if !m.Enabled() {
 		if m.Username != "" || m.Password != "" || m.From != "" {
 			return fmt.Errorf("config %s: mail has credentials or a sender and no host", path)

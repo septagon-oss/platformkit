@@ -22,6 +22,17 @@ export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
 # same PLATFORMKIT_PG_PORT, so overriding the port once moves both.
 PLATFORMKIT_PG_PORT ?= 5432
 PLATFORMKIT_NATS_PORT ?= 4222
+# Mailpit, the development mail sink `make up` starts. Two ports because it is two
+# things: the SMTP port the application sends through, and the HTTP port a person
+# opens and `e2e/steps/inbox.ts` reads. A mail host is a fact about the machine the
+# process runs on, so `run` passes these to the application as the environment
+# values kit/config reads — target-scoped, deliberately: exported globally they
+# would put a mail host into every `go test` process, and the composition tests
+# that load the example config would switch from the in-memory mailbox to SMTP.
+# The sender goes with them because kit/config refuses a mail server without one:
+# naming a host is not yet naming a working mail server.
+PLATFORMKIT_MAIL_PORT ?= 1025
+PLATFORMKIT_MAIL_UI_PORT ?= 8025
 PLATFORMKIT_TEST_ADMIN_URL ?= postgres://postgres:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
 PLATFORMKIT_TEST_DATABASE_URL ?= postgres://platformkit_app:platformkit@localhost:$(PLATFORMKIT_PG_PORT)/platformkit?sslmode=disable
 # The JetStream transport is tested against the same NATS `make up` starts. The
@@ -99,8 +110,16 @@ test: ## Test selected packages, reusing successful results when inputs match
 vet: ## Run go vet
 	go vet ./...
 
+# The three assignments sit after the `cd`, on the command that reads them. Written
+# before it — `VAR=… cd apps/platformkit && go run .` — they belong to `cd`, which
+# ignores them, and `go run` starts with no mail host at all: `make up` + `make run`
+# then answers every sign-up with 503 while the recipe looks like it passed a sink.
+# TestLocalRunPassesMailConfigurationToApplication runs this recipe through a stand-in
+# `go` that writes the three values out, which is the only way to ask a recipe a
+# question without booting the server it is meant to start.
 run: config.yaml ## Run the reference app; a missing config.yaml is created from the example
-	cd apps/platformkit && go run . --config ../../config.yaml
+	cd apps/platformkit && PLATFORMKIT_MAIL_HOST=127.0.0.1 PLATFORMKIT_MAIL_PORT=$(PLATFORMKIT_MAIL_PORT) \
+	  PLATFORMKIT_MAIL_FROM=platformkit@localhost go run . --config ../../config.yaml
 
 # A first run has no config.yaml, and the example is the development
 # configuration `make up` matches, so the first run gets a copy of it. The rule
@@ -268,7 +287,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
+up: ## Start Postgres, NATS, Valkey, the object store and the mail sink, and wait for all five to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
@@ -306,5 +325,5 @@ trace: ## Start the local OTLP collector that prints every span it receives
 # The profile is named here as well, because `down` is the file's teardown: a
 # goal that stopped two containers and left a third holding port 4317 would half
 # finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store and the collector, and drop their volumes
+down: ## Stop Postgres, NATS, Valkey, the object store, the collector and the mail sink, and drop their volumes
 	docker compose --profile telemetry down -v

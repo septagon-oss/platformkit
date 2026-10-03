@@ -2,12 +2,12 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "d9d5d1dbde40bd4d5f54e6720df82890fff02138"
+    "candidate": "8fb7319295fd6c4e8159e3cabdf5c65bff804bf1"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
-    "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, []Check, ...Report) net/http.Handler",
+    "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, Faults, []Check, ...Report) net/http.Handler",
     "./kit/health.Register: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, ...Check) to func(*github.com/septagon-oss/platformkit/kit/httpx.API, []Check, ...Report)",
     "./kit/httpx.(*API).InvalidateHost: changed from func(string) to func(...string) error",
     "./kit/httpx.(*API).Static: removed",
@@ -61,6 +61,7 @@
     "./modules/user/contracts.Service.Holders: added",
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/web.Deps: old is comparable, new is not",
+    "./ui/document.Fault: changed from func(int, string, string, string, string) View to func(FaultProps) View",
     "./ui/page.Serve: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I]) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I])",
     "./ui/resource.Options.Root: removed",
     "./ui/resource.Path: removed",

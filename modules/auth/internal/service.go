@@ -41,8 +41,15 @@ type Delivery struct {
 
 // Service is signing in and what a role may do.
 type Service struct {
-	users   contracts.Users
-	notify  contracts.Notifier
+	users  contracts.Users
+	notify contracts.Notifier
+	// conn is the application's pool, handed over in Routes — the one moment the
+	// kernel offers one, which is when the file module takes its token too. One
+	// write uses it: the emailed verification credential, which has to be
+	// committed before the mail carrying it is handed over. A composition that
+	// never registers routes has no pool and issues no emailed credential: it
+	// says so rather than sending a link to a row that will never appear.
+	conn    *db.Conn
 	mail    Delivery
 	limiter *contracts.Limiter
 
@@ -59,6 +66,12 @@ type Service struct {
 	// requests are already reading it.
 	factorKey []byte
 }
+
+// UseConn takes the application's pool, from Routes — the one moment the kernel
+// has one to give, and the same moment this module's Declare takes the
+// permission catalogue. Only offerVerification uses it, and only to commit the
+// credential an email is about to carry; see the field.
+func (s *Service) UseConn(c *db.Conn) { s.conn = c }
 
 // Declare records the permissions the composition defines. module.go calls it
 // once, inside Routes, with what the kernel read off every manifest.

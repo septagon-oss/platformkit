@@ -243,18 +243,74 @@ func Bare(body []g.Node) g.Node {
 		components.Stack(components.StackProps{Gap: "6"}, body...))
 }
 
-// Fault is the page for a refusal a person can act on: the status text, the
-// detail, and one way back. title is what the status is called — ui/page
-// passes http.StatusText, which this package does not link net/http to say.
-func Fault(status int, title, detail, back, backLabel string) View {
-	if strings.TrimSpace(detail) == "" {
-		detail = "That did not work."
+// FaultProps is the generic verdict page: what happened, in one line, and every
+// way on that actually exists for this request.
+//
+// It is a props struct rather than five positional strings for the reason 0015
+// gives for RefusalProps: the affordances are conditional, and a page drawn from
+// five strings in a row cannot leave one out without the reader of the call
+// knowing which one meant "nothing". Every field here is optional, and a field
+// that is empty renders no control — the page never offers a door nobody mounted.
+type FaultProps struct {
+	Status int
+	// Title is what the status is called — ui/page passes http.StatusText, which
+	// this package does not link net/http to say.
+	Title string
+	// Sentence is the verdict's own line, code first, as every refusal shows it.
+	Sentence string
+	// Retry is the request's own address, offered for a verdict that clears by
+	// waiting and only on a method a link can re-issue. RetryAfter is the guard's
+	// own Retry-After in whole seconds, and 0 says no guard sent one — which the
+	// page says nothing about rather than inventing a wait.
+	Retry, RetryLabel string
+	RetryAfter        int
+	RetryAfterLabel   string
+	// Back is the page the visitor came from, and only ever a path on this site;
+	// ui/page checks that before it gets here.
+	Back, BackLabel string
+	// Home is the way on the composition owns — what this page used to call its
+	// only link. It is never the address that refused: Retry already is that,
+	// deliberately, and it appears above Home so a person who could simply wait
+	// is not offered the loss of their place instead.
+	Home, HomeLabel string
+	// SignIn is the chrome's own sign-in address, offered only on the verdict
+	// signing in could change.
+	SignIn, SignInLabel string
+	// Reference is the request's id — the problem document's instance read back
+	// as a bare identifier — and the label it is named by on the page. It is
+	// rendered as a labelled value, not glued into the sentence, because the one
+	// thing a person does with it is select it and read it to somebody.
+	Reference, ReferenceLabel string
+}
+
+// Fault is the page for a refusal a person may be able to act on.
+func Fault(p FaultProps) View {
+	if strings.TrimSpace(p.Sentence) == "" {
+		p.Sentence = "That did not work."
 	}
-	return View{Title: title, Status: status, Language: "en", Body: []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title}),
-		components.Alert(components.AlertProps{Tone: "danger", Message: detail, Bordered: true}),
-		components.Link(components.LinkProps{Label: backLabel, Href: back}),
-	}}
+	body := []g.Node{
+		components.Toolbar(components.ToolbarProps{Title: p.Title}),
+		components.Alert(components.AlertProps{Tone: "danger", Message: p.Sentence, Bordered: true}),
+	}
+	if p.Retry != "" {
+		body = append(body, components.Link(components.LinkProps{Label: p.RetryLabel, Href: p.Retry}))
+	}
+	if p.RetryAfter > 0 {
+		body = append(body, components.Text(components.TextProps{Content: p.RetryAfterLabel, Element: "p", Color: "secondary"}))
+	}
+	for _, way := range []struct{ href, label string }{{p.Back, p.BackLabel}, {p.Home, p.HomeLabel}, {p.SignIn, p.SignInLabel}} {
+		if way.href != "" {
+			body = append(body, components.Link(components.LinkProps{Label: way.label, Href: way.href}))
+		}
+	}
+	if p.Reference != "" {
+		// A labelled value: the id is a thing a person reads out, so it is a thing
+		// they can select and a screen reader reaches as a value with a name
+		// rather than as the tail of a sentence.
+		body = append(body, components.Text(components.TextProps{Content: p.ReferenceLabel, Element: "span", Color: "muted", Size: "sm"}),
+			components.Text(components.TextProps{Content: p.Reference, Element: "samp", Size: "sm", NoWrap: true}))
+	}
+	return View{Title: p.Title, Status: p.Status, Language: "en", Body: body}
 }
 
 // RefusalProps is the one verdict that arrives with parts: a refusal of a
@@ -282,6 +338,17 @@ type RefusalProps struct {
 	// Ask is the address the ask posts to, and "" leaves no ask control on the
 	// page — a button to a door nobody mounted is a lie about a door.
 	Ask, AskLabel, Permission, Path string
+	// SignIn is the chrome's own sign-in address, offered only on the verdict
+	// signing in could change (a 401), and "" leaves no link on the page — the
+	// same rule Ask follows. T-0184's refusal page is unchanged by everything
+	// below it: the fields are empty there, and an empty field renders nothing.
+	SignIn, SignInLabel string
+	// Retry, RetryAfter and the label beside it are the transient verdict's way on,
+	// on the two shapes of the one verdict: a refusal page for a 503 is still the
+	// refusal page, and it still has to say you may wait.
+	Retry, RetryLabel string
+	RetryAfter        int
+	RetryAfterLabel   string
 }
 
 // Refusal is the page for a person the kernel refused before any handler ran.
@@ -305,6 +372,15 @@ func Refusal(p RefusalProps) View {
 			h.Input(h.Type("hidden"), h.Name("path"), h.Value(p.Path)),
 			components.Button(components.ButtonProps{Label: p.AskLabel, Type: "submit", Size: "md"}),
 		))
+	}
+	if p.Retry != "" {
+		body = append(body, components.Link(components.LinkProps{Label: p.RetryLabel, Href: p.Retry}))
+	}
+	if p.RetryAfter > 0 {
+		body = append(body, components.Text(components.TextProps{Content: p.RetryAfterLabel, Element: "p", Color: "secondary"}))
+	}
+	if p.SignIn != "" {
+		body = append(body, components.Link(components.LinkProps{Label: p.SignInLabel, Href: p.SignIn}))
 	}
 	if p.Home != "" {
 		body = append(body, components.Link(components.LinkProps{Label: p.HomeLabel, Href: p.Home}))

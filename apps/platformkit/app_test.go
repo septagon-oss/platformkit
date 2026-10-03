@@ -171,7 +171,10 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 // and its administrator, the process migrates and serves, and the whole round
 // trip — sign in, create, list, sign out — happens over a cookie.
 func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
+	// The mailbox sink, asked for by name: this case reads a notice's mail out of
+	// this process's memory, which is what mail.sink: mailbox is for.
 	path, cfg := configure(t)
+	path, cfg = keepMailInTheProcess(t, path, cfg)
 	install(t, path)
 
 	c := compose(cfg)
@@ -1642,20 +1645,24 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// own branch, and the merge with main gave 36 to modules/audit's request index.
 	// Because it is the kernel's own file above every module's, it also sits above
 	// preSplitTop, which is why the ceiling below is the highest adopted version and
-	// not the foundation's highest file — see legacyLayout.
+	// not the foundation's highest file — see legacyLayout. The same rule moved this
+	// delivery's own credential file: modules/auth's sent_at was written as 000030,
+	// and 42 is the first number no other owner had taken — 000030 belongs to the
+	// kernel's tenant_oidc, and 000041 to the kernel's outbox_baggage.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 41 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41) and twenty-six under modules/*/migrations/ (4, 7, 8,
+	// this head prints 42 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41) and twenty-seven under modules/*/migrations/ (4, 7, 8,
 	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36, 37,
-	// 38, 39, 40), all at distinct versions. The release this fixture is applied from
-	// shipped 33 of them: the thirteen under migrations/ up to the adopted ceiling
-	// (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module adopts
-	// back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32,
-	// 33), which is every version to modules/auth's 33, the highest number any owner
-	// names. The eight above it — the kernel's own 34 and 41, modules/audit's 35, 36
-	// and 37, modules/change's 38, modules/site's 39 and modules/file's 40 — postdate
-	// that release, are not in the old installation's ledger, and legacyLayout leaves
+	// 38, 39, 40, 42), all at distinct versions. The release this fixture is applied
+	// from shipped 33 of them: the thirteen under migrations/ up to the adopted
+	// ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module
+	// adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27,
+	// 31, 32, 33), which is every version to modules/auth's 33, the highest number any
+	// owner names. The nine above it — the kernel's own 34 and 41, modules/audit's 35,
+	// 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
+	// modules/auth's 42 — postdate that release, are not in the old installation's
+	// ledger, and legacyLayout leaves
 	// them out; the upgrade below applies them under the owner that ships them and
 	// counts them as new rows. Each continues past the highest number anywhere in the
 	// composition, which is the rule this fixture exists to enforce.
@@ -1682,10 +1689,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the eight files above the
+	// release ships is in the ledger, which is where the nine files above the
 	// adopted ceiling of 33 (the kernel's own 34 and 41, modules/audit 35, 36 and 37,
-	// modules/change 38, modules/site 39 and modules/file 40, all absent from the old
-	// ledger) have to be accounted for: 41 files in the release, 41 rows.
+	// modules/change 38, modules/site 39, modules/file 40 and modules/auth 42, all
+	// absent from the old ledger) have to be accounted for: 42 files in the release,
+	// 42 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

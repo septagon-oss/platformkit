@@ -281,3 +281,28 @@ func write(t *testing.T, redirect string) string {
 	}
 	return path
 }
+
+// TestTheMailHostAndPortArriveFromTheEnvironment is the development machine's
+// path to a mail server. The example file keeps mail.host empty — it is what a
+// fresh production install copies, and an empty host is what makes a deployment
+// without mail refuse sign-up rather than fake one — so the only way a local run
+// reaches the Mailpit that `make up` starts is these two variables, which is how
+// every other per-machine value already arrives.
+func TestTheMailHostAndPortArriveFromTheEnvironment(t *testing.T) {
+	t.Setenv("PLATFORMKIT_MAIL_HOST", "127.0.0.1")
+	t.Setenv("PLATFORMKIT_MAIL_PORT", "1025")
+	t.Setenv("PLATFORMKIT_MAIL_FROM", "platformkit@localhost")
+	got, err := config.Load(example)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !got.Mail.Enabled() || got.Mail.Port != 1025 {
+		t.Errorf("mail came through as %+v; the environment is where a development machine says where its mail sink is", got.Mail)
+	}
+
+	t.Setenv("PLATFORMKIT_MAIL_FROM", "platformkit@localhost")
+	t.Setenv("PLATFORMKIT_MAIL_PORT", "postbox")
+	if _, err := config.Load(example); err == nil || !strings.Contains(err.Error(), "mail.port") {
+		t.Errorf("a port that is not a number was refused without naming the key: %v", err)
+	}
+}

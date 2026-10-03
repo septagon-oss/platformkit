@@ -175,6 +175,14 @@ auth:
 # and what a production one has to notice at boot. There is one sender and no
 # provider abstraction; SMTP is what every service worth naming speaks.
 #
+# A development machine does want mail: `make up` starts Mailpit beside Postgres
+# and NATS, and `make run` points this installation at it through
+# PLATFORMKIT_MAIL_HOST and PLATFORMKIT_MAIL_PORT (a mail host is a fact about the
+# machine, which is why it arrives that way rather than in the file every
+# production install copies). Its inbox is on PLATFORMKIT_MAIL_UI_PORT, and
+# `make e2e` reads it to follow a verification link. The host stays empty here so
+# that a deployment which sets nothing sends nothing.
+#
 # The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
 mail:
   host: ""

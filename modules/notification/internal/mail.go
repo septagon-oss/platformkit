@@ -79,6 +79,15 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
+			if mailer == nil {
+				// No transport in this installation, said on the delivery ledger
+				// rather than in a log line somebody has to notice: the notice stays
+				// and stays readable in the application, and the mail it asked for is
+				// recorded as suppressed with the reason a reader can act on. The
+				// outbox does not retry what no retry can fix.
+				return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+					"this installation has no mail server: set mail.host")
+			}
 			if err := mailer.Send(ctx, contracts.Message{To: to, Subject: row.Title, Body: body}); err != nil {
 				// No row: this transaction rolls back and the outbox retries on the kernel's ladder;
 				// a send that can never succeed ends in platformkit_dead_letters, which is its record.

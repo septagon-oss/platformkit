@@ -72,7 +72,10 @@ func TestDocumentPinsATheme(t *testing.T) {
 
 func TestFaultKeepsTheStatusAndTheWayBack(t *testing.T) {
 	t.Parallel()
-	v := document.Fault(http.StatusNotFound, "Not Found", "no such task", "/admin", "Back to the dashboard")
+	v := document.Fault(document.FaultProps{
+		Status: http.StatusNotFound, Title: "Not Found", Sentence: "no such task",
+		Home: "/admin", HomeLabel: "Back to the dashboard",
+	})
 	if v.Status != http.StatusNotFound || v.Title != "Not Found" {
 		t.Fatalf("view is %+v", v)
 	}
@@ -82,7 +85,9 @@ func TestFaultKeepsTheStatusAndTheWayBack(t *testing.T) {
 			t.Fatalf("fault lacks %q", want)
 		}
 	}
-	if !strings.Contains(render(t, g.Group(document.Fault(422, "Unprocessable Entity", "", "/", "Home").Body)), "That did not work.") {
+	if !strings.Contains(render(t, g.Group(document.Fault(document.FaultProps{
+		Status: 422, Title: "Unprocessable Entity", Home: "/", HomeLabel: "Home",
+	}).Body)), "That did not work.") {
 		t.Fatal("an empty detail has no fallback sentence")
 	}
 }

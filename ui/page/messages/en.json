@@ -1,0 +1,238 @@
+{
+  "fault.404": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "There is nothing to see at this address.",
+    "plural": {
+      "": "There is nothing to see at this address."
+    }
+  },
+  "fault.405": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This address does not take this kind of request.",
+    "plural": {
+      "": "This address does not take this kind of request."
+    }
+  },
+  "fault.500": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Something went wrong at our end.",
+    "plural": {
+      "": "Something went wrong at our end."
+    }
+  },
+  "fault.503": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "kit/httpx/tenant.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This service is unavailable for a moment. Wait and try again.",
+    "plural": {
+      "": "This service is unavailable for a moment. Wait and try again."
+    }
+  },
+  "fault.AUTH_ANONYMOUS": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Sign in before sending this.",
+    "plural": {
+      "": "Sign in before sending this."
+    }
+  },
+  "fault.AUTH_DENIED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "You may not do this.",
+    "plural": {
+      "": "You may not do this."
+    }
+  },
+  "fault.AUTH_DENIED.permission": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "You can't do this. You need the %s permission for it. Anyone who manages roles here can grant it: ask your administrator.",
+    "plural": {
+      "": "You can't do this. You need the %s permission for it. Anyone who manages roles here can grant it: ask your administrator."
+    }
+  },
+  "fault.AUTH_NOT_OPERATOR": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This operation belongs to the installation, not to your tenant.",
+    "plural": {
+      "": "This operation belongs to the installation, not to your tenant."
+    }
+  },
+  "fault.AUTH_NO_TENANT": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This work belongs to a tenant and this host names none.",
+    "plural": {
+      "": "This work belongs to a tenant and this host names none."
+    }
+  },
+  "fault.AUTH_PRINCIPAL_CHANGED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "The signed-in account is not the one that prepared this request.",
+    "plural": {
+      "": "The signed-in account is not the one that prepared this request."
+    }
+  },
+  "fault.AUTH_UNDECLARED": {
+    "references": [
+      "kit/httpx/authorize.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This operation never said who may call it.",
+    "plural": {
+      "": "This operation never said who may call it."
+    }
+  },
+  "fault.CSRF_ORIGIN": {
+    "references": [
+      "kit/httpx/csrf.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This request came from another site, so nothing was written.",
+    "plural": {
+      "": "This request came from another site, so nothing was written."
+    }
+  },
+  "fault.LIMIT_EXHAUSTED": {
+    "references": [
+      "kit/httpx/public_writes.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Too many submissions from this address. Wait and try again.",
+    "plural": {
+      "": "Too many submissions from this address. Wait and try again."
+    }
+  },
+  "fault.PUBLIC_SETS_A_COOKIE": {
+    "references": [
+      "kit/httpx/respond.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "This page promises nobody standing here is remembered.",
+    "plural": {
+      "": "This page promises nobody standing here is remembered."
+    }
+  },
+  "fault.ask": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Ask for access",
+    "plural": {
+      "": "Ask for access"
+    }
+  },
+  "fault.back": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Go back to the page you came from",
+    "plural": {
+      "": "Go back to the page you came from"
+    }
+  },
+  "fault.granter": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Ask your administrator — anyone whose role grants them %s.",
+    "plural": {
+      "": "Ask your administrator — anyone whose role grants them %s."
+    }
+  },
+  "fault.holds_the_row": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "You already hold what this needs; this row's own rule refused it: %s",
+    "plural": {
+      "": "You already hold what this needs; this row's own rule refused it: %s"
+    }
+  },
+  "fault.missing": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "What is missing: %s",
+    "plural": {
+      "": "What is missing: %s"
+    }
+  },
+  "fault.request_reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Request reference",
+    "plural": {
+      "": "Request reference"
+    }
+  },
+  "fault.retry": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Try again",
+    "plural": {
+      "": "Try again"
+    }
+  },
+  "fault.retry_after": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This should work again in %d seconds.",
+    "plural": {
+      "": "This should work again in %d seconds."
+    }
+  },
+  "fault.sent": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Your request was sent",
+    "plural": {
+      "": "Your request was sent"
+    }
+  },
+  "fault.sent_body": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "The people in this tenant who can grant access have been told what you need.",
+    "plural": {
+      "": "The people in this tenant who can grant access have been told what you need."
+    }
+  },
+  "fault.sign_in": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Sign in",
+    "plural": {
+      "": "Sign in"
+    }
+  }
+}

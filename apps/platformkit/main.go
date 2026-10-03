@@ -75,11 +75,16 @@ func run(args []string) error {
 	defer stop()
 
 	c := compose(cfg)
-	if !cfg.Mail.Enabled() {
-		// Said out loud, because the failure it warns about is silent: every
-		// notification is still written and still visible in the application,
-		// and the ones asking for mail are logged instead of sent.
-		slog.WarnContext(ctx, "app: mail is not configured, so notifications marked for email are recorded and not sent; set mail.host")
+	switch {
+	case cfg.Mail.Enabled():
+	case cfg.Mail.Mailbox():
+		slog.WarnContext(ctx, "app: mail.sink is mailbox, so every message this application sends is kept in this process and none leaves it; set mail.host to send it")
+	default:
+		// Said out loud, because the two failures it warns about are otherwise
+		// quiet: a stranger who asks to sign up is refused with a reasoned 503 and
+		// no row is written, and a notice that asks for mail is recorded as
+		// suppressed in the delivery ledger.
+		slog.WarnContext(ctx, "app: mail is not configured, so an emailed verification link cannot be sent: sign-up by email is refused and notifications marked for email are recorded as suppressed; set mail.host, or mail.sink: mailbox to keep messages in this process")
 	}
 	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.Role(*role)))
 	if err != nil {

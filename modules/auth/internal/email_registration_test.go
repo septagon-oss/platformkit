@@ -369,8 +369,10 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	if len(mailbox.Sent()) != 1 {
 		t.Fatal("immediate resend bypassed the token cooldown")
 	}
-	// Advance only disposable fixture timestamps; no wait or changed policy.
-	if _, err := admin.Exec("UPDATE verification_tokens SET created_at=created_at-interval '2 minutes' WHERE user_id=$1", u.ID); err != nil {
+	// Advance only disposable fixture timestamps; no wait or changed policy. The
+	// cooldown runs from the delivery, so both clocks move together.
+	if _, err := admin.Exec("UPDATE verification_tokens SET created_at=created_at-interval '2 minutes',"+
+		" sent_at=sent_at-interval '2 minutes' WHERE user_id=$1", u.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := admin.Exec("DELETE FROM platformkit_limits WHERE key LIKE '%auth/verification-mail/%'"); err != nil {
