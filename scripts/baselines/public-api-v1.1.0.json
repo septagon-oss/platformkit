@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "8fb7319295fd6c4e8159e3cabdf5c65bff804bf1"
+    "candidate": "e683acf1981dfc09d66f4af32108aac52f420de1"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
