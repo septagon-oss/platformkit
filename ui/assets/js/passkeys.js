@@ -40,12 +40,14 @@
     return btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
 
-  // The options the server sent are JSON with the byte fields base64url-encoded;
-  // navigator.credentials wants them as buffers. Nothing else is changed, which
-  // is what keeps the relying-party id, the timeout and the allow list the
-  // server's decision rather than this file's.
-  function buffers(options) {
-    const publicKey = { ...options };
+  // The options the server sent are the standard's own bundle — the creation or
+  // request options under publicKey — with its byte fields base64url-encoded;
+  // navigator.credentials wants the bundle unwrapped and those bytes as buffers.
+  // Nothing else is changed, which is what keeps the relying-party id, the
+  // timeout and the allow list the server's decision rather than this file's.
+  function buffers(sent) {
+    const bundle = typeof sent === "string" ? JSON.parse(sent) : sent ?? {};
+    const publicKey = { ...(bundle.publicKey ?? bundle) };
     if (typeof publicKey.challenge === "string") publicKey.challenge = toBytes(publicKey.challenge);
     if (publicKey.user && typeof publicKey.user.id === "string") publicKey.user = { ...publicKey.user, id: toBytes(publicKey.user.id) };
     if (Array.isArray(publicKey.allowCredentials)) {
@@ -88,7 +90,7 @@
       button.disabled = true;
       try {
         const begun = await ask(button.getAttribute("data-begin"));
-        const publicKey = buffers(JSON.parse(begun.options ?? "{}"));
+        const publicKey = buffers(begun.options);
         const credential = await navigator.credentials.get({ publicKey });
         if (!credential) throw new Error("No passkey answered the prompt");
         await ask(button.getAttribute("data-verify"), { ceremony: begun.ceremony, response: answer(credential) });
@@ -110,7 +112,7 @@
       if (button) button.disabled = true;
       try {
         const begun = await ask(form.getAttribute("data-begin"));
-        const publicKey = buffers(JSON.parse(begun.options ?? "{}"));
+        const publicKey = buffers(begun.options);
         const credential = await navigator.credentials.create({ publicKey });
         if (!credential) throw new Error("No passkey answered the prompt");
         await ask(form.getAttribute("data-finish"), {
