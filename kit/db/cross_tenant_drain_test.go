@@ -106,7 +106,7 @@ func TestADrainReachesEveryTenantOfATableItsOwnerRowSecurityBinds(t *testing.T) 
 	// given nothing else. `postgres` cannot answer the question this case asks.
 	schema := schemaOf(t, adminURL)
 	owner := roleOwner(schema)
-	const password = "review4-not-a-superuser"
+	const password = "cross-tenant-not-a-superuser"
 	for _, statement := range []string{
 		fmt.Sprintf(`CREATE ROLE %s LOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE PASSWORD '%s'`, quoteIdent(owner), password),
 		fmt.Sprintf(`GRANT USAGE ON SCHEMA %s TO %s`, quoteIdent(schema), quoteIdent(owner)),
