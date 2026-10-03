@@ -71,7 +71,10 @@ func r7navigate(t *testing.T, cfg config.Config, client *http.Client, host, path
 // TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage — the 403 a signed-in person is
 // shown, at a tenant that declared Portuguese alone, asked in English.
 func TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage(t *testing.T) {
+	// The mailbox sink, asked for by name: this case reads a confirmation link out
+	// of this process's memory, which is what mail.sink: mailbox is for.
 	path, cfg := configure(t)
+	path, cfg = keepMailInTheProcess(t, path, cfg)
 	install(t, path)
 	c := compose(cfg)
 	options := appOptions(cfg, c, app.All)

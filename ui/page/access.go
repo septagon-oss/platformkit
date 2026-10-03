@@ -62,9 +62,8 @@ func MountAccess(r *httpx.Router, s Shell) {
 		Summary: "Confirmation that an access request was sent",
 	}, httpx.SignedIn(), func(_ context.Context, req Request, _ *Empty) (View, error) {
 		loc := req.Locale
-		title := word0(loc, "fault.sent", "Your request was sent")
-		body := word0(loc, "fault.sent_body",
-			"The people in this tenant who can grant access have been told what you need.")
+		title := word0(loc, "fault.sent")
+		body := word0(loc, "fault.sent_body")
 		v := View{Title: title, Status: http.StatusOK, Body: []g.Node{
 			components.Toolbar(components.ToolbarProps{Title: title}),
 			components.Alert(components.AlertProps{Tone: "success", Message: body, Bordered: true}),

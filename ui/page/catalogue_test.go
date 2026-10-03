@@ -3,6 +3,7 @@ package page
 import (
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -85,14 +86,57 @@ func TestTheShippedSentencesAreTheOnesTheNegotiationAnswersWith(t *testing.T) {
 		t.Errorf("the refusal said %q, not the sentence messages/pt-PT.json carries", got)
 	}
 
-	// The source language is the guard's own line, permission name and all: this
-	// catalogue ships no English half on purpose, and an English browser must get
-	// the sentence that says what is missing rather than a generic one.
+	// The source language has an entry of its own: an English request is answered
+	// with the sentence messages/en.json carries, in the language it declares. What
+	// the guard's own line still contributes — the permission name, the subsystem,
+	// the address — stays on the page beside it, which is asserted where the page is
+	// actually rendered (fault_denied_permission_test.go, fault_outage_language_test.go,
+	// serve_refusal_language_test.go), not here at the loader.
 	english := locale.SelectLocale(xtext.Load("en", Catalogue()), "en-GB,en;q=0.9")
 	if english.Language != "en" {
-		t.Fatalf("an English request was answered in %q, which is what a catalogue with no English file must not do", english.Language)
+		t.Fatalf("an English request was answered in %q, which is what a catalogue with an English file must not do", english.Language)
 	}
-	if got := english.Text("fault."+httpx.CodeDenied, "AUTH_DENIED: this operation requires note.write"); got != "AUTH_DENIED: this operation requires note.write" {
-		t.Errorf("the English refusal was reworded to %q", got)
+	if got := english.Text("fault."+httpx.CodeDenied, "AUTH_DENIED: this operation requires note.write"); got != "You may not do this." {
+		t.Errorf("the English refusal said %q, not the sentence messages/en.json carries", got)
+	}
+}
+
+// The copy this package writes itself — the labels, the parts of a denial, the
+// confirmation the ask lands on — is in both catalogues: an English label glued into
+// a Go file is the same defect as a Portuguese tenant served an English label, one
+// language further out. This is the page's own list of what it asks for, so the gate
+// is on the page rather than on a file: a label added to fault.go without its English
+// fails here, in the commit that added it. That messages/en.json now carries a guard's
+// key beside its own is the two-catalogue contract refusal_catalogues_test.go holds:
+// the guard's sentence is kept on the page in the source language, so a shipped entry
+// there costs nobody the permission or the number only the refusal knows.
+func TestThePagesOwnLinesAreCopiedInBothCatalogues(t *testing.T) {
+	t.Parallel()
+	english := ownCopy()
+	portuguese := map[string]string{}
+	body, err := catalogues.ReadFile("messages/pt-PT.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var shipped map[string]struct {
+		Translation string `json:"translation"`
+	}
+	if err := json.Unmarshal(body, &shipped); err != nil {
+		t.Fatal(err)
+	}
+	for key, message := range shipped {
+		portuguese[key] = message.Translation
+	}
+	wanted := map[string]bool{deniedPermissionKey: true}
+	for _, key := range refusalParts {
+		wanted[key] = true
+	}
+	for key := range wanted {
+		if strings.TrimSpace(english[key]) == "" {
+			t.Errorf("the refusal page asks for %q and messages/en.json carries no English for it", key)
+		}
+		if strings.TrimSpace(portuguese[key]) == "" {
+			t.Errorf("the refusal page asks for %q and messages/pt-PT.json carries no Portuguese for it", key)
+		}
 	}
 }

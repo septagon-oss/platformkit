@@ -95,6 +95,19 @@ database:
   migrate_url: "$(swap "$admin_url")"
 nats:
   url: "${PLATFORMKIT_TEST_NATS_URL:-nats://localhost:4222}"
+# The development mail sink that 'make up' starts, written into the file rather
+# than passed through the environment: run_app below clears every PLATFORMKIT_*
+# variable before exec, so a mail host that arrived by env would be unset on its way
+# to the one process that needs it. Without a mail host the auth module rightly
+# refuses email registration, which is what made every sign-up journey in this
+# repository impossible until Mailpit existed. A sender is required, not cosmetic:
+# an empty one is refused by the all-or-none rule kit/config validates with.
+# No backticks in this comment: the heredoc is expanded, on purpose, and would run
+# anything inside them.
+mail:
+  host: "127.0.0.1"
+  port: ${PLATFORMKIT_MAIL_PORT:-1025}
+  from: "platformkit@e2e.test"
 log:
   level: "warn"
 audit:
@@ -142,6 +155,20 @@ for _ in $(seq 1 60); do
 	sleep 1
 done
 
+# The inbox the journey reads. It is a fixture, so its absence is a fixture
+# problem and must say so at once: a spec that could not reach it would otherwise
+# wait out its own timeout for a message that can never arrive.
+mail_url="${PLATFORMKIT_E2E_MAIL_URL:-http://127.0.0.1:8025}"
+mail_ready=false
+for _ in $(seq 1 30); do
+	if curl -fsS "$mail_url/api/v1/info" >/dev/null 2>&1; then mail_ready=true; break; fi
+	sleep 1
+done
+if ! "$mail_ready"; then
+	echo "e2e: no mail sink at $mail_url/api/v1/info; bring the stack up with 'make up' (PLATFORMKIT_MAIL_PORT=${PLATFORMKIT_MAIL_PORT:-1025}, PLATFORMKIT_MAIL_UI_PORT=${PLATFORMKIT_MAIL_UI_PORT:-8025})." >&2
+	exit 1
+fi
+
 cd e2e
 # npm ci and not npm install: ci installs exactly what package-lock.json pins
 # and fails when the lock and the manifest disagree, which is what a gate wants.
@@ -187,6 +214,7 @@ if "$default_output"; then
 	output_args=(--output "$results")
 fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
+	PLATFORMKIT_E2E_MAIL_URL="$mail_url" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \

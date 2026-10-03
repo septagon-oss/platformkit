@@ -4,8 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -118,7 +120,7 @@ func compose(cfg config.Config) composition {
 		Languages: installed.Languages(),
 	})
 	active := tenantcontracts.Active{Service: tenants}
-	hosts := tenantHosts{tenants: tenants}
+	hosts := tenantHosts{tenants: tenants, served: cfg.Server.PublicHost}
 	mail := mailer(cfg)
 	notify, notificationModule := notification.Module(notification.Deps{
 		// The app adapts, so notification never names user or tenant: both
@@ -154,9 +156,11 @@ func compose(cfg config.Config) composition {
 		//
 		// What the mode gives a stranger is an account that cannot sign in:
 		// RegisterUnverified stores the chosen password against an `unverified`
-		// row and nothing activates it but the link in the mailbox — which, in a
-		// deployment with no SMTP configured, is the in-memory mailbox above, so
-		// no message leaves this machine. The roles come from here and never from
+		// row and nothing activates it but the link in the mail — which is why
+		// the command asks for a transport first and refuses with a reasoned 503
+		// when mailer() returned nil, leaving no row and no event behind. Where a
+		// sink is wired, no message leaves this machine unless mail.host names a
+		// server that will carry it. The roles come from here and never from
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
 		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
@@ -179,6 +183,15 @@ func compose(cfg config.Config) composition {
 		// every tenant as `existing`: a refusal, and not a half-made person.
 		Provisioner: provisioner{users: users},
 		PublicHost:  cfg.Server.PublicHost,
+		// The page the verification link opens. The chrome is named here because
+		// every part of it is this product's fact: which palette, which mount
+		// serves the sheet, and which sign-in page a person who has just
+		// confirmed their address is sent to. TestTheEmailedLinkOpensAPageThatConfirms
+		// asks the running server that this line reaches a page.
+		Pages: auth.Pages{
+			Theme: design.Default(), Assets: pinnedAssets,
+			SignIn: pinnedSignIn, Messages: installed,
+		},
 	})
 
 	// The file service is returned beside its manifest, as user's and
@@ -330,19 +343,28 @@ func operatorStorybook(dir string) func(context.Context) (export.Storybook, erro
 	}
 }
 
-// mailer is the one choice this application makes about mail: the SMTP sender
-// when a server is configured, and the in-memory mailbox when none is. The
-// mailbox is not a stub — it keeps every message and logs each one — so a
-// deployment without mail records every notification, shows it in the
-// application, and says what it would have sent. run() warns at boot.
+// mailer is the one choice this application makes about mail, and it has three
+// answers. The SMTP sender when a server is configured. The in-memory mailbox
+// when the configuration asks for that sink by name — it is not a stub, it keeps
+// every message and logs each one, and a case that has to read a confirmation
+// link opts into it rather than relying on a default. And nil when neither is
+// said, which is a deployment with no mail: an emailed verification link is then
+// a promise this installation cannot keep, so the command that would make it
+// answers a reasoned 503 and writes nothing (modules/auth refuses on exactly
+// this nil), a notice that asks for mail is recorded as suppressed, and run()
+// says so at boot.
 func mailer(cfg config.Config) notificationcontracts.Mailer {
-	if !cfg.Mail.Enabled() {
+	switch {
+	case cfg.Mail.Enabled():
+		return notification.SMTP(notification.Mail{
+			Host: cfg.Mail.Host, Port: cfg.Mail.Port, Username: cfg.Mail.Username,
+			Password: cfg.Mail.Password, From: cfg.Mail.From,
+		})
+	case cfg.Mail.Mailbox():
 		return notification.NewMailbox()
+	default:
+		return nil
 	}
-	return notification.SMTP(notification.Mail{
-		Host: cfg.Mail.Host, Port: cfg.Mail.Port, Username: cfg.Mail.Username,
-		Password: cfg.Mail.Password, From: cfg.Mail.From,
-	})
 }
 
 // tenantHosts is the adapter that lets the notification and auth modules build a
@@ -354,14 +376,66 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 // first row of a list ordered by it (migrations/000020). It used to pick
 // whichever name sorted first, which meant adding admin.acme.example.com moved
 // every future link onto it.
-type tenantHosts struct{ tenants tenantcontracts.Service }
+type tenantHosts struct {
+	tenants tenantcontracts.Service
+	// served is the host this process answers at, from server.public_host. See
+	// PublicHost for the one thing it is added to.
+	served string
+}
 
 func (h tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
 	hosts, err := h.tenants.Hosts(ctx, tx)
 	if err != nil || len(hosts) == 0 {
 		return "", err
 	}
-	return hosts[0], nil
+	return withServedPort(hosts[0], h.served), nil
+}
+
+// withServedPort puts the port a browser reaches this installation on back onto
+// the host name the tenant table stores.
+//
+// The table stores a name and nothing else on purpose: httpx.HostOnly is the
+// loader's key and the module that stores a host has to spell it the same way,
+// so a host row is `localhost` even on a machine where nobody listens on port
+// 80. A link built from the row alone therefore names a socket that is not
+// open, and every emailed sign-up link of a development instance — and of any
+// installation that serves http on a port — dies on a connection refused.
+//
+// The rule is the one the cookie's Secure flag already uses — kit/config's
+// Local predicate, which the session cookies are marked non-Secure by for the
+// same reason — and it says which host picks up the port: a machine-local name,
+// `localhost`, anything beneath `.localhost`, or a loopback address. RFC 6761
+// keeps `.localhost` out of DNS entirely, so such a name can only be answered by
+// the machine the browser is on, and that machine has one process listening:
+// this one, on this socket. acme.localhost:8080 and platformkit.localhost:8080
+// are the same listener answering two Host headers, so the port belongs to every
+// host of a development instance and not only to the installation's own name.
+// A second tenant's mail that left it off said "port 80", and a connection
+// refused is what its new person read.
+//
+// A name that is not this machine's is a different answer. It is routed by
+// whatever fronts it, and that proxy's port is not this process's fact to invent
+// — which is also why an installation that names no port for itself hands none
+// out.
+func withServedPort(host, served string) string {
+	if host == "" || served == "" || !config.Local(host) || !config.Local(served) {
+		return host
+	}
+	_, port, err := net.SplitHostPort(served)
+	if err != nil || port == "" {
+		return host
+	}
+	if _, listed, err := net.SplitHostPort(host); err == nil && listed != "" {
+		return host
+	}
+	return host + ":" + port
+}
+
+// answersLocally is the name a browser resolves to the machine the process is
+// running on rather than to a host someone fronted elsewhere.
+func answersLocally(host string) bool {
+	name := httpx.HostOnly(host)
+	return name == "localhost" || strings.HasSuffix(name, ".localhost")
 }
 
 // recipients is the adapter that lets the notification module send an email

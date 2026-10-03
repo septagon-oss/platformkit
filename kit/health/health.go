@@ -39,7 +39,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -79,12 +78,26 @@ type Report interface {
 // the application, DatabaseCheck below, and a second one arrives with the type
 // that needs it.
 
+// Faults answers a probe's failure in the shape the caller asked for. kit/httpx's
+// (*API).Siteless satisfies it and is the only implementation: a probe never writes
+// its own body again, which is what makes the answer to a monitor the same document
+// every other kernel refusal writes — the same encoder, the same field order, the
+// same Content-Type — rather than a copy of it kept beside it.
+//
+// It is one call and it is deliberately not `fail`, because the probe cannot pay for
+// what `fail` does: resolving the request's host is a real query with a two second
+// budget (this package's comment names the restart storm it caused), and a probe
+// request has no tenant transaction to resolve anything inside. So the port states the
+// constraint instead of leaving it as a comment: the thing that answers a probe's
+// failure is the door that never asks who owns the address.
+type Faults func(w http.ResponseWriter, r *http.Request, status int, detail string)
+
 // Register mounts the two probes beside the API, on the router that carries
 // neither the request middleware nor a transaction. Both roles therefore answer
 // the same bytes from the same handler, which is what the deployment's one
 // probe stanza already assumed. See Mux, and httpx.API.Probes.
 func Register(api *httpx.API, checks []Check, reports ...Report) {
-	api.Probes(Mux(slog.Default(), checks, reports...), livePath, readyPath)
+	api.Probes(Mux(slog.Default(), api.Siteless, checks, reports...), livePath, readyPath)
 }
 
 // Mux is the two probes. It is a plain net/http mux because that is all a probe
@@ -96,9 +109,21 @@ func Register(api *httpx.API, checks []Check, reports ...Report) {
 // learn twice. It was two implementations of two routes until the web role's
 // probes had to stop resolving a tenant, at which point the one that already
 // did not was the answer.
-func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
+//
+// The fault door is a parameter rather than something Mux builds, because a mux
+// built without an *API has no way to reach one: it lives outside the middleware
+// chain that owns one. Every caller passes the same door — (*httpx.API).Siteless —
+// which is what makes a refused probe read alike in both roles.
+func Mux(log *slog.Logger, faults Faults, checks []Check, reports ...Report) http.Handler {
 	if log == nil {
 		log = slog.Default()
+	}
+	if faults == nil {
+		// A wiring mistake, caught at boot where the wiring is, rather than at the
+		// first probe during the outage it is there to report. Refusing it is also the
+		// only honest answer available: the alternative is a mux that writes a problem
+		// body of its own, which is the second encoder this port exists to remove.
+		panic("health: Mux requires the kernel's fault door; pass (*httpx.API).Siteless")
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET "+livePath, func(w http.ResponseWriter, _ *http.Request) {
@@ -110,8 +135,20 @@ func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
 			write(w, http.StatusOK, ready(r.Context(), reports), "application/json")
 			return
 		}
-		body, _ := json.Marshal(problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", ")))
-		write(w, http.StatusServiceUnavailable, string(body), problem.ContentType)
+		// The one line in this package that answers a failure, and it is a call to the
+		// kernel's door rather than a body written here. That substitution is the point:
+		// a person who navigated to /ready during an outage was shown problem+json in a
+		// browser window because this mux sits outside the middleware chain and so had no
+		// *API to ask, and a second encoder of the problem shape is what fault.go exists
+		// to refuse. The port costs this package nothing it must not pay — no host is
+		// resolved, no transaction opened, no Accept header read (see Faults).
+		faults(w, r, http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", "))
+		// The reference the page shows and the check that failed are joined here, in the
+		// one line an operator has to read: whoever is quoting `request 8f2c…` off a
+		// screenshot is quoting the string below.
+		log.ErrorContext(r.Context(), "health: readiness failed",
+			"checks", strings.Join(failed, ", "),
+			"request_id", w.Header().Get(httpx.RequestIDHeader))
 	})
 	return mux
 }

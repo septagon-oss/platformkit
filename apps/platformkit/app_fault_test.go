@@ -48,7 +48,7 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 		"<title>Forbidden",         // the verdict, where a browser tab and a history entry read it
 		httpx.CodeCSRFOrigin + ":", // the named code, which is what a person reads back to support
 		"Back to the workspace",    // one way out
-		"(request ",                // the reference, as a bare id a person can read aloud
+		"Request reference",        // the reference, under a name, as a value
 		`href="/app/admin/assets/`, // and the shell's own stylesheet, so it looks like the application
 	} {
 		if !strings.Contains(body, want) {
@@ -58,18 +58,19 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 
 	// The reference has to be the request's own identifier and not something the page
 	// invented: the JSON body carries the same value as an instance URN, and a log line
-	// is found by the id, not by the words around it.
-	const marker = "(request "
-	at := strings.Index(body, marker)
-	if at < 0 {
-		t.Fatalf("no reference on the page: %s", trimHTML(body))
+	// is found by the id, not by the words around it. It is a labelled value rather
+	// than the tail of the sentence, so that a person can select all of it and a
+	// screen reader reaches it as a value with a name — which is also why the marker
+	// this looked for used to be "(request ".
+	if !strings.Contains(body, "<samp") {
+		t.Fatalf("the reference is not rendered as a value: %s", trimHTML(body))
 	}
-	id := body[at+len(marker):]
-	if end := strings.IndexByte(id, ')'); end > 0 {
-		id = id[:end]
-	}
+	id := referenceID(body)
 	if len(id) != 36 || strings.Count(id, "-") != 4 {
 		t.Errorf("the reference is %q, which is not the request id a log line is found by", id)
+	}
+	if strings.Contains(body, "(request ") {
+		t.Errorf("the reference is glued into the sentence as well as shown as a value: %s", trimHTML(body))
 	}
 	if strings.Contains(body, "urn:request:") {
 		t.Errorf("the page shows the raw URN; the person reading it wants the id, not the scheme")
@@ -123,6 +124,29 @@ func crossSiteAccept(t *testing.T, cfg config.Config, client *http.Client, host,
 
 // trimHTML keeps a failure readable: a refusal page is a whole document, and a whole one
 // in a test log hides the assertion under it.
+// referenceID is the request id the page shows as its reference value: the text
+// inside the <samp> element, with the markers the text component renders around its
+// own content stripped. It is read out of the page rather than handed to it, so the
+// case proves the id travelled from the request, through the problem document's
+// instance, into the one element a person can select and read aloud.
+func referenceID(body string) string {
+	at := strings.Index(body, "<samp")
+	if at < 0 {
+		return ""
+	}
+	rest := body[at:]
+	end := strings.Index(rest, "</samp>")
+	if end < 0 {
+		return ""
+	}
+	inner := rest[:end]
+	if gt := strings.Index(inner, ">"); gt >= 0 {
+		inner = inner[gt+1:]
+	}
+	inner = strings.TrimPrefix(inner, "<!--pk-text:content-->")
+	return strings.TrimSuffix(inner, "<!--/pk-text:content-->")
+}
+
 func trimHTML(body string) string {
 	const keep = 700
 	if len(body) > keep {

@@ -83,12 +83,51 @@ func (a *API) respond(next http.Handler) http.Handler {
 // refusal inside the chain reaches it through declared, because huma's writer stamps a
 // schema link into the body and answers a header this encoder does not, which would make
 // two shapes of the one problem. See fault.go.
+//
+// The bytes are the marshalled document and one newline, which is what an encoder
+// writing into the writer produced, kept as two writes rather than one Encode so that
+// writeProbeProblem below can answer with the same encoder and the same field order.
+// Splitting it this way is not a second shape: it is the one document, and the only
+// question the two callers answer differently is whether they end it with a newline.
 func writeProblem(w http.ResponseWriter, status int, id, detail string) {
+	writeProblemBody(w, status, true, id, detail)
+}
+
+// writeProbeProblem answers the two probes. It is the same document from the same
+// encoder with one thing withheld: the instance URN. Not because a probe has no request
+// to name — it has one, and X-Request-ID carries it as it always did — but because this
+// is the body a monitor has diffed since the probe existed, and a member added to a
+// document something parses and compares is a change of contract in the one place the
+// contract is not a human reading a page. A person who is *shown* the failure gets the
+// reference, in the page the negotiated renderer writes.
+//
+// It withholds the trailing newline for the same reason: an orchestrator's readiness
+// stanza, a kubelet exec probe grepping stdout, a shell piping curl into jq -e — every
+// one of those reads the same bytes whether or not the line ends, and every one of them
+// was written against the answer this probe gave before it had a page to hand to a
+// browser. Nothing here is worth breaking to make a document 503-shaped.
+func writeProbeProblem(w http.ResponseWriter, status int, detail string) {
+	writeProblemBody(w, status, false, "", detail)
+}
+
+func writeProblemBody(w http.ResponseWriter, status int, newline bool, id, detail string) {
 	p := problem.New(status, detail)
 	if id != "" {
 		p.Instance = "urn:request:" + id
 	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		// problem.New builds a struct of strings and one int; it does not fail. If it
+		// ever did, the status line is still the verdict, and a body that is not there
+		// is honest in the way a half-written one is not.
+		w.Header().Set("Content-Type", problem.ContentType)
+		w.WriteHeader(status)
+		return
+	}
+	if newline {
+		body = append(body, '\n')
+	}
 	w.Header().Set("Content-Type", problem.ContentType)
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(p)
+	_, _ = w.Write(body)
 }

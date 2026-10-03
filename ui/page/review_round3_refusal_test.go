@@ -330,10 +330,23 @@ func TestThePublicWriteLimitRefusalIsTheShellsPage(t *testing.T) {
 		t.Errorf("a navigating browser past the limit was handed %s and not the shell's page: %s",
 			last.Header().Get("Content-Type"), strings.TrimSpace(body))
 	}
-	for _, want := range []string{"LIMIT_EXHAUSTED", refusalWayOut, "(request "} {
+	for _, want := range []string{"LIMIT_EXHAUSTED", refusalWayOut} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the refusal this person is shown omits %q: %s", want, firstLine(body))
 		}
+	}
+	// The reference, and this is the assertion that replaced "(request ": the id is
+	// on the page as a value with a name rather than as the tail of a sentence, and
+	// the id the person can select is the one the response header carries. Strictly
+	// stronger than the substring it replaced, which matched a truncated one too.
+	reference := last.Header().Get(httpx.RequestIDHeader)
+	if reference == "" {
+		t.Errorf("the refusal sends no %s, so the page cannot name the request an operator would look up", httpx.RequestIDHeader)
+	} else if !strings.Contains(body, "<samp") || !strings.Contains(body, reference) {
+		t.Errorf("the refusal page does not show %q as its reference value: %s", reference, firstLine(body))
+	}
+	if strings.Contains(body, "(request ") {
+		t.Errorf("the reference is still glued into the sentence as well as shown as a value: %s", firstLine(body))
 	}
 }
 

@@ -547,7 +547,7 @@ func useJetStream(mode string, role Role) (bool, error) {
 // buildAPI builds the API, lets every module register its routes and checks,
 // and runs the boot gates. It returns before anything listens, so a composition
 // that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (http.Handler, error) {
+func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (http.Handler, *httpx.API, error) {
 	api, router := httpx.New(httpx.Options{
 		Cache:        store,
 		PublicHost:   a.cfg.Server.PublicHost,
@@ -602,7 +602,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (h
 		}
 	}
 	if err := a.composeGates(api); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
@@ -616,13 +616,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (h
 	// no deployment to migrate and no reason to run a build it knows is
 	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	counts := api.MountedBySurface()
 	// event_schema_coverage is the register's number for this pillar: how many
@@ -643,7 +643,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (h
 	for _, door := range api.AnonymousDoors() {
 		a.log.InfoContext(ctx, "app: a workspace route answers an anonymous caller", "route", door)
 	}
-	return router, nil
+	return router, api, nil
 }
 
 // composeGates refuses the compositions that cannot be products, and mounts the
@@ -843,9 +843,14 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 
 // probes is the worker's whole HTTP surface: liveness and readiness, on the
 // same address the web role listens on, so one orchestrator manifest describes
-// both roles. kit/health owns the shape, so the two roles answer alike.
-func (a *App) probes(conn *db.Conn) http.Handler {
-	return health.Mux(a.log, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
+// both roles. kit/health owns the shape, so the two roles answer alike — and
+// "alike" now reaches as far as the shape of a failed readiness, which is why the
+// API this composition already built is handed over rather than a worker that
+// answers an outage with a body of its own. The worker role builds the API on the
+// way through Start whatever role it serves, so this costs no second one, and the
+// reports the web role answers with are the same ones here.
+func (a *App) probes(api *httpx.API, conn *db.Conn) http.Handler {
+	return health.Mux(a.log, api.Siteless, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 }
 
 // routeKind names the constructor a route used, for the one error that has to

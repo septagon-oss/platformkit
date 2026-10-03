@@ -28,6 +28,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -60,10 +61,37 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 		countRefusal(r.Context(), status)
 	}
 	id := requestIDFrom(r.Context())
-	if a.show(w, r, id, status, detail) {
+	if a.show(w, r, id, status, detail, false) {
 		return
 	}
 	writeProblem(w, status, id, detail)
+}
+
+// Siteless answers a failure of the process itself to a request that names no site: the
+// two probes. Same negotiation, same renderer, same single JSON encoder as fail; the one
+// thing it withholds is the host lookup, which is exactly the query a probe must never
+// make — kit/health's package comment gives the outage it caused, and
+// TestTheProbesNeverResolveTheHost is the case that holds it. So this is not a third
+// answer to what a refusal is; it is fail with the one step a probe cannot pay for taken
+// out, and the page it renders has no tenant for the same reason its JSON answer never
+// had one.
+//
+// kit/health is its only caller, through the one-method port that package declares.
+// A route that has a host to resolve has a fail to call instead.
+//
+// The one thing that is not fail's here is the machine-readable answer. A page rendered
+// for a probe carries the reference, minted behind the negotiation as everywhere else;
+// the JSON answer withholds the instance member and the encoder's trailing newline,
+// because those bytes are what a readiness stanza has compared since it existed — see
+// writeProbeProblem. The person who is *shown* the failure and the monitor that parses
+// it are given the same verdict by the same encoder; what a monitor is owed is that the
+// bytes it reads do not move under it.
+func (a *API) Siteless(w http.ResponseWriter, r *http.Request, status int, detail string) {
+	id := requestIDFrom(r.Context())
+	if a.show(w, r, id, status, detail, true) {
+		return
+	}
+	writeProbeProblem(w, status, detail)
 }
 
 // show asks the registered renderer for a page and reports whether it answered.
@@ -77,15 +105,25 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 // place the question can be asked without being asked twice: it is the only branch that
 // renders a page, and a page has a language. A refusal handed to a program is a code,
 // the same in every language, and owes no lookup.
-func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string) bool {
-	if a.opts.Fault == nil || !wantsDocument(r) {
+func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string, siteless bool) bool {
+	if a.opts.Fault == nil || !WantsDocument(r) {
 		return false
 	}
-	r = a.withHostTenant(r)
-	p := problem.New(status, detail)
-	if id != "" {
-		p.Instance = "urn:request:" + id
+	// The mint sits behind the negotiation on purpose. A page is the only answer
+	// that shows a reference, and a request that asked for a value is owed the
+	// bytes it always got — no new header, no instance member. Everything except
+	// the two probes already has an id by here, because the id middleware runs
+	// ahead of every route; a probe is the request that reaches this line without
+	// one, and the page it renders is worthless without a reference to quote.
+	if id == "" {
+		id = uuid.NewString()
+		w.Header().Set(RequestIDHeader, id)
 	}
+	if !siteless {
+		r = a.withHostTenant(r)
+	}
+	p := problem.New(status, detail)
+	p.Instance = "urn:request:" + id
 	return a.opts.Fault(w, r, p)
 }
 
@@ -124,13 +162,13 @@ func (a *API) refuse(ctx huma.Context, status int, detail string) {
 	// reach past the huma context and it panics on a foreign one.
 	r, w := humachi.Unwrap(ctx)
 	id := requestIDFrom(r.Context())
-	if wantsDocument(r) {
+	if WantsDocument(r) {
 		// The verdict is stated before the page is asked for, because a page the
 		// renderer wrote never passed through a writer that states one. A renderer
 		// that declines has written nothing, which is what lets the document below
 		// answer in the same buffer.
 		ctx.SetStatus(status)
-		if a.show(w, r, id, status, detail) {
+		if a.show(w, r, id, status, detail, false) {
 			return
 		}
 	}
@@ -150,8 +188,16 @@ type declared struct {
 
 func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 
-// wantsDocument reports whether the client asked to be *shown* the answer rather than
+// WantsDocument reports whether the client asked to be *shown* the answer rather than
 // handed a value.
+//
+// It is exported because the question is the kernel's and there is one answer to it.
+// ui/page asks it of a refusal a *page handler* made (Serve): a page route answers a
+// browser with a page, and a client that named application/json with the problem
+// document — the same division this function decides for every guard's refusal. A
+// second copy of the rule in ui would be a second answer to which client gets which
+// shape, and the two would drift exactly where they matter, which is the htmx line and
+// the `q=0` line below.
 //
 // Only an explicit text/html (or its XHTML sibling) counts. `Accept: */*` deliberately
 // does not: that is what curl, health checks, SDKs and monitoring send, and answering
@@ -168,7 +214,57 @@ func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 // e2e/session-recovery.spec.ts are what that was built for. A swapped fragment is still
 // what htmx gets on a success (see Redirect and Page), so this says only that a
 // refusal goes to the caller that parses it.
-func wantsDocument(r *http.Request) bool {
+// WantsValue reports the mirror half of the same negotiation: a client that named a
+// JSON media type and did not name markup is asking to be *handed* the answer. It is
+// exported for ui/page, which mounts a page as an ordinary operation and therefore has
+// to decide the same question when one of its handlers refuses — but the two halves are
+// not the same question, and the difference is deliberate.
+//
+// WantsDocument answers "did this caller ask to be shown something", and only an
+// explicit text/html counts, because that is the question a *guard* asks ahead of
+// routing, where the default answer for a curl or an SDK is the machine-readable one.
+// WantsValue answers "did this caller refuse the page", and only an explicit JSON media
+// type counts, because the caller asking it is a route that *owns* a page: a client that
+// named nothing (a bare httptest request, a health-style client, anything that sent no
+// Accept at all) is not refusing markup, it simply has no opinion, and the page is the
+// answer this route exists to give. htmx names nothing here either: the controllers
+// inside a page read the refusal's code back out of the document the kernel writes for a
+// guard (ui/assets/js/htmx-config.js), and the fragments they swap are the success path.
+//
+// So the two predicates are one rule read from each side — a refusal is a page for a
+// caller that came to look at one, and a problem document for one that named a value —
+// and both readings live here rather than in the caller that needed them.
+func WantsValue(r *http.Request) bool {
+	if r == nil || r.Header.Get("HX-Request") == "true" {
+		return false
+	}
+	for _, offered := range strings.Split(r.Header.Get("Accept"), ",") {
+		media, params, _ := strings.Cut(strings.TrimSpace(offered), ";")
+		if strings.EqualFold(media, "text/html") || strings.EqualFold(media, "application/xhtml+xml") {
+			// Markup was offered, whatever its weight: this caller will look at the page.
+			return false
+		}
+		q := 1.0
+		if weight, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			if parsed, err := strconv.ParseFloat(weight, 64); err == nil {
+				q = parsed
+			}
+		}
+		if q > 0 && (strings.EqualFold(media, "application/json") ||
+			strings.EqualFold(media, problem.ContentType) || strings.EqualFold(media, "application/ld+json")) {
+			return true
+		}
+	}
+	return false
+}
+
+func WantsDocument(r *http.Request) bool {
+	if r == nil {
+		// No request means no client asked to be shown anything — which is the answer a
+		// page handler reached from a context that carried no request has always been
+		// given: render the verdict, since nothing is waiting to parse a body.
+		return true
+	}
 	if r.Header.Get("HX-Request") == "true" {
 		return false
 	}

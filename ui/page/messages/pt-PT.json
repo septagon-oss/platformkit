@@ -185,5 +185,50 @@
     "plural": {
       "": "Já tem o que isto pede; a regra desta registo recusou-o: %s"
     }
+  },
+  "fault.retry": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Tentar de novo",
+    "plural": {
+      "": "Tentar de novo"
+    }
+  },
+  "fault.retry_after": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Isto deverá funcionar de novo daqui a %d segundos.",
+    "plural": {
+      "": "Isto deverá funcionar de novo daqui a %d segundos."
+    }
+  },
+  "fault.back": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Voltar à página de onde veio",
+    "plural": {
+      "": "Voltar à página de onde veio"
+    }
+  },
+  "fault.sign_in": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Iniciar sessão",
+    "plural": {
+      "": "Iniciar sessão"
+    }
+  },
+  "fault.request_reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Referência do pedido",
+    "plural": {
+      "": "Referência do pedido"
+    }
   }
 }

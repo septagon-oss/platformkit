@@ -111,16 +111,28 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			if status >= http.StatusInternalServerError {
 				return nil, err
 			}
+			asked, _ := httpx.RequestFrom(ctx)
+			if httpx.WantsValue(asked) {
+				// The client named a JSON media type and refused markup, so the refusal of a
+				// page route is the same problem document every other refusal of this address
+				// would have been, written by the kernel's one encoder. The rule
+				// kit/httpx/fault.go states for a guard's refusal, applied to a handler's and
+				// asked of the same file rather than copied: a browser navigation names
+				// text/html and reaches the page below, an SDK names application/json and
+				// gets the body it parses, and a client that named nothing has no opinion to
+				// honour — so it gets the page this route exists to give.
+				return nil, err
+			}
 			// The refusal of a handler is the same page the kernel's guards render
 			// (fault.go) and is worded the same way: through the locale this shell just
 			// negotiated, with the sentence this shell ships for that verdict. A person
 			// who was refused by a module is looking at the page all the same, and the
 			// copy they are shown is not the reason the language was bought for the shell
-			// that mounted them. `fault` claims a language only over a sentence it
-			// actually replaced, so a verdict no catalogue speaks stays English and says
-			// so — and the reference is empty here because a handler's own 4xx carries no
-			// request id of its own.
-			refused := fault(status, detail, r.Locale, "", s.Back, s.BackLabel)
+			// that mounted them. `fault` claims a language only over a sentence it actually
+			// replaced, so a verdict no catalogue speaks stays English and says so — and
+			// the reference is empty here because a handler's own 4xx carries no request id
+			// of its own.
+			refused := fault(asked, status, detail, r.Locale, "", s, 0)
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}

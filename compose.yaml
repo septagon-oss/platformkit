@@ -1,8 +1,9 @@
 # Local dependencies for `make run`, `make test` and `make check`. Every published
-# port is overridable so this stack can run beside another Postgres, NATS, Valkey or
-# object store: PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT, PLATFORMKIT_VALKEY_PORT
-# and PLATFORMKIT_S3_PORT. `make test` and `make check` read the same variables, so
-# overriding them once is enough.
+# port is overridable so this stack can run beside another worker's Postgres, NATS,
+# Valkey, object store or mail sink: PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT,
+# PLATFORMKIT_VALKEY_PORT, PLATFORMKIT_S3_PORT and the two mail ports,
+# PLATFORMKIT_MAIL_PORT and PLATFORMKIT_MAIL_UI_PORT. `make test` and `make check`
+# read the same variables, so overriding them once is enough.
 #
 # One further service sits behind the `telemetry` profile and so takes no part in
 # `make up`: see `make trace`.
@@ -113,6 +114,35 @@ services:
       # --wait, so a probe that can never be satisfied is a stack that never
       # starts.
       test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mailpit:
+    # The development mail sink, and only that. It accepts every message
+    # addressed to it, keeps it in the container, and answers an HTTP API about
+    # what arrived — which is what e2e/steps/inbox.ts reads to follow a
+    # verification link a real registration sent. MIT licensed, and not a relay:
+    # nothing here is meant to leave this machine.
+    #
+    # It is why `make run` can sign anybody up at all. Email registration refuses
+    # without a mail server (modules/auth answers 503 "account email delivery is
+    # unavailable"), so every local run and every walkthrough used to meet
+    # "sign-up is temporarily unavailable". A production deployment brings no
+    # mailpit: it has PLATFORMKIT_MAIL_HOST, a password and a sender, and an
+    # empty mail.host still means no mail and no email sign-up, as it always did.
+    #
+    # The patch release is pinned for the reason postgres:16 and nats:2 are:
+    # `latest` would let a day's upstream change move a gate nobody re-ran.
+    image: axllent/mailpit:v1.31.3
+    ports:
+      # SMTP for the application, and the UI/API for a person and the steps.
+      - "${PLATFORMKIT_MAIL_PORT:-1025}:1025"
+      - "${PLATFORMKIT_MAIL_UI_PORT:-8025}:8025"
+    healthcheck:
+      # The image's own probe subcommand, so the check is the binary and not a
+      # shell — the reason nats needed the alpine variant to probe itself.
+      test: ["CMD", "/mailpit", "readyz"]
       interval: 5s
       timeout: 5s
       retries: 10

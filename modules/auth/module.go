@@ -52,6 +52,17 @@ func (EnvironmentSecrets) Lookup(_ context.Context, ref string) (string, bool) {
 // of its own rather than on the application's configuration surface.
 type OIDC = internal.OIDC
 
+// Pages is the chrome of the one page this module writes for itself: the page
+// the address in a verification email opens (see internal/ui/page.go).
+//
+// The page is the module's — it is the credential, the state and the command
+// that spends them — and its chrome is not: the palette, where the stylesheet is
+// served and where a person who has just confirmed an address is sent are facts
+// about the installation, so the composition writes them here. A composition
+// that turns emailed registration on and leaves Pages zero mails a link that
+// opens nothing.
+type Pages = internal.Pages
+
 // Deps is what this module cannot make for itself.
 type Deps struct {
 	// Users is how a password login finds the person an address belongs to,
@@ -143,6 +154,11 @@ type Deps struct {
 	// browser refuses a Secure cookie over http://localhost, so a development
 	// machine would be a development machine nobody could sign in to.
 	PublicHost string
+
+	// Pages is the chrome of the page the verification link opens. Only the
+	// emailed-verification lifecycle has such a page, so only that lifecycle
+	// reads it; see Pages.
+	Pages Pages
 }
 
 // Module is the manifest, and the service it is built on: main hands the same
@@ -231,6 +247,11 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// module is being wired. The hourly sweep reads it back to say which
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
+			// The pool, taken at the same moment and for the same reason: the
+			// one write in this module that must commit before the message that
+			// announces it — the emailed verification credential — opens its own
+			// short transaction on it. See internal.offerVerification.
+			svc.UseConn(s.Conn())
 			internal.RegisterRoutes(s, svc, cookies)
 			// A person's own keys, mounted always: unlike the factor routes
 			// there is no secret this needs from the deployment — the token is
@@ -259,6 +280,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			}
 			if deps.EmailRegistration != nil {
 				internal.RegisterEmailRegistrationRoutes(s, svc, *deps.EmailRegistration)
+				internal.MountVerifyEmailPage(s, svc, *deps.EmailRegistration, deps.Pages)
 			}
 			// The gate is "can any tenant here reach a provider", which is the
 			// installation's issuer or the port that resolves one per tenant —

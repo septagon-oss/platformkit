@@ -35,7 +35,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/db"
 	"io/fs"
 	"net/http"
 	"path"
@@ -279,6 +281,19 @@ func (r *Router) Home() (*Router, bool) {
 	}
 	return home, r.api.claim(r.surface, r.module)
 }
+
+// Conn is the application's own pool: the same handle the transaction
+// middleware puts on a request's context for httpx.ConnFrom to find.
+//
+// Every read and every write that belongs to a caller runs in that caller's
+// transaction, and a module that opens one of its own breaks the commit its
+// caller is relying on. One thing is legitimately outside that rule: a fact that
+// has to be committed *before* the step that announces it — an emailed
+// credential, whose row must be visible by the time the message carrying it is
+// handed over — which is written in a short transaction that ends first, in the
+// tenant the request or the event already named. A module takes the pool for
+// that and nothing else, and names the write it took it for.
+func (s Surfaces) Conn() *db.Conn { return s.api.opts.Conn }
 
 // SystemToken is the credential an in-process caller uses to reach a route that
 // needs a principal where no HTTP request carries one. It belongs to the
