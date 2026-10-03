@@ -293,12 +293,36 @@ test('a passkey the browser enrolled answers its owner\u2019s password and opens
   await person.goto('/app');
   await expect(person).toHaveURL(/\/app$/);
 
+  // Half five: the door a tenant may open — and the one this fixture's tenant
+  // keeps shut. The same passkey, on the same device, with no password offered
+  // first: the usernameless ceremony the shell's own button runs. The
+  // administrator opens it over the route that guards it and closes it again
+  // here, so the tenant is left as this journey found it and the case below,
+  // which pins the refusal, still describes the tenant every installation has.
+  await person.locator('[data-sign-out]').click();
+  await expect(person).toHaveURL(/\/app\/admin\/login$/);
+  const opened = await page.request.post('/api/v1/auth/settings/passkey-sign-in', { data: { enabled: true } });
+  expect(opened.status(), await opened.text()).toBe(200);
+  expect((await opened.json()).enabled).toBe(true);
+  await person.getByRole('button', { name: 'Continue with a passkey' }).click();
+  await expect(person).toHaveURL(/\/app$/);
+  expect((await person.request.get('/api/v1/auth/me')).status()).toBe(200);
+  const shut = await page.request.post('/api/v1/auth/settings/passkey-sign-in', { data: { enabled: false } });
+  expect(shut.status(), await shut.text()).toBe(200);
+  expect((await shut.json()).enabled).toBe(false);
+
   await context.close();
 });
 
 test('a tenant that has not opened the usernameless door is refused with the reason', async ({ page }) => {
   await virtualAuthenticator(page);
   await signIn(page);
+  // The tenant this case is about is the one every installation starts with: no
+  // row, door shut. It is said rather than assumed, because the journey above
+  // opens the door and closes it, and a case that depends on another case's
+  // tidiness is a case that fails for the wrong reason.
+  const shut = await page.request.post('/api/v1/auth/settings/passkey-sign-in', { data: { enabled: false } });
+  expect(shut.status(), await shut.text()).toBe(200);
   await page.locator('[data-sign-out]').click();
   await expect(page).toHaveURL(/\/app\/admin\/login$/);
   const begun = await page.request.post(beginSignIn);
