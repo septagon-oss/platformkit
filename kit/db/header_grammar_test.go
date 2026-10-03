@@ -1,13 +1,13 @@
 package db_test
 
-// header_grammar_test.go is the fourth review's case for a header the
+// A header the
 // grammar accepts and then reads as something other than what the file says.
 //
-// The specification's own grammar (SPECIFY, "The header grammar") states the rule
+// The specification's own grammar (the brief, "The header grammar") states the rule
 // this case holds:
 //
-//	"A `reason=` value runs to the end of its line and may contain spaces, so it
-//	must be the last pair on that line."
+// 	"A `reason=` value runs to the end of its line and may contain spaces, so it
+// 	must be the last pair on that line."
 //
 // "must" is the domain, and the domain is what `parseHeader` refuses everything
 // else outside of — every other key whose value is out of range, every repeated
@@ -17,8 +17,8 @@ package db_test
 // a declaration any more, and nothing says so. kit/db/migration_header.go's own
 // reason for refusing an unknown key is the harm this leaves:
 //
-//	"a marker the runner would not read says 'this file was reviewed' about a file
-//	 that was not."
+// 	"a marker the runner would not read says 'this file was reviewed' about a file
+// 	 that was not."
 //
 // The file below is that harm in its worst shape: the unread pair is
 // `phase=contract expand=2`, and the statement is a `DROP COLUMN` — the one
@@ -35,7 +35,7 @@ package db_test
 // The other two cases in this file are pins rather than complaints, and each marks
 // the boundary of what was found. The autocommit shape the rule table points at
 // (`autocommit=true` for a concurrent build) is a *two*-statement file, which
-// SPECIFY records as a measured decision — "A file with more than one statement in
+// the brief records as a measured decision — "A file with more than one statement in
 // this mode is not caught by a parser: … The message is Postgres', the rule is
 // ours". What is pinned here is the half a release depends on: the file that never
 // ran leaves no index and no ledger row, so the next run is the same file again.
@@ -67,7 +67,7 @@ ALTER TABLE probe DROP COLUMN c`)}
 	}
 	// The column is the assertion, and it does not care which refusal the remedy
 	// is: a `DROP COLUMN` whose header declares a contract half has to be read, not
-	// run. Refusing the line (what SPECIFY's "must be the last pair" implies) and
+	// run. Refusing the line (what the brief's "must be the last pair" implies) and
 	// reading the pair (which leaves the file waiting for an expansion that never
 	// applied) both land here.
 	admin := dbtest.Open(t, migrateURL)
@@ -106,7 +106,7 @@ UPDATE probe SET done = true WHERE id IN (SELECT id FROM batch)`)},
 }
 
 // TestAnAutocommitFileThatDidNotRunLeavesNothingBehind pins the state half of the
-// shape SPECIFY accepts: the two-statement autocommit file is refused by PostgreSQL
+// shape the brief accepts: the two-statement autocommit file is refused by PostgreSQL
 // (error 25001) rather than by a rule, and the delivery's reasoning for that is
 // recorded in the specification. What has to be true, and is, is that a file which
 // did not run wrote nothing down — no index, no ledger row — so the operator's next

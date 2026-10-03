@@ -1,6 +1,6 @@
 package db_test
 
-// data_body_semicolon_test.go is the ninth review's case for the executor's
+// The executor's
 // refusal of a phase=data file: "a data file is one statement: the window wraps the
 // body, and a second statement would be run over a window of its own with no cursor
 // between them; split the file" (kit/db/backfill.go, drain).

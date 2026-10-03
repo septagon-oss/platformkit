@@ -1,12 +1,11 @@
 package db_test
 
-// data_file_is_drained_over_a_key_the_server_can_order_but_not_maximum_test.go is
-// the twelfth round's case for the claim at kit/db/README.md:95:
+// The claim at kit/db/README.md:95:
 //
-//	"The key may be of any single-column primary key type: the cursor travels as the key
-//	cast to text and comes back as a comparison against that type's own name, read from
-//	the catalogue, so the drain asks PostgreSQL for the ordering instead of keeping a
-//	list of the types it is willing to name."
+// 	"The key may be of any single-column primary key type: the cursor travels as the key
+// 	cast to text and comes back as a comparison against that type's own name, read from
+// 	the catalogue, so the drain asks PostgreSQL for the ordering instead of keeping a
+// 	list of the types it is willing to name."
 //
 // It asks the ordering for the window (`ORDER BY w LIMIT n`) and the *maximum* for the top
 // of it: `SELECT count(*), coalesce(max(w)::text, '') FROM (…) windowed`. PostgreSQL has no
@@ -20,10 +19,10 @@ package db_test
 // of them. Measured end to end through the release step the delivery wrote: with the
 // ten-thousand-row fixture on a copy of the previous release,
 //
-//	rehearse: candidate: 680fd1e with a dirty tree
-//	platformkit: db: migrate: platformkit/000027_rehearse_backfill.up.sql: measuring the
-//	    next batch of users: ERROR: function max(uuid) does not exist (SQLSTATE 42883)
-//	rehearse: failed: 1 finding(s); exit 1
+// 	rehearse: candidate: 680fd1e with a dirty tree
+// 	platformkit: db: migrate: platformkit/000027_rehearse_backfill.up.sql: measuring the
+// 	    next batch of users: ERROR: function max(uuid) does not exist (SQLSTATE 42883)
+// 	rehearse: failed: 1 finding(s); exit 1
 //
 // The failure is not even a refusal with an id: the four below-threshold refusals name
 // themselves, and this one arrives as PostgreSQL's own text. And it leaves the progress row

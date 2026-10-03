@@ -15,7 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 )
 
-// The round-4 review's two cases about the caller list this package publishes.
+// Two cases about the caller list this package publishes.
 // Both have a passing branch: name what the tree holds, and state the reachability
 // the import graph runs.
 

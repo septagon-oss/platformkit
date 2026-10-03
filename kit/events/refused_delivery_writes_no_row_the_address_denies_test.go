@@ -1,14 +1,14 @@
 package events
 
-// A reviewer's pin (review round 6, task T-0109).
+// A delivery the address denies writes nothing at all.
 //
 // b7ad506 taught the NATS provider to read the address a message arrived at and
-// to terminate a delivery whose document does not claim it. Round 5's pin
+// to terminate a delivery whose document does not claim it. The subject pin
 // asserts the half about the handler: it must not run inside the second tenant's
 // rows. Nothing asserts the other half — what a refusal *writes*. This package's
 // own README, replay.go and rule 9 all say a refusal writes nothing, and the
 // branch beside the new one (`sink.Dead` then `Term`, as the undecodable-message
-// branch does) is a fix shape that would keep round 5's pin green while writing
+// branch does) is a fix shape that would keep the subject pin green while writing
 // two rows: a `platformkit_handled` claim and a `platformkit_dead_letters` row,
 // both stamped with the tenant that only the *body* claimed, filed against the
 // tenant whose address the message was thrown at. A refusal that leaves forged,
@@ -20,7 +20,7 @@ package events
 // claim row naming its tenant — that is what makes the forged event's absence
 // mean "this refusal wrote nothing" rather than "claims are not written here at
 // all", and it is the reachability probe: it never asks the refusal's leave. The
-// delivery itself is then read for what it may and may not record: round 5 left
+// delivery itself is then read for what it may and may not record: that pin left
 // two correct outcomes open (refuse the mismatch, or run scoped to the address),
 // and this pin holds the rule those two share — no row in either table may name a
 // tenant the message's address does not, and a message whose handler never ran
@@ -122,7 +122,7 @@ func TestADeliveryRefusedForItsAddressRecordsNoTenantItsAddressDoesNotName(t *te
 	// Any further delivery on this subscription is the mismatched message being
 	// handled after all. Which tenant that would be is the question the two
 	// counts below answer, so it is recorded rather than failed here: a
-	// delivery scoped to the address is one of the outcomes round 5 accepted.
+	// delivery scoped to the address is one of the outcomes the refusal accepts.
 	select {
 	case late := <-seen:
 		t.Logf("the delivery ran the handler for the mismatched message %s (address %s, body %s)", late.ID, tenantA, tenantB)

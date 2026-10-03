@@ -1,6 +1,6 @@
 package db_test
 
-// contract_partner_test.go is the seventh review's case for the sentence on
+// The sentence on
 // `partnerFile` in kit/db/migrate.go: it "names the version a contract half waits for
 // as a file, because that is what an operator greps for and what a release note
 // lists".

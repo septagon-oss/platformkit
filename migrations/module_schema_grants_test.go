@@ -16,10 +16,10 @@ import (
 	"github.com/septagon-oss/platformkit/migrations"
 )
 
-// The second review's pins for migrations/000026_module_schema.up.sql. Each test
+// Pins for migrations/000026_module_schema.up.sql. Each test
 // here takes a claim the function's header, migrations/README.md or the
-// implementation report makes that no shipped test reaches — the same shape as
-// the first review's finding, found the same way: ask what stays green if the
+// implementation report makes that no shipped test reaches — found the way every
+// case in this package is found: ask what stays green if the
 // statement is wrong, then run the case.
 //
 // TestModuleSchemaGrantsNoMoreThanTheDeploymentAlreadyHandedOut FAILS as filed.
@@ -35,7 +35,7 @@ import (
 //
 // The other three pass, and pin branches the implementation report records as
 // unreachable from this suite ("a test for either needs the superuser door
-// T-0029 is settling"): a schema another role owns, a grantee the catalog spells
+// that another task is settling"): a schema another role owns, a grantee the catalog spells
 // 0, and a deployment that pins no defaults at all. The admin URL dbtest hands
 // every test is already SUPERUSER — kit/db/pool_test.go has created probe roles
 // through it since — so all three are reachable today, with no new door.
@@ -254,7 +254,7 @@ func kernelSchema(t *testing.T) (adminURL, appURL string, admin *sql.DB) {
 // deploymentSchema is this test's own schema, which is the deployment's `public`
 // for everything in this file. It is the third copy of the read moduleOwner and
 // quotingOwner make; those two are unexported helpers of this package, so a
-// reviewer's file cannot call them.
+// test outside this package cannot call them.
 func deploymentSchema(t *testing.T, ctx context.Context, admin *sql.DB) string {
 	t.Helper()
 	var schema string

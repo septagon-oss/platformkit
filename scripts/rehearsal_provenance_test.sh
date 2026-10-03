@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# rehearsal_provenance_test.sh — the sixth review's case for the line the
+# The case for the line the
 # rehearsal report is headed with.
 #
 # migrations/README.md makes `make rehearse` "the step a release requires before a

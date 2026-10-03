@@ -1,6 +1,6 @@
 package ui_test
 
-// Review round 5's file. The client layer is the one layer a consumer may write,
+// The client layer is the one layer a consumer may write,
 // and ui/ui.go states the reason the layers exist at all: "Every rule Compose
 // emits is in a layer — an unlayered rule beats every layer and would undo the
 // order statement." refuseClientSheet already enforces the same promise against
@@ -42,7 +42,7 @@ func compose(t *testing.T, sheet *css.Sheet) (body string, refused any) {
 	return body, nil
 }
 
-// TestAConsumerSheetCannotCloseItsLayer is the finding: three ways a
+// TestAConsumerSheetCannotCloseItsLayer: three ways a
 // consumer rule's own text ends the client layer early or opens a layer the
 // consumer does not own, none of which the gate refuses today.
 func TestAConsumerSheetCannotCloseItsLayer(t *testing.T) {

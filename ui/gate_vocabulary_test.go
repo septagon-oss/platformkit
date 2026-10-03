@@ -1,8 +1,7 @@
 package ui_test
 
-// Review round 2 of T-0108 (the stylesheet has cascade layers). This round asks
-// one question: is review round 1's finding 2 — "the client gate does not cover
-// the kernel's own markup" — cured? The cure widened the vocabulary to
+// One question about the client gate: does it cover
+// the kernel's own markup? The answer widened the vocabulary to
 // components.Hooks and matched the attribute *name* an attribute selector
 // addresses. These cases test the cure against the two things it did not cover:
 // the parts the kernel renders outside ui/components, and the selector forms a
@@ -23,10 +22,10 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// reviewAcceptsClientSheet reports whether Compose placed the sheet instead of
+// acceptsClientSheet reports whether Compose placed the sheet instead of
 // refusing it. The refusal is a panic, so the case is decided by what Compose
 // does, not by what it prints.
-func reviewAcceptsClientSheet(t *testing.T, sheet *css.Sheet) (accepted bool) {
+func acceptsClientSheet(t *testing.T, sheet *css.Sheet) (accepted bool) {
 	t.Helper()
 	defer func() {
 		accepted = recover() == nil
@@ -36,13 +35,13 @@ func reviewAcceptsClientSheet(t *testing.T, sheet *css.Sheet) (accepted bool) {
 }
 
 // TestTheClientGateRefusesAKernelHookInEverySelectorFormABrowserReads is
-// finding 2's residual: the gate compares the attribute name as written, while
+// the finding's residual: the gate compares the attribute name as written, while
 // CSS allows whitespace inside the brackets and escapes inside an identifier, and
 // HTML matches attribute names ASCII-case-insensitively. `ui.Compose` refuses
 // `[data-component=button]` and accepts `[ data-component=button ]`, so the one
 // spelling that is refused is the spelling nobody writes by accident.
 //
-// The browser half is measured in the review report: with the sheet Compose
+// The browser half is measured in a browser: with the sheet Compose
 // emits for `[ data-component=button ]`, a real components.Button computes
 // border-radius 77px instead of the 6px `[data-component=button]` gives it from
 // --pk-radius-button, because the client layer ranks after the components layer.
@@ -59,7 +58,7 @@ func TestTheClientGateRefusesAKernelHookInEverySelectorFormABrowserReads(t *test
 		"[data\\2D component=\"button\"]",     // \2D is "-": the same name, escaped
 	} {
 		sheet := css.NewSheet().Select(selector, css.Decl("border-radius", css.Literal("77px")))
-		if reviewAcceptsClientSheet(t, sheet) {
+		if acceptsClientSheet(t, sheet) {
 			t.Errorf("Compose accepted a client rule whose selector %s names data-component, a hook ui/components renders: the client layer ranks after the components layer, so this rule restyles a kernel component", selector)
 		}
 	}
@@ -82,15 +81,15 @@ func TestTheClientGateCoversTheKernelPartsRenderedOutsideComponents(t *testing.T
 		{"[data-confirm-label]", "ui/resource/resource.go, the same action's label"},
 	} {
 		sheet := css.NewSheet().Select(part.hook, css.Decl("display", css.Literal("none")))
-		if reviewAcceptsClientSheet(t, sheet) {
+		if acceptsClientSheet(t, sheet) {
 			t.Errorf("Compose accepted a client rule naming %s, which %s renders: a client can hide the shell's own affordance and the layer carries it past every kernel rule", part.hook, part.renderedBy)
 		}
 	}
 }
 
-// reviewLayerBlockAt returns the layer whose block contains the byte offset, by
+// layerBlockAt returns the layer whose block contains the byte offset, by
 // the emitter's own indentation: a layer block opens and closes at column 0.
-func reviewLayerBlockAt(sheet string, at int) string {
+func layerBlockAt(sheet string, at int) string {
 	layer := ""
 	for _, line := range strings.Split(sheet[:at], "\n") {
 		if strings.HasPrefix(line, "@layer ") && strings.HasSuffix(line, " {") {
@@ -103,14 +102,14 @@ func reviewLayerBlockAt(sheet string, at int) string {
 }
 
 // TestAComponentStateRuleSharesTheComponentsLayerAheadOfTheClassLists is
-// the pin of review round 1's finding 1 as cured. The role rule must share the
+// the pin of an earlier round's the finding as cured. The role rule must share the
 // components layer with the utility on its own element — a layer ranks before
 // specificity, so an earlier layer loses whatever the selector says — and must be
 // emitted ahead of the class lists, so the equal-specificity ties a component's
 // own markup creates answer the way they answered before layers existed. The
 // preflight stays in the base layer, where any class outspecifies it.
 //
-// This one passes at the reviewed commit. It is here because both halves are
+// This one passes today. It is here because both halves are
 // load-bearing and nothing else in the tree reads the order inside the layer:
 // moving componentState() after rules(), or back into base(), is silent until a
 // dismissed dialog stays on the viewport.
@@ -141,7 +140,7 @@ func TestAComponentStateRuleSharesTheComponentsLayerAheadOfTheClassLists(t *test
 		if at < 0 {
 			t.Fatalf("the composed sheet carries no rule %s", role)
 		}
-		if got := reviewLayerBlockAt(sheet, at); got != "components" {
+		if got := layerBlockAt(sheet, at); got != "components" {
 			t.Errorf("the kernel role rule %s sits in @layer %q, not @layer components: a utility class on the same element outranks it", role, got)
 			continue
 		}
@@ -154,14 +153,14 @@ func TestAComponentStateRuleSharesTheComponentsLayerAheadOfTheClassLists(t *test
 		if at < 0 {
 			t.Fatalf("the composed sheet carries no preflight rule %s", preflight)
 		}
-		if got := reviewLayerBlockAt(sheet, at); got != "base" {
+		if got := layerBlockAt(sheet, at); got != "base" {
 			t.Errorf("the preflight rule %s sits in @layer %q, not @layer base: it now outranks the utility classes it exists to be overruled by", preflight, got)
 		}
 	}
 }
 
-// TestTheClientGateReadsAKeyframeNestedInAMediaBlock pins review round 1's
-// finding 3 as cured at the depth the walk now reaches: css.WalkRules visits a
+// TestTheClientGateReadsAKeyframeNestedInAMediaBlock pins an earlier round's
+// the finding as cured at the depth the walk now reaches: css.WalkRules visits a
 // @keyframes stop because the browser applies its declarations, and it recurses
 // through a nested at-rule, so the same colour hidden inside a @media block is
 // refused too. Nothing else in the tree composes the two together.
@@ -176,7 +175,7 @@ func TestTheClientGateReadsAKeyframeNestedInAMediaBlock(t *testing.T) {
 	if body := sheet.CSS(); !strings.Contains(body, "#ff0000") {
 		t.Fatalf("the sheet under test does not carry the raw colour it is meant to: %s", body)
 	}
-	if reviewAcceptsClientSheet(t, sheet) {
+	if acceptsClientSheet(t, sheet) {
 		t.Error("Compose accepted a raw colour in a @keyframes stop nested inside a @media block; the same colour in a rule and in a bare keyframe is refused")
 	}
 }

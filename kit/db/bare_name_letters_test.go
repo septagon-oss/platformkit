@@ -1,6 +1,6 @@
 package db_test
 
-// bare_name_letters_test.go is the eighth review's case for the sentence ADR
+// The sentence ADR
 // 0011 and migrations/README.md gained in 68c7560, and for the reader those sentences
 // describe.
 //

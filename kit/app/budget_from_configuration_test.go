@@ -1,6 +1,6 @@
 package app
 
-// budget_from_configuration_test.go pins the one line of the migration
+// This case pins the one line of the migration
 // story that no other case walks: kit/db/README.md says
 // "database.lock_timeout and database.statement_timeout change them", config.example
 // .yaml documents both, and kit/config carries them as optional fields. Every other

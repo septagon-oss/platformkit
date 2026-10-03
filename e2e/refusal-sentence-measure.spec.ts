@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// The second review's pin over the page this delivery created: the confirmation a
-// person lands on after they ask for access, measured rather than admired.
+// The confirmation page a person lands on after they ask for access, measured
+// rather than admired.
 //
 // The brief holds the design floor HIGH for "a page this delivery creates with any
 // refusal", and gates/design_gate.py refuses a body line longer than 75 characters

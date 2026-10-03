@@ -1,6 +1,4 @@
-// Review round 16 of T-0108 (last review, decision 0039 — HIGH only).
-//
-// Every case in this repository reads a *name*: rounds 10 to 14 feed the gate a
+// Every case in this repository reads a *name*: some feed the gate a
 // selector and ask whether refuseClientSheet refuses it, and cascade-layers.spec.ts
 // reads the class names Chromium resolved out of the served sheet. Neither half
 // alone carries the brief's invariant. The gate reads the text the developer

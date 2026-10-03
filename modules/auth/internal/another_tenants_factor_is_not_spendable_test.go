@@ -1,6 +1,6 @@
 package internal_test
 
-// review 4 (decision 0039: HIGHs only). Check 2 of the review's own list, at the two
+// A second factor is not spendable by its holder's neighbour, asked at the two
 // tables this brief adds.
 //
 // Tenant isolation for sessions has a case (TestAnotherTenantsSessionRefRevokesNothing)

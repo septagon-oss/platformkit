@@ -1,6 +1,6 @@
 package db_test
 
-// two_drains_of_one_table_write_no_row_twice_test.go is the thirteenth round's pin
+// This file is a pin
 // of the one claim the drain makes about a second runner.
 //
 // `Backfill` deliberately does not take the advisory lock every migration takes: a drain

@@ -1,13 +1,13 @@
 package ui_test
 
-// Review round 3 of T-0108 (the stylesheet has cascade layers). Round 1's HIGH
-// was one rule in the wrong layer: `dialog[data-component=modal]:not([open])`
+// The stylesheet has cascade layers, and the shape of bug a layer ranking allows is
+// one rule in the wrong layer: `dialog[data-component=modal]:not([open])`
 // sat in @layer base, the `flex` utility sat in @layer components, a layer ranks
 // before specificity, and a dismissed modal kept covering the page. The cure
 // moved that rule and its siblings into componentState() in @layer components.
 //
-// Nothing in the tree keeps the *shape* of that bug from coming back. The two
-// reviewer files and ui_test.go name the rules that moved and check those; a
+// Nothing in the tree keeps the *shape* of that bug from coming back. The files
+// that name the rules which moved check those; a
 // later change that writes a new rule about a component into base() — the place
 // rules about markup used to live — composes, passes every one of them, and ships
 // the same regression for a component nobody thought to list.
@@ -28,9 +28,9 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 )
 
-// reviewBaseLayerBlock returns the body of @layer base { … } as the emitter
+// baseLayerBlock returns the body of @layer base { … } as the emitter
 // writes it: the block opens at column 0 and closes at column 0.
-func reviewBaseLayerBlock(t *testing.T, sheet string) string {
+func baseLayerBlock(t *testing.T, sheet string) string {
 	t.Helper()
 	const open = "@layer base {"
 	at := strings.Index(sheet, open)
@@ -45,12 +45,12 @@ func reviewBaseLayerBlock(t *testing.T, sheet string) string {
 	return rest[:end]
 }
 
-// reviewCarriesOwnSpecificity reports whether a selector names more than elements
+// carriesOwnSpecificity reports whether a selector names more than elements
 // and pseudo-elements: an attribute selector, a class, an id or a pseudo-class
 // (a single colon; "::before" is a pseudo-element and stays element-level). Those
 // are exactly the forms that reach past a preflight rule, so they belong in the
 // layer the utilities live in — see componentState.
-func reviewCarriesOwnSpecificity(selector string) string {
+func carriesOwnSpecificity(selector string) string {
 	for i := 0; i < len(selector); i++ {
 		switch selector[i] {
 		case '[':
@@ -83,20 +83,20 @@ func isNameByte(c byte) bool {
 func TestNothingThatNamesAComponentIsEmittedInTheBaseLayer(t *testing.T) {
 	t.Parallel()
 	sheet := string(ui.Compose(design.Default()).Body)
-	block := reviewBaseLayerBlock(t, sheet)
+	block := baseLayerBlock(t, sheet)
 
 	// The matcher checks itself, so a case that passes on an empty block or on a
 	// parser that read nothing cannot be mistaken for a green pin.
-	if got := reviewCarriesOwnSpecificity("[data-component=button]"); got == "" {
+	if got := carriesOwnSpecificity("[data-component=button]"); got == "" {
 		t.Fatal("the specificity matcher reads an attribute selector as an element selector")
 	}
 	for _, control := range []string{".flex", "#pk-root", "input:focus-visible", "dialog:has(> input)"} {
-		if reviewCarriesOwnSpecificity(control) == "" {
+		if carriesOwnSpecificity(control) == "" {
 			t.Errorf("the specificity matcher reads %q as an element selector", control)
 		}
 	}
 	for _, allowed := range []string{"*, *::before, *::after", "dialog::backdrop", "nav ul, nav ol", "html"} {
-		if got := reviewCarriesOwnSpecificity(allowed); got != "" {
+		if got := carriesOwnSpecificity(allowed); got != "" {
 			t.Errorf("the specificity matcher calls %q %s; a preflight selector is allowed to be an element or a universal selector", allowed, got)
 		}
 	}
@@ -113,7 +113,7 @@ func TestNothingThatNamesAComponentIsEmittedInTheBaseLayer(t *testing.T) {
 				continue
 			}
 			checked++
-			if kind := reviewCarriesOwnSpecificity(selector); kind != "" {
+			if kind := carriesOwnSpecificity(selector); kind != "" {
 				t.Errorf("the composed sheet emits %q in @layer base, and %s is more than an element selector: a layer ranks before specificity, so this rule is outranked by any single utility class on the element it governs — the shape of the rule this branch moved out of base() to fix a dismissed dialog that never closed. Write it in componentState() instead.", selector, kind)
 			}
 		}

@@ -10,7 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// Review round 19's pin: the reduced-motion floor is a *placement*, and a case that
+// The reduced-motion floor is a *placement*, and a case that
 // guards it with a list of property names guards the sheet as it was written.
 //
 // e2e/reduced-motion-floor.spec.ts measures the served sheet in
@@ -32,17 +32,17 @@ import (
 // composition and asks the same question of it: placed in `@layer client`, never
 // unlayered, where an unlayered rule would outrank all four layers at once.
 //
-// ui.Compose is the subject, not ui.Assets: rounds 9 and 13 already read the served
+// ui.Compose is the subject, not ui.Assets: this package's served-sheet files read
 // bytes, and what is unguarded here is the shape of the emitted text against a
-// property list another reviewer's file has to keep up with.
+// property list another file has to keep up with.
 
 var r19Layers = map[string]bool{"tokens": true, "base": true, "components": true, "client": true}
 
-// r19Scan walks CSS text the way a brace does, and reports each `!important` with the name of the
+// scanDeclarations walks CSS text the way a brace does, and reports each `!important` with the name of the
 // `@layer` block a browser would resolve it in ("" outside every block) and the selector of the rule
 // that carries it. Strings and comments are skipped: a `content: "}"` is not a block, and a scanner
 // that read one would mis-nest everything after it.
-func r19Scan(t *testing.T, text string) []r19Important {
+func scanDeclarations(t *testing.T, text string) []r19Important {
 	t.Helper()
 	var importants []r19Important
 	var stack []r19Block // one per open brace: the layer it resolves in, and the head it opens with
@@ -64,7 +64,7 @@ func r19Scan(t *testing.T, text string) []r19Important {
 			}
 			i += end + 4
 		case c == '"' || c == '\'':
-			i = r19SkipString(t, text, i)
+			i = skipStringLiteral(t, text, i)
 		case c == '{':
 			name := ""
 			start := i - 1
@@ -94,7 +94,7 @@ func r19Scan(t *testing.T, text string) []r19Important {
 				}
 			}
 			importants = append(importants, r19Important{
-				layer: deepest(), selector: selector, at: i, property: r19PropertyBefore(text, i)})
+				layer: deepest(), selector: selector, at: i, property: propertyBeforeDeclaration(text, i)})
 			i += len("!important")
 		default:
 			i++
@@ -112,13 +112,13 @@ type r19Important struct {
 	property string
 }
 
-// r19PropertyBefore reads the property name a declaration's value starts from, back to
+// propertyBeforeDeclaration reads the property name a declaration's value starts from, back to
 // the colon that separates them. It is reported, never asserted: a case that asserted
 // on it would be the list this case exists to replace.
-func r19PropertyBefore(text string, at int) string {
+func propertyBeforeDeclaration(text string, at int) string {
 	colon := strings.LastIndexByte(text[:at], ':')
 	start := colon
-	for start > 0 && (r19IsNameByte(text[start-1]) || text[start-1] == '-') {
+	for start > 0 && (isLayerNameByte(text[start-1]) || text[start-1] == '-') {
 		start--
 	}
 	if colon < 0 || start >= colon {
@@ -127,11 +127,11 @@ func r19PropertyBefore(text string, at int) string {
 	return strings.ToLower(strings.TrimSpace(text[start:colon]))
 }
 
-func r19IsNameByte(b byte) bool {
+func isLayerNameByte(b byte) bool {
 	return b >= 'a' && b <= 'z' || b >= 'A' && b <= 'Z' || b >= '0' && b <= '9'
 }
 
-func r19SkipString(t *testing.T, text string, i int) int {
+func skipStringLiteral(t *testing.T, text string, i int) int {
 	t.Helper()
 	quote := text[i]
 	for j := i + 1; j < len(text); j++ {
@@ -152,7 +152,7 @@ func TestEveryImportantDeclarationSitsInsideALayer(t *testing.T) {
 	if v := os.Getenv("PKIT_R19_DUMP"); v != "" {
 		os.WriteFile(v, sheet.Body, 0o644)
 	}
-	importants := r19Scan(t, text)
+	importants := scanDeclarations(t, text)
 	if len(importants) == 0 {
 		t.Fatal("the sheet authors no !important at all, so the floor this case guards is not in it")
 	}
@@ -182,7 +182,7 @@ func TestAConsumerImportantOnAKernelUnusedPropertyStaysInItsLayer(t *testing.T) 
 		css.Decl("pointer-events", css.Literal("none !important")))
 	sheet := ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{consumer}})
 	text := string(sheet.Body)
-	importants := r19Scan(t, text)
+	importants := scanDeclarations(t, text)
 	found := 0
 	for _, imp := range importants {
 		if imp.selector != ".r19-caret" {

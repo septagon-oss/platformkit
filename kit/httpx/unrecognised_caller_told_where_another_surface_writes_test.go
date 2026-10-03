@@ -1,11 +1,11 @@
 package httpx_test
 
-// Reviewer's cases for the second review of T-0024 (three surfaces by path).
-// Written to falsify what the change asserts about itself, in kit/httpx/surfaces.go,
+// Cases written against what the surfaces claim about themselves, in
+// kit/httpx/surfaces.go,
 // kit/httpx/schemas.go, kit/httpx/httpx.go and kit/httpx/README.md. Each case reaches
 // its assertion through what correct behaviour prints — a status, the host's own refusal
 // body, the bytes of a file the tree does hold — and never through the output of the
-// defect it reports. Reviewer: a fresh pi session, 2026-09-21.
+// defect it reports.
 
 import (
 	"context"
@@ -174,8 +174,8 @@ func TestAMissingFileUnderAMountedTreeTakesTheRefusalOfAnAddressNobodyMounted(t 
 	}
 }
 
-// TestThePublicWriteLimitCountsTwoTenantsApartInTheCounterItWritesTo is the pin over the
-// promise the first review called High: README.md's "counted by tenant, route and
+// TestThePublicWriteLimitCountsTwoTenantsApartInTheCounterItWritesTo holds the
+// promise README.md makes: "counted by tenant, route and
 // address", and public_writes.go's "two customers therefore never share a counter". The
 // existing cases read the *key* the kernel composes, with a double in place of the
 // counter; this one uses limit.Postgres — the limiter kit/app actually wires — so the

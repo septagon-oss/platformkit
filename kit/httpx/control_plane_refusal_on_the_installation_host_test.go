@@ -1,6 +1,6 @@
 package httpx_test
 
-// The fifth review's cases, left in the tree by a reviewer who did not write the fix.
+// One control-plane refusal, answered the same way down both roads of one host.
 //
 // ## The case that fails, and what it falsifies
 //
@@ -22,7 +22,7 @@ package httpx_test
 // never-mounted address, headers and body, at both shapes, and the gate was moved inside
 // the headers middleware to make that true. That fixture resolves the installation host to
 // an *operator* tenant, so nothing it asks ever reaches notHere. The second half — the road
-// round 8's table row "a door only the operator may open, asked at another tenant" walks —
+// the rule "a door only the operator may open, asked at another tenant" walks —
 // has never been compared to anything.
 //
 // This case compares it, at the installation host, over a real HTTP/1.1 server, at both
@@ -37,7 +37,7 @@ package httpx_test
 // writer of problem bodies.
 //
 // The fix has two honest shapes, and either turns every subtest green: answer the chain's
-// fallback with the same encoder the kernel-side answers use (this reviewer tried it —
+// fallback with the same encoder the kernel-side answers use (one trial fix tried it —
 // `refuse` writing writeProblem on the writer humachi carries, four lines — and
 // ./kit/httpx ./ui/... ./kit/app ./apps/platformkit ./modules/auth ./kit/rest
 // ./modules/task all stay ok), or state in README.md, CHANGELOG.md and notHere that the
@@ -45,7 +45,7 @@ package httpx_test
 //
 // ## The case that passes
 //
-// Retry-After on the public write limit was left unverified by the fourth review for the
+// Retry-After on the public write limit went unverified for the
 // limb this round changed. Headers are set before the answer is written, on either end of
 // the opt-out, which the second case pins so a later change to the fallback writer that
 // drops them is caught here rather than in a browser.
@@ -73,12 +73,12 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// round5Kernel is guardKernel with the one thing it cannot express: whether the tenant this
+// installationHostKernel is guardKernel with the one thing it cannot express: whether the tenant this
 // installation resolves at the installation host *is* the operator's. Without it an Ops
 // address is either never served (a customer host, refused by the host gate) or never
 // refused by notHere (an operator tenant), and the road README's second half describes
 // cannot be built at all.
-func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler, func(rel string) string, func(rel string) string) {
+func installationHostKernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler, func(rel string) string, func(rel string) string) {
 	t.Helper()
 	who := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme", Operator: operator}
 	_, app := dbtest.Schema(t)
@@ -99,7 +99,7 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 		Fault: fault,
 	})
 	httpx.Register(api.Surfaces(probe).Ops, huma.Operation{
-		OperationID: "round5-operate", Method: http.MethodGet, Path: "/all",
+		OperationID: "installation-host-operate", Method: http.MethodGet, Path: "/all",
 	}, httpx.OperatorPermission("billing:operate"), ok)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the fixture does not describe itself: %v", err)
@@ -107,15 +107,15 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 	return router, api.Surfaces(probe).Ops.Path, func(rel string) string { return httpx.AppRoot + rel }
 }
 
-// round5Answer is what one request read off a real server: the status, the headers as they
+// installationHostAnswer is what one request read off a real server: the status, the headers as they
 // arrived (Content-Length included) and the whole body a client would parse.
-type round5Answer struct {
+type installationHostAnswer struct {
 	status int
 	header http.Header
 	body   string
 }
 
-func round5Ask(t *testing.T, server, authority, path, accept, id string) round5Answer {
+func installationHostAsk(t *testing.T, server, authority, path, accept, id string) installationHostAnswer {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, server+path, nil)
 	if err != nil {
@@ -134,14 +134,14 @@ func round5Ask(t *testing.T, server, authority, path, accept, id string) round5A
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
-	return round5Answer{status: res.StatusCode, header: res.Header, body: string(body)}
+	return installationHostAnswer{status: res.StatusCode, header: res.Header, body: string(body)}
 }
 
 // noncePattern is the per-request content security policy nonce, random by construction
 // (headers.go), which is the one thing a comparison of two responses may not read apart.
 var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
 
-func round5Same(t *testing.T, a, b round5Answer, asked, reference string) {
+func installationHostSame(t *testing.T, a, b installationHostAnswer, asked, reference string) {
 	t.Helper()
 	if a.status != b.status {
 		t.Errorf("%s answers %d where %s answers %d: README.md promises one status for both",
@@ -185,10 +185,10 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 	// composition where the host resolves to the operator's tenant the very same address
 	// is *served*. If this fails, the address is not mounted and the table below compares
 	// two ordinary 404s and means nothing.
-	served, opsAt, _ := round5Kernel(t, true, nil)
+	served, opsAt, _ := installationHostKernel(t, true, nil)
 	opServer := httptest.NewServer(served)
 	defer opServer.Close()
-	if got := round5Ask(t, opServer.URL, installationHost, opsAt("/all"), "application/json", id); got.status != http.StatusOK {
+	if got := installationHostAsk(t, opServer.URL, installationHost, opsAt("/all"), "application/json", id); got.status != http.StatusOK {
 		t.Fatalf("the operator's tenant at %s = %d %s; the address is not mounted, so the case below compares nothing",
 			opsAt("/all"), got.status, got.body)
 	}
@@ -207,11 +207,11 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 			if shape.answer {
 				fault = documentFault
 			}
-			router, opsAt, appAt := round5Kernel(t, false, fault)
+			router, opsAt, appAt := installationHostKernel(t, false, fault)
 			server := httptest.NewServer(router)
 			defer server.Close()
 
-			refusal := round5Ask(t, server.URL, installationHost, opsAt("/all"), shape.accept, id)
+			refusal := installationHostAsk(t, server.URL, installationHost, opsAt("/all"), shape.accept, id)
 			if refusal.status != http.StatusNotFound {
 				t.Fatalf("the control plane asked by a tenant that is not the installation's = %d %s, want the 404 this case compares",
 					refusal.status, refusal.body)
@@ -227,7 +227,7 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 			} else if n := strings.Count(refusal.body, "<!doctype html>"); n != 1 {
 				t.Errorf("%s carries %d pages in one body: %s", shape.name, n, refusal.body)
 			}
-			round5Same(t, refusal, round5Ask(t, server.URL, installationHost, appAt(nowhere), shape.accept, id),
+			installationHostSame(t, refusal, installationHostAsk(t, server.URL, installationHost, appAt(nowhere), shape.accept, id),
 				"the control plane at the installation host", "an address nobody mounted")
 		})
 	}

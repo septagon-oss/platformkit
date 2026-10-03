@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# provenance_bigtree_test.sh — the seventh review's case for the deviation the
-# round recorded instead of the one the sixth review suggested.
+# The case for the dirty-tree deviation that shows only on a tree too large
+# for a pipe.
 #
 # scripts/rehearsal_provenance_test.sh runs the rehearsal's own candidate line
 # in a repository holding one committed file and one uncommitted one. That case cannot
-# tell the two ways of asking "is this tree dirty" apart, because the failure the round
-# measured only happens when `git status` has more output than a pipe holds: under
+# tell the two ways of asking "is this tree dirty" apart, because the failure only
+# happens when `git status` has more output than a pipe holds: under
 # `set -o pipefail`, `git status --porcelain | grep -q .` lets `grep` answer and close
 # the pipe while `git` is still writing, `git` dies of SIGPIPE, pipefail takes the 141
 # as the pipeline's status, and `&&` reads that as "clean" — the rehearsal then names a

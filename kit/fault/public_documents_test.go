@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds is T-0031's round-3
-// reviewer case for the rule the round-2 guard names but does not reach. ADR 0009
-// keeps a private catalog's capabilities out of a public document; the guard the
-// last review left reads `../../kit/*/README.md` and nothing else, so a name in
+// TestEveryPublicDocumentNamesOnlyAModuleThisRepositoryHolds applies the guide
+// guard to every public document. ADR 0009
+// keeps a private catalog's capabilities out of a public document; the guard this
+// package first wrote reads `../../kit/*/README.md` and nothing else, so a name in
 // ARCHITECTURE.md, in the release note, in an ADR, or in a guide one directory
 // deeper (kit/flags/providers/ofrep, kit/locale/providers/xtext, kit/tenancy/
 // providers/topaz, kit/flags/providers/openfeature) is invisible to it.

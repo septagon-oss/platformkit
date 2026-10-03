@@ -1,6 +1,6 @@
 package internal_test
 
-// Review round 1 of T-0115, at the module: `Delete` releases the slug and traps the
+// At the module: `Delete` releases the slug and traps the
 // host.
 //
 // `contracts/tenant.go`'s own comment on `Delete` — the file every other module reads —

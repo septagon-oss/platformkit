@@ -1,6 +1,6 @@
 package internal_test
 
-// Review 6 (decision 0039: HIGHs only) over the door this branch did not write a
+// The second factor at the door this branch did not write a
 // factor check into.
 //
 // The branch shipped two things in one delivery: an issuer per tenant (`8b29ea0`)
@@ -30,7 +30,7 @@ package internal_test
 // `/api/v1/auth/factors/totp/finish`. The person's own state says a second thing
 // is required; the session the federated leg opens does not care.
 //
-// Both fixes are honest and neither is this review's to choose: the federated leg
+// Both fixes are honest and neither is this case's to choose: the federated leg
 // asks the question the account already answers (the assertion below is exactly
 // that, and a redirect to the challenge leg satisfies it), or the exemption
 // becomes a declaration the tenant makes and the module refuses to open a session

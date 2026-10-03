@@ -1,6 +1,6 @@
 package main
 
-// Review round 2's case over the new sessions screen. The screen's
+// The sessions screen on the operator's trail. The screen's
 // "End the other N" button posts to /app/auth/sessions/revoke-rest, which
 // answers through the auth module's except-taking revocation — the command the
 // module's own contract keeps silent, because it was written for the password

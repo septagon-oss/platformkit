@@ -1,7 +1,7 @@
 package db_test
 
-// drain_refusals_test.go walks the two drain refusals the specification's own
-// refusal table names — SPECIFY.md's `data-table-missing` and `data-key-not-primary-key`
+// This file walks the two drain refusals the specification's own
+// refusal table names — the brief.md's `data-table-missing` and `data-key-not-primary-key`
 // ("the `table=` name does not resolve in this database"; "the table has no
 // single-column primary key", both "correctable") — which are implemented in
 // kit/db/backfill.go (`primaryKey`, `tableExistsSQL`) and are not reached by any case in

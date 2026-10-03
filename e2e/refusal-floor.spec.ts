@@ -1,16 +1,14 @@
 import { expect, test } from '@playwright/test';
 
-// The third review's pin over the page this delivery *changed*: the refusal a
-// signed-in person is answered with.
+// The refusal a signed-in person is answered with, measured at the design floor.
 //
 // The brief holds the design floor HIGH for a page a delivery creates or changes,
 // and the floor is `~/.local/share/pkit-999/gates/design_gate.py` — a tool no goal
 // in this repository runs, whose probe takes no cookie, so it can only ever measure
 // the sign-in page an anonymous visitor is redirected to and never the refusal a
-// member is actually shown. The one case the second review left measures the ask's
-// confirmation page and nothing else; the refusal page itself — the page this branch
-// gave its three new sentences, its granter line and its ask form — has never been
-// measured by anything.
+// member is actually shown. `e2e/refusal-sentence-measure.spec.ts` measures the
+// ask's confirmation page and nothing else; the refusal page itself — the page
+// with its three sentences, its granter line and its ask form — is measured here.
 //
 // Every number below is the gate's own rule, read off that file's `rules()`: at most
 // two left edges, two body sizes, six font sizes, one primary CTA above the fold,
@@ -188,7 +186,7 @@ test('the refusal page a signed-in person is shown holds the design floor at 390
     expect(refusal?.status(), 'the member was not refused, so this page has no start').toBe(403);
     await expectFloor(p, 'the refusal page', width);
 
-    // The confirmation page at the width the second review's case did not probe.
+    // The confirmation page at the width the other spec does not probe.
     await p.locator('form[action="/app/access-request"] button[type="submit"]').click();
     await expect(p).toHaveURL(/\/app\/access-request\/sent$/);
     await expectFloor(p, 'the ask confirmation', width);
@@ -197,7 +195,7 @@ test('the refusal page a signed-in person is shown holds the design floor at 390
   }
 });
 
-// The third review's second pin, and the one item rounds 1 and 2 both left unverified: two writes
+// The second pin here, and the item nothing else had verified: two writes
 // that each take away a grant the tenant cannot lose, at the same moment.
 //
 // Rule 8 of the house rules is *refuse the write that takes the last one away, never the write that

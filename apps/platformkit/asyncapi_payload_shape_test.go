@@ -1,6 +1,6 @@
 package main
 
-// REVIEW round 1 (T-0109), finding 4.
+// The AsyncAPI document describes the payload the broker actually carries.
 //
 // AsyncAPI 3.0.0 says a message's `payload` member IS a Schema Object — the
 // message body's schema, read where it is. kit/app/asyncapi.go writes
@@ -13,8 +13,8 @@ package main
 //
 // Measured against the checked-in document with a real validator:
 //
-//   payload member  vs {"anything":123}  -> 0 errors   (the contract is inert)
-//   payload.schema  vs {"anything":123}  -> 4 errors   (userId, email, status, at)
+// payload member  vs {"anything":123}  -> 0 errors   (the contract is inert)
+// payload.schema  vs {"anything":123}  -> 4 errors   (userId, email, status, at)
 //
 // The same wrapping is why the golden test could assert
 // `payload.schema.type == "object"` and call the catalogue covered: it reads the

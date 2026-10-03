@@ -1,6 +1,6 @@
 package internal_test
 
-// Review round 2 of T-0115, at the module: a promotion moves the routing table and leaves
+// At the module: a promotion moves the routing table and leaves
 // no record anywhere that it did.
 //
 // `AddHost` is also the platform's only way to choose a tenant's primary host: the host is

@@ -1,10 +1,10 @@
 package page_test
 
-// Review round 1 of T-0108: a second shell stylesheet now depends on the order
+// A second shell stylesheet depends on the order
 // the shell links it. gallery.css is `@layer components` since the cascade
 // change, and a layer's rank comes from the order the layers are *first
-// declared*, not from the order statement that names them all — measured in the
-// review: with app.css first the components rule wins (rgb(9,9,9)), with
+// declared*, not from the order statement that names them all — measured in a
+// browser: with app.css first the components rule wins (rgb(9,9,9)), with
 // gallery.css first the order statement in app.css re-ranks the layers behind
 // it and the base rule wins (rgb(8,8,8)). The shell keeps that promise today by
 // writing its own stylesheet before anything the view adds

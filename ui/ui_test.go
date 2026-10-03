@@ -268,7 +268,7 @@ func TestTheGateRefusesAConsumerRuleAtAClassACompositionOwnsListCarries(t *testi
 	if !strings.Contains(served, ".tracking-tight {") {
 		t.Fatalf("premise: the sheet this composition emits carries no rule at .tracking-tight, so this case would refuse a rule about a class nothing styles")
 	}
-	if layer := reviewRound11LayerOf(t, served, ".tracking-tight {"); layer != "components" {
+	if layer := layerHoldingSelector(t, served, ".tracking-tight {"); layer != "components" {
 		t.Fatalf("premise: .tracking-tight is emitted in layer %q, not the components layer the client layer outranks", layer)
 	}
 	func() {

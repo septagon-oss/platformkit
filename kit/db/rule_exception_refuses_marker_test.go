@@ -9,14 +9,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-// These cases are the review's. Each one asserts what migrations/README.md and
+// Each case here asserts what migrations/README.md and
 // kit/db's own rule table say about a file, and each is a file the runner accepts
 // today. They are left failing rather than deleted: the assertion is the correct
 // behaviour, and the passing branch is the rule table or the executor catching up.
 
-// reviewProbeSource is the ordinary first file — a table with the single-column
+// probeSource is the ordinary first file — a table with the single-column
 // primary key a drain needs, and rows — beside the file under test.
-func reviewProbeSource(second string) db.MigrationSource {
+func probeSource(second string) db.MigrationSource {
 	files := fstest.MapFS{
 		"000001_probe.up.sql": {Data: []byte(`CREATE TABLE probe (id bigint PRIMARY KEY, a text, b text, passes integer NOT NULL DEFAULT 0);
 CREATE INDEX probe_a ON probe (a);
@@ -71,7 +71,7 @@ func TestARuleWithNoExceptionRefusesItsMarker(t *testing.T) {
 			if tc.rule == "data-with-ddl" {
 				marked = "-- pkit: allow=data-with-ddl reason=a sentence a reviewer would read\n" + tc.file
 			}
-			err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(marked))
+			err := db.Migrate(t.Context(), migrateURL, probeSource(marked))
 			if err == nil {
 				t.Fatalf("the runner applied a file carrying allow=%s; the rule table documents no exception for it, so the marker is a bypass its own name hides:\n%s",
 					tc.rule, marked)
@@ -93,7 +93,7 @@ func TestARuleWithNoExceptionRefusesItsMarker(t *testing.T) {
 // operation.
 func TestTheTypeChangeRuleCatchesTheShortSpelling(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	err := db.Migrate(t.Context(), migrateURL, reviewProbeSource("ALTER TABLE probe ALTER b TYPE varchar(64)"))
+	err := db.Migrate(t.Context(), migrateURL, probeSource("ALTER TABLE probe ALTER b TYPE varchar(64)"))
 	if err == nil {
 		t.Fatal("a table rewrite without the COLUMN keyword was accepted; the rule refuses the rewrite, not the spelling")
 	}
@@ -109,7 +109,7 @@ func TestTheTypeChangeRuleCatchesTheShortSpelling(t *testing.T) {
 // goes, and the version it belongs to can never run again.
 func TestAnAutocommitFileMustSurviveItsOwnSuccess(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(
+	err := db.Migrate(t.Context(), migrateURL, probeSource(
 		"-- pkit: autocommit=true\nDROP INDEX CONCURRENTLY probe_a"))
 	if err == nil {
 		// The statement is not re-runnable, which is what the rule is for: the
@@ -158,7 +158,7 @@ UPDATE probe SET passes = passes + 1 WHERE id IN (SELECT id FROM BATCH)`,
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			migrateURL, _ := dbtest.URLs(t)
-			if err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(tc.file)); err != nil {
+			if err := db.Migrate(t.Context(), migrateURL, probeSource(tc.file)); err != nil {
 				t.Fatalf("migrate: %v (%s)", err, tc.want)
 			}
 			admin := dbtest.Open(t, migrateURL)
@@ -179,7 +179,7 @@ UPDATE probe SET passes = passes + 1 WHERE id IN (SELECT id FROM BATCH)`,
 // review with nothing under it.
 func TestAnExceptionsReasonSaysSomething(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(
+	err := db.Migrate(t.Context(), migrateURL, probeSource(
 		"-- pkit: allow=drop-column reason=x\nALTER TABLE probe DROP COLUMN b"))
 	if err == nil {
 		t.Fatal("allow=drop-column reason=x applied: a one-character reason is the empty reason with a letter in front of it")
@@ -198,7 +198,7 @@ func TestAnExceptionsReasonSaysSomething(t *testing.T) {
 // key it is refusing sends the operator to edit a line that is already there.
 func TestABatchOfZeroIsRefusedForWhatItActuallyIs(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(
+	err := db.Migrate(t.Context(), migrateURL, probeSource(
 		"-- pkit: phase=data\n-- pkit: batch=0\n-- pkit: table=probe\nUPDATE probe SET passes = passes + 1 WHERE id IN (SELECT id FROM batch)"))
 	if err == nil {
 		t.Fatal("batch=0 applied: a window of no rows is a drain that never advances")

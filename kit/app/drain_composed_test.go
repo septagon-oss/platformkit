@@ -1,6 +1,6 @@
 package app
 
-// drain_composed_test.go is the case the migration runner's whole story
+// The case the migration runner's whole story
 // about a data migration depends on and nothing else ran: kit/db deliberately
 // leaves a drain over a table with readers to the worker, and kit/app is the
 // composition that schedules it. Delete the line that schedules it and every

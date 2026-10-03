@@ -1,7 +1,7 @@
 package db_test
 
-// bodys_own_cte_reads_the_window_that_leads_the_merged_list_test.go pins the one
-// property of the twelfth round's wrapper that no case in the tree asks for.
+// The one
+// property of the wrapper that no case in the tree asks for.
 //
 // `windowedBody` merges the kernel's window and the body's own CTE list into one `WITH`, and
 // documents why the order matters: "The window leads the merged list, so a body's own CTE may

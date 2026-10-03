@@ -1,6 +1,6 @@
 package main
 
-// Review round 1 of T-0115, at the reference application: the brief's own invariant,
+// At the reference application: the invariant the delivery states for itself,
 // read back out of the trail rather than out of the outbox.
 //
 // The brief's measure was that "a suspension's audit row lands in the suspended

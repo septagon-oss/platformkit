@@ -1,20 +1,20 @@
 package httpx_test
 
-// REVIEW round 4 (T-0109) — a pin, not a defect report. Nothing here fails at
-// the head it was written against.
+// A caller's trace state reaches the handler bounded. This is a pin, not a defect
+// report: nothing here fails at the head it was written against.
 //
 // MaxTraceState is applied, the commit says, "at the one door through which a
 // caller's state can enter — so the row, the envelope and the header can only
 // ever carry the same bounded value". The door is real, and it is this package:
 // kit/httpx/request_id.go:53 is the only call in the repository that puts a
 // caller's trace context into a context. But the bound is tested one package
-// away from the door it guards — kit/trace calls trace.Parse, and the review 3
-// pin calls trace.Parse:
+// away from the door it guards — kit/trace calls trace.Parse, and the trace
+// package's own case calls trace.Parse:
 //
-//	$ grep -rln "trace.Parse" --include=*.go .
-//	kit/trace/callers_trace_state_arrives_bounded_test.go
-//	kit/trace/trace.go
-//	kit/httpx/request_id.go
+// 	$ grep -rln "trace.Parse" --include=*.go .
+// 	kit/trace/callers_trace_state_arrives_bounded_test.go
+// 	kit/trace/trace.go
+// 	kit/httpx/request_id.go
 //
 // so nothing asks what a *request* gets. If the middleware stopped calling
 // trace.Parse — a renamed header, a second middleware that reads `tracestate`

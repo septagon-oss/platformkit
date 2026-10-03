@@ -1,6 +1,6 @@
 package internal_test
 
-// Review round 3 of T-0115, at the trail. The tenant module now writes one lifecycle verb
+// At the trail. The tenant module writes one lifecycle verb
 // as two events in two tenants — the verb in the subject's scope and `tenant.lifecycle_recorded`
 // in the installation's — and the sentence the delivery writes about the second row is a
 // tenancy claim: it is "what an operator's audit of the control plane reads", it names the

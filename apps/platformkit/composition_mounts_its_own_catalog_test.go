@@ -1,20 +1,20 @@
 package main
 
-// Review 4's pin over two lines this branch leans on and no case in this package
+// Two lines this branch leans on that no other case in this package
 // reads.
 //
-// Round 3's HIGH — a catalog body whose type was erased, published as
+// The defect this holds shut — a catalog body whose type was erased, published as
 // {"schema":{}} while every gate stayed green — is cured and stays cured: its
 // mutation was re-run at e81c9f7 and now fails three cases, naming each lost key.
 // What is still unpinned sits one line further up.
 //
 // apps/platformkit/app_test.go's start() fills a nil opts.WorkspaceCatalog with
-// the product's mount, so every case here — both contract gates and review 3's pin
+// the product's mount, so every case here — both contract gates and this pin
 // included — boots a process that answers /api/v1/app/resources whatever the
 // composition does. With `WorkspaceCatalog: workspaceCatalog(),` deleted from
 // appOptions the whole package is green:
 //
-//	go test ./apps/platformkit -count=1        -> ok   (measured at e81c9f7: 57.922s, rc=0)
+// 	go test ./apps/platformkit -count=1        -> ok   (measured at e81c9f7: 57.922s, rc=0)
 //
 // The process run() and serve() actually start does fail, loudly: the kernel's
 // composeGates (kit/app/app.go, reached from Run through buildAPI) refuses a

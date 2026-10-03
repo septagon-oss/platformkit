@@ -1,7 +1,7 @@
 package screens_test
 
-// operations_entry_test.go — review 1's pin on the one wire key
-// T-0185 added. `operations` is printed only by Describe1, and SPECIFY §4 named
+// The one wire key this delivery added.
+// `operations` is printed only by Describe1, and the brief named
 // the case that proves it (TestDescribePublishesOnlyTheOperationsTheResource
 // Offers); no such case exists in the tree, so the key the native shell is told
 // to read has never been published in a test. The second case asks whether the

@@ -1,7 +1,7 @@
 package rest_test
 
-// The third review's file. Three of the four cases below pin claims the change
-// makes about its own new early return that nothing in the tree reaches: the
+// Three of the four cases below pin claims the patch door makes about its own
+// early return, which nothing else in the tree reaches: the
 // commit body says "It sits after `GetForUpdate`, so a PATCH of a missing,
 // foreign or soft-deleted row is still 404" — nobody asked the second and third
 // of those, on the row shapes where they are not both the same question — and

@@ -1,6 +1,6 @@
 package ui_test
 
-// Review round 11 of T-0108 (the stylesheet has cascade layers). One question,
+// The stylesheet has cascade layers. One question,
 // asked of the gate rather than of the emitter: the brief states the rule a
 // client lives under as "a client sheet is `@layer client` only, `var()` only,
 // and a gate refuses a client rule that names a kernel role's own selector",
@@ -24,8 +24,8 @@ package ui_test
 // client layer is ranked last and a later layer beats an earlier one for normal
 // declarations whatever the selector:
 //
-//	no consumer rule .......... modal.display=none | flex.display=flex | sr.position=absolute
-//	dialog, .flex, .sr-only ... modal.display=block | flex.display=inline | sr.position=static
+// 	no consumer rule .......... modal.display=none | flex.display=flex | sr.position=absolute
+// 	dialog, .flex, .sr-only ... modal.display=block | flex.display=inline | sr.position=static
 //
 // The three are the failures this branch's own comments say the layer placement
 // exists to prevent: `componentState` moved `dialog[data-component=modal]:not([open])`
@@ -52,9 +52,9 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// reviewRound11KernelSheet is the composed sheet with one consumer rule in it,
+// kernelSheet is the composed sheet with one consumer rule in it,
 // composed so a panic can be reported rather than crash the suite.
-func reviewRound11KernelSheet(t *testing.T, sheets ...*css.Sheet) (body string, refusal string) {
+func kernelSheet(t *testing.T, sheets ...*css.Sheet) (body string, refusal string) {
 	t.Helper()
 	defer func() {
 		if r := recover(); r != nil {
@@ -65,9 +65,9 @@ func reviewRound11KernelSheet(t *testing.T, sheets ...*css.Sheet) (body string, 
 	return body, ""
 }
 
-// reviewRound11LayerOf returns the layer whose block holds selector, by the
+// layerHoldingSelector returns the layer whose block holds selector, by the
 // emitter's own indentation: a layer block opens and closes at column 0.
-func reviewRound11LayerOf(t *testing.T, sheet, selector string) string {
+func layerHoldingSelector(t *testing.T, sheet, selector string) string {
 	t.Helper()
 	at := strings.Index(sheet, selector)
 	if at < 0 {
@@ -131,16 +131,16 @@ func TestTheGateRefusesAConsumerRuleThatNamesAKernelClass(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sheet := css.NewSheet().Select(c.selector, css.Decl("display", css.Literal("block")))
-			before, _ := reviewRound11KernelSheet(t)
+			before, _ := kernelSheet(t)
 			if before == "" {
 				t.Fatal("the kernel's own sheet does not compose")
 			}
 			// The premise, checked rather than assumed: this class is the
 			// kernel's own, emitted in a kernel layer ahead of the client layer.
-			if reviewRound11LayerOf(t, before, c.kernel) != "components" {
+			if layerHoldingSelector(t, before, c.kernel) != "components" {
 				t.Fatalf("the case's premise is wrong: %s is not emitted in @layer components", c.kernel)
 			}
-			body, refusal := reviewRound11KernelSheet(t, sheet)
+			body, refusal := kernelSheet(t, sheet)
 			if refusal == "" {
 				at := strings.Index(body, "@layer client {")
 				t.Errorf("ui.Compose accepted a consumer rule that names the kernel's own selector %q: it is emitted at byte %d of a %d-byte sheet, inside @layer client, which ranks last, so %s. The brief requires the gate to refuse a client rule that names a kernel role's own selector, and the gate refuses the kernel's attribute names by exactly this read; a class name is as much a name to a browser, and `emitted` already computes the set of them.",
@@ -168,7 +168,7 @@ func TestTheGateStillTakesAConsumerRuleThatNamesOnlyItsOwnClass(t *testing.T) {
 		Select(".store-hero", css.Decl("display", css.Literal("grid"))).
 		Select(".store-hero-card", css.Decl("padding", css.Literal("1rem"))).
 		Select(".store-hero", css.Decl("color", css.VarRef("pk-color-accent-default", "")))
-	body, refusal := reviewRound11KernelSheet(t, sheet)
+	body, refusal := kernelSheet(t, sheet)
 	if refusal != "" {
 		t.Fatalf("Compose refused a consumer rule that names no kernel class: %q", refusal)
 	}

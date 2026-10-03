@@ -10,7 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui"
 )
 
-// Review 9's pin, on the one boundary every earlier round read but nobody held: the
+// The boundary the other files read but nobody held: the
 // composed sheet is not the artifact a browser loads. ui.Assets is what turns it into
 // app.css, and its overlay answers its own files before the trees a consumer hands
 // it, so a consumer's own app.css cannot replace the layered sheet. Were that lookup
@@ -29,7 +29,7 @@ const r9Order = "@layer tokens, base, components, client;"
 
 var r9Openings = []string{"@layer tokens {", "@layer base {", "@layer components {", "@layer client {"}
 
-func r9Served(t *testing.T, assets fs.FS, name string) string {
+func servedLayeredSheet(t *testing.T, assets fs.FS, name string) string {
 	t.Helper()
 	body, err := fs.ReadFile(assets, name)
 	if err != nil {
@@ -38,10 +38,10 @@ func r9Served(t *testing.T, assets fs.FS, name string) string {
 	return string(body)
 }
 
-// r9Scan separates what a sheet states from what it opens: one `@layer a, b;`
+// scanLayers separates what a sheet states from what it opens: one `@layer a, b;`
 // statement, the blocks at depth 0 counted by balancing braces over quoted strings,
 // and any rule or block the sheet leaves outside a layer.
-func r9Scan(t *testing.T, sheet string) (statements, blocks, unlayered []string) {
+func scanLayers(t *testing.T, sheet string) (statements, blocks, unlayered []string) {
 	t.Helper()
 	depth, inString := 0, byte(0)
 	for _, line := range strings.Split(sheet, "\n") {
@@ -82,11 +82,11 @@ func r9Scan(t *testing.T, sheet string) (statements, blocks, unlayered []string)
 
 func TestTheServedSheetIsTheLayeredSheetInItsDeclaredOrder(t *testing.T) {
 	app := ui.Compose(design.Default())
-	sheet := r9Served(t, ui.Assets(app), "app.css")
+	sheet := servedLayeredSheet(t, ui.Assets(app), "app.css")
 	if sheet != string(app.Body) {
 		t.Fatal("the served app.css is not the composed sheet")
 	}
-	statements, blocks, unlayered := r9Scan(t, sheet)
+	statements, blocks, unlayered := scanLayers(t, sheet)
 	if strings.Join(statements, " | ") != r9Order {
 		t.Fatalf("the served sheet states %v, want exactly the one order statement %q: the ranking has to be stated, and stated before every block that uses a name in it", statements, r9Order)
 	}
@@ -105,7 +105,7 @@ func TestAConsumerCannotServeItsOwnAppCSSOverTheLayeredSheet(t *testing.T) {
 	// ui.Extra meets refuseClientSheet; served as app.css it would never meet it.
 	unlayered := ".pk-card { background: var(--pk-role-surface-default) }"
 	assets := ui.Assets(app, fstest.MapFS{"app.css": {Data: []byte(unlayered)}})
-	served := r9Served(t, assets, "app.css")
+	served := servedLayeredSheet(t, assets, "app.css")
 	if served != string(app.Body) {
 		t.Fatalf("a consumer's own app.css replaced the composed sheet: %d bytes served, %d composed", len(served), len(app.Body))
 	}
@@ -118,7 +118,7 @@ func TestTheServedGallerySheetLandsInsideTheComponentsLayer(t *testing.T) {
 	// gallery.css states no order of its own: it may rank only where app.css — which
 	// every shell links first — says the components layer ranks. So it must open one
 	// block and nothing else, and no rule outside it.
-	statements, blocks, unlayered := r9Scan(t, r9Served(t, ui.Assets(ui.Compose(design.Default())), "gallery.css"))
+	statements, blocks, unlayered := scanLayers(t, servedLayeredSheet(t, ui.Assets(ui.Compose(design.Default())), "gallery.css"))
 	if len(statements) != 0 {
 		t.Errorf("gallery.css states its own layer order %v; the order belongs to app.css, which is linked first", statements)
 	}

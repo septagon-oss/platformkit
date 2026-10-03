@@ -1,6 +1,5 @@
-// Review round 14 of T-0108. Rounds 11, 12 and 13 asked whether the gate reads
-// every name and every spelling of a name. This file asks the two questions none
-// of them asked: whether the sentence the refusal prints says what the sheet it
+// The two questions the name-reading cases do not ask: whether the sentence the
+// refusal prints says what the sheet it
 // emits says, and whether the sheet the composition serves ends where the sheet
 // the composition reads begins.
 //
@@ -16,8 +15,8 @@
 // rules for classes app.css does not carry, the same page links both
 // (modules/admin/internal/gallery.go:101), and ui.Assets serves it for every
 // composition, including one that never passed components.GalleryClassLists in
-// Extra.Lists. Nothing in the tree read its class set against the gate: round 13
-// read app.css's components block, round 9 pinned only that gallery's rules land
+// Extra.Lists. Nothing in the tree read its class set against the gate: an earlier round
+// read app.css's components block, the sibling case pinned only that gallery's rules landing
 // inside a layer.
 package ui_test
 
@@ -31,11 +30,11 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// round14Served reads one file out of the asset tree the shell serves, in the
-// bytes a browser downloads — the read round 9's r9Served owns, reused.
-func round14Served(t *testing.T, name string) string {
+// gallerySheet reads one file out of the asset tree the shell serves, in the
+// bytes a browser downloads — the read an earlier round's servedLayeredSheet owns, reused.
+func gallerySheet(t *testing.T, name string) string {
 	t.Helper()
-	return r9Served(t, ui.Assets(ui.Compose(design.Default())), name)
+	return servedLayeredSheet(t, ui.Assets(ui.Compose(design.Default())), name)
 }
 
 // TestEveryClassGalleryCSSAddressesIsRefusedByTheGate is the brief's
@@ -45,16 +44,16 @@ func round14Served(t *testing.T, name string) string {
 // whether or not this composition passed the gallery's own class lists.
 func TestEveryClassGalleryCSSAddressesIsRefusedByTheGate(t *testing.T) {
 	t.Parallel()
-	gallery := round14Served(t, "gallery.css")
-	heads := reviewRound13Subjects(t, reviewRound13Block(t, gallery, "components"), "gallery.css's @layer components")
+	gallery := gallerySheet(t, "gallery.css")
+	heads := servedSubjects(t, servedBlock(t, gallery, "components"), "gallery.css's @layer components")
 	checked := 0
 	for _, head := range heads {
-		for _, written := range reviewRound13ClassTokens(t, head) {
+		for _, written := range classTokensInSelector(t, head) {
 			checked++
-			if refusal, body := reviewRound13Refusal(t, "."+written); refusal == "" {
+			if refusal, body := servedRefusal(t, "."+written); refusal == "" {
 				t.Errorf("ui.Compose took a consumer rule at .%s: gallery.css addresses it in @layer components (%d-byte sheet), the shell links that sheet beside app.css, and @layer client outranks it; the gate's vocabulary names no class for this selector", written, body)
 			}
-			if refusal, _ := reviewRound13Refusal(t, `[class~="`+written+`"]`); refusal == "" {
+			if refusal, _ := servedRefusal(t, `[class~="`+written+`"]`); refusal == "" {
 				t.Errorf("ui.Compose took a consumer rule at [class~=%q], which matches the same elements gallery.css styles at .%s, from the layer that outranks that rule", written, written)
 			}
 		}
@@ -73,7 +72,7 @@ func TestEveryClassGalleryCSSAddressesIsRefusedByTheGate(t *testing.T) {
 // must agree with it.
 func TestTheClassRefusalStatesTheDirectionTheSheetDeclares(t *testing.T) {
 	t.Parallel()
-	sheet := reviewRound13Served()
+	sheet := servedSheet()
 	statement := sheet[:strings.Index(sheet, "\n")]
 	if !strings.HasPrefix(statement, "@layer ") || !strings.HasSuffix(statement, ";") {
 		t.Fatalf("the sheet's first line is not an order statement: %q", statement)
@@ -96,7 +95,7 @@ func TestTheClassRefusalStatesTheDirectionTheSheetDeclares(t *testing.T) {
 	}
 	// components is declared earlier, so for a normal declaration the client rule
 	// wins and the kernel's rule loses.
-	refusal, _ := reviewRound13Refusal(t, ".sr-only")
+	refusal, _ := servedRefusal(t, ".sr-only")
 	if refusal == "" {
 		t.Fatal("the gate no longer refuses .sr-only, so it states no direction")
 	}

@@ -1,24 +1,24 @@
 package migrations_test
 
-// The third review's cases for migrations/000026_module_schema.up.sql and
+// Cases for migrations/000026_module_schema.up.sql and
 // dbtest.TenantTablesSQL. Two claims are checked here that no shipped test
-// reaches, found the same way the first two reviews found theirs: ask what stays
+// reaches, found the way every case in this package is found: ask what stays
 // green if the statement is wrong, then run the case.
 //
-// TestModuleSchemaGrantsNoPrivilegeTheDeploymentPinnedElsewhere FAILS as filed.
-// The function reads a grantee's privilege list out of every pg_default_acl row
+// TestModuleSchemaGrantsNoPrivilegeTheDeploymentPinnedElsewhere is the escalation
+// case. The function reads a grantee's privilege list out of every pg_default_acl row
 // the migration role owns for that object kind, with no filter on
 // defaclnamespace, and unions them. PostgreSQL itself does not: a default
 // privilege pinned IN SCHEMA applies to that namespace and to no other (measured
-// in the report beside this file). So a role the deployment pinned SELECT in the
+// against the server itself). So a role the deployment pinned SELECT in the
 // namespace it can reach, and INSERT in a second namespace of the same migration
 // role, arrives inside every module schema with both — a privilege the
 // deployment never handed that role anywhere. That contradicts the two sentences
 // the function's header and migrations/README.md carry as the reason the
 // privilege list is read rather than written ("a role the deployment pinned to
 // SELECT reads a module's tables and does not write them"; "no module schema
-// hands out more than that"), and it is the same escalation the second review's
-// file pins, in the one dimension that file does not cover.
+// hands out more than that"), and it is the same escalation the grant
+// case pins, in the one dimension that case does not cover.
 //
 // The control is the first half of the test and is load-bearing: it asserts what
 // PostgreSQL hands that role in each of the deployment's own namespaces, so the

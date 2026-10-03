@@ -1,32 +1,32 @@
 package main
 
-// Review 5 (decision 0039: HIGHs only) against `61e5f34`, the fix for review 4's F1.
+// A key that opens no door is not a credential, asked of the cure that widened the refusal.
 //
 // The fix holds a credential that carries its own ceiling to that ceiling by
 // refusing it every operation that names no permission — that is, every
 // `httpx.SignedIn()` door in the application:
 //
-//	if auth.kind == kindSignedIn && p.Permissions != nil { deny }
+// 	if auth.kind == kindSignedIn && p.Permissions != nil { deny }
 //
-// The refusal is right for the self-service doors review 4 named. This case asks
+// The refusal is right for the self-service doors it first named. This case asks
 // what else that sentence covers, because the same kernel mounts one further
 // SignedIn operation that is nobody's self-service door:
 //
-//	kernel := api.Surfaces("")
-//	httpx.Register(kernel.App, huma.Operation{OperationID: "app-resources", …},
-//		httpx.SignedIn(), …)                                   // kit/app/app.go
+// 	kernel := api.Surfaces("")
+// 	httpx.Register(kernel.App, huma.Operation{OperationID: "app-resources", …},
+// 		httpx.SignedIn(), …)                                   // kit/app/app.go
 //
 // `GET /api/v1/app/resources` is the document a shell that is not a browser
 // builds its whole vocabulary out of — the composition gate refuses a
 // composition that registers resources and wires no renderer for exactly that
 // reason ("a native shell has nothing to read — wire app.Options
 //
-//	.WorkspaceCatalog"), and decision 0019 makes it the mobile counterpart's
-//	first request. And the credential a native shell holds is the bearer key:
-//	brief item 4, "Bearer tokens for the mobile shell", and this module's own
-//	summary of why the table exists at all — "the only credential this platform
-//	accepted was a cookie, so a mobile shell or a deploy bot had to hold a
-//	person's password and impersonate their browser".
+// 	.WorkspaceCatalog"), and decision 0019 makes it the mobile counterpart's
+// 	first request. And the credential a native shell holds is the bearer key:
+// 	brief item 4, "Bearer tokens for the mobile shell", and this module's own
+// 	summary of why the table exists at all — "the only credential this platform
+// 	accepted was a cookie, so a mobile shell or a deploy bot had to hold a
+// 	person's password and impersonate their browser".
 //
 // So the fix left the installation with a credential that may call every
 // permission-named route and no door that tells it what the routes are: the key
@@ -154,7 +154,7 @@ func TestAScopedKeyReadsTheCatalogAShellIsBuiltFrom(t *testing.T) {
 // so it is the assertion a later cure must not break. What it deliberately does
 // not assert is the *next* clause of that README sentence — "POST /logout still
 // answers a cleared cookie" — because logout is httpx.SignedIn() and that request
-// is now a 403; REVIEW.md records the sentence, and a cleared cookie is not a
+// is now a 403, and a cleared cookie is not a
 // session either way.
 func TestAKeyRequestMintsNoSessionAnywhere(t *testing.T) {
 	path, cfg := configure(t)
@@ -227,7 +227,7 @@ func liveSessionCookiesOfKeyRequest(t *testing.T, cfg config.Config, key, method
 
 // TestAScopedKeyStillRefusesTheDoorsItWasNeverGiven is the other half, so the fix
 // above cannot be bought by admitting a scoped key everywhere: the self-service
-// doors review 4 named stay shut, and the roles route stays shut to a key scoped
+// doors stay shut, and the roles route stays shut to a key scoped
 // to a read.
 func TestAScopedKeyStillRefusesTheDoorsItWasNeverGiven(t *testing.T) {
 	path, cfg := configure(t)

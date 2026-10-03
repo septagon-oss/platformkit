@@ -13,8 +13,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 )
 
-// TestTheFaultNamesAnswerWhatTheCRUDNamesAnswer is the reviewer's pin for T-0031,
-// asked from the consumer's side of the move. Every existing case of this mapping
+// TestTheFaultNamesAnswerWhatTheCRUDNamesAnswer asks the mapping from the
+// consumer's side of the move. Every existing case of this mapping
 // hands Fault a crud.Err… name, so nothing in the tree said the thing kit/fault
 // exists for: that the value package which takes no transaction, and so wraps
 // kit/fault, is answered the same status and the same detail as the adapter that

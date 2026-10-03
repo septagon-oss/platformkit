@@ -1,25 +1,25 @@
 package httpx_test
 
-// The sixth review's pins, left in the tree by a reviewer who did not write the fix.
+// Two statements about one refusal shape that nothing else asserted.
 //
-// Round 9 moved the encoder of every refusal decided inside the huma chain: `refuse`
+// The encoder of every refusal decided inside the huma chain moved: `refuse`
 // now ends at `writeProblem` rather than at `huma.WriteErr`. Two things hold that new
 // line, and before this file neither was asserted anywhere.
 //
-//  1. The document a guard's refusal carries is the *kernel's* shape — `type`, `title`,
-//     `status`, `detail`, `instance`, and nothing else: no `"$schema"` member in the body
-//     and no `Link: …; rel="describedBy"` response header. The fifth review's case
-//     compares the two roads of one host, so any single shape satisfies it, including
-//     Huma's; only a statement about the shape itself keeps what kit/problem's package
-//     doc ("the one error shape the API returns") and the CHANGELOG promise, and keeps
-//     round 9's substitution from quietly reversing itself back to two shapes of one
-//     problem — the defect that case exists to catch.
-//  2. The request id inside a refusal a *handler* returns is stamped by the
-//     `stampRequestID` response transformer, which after round 9 writes the only bodies
-//     nothing else stamps. Round 9 names this gap in its own commit body: with the
-//     transformer line commented out, "a sweep of ./kit/... ./ui/...
-//     ./apps/platformkit/... ./modules/... fails nothing". These are the ~25 test lines
-//     it said were missing.
+// 1. The document a guard's refusal carries is the *kernel's* shape — `type`, `title`,
+// `status`, `detail`, `instance`, and nothing else: no `"$schema"` member in the body
+// and no `Link: …; rel="describedBy"` response header. The sibling case
+// compares the two roads of one host, so any single shape satisfies it, including
+// Huma's; only a statement about the shape itself keeps what kit/problem's package
+// doc ("the one error shape the API returns") and the CHANGELOG promise, and keeps
+// this substitution from quietly reversing itself back to two shapes of one
+// problem — the defect that case exists to catch.
+// 2. The request id inside a refusal a *handler* returns is stamped by the
+// `stampRequestID` response transformer, which now writes the only bodies
+// nothing else stamps. The change that moved the encoder named this gap: with the
+// transformer line commented out, "a sweep of ./kit/... ./ui/...
+// ./apps/platformkit/... ./modules/... fails nothing". These are the ~25 test lines
+// it said were missing.
 //
 // Each case reaches its assertion through what the fixed behaviour prints — the verdict's
 // status and the caller's own request id, both of which either defect leaves untouched —
@@ -41,11 +41,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
-// round6ID is sent by the caller, so the answer has one value to be compared against.
-const round6ID = "one-request-id-for-this-case"
+// askedID is sent by the caller, so the answer has one value to be compared against.
+const askedID = "one-request-id-for-this-case"
 
-// round6Ask is askFor with the one thing it does not send: a request id of the caller's.
-func round6Ask(t *testing.T, router http.Handler, method, path, accept string) *httptest.ResponseRecorder {
+// callerIDAsk is askFor with the one thing it does not send: a request id of the caller's.
+func callerIDAsk(t *testing.T, router http.Handler, method, path, accept string) *httptest.ResponseRecorder {
 	t.Helper()
 	var payload io.Reader
 	if method == http.MethodPost {
@@ -56,7 +56,7 @@ func round6Ask(t *testing.T, router http.Handler, method, path, accept string) *
 		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", accept)
-	req.Header.Set(httpx.RequestIDHeader, round6ID)
+	req.Header.Set(httpx.RequestIDHeader, askedID)
 	req.AddCookie(&http.Cookie{Name: httpx.SessionCookie, Value: "present"})
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
@@ -64,18 +64,18 @@ func round6Ask(t *testing.T, router http.Handler, method, path, accept string) *
 }
 
 // TestAGuardRefusalIsAnsweredWithTheKernelsOneProblemDocumentAndNoSchemaLink holds the
-// shape the fifth review compared rather than the equality of two answers: the guard's
+// shape this case compares rather than the equality of two answers: the guard's
 // document is the kernel's own, the one `writeProblem` writes, and not Huma's variant of
 // the same value.
 func TestAGuardRefusalIsAnsweredWithTheKernelsOneProblemDocumentAndNoSchemaLink(t *testing.T) {
 	api, router := guardKernel(t, guardSetup{allow: false}, nil)
-	asked := round6Ask(t, router, http.MethodGet, at(api, "/plans"), "application/json")
+	asked := callerIDAsk(t, router, http.MethodGet, at(api, "/plans"), "application/json")
 	if asked.Code != http.StatusForbidden {
 		t.Fatalf("the denial answered %d, want 403: the case says nothing about a shape it cannot reach (%s)",
 			asked.Code, asked.Body.String())
 	}
 	if got := asked.Header().Get("Link"); got != "" {
-		t.Errorf("the refusal answers Link=%q: that header belongs to Huma's writer, and round 9 moved this road to writeProblem precisely so the answer carries one shape and one Content-Length (%s)",
+		t.Errorf("the refusal answers Link=%q: that header belongs to Huma's writer, and this road writes through writeProblem precisely so the answer carries one shape and one Content-Length (%s)",
 			got, asked.Body.String())
 	}
 	var fields map[string]any
@@ -85,10 +85,10 @@ func TestAGuardRefusalIsAnsweredWithTheKernelsOneProblemDocumentAndNoSchemaLink(
 	if _, stamped := fields["$schema"]; stamped {
 		t.Errorf(`the refusal carries "$schema" in its body: the kernel has one encoder of this shape and it does not stamp that member (%s)`, asked.Body.String())
 	}
-	if got := asked.Header().Get(httpx.RequestIDHeader); got != round6ID {
-		t.Errorf("X-Request-Id = %q, want the caller's %q", got, round6ID)
+	if got := asked.Header().Get(httpx.RequestIDHeader); got != askedID {
+		t.Errorf("X-Request-Id = %q, want the caller's %q", got, askedID)
 	}
-	if want := "urn:request:" + round6ID; fields["instance"] != want {
+	if want := "urn:request:" + askedID; fields["instance"] != want {
 		t.Errorf(`instance = %v, want %q: the header and the body are meant to name one request`, fields["instance"], want)
 	}
 	if want := httpx.CodeDenied + ":"; !strings.HasPrefix(stringField(fields["detail"]), want) {
@@ -107,7 +107,7 @@ func TestAGuardRefusalIsAnsweredWithTheKernelsOneProblemDocumentAndNoSchemaLink(
 }
 
 // TestARefusalAHandlerReturnsCarriesTheRequestTheTransformerStamps pins the transformer
-// that round 9 left asserting nothing: a body huma marshals gets its `instance` from
+// that the move left asserting nothing: a body huma marshals gets its `instance` from
 // `stampRequestID`, because no kernel writer passes through it.
 func TestARefusalAHandlerReturnsCarriesTheRequestTheTransformerStamps(t *testing.T) {
 	api, router := guardKernel(t, guardSetup{allow: true}, nil)
@@ -116,20 +116,20 @@ func TestARefusalAHandlerReturnsCarriesTheRequestTheTransformerStamps(t *testing
 	}, httpx.Permission("billing:read"), func(context.Context, *struct{}) (*body, error) {
 		return nil, problem.New(http.StatusConflict, "ROUND6: this row is not in that state")
 	})
-	asked := round6Ask(t, router, http.MethodGet, at(api, "/round6-conflict"), "application/json")
+	asked := callerIDAsk(t, router, http.MethodGet, at(api, "/round6-conflict"), "application/json")
 	if asked.Code != http.StatusConflict {
 		t.Fatalf("the handler's own refusal answered %d, want 409: the stamp is asserted nowhere else (%s)",
 			asked.Code, asked.Body.String())
 	}
-	if got := asked.Header().Get(httpx.RequestIDHeader); got != round6ID {
-		t.Fatalf("X-Request-Id = %q, want the caller's %q: without the header there is nothing to compare the body with", got, round6ID)
+	if got := asked.Header().Get(httpx.RequestIDHeader); got != askedID {
+		t.Fatalf("X-Request-Id = %q, want the caller's %q: without the header there is nothing to compare the body with", got, askedID)
 	}
 	var fields map[string]any
 	if err := json.Unmarshal(asked.Body.Bytes(), &fields); err != nil {
 		t.Fatalf("the refusal is not one problem document: %v (%s)", err, asked.Body.String())
 	}
-	if want := "urn:request:" + round6ID; fields["instance"] != want {
-		t.Errorf(`instance = %v, want %q: stampRequestID is the only thing that puts the request id into a body huma marshals, and no test checked it fired since round 9 moved the guards off that writer (%s)`,
+	if want := "urn:request:" + askedID; fields["instance"] != want {
+		t.Errorf(`instance = %v, want %q: stampRequestID is the only thing that puts the request id into a body huma marshals, and no test checked it fired since the guards moved off that writer (%s)`,
 			fields["instance"], want, asked.Body.String())
 	}
 }

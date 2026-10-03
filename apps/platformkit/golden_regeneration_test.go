@@ -1,8 +1,8 @@
 package main
 
-// Review 2's pin over the fix to review 1's finding 1.
+// Regenerating a golden document cannot launder a wire break.
 //
-// Round 1 refused the gate because UPDATE_GOLDEN=1 wrote a document it had just
+// The gate was refused because UPDATE_GOLDEN=1 wrote a document it had just
 // named broken. The cure (commit 9b89aa7) makes refuseWireBreak end the test after
 // naming every rule. That leaves the other half of the branch's promise — the half
 // a reader of openapi_contract_test.go:86 still reads ("the flag is the fix for it",
@@ -35,20 +35,20 @@ import (
 	"testing"
 )
 
-// reviewPinStalePath is an address the reference composition serves and that
+// staleContractPath is an address the reference composition serves and that
 // deviceContractPaths does not name, so a golden missing it disagrees with the
 // served document additively — the pair the flag exists to reconcile.
-const reviewPinStalePath = "/api/v1/auth/password/reset"
+const staleContractPath = "/api/v1/auth/password/reset"
 
 func TestTheFlagStillRegeneratesADocumentThatIsMerelyStale(t *testing.T) {
 	golden := mustReadOpenAPIGolden(t)
 
 	stale := wireMutated(t, golden, func(t *testing.T, doc map[string]any) {
 		paths := wireMap(doc["paths"])
-		if _, ok := paths[reviewPinStalePath]; !ok {
-			t.Fatalf("%s is not in the checked-in contract, so deleting it would not make the pair stale; pick an address the composition serves", reviewPinStalePath)
+		if _, ok := paths[staleContractPath]; !ok {
+			t.Fatalf("%s is not in the checked-in contract, so deleting it would not make the pair stale; pick an address the composition serves", staleContractPath)
 		}
-		delete(paths, reviewPinStalePath)
+		delete(paths, staleContractPath)
 	})
 
 	// The pair is stale and not broken, said by the gate's own rules rather than by

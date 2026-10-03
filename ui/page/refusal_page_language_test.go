@@ -1,7 +1,7 @@
 package page_test
 
-// The reviewer's case for the second review of T-0024: the language a refusal page is
-// written in. The brief specifies this piece of the change in two places — §"Locale,
+// The language a refusal page is
+// written in. The change specifies this piece of itself in two places — §"Locale,
 // time, money" ("refusal pages stop being English-only": httpx publishes the refusal
 // codes, ui/page holds one table code → "fault.<code>" catalog key, fault() takes the
 // resolved language and stops pinning "en", the page carries Content-Language and

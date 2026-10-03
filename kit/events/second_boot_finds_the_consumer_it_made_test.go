@@ -1,13 +1,12 @@
 package events
 
-// REVIEW round 2 (T-0109). The pin of the cure for finding 3, at the edge the
-// cure itself introduced.
+// The edge a cure itself introduced: a second boot finds the consumer it made.
 //
 // The window is carried by a consumer that filters *two* subjects, and
 // `reconcile` (kit/events/providers/nats/jetstream.go) decides whether a stored
 // consumer has drifted with:
 //
-//	if want := transport.Filters(name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want)
+// 	if want := transport.Filters(name); info.Config.FilterSubject != "" || !slices.Equal(info.Config.FilterSubjects, want)
 //
 // and a consumer that fails that test is deleted and made again — "a log line
 // rather than an operator's afternoon", because DeliverAll re-reads the stream

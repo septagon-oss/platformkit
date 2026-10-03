@@ -1,7 +1,6 @@
 package db_test
 
-// contract_half_waits_whether_or_not_the_owner_has_history_test.go is the tenth
-// round's acceptance-review case for the release rule the brief names: "the runner refuses a
+// The release rule the brief names: "the runner refuses a
 // `contract` migration whose `expand` partner has not been applied for at least one release
 // (recorded in the ledger by version)".
 //
@@ -23,7 +22,7 @@ package db_test
 //
 // The second leg is the same half beside an expansion the same release offers at a later
 // version. There the run applies the contract first and the expansion after it, which is what
-// SPECIFY's scope ("for an owner that already has history", line 154) and kit/db/README's
+// the brief's scope ("for an owner that already has history", line 154) and kit/db/README's
 // "An owner with no history at all is the exception both times: nobody is reading, and its files
 // apply in order" both appear to accept; the case is recorded here and not asserted, because
 // which way it is answered is the round's call. What is asserted is the first leg, where there

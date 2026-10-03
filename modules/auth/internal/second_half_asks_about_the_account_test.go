@@ -1,35 +1,35 @@
 package internal_test
 
-// The two halves of the cure for review 6's HIGH, pinned from the outside.
+// The two halves of one cure, pinned from the outside.
 //
 // `3ff61ad` closed the door `Service.Open` left open: a person whose account
 // answers with a second factor is no longer signed in by a provider that proved
-// only the first half. Review 6's own file pins that refusal at a live account,
+// only the first half. second_factor_gates_every_door_test.go pins that refusal at a live account,
 // and `oidc_factor_test.go` pins that the refused person can still finish at the
 // challenge. Two consequences of the same four lines are pinned by neither, and
 // both are the way the cure could quietly rot without a case going red:
 //
-//  1. The refusal is about an open account's owner, not about a closed one. The
-//     four lines sit after the active check on purpose — the commit says so: "a
-//     closed account still gets the one answer it got before and the oracle does
-//     not widen". Nobody ran a person who holds an enrolled factor and whose
-//     account this tenant closed. If the order flips, or if the factor question
-//     moves into the callback in front of `ConfirmAddress`, a closed account
-//     starts learning — from a public address, over its own provider — that a
-//     second factor is enrolled for it, which is one fact more than that door ever
-//     gave. The case reaches that through a status code and a row count, never
-//     through a sentence, and ends with a live colleague on the same leg, so a
-//     door shut to everybody satisfies nothing either.
+// 1. The refusal is about an open account's owner, not about a closed one. The
+// four lines sit after the active check on purpose — the commit says so: "a
+// closed account still gets the one answer it got before and the oracle does
+// not widen". Nobody ran a person who holds an enrolled factor and whose
+// account this tenant closed. If the order flips, or if the factor question
+// moves into the callback in front of `ConfirmAddress`, a closed account
+// starts learning — from a public address, over its own provider — that a
+// second factor is enrolled for it, which is one fact more than that door ever
+// gave. The case reaches that through a status code and a row count, never
+// through a sentence, and ends with a live colleague on the same leg, so a
+// door shut to everybody satisfies nothing either.
 //
-//  2. The question is asked of an account, in a tenant, per request. This brief
-//     shipped an issuer per tenant beside the factor, and
-//     `TestTwoTenantsSignInAtTwoIssuersInOneProcess` proves the *providers*
-//     resolve per host — but it enrols no factor at either tenant. A refusal that
-//     spread past the account (a process-wide flag, a `Deps` bool, a factor
-//     counted on a connection that never resolved a tenant) would sign nobody in
-//     anywhere and leave that case green. This one enrols at one tenant and
-//     requires the other tenant's own person to walk the same leg into a session,
-//     twice, on either side of the refusal.
+// 2. The question is asked of an account, in a tenant, per request. This brief
+// shipped an issuer per tenant beside the factor, and
+// `TestTwoTenantsSignInAtTwoIssuersInOneProcess` proves the *providers*
+// resolve per host — but it enrols no factor at either tenant. A refusal that
+// spread past the account (a process-wide flag, a `Deps` bool, a factor
+// counted on a connection that never resolved a tenant) would sign nobody in
+// anywhere and leave that case green. This one enrols at one tenant and
+// requires the other tenant's own person to walk the same leg into a session,
+// twice, on either side of the refusal.
 
 import (
 	"context"
@@ -188,7 +188,7 @@ func mountTwoWithFactors(t *testing.T, providers contracts.OIDCProviders, secret
 // and asks the federated door what it says at each step.
 //
 // While the account is open the leg is refused for its second half, which is
-// review 6's finding and its case. Once the tenant has closed the account the leg
+// the refusal and its case. Once the tenant has closed the account the leg
 // must be refused by the refusal that predates this branch — 403, the account, not
 // the credential — and the answer has to stay exactly that: the same status it
 // gave a closed account with no factor, no session row, and no sentence about
@@ -219,7 +219,7 @@ func TestAClosedAccountIsRefusedByTheDoorThatWasAlreadyRefusingIt(t *testing.T) 
 	open := liveSessionRows(t, conn, acme, adaID)
 	held := federate(t, router, issuer, host, ada, "ada-held")
 	if held.Code != http.StatusUnauthorized {
-		// Review 6's own case owns this claim; here it is the reason the ordering
+		// The gating case owns this claim; here it is the reason the ordering
 		// below means anything: the door did ask the account while it was open.
 		t.Errorf("the federated leg for an open account holding a factor = %d %s, want 401",
 			held.Code, held.Body.String())

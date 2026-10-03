@@ -3,8 +3,8 @@ package db_test
 // budgets_a_deployment_named_are_on_the_session_inside_every_batch_test.go
 // pins the sentence at the top of the migrations section of `kit/db/README.md`:
 //
-//	"The same two values go on the session before every batch of a drain (`BackfillWith`,
-//	and through it `app.Drain`, `jobs.BackfillMigrations` and `platformkit migrate --drain`)…"
+// 	"The same two values go on the session before every batch of a drain (`BackfillWith`,
+// 	and through it `app.Drain`, `jobs.BackfillMigrations` and `platformkit migrate --drain`)…"
 //
 // Every existing case that reads the budgets back (`migrate_expand_contract_test.go`'s
 // TestMigrationsRunInsideTheStatementBudgets, `kit/app`'s

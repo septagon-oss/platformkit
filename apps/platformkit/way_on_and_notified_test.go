@@ -1,28 +1,28 @@
 package main
 
-// Two claims this review tried to falsify on the branch that makes a refusal
+// Two claims about the branch that makes a refusal
 // offer a way on and an ask.
 //
-//  1. "The way on is never the address that refused." The brief's first item
-//     asks for a door that answers; the delivery replaced the old link with one
-//     literal, /app/dashboard, and pinned that literal in a page test and in
-//     e2e/surfaces.spec.ts. Neither case asks the running server whether the
-//     address the refusal page actually links to answers the refused person. A
-//     way on that 404s is the same dead end the walkthroughs met, drawn in
-//     different ink — so this case reads the link off the page, whatever it
-//     says, and follows it as the refused person would.
+// 1. "The way on is never the address that refused." The brief's first item
+// asks for a door that answers; the delivery replaced the old link with one
+// literal, /app/dashboard, and pinned that literal in a page test and in
+// e2e/surfaces.spec.ts. Neither case asks the running server whether the
+// address the refusal page actually links to answers the refused person. A
+// way on that 404s is the same dead end the walkthroughs met, drawn in
+// different ink — so this case reads the link off the page, whatever it
+// says, and follows it as the refused person would.
 //
-//  2. "Notified is in the payload because 'sent' is only ever true of the
-//     notices that were written" (kit/app/access.go, app.AccessRequested). The
-//     ask's own loop skips the asker when the asker holds role management, and
-//     what it records is the length of the recipient list. The person who holds
-//     role management and is refused something else is the case that tells the
-//     two apart, so this case makes one: a role granting role:manage and
-//     nothing else.
+// 2. "Notified is in the payload because 'sent' is only ever true of the
+// notices that were written" (kit/app/access.go, app.AccessRequested). The
+// ask's own loop skips the asker when the asker holds role management, and
+// what it records is the length of the recipient list. The person who holds
+// role management and is refused something else is the case that tells the
+// two apart, so this case makes one: a role granting role:manage and
+// nothing else.
 //
-//  3. The limit. The brief asks for one per person and permission; the branch
-//     wires it and no case posts the fourth ask. A refused ask must write no
-//     event and no notice, and must leave the refusal standing.
+// 3. The limit. The brief asks for one per person and permission; the branch
+// wires it and no case posts the fourth ask. A refused ask must write no
+// event and no notice, and must leave the refusal standing.
 //
 // Every case reaches its assertion through the answer the fixed behaviour gives
 // — the address on the page, the rows in the trail, the verdict at the door —
@@ -420,7 +420,7 @@ func TestAnAskWhoseNoticeFailsLeavesNoHalfWrittenAsk(t *testing.T) {
 }
 
 // TestTheWorkspaceHomeAnswersTheRefusedMemberWithADashboard is the other half of
-// Finding 1 and the reason the case above has a passing branch: the workspace
+// The reason the case above has a passing branch: the workspace
 // root is the address this composition serves a signed-in person with no grant
 // at all. e2e/design-audit.spec.ts names it ['dashboard', '/app']; this asks the
 // running server rather than the spec. Nothing here depends on what the refusal

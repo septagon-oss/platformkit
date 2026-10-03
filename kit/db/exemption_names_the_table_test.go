@@ -1,7 +1,7 @@
 package db_test
 
-// exemption_names_the_table_test.go is the tenth round's case for the reach of
-// the ninth review's second finding, on the side of the line the finding did not stand on.
+// The reach of
+// the second finding, on the side of the line the finding did not stand on.
 //
 // The finding was that the exemption below `index-not-concurrent` compared the *spelling* of
 // a table name: `newMigrationText` recorded `reCreateTable`'s capture verbatim, so

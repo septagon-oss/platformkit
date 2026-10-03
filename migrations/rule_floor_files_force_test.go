@@ -1,6 +1,6 @@
 package migrations_test
 
-// rule_floor_files_force_test.go is the case SPECIFY.md named as implement's —
+// The case the brief named as implement's —
 // "migrations/floors_test.go asserts the two agree and that no floor is above the
 // owner's head, so a raised floor is a review, not an edit" — and never wrote.
 // migrations/README.md states the floors as measured and adds "Lowering a floor is

@@ -9,14 +9,14 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// Review round 17's pin for the seam `a93e226` opened.
+// What a mounted composition refuses, and what the design capture accepts.
 //
-// That commit's claim has two halves. The tool half — a design capture has to be able to
+// The claim has two halves. The tool half — a design capture has to be able to
 // render a sheet a page would be refused — is pinned by compose_design_test.go on two rules.
 // The mounted half, the sentence in the commit body that says `Compose` "still panics on
-// every one of those spellings", was pinned by nobody: the adopted round-11, -12 and -15
-// files each check one vocabulary (kernel attributes, kernel classes, the colour read's
-// bounds), and nothing names the spellings that actually broke CI's browser step. That
+// every one of those spellings", had no case: the sibling files each check one
+// vocabulary (kernel attributes, kernel classes, the colour read's
+// bounds), and none named the spellings that actually broke CI's browser step. That
 // matters because the two compositions now part company: a refusal that stops firing is
 // invisible on the tool side, where nothing is refused by design, and shows up only as a
 // rule riding into the sheet a page links.

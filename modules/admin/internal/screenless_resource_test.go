@@ -1,6 +1,6 @@
 package internal
 
-// screenless_resource_test.go — a state T-0185 introduced: a Spec that
+// A Spec that
 // offers no list leaves httpx.Resource.Screen empty, so no generated page exists
 // at any address. ownScreens answers "which resources serve their own workspace
 // pages" by asking whether a recorded path is the resource's screen or sits

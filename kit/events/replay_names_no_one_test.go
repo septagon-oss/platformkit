@@ -1,6 +1,6 @@
 package events
 
-// REVIEW round 1 (T-0109), finding 2.
+// A replay names who authorised it — and a missing actor is a refusal, not a NULL.
 //
 // replay.go names what the brief asked for — "under whose authority, audited" —
 // and then enforces only half of it. A reason is required before the

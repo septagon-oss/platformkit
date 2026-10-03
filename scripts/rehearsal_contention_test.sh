@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# rehearsal_contention_test.sh — the review's cases for the rehearsal step.
+# Cases for the rehearsal step: a contended file, and a lock wait.
 #
 # A separate file, and not a case inside scripts/check_architecture_test.sh,
 # because that suite is the delivery's own gate and aborts at its first failure: a
-# reviewer's failing case there would hide every case after it. Nothing in the
+# failing case there would hide every case after it. Nothing in the
 # repository runs this file; `bash scripts/rehearsal_contention_test.sh` does. It needs
 # PLATFORMKIT_TEST_ADMIN_URL for the watcher case, the same owner connection the
 # step itself insists on.

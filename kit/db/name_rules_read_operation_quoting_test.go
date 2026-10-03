@@ -1,6 +1,6 @@
 package db_test
 
-// name_rules_read_operation_quoting_test.go is the seventh review's case for the claim ADR 0011
+// The claim ADR 0011
 // makes about the rule table — "The rules read operations rather than spellings" —
 // and migrations/README.md's version of it for the dropped column: "it is refused
 // whatever the word after `COLUMN` was".

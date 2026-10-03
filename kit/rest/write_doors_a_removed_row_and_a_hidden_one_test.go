@@ -1,9 +1,9 @@
 package rest_test
 
-// The fourth review's file. Round 5 moved two things — the empty PATCH's tenant
-// recheck and the delete door's — and both new returns land the same answer on
-// row shapes that used to answer differently. What nothing in the tree pins
-// after those moves is:
+// Two moves put the empty PATCH's tenant
+// recheck and the delete door's behind a new return, and both returns land the
+// same answer on row shapes that used to answer differently. What nothing in the
+// tree pins after those moves is:
 //
 //  1. that the two delete statements the round-5 case's own comment calls the
 //     whole difference are still two different statements. After the recheck

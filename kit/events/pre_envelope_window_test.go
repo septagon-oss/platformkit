@@ -1,6 +1,6 @@
 package events
 
-// REVIEW round 1 (T-0109), finding 3.
+// A publisher on the previous build still reaches its consumer.
 //
 // transport/cloudevents.go justifies accepting the pre-envelope shape with one
 // argument, and kit/events/README.md turns it into an instruction: "while a
@@ -69,7 +69,7 @@ func TestAPreEnvelopeMessageReachesTheSubscriptionThatClaimsToReadIt(t *testing.
 
 	// The previous build's message: its address and the exact body its relay
 	// wrote. Pinned first, because the loss this test is about is the filter's,
-	// not the decoder's — if this body ever stops decoding, the finding below
+	// not the decoder's — if this body ever stops decoding, the case below
 	// is a different one and this test should say so.
 	legacy := fmt.Sprintf(
 		`{"id":%q,"name":%q,"tenantId":%q,"payload":{"amount":7},"at":"2026-09-28T00:00:00Z","actor":%q}`,

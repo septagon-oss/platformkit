@@ -13,9 +13,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 )
 
-// TestTheIsolationRefusalIsTheSharedValueUnderTheFaultName is the reviewer's pin
-// for T-0031, asked where the two names meet a real refusal rather than a
-// hand-made error. A value package wraps kit/fault because it takes no
+// TestTheIsolationRefusalIsTheSharedValueUnderTheFaultName asks where the two
+// names meet a real refusal rather than a hand-made error. A value package wraps kit/fault because it takes no
 // transaction; this adapter classifies what the database refused under
 // kit/crud's name; one mapping in kit/rest answers both. So the refusal a
 // second tenant gets at row-level security has to be matchable as

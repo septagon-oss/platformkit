@@ -1,23 +1,22 @@
 package db_test
 
-// refusal_id_is_declared_wherever_the_runner_keeps_it_test.go is the tenth round's
-// acceptance-review pin for the refusal-id gate.
+// The refusal-id gate.
 //
 // kit/db/README.md promises, of the four runtime ids: "Between them the two halves of that
 // promise hold: an id named here that nothing prints, or a printed id nothing names, fails one
 // case or the other rather than drifting." The second half holds only while every id is
 // declared in the one file the two regexps read. Measured in a copy of HEAD, a fifth id —
 //
-//	// kit/db/backfill.go
-//	const refusalDataBodySplit = "data-body-multiple-statements"
-//	…
-//	return drainReport{}, refusal(refusalDataBodySplit, "a data file is one statement: …", "split the file")
+// 	// kit/db/backfill.go
+// 	const refusalDataBodySplit = "data-body-multiple-statements"
+// 	…
+// 	return drainReport{}, refusal(refusalDataBodySplit, "a data file is one statement: …", "split the file")
 //
 // declared in the file that prints it, named by no document, and printed by a run every case
 // in this package already reaches — leaves `go test ./kit/db/... ./migrations/... -count=1`
 // green, and all three of the id cases green. `declaredRefusalID` and `refusalIDConst` read
 // `refusals.go` by name, and `inlinedRefusalID` looks for the id written into a sentence as a
-// literal, which a `%s` is not. The tenth round's commit records that limit under *Not
+// literal, which a `%s` is not. that commit records that limit under *Not
 // verified*; the sentence above does not.
 //
 // So this case reads the declarations off the package rather than off one file: an id is what

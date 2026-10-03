@@ -1,12 +1,12 @@
 package db_test
 
-// data_file_reads_window_judged_text_literals_test.go is the fourth review's case for the one place the
+// The one place the
 // kernel's two readings of a file's body can disagree with the body itself.
 //
 // kit/db/migration_header.go states why the two readings were made one:
 //
-//	A second reading of a second text is how a file gets judged for one thing and
-//	executed as another.
+// 	A second reading of a second text is how a file gets judged for one thing and
+// 	executed as another.
 //
 // and the kernel does run one text — `plain`, "the body with the comments gone and
 // the case folded" — for both the rule table and the drain. What that single text

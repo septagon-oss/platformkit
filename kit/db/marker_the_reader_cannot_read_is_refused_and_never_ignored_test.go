@@ -1,13 +1,12 @@
 package db_test
 
-// marker_the_reader_cannot_read_is_refused_and_never_ignored_test.go is the
-// twelfth round's case for one sentence of the grammar:
+// One sentence of the grammar:
 //
-//	migration_header.go: "A key outside this list is refused rather than ignored: a marker
-//	  the runner would not read says 'this file was reviewed' about a file that was not."
-//	migrations/README.md: "After the first line that is not a header line, a `-- pkit:`
-//	  marker may not appear again — a marker the runner would not read claims a review the
-//	  runner never did."
+// 	migration_header.go: "A key outside this list is refused rather than ignored: a marker
+// 	  the runner would not read says 'this file was reviewed' about a file that was not."
+// 	migrations/README.md: "After the first line that is not a header line, a `-- pkit:`
+// 	  marker may not appear again — a marker the runner would not read claims a review the
+// 	  runner never did."
 //
 // The second rule protects the run *below* the header, and it is reached by matching
 // `headerLine` again — the same expression, so it only ever refuses a marker the reader
@@ -21,13 +20,13 @@ package db_test
 // only difference is the whitespace in the marker, each declaring the same data migration
 // (`phase=data`, `batch=5000`, `table=probe`) over a body that does not read the window:
 //
-//	one space, the documented spelling  applied=0 err=rule data-body-unbounded: … one
-//	                                     statement walks the whole table …
-//	two spaces after the dashes         applied=1 err=<nil>
-//	no space after the dashes           applied=1 err=<nil>
-//	a tab after the dashes              applied=1 err=<nil>
-//	an indent before the dashes          applied=1 err=<nil>
-//	a space before the colon            applied=1 err=<nil>
+// 	one space, the documented spelling  applied=0 err=rule data-body-unbounded: … one
+// 	                                     statement walks the whole table …
+// 	two spaces after the dashes         applied=1 err=<nil>
+// 	no space after the dashes           applied=1 err=<nil>
+// 	a tab after the dashes              applied=1 err=<nil>
+// 	an indent before the dashes          applied=1 err=<nil>
+// 	a space before the colon            applied=1 err=<nil>
 //
 // The five unread ones run the author's whole-table UPDATE as one transaction inside the
 // migration — the harm `data-body-unbounded` exists to refuse, and the harm the brief names

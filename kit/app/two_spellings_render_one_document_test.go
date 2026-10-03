@@ -1,6 +1,6 @@
 package app
 
-// A reviewer's pin (review round 5, task T-0109).
+// One manifest, two spellings, one answer.
 //
 // 9a9aa1b returned `Module.Events` to main's `[]string` and added
 // `Module.Declared` beside it, on the word that "the two spellings of a

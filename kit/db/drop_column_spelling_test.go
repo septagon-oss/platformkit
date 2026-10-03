@@ -1,6 +1,6 @@
 package db_test
 
-// drop_column_spelling_test.go is the sixth review's case for the one
+// The one
 // statement the guard table exists to move into a later release, spelled the way
 // PostgreSQL lets an author spell it.
 //
@@ -13,7 +13,7 @@ package db_test
 // same for `ADD [COLUMN]`. `reDropColumn` is the third ALTER TABLE action in the
 // table and the only one that requires the keyword:
 //
-//	reDropColumn = `\bdrop\s+column\b`
+// 	reDropColumn = `\bdrop\s+column\b`
 //
 // ALTER TABLE's grammar makes it optional there too, so
 // `ALTER TABLE probe DROP b` is the same statement, taking the same name away

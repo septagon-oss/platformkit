@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-// Review round 18 (platformkit, T-0108): what the reduced-motion floor actually reaches.
+// What the reduced-motion floor actually reaches, measured in a browser.
 //
 // ARCHITECTURE.md says the `@layer base` `prefers-reduced-motion` fallback "outranks a consumer's
 // `!important` animation in `client` and unlayered alike — an accessibility floor a page cannot

@@ -1,6 +1,6 @@
 package internal_test
 
-// review 4 (decision 0039: HIGHs only). Two claims about the bearer key that the
+// Two claims about the bearer key that the
 // delivery makes about itself, tried at the router.
 //
 // The first is the ceiling. modules/auth/README.md says "A key is a narrowed

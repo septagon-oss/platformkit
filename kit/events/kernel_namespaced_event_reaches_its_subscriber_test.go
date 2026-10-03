@@ -1,8 +1,8 @@
 package events
 
-// REVIEW round 3 (T-0109).
+// A kernel-namespaced event reaches the subscriber its address names.
 //
-// Since round 2 the composition has an event whose namespace is not the name of
+// The composition has an event whose namespace is not the name of
 // the manifest that emits it: `security.denied` is declared by the kernel's
 // manifest, whose name is `platformkit` (kit/module.KernelName), and is listed
 // in module.KernelEvents. That is the one exemption the merged tree needed, and

@@ -5,19 +5,19 @@ package db_test
 // Two sentences in `migrations/README.md` promise an enumeration, and the enumeration has one
 // fewer member than the promise:
 //
-//	"Eight refusals have no `allow=` to answer them — the executor's three (…), and the five
-//	rules whose exception column says `none`"
-//	"… The paragraph below the table names which reading each of the eight is asked of, and what
-//	 that gives up."
+// 	"Eight refusals have no `allow=` to answer them — the executor's three (…), and the five
+// 	rules whose exception column says `none`"
+// 	"… The paragraph below the table names which reading each of the eight is asked of, and what
+// 	 that gives up."
 //
 // `docs/adr/0011-migration-ownership.md` repeats the same promise for the same set ("Which text
 // each of the eight refusals with no `allow=` is asked of — those five rules and the executor's
 // three"). What the paragraphs below the table then divide is three + two + two:
 //
-//   - "Three — the executor's `a data file is one statement`, `data-with-ddl` and
-//     `autocommit-not-rerunnable` — are decided from the cut PostgreSQL makes";
-//   - "The executor's other two are the window's own shape";
-//   - "The other two ask after one word, `CONCURRENTLY`".
+// - "Three — the executor's `a data file is one statement`, `data-with-ddl` and
+// `autocommit-not-rerunnable` — are decided from the cut PostgreSQL makes";
+// - "The executor's other two are the window's own shape";
+// - "The other two ask after one word, `CONCURRENTLY`".
 //
 // Seven. The fifth rule with no exception, `unused-allow`, is named twice on the page — both
 // times *above* the table, in the paragraph that says an author who excepts a rule that never

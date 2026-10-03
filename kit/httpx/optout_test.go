@@ -1,7 +1,7 @@
 package httpx_test
 
-// Reviewer's cases for the fourth review of T-0024 (three surfaces by path). Reviewer: a
-// fresh pi session, 2026-09-21.
+// A renderer that declines to draw a refusal says so, and the answer it opts into is
+// one problem document at every surface.
 //
 // httpx.Fault documents one opt-out and one consequence of using it: "returning false
 // falls back to the Problem JSON, which is how a renderer opts out for a request it has no

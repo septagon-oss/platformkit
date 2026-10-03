@@ -1,17 +1,17 @@
 package events_test
 
-// REVIEW round 1 (T-0109), the pinning test.
+// The tenant boundaries of the outbox and the handled ledger.
 //
 // Nothing here reports a defect. It pins the two assertions this branch is most
 // easily able to lose silently, because both are facts of a column pair and a
 // policy that the new migration did not touch:
 //
-//   1. the trace columns 000027 adds to platformkit_outbox are behind the same
-//      row-level-security policy as the row they describe — a second tenant can
-//      neither read them nor clear the first tenant's handling claim;
-//   2. the tenant in the envelope is the transaction's tenant, so the address a
-//      bridge subscribes to is the tenant that owns the data, and a document
-//      whose subject names another tenant is refused rather than delivered.
+// 1. the trace columns 000027 adds to platformkit_outbox are behind the same
+// row-level-security policy as the row they describe — a second tenant can
+// neither read them nor clear the first tenant's handling claim;
+// 2. the tenant in the envelope is the transaction's tenant, so the address a
+// bridge subscribes to is the tenant that owns the data, and a document
+// whose subject names another tenant is refused rather than delivered.
 //
 // Both fail the moment anyone widens a policy, moves the relay into a tenant
 // transaction, or lets a caller name the tenant of an envelope it was handed.
@@ -77,7 +77,7 @@ func TestTheTraceColumnsAreTheirTenantsAndNoOnesElse(t *testing.T) {
 	// A claim of the first tenant's, so there is something the second tenant
 	// might be able to take away.
 	if err := db.Run(tenancy.WithTenant(t.Context(), acmeTx), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return tx.DB().Exec("INSERT INTO platformkit_handled (event_id, durable, tenant_id) VALUES (?, 'review1', ?)",
+		return tx.DB().Exec("INSERT INTO platformkit_handled (event_id, durable, tenant_id) VALUES (?, 'relay', ?)",
 			eventID, db.TenantOf(tx).ID).Error
 	}); err != nil {
 		t.Fatalf("write acme's claim: %v", err)
@@ -127,7 +127,7 @@ func TestTheTraceColumnsAreTheirTenantsAndNoOnesElse(t *testing.T) {
 	if err := admin.QueryRow(`SELECT count(*) FROM platformkit_outbox WHERE id=$1`, eventID).Scan(&still); err != nil {
 		t.Fatal(err)
 	}
-	if err := admin.QueryRow(`SELECT count(*) FROM platformkit_handled WHERE event_id=$1 AND durable='review1'`, eventID).Scan(&stillClaims); err != nil {
+	if err := admin.QueryRow(`SELECT count(*) FROM platformkit_handled WHERE event_id=$1 AND durable='relay'`, eventID).Scan(&stillClaims); err != nil {
 		t.Fatal(err)
 	}
 	if still != 1 {

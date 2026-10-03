@@ -1,24 +1,24 @@
 package internal
 
-// Review round 4 of T-0108. This branch moves the module's own prose sheet from
+// The module's own prose sheet moves from
 // the end of the kernel's bytes into `@layer client`, and a later layer ranks
 // above every earlier one whatever its selector says. Two things therefore hold
 // this sheet in place, and nothing in the tree said either of them out loud:
 //
-//  1. Every prose rule is a descendant rule under this module's own [data-prose]
-//     hook. A bare `a { … }` in the client layer would beat the kernel utility
-//     on every link in the site bar (components.Link renders .text-… in the
-//     components layer) — the one direction the layer statement makes a client
-//     rule win, and the gate in ui.Compose refuses only names the kernel owns,
-//     so nothing but this module's own scoping keeps a prose rule inside the
-//     article.
-//  2. Nothing inside [data-prose] carries a class. That is what makes the client
-//     layer's precedence harmless on this page: a Markdown render emits bare
-//     elements (goldmark escapes raw HTML, bluemonday.UGCPolicy sanitises the
-//     result, and parser.WithAttribute is not enabled, so an author cannot write
-//     a class), and the one component inside the article is the kernel's heading.
-//     The moment an authoring syntax for classes arrives, a prose rule and a
-//     utility can land on one element and the layer — not the selector — decides.
+// 1. Every prose rule is a descendant rule under this module's own [data-prose]
+// hook. A bare `a { … }` in the client layer would beat the kernel utility
+// on every link in the site bar (components.Link renders .text-… in the
+// components layer) — the one direction the layer statement makes a client
+// rule win, and the gate in ui.Compose refuses only names the kernel owns,
+// so nothing but this module's own scoping keeps a prose rule inside the
+// article.
+// 2. Nothing inside [data-prose] carries a class. That is what makes the client
+// layer's precedence harmless on this page: a Markdown render emits bare
+// elements (goldmark escapes raw HTML, bluemonday.UGCPolicy sanitises the
+// result, and parser.WithAttribute is not enabled, so an author cannot write
+// a class), and the one component inside the article is the kernel's heading.
+// The moment an authoring syntax for classes arrives, a prose rule and a
+// utility can land on one element and the layer — not the selector — decides.
 //
 // Case 1 reads this module's composed sheet; case 2 reads what the content
 // renderer can actually emit. Both are about this module, neither counts the
@@ -122,7 +122,7 @@ func TestEveryProseRuleIsScopedToTheModulesOwnArticle(t *testing.T) {
 }
 
 func TestNothingInsideTheArticleCarriesAClass(t *testing.T) {
-	html, err := contracts.Render(sampleReviewBody)
+	html, err := contracts.Render(sampleArticleBody)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestNothingInsideTheArticleCarriesAClass(t *testing.T) {
 	}
 }
 
-const sampleReviewBody = "# Title\n\nA [link](https://example.com) with `code`.\n\n" +
+const sampleArticleBody = "# Title\n\nA [link](https://example.com) with `code`.\n\n" +
 	"# Heading with an attribute {.text-3xl}\n\n" +
 	"> A quote.\n\n* one\n* two\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n" +
 	"<div class=\"text-3xl\">raw html</div>\n"

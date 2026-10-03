@@ -1,20 +1,20 @@
 package db_test
 
-// refusal_ids_are_the_table_test.go is the ninth review's pin for the sentence
+// The sentence
 // kit/db/README.md and kit/db/refusal_names_test.go both write about themselves:
 //
-//	"an id named here that nothing prints, or a printed id nothing names, fails that case
-//	 rather than drifting."
+// 	"an id named here that nothing prints, or a printed id nothing names, fails that case
+// 	 rather than drifting."
 //
 // Neither half is true of `refusal_names_test.go` as it stands. Its README leg walks a
 // literal list of the four ids, and its message leg refuses one file per id from that same
 // list, so the four that are written down are pinned in both directions and the *set* is
 // pinned in neither. Measured in a copy of HEAD:
 //
-//   - a fifth row added to README's table — `drain-has-no-window`, an id no code prints —
-//     and `go test ./kit/db ./migrations ./kit/app` is green;
-//   - a fifth id added to kit/db/refusals.go and printed by the drain's two-statement
-//     refusal, named by no document anywhere, and the same packages are green.
+// - a fifth row added to README's table — `drain-has-no-window`, an id no code prints —
+// and `go test ./kit/db ./migrations ./kit/app` is green;
+// - a fifth id added to kit/db/refusals.go and printed by the drain's two-statement
+// refusal, named by no document anywhere, and the same packages are green.
 //
 // Renaming one of the four, in either file, does fail — so the gate is real for what it
 // lists and silent about everything else, which is the drift both sentences promise
@@ -75,7 +75,7 @@ func TestTheRefusalIDsTheCodeDeclaresAreTheOnesItsTableLists(t *testing.T) {
 			t.Errorf("README.md names %q and nothing in refusals.go prints it: the table promises a run that answers with a name no code says", id)
 		}
 	}
-	// The four this review's predecessor found are named here so that a change which
+	// The four this case's predecessor found are named here so that a change which
 	// quietly empties both lists — one constant and one table row at a time — still fails.
 	for _, id := range []string{
 		"data-table-missing", "data-key-not-primary-key",

@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
-// The fifth review's pin: one ask, one notice to each holder of role management —
-// never one per role — in the one composition the merge of origin/main left.
+// One ask, one notice to each holder of role management —
+// never one per role — in the composition the reference application boots.
 //
 // What is already covered, and what is not. The delivery's own journey
 // (`e2e/access-request.spec.ts`) and the two Go cases in `apps/platformkit` each

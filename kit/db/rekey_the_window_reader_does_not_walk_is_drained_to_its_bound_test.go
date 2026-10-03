@@ -1,26 +1,25 @@
 package db_test
 
-// rekey_the_window_reader_does_not_walk_is_drained_to_its_bound_test.go is the
-// fourteenth round's case for the two bodies that move the key the cursor runs over in a
+// The two bodies that move the key the cursor runs over, in a
 // shape `movesTheWindowKey` does not walk.
 //
 // The claim under test is the one `kit/db/backfill.go` makes above that reader — the drain's
 // one assumption is "refused rather than trusted": the cursor is a key, so every conclusion
 // the drain draws from it (a short window is the end because nothing is left above that key,
 // a resumed cursor has rows behind it and not in front of it, a committed row is never taken
-// again) holds only of a key that stays where it was. The thirteenth review found the body
-// that writes the key; the round refused it by name, reading "the assignment targets of the
+// again) holds only of a key that stays where it was. one finding was that the body
+// that writes the key; the executor refuses it by name, reading "the assignment targets of the
 // statements that name the drained table" (`migrations/README.md`).
 //
 // Two bodies still move the key past that reader:
 //
-//   - `UPDATE probe p SET id = …` — an alias written without `AS`, ordinary SQL and one word
-//     away from the spelling the reader walks (`UPDATE probe AS p`, which it does walk). The
-//     give-up sentence in `migrations/README.md` names an upsert's `DO UPDATE SET` and a
-//     `MERGE` arm; it does not name this, and this statement does name the drained table.
-//   - `WITH moved AS (DELETE FROM probe … RETURNING *) INSERT INTO probe SELECT id + 1000 …`
-//     — one statement, which is what the window asks for, that takes the key away and hands
-//     it back above the cursor. No UPDATE, so no assignment list to read.
+// - `UPDATE probe p SET id = …` — an alias written without `AS`, ordinary SQL and one word
+// away from the spelling the reader walks (`UPDATE probe AS p`, which it does walk). The
+// give-up sentence in `migrations/README.md` names an upsert's `DO UPDATE SET` and a
+// `MERGE` arm; it does not name this, and this statement does name the drained table.
+// - `WITH moved AS (DELETE FROM probe … RETURNING *) INSERT INTO probe SELECT id + 1000 …`
+// — one statement, which is what the window asks for, that takes the key away and hands
+// it back above the cursor. No UPDATE, so no assignment list to read.
 //
 // Both are the harm the refusal exists to prevent, measured rather than argued: ten rows and
 // a window of five, so every window is a full one and the drain never meets the short window

@@ -1,7 +1,6 @@
 package db_test
 
-// data_body_that_moves_its_own_key_is_refused_rather_than_drained_test.go is the
-// thirteenth round's case for the one thing the drain's cursor model quietly assumes.
+// The one thing the drain's cursor model quietly assumes.
 //
 // The cursor is a key, and the whole resumability claim rests on where that key sits still:
 // `kit/db/backfill.go` says progress is "the last key the run committed — a key, not an
