@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
 
 // The passkey journey, driven by a browser and an emulated authenticator.
@@ -331,3 +332,37 @@ test('a tenant that has not opened the usernameless door is refused with the rea
   expect(`${refusal?.detail ?? refusal?.title ?? ''}`).not.toBe('');
   expect((await page.request.get('/api/v1/auth/me')).status()).toBe(403);
 });
+
+// axe over the two screens this feature puts a control on. The rest of the suite
+// audits the shell's own pages (`design-audit.spec.ts`) and the sign-in *form*
+// (`localization.spec.ts`, which includes `[data-login-form]` and so has never
+// seen the button beside it); neither of them has ever looked at the passkey door
+// or at the enrolment form, which are the markup this task added. The two widths
+// are the file's own: 320 where a layout has given up and 1280 where it has not.
+for (const width of [320, 1280]) {
+  test(`axe finds nothing on the sign-in door carrying the passkey button at ${width}px`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto('/app/admin/login');
+    await expect(page.getByRole('button', { name: 'Continue with a passkey' })).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+    // An empty violations list is only worth something if axe was looking at this
+    // page: the rule count is the proof that the document was analysed rather than
+    // skipped, so the case cannot pass by auditing nothing.
+    expect(results.passes.length, `axe checked almost nothing at ${width}px`).toBeGreaterThan(10);
+    expect(results.violations, `axe on the sign-in page at ${width}px`).toEqual([]);
+  });
+
+  test(`axe finds nothing on the enrolment form on the sessions screen at ${width}px`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.setViewportSize({ width, height: 900 });
+    await signIn(page);
+    await page.goto('/app/auth/sessions');
+    await expect(page.getByLabel('What this device is called')).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+    expect(results.passes.length, `axe checked almost nothing at ${width}px`).toBeGreaterThan(10);
+    expect(results.violations, `axe on the sessions screen at ${width}px`).toEqual([]);
+  });
+}
