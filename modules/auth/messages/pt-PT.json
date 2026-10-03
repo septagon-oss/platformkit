@@ -7,5 +7,14 @@
     "plural": {
       "": "gerir funções"
     }
+  },
+  "permission.passkey:signin": {
+    "references": [
+      "modules/auth/module.go"
+    ],
+    "translation": "permitir entrada apenas com passkey",
+    "plural": {
+      "": "permitir entrada apenas com passkey"
+    }
   }
 }
