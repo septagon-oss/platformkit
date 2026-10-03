@@ -89,6 +89,47 @@ async function ceremony(page: Page, begin: string, verify: string, extra: Record
   }, { begin, verify, extra, otherCeremony: options.otherCeremony === true });
 }
 
+// assertion runs one sign-in leg pair in the page: ask the server for a prompt,
+// prompt the platform with what it sent, hand the answer back. Unlike ceremony
+// above, the prompt here is one the platform *answers* — navigator.credentials.get
+// over the resident credential — which is what a passkey that already exists does.
+async function assertion(page: Page, begin: string, verify: string, beginBody: Record<string, unknown> = {}) {
+  return page.evaluate(async ({ begin, verify, beginBody }) => {
+    const toBytes = (value: string) => {
+      const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(padded + '='.repeat((4 - (padded.length % 4)) % 4));
+      return Uint8Array.from(raw, c => c.charCodeAt(0));
+    };
+    const ask = async (url: string, body?: unknown) => {
+      const response = await fetch(url, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: response.status, body: await response.json().catch(() => ({})) };
+    };
+    const begun = await ask(begin, beginBody);
+    if (begun.status >= 400) return { began: begun.status, answered: 0, said: `${begun.body?.detail ?? ''}` };
+    const offered = typeof begun.body.options === 'string'
+      ? JSON.parse(begun.body.options) : begun.body.options ?? {};
+    const publicKey = { ...(offered.publicKey ?? offered) };
+    if (typeof publicKey.challenge === 'string') publicKey.challenge = toBytes(publicKey.challenge);
+    if (Array.isArray(publicKey.allowCredentials)) {
+      publicKey.allowCredentials = publicKey.allowCredentials.map(c => ({ ...c, id: toBytes(c.id) }));
+    }
+    const asked = await navigator.credentials.get({ publicKey });
+    if (!asked) return { began: begun.status, answered: 0, said: 'the platform answered nothing' };
+    const wire = (asked as unknown as { toJSON?: () => { rawId?: string; response?: unknown } }).toJSON
+      ? (asked as unknown as { toJSON: () => { rawId?: string; response?: unknown } }).toJSON()
+      : asked;
+    const answered = await ask(verify, {
+      ceremony: begun.body.ceremony,
+      response: { id: asked.id, rawId: wire.rawId, response: wire.response, type: 'public-key' },
+    });
+    return { began: begun.status, answered: answered.status, said: `${answered.body?.detail ?? ''}` };
+  }, { begin, verify, beginBody });
+}
+
 async function signIn(page: Page) {
   await page.goto('/app/admin/login');
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email);
@@ -177,6 +218,82 @@ test('the device keeps the passkey the browser made for the host that asked, and
   });
   expect(['SecurityError', 'NotAllowedError']).toContain(refusal);
   expect(requests).toBe(0);
+});
+
+test('a passkey the browser enrolled answers its owner\u2019s password and opens the session', async ({ page, browser }) => {
+  // The brief's journey, in the order the person does it: enrol, sign out, sign
+  // in again with the password refused as half a sign-in, the passkey answering
+  // the other half, and the application served to the session that opened.
+  //
+  // It brings its own person. The fixture's one account cannot carry this: the
+  // moment a factor exists, the module refuses a bare password for it — which is
+  // the second-factor rule, not a bug — and every other spec in this suite signs
+  // in with that password, and rule 8 refuses to withdraw the last factor, so an
+  // enrolment there could not be undone by the test that made it. This person is
+  // created through the routes the tenant's own administrator uses, holds no
+  // administration, and spends nothing that belongs to anybody else.
+  const personEmail = 'passkey-journey@e2e.test';
+  const personPassword = 'a-passkey-journey-password';
+  await signIn(page);
+  const invited = await page.request.post('/api/v1/user/invitations', {
+    data: { email: personEmail, displayName: 'Passkey journey', roles: ['member'] },
+  });
+  expect(invited.status(), await invited.text()).toBe(201);
+  const created = (await invited.json()).id as string;
+  expect(created).toBeTruthy();
+  expect((await page.request.post(`/api/v1/user/users/${created}/set-password`, {
+    data: { password: personPassword },
+  })).status()).toBe(200);
+
+  // The person, in a browser of their own, with a device of their own.
+  const context = await browser.newContext();
+  const person = await context.newPage();
+  const { cdp, authenticatorId } = await virtualAuthenticator(person);
+
+  // Half one: while no passkey exists, the password is the whole sign-in.
+  await person.goto('/app/admin/login');
+  await person.getByRole('textbox', { name: 'Email', exact: true }).fill(personEmail);
+  await person.getByLabel('Password').fill(personPassword);
+  await person.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(person).toHaveURL(/\/app$/);
+
+  // Half two: the person enrols by clicking, on the screen the shell draws, in
+  // the controller the shell ships. Neither the options nor the answer below is
+  // synthesised: the page's own fetch legs run against the real routes.
+  await person.goto('/app/auth/sessions');
+  await person.getByLabel('What this device is called').fill('Playwright laptop');
+  await person.getByRole('button', { name: 'Add a passkey' }).click();
+  await expect(person.locator('[data-auth-message]')).toBeVisible();
+  const listed = await (await person.request.get('/api/v1/auth/factors')).json();
+  const kinds = ((listed?.items ?? listed) as { kind: string }[]).map(factor => factor.kind);
+  expect(kinds).toContain('passkey');
+  const stored = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
+  expect(stored.credentials.map(credential => credential.rpId)).toEqual(['localhost']);
+
+  // Half three: signed out, the same credentials now arrive back as a refusal,
+  // because the person holds a factor and half a sign-in is not a sign-in.
+  await person.locator('[data-sign-out]').click();
+  await expect(person).toHaveURL(/\/app\/admin\/login$/);
+  await person.getByRole('textbox', { name: 'Email', exact: true }).fill(personEmail);
+  await person.getByLabel('Password').fill(personPassword);
+  await person.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await expect(person).toHaveURL(/\/app\/admin\/login$/);
+  await expect(person.locator('[data-login-error]')).toContainText('second factor');
+
+  // Half four: the passkey answers the half the password opened, and the session
+  // it opens is the one the application serves. The ceremony was begun at the
+  // challenge door, so it is spent there — the same answer cannot be carried to
+  // the usernameless door, which is the server's record and not the caller's.
+  const answered = await assertion(person, '/api/v1/auth/challenge/passkey/begin',
+    '/api/v1/auth/challenge/passkey/verify', { email: personEmail });
+  expect(answered.said).toBe('');
+  expect(answered.began).toBe(200);
+  expect(answered.answered).toBe(200);
+  expect((await person.request.get('/api/v1/auth/me')).status()).toBe(200);
+  await person.goto('/app');
+  await expect(person).toHaveURL(/\/app$/);
+
+  await context.close();
 });
 
 test('a tenant that has not opened the usernameless door is refused with the reason', async ({ page }) => {
