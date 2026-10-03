@@ -5,7 +5,7 @@ package rest_test
 // same answer on row shapes that used to answer differently. What nothing in the
 // tree pins after those moves is:
 //
-//  1. that the two delete statements the round-5 case's own comment calls the
+//  1. that the two delete statements a sibling case's own comment calls the
 //     whole difference are still two different statements. After the recheck
 //     `deleteDoorRefused` asserts the identical thing for SoftDelete true and
 //     false — 404, one live row, no event — so nothing any more asks what each
@@ -13,10 +13,10 @@ package rest_test
 //     `SoftDelete: false` quietly became a hide keeps every existing case green.
 //  2. the two halves of the acceptance that sit on the far side of each new
 //     case: the caller's *own* row on the shared catalogue answers 200 and says
-//     nothing (round 3's file asserts the silence on rest_tasks, whose policy
-//     hides foreign rows and which is therefore not the row shape the finding
+//     nothing (the earlier file asserts the silence on rest_tasks, whose policy
+//     hides foreign rows and which is therefore not the row shape the refusal
 //     was about), and the door *beneath* HTTP refuses a foreign row the way the
-//     route does (round 5's file asks tenancy at the route and the in-process
+//     route does (the sibling file asks tenancy at the route and the in-process
 //     doors only inside the tenant that owns the row).
 //
 // Every case asserts behaviour the change claims, so each passes once the claim
@@ -48,10 +48,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
-// review6Module is the module these cases mount their catalogue as. Every
+// catalogModule is the module these cases mount their catalogue as. Every
 // address below is composed from it and the surface the permissions choose;
 // nothing here writes a prefix.
-const review6Module = "billing"
+const catalogModule = "billing"
 
 // sharedCatalogue is mountCatalog's mount given the soft-delete flag and the
 // API, so one case can ask both statements a delete becomes and reach the two
@@ -74,9 +74,9 @@ func sharedCatalogue(t *testing.T, soft bool) (*httpx.API, http.Handler, *sql.DB
 		Log: slog.New(slog.DiscardHandler),
 	})
 	rest.Spec[*Plan]{
-		Module: review6Module, Entity: "plan", Path: "/plans",
+		Module: catalogModule, Entity: "plan", Path: "/plans",
 		Read: "billing:read", Write: "billing:catalog", SoftDelete: soft,
-	}.Mount(api.Surfaces(review6Module))
+	}.Mount(api.Surfaces(catalogModule))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
 	}
@@ -146,8 +146,8 @@ func stampOf(t *testing.T, admin *sql.DB, key string) string {
 func inPage(t *testing.T, api *httpx.API, path, verb string, fail *[]string,
 	body func(context.Context, httpx.Resource, *[]string)) {
 	t.Helper()
-	httpx.Register(api.Surfaces(review6Module).App, huma.Operation{
-		OperationID: "review6-" + verb, Method: http.MethodPost, Path: path,
+	httpx.Register(api.Surfaces(catalogModule).App, huma.Operation{
+		OperationID: "catalog-" + verb, Method: http.MethodPost, Path: path,
 		Hidden: true, DefaultStatus: http.StatusNoContent,
 	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*struct{}, error) {
 		body(ctx, api.Resources()[0], fail)
@@ -156,7 +156,7 @@ func inPage(t *testing.T, api *httpx.API, path, verb string, fail *[]string,
 }
 
 // TestTheDeleteDoorStillTellsARemovedRowFromAHiddenOne. The refused delete is one
-// answer for both flags — that is round 5's fix and the point of its case. The
+// answer for both flags — that is the fix, and the point of the case above. The
 // delete that is not refused is two different things, and the Spec's flag picks
 // which: a Spec that says SoftDelete keeps the row and hides it; a Spec that does
 // not says the row leaves the table.
@@ -280,8 +280,8 @@ func answerStamp(t *testing.T, body string) string {
 // lives in updateRow and deleteRow, which the five routes and the two closures
 // share, so the page's answer about a foreign catalogue row is claimed to be the
 // route's: ErrNotFound, nothing of the row in it, the row standing, nothing
-// published. Round 5's file asks tenancy through HTTP and asks the closures only
-// inside the tenant that owns the row, so this is the case that says the fix is
+// published. Asking tenancy through HTTP, and asking the closures only inside
+// the tenant that owns the row, leaves this open: this is the case that says the fix is
 // in the shared half and not in the HTTP half.
 func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T) {
 	api, router, admin := sharedCatalogue(t, false)
@@ -301,7 +301,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 	mine := uuid.MustParse(id(t, body))
 
 	var refused, control []string
-	inPage(t, api, "/review6/foreign", "foreign", &refused, func(ctx context.Context, r httpx.Resource, fail *[]string) {
+	inPage(t, api, "/catalog/foreign", "foreign", &refused, func(ctx context.Context, r httpx.Resource, fail *[]string) {
 		if row, err := r.Update(ctx, foreign, map[string]any{}); err == nil {
 			*fail = append(*fail, "the page's Update of nothing returned name "+fmt.Sprintf("%v", row["name"])+" and said nothing was wrong")
 		} else if code := faultStatus(err); code != http.StatusNotFound {
@@ -317,7 +317,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 			*fail = append(*fail, "the page's Delete named the row: "+err.Error())
 		}
 	})
-	inPage(t, api, "/review6/own", "own", &control, func(ctx context.Context, r httpx.Resource, fail *[]string) {
+	inPage(t, api, "/catalog/own", "own", &control, func(ctx context.Context, r httpx.Resource, fail *[]string) {
 		if row, err := r.Update(ctx, mine, map[string]any{}); err != nil {
 			*fail = append(*fail, "the page's Update of nothing on the tenant's own row: "+err.Error())
 		} else if fmt.Sprintf("%v", row["name"]) != "Mine" {
@@ -330,7 +330,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 
 	// The foreign row first, and the counts asked before the control runs, so a
 	// published event cannot be attributed to the wrong half of the case.
-	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(review6Module).App.Path("/review6/foreign"), ""); code != http.StatusNoContent {
+	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(catalogModule).App.Path("/catalog/foreign"), ""); code != http.StatusNoContent {
 		t.Fatalf("the foreign-row probe request = %d %s, want 204 so the closures were reached", code, out)
 	}
 	for _, f := range refused {
@@ -346,7 +346,7 @@ func TestThePageDoorRefusesARowAnotherTenantOwnsTheWayTheRouteDoes(t *testing.T)
 		t.Errorf("the page's refused delete published %d billing.plan.deleted events, want none", n)
 	}
 
-	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(review6Module).App.Path("/review6/own"), ""); code != http.StatusNoContent {
+	if code, out := askAs(t, router, "reader.test", http.MethodPost, api.Surfaces(catalogModule).App.Path("/catalog/own"), ""); code != http.StatusNoContent {
 		t.Fatalf("the own-row probe request = %d %s, want 204 so the control ran", code, out)
 	}
 	for _, f := range control {

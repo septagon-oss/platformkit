@@ -44,7 +44,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-const review11Orders = "CREATE TABLE orders (id bigint PRIMARY KEY, total text)"
+const ordersTable = "CREATE TABLE orders (id bigint PRIMARY KEY, total text)"
 
 func TestAContractHalfRefusesWhileTheVersionItWaitsForHasNotApplied(t *testing.T) {
 	for _, tc := range []struct {
@@ -57,7 +57,7 @@ func TestAContractHalfRefusesWhileTheVersionItWaitsForHasNotApplied(t *testing.T
 			// brief's rule both refuse it; planOwner's first line waves it through.
 			name: "a first installation, and an expansion this owner never had a version for",
 			files: fstest.MapFS{
-				"000001_orders.up.sql": {Data: []byte(review11Orders)},
+				"000001_orders.up.sql": {Data: []byte(ordersTable)},
 				"000002_drop.up.sql":   {Data: []byte("-- pkit: phase=contract\n-- pkit: expand=9\nALTER TABLE orders DROP COLUMN total")},
 				"000003_items.up.sql":  {Data: []byte("CREATE TABLE line_items (id bigint PRIMARY KEY, order_id bigint)")},
 			},
@@ -101,12 +101,12 @@ func TestAContractHalfIsRefusedOnAnInstalledOwnerAndAppliedOnTheReleaseAfter(t *
 	t.Run("installed owner, expansion not applied", func(t *testing.T) {
 		migrateURL, _ := dbtest.URLs(t)
 		if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "late", Files: fstest.MapFS{
-			"000001_orders.up.sql": {Data: []byte(review11Orders)},
+			"000001_orders.up.sql": {Data: []byte(ordersTable)},
 		}}); err != nil {
 			t.Fatalf("the release this installation is one behind: %v", err)
 		}
 		err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "late", Files: fstest.MapFS{
-			"000001_orders.up.sql": {Data: []byte(review11Orders)},
+			"000001_orders.up.sql": {Data: []byte(ordersTable)},
 			"000002_drop.up.sql":   {Data: []byte("-- pkit: phase=contract\n-- pkit: expand=3\nALTER TABLE orders DROP COLUMN total")},
 			"000003_amount.up.sql": {Data: []byte("ALTER TABLE orders ADD COLUMN amount_minor bigint")},
 		}})
@@ -122,13 +122,13 @@ func TestAContractHalfIsRefusedOnAnInstalledOwnerAndAppliedOnTheReleaseAfter(t *
 	t.Run("expansion applied a release ago", func(t *testing.T) {
 		migrateURL, _ := dbtest.URLs(t)
 		if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "next", Files: fstest.MapFS{
-			"000001_orders.up.sql": {Data: []byte(review11Orders)},
+			"000001_orders.up.sql": {Data: []byte(ordersTable)},
 			"000002_amount.up.sql": {Data: []byte("ALTER TABLE orders ADD COLUMN amount_minor bigint")},
 		}}); err != nil {
 			t.Fatalf("the expansion, applied in its own release: %v", err)
 		}
 		if err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "next", Files: fstest.MapFS{
-			"000001_orders.up.sql": {Data: []byte(review11Orders)},
+			"000001_orders.up.sql": {Data: []byte(ordersTable)},
 			"000002_amount.up.sql": {Data: []byte("ALTER TABLE orders ADD COLUMN amount_minor bigint")},
 			"000003_drop.up.sql":   {Data: []byte("-- pkit: phase=contract\n-- pkit: expand=2\nALTER TABLE orders DROP COLUMN total")},
 		}}); err != nil {

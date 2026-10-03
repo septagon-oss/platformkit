@@ -15,11 +15,10 @@ package db_test
 //
 // It is not theoretical. `go test -timeout` kills the binary, and a killed case never runs
 // its `DROP SCHEMA … CASCADE`; the schema it was using stays, with its `probe` inside, and
-// every one of these legs then reports a relation the case never created. an earlier round
-// met exactly this and wrote down the cure it had used ("Dropping
-// `t_38fibyx6w3pci_testadrainresumesfromarowthatholdsnokeyyet` made all six pass"). The leg
-// the review rewrote, and `marker_the_reader_cannot_read_is_refused_and_never_ignored_test.go:95`,
-// already count through `current_schema()`.
+// every one of these legs then reports a relation the case never created. The cure is
+// a predicate, not a habit: count only through the schema the run is standing in.
+// `marker_the_reader_cannot_read_is_refused_and_never_ignored_test.go:95` reads that way
+// already, and so does every leg below.
 //
 // Reproduction of the failure the missing predicate causes, on an otherwise clean tree:
 //
@@ -74,7 +73,7 @@ func TestACatalogCountOfOneTestsOwnSchemaNamesItsSchema(t *testing.T) {
 	}
 	if len(found) > 0 {
 		t.Errorf("%d legs count %s by a bare name, which PostgreSQL matches in every schema, while dbtest gives this package's cases one schema each; the count has to name the schema (`%s = current_schema()::regnamespace`, `%s = current_schema()`) or resolve the name through search_path:\n\t%s",
-			len(found), strings.Join(review13Keys(), " and "),
+			len(found), strings.Join(catalogKeys(), " and "),
 			filterKey[0], filterKey[1], strings.Join(found, "\n\t"))
 	}
 }
@@ -86,7 +85,7 @@ func TestACatalogCountOfOneTestsOwnSchemaNamesItsSchema(t *testing.T) {
 // the SQL the case runs, not about where its words happen to sit.
 func unqualifiedCounts(text string) []string {
 	var found []string
-	for _, needle := range review13Needles() {
+	for _, needle := range valueNeedles() {
 		for at := 0; at < len(text); {
 			i := strings.Index(text[at:], needle)
 			if i < 0 {
@@ -94,7 +93,7 @@ func unqualifiedCounts(text string) []string {
 			}
 			i += at
 			query, line := literalContaining(text, i)
-			if !review13Filtered(query) {
+			if !queryIsFiltered(query) {
 				found = append(found, strconv.Itoa(line)+": "+strings.Join(strings.Fields(query), " "))
 			}
 			at = i + len(needle)
@@ -104,7 +103,7 @@ func unqualifiedCounts(text string) []string {
 	return found
 }
 
-func review13Needles() []string {
+func valueNeedles() []string {
 	var needles []string
 	for table, columns := range catalogView {
 		for _, column := range columns {
@@ -141,7 +140,7 @@ func literalContaining(text string, i int) (query string, line int) {
 	return query, line
 }
 
-func review13Filtered(query string) bool {
+func queryIsFiltered(query string) bool {
 	for _, key := range filterKey {
 		if strings.Contains(query, key) {
 			return true
@@ -150,7 +149,7 @@ func review13Filtered(query string) bool {
 	return false
 }
 
-func review13Keys() []string {
+func catalogKeys() []string {
 	var out []string
 	for k := range catalogView {
 		out = append(out, k)
