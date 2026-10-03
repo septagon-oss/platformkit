@@ -1,9 +1,9 @@
 package db_test
 
 // data_body_that_binds_the_window_name_in_a_spelling_the_guard_does_not_read_test.go
-// is the thirteenth round's case for the refusal the twelfth round added.
+// is a case for the refusal an earlier change added.
 //
-// The twelfth round's finding 4 was a `phase=data` body that opens with its own `WITH`
+// one finding was a `phase=data` body that opens with its own `WITH`
 // list: the wrapper pasted a second `WITH` in front of it, the server's own syntax error
 // arrived after `beginDrain` had written the progress row, and the drain was left forever
 // half-started. The cure joins the two CTE lists and refuses, before the progress row, the
@@ -12,8 +12,8 @@ package db_test
 // The refusal asks `shape` for `\bbatch\s+as\s*\(`. Two spellings of the same binding answer
 // that question no, and both reach the server with two CTEs of one name:
 //
-//	WITH "batch" AS (…)    -- a quoted lower-case name is the same identifier to PostgreSQL
-//	WITH batch (id) AS (…) -- a CTE column list sits between the name and `as`
+// 	WITH "batch" AS (…)    -- a quoted lower-case name is the same identifier to PostgreSQL
+// 	WITH batch (id) AS (…) -- a CTE column list sits between the name and `as`
 //
 // while `reBatchWindow`, the question that decides whether the body is wrapped at all, does
 // read the body's `FROM batch` in both files. So the file is wrapped, the merged list carries

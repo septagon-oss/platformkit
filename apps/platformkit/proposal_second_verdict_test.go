@@ -7,7 +7,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
-// TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP is review 5's HIGH at the
+// TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP is the refusal at the
 // door rather than in the service: an approved proposal has been decided, so a second
 // verdict — from another account that may decide, or from the reviewer who changed
 // their mind — is a refusal that leaves the row's verdict and reviewer exactly where

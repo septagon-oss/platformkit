@@ -1,6 +1,6 @@
 package db_test
 
-// data_file_shape_test.go is the delivery's case for the two drains a migration run
+// This file is the delivery's case for the two drains a migration run
 // does not own, beside the one it does.
 //
 // A `phase=data` body of two statements is refused by the executor, because the window

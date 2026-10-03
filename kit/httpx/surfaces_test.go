@@ -32,7 +32,7 @@ import (
 // and that is the second fact the control plane is gated on.
 const installationHost = "platformkit.example"
 
-// surfaces is this file's fixture: one installation, one host per tenant, and an
+// This file is this file's fixture: one installation, one host per tenant, and an
 // authorizer that says yes to everything so that what a case observes is the
 // surface's own decision and not a role's.
 type surfaces struct {

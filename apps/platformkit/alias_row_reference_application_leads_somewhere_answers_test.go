@@ -1,15 +1,14 @@
 package main
 
-// Reviewer's case for the third review of T-0024 (three surfaces by path).
-// Reviewer: a fresh pi session, 2026-09-21.
+// Every alias the composition serves answers at the address it leads to.
 //
 // kit/httpx/aliases.go states its own second half and names the test that holds it:
 //
-//	"The test over there (§TestTheAliasRedirectsAndNeverServes) checks that every row
-//	 redirects the way the table says, and the reference application
-//	 (§TestTheOldAddressesOfTheReferenceApp) asks its running server whether the address
-//	 each row points at actually answers — … Without that second half a row can name an
-//	 address nothing serves, and the person holding the bookmark gets a redirect into a 404."
+// 	"The test over there (§TestTheAliasRedirectsAndNeverServes) checks that every row
+// 	 redirects the way the table says, and the reference application
+// 	 (§TestTheOldAddressesOfTheReferenceApp) asks its running server whether the address
+// 	 each row points at actually answers — … Without that second half a row can name an
+// 	 address nothing serves, and the person holding the bookmark gets a redirect into a 404."
 //
 // No test of that name exists in the repository (`git grep TestTheOldAddressesOfTheReferenceApp`
 // finds the two comments that cite it and nothing else), and the failure it was cited to

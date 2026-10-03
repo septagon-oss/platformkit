@@ -6,17 +6,17 @@ package db_test
 //
 // `windowedBody` writes the window and pastes the body after it:
 //
-//	"WITH batch AS (SELECT … ORDER BY … LIMIT n)\n" + strings.TrimRight(m.body, " \n\t;")
+// 	"WITH batch AS (SELECT … ORDER BY … LIMIT n)\n" + strings.TrimRight(m.body, " \n\t;")
 //
 // PostgreSQL takes one `WITH` per statement, so a body that opens with one — the idiomatic
 // shape for a backfill that names the rows it is about to touch — comes out as two, and the
 // server answers the file the kernel assembled, not the file its author wrote. Measured at
 // HEAD over a twelve-row table with `batch=5`:
 //
-//	WITH stale AS (SELECT id FROM probe WHERE note = '')
-//	UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM stale INTERSECT SELECT id FROM batch)
-//	→ db: migrate: shape/000002_fill.up.sql: ERROR: syntax error at or near "WITH" (SQLSTATE 42601)
-//	  with 1 row left in schema_migration_backfill
+// 	WITH stale AS (SELECT id FROM probe WHERE note = '')
+// 	UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM stale INTERSECT SELECT id FROM batch)
+// 	→ db: migrate: shape/000002_fill.up.sql: ERROR: syntax error at or near "WITH" (SQLSTATE 42601)
+// 	  with 1 row left in schema_migration_backfill
 //
 // Four spellings beside it — `UPDATE … FROM batch b`, `INSERT … SELECT id FROM batch`, a body
 // ending in a comment, `DELETE … IN (SELECT id FROM batch)` — apply and drain to the end, so
@@ -24,8 +24,8 @@ package db_test
 //
 // The harm is what is left behind. `kit/db/README.md` promises:
 //
-//	"A refusal of a data file leaves nothing resumable: the progress row means 'this drain
-//	 started, resume it', so a shape the window cannot run is refused before that row exists."
+// 	"A refusal of a data file leaves nothing resumable: the progress row means 'this drain
+// 	 started, resume it', so a shape the window cannot run is refused before that row exists."
 //
 // This is exactly a shape the window cannot run, and the row is there: `drain` refuses the
 // *statement count* before `beginDrain` and nothing else, so the file is now "in flight" —

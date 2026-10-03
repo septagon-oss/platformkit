@@ -1,13 +1,13 @@
 package main
 
-// Reviewer's case for the fourth review of T-0024 (three surfaces by path). Reviewer: a
-// fresh pi session, 2026-09-21.
+// A signed-in person who lacks the grant is shown the page, and the reference
+// application is where that is provable.
 //
-// The third review closed its finding 1 (a person who is signed in and lacks a grant is
-// shown the shell's page, not a body of JSON) at a composed kernel, and wrote down what it
-// could not prove: "no run here signed in to a running application as an account that lacks
+// The refusal was closed at a composed kernel — a person who is signed in and lacks a grant is
+// shown the shell's page, not a body of JSON — and what it
+// could not prove was written down: "no run here signed in to a running application as an account that lacks
 // a grant and watched the answer arrive", because every account this application
-// provisions is an administrator. Round 6 composed password signup with the member role
+// provisions is an administrator. The change composed password signup with the member role
 // into the reference application, which supplies exactly that person: nobody invited,
 // holding the tenant's ordinary member role — which the seed grants nothing
 // (modules/auth/internal/seed.go:27, and e2e/admin-roles.spec.ts:39 says the same in the
@@ -36,9 +36,9 @@ import (
 	"github.com/septagon-oss/platformkit/modules/notification"
 )
 
-// round4Password is a member's own chosen secret: written by the signup form, hashed by the
+// memberPassword is a member's own chosen secret: written by the signup form, hashed by the
 // user module, read back by nobody here.
-const round4Password = "a-member-chooses-this-password"
+const memberPassword = "a-member-chooses-this-password"
 
 // navigated is what a browser sends when somebody types an address.
 const navigated = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
@@ -56,10 +56,10 @@ func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *
 	if !ok {
 		t.Fatalf("the reference application mails through %T; this case reads the confirmation link out of the mailbox it keeps", c.mail)
 	}
-	email := "round4.member@acme.test"
+	email := "member.undocumented@acme.test"
 	signup, err := json.Marshal(map[string]any{
 		"email": email, "displayName": "Round Four Member",
-		"password": round4Password, "confirmation": round4Password, "termsAccepted": true,
+		"password": memberPassword, "confirmation": memberPassword, "termsAccepted": true,
 	})
 	if err != nil {
 		t.Fatalf("marshal the signup: %v", err)
@@ -90,7 +90,7 @@ func TestASignedInPersonWithoutTheGrantIsShownAPageAtTheReferenceApplication(t *
 		t.Fatalf("confirming the mailbox link = %d %s, want it to activate the account this composition just accepted", code, body)
 	}
 
-	member := signIn(t, cfg, acmeHost, email, round4Password)
+	member := signIn(t, cfg, acmeHost, email, memberPassword)
 	const screen = "/app/task/tasks"
 
 	// Reachability, independent of the answer under test: the administrator, same address,

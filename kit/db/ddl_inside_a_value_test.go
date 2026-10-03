@@ -1,9 +1,8 @@
 package db_test
 
-// ddl_inside_a_value_test.go is the tenth round's case for how far the ninth
-// review's first finding reaches.
+// How far the executor's first refusal reaches.
 //
-// The finding was the executor's: a `phase=data` file whose body is one statement was
+// The refusal was the executor's: a `phase=data` file whose body is one statement was
 // refused as two because the `;` sat inside a `$tag$ … $tag$` value it was writing
 // (`len(splitStatements(m.plain)) > 1`). The same split fed one rule, and that rule's
 // answer is worse than the executor's: `data-with-ddl` fires on a statement that *begins*
@@ -18,15 +17,15 @@ package db_test
 // dollar body, because that over-reading is what a marker is for. This file holds the new
 // reading to what it changes and nothing more:
 //
-//   - a value that carries DDL after a semicolon is data (the file drains, `ghost` is
-//     never created) — the leg that fails before the change;
-//   - DDL written as a statement after a semicolon outside any value still fires the rule,
-//     and still with no exception to except it, which is the leg that would catch a fix
-//     that took the rule's teeth instead of its misreading;
-//   - a body that is genuinely two statements *and* carries a value is still refused by the
-//     executor, so the count still counts: `data_body_that_binds_the_windows_own_name_is_refused_test.go` shows the
-//     valueless spelling of that file, and this is the one where the semicolon inside the
-//     value is what a wrong split would have counted.
+// - a value that carries DDL after a semicolon is data (the file drains, `ghost` is
+// never created) — the leg that fails before the change;
+// - DDL written as a statement after a semicolon outside any value still fires the rule,
+// and still with no exception to except it, which is the leg that would catch a fix
+// that took the rule's teeth instead of its misreading;
+// - a body that is genuinely two statements *and* carries a value is still refused by the
+// executor, so the count still counts: `data_body_that_binds_the_windows_own_name_is_refused_test.go` shows the
+// valueless spelling of that file, and this is the one where the semicolon inside the
+// value is what a wrong split would have counted.
 //
 // Every assertion is on the catalogue or the ledger, not on a message: which rule refused,
 // and whether anything was written.

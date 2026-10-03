@@ -1,12 +1,12 @@
 package app
 
-// drain_in_flight_boots_test.go is the third review's case for the one
+// The case for the one
 // convergence kit/db/README.md states as a guarantee:
 //
-//	"An owner that already has history is a table under readers: Migrate stops
-//	 there … and jobs.BackfillMigrations — composed into the worker by kit/app
-//	 as schema-backfill — is what finishes it … A boot that refused a drain
-//	 would stop the only role that can finish it."
+// 	"An owner that already has history is a table under readers: Migrate stops
+// 	 there … and jobs.BackfillMigrations — composed into the worker by kit/app
+// 	 as schema-backfill — is what finishes it … A boot that refused a drain
+// 	 would stop the only role that can finish it."
 //
 // The last sentence is the reason Migrate returns nil in front of a data file it
 // will not drain. It is also the sentence the resumed drain contradicts: a file

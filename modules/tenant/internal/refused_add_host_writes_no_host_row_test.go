@@ -1,9 +1,9 @@
 package internal_test
 
-// Review round 2 of T-0115, at the module: the rule review round 1 filed as finding 2 is
+// At the module, the rule a refusal writes nothing is
 // still broken one verb over.
 //
-// Finding 2 was "`RemoveHost` deletes the row and only then asks `audience`, so the refusal
+// The shape was "`RemoveHost` deletes the row and only then asks `audience`, so the refusal
 // of an unauditable verb writes." The cure (`a12e6c7`) moved that one call above that one
 // DELETE and put a sentence in its place:
 //
@@ -12,10 +12,10 @@ package internal_test
 // `AddHost` is the command that sentence is about and it does not hold: `attach` — the
 // INSERT of the new `tenant_hosts` row — runs first, and `audience` is asked after it
 // (modules/tenant/internal/service.go, the eight lines between `s.lock` and `s.record`).
-// So the same move that made round 1's case pass — commit the transaction the refusal came
+// So the same move that makes the remove case pass — commit the transaction the refusal came
 // out of, which is exactly what `TestAnInstallationWithNoOperatorTenantWritesNothing` does
 // for `Create` — leaves a hostname attached to the tenant by a verb that refused. The state
-// that makes the refusal fire is the state round 1's case names and this one copies: an
+// that makes the refusal fire is the state the remove case names and this one copies: an
 // installation with no operator tenant.
 //
 // The case reaches its assertion through what the fixed behaviour prints: the refusal is

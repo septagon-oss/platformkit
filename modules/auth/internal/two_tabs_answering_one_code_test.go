@@ -1,6 +1,6 @@
 package internal_test
 
-// review 5 (decision 0039: HIGHs only). The one claim about the second factor and
+// The one claim about the second factor and
 // the bearer key that nobody has ever run.
 //
 // Both are spent by a guarded UPDATE — `WHERE last_step < ?` on the factor row,
@@ -11,8 +11,8 @@ package internal_test
 // this shape (`TestTwoTabsRevokingOneSessionSettleOnce`). No case anywhere runs
 // two concurrent spends against a factor row or a token row:
 //
-//	$ grep -rn "sync.WaitGroup" modules/auth/internal/*_test.go
-//	  sessions_test.go  roles_concurrency_test.go  verification_atomic_test.go
+// 	$ grep -rn "sync.WaitGroup" modules/auth/internal/*_test.go
+// 	  sessions_test.go  roles_concurrency_test.go  verification_atomic_test.go
 //
 // and the last delivery commit's own `Not verified:` line repeats it — "two
 // concurrent spends against one factor row or one token row, which no case in the
@@ -25,19 +25,19 @@ package internal_test
 // refusal through the status a working refusal carries (401) and the row it
 // leaves, never through any sentence the refusal prints.
 //
-// Re-recorded for 000033 (review 8's HIGH, decision 0008). What both cases send at
-// the challenge route changed; what they assert did not. Review 8 found that the
+// Re-recorded for 000033, decision 0008. What both cases send at
+// the challenge route changed; what they assert did not. The re-recording found that the
 // leg answered a code offered by *nobody* — a leaked recovery-code file was a
 // password — and cured it by making the answer spendable only by a caller a door
 // had just refused (first_factor_proofs). Two concurrent POSTs of `{"email",
 // "code"}` with no first half behind them are, under that cure, two refusals, which
-// is the request review 8's own `second_factor_requires_its_first_half_test.go`
+// is the request `second_factor_requires_its_first_half_test.go`
 // requires to be refused; the two files cannot both be green at any HEAD, and the
-// review named the resolution: "the two files are re-recorded with their first
+// the cure named the resolution: "the two files are re-recorded with their first
 // half added (the concurrency shape survives: two tabs that each hold the marker,
 // one code, one session)". So each case below offers the password once and takes
-// the 401 that mints the window, exactly as `review_r4_the_second_factor_leg_
-// signs_a_person_in_test.go:111` already does, and then sends the same two requests
+// the 401 that mints the window, exactly as
+// second_factor_leg_signs_a_person_in_test.go already does, and then sends the same two requests
 // at the same instant. Every assertion below is unchanged: one 200 with a cookie,
 // one 401 without, one session row, one logged_in, one spent code. One claim is
 // weaker and is stated rather than glossed: with one window per person the tab that
@@ -89,7 +89,7 @@ func TestTwoTabsAnsweringOneCodeOpenOneSession(t *testing.T) {
 		t.Fatalf("finishing the enrolment = %d %s, want 201", finish.Code, finish.Body.String())
 	}
 
-	// The first half, offered, exactly as review 4's leg case does it. The door now
+	// The first half, offered, exactly as the leg case does it. The door now
 	// answers only a sign-in it refused a moment ago, so a case about two
 	// concurrent answers has to arrive through that refusal: the password alone is
 	// held at 401 with no session, and that holding is what makes the step below

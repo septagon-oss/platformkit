@@ -1,6 +1,6 @@
 package db_test
 
-// cross_tenant_drain_test.go is the fourth review's case for the one claim
+// The one claim
 // about the drain that no test in this repository has ever discriminated: that a
 // phase=data file reaches *every* tenant's rows, and does it because of the
 // tenancy setting `crossTenants` writes rather than because the role that runs a
@@ -8,13 +8,13 @@ package db_test
 //
 // kit/db/backfill.go states both halves:
 //
-//	crossTenants is the one place a migration reaches every tenant's rows …
-//	one that simply ran as the table owner would be refused by the FORCE every
-//	tenant table carries.
+// 	crossTenants is the one place a migration reaches every tenant's rows …
+// 	one that simply ran as the table owner would be refused by the FORCE every
+// 	tenant table carries.
 //
 // and migrations/000001_tenancy.up.sql states the other half it depends on:
 //
-//	FORCE matters: without it the table owner escapes the policy.
+// 	FORCE matters: without it the table owner escapes the policy.
 //
 // Every case here has run the drain as `postgres`, which is a superuser with
 // BYPASSRLS, and PostgreSQL stops evaluating a policy for such a role whatever

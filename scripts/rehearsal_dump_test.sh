@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# rehearsal_dump_test.sh — the review's case for the one branch of
-# scripts/rehearse_migrations.sh no run in this branch's history had taken: `--dump`.
+# The case for the one branch of
+# scripts/rehearse_migrations.sh no recorded run had taken: `--dump`.
 #
 # The step has two ways to get its copy. `--base-ref` builds the previous release and
 # runs its `bootstrap`; `--dump` restores an operator's `pg_dump`. Every recorded run
-# of this step, in the delivery's and in seven reviews' *Not verified*, is a
-# `--base-ref` run or an argument refusal — the delivery's own IMPLEMENT.md and each
-# review say the `--dump` branch was "covered only by scripts/rehearsal_contention_test.sh
-# and the make check rehearsal steps, which I saw pass". Those cover the contended grep
+# of this step is a
+# `--base-ref` run or an argument refusal — the reports that recorded the step said
+# the `--dump` branch was "covered only by scripts/rehearsal_contention_test.sh
+# and the make check rehearsal steps". Those cover the contended grep
 # and the watcher's program over a captured log; none restores a dump.
 #
 # So this runs it end to end, and runs it where it means something: the base is
@@ -32,7 +32,7 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 script="$root/scripts/rehearse_migrations.sh"
-base_ref="${REVIEW15_BASE_REF:-75b04d1^}"
+base_ref="${REHEARSAL_DUMP_BASE_REF:-75b04d1^}"
 failed=0
 fail() { echo "FAIL: $*" >&2; failed=1; }
 ok() { echo "ok: $*"; }
@@ -65,15 +65,15 @@ with_database() {
 }
 query() { psql "$(with_database "$admin_url" "$1")" -v ON_ERROR_STOP=1 -qtA -c "$2"; }
 
-# A dump to rehearse with. REVIEW15_DUMP reviews an existing one (stage 3 needs no
+# A dump to rehearse with. REHEARSAL_DUMP rehearses an existing one (stage 3 needs no
 # fresh base at all); otherwise stage 1 builds the base and dumps it.
-dump="${REVIEW15_DUMP:-$work/base.dump}"
+dump="${REHEARSAL_DUMP:-$work/base.dump}"
 
 # ---------------------------------------------------------------------------
 # 1. A `--base-ref` rehearsal, kept, so the base it built can be dumped.
 # ---------------------------------------------------------------------------
-if [ -n "${REVIEW15_DUMP:-}" ]; then
-	[ -r "$dump" ] || { fail "REVIEW15_DUMP names no readable dump at $dump"; exit 1; }
+if [ -n "${REHEARSAL_DUMP:-}" ]; then
+	[ -r "$dump" ] || { fail "REHEARSAL_DUMP names no readable dump at $dump"; exit 1; }
 	ok "stage 1 skipped: rehearsing the existing dump at $dump"
 else
 if ! timeout 1800 bash "$script" --base-ref "$base_ref" --keep >"$work/baseref.log" 2>&1; then

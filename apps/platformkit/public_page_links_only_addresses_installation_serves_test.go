@@ -6,7 +6,7 @@ package main
 // matters it is proved with what correct behaviour prints (a status, the door that
 // answers, the page the settings name), never with the defect's own output.
 //
-// Reviewer: a fresh pi session, 2026-09-21. REVIEW.md in the state directory
+// Reviewer: a fresh pi session, 2026-09-21. the record in the state directory
 // carries the reproduction of each and the assertion it falsifies.
 
 import (

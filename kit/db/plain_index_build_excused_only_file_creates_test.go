@@ -1,6 +1,6 @@
 package db_test
 
-// plain_index_build_excused_only_file_creates_test.go is the seventh review's case for what the
+// What the
 // index-not-concurrent rule decides from.
 //
 // migrations/README.md: "`index-not-concurrent` | `CREATE INDEX` without

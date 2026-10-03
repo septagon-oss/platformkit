@@ -1,6 +1,6 @@
 package main
 
-// Review 3's pin over the one production line this delivery changed.
+// The composition publishes its own contract: the one production line this delivery changed.
 //
 // apps/platformkit/fault.go's WorkspaceCatalog literal is what makes the published
 // document name the fields a native shell parses — the commit body of 6c41681 calls
@@ -15,7 +15,7 @@ package main
 // Reproduction of the hole, at 5fe47ff, with fault.go's renderer rewritten to hand
 // back *any (the type erased — the state the case above promises to refuse):
 //
-//	go test ./apps/platformkit -count=1        -> ok
+// 	go test ./apps/platformkit -count=1        -> ok
 //
 // The binary this repository ships would then publish a catalog whose body it
 // describes as an empty object, and every gate here would stay green while a shell

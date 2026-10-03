@@ -6,8 +6,8 @@ package db_test
 //
 // `migrations/README.md` writes, in the paragraph under its own rule table:
 //
-//	"Seven refusals have no `allow=` to answer them — the executor's three (…), and the four
-//	rules whose exception column says `none`"
+// 	"Seven refusals have no `allow=` to answer them — the executor's three (…), and the four
+// 	rules whose exception column says `none`"
 //
 // and `docs/adr/0011-migration-ownership.md` repeats the count ("those four rules and the
 // executor's three"). The table the sentence sits under has eleven rules, five of which

@@ -1,6 +1,6 @@
 package migrations_test
 
-// The fourth review's pin for migrations/000026_module_schema.up.sql.
+// The reference deployment, read against its own mirror.
 //
 // Every shipped test of that function runs under dbtest, which makes a schema for
 // the one test and pins its own pair of default privileges beside it
@@ -24,7 +24,7 @@ package migrations_test
 // (TestModuleSchemaOpensTheOwnerToTheApplicationRole owns those; a policy cannot
 // even be exercised inside the transaction below, because only kit/db may write the
 // setting a policy reads), and a privilege list wider than this namespace's own pin
-// in general (review_round2 and review_round3 pin that, against a deployment that
+// in general (the grant and namespace cases pin that, against a deployment that
 // pins SELECT alone). What it does bite on is the mirror drifting from the
 // deployment's rows in the deployment's own namespace: a dropped `… ON SEQUENCES`
 // statement, a schema grant that stopped being discovered, a privilege arriving that

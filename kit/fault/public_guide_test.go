@@ -11,8 +11,8 @@ import (
 // "calendar/contracts". The prefix is what has to exist in this repository.
 var capability = regexp.MustCompile(`([a-z][a-z0-9_-]*)/(contracts|events|domain)`)
 
-// TestAGuideNamesOnlyAModuleThisRepositoryHolds is the reviewer's pin for the
-// rule ADR 0009 states and T-0031's brief repeats: public documentation
+// TestAGuideNamesOnlyAModuleThisRepositoryHolds is the guides' half of the
+// rule ADR 0009 states: public documentation
 // describes the consumer seam without naming catalog capabilities. A guide may
 // say "a module's value package"; naming a package that lives in a repository
 // this one does not publish is a disclosure the foundation cannot undo. The

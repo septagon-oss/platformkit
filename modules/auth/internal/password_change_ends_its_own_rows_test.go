@@ -1,12 +1,12 @@
 package internal_test
 
-// Review round 3's pin over the row scope of the one revocation.
+// The row scope of the one revocation: a password change ends its own sessions.
 //
 // 04e563f merged two DELETE statements into internal.Service.revoke and made
 // both revocations publish: the password change's clause now leaves an
 // auth.session_revoked per machine it signed out. That widens what a raw
 // statement does with a caller's transaction — it both ends rows and reports
-// them — and the case the round-2 review left covers only the "keep none"
+// them — and the neighbouring case covers only the "keep none"
 // caller across two tenants. This is the other caller, the password change,
 // inside one tenant, where row-level security is no help: every row here is
 // visible to this transaction and the only clause between Ada's password change
@@ -14,12 +14,12 @@ package internal_test
 //
 // Three claims, in the order a person would lose them:
 //
-//   - a refused change writes nothing and emits nothing: the wrong current
-//     password ends no session and adds no revocation to the outbox;
-//   - the accepted change publishes exactly the rows its own statement removed —
-//     two, not one and not three;
-//   - it ends nobody else's: Bhavna's session still identifies, and Ada keeps
-//     the machine she asked from.
+// - a refused change writes nothing and emits nothing: the wrong current
+// password ends no session and adds no revocation to the outbox;
+// - the accepted change publishes exactly the rows its own statement removed —
+// two, not one and not three;
+// - it ends nobody else's: Bhavna's session still identifies, and Ada keeps
+// the machine she asked from.
 //
 // Every assertion reaches the state through a live-session count and a count of
 // the outbox, so it holds whichever sentence the answers carry.

@@ -1,9 +1,9 @@
 package internal
 
-// Review round 2's pin, on the half of review round 1's Finding 1 that nothing
-// in the repository holds.
+// The build stamp has two halves, and this is the one no other case in this
+// repository holds.
 //
-// Finding 1 was that the Makefile stripped the revision the admin shell's footer
+// The Makefile stripped the revision the admin shell's footer
 // renders (mount.go's version()). The cure is in two places: `-buildvcs=false`
 // now sits on the two gate commands that throw their output away and nowhere
 // else — which binary_makefile_goal_builds_carries_revision_footer_test.go guards — and the Makefile pins
@@ -12,7 +12,7 @@ package internal
 // (go.dev/issue/58218, fixed in go1.27) and stamps the first parent directory
 // with a `.git` of its own instead, or fails the build outright.
 //
-// The flags case cannot see that second half: measured in review round 2, it
+// The flags case cannot see that second half: it
 // passes under go1.26.6 in a clone-shaped checkout, so a pin reverted to the
 // `go` line is green in CI and red only on a contributor's linked worktree —
 // the ordinary way to keep two branches buildable.
@@ -67,8 +67,8 @@ func TestTheToolchainTheMakefileSelectsIdentifiesALinkedWorktree(t *testing.T) {
 		command := exec.CommandContext(ctx, "git", arguments...)
 		command.Dir = dir
 		command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null",
-			"GIT_AUTHOR_NAME=review", "GIT_AUTHOR_EMAIL=review@example.test",
-			"GIT_COMMITTER_NAME=review", "GIT_COMMITTER_EMAIL=review@example.test")
+			"GIT_AUTHOR_NAME=stamper", "GIT_AUTHOR_EMAIL=stamper@example.test",
+			"GIT_COMMITTER_NAME=stamper", "GIT_COMMITTER_EMAIL=stamper@example.test")
 		out, err := command.CombinedOutput()
 		if err != nil {
 			t.Skipf("git %s in %s: %v\n%s", strings.Join(arguments, " "), dir, err, out)
@@ -118,12 +118,12 @@ func makefileGOTOOLCHAIN(t *testing.T, root string) string {
 	t.Helper()
 	ask := filepath.Join(t.TempDir(), "gotoolchain.mk")
 	body := "include " + filepath.Join(root, "Makefile") + "\n" +
-		"review-round2-print-gotoolchain:\n\t@printf '%s' '$(GOTOOLCHAIN)'\n"
+		"print-gotoolchain:\n\t@printf '%s' '$(GOTOOLCHAIN)'\n"
 	if err := os.WriteFile(ask, []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	command := exec.Command("make", "--no-print-directory", "-C", root, "-f", ask,
-		"review-round2-print-gotoolchain")
+		"print-gotoolchain")
 	out, err := command.CombinedOutput()
 	if err != nil {
 		t.Fatalf("asking the Makefile for the toolchain it selects: %v\n%s", err, out)

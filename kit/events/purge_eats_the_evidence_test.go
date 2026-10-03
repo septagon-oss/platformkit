@@ -1,6 +1,6 @@
 package events
 
-// REVIEW round 1 (T-0109), finding 6.
+// A dead letter keeps the payload it describes, purge or no purge.
 //
 // The brief opened with "dead letters lose their evidence". This delivery clears
 // the `platformkit_handled` half of that with `Replay` and says so; the payload
@@ -41,7 +41,7 @@ func TestADeadLetterKeepsThePayloadItDescribes(t *testing.T) {
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 	transport := memory.New()
 	if err := Consume(ctx, conn, transport, []Subscription{{
-		Module: "review1", Name: "ledger.invoice_issued",
+		Module: "ledger", Name: "ledger.invoice_issued",
 		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
 			return errors.New("the mailer is down")
 		},
@@ -87,7 +87,7 @@ func TestADeadLetterKeepsThePayloadItDescribes(t *testing.T) {
 	}
 
 	// The operator a week later gets a refusal that blames the missing row, not the
-	// purge — under an operator, because finding 2's own pin requires one of those.
+	// purge — under an operator, because the replay pin requires one of those.
 	if _, err := Replay(tenancy.WithActor(ctx, uuid.New()), conn, id, "", "the mailer is fixed"); errors.Is(err, ErrNothingToReplay) {
 		t.Errorf("the replay is unreachable because the payload was purged: %v", err)
 	} else if err != nil {

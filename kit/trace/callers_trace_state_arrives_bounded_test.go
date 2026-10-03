@@ -1,15 +1,15 @@
 package trace_test
 
-// REVIEW round 3 (T-0109).
+// A caller-supplied correlation handle is bounded before it is stored.
 //
 // kit/httpx/request_id.go bounds the header beside this one and says why:
 //
-//	// maxRequestID bounds an id a client supplied. An id is a correlation
-//	// handle, not a payload.
-//	const maxRequestID = 64
+// 	// maxRequestID bounds an id a client supplied. An id is a correlation
+// 	// handle, not a payload.
+// 	const maxRequestID = 64
 //
-//	func givenID(s string) string { … a newline or a kilobyte in it is a forged
-//	log entry or a wasted response. }
+// 	func givenID(s string) string { … a newline or a kilobyte in it is a forged
+// 	log entry or a wasted response. }
 //
 // tracestate is the same kind of value — a caller-supplied correlation handle
 // that this program copies without reading it — and it is treated the opposite

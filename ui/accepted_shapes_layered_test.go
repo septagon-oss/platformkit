@@ -1,11 +1,10 @@
 package ui_test
 
-// Review round 8 of T-0108: a pin, not a defect. Rounds 1-7 each pinned a
-// refusal; nothing reads what the gate *accepts*. The layer promise dies two
-// ways: a consumer rule that escapes @layer client, or a composition that refuses
+// What the gate *accepts* is as load-bearing as what it refuses. The layer promise
+// dies two ways: a consumer rule that escapes @layer client, or a composition that refuses
 // a rule a real client writes — and a refused composition panics at mount and
 // ships no stylesheet, the failure mode ui/ui.go names itself. So this feeds
-// Compose the consumer shapes ui/ui.go's docs and round 20's sweep say the gate
+// Compose the consumer shapes ui/ui.go's docs say the gate
 // must take, and counts braces over the bytes back: the blocks opened at depth 0
 // are the four layers in that order, no brace opens or closes outside every
 // block, and the consumer's text is inside the client one. It reads no refusal
@@ -48,7 +47,7 @@ func TestEveryConsumerShapeTheGateTakesLandsInsideOneLayer(t *testing.T) {
 			sheet := css.NewSheet()
 			c.build(sheet)
 			body := string(ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{sheet}}).Body)
-			heads, stray := reviewDepth0Blocks(body)
+			heads, stray := depth0Blocks(body)
 			if got := strings.Join(heads, "|"); got != "@layer tokens|@layer base|@layer components|@layer client" {
 				t.Errorf("with a consumer %s rule in it the sheet opens %v at depth 0, want the four layers in that order: a block outside every layer is unlayered and outranks the order statement", c.name, heads)
 			}
@@ -63,9 +62,9 @@ func TestEveryConsumerShapeTheGateTakesLandsInsideOneLayer(t *testing.T) {
 	}
 }
 
-// reviewDepth0Blocks returns the head of every block the sheet opens at depth 0
+// depth0Blocks returns the head of every block the sheet opens at depth 0
 // and every brace there that opened or closed nothing.
-func reviewDepth0Blocks(body string) (heads, stray []string) {
+func depth0Blocks(body string) (heads, stray []string) {
 	depth, pending := 0, 0
 	for at := 0; at < len(body); at++ {
 		switch body[at] {

@@ -1,7 +1,6 @@
 package db_test
 
-// data_file_judged_what_postgres_reads_value_test.go is the sixth review's case for the one question the
-// round made single: does this body read the batch window.
+// The one question: does this body read the batch window.
 //
 // kit/db/README.md says the answer is taken from one reading of the body and that
 // the reading puts away "the contents of every string literal", so "a body that
@@ -14,19 +13,19 @@ package db_test
 // readings it then produces fail in *both* directions for the question that is now
 // asked only once:
 //
-//   - a dollar-quoted or block-commented body carrying an apostrophe opens a
-//     literal that never closes, so `shape` puts away the real statements after it,
-//     and a bounded file is refused as unbounded — and the remedy its refusal
-//     offers (`allow=data-body-unbounded`) sends the body unwrapped, where the
-//     window relation it names does not exist (42P01), after the owner's earlier
-//     file has already applied. That is the harm the previous round closed for a
-//     `--` inside a `'…'`, over again through the other spellings PostgreSQL
-//     accepts;
-//   - the same two constructs leave the text *in*, so a body whose only mention of
-//     the window is data it is writing answers "yes", gets wrapped, and its one
-//     whole-table statement runs once per window over every row of the table —
-//     which is what the round's `migration.windowed` change exists to make
-//     impossible, and what `windowed` still cannot see.
+// - a dollar-quoted or block-commented body carrying an apostrophe opens a
+// literal that never closes, so `shape` puts away the real statements after it,
+// and a bounded file is refused as unbounded — and the remedy its refusal
+// offers (`allow=data-body-unbounded`) sends the body unwrapped, where the
+// window relation it names does not exist (42P01), after the owner's earlier
+// file has already applied. That is the harm the previous round closed for a
+// `--` inside a `'…'`, over again through the other spellings PostgreSQL
+// accepts;
+// - the same two constructs leave the text *in*, so a body whose only mention of
+// the window is data it is writing answers "yes", gets wrapped, and its one
+// whole-table statement runs once per window over every row of the table —
+// which is what the round's `migration.windowed` change exists to make
+// impossible, and what `windowed` still cannot see.
 //
 // Both legs assert through the rows: `passes` counts the transactions that wrote a
 // row, so a body that ran once per window is visible whatever the runner printed.

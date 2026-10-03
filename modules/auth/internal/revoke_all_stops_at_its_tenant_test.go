@@ -18,7 +18,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 )
 
-// TestRevokeAllEndsOnlyWhatItsOwnStatementRemoved is this round's pin over the
+// TestRevokeAllEndsOnlyWhatItsOwnStatementRemoved is this case's pin over the
 // cure: the read-then-delete became one raw DELETE ... RETURNING, and a raw
 // statement is only as tenant-bounded as the transaction carrying it. Two
 // tenants hold sessions; the command runs in the first. Its return value must

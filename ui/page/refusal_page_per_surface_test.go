@@ -1,9 +1,8 @@
 package page_test
 
-// Reviewer's cases for the third review of T-0024 (three surfaces by path).
-// Reviewer: a fresh pi session, 2026-09-21.
+// The refusal page on each surface that answers a refused person.
 //
-// Round 5 closed the second review's finding 1 by translating the refusal page. Every case
+// The refusal page is translated. Every case
 // that proves it — ui/page/fault_language_test.go and kit/httpx/unrecognised_caller_told_where_another_surface_writes_test.go
 // — builds a problem by hand and hands it to the renderer. Both are true whatever the guards
 // do with the request that would have produced it. These cases ask the composed kernel
@@ -11,8 +10,8 @@ package page_test
 // renderer wired the way apps/platformkit/fault.go wires it. That is the level at which a
 // person either sees a page in the language they asked for or does not.
 //
-// The first case is the pin: the second review's finding 3 (a refusal outside the host's
-// chain) and finding 1 (an English-only refusal page) meet at the two addresses round 5
+// The first case is the pin: one finding (a refusal outside the host's
+// chain) and the finding (an English-only refusal page) meet at the two addresses an earlier round
 // changed — an address nobody mounted and a miss inside a mounted tree — and both hold when
 // the question comes through the router. The rest are the refusals whose answer never
 // reaches this package at all, because the guard that refuses them answers with
@@ -182,7 +181,7 @@ const (
 )
 
 // TestTheRefusalOfAnAddressNobodyMountedSpeaksTheRequestThroughTheRouter is the pin, and it
-// passes: the second review's two findings meet at these two addresses, and what round 5
+// passes: an earlier review's two findings meet at these two addresses, and what an earlier round
 // shipped holds when the question is asked of the router rather than of the renderer. An
 // address nobody mounted and a file a mounted tree does not hold are the same refusal of the
 // same host, in the language the request brought, with the headers that say so and the
@@ -234,7 +233,7 @@ func TestTheRefusalOfAnAddressNobodyMountedSpeaksTheRequestThroughTheRouter(t *t
 // apps/platformkit/fault.go: "The application, not kit/app, decides this: a failure page is
 // chrome… and every guard in the kernel then answers a navigating client with this shell's
 // page" (ui/page/fault.go). ui/page/fault.go's new table names six refusals of the session
-// and the permission — AUTH_DENIED among them — and the second review's finding 1 was closed
+// and the permission — AUTH_DENIED among them — and one finding was closed
 // by translating them.
 //
 // The guard that asks for a permission refuses with huma.WriteErr

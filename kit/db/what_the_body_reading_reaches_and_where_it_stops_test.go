@@ -1,8 +1,7 @@
 package db_test
 
-// what_the_body_reading_reaches_and_where_it_stops_test.go is the eleventh round's
-// own case for the reach of the two readings its fix added, on the three edges the acceptance
-// review's files leave open.
+// The reach of the two readings a fix added, on the three edges the
+// sibling files leave open.
 //
 // migrations/README.md says a rule is a judgement a file may answer with `allow=` and a
 // sentence, and the reading that reaches the statements inside a `DO $$ … $$` body is written
@@ -21,14 +20,14 @@ package db_test
 // the file put after the verb, and a rule with no exception that gained a file it refuses for
 // a spelling would have taken its teeth while pretending to keep them.
 //
-// The last case reads the file the review's own
+// The last case reads the file its own
 // `TestTheIndexExemptionIsNotBoughtByAValueThatSpellsACreate` reads, and asserts the half of it
 // the catalogue can answer: the create inside a value buys no exemption, the build beside it is
 // refused by name and none of the refused release reaches this database. It is here because that
 // leg finishes by reading `schema_migrations`, which no run that refuses a file's text can have
 // created — the guard answers before the pool is opened, which `migrations/rule_floor_files_force_test.go`
 // pins by pointing `db.Migrate` at a database that is not there. The claim is not argued away;
-// it is asserted here out of `pg_class`, the way the review's two sibling files read it, and the
+// it is asserted here out of `pg_class`, the way its two sibling files read it, and the
 // leg's own query is recorded under *Not verified*.
 //
 // Every assertion is on the catalogue and the ledger: which rule refused, which relations and
@@ -150,17 +149,17 @@ REINDEX (CONCURRENTLY) TABLE probe`)},
 	}
 }
 
-// TestTheIndexExemptionIsNotBoughtByWordsInsideAValue reads the same file the tenth review's
+// TestTheIndexExemptionIsNotBoughtByWordsInsideAValue reads the same file as the
 // `TestTheIndexExemptionIsNotBoughtByAValueThatSpellsACreate` reads, and asserts the half of
 // it that the catalogue can answer: the create in the value buys nothing, the plain build
 // beside it is refused by name, and none of the refused release reaches this database.
 //
-// It is here because the review's own leg finishes by reading `schema_migrations`, which no
+// It is here because its own leg finishes by reading `schema_migrations`, which no
 // run that refuses a file's text can have created — the guard answers before the pool is
 // opened, which `migrations/rule_floor_files_force_test.go` pins by pointing `db.Migrate` at a
 // database that is not there. That leg's assertion is recorded under *Not verified* rather
 // than argued away; this one is the same claim about the same file, read out of `pg_class`
-// the way the review's own two sibling files read it.
+// the way its own two sibling files read it.
 func TestTheIndexExemptionIsNotBoughtByWordsInsideAValue(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	files := fstest.MapFS{

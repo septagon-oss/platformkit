@@ -1,6 +1,6 @@
 package events_test
 
-// REVIEW round 1 (T-0109), finding 1.
+// A declared member nothing can project is refused, not left unconstrained.
 //
 // schema.go states the rule for a member it cannot project — "Nil means 'no
 // constraint' … an honest unknown is checked by nobody rather than wrongly by
@@ -48,15 +48,15 @@ type unprojectableIssued struct {
 
 const unprojectableBody = `{"raw":{"a":1},"any":"text","list":[1,"two"]}`
 
-func declareReview1(t *testing.T, list ...events.Declared) {
+func declareManifest(t *testing.T, list ...events.Declared) {
 	t.Helper()
 	events.DeclareAll(list)
 	t.Cleanup(func() { events.DeclareAll(nil) })
 }
 
-// publishReview1 returns the error and, separately, whatever the call panicked
+// publishManifest returns the error and, separately, whatever the call panicked
 // with, so a panic is a reported result rather than a dead test binary.
-func publishReview1(t *testing.T, conn *db.Conn, name string, payload any) (err error, panicked any) {
+func publishManifest(t *testing.T, conn *db.Conn, name string, payload any) (err error, panicked any) {
 	t.Helper()
 	defer func() {
 		if r := recover(); r != nil {
@@ -109,9 +109,9 @@ func TestAMemberTheProjectionCannotDescribeConstrainsNothing(t *testing.T) {
 // brief names: the outbox either takes the row or refuses it with a reason.
 func TestTheDoorDoesNotPanicOnAMemberItCannotCheck(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
-	declareReview1(t, events.Declare[unprojectableIssued]("billing.invoice_issued"))
+	declareManifest(t, events.Declare[unprojectableIssued]("billing.invoice_issued"))
 
-	err, panicked := publishReview1(t, conn, "billing.invoice_issued", json.RawMessage(unprojectableBody))
+	err, panicked := publishManifest(t, conn, "billing.invoice_issued", json.RawMessage(unprojectableBody))
 	if panicked != nil {
 		t.Fatalf("Publish panicked instead of answering: %v", panicked)
 	}
@@ -129,7 +129,7 @@ func TestTheDoorDoesNotPanicOnAMemberItCannotCheck(t *testing.T) {
 	// The check still bites where it can see: the same door refuses a payload
 	// that is not an object at all, naming the event and the path, and writes
 	// nothing (rule 9). This is the half that must survive the fix.
-	err, panicked = publishReview1(t, conn, "billing.invoice_issued", "a string, not the payload")
+	err, panicked = publishManifest(t, conn, "billing.invoice_issued", "a string, not the payload")
 	if panicked != nil {
 		t.Fatalf("Publish panicked instead of refusing: %v", panicked)
 	}

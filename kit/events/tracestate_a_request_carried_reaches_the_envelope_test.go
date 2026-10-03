@@ -1,6 +1,6 @@
 package events
 
-// REVIEW round 4 (T-0109) — a pin, not a defect report. Nothing here fails at
+// A pin, not a defect report. Nothing here fails at
 // the head it was written against; it holds the assertion this branch is most
 // easily able to lose without noticing.
 //
@@ -8,15 +8,15 @@ package events
 // every attribute the relay is supposed to carry — and of the two headers the
 // W3C distributed-tracing extension names, it checks one. `traceparent` is
 // asserted twice (TestARelayedEventIsACloudEventsEnvelopeOnItsTenantsSubject and
-// the review 1 tenant pin), so that half of the pair cannot be dropped quietly.
+// the tenant-boundary pin), so that half of the pair cannot be dropped quietly.
 // `tracestate` — the attribute kit/trace's own comment says a vendor's entry in
 // is "not this program's to interpret or reorder", the attribute migration
 // 000028 added a column for, and the attribute 3809d04 bounded at 512 bytes
 // because the relay republishes it — is asserted by nothing in the repository:
 //
-//	$ grep -rn "TraceState" --include=*_test.go kit/events kit/app apps/platformkit
-//	kit/events/transport/cloudevents_test.go:44:	ev.TraceState = "rojo=00f067aa0ba902b7"
-//	kit/events/transport/cloudevents_test.go:85:	ev.TraceState = "rojo=00f067aa0ba902b7"
+// 	$ grep -rn "TraceState" --include=*_test.go kit/events kit/app apps/platformkit
+// 	kit/events/transport/cloudevents_test.go:44:	ev.TraceState = "rojo=00f067aa0ba902b7"
+// 	kit/events/transport/cloudevents_test.go:85:	ev.TraceState = "rojo=00f067aa0ba902b7"
 //
 // both of which set it on a value this package marshals in-process. Deleting the
 // two lines that carry it out of the row (kit/events/relay.go:98-99) or dropping

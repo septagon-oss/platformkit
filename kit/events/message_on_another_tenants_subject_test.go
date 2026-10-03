@@ -1,6 +1,6 @@
 package events
 
-// A reviewer's pin (review round 5, task T-0109).
+// A message on another tenant's subject is refused at the door.
 //
 // The subject is where this delivery put the tenant: "platformkit.<tenant>.
 // <module>.<event> so a durable can be per tenant" (decision 0053 §1), and
@@ -69,7 +69,7 @@ func TestAMessageStoredOnOneTenantsAddressIsNotDeliveredInsideAnotherTenantsTran
 	// One row that belongs to tenant B and to nobody else. The handler's own
 	// read of it is what says which tenant its transaction ran under: read
 	// through RLS it is visible exactly when the transaction is B's.
-	marker := "review5-" + uuid.NewString()
+	marker := "other-tenant-" + uuid.NewString()
 	if _, err := admin.ExecContext(t.Context(),
 		`INSERT INTO platformkit_outbox (tenant_id, name, payload) VALUES ($1, $2, '{}'::jsonb)`,
 		tenantB.ID, marker); err != nil {

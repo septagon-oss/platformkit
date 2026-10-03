@@ -1,6 +1,6 @@
 package rest_test
 
-// The door-level half of the review: what the folding rule and the new
+// What the folding rule and the new
 // "changed nothing, say nothing" rule answer at the doors themselves — under
 // every media type the create route accepts, for a row another tenant owns,
 // when the refused body also named a field the caller was allowed to change,

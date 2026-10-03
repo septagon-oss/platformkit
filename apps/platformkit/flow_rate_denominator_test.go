@@ -1,6 +1,6 @@
 package main
 
-// Review 1's pin over the denominator of mobile_flow_pass_rate.
+// The denominator of mobile_flow_pass_rate, pinned.
 //
 // The brief defines the number: "declared mobile flows whose Maestro spec ran and
 // passed ÷ declared". e2e/maestro/flows.json states the same thing about itself —
@@ -17,9 +17,9 @@ package main
 // still run by hand in a repository this job never touches. The command, against a
 // report in which the kernel's flow passed:
 //
-//	printf '<testsuites><testsuite name="catalog" tests="1"><testcase name="e2e/maestro/catalog.yaml"/></testsuite></testsuites>' >/tmp/pass.xml
-//	MAESTRO_JUNIT=/tmp/pass.xml go test ./apps/platformkit -run TestDeclaredMobileFlowsRan -count=1 -v
-//	    -> mobile_flow_pass_rate = 1/1 over the flows this repository runs
+// 	printf '<testsuites><testsuite name="catalog" tests="1"><testcase name="e2e/maestro/catalog.yaml"/></testsuite></testsuites>' >/tmp/pass.xml
+// 	MAESTRO_JUNIT=/tmp/pass.xml go test ./apps/platformkit -run TestDeclaredMobileFlowsRan -count=1 -v
+// 	    -> mobile_flow_pass_rate = 1/1 over the flows this repository runs
 //
 // while the file the same commit calls the denominator lists five flows.
 //

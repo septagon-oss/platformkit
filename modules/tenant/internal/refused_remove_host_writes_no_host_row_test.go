@@ -1,6 +1,6 @@
 package internal_test
 
-// Review round 1 of T-0115, at the module: the refusal the delivery says it asks
+// At the module: the refusal the delivery says it asks
 // before it writes, for the one verb where it asks after.
 //
 // `internal/service.go` states the rule for the whole delivery:

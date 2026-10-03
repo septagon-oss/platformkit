@@ -1,6 +1,6 @@
 package db_test
 
-// index_exemption_spelling_test.go is the ninth review's case for the
+// The
 // index-exemption below the `index-not-concurrent` rule.
 //
 // migrations/README.md's row for that rule says it "fires on `CREATE INDEX` without

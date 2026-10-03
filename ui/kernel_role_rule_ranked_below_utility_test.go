@@ -1,6 +1,6 @@
 package ui_test
 
-// Review round 1 of T-0108 (the stylesheet has cascade layers). These cases
+// The stylesheet has cascade layers. These cases
 // read the sheet Compose ships and ask the two questions the delivery's own
 // documentation says are answered: does a kernel role rule still outrank the
 // utility sitting on its own element, and does the client gate cover every hook
@@ -9,7 +9,7 @@ package ui_test
 // Each case asserts the behaviour the documentation promises, so each has a
 // passing branch once the layer placement or the gate is fixed; none asserts
 // what the broken sheet prints. The browser half of the first case is measured
-// in the review report (a closed modal computes display: flex, a checked
+// in a browser (a closed modal computes display: flex, a checked
 // checkbox computes transparent ink, both hidden at the merge base).
 
 import (
@@ -21,8 +21,8 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// reviewLayerRanks parses the order statement Compose opens the sheet with.
-func reviewLayerRanks(t *testing.T, sheet string) map[string]int {
+// layerRanks parses the order statement Compose opens the sheet with.
+func layerRanks(t *testing.T, sheet string) map[string]int {
 	t.Helper()
 	line, _, _ := strings.Cut(sheet, "\n")
 	if !strings.HasPrefix(line, "@layer ") || !strings.HasSuffix(line, ";") {
@@ -35,10 +35,10 @@ func reviewLayerRanks(t *testing.T, sheet string) map[string]int {
 	return ranks
 }
 
-// reviewLayerOf returns the layer whose block holds the selector, by the
+// layerOf returns the layer whose block holds the selector, by the
 // emitter's own indentation: a layer block opens at column 0 and closes at
 // column 0, everything it holds is indented.
-func reviewLayerOf(t *testing.T, sheet, selector string) string {
+func layerOf(t *testing.T, sheet, selector string) string {
 	t.Helper()
 	at := strings.Index(sheet, selector)
 	if at < 0 {
@@ -69,13 +69,13 @@ func reviewLayerOf(t *testing.T, sheet, selector string) string {
 func TestAKernelRoleRuleIsNotRankedBelowItsOwnUtility(t *testing.T) {
 	t.Parallel()
 	sheet := string(ui.Compose(design.Default()).Body)
-	ranks := reviewLayerRanks(t, sheet)
+	ranks := layerRanks(t, sheet)
 	for _, pair := range []struct{ role, utility string }{
 		{"dialog[data-component=modal]:not([open]) {", ".flex {"},
 		{"[data-component=checkbox] > [data-checkbox-box] {", ".text-transparent {"},
 		{"[data-component=checkbox] > input:is(:checked,:indeterminate) + [data-checkbox-box] {", ".bg-surface-primary {"},
 	} {
-		roleLayer, utilityLayer := reviewLayerOf(t, sheet, pair.role), reviewLayerOf(t, sheet, pair.utility)
+		roleLayer, utilityLayer := layerOf(t, sheet, pair.role), layerOf(t, sheet, pair.utility)
 		if ranks[roleLayer] < ranks[utilityLayer] {
 			t.Errorf("the kernel role rule %s sits in @layer %s, below the utility %s in @layer %s: the utility wins and the role stops applying",
 				pair.role, roleLayer, pair.utility, utilityLayer)

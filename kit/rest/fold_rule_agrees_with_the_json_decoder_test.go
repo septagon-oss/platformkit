@@ -1,7 +1,7 @@
 package rest
 
-// The two files named review2 are a review's, not the change's. This one asks
-// the claim the change rests on — that foldedName and encoding/json agree about
+// What the folding rule rests on: the claim
+// that foldedName and encoding/json agree about
 // which key names which field — of every single-rune spelling of one declared
 // name. A key the decoder binds but the predicate does not name is a write
 // through the door; a key the predicate names but the decoder ignores is a

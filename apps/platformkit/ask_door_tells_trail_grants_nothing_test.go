@@ -1,6 +1,6 @@
 package main
 
-// ask_door_tells_trail_grants_nothing_test.go is the second review's pin over the ask's
+// The pin over the ask's
 // other door: the kernel's own JSON one, POST /api/v1/app/access-requests.
 //
 // Every ask case on this branch asks the browser door — apps/platformkit's journey,
@@ -53,7 +53,7 @@ func TestTheJSONAskDoorTellsTheSameTrailAndGrantsNothing(t *testing.T) {
 	memberID := userIDOf(t, cfg, asker)
 
 	// 1. Anonymous: refused at the guard, for the reason the guard gives, and the
-	//    ask wrote nothing. The refusal is the answer, not a half-write with it.
+	// ask wrote nothing. The refusal is the answer, not a half-write with it.
 	code, body := do(t, cfg, nil, http.MethodPost, acmeHost, jsonAskPath, asked)
 	if code != http.StatusForbidden || !strings.Contains(body, "AUTH_ANONYMOUS") {
 		t.Errorf("POST %s anonymously = %d %s, want 403 naming AUTH_ANONYMOUS", jsonAskPath, code, body)
@@ -106,7 +106,7 @@ func TestTheJSONAskDoorTellsTheSameTrailAndGrantsNothing(t *testing.T) {
 	}
 
 	// 6. Two doors, one command: the browser's form lands beside the JSON ask, in
-	//    the same bell and the same trail, with the same count of notices.
+	// the same bell and the same trail, with the same count of notices.
 	if code, location, posted := askForm(t, cfg, member, acmeHost, pinnedAsk,
 		"permission=task%3Aread&path=%2Fapp%2Ftask%2Ftasks"); code != http.StatusSeeOther {
 		t.Fatalf("POST %s = %d %s, want the 303", pinnedAsk, code, posted)

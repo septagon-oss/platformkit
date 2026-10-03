@@ -1,6 +1,6 @@
 package main
 
-// Review 6's pins over the one door `2751741` opened, and over the doors the
+// Pins over the one door that change opened, and over the doors the
 // same commit's README says it did not.
 //
 // `httpx.AnyCredential()` is new in this kernel: a fifth authorisation
@@ -13,30 +13,30 @@ package main
 // not something a declaration checker can read off an operation id. So the
 // guarantee has to be a case at the mount, and this is that case:
 //
-//  1. the door admits a caller who is nobody. `AnyCredential` is not `Public`,
-//     and the kind exists precisely because the principal check still has to
-//     run first. Measured: anonymous is 403 `AUTH_ANONYMOUS` today, and a
-//     session is 200 — so the case cannot be satisfied by refusing everybody,
-//     which is the shape the previous round's cure had.
-//  2. the door belongs to a tenant. A key is minted inside one tenant and its
-//     resolution reads a row inside the tenant the Host resolved; presented at
-//     another tenant's address it is a stranger, and this door — new, and the
-//     widest thing a key may now touch — must agree with every other door about
-//     that. Reached only through statuses and the resource paths a document
-//     names.
-//  3. what the door answers is a promise it can keep. The document says "the
-//     resources this caller may reach", so every path it names has to answer
-//     that caller, and a read-only key must not be handed verbs. This is the
-//     consistency between the catalogue's closures (`Readable`, `Writable`,
-//     `CommandsFor`) and the middleware that guards the routes: `mayUse` answers
-//     `recognised` for a `signed_in` command while `authorize` refuses a scoped
-//     credential at such a route, so the two disagree today only in principle —
-//     no registered resource declares one. The case runs both and would see it
-//     the day someone mounts one.
-//  4. the doors the README says are still a session's work are. `modules/auth/README.md`
-//     lists them twice and names two more (`POST /logout` and
-//     `POST /tokens/{id}/revoke`) with a reason each; `61e5f34`'s guard is what
-//     makes them true, and nothing pinned five of the seven.
+// 1. the door admits a caller who is nobody. `AnyCredential` is not `Public`,
+// and the kind exists precisely because the principal check still has to
+// run first. Measured: anonymous is 403 `AUTH_ANONYMOUS` today, and a
+// session is 200 — so the case cannot be satisfied by refusing everybody,
+// which is the shape the previous round's cure had.
+// 2. the door belongs to a tenant. A key is minted inside one tenant and its
+// resolution reads a row inside the tenant the Host resolved; presented at
+// another tenant's address it is a stranger, and this door — new, and the
+// widest thing a key may now touch — must agree with every other door about
+// that. Reached only through statuses and the resource paths a document
+// names.
+// 3. what the door answers is a promise it can keep. The document says "the
+// resources this caller may reach", so every path it names has to answer
+// that caller, and a read-only key must not be handed verbs. This is the
+// consistency between the catalogue's closures (`Readable`, `Writable`,
+// `CommandsFor`) and the middleware that guards the routes: `mayUse` answers
+// `recognised` for a `signed_in` command while `authorize` refuses a scoped
+// credential at such a route, so the two disagree today only in principle —
+// no registered resource declares one. The case runs both and would see it
+// the day someone mounts one.
+// 4. the doors the README says are still a session's work are. `modules/auth/README.md`
+// lists them twice and names two more (`POST /logout` and
+// `POST /tokens/{id}/revoke`) with a reason each; `61e5f34`'s guard is what
+// makes them true, and nothing pinned five of the seven.
 
 import (
 	"encoding/json"
@@ -58,7 +58,7 @@ const r6CatalogPath = "/api/v1/app/resources"
 func r6KeyScopedToARead(t *testing.T, cfg config.Config, admin *http.Client) string {
 	t.Helper()
 	code, body := do(t, cfg, admin, http.MethodPost, acmeHost, "/api/v1/auth/tokens",
-		`{"name":"Review 6","scopes":["task:read"]}`)
+		`{"name":"scoped-task-key","scopes":["task:read"]}`)
 	if code != http.StatusCreated {
 		t.Fatalf("minting a key scoped to task:read = %d %s, want 201", code, body)
 	}
@@ -224,7 +224,7 @@ func TestWhatTheCatalogueTellsAKeyTheKeyCanActuallyWalk(t *testing.T) {
 // withdraw a factor, revoke a session, sign out of every browser", plus
 // `POST /logout` and `POST /tokens/{id}/revoke`, each with a sentence of its own
 // about why a key may not do it — and asks a key for each. `61e5f34`'s guard is
-// what makes those sentences true; review 5 pinned five doors and these seven
+// what makes those sentences true; the scoped-key case pinned five doors and these seven
 // are what the file promises, so the promise and the proof are now the same size.
 func TestTheSelfServiceDoorsTheReadmePromisesAreStillASessionsWork(t *testing.T) {
 	path, cfg := configure(t)

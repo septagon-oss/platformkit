@@ -1,8 +1,8 @@
 package rest_test
 
-// signed_in_catalog_test.go — review 1's pin, and the case SPECIFY §4
-// named (TestASignedInResourceIsInItsCallersCatalogueAtAll) that the delivery
-// never wrote: the reason Readable moved onto the declaration is that Describe
+// The case the delivery never wrote:
+// TestASignedInResourceIsInItsCallersCatalogueAtAll. The reason Readable moved
+// onto the declaration is that Describe
 // drops what it answers no to, so the claim that matters is about the document,
 // not about the method. This asks the document, over a mounted Spec, a real
 // Postgres and a caller who holds no grant at all.

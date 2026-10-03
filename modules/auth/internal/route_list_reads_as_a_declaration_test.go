@@ -1,8 +1,8 @@
 package internal
 
-// Review round 5's pin, on the one number of the brief that no test holds.
+// The one number of the brief no test held: the route list reads as a declaration.
 //
-// T-0100 exists partly because "RegisterRoutes is 253 lines … a list that long
+// This module exists partly because "RegisterRoutes is 253 lines … a list that long
 // is a page a reader scrolls rather than a declaration they read", and its
 // done-criterion 3 names the bound: no function exceeds 150 lines except a
 // `cases` table. Nothing in this repository measures a function. The loc budget
@@ -13,13 +13,13 @@ package internal
 // So this case reads handler.go the way a reader does. Two assertions, both
 // about the list rather than the answers it names:
 //
-//   - RegisterRoutes spans at most 150 lines, the brief's own bound;
-//   - every registration declares its guard and hands over a factory call or a
-//     named function, so no operation body is spelled out inside the list. The
-//     kernel already panics at boot on the zero Auth (httpx.prepare), which is
-//     why the second half is a shape and not only an argument count: a closure
-//     passed inline is a guarded, declared route that is still forty lines of
-//     prose in the middle of a table of contents.
+// - RegisterRoutes spans at most 150 lines, the brief's own bound;
+// - every registration declares its guard and hands over a factory call or a
+// named function, so no operation body is spelled out inside the list. The
+// kernel already panics at boot on the zero Auth (httpx.prepare), which is
+// why the second half is a shape and not only an argument count: a closure
+// passed inline is a guarded, declared route that is still forty lines of
+// prose in the middle of a table of contents.
 //
 // Both reach their assertion through what the declaration is — a span, a callee
 // — never through a sentence a defect would have to print.
@@ -95,7 +95,7 @@ func TestTheRouteListIsADeclarationAndEveryRouteNamesItsGuard(t *testing.T) {
 		return true
 	})
 	// Root adopts (decision 0008, 2026-10-01): the literal count is gone. It held handler.go to exactly 11
-	// operations while the module registers 27 (review r3 measured it), so no tree could hold both, and
+	// operations while the module registers 27, so no tree could hold both, and
 	// adding the brief's second factor could only widen the gap. The whole surface is surface_test.go's
 	// mount-record table, which names every route; this case keeps reading each registration's shape.
 	_ = registrations

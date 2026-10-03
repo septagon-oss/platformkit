@@ -1,9 +1,8 @@
 package ui_test
 
-// Review round 6 of T-0108. The delivery of 66b6756 closed the escape round 5
-// found — text inside a declaration *value* that ends the declaration — by
-// reading each value "in the parts a browser splits it into". It split the
-// value and left the property unread beyond one prefix test.
+// A cure for one escape — text inside a declaration *value* that ends the
+// declaration — read each value "in the parts a browser splits it into". It split
+// the value and left the property unread beyond one prefix test.
 //
 // That is the same channel, one field over. The emitter writes
 // `selector { property: value; }` (ui/css/css.go, Declaration.CSS), so the
@@ -36,7 +35,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// TestTheGateReadsTheTextAPropertyFieldDeclares is the finding: a consumer
+// TestTheGateReadsTheTextAPropertyFieldDeclares: a consumer
 // rule whose *property* field carries a semicolon declares a second declaration
 // the gate never looks at. Each case must be refused; today Compose accepts all
 // three and the refusal the value field gets is what they ask for.

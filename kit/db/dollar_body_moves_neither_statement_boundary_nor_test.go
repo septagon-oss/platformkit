@@ -1,6 +1,6 @@
 package db_test
 
-// dollar_body_moves_neither_statement_boundary_nor_test.go is the eighth review's case for a sentence
+// A sentence
 // migrations/README.md states about the guard's own reading: the comment and literal
 // constructs it knows — `--`, `/* … */`, `$tag$ … $tag$`, `E'…'` — "None of them can move
 // the boundary of what the guard sees."

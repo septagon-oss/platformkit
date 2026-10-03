@@ -1,6 +1,6 @@
 package ui_test
 
-// Review round 10 of T-0108 (the stylesheet has cascade layers).
+// The stylesheet has cascade layers.
 //
 // refuseClientSheet polices three kernel-owned names: an attribute the kernel
 // renders, the root element, and a property in the --pk- namespace (plus the raw
@@ -20,10 +20,10 @@ package ui_test
 // var(--pk-role-surface-brand), which the tokens layer defines on :root as
 // var(--pk-color-accent-default) = #0f5d4e:
 //
-//	no client rule                   -> background-color: rgb(15, 93, 78)
-//	:ROOT { --\70 k-color-…: rgb(255,0,0) } -> rgb(255, 0, 0)   ← accepted by the gate
-//	.rgb-upper { color: RGB(1,2,3) }         -> color: rgb(1, 2, 3)  ← accepted
-//	.rgb-upper { color: #\36 666 }           -> color: rgba(102, 102, 102, .4) ← accepted
+// 	no client rule                   -> background-color: rgb(15, 93, 78)
+// 	:ROOT { --\70 k-color-…: rgb(255,0,0) } -> rgb(255, 0, 0)   ← accepted by the gate
+// 	.rgb-upper { color: RGB(1,2,3) }         -> color: rgb(1, 2, 3)  ← accepted
+// 	.rgb-upper { color: #\36 666 }           -> color: rgba(102, 102, 102, .4) ← accepted
 //
 // The accepted case repaints every kernel component on the page: the client
 // layer ranks after tokens, the rule lands on the root element, var() is
@@ -47,9 +47,9 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// reviewComposeClientRule composes one consumer rule and returns the gate's
+// composeClientRule composes one consumer rule and returns the gate's
 // refusal, or "" when Compose accepted the sheet and emitted it.
-func reviewComposeClientRule(t *testing.T, selector, property, value string) (refusal string) {
+func composeClientRule(t *testing.T, selector, property, value string) (refusal string) {
 	t.Helper()
 	defer func() {
 		if p := recover(); p != nil {
@@ -103,7 +103,7 @@ func TestTheGateRefusesEverySpellingTheBrowserResolves(t *testing.T) {
 		{"#hex with an escaped digit", ".store-hero", "color", "#\\36 6666", ""},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			refusal := reviewComposeClientRule(t, c.selector, c.property, c.value)
+			refusal := composeClientRule(t, c.selector, c.property, c.value)
 			if refusal == "" {
 				t.Fatalf("ui.Compose accepted the consumer rule %s { %s: %s }, which a browser reads as the kernel's own: it refused nothing, so the sheet ships the rule inside @layer client, which ranks after the layer that names it",
 					c.selector, c.property, c.value)
@@ -133,7 +133,7 @@ func TestTheGateStillTakesWhatOnlyReadsAKernelName(t *testing.T) {
 		{"a hook of its own", "[data-store-card=featured]", "gap", "1rem"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			if refusal := reviewComposeClientRule(t, c.selector, c.property, c.value); refusal != "" {
+			if refusal := composeClientRule(t, c.selector, c.property, c.value); refusal != "" {
 				t.Fatalf("the gate refused a rule that names nothing it owns: %s", refusal)
 			}
 		})

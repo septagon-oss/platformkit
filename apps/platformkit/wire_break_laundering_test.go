@@ -1,12 +1,12 @@
 package main
 
-// Review 1's pin over T-0120's headline gate: UPDATE_GOLDEN=1 must not write the
+// The headline gate: UPDATE_GOLDEN=1 must not write the
 // golden the wire gate has just refused.
 //
 // Three places say this is so. wire_compatibility_test.go's header: "Nothing
 // overrides a refusal, including UPDATE_GOLDEN=1". openapi_contract_test.go's
 // UPDATE_GOLDEN branch: "The refusal runs before the rewrite. A break cannot be
-// laundered by regenerating the file it breaks". SPECIFY's G3, the gate case this
+// laundered by regenerating the file it breaks". The gate case this
 // delivery says it wrote: "fails **despite** the flag — the flag cannot launder a
 // break".
 //
@@ -15,14 +15,14 @@ package main
 // to os.WriteFile. So a break prints its B-rules and is written anyway; and the
 // *next* run — the one `make check` does, with no flag — compares the served
 // document against the broken golden the flag just wrote and passes. The command
-// that proves this, at the commit under review:
+// that proves this, at the commit the change is against:
 //
-//	python3 - <<'EOF'                # rename the catalog's operationId in kit/app
-//	p='kit/app/app.go'; s=open(p).read()
-//	open(p,'w').write(s.replace('OperationID: "app-resources"','OperationID: "app-resourcez"',1))
-//	EOF
-//	UPDATE_GOLDEN=1 go test ./apps/platformkit -run TheOpenAPIDocumentIsTheCompositionServed -count=1   # FAILS, and writes
-//	go test     ./apps/platformkit -run TheOpenAPIDocumentIsTheCompositionServed -count=1               # ok
+// 	python3 - <<'EOF'                # rename the catalog's operationId in kit/app
+// 	p='kit/app/app.go'; s=open(p).read()
+// 	open(p,'w').write(s.replace('OperationID: "app-resources"','OperationID: "app-resourcez"',1))
+// 	EOF
+// 	UPDATE_GOLDEN=1 go test ./apps/platformkit -run TheOpenAPIDocumentIsTheCompositionServed -count=1   # FAILS, and writes
+// 	go test     ./apps/platformkit -run TheOpenAPIDocumentIsTheCompositionServed -count=1               # ok
 //
 // git status then shows a committed contract with a renamed operationId and an
 // operation the document no longer publishes, and make check is green over it. B1
@@ -47,18 +47,18 @@ import (
 	"testing"
 )
 
-// reviewPinOperation is an address and an operationId the composition serves
+// pinnedOperation is an address and an operationId the composition serves
 // nowhere. A golden that names them disagrees with the served document by an
 // address that went away, which is B1 and B2 — not by a gap the gate allows.
-const reviewPinOperation = "review-pin-address"
+const pinnedOperation = "pinned-address"
 
 func TestTheWireGateWritesNothingWhenItRefuses(t *testing.T) {
 	golden := mustReadOpenAPIGolden(t)
 
 	broken := wireMutated(t, golden, func(t *testing.T, doc map[string]any) {
-		wireMap(doc["paths"])["/api/v1/app/"+reviewPinOperation] = map[string]any{
+		wireMap(doc["paths"])["/api/v1/app/"+pinnedOperation] = map[string]any{
 			"get": map[string]any{
-				"operationId": reviewPinOperation,
+				"operationId": pinnedOperation,
 				"summary":     "an address the composition does not serve",
 				"tags":        []any{"kernel"},
 				"responses":   map[string]any{},
@@ -105,7 +105,7 @@ func TestTheWireGateWritesNothingWhenItRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read %s after the refused run: %v", openapiGolden, err)
 	}
-	if !strings.Contains(string(onDisk), reviewPinOperation) {
+	if !strings.Contains(string(onDisk), pinnedOperation) {
 		t.Errorf("UPDATE_GOLDEN=1 wrote %s over a break it had just named (%s): the flag laundered the contract. The next run, the one make check runs, reads the served document against the broken golden this run wrote and finds them equal.",
 			openapiGolden, strings.ReplaceAll(rules[0], "\n", " "))
 	}

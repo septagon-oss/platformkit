@@ -1,15 +1,15 @@
 import { expect, test } from '@playwright/test';
 
-// The fourth review's pin over the same two pages this delivery owns, in the
+// The same two pages this delivery owns, in the
 // language the tenant is actually served in.
 //
 // The brief holds the design floor HIGH for a page a delivery creates or changes, and the tree
 // already measures both of these pages — in English. `e2e/refusal-floor.spec.ts` walks
 // every rule of gates/design_gate.py over the refusal and the ask confirmation; the delivery's own
-// `e2e/refusal-sentence-measure.spec.ts` measures the confirmation's line length. What nobody ran,
-// in any round, is the same floor over the *Portuguese* render, which review 3 lists under
-// "Unverified" in its own words: "the pt-PT render of both fault pages under the floor: I measured
-// the English render at both widths". The tenant this fixture boots is served in pt-PT
+// `e2e/refusal-sentence-measure.spec.ts` measures the confirmation's line length. What nobody
+// ran is the same floor over the *Portuguese* render: the pt-PT render of both fault
+// pages under the floor, where only the English render had been
+// measured at both widths. The tenant this fixture boots is served in pt-PT
 // (scripts/e2e.sh bootstraps `--language pt-PT`), `e2e/localization.spec.ts` proves that
 // declaration is live, and every sentence this branch added to the refusal page is longer in
 // Portuguese than in English — "Ask your administrator — anyone whose role grants them manage

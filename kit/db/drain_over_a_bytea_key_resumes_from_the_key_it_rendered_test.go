@@ -1,7 +1,6 @@
 package db_test
 
-// drain_over_a_bytea_key_resumes_from_the_key_it_rendered_test.go is the
-// thirteenth round's pin of the rendering half of the twelfth round's first fix.
+// The rendering half of the cursor: a resumed drain reads back the key it wrote.
 //
 // The fix took the top of a window off the missing `max` aggregate and onto the key's own
 // ordering, and the cursor that travels with it is the key rendered by `w::text` — so a

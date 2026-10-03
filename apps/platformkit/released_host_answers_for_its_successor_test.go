@@ -1,6 +1,6 @@
 package main
 
-// Review round 4 of T-0115, at the composition: a hostname the control plane lets go
+// At the composition: a hostname the control plane lets go
 // stops answering for the tenant that let go of it — in this process, today, not
 // within the resolution cache's half minute.
 //

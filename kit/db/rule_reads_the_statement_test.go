@@ -1,7 +1,7 @@
 package db_test
 
-// rule_reads_the_statement_test.go is the third review's case for the
-// one rule the second review's finding 2 did not reach.
+// The
+// one rule one finding did not reach.
 //
 // That finding was that `alter-column-type` matched a keyword rather than the
 // operation, and the fix moved the predicate inside a single statement
@@ -29,7 +29,7 @@ import (
 
 func TestANotNullColumnIsRefusedForItsOwnStatement(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
-	err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(
+	err := db.Migrate(t.Context(), migrateURL, probeSource(
 		"ALTER TABLE probe ADD COLUMN c integer NOT NULL;\nALTER TABLE probe ALTER COLUMN a SET DEFAULT 'none'"))
 	if err == nil {
 		admin := dbtest.Open(t, migrateURL)
@@ -42,7 +42,7 @@ func TestANotNullColumnIsRefusedForItsOwnStatement(t *testing.T) {
 	}
 	// The remedy the rule names is a statement-level one: the same ADD COLUMN
 	// with its own DEFAULT is ordinary SQL.
-	if err := db.Migrate(t.Context(), migrateURL, reviewProbeSource(
+	if err := db.Migrate(t.Context(), migrateURL, probeSource(
 		"ALTER TABLE probe ADD COLUMN c integer NOT NULL DEFAULT 0;\nALTER TABLE probe ALTER COLUMN a SET DEFAULT 'none'")); err != nil {
 		t.Errorf("the same file with a default on the column being added was refused: %v", err)
 	}

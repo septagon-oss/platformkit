@@ -1,6 +1,6 @@
 package internal
 
-// Review round 12 of T-0108, aimed at the vocabulary the client gate reads.
+// The `.name` spelling, read through the vocabulary the client gate uses.
 //
 // `ui.kernelClasses` is computed from `components.ClassLists()`, and the
 // completeness pin the delivery shipped (ui/hooks_test.go) walks the sheets
@@ -29,9 +29,9 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// reviewRound12LayerOf returns the layer whose block holds text, by the emitter's
+// layerHoldingText returns the layer whose block holds text, by the emitter's
 // own convention: a layer block opens and closes at column 0.
-func reviewRound12LayerOf(sheet, text string) string {
+func layerHoldingText(sheet, text string) string {
 	layer := ""
 	for _, line := range strings.Split(sheet[:strings.Index(sheet, text)], "\n") {
 		if strings.HasPrefix(line, "@layer ") && strings.HasSuffix(line, " {") {
@@ -70,7 +70,7 @@ func TestEveryClassTheSiteServesIsRefusedToAConsumerSheet(t *testing.T) {
 			t.Errorf("premise: %s is carried by this module's markup and named by no rule of the sheet it serves", selector)
 			continue
 		}
-		if layer := reviewRound12LayerOf(served, selector+" {"); layer != "components" {
+		if layer := layerHoldingText(served, selector+" {"); layer != "components" {
 			t.Errorf("premise: %s is emitted in layer %q, not the components layer", selector, layer)
 			continue
 		}

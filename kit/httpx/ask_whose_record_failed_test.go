@@ -1,11 +1,10 @@
 package httpx_test
 
-// ask_whose_record_failed_test.go is the second review's pin over the
-// one verdict of an ask that no other case on this branch drives: the record itself
+// The one verdict of an ask that no other case drives: the record itself
 // failing.
 //
-// Commit 6e1500e cured the first review's finding 9 by giving httpx.Options.Accessed
-// an error and returning it, and wrote the property into the command's own comment:
+// The cure that gave httpx.Options.Accessed an error, and returned it, wrote the
+// property into the command's own comment:
 // "an ask whose event did not commit rolls back with its notices". Putting the drop
 // back — `_ = d.record(ctx, …)` — left every case in this package and every case in
 // apps/platformkit green, which is how its author knows nothing consults the branch.

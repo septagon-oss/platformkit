@@ -1,9 +1,9 @@
 package db_test
 
-// autocommit_function_body_test.go is the tenth round's case for how far the
+// How far the
 // first finding's principle reaches past the two refusals it was reported against.
 //
-// The principle the round adopted is that a refusal no `allow=` can reach may not be decided
+// The principle the case adopted is that a refusal no `allow=` can reach may not be decided
 // from a reading that is wrong about where a value ends — because the file it refuses is not
 // correctable: no marker excepts it, and the remedy its sentence names cannot be carried out.
 // Three refusals have no marker and read a statement split: the executor's "a data file is one
@@ -18,8 +18,8 @@ package db_test
 // statement could not be re-run when the statement it was talking about is data. Measured
 // against the server (psql, this repository's own cluster):
 //
-//	ERROR:  CREATE INDEX CONCURRENTLY cannot be executed from a function
-//	ERROR:  DROP INDEX CONCURRENTLY cannot be executed from a function
+// 	ERROR:  CREATE INDEX CONCURRENTLY cannot be executed from a function
+// 	ERROR:  DROP INDEX CONCURRENTLY cannot be executed from a function
 //
 // so a statement list inside a value of an autocommit file cannot be the unrerunnable
 // statement the rule is about even if the guard reads it as one. The leg below fails before

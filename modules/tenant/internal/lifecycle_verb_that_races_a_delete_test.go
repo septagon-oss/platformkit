@@ -1,6 +1,6 @@
 package internal_test
 
-// Review round 3 of T-0115, at the module. `TestTwoLifecycleCommandsOnOneRowSettleOnce`
+// At the module. `TestTwoLifecycleCommandsOnOneRowSettleOnce`
 // pins one half of the rule the `FOR UPDATE` exists for: two of the *same* verb settle to one
 // act, because the second re-reads the row as the first committed it and takes its idempotent
 // branch. That leaves the other half untested, and it is the half that ends a customer: a

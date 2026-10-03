@@ -1,6 +1,6 @@
 package events_test
 
-// A reviewer's pin (review round 7, task T-0109). Nothing here fails at the head
+// A pin, not a defect report: nothing here fails at the head
 // it was written against: it holds two sentences this branch rests on — one about
 // the names a consumer compiles against, one about what naming an event does and
 // does not oblige at the outbox.
@@ -11,10 +11,10 @@ package events_test
 // `Events()`. What a consumer actually reads was measured over the client tree
 // that consumes this module rather than guessed:
 //
-//	$ git -C <clients> grep -ho 'events\.[A-Z][A-Za-z0-9_]*' origin/main -- '*.go' | sed 's/^events\.//' | sort | uniq -c | sort -rn
-//	     56 Publish     9 Subscription    9 Event    1 Transport
-//	$ git -C <clients> grep -n 'events\.JetStream\|ConnectJetStream\|events\.Memory(' origin/main -- '*.go'
-//	(no lines: no consumer calls the two constructors this branch removed)
+// 	$ git -C <clients> grep -ho 'events\.[A-Z][A-Za-z0-9_]*' origin/main -- '*.go' | sed 's/^events\.//' | sort | uniq -c | sort -rn
+// 	     56 Publish     9 Subscription    9 Event    1 Transport
+// 	$ git -C <clients> grep -n 'events\.JetStream\|ConnectJetStream\|events\.Memory(' origin/main -- '*.go'
+// 	(no lines: no consumer calls the two constructors this branch removed)
 //
 // Those names are the whole surface a consumer of this package builds against,
 // and this file is the compile-time half of that sentence: the release that

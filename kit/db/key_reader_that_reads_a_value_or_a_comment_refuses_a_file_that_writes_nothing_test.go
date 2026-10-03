@@ -6,8 +6,8 @@ package db_test
 //
 // `migrations/README.md`, under the rule table, describes the executor's third refusal:
 //
-//	"a body that only *reads* the key, in a predicate or as another column's value, **or in the
-//	words of a value it stores**, is no write to it at all."
+// 	"a body that only *reads* the key, in a predicate or as another column's value, **or in the
+// 	words of a value it stores**, is no write to it at all."
 //
 // and the same page says of the rules above it that they read "text with comments stripped" and
 // that "two dashes inside a literal is data, not the comment that would otherwise hide the rest

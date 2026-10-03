@@ -1,11 +1,10 @@
 package db_test
 
-// statement_inside_a_dollar_body_is_no_statement_at_all_test.go is the tenth
-// round's acceptance-review case for what the rule table reads a body as.
+// What the rule table reads a body as.
 //
 // migrations/README.md: "The engine reads text with comments stripped, not a parse tree — the
 // runner is not a SQL parser — so a statement inside a dollar-quoted body can be flagged, and
-// the answer is the marker." The tenth round's commit states the same division the other way
+// the answer is the marker." The same division reads the other way round:
 // round: "every rule that carries an exception keeps the inside reading, whose false positive is
 // what the marker exists for".
 //

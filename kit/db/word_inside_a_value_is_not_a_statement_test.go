@@ -1,17 +1,16 @@
 package db_test
 
-// word_inside_a_value_is_not_a_statement_test.go is the tenth round's
-// acceptance-review case for the two rules about `CONCURRENTLY`.
+// The two rules about `CONCURRENTLY`.
 //
-// The tenth round's own file, `autocommit_function_body_test.go`, records why
+// the sibling file, `autocommit_function_body_test.go`, records why
 // `autocommit-not-rerunnable` moved to the cut PostgreSQL makes, and closes with:
 //
-//	`index-concurrent-without-autocommit` and `autocommit-without-concurrently` ask their
-//	question of the whole body and so never consult a split; the rules that read a dollar
-//	body from the inside on purpose all carry a marker.
+// 	`index-concurrent-without-autocommit` and `autocommit-without-concurrently` ask their
+// 	question of the whole body and so never consult a split; the rules that read a dollar
+// 	body from the inside on purpose all carry a marker.
 //
 // The first half is true — both call `migrationText.any`, a regexp over the body — and it is
-// offered as if it settled the question the round adopted as a principle: a refusal no
+// offered as if it settled the question the case adopted as a principle: a refusal no
 // `allow=` reaches may not rest on a reading that is wrong about what the file does, because
 // the file it refuses is then not correctable. Neither rule asks where a statement begins or
 // ends; both ask whether the *word* `concurrently` appears anywhere in the file's text, and
@@ -22,8 +21,8 @@ package db_test
 //
 // Whether a rule carries a marker is a different question from whether it reads a value's
 // contents, and both of these rules state none: migrations/README.md's table says `none` for
-// both, SPECIFY's says "none: it is a fact about Postgres, not a judgement", and the same
-// SPECIFY table over the same three rules calls them "immutable as stated, **correctable as
+// both, the brief's says "none: it is a fact about Postgres, not a judgement", and the same
+// the brief table over the same three rules calls them "immutable as stated, **correctable as
 // authored**: they refuse the shape". The first three legs are the file that is not correctable
 // as authored; the next two are the rule whose teeth a value takes; the last is the same
 // misreading on the `CREATE TABLE` capture, which decides an exemption.
@@ -43,11 +42,11 @@ import (
 
 const review11Seed = "CREATE TABLE probe (id bigint PRIMARY KEY, note text NOT NULL DEFAULT '');\nINSERT INTO probe (id) SELECT g FROM generate_series(1, 25) g"
 
-// review11Backfill is the same one-windowed-update body spelled three ways: with the words of
+// backfillBody is the same one-windowed-update body spelled three ways: with the words of
 // an index build inside a dollar-quoted value, with them in an ordinary literal, and without
 // them. The third is the control — it shows that what the first two answer has to do with the
 // word and not with the shape of the file.
-var review11Backfill = map[string]string{
+var backfillBody = map[string]string{
 	"a data body whose value carries the words of an index build": `-- pkit: phase=data
 -- pkit: batch=10
 -- pkit: table=probe
@@ -72,7 +71,7 @@ func TestADataValueThatSpellsConcurrentlyIsStillOneWindowedStatement(t *testing.
 			migrateURL, _ := dbtest.URLs(t)
 			files := fstest.MapFS{
 				"000001_probe.up.sql": {Data: []byte(review11Seed)},
-				"000002_note.up.sql":  {Data: []byte(review11Backfill[spelling])},
+				"000002_note.up.sql":  {Data: []byte(backfillBody[spelling])},
 			}
 			err := db.Migrate(t.Context(), migrateURL, db.MigrationSource{Owner: "word", Files: files})
 			if err != nil {
@@ -100,7 +99,7 @@ func TestADataValueThatSpellsConcurrentlyIsStillOneWindowedStatement(t *testing.
 // TestAnAutocommitFileWhoseOnlyConcurrentlyIsDataIsStillRefused is the same misreading on the
 // side where it costs the guard rather than the author. migrations/README.md's table says
 // `autocommit-without-concurrently` fires on "`autocommit=true` with nothing nontransactional
-// in the file"; SPECIFY's says "in a file with no `CONCURRENTLY` statement". The first file
+// in the file"; the brief's says "in a file with no `CONCURRENTLY` statement". The first file
 // below has no nontransactional statement — the words are inside a value the function body
 // writes — and the control beside it, word for word the same file without that value, is
 // refused. A value, which is data, answers the one question this rule exists to make
@@ -166,7 +165,7 @@ CREATE INDEX probe_note_idx ON probe (note)`)},
 	// The ledger this case counts has to be created by a run nothing refuses. The guard
 	// answers from the files inside `readMigrations`, before the pool opens, so the run
 	// this case asks for leaves no `schema_migrations` to query at all — the leg that read
-	// it until the twelfth review ruled it superseded (decision 0008's amendment of
+	// it until an earlier ruling held it superseded (decision 0008's amendment of
 	// 2026-09-23, case 3) could only be satisfied by the defect it reports, which is a
 	// proof that cannot pass. Its sibling legs at :115 and :140 ask `pg_class` for the
 	// same reason, and `kit/db/contention_err_contended_under_budget_deployment_named_test.go` requires that a refused

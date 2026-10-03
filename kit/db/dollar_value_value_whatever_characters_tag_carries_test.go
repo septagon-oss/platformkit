@@ -1,6 +1,6 @@
 package db_test
 
-// dollar_value_value_whatever_characters_tag_carries_test.go is the seventh review's case for the sentence
+// The sentence
 // kit/db/README.md and migrations/README.md close with: the window question is asked
 // of a reading that puts away "the contents of every string literal", so "a body that
 // names the window only inside a value it is writing does not [get its window]" and
@@ -10,10 +10,10 @@ package db_test
 // a name takes". PostgreSQL's rule for a dollar-quote tag is the rule for a *quoted*
 // identifier, which in a UTF-8 database includes accented letters:
 //
-//	=> select length($é$abc$é$);  → 3
+// 	=> select length($é$abc$é$);  → 3
 //
 // So `$atualização$ … $atualização$` is one value to the server and not a tag to the
-// reader. That is the round's own finding 2 — a body whose only window reference is
+// reader. That is the round's own the finding — a body whose only window reference is
 // data it writes is wrapped anyway, and its one whole-table statement runs once per
 // window over every row — through a spelling its Limits names as "conservatively not a
 // tag" without noticing which way the conservatism fails: not reading a tag leaves the

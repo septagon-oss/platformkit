@@ -7,7 +7,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/rest"
 )
 
-// TestTheFormDoorRefusesAFoldedCommandOwnedName (review T-0020, finding 1). The
+// TestTheFormDoorRefusesAFoldedCommandOwnedName: the
 // README says every write door refuses a key that folds onto a field a command
 // owns; Values is the door ui/screens mounts for a create form, and it refuses
 // only the exact spelling, so "STATUS" is neither refused nor applied and the

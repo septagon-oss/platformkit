@@ -17,16 +17,16 @@ import (
 // module_schema_test.go never reaches, so the shipped statements behind them
 // can be deleted and `go test ./migrations/... -count=1` stays green:
 //
-//   * the function's third statement — `ALTER DEFAULT PRIVILEGES IN SCHEMA
-//     <owner> GRANT USAGE, SELECT ON SEQUENCES TO <role>`, one of the three the
-//     brief names — reaches no test at all, because no test creates a
-//     sequence-backed column in an opened schema. Without it the application
-//     role gets `permission denied for sequence` on the ordinary module table
-//     `id serial`, which is the failure this function exists to prevent.
-//   * `%I` around the schema name is justified in the header by the grammar the
-//     ledger uses — `^[a-z][a-z0-9_-]*$` admits a hyphen, which an unquoted
-//     identifier does not survive — and no test opens such an owner, so
-//     `%I` could become `%s` in silence.
+// * the function's third statement — `ALTER DEFAULT PRIVILEGES IN SCHEMA
+// <owner> GRANT USAGE, SELECT ON SEQUENCES TO <role>`, one of the three the
+// brief names — reaches no test at all, because no test creates a
+// sequence-backed column in an opened schema. Without it the application
+// role gets `permission denied for sequence` on the ordinary module table
+// `id serial`, which is the failure this function exists to prevent.
+// * `%I` around the schema name is justified in the header by the grammar the
+// ledger uses — `^[a-z][a-z0-9_-]*$` admits a hyphen, which an unquoted
+// identifier does not survive — and no test opens such an owner, so
+// `%I` could become `%s` in silence.
 
 // TestModuleSchemaOpensTheOwnerSequencesToTheApplicationRole writes a row into
 // a sequence-backed column of a module's table, as the application role, inside

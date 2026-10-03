@@ -1,11 +1,11 @@
 package migrations_test
 
-// The fourth review's case for dbtest.DeploymentSchema, the one name this change
+// The case for dbtest.DeploymentSchema, the one name this change
 // made reusable. Its doc comment promises a resolved answer — "the answer has to be
 // what the database resolved, not what this package meant"
 // (kit/db/dbtest/dbtest.go:117-120) — and a shape it guarantees, "t_<run>_<test>",
-// "the shape an owner name is cut from" — which is how moduleOwner and the third
-// review's file derive every owner and role name in this package. What it reads is
+// "the shape an owner name is cut from" — which is how moduleOwner and the grant
+// cases here derive every owner and role name in this package. What it reads is
 // current_setting('search_path'): the raw setting the connection URL asked the
 // server to place, echoed back unchanged, and that setting is a *list*.
 // current_schema() is the namespace the server resolved that list to, and the one an
@@ -26,7 +26,7 @@ package migrations_test
 // message only a broken helper could print. Reading current_schema() instead is
 // enough: every dbtest URL names exactly one schema today, so both answers agree for
 // every caller that exists, and go test ./migrations/... passes unchanged with that
-// one line in place of the current one (measured, this review).
+// one line in place of the current one.
 
 import (
 	"context"

@@ -1,11 +1,11 @@
 package events
 
-// REVIEW round 2 (T-0109). The pin of the cure for finding 5, one tenant wider
-// than the pin that found it.
+// The purge exemption is the row's own, one tenant wider
+// than the case that first named it.
 //
 // `Purge` now exempts a relayed row while a dead letter still describes it:
 //
-//	AND NOT EXISTS (SELECT 1 FROM platformkit_dead_letters d WHERE d.event_id = o.id)
+// 	AND NOT EXISTS (SELECT 1 FROM platformkit_dead_letters d WHERE d.event_id = o.id)
 //
 // Two things about that clause are not visible in a one-tenant test.
 //
@@ -48,7 +48,7 @@ func TestThePurgeExemptionIsTheRowsOwnAndNoOnesElse(t *testing.T) {
 
 	transport := memory.New()
 	if err := Consume(ctx, conn, transport, []Subscription{{
-		Module: "review2", Name: "ledger.invoice_issued",
+		Module: "ledger", Name: "ledger.invoice_issued",
 		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
 			return errors.New("the mailer is down")
 		},

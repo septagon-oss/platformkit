@@ -1,13 +1,12 @@
 package db_test
 
-// drain_over_a_key_whose_smallest_value_is_the_empty_string_terminates_test.go is
-// the twelfth round's case for the cursor.
+// The cursor, from the smallest key it can hold.
 //
 // `schema_migration_backfill.cursor` is `text NOT NULL DEFAULT ''`, and `windowBound` turns
 // the string it reads back into SQL:
 //
-//	if from == "" { return "TRUE" }                      // "from the start"
-//	return `key > $1::type`
+// 	if from == "" { return "TRUE" }                      // "from the start"
+// 	return `key > $1::type`
 //
 // So the empty string is the sentinel for "no window committed yet" — and for a `text` (or
 // `varchar`) primary key it is also a *value the column can hold*, the smallest one in every
@@ -18,9 +17,9 @@ package db_test
 //
 // Measured, at HEAD, over four rows whose keys are '', 'b', 'c', 'd', with `batch=1`:
 //
-//	Migrate  → refusal backfill-exceeds-install-budget … (50 batches of 1, cursor )
-//	Backfill → context deadline exceeded after 2s, during which the row '' was written
-//	           3428 times and the rows 'b', 'c' and 'd' were written 0 times.
+// 	Migrate  → refusal backfill-exceeds-install-budget … (50 batches of 1, cursor )
+// 	Backfill → context deadline exceeded after 2s, during which the row '' was written
+// 	           3428 times and the rows 'b', 'c' and 'd' were written 0 times.
 //
 // `db.Backfill` names no bound — it is the worker's door, composed as `jobs.BackfillMigrations`
 // and ticks every five seconds forever — so on an installation this is one row updated as fast

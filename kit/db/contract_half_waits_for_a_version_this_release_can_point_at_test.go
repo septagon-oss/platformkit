@@ -1,17 +1,16 @@
 package db_test
 
-// contract_half_waits_for_a_version_this_release_can_point_at_test.go is the
-// eleventh round's own answer to the question its acceptance review wrote and then left
-// unpinned on purpose: a contract half beside an expansion the same release runs *after* it
-// (contract@2 `expand=3`). The review recorded the case and said which way it is answered is
-// "the round's decision, not mine to pin".
+// A contract half beside an expansion the same release runs *after* it waits for
+// the version it names. This is the answer to the question the brief wrote and
+// deliberately left unpinned: the case records the question and says that which way
+// it is answered is the delivery's decision, not the case's to pin.
 //
 // The decision is this: `expand=` names a version of the same owner that comes *before* the
 // half that waits for it, and one this release actually lists. It is bounded the way a
 // source's `RulesFrom` floor is bounded — a self-declared number judged against the files the
 // source can point at rather than trusted — because the owner's files apply in order and a
 // number at or above the half's own version names an expansion no order of applying reaches
-// first. SPECIFY's "its files apply in order" and `planOwner`'s "a contract half may not run in
+// first. the brief's "its files apply in order" and `planOwner`'s "a contract half may not run in
 // the same release as the expansion it removes" cannot both govern a file that names a later
 // version, so the rule refuses it and says so, on a fresh installation as on an installed one:
 // the fresh one is where an unbounded number does the damage, because the half applies, the
@@ -42,7 +41,7 @@ func TestAContractHalfWaitsForAVersionThisReleaseCanPointAt(t *testing.T) {
 		files fstest.MapFS
 	}{
 		{
-			// The case the tenth review wrote, unpinned, and left for this round to
+			// The case an earlier review wrote, unpinned, and left for this case to
 			// answer. The run applies a release's files in version order, so the half at
 			// version 2 runs before the expansion at version 3 — the release that adds
 			// the thing and takes it away in one go, which is the thing the guard is for.

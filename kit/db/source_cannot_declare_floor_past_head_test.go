@@ -1,13 +1,13 @@
 package db_test
 
-// source_cannot_declare_floor_past_head_test.go is the third review's cases for what T-0018 says
+// What T-0018 says
 // about its own guard.
 //
 // Case 1 is about the floor. migrations/README.md: "A rule cannot be refused on a
 // file that is already applied somewhere: … So a source states the first version
 // it is guarded from … and the number is one past the highest file the rules
 // refuse today … Lowering a floor is a review, not an edit", and the task's
-// SPECIFY.md promises a floors test that asserts "no floor is above the owner's
+// the brief.md promises a floors test that asserts "no floor is above the owner's
 // head". migrations/rule_floor_files_force_test.go asserts the two directions for the four
 // sources that exist; the kernel itself accepts any int64 a source writes, so a
 // floor above the head — one that skips versions no installation has seen — is a
