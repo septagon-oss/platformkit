@@ -1,13 +1,13 @@
 package internal_test
 
-// T-0115 review round 1, finding 1 — the author's own case for the behaviour the
-// review demanded.
+// The case for a delete that releases a host, written because the file that
+// already asks for it cannot run.
 //
 // `retired_tenants_host_test.go` asks for exactly this and cannot run:
 // its helper is `fail := func(what string, err error) { t.Fatalf("%s: %v", what, err) }`,
 // with no `if err != nil` around the Fatal, so it fails at its first call whatever
 // the code does, printing the error it was handed as `<nil>`. That file belongs to
-// the review and decision 0008 keeps my hands off it, so the behaviour it demands
+// another task's pin and decision 0008 keeps my hands off it, so the behaviour it demands
 // is asserted here — over the same three facts it names (the retired tenant's host
 // is servable by another customer, `ByHost` resolves that name to the new tenant,
 // and the retired row survives with `deleted_at` set so the cure cannot be bought

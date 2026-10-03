@@ -10,7 +10,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
-// TestADenialWithSomebodyToAttributeItToIsHandedToTheComposition is T-0116's second item at
+// TestADenialWithSomebodyToAttributeItToIsHandedToTheComposition is the kernel's edge of it:
 // the kernel's edge: a refused authorization is no longer only a log line. A signed-in
 // caller in a resolved tenant who lacks the grant is refused as before, and Options.Denied
 // is handed who, where, which operation, the code and the request id — which kit/app turns

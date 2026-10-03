@@ -208,7 +208,7 @@ func TestTheSessionsScreenEndsTheSessionTheFormNamed(t *testing.T) {
 	}
 }
 
-// TestTheSessionsScreenSendsARevokedSessionToTheSignInPage is T-0094's failure,
+// TestTheSessionsScreenSendsARevokedSessionToTheSignInPage is the failure it guards,
 // asserted in the package that owns the sign-in page's address.
 //
 // The mechanism was never missing: kit/httpx redirects an anonymous HTML GET to

@@ -1,12 +1,12 @@
 package main
 
-// Review round 1 of T-0115, round 3's delivery: the lifecycle verbs are routes, and until
-// this file nothing in the repository had answered one of the four new ones successfully.
+// The lifecycle verbs are routes, and until this file nothing in the repository had
+// answered one of the four new ones successfully.
 //
 // What existed: modules/tenant/internal drives `Rename`, `Reactivate`, `RemoveHost` and
 // `Delete` through the service and the shared conformance suite drives the same verbs
-// through both doubles, and review round 1's app-level case probes those four addresses
-// anonymously and asserts only that none is *accepted*. A route nobody mounted answers that
+// through both doubles, and one app-level case probed those four addresses
+// anonymously and asserted only that none is *accepted*. A route nobody mounted answers that
 // assertion too. Between the two there was no case that a person's request — right host,
 // right grant, right body, one session — was routed, decoded, answered and read back: a
 // `rename` mounted at the wrong path, or a `remove-host` whose `{host}` parameter never

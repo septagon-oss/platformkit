@@ -1,7 +1,7 @@
 package db_test
 
-// What T-0018 says
-// about its own guard.
+// What the guard says
+// about its own floor.
 //
 // Case 1 is about the floor. migrations/README.md: "A rule cannot be refused on a
 // file that is already applied somewhere: … So a source states the first version

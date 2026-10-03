@@ -20,7 +20,7 @@ import (
 // it — and from both directions: its key is looked for in the file, and a key in the
 // file that no verdict and no code asks for still fails below. A list of statuses
 // written here could not say that, because the day a fourth status joined faultKey's
-// switch the list would simply be silent about it — the mutation review round 3 ran.
+// switch the list would simply be silent about it — which is the mutation to try.
 func raisedFaults(t *testing.T) []string {
 	t.Helper()
 	keys := make([]string, 0, len(faultKeys)+4)

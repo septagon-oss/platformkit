@@ -1,12 +1,12 @@
 package page_test
 
-// A delivery's case for review round 5's finding 1(b).
+// A refusal a module makes is answered in the tenant's own language.
 //
 // `Serve` turned a handler's own 4xx into `page.Fault(status, detail, back, backLabel)`
 // — the exported entry point, which takes no locale — while `FaultHandler` used the
 // unexported `fault(…, loc, …)`, which does. The consequence was that the refusal a
 // module makes was English *in the shell that ships the sentence for it*, and the
-// review's own reproduction had to reach a kernel guard to be answered in Portuguese.
+// reproduction of that refusal had to reach a kernel guard to be answered in Portuguese.
 // Both kinds of refusal now go through one function, so this file asks both halves of
 // that and nothing else:
 //

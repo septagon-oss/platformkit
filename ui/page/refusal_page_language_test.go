@@ -14,8 +14,6 @@ package page_test
 // fault(status, p.Detail, …) without the resolved locale, ui/document.Fault still
 // returns View{Language: "en"}, and FaultHandler writes only Content-Type and
 // Cache-Control — while Serve writes Content-Language and Vary (serve.go:123).
-//
-// Reviewer: a fresh pi session, 2026-09-21.
 
 import (
 	"net/http"

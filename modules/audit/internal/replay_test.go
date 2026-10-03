@@ -2,8 +2,8 @@ package internal_test
 
 // The trail's idempotence key is (tenant_id, event_id) — migrations/000015 added the
 // tenant to it and dropped the global unique index of migrations/000010. Nothing read
-// that key until now. T-0115 is the first code to depend on it for a design decision:
-// `modules/tenant` writes one lifecycle verb as two events in two tenants — the customer's
+// that key until now. The lifecycle verbs are the first code to depend on it for a design
+// decision: `modules/tenant` writes one verb as two events in two tenants — the customer's
 // own row and the installation's mirror of it — and says in its own comment why the
 // duplicate it wants stopped is stopped by the command and not by the table ("the trail's
 // idempotence key is (tenant_id, event_id) and these are two event ids"). Two rows per
