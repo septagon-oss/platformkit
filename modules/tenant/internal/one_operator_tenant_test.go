@@ -18,8 +18,8 @@ package internal_test
 // (kit/httpx/authorize.go:106), and that field is `tenants.operator`, a plain
 // boolean column. migrations/000006_tenant.up.sql:51-53 closes the door on it with
 // `WITH CHECK (platformkit_is_system())`, and the two cases that write that column
-// today (r1_the_refusal_writes_nothing_test.go:62 and
-// r2_a_refused_add_host_writes_no_host_row_test.go:62) write it from a
+// today (refused_remove_host_writes_no_host_row_test.go:62 and
+// refused_add_host_writes_no_host_row_test.go:62) write it from a
 // *system* transaction, to take the installation away. No case asks whether a
 // tenant's own transaction can put the column back, which is the difference between
 // "a customer cannot reach the control plane" being a database fact and being a
