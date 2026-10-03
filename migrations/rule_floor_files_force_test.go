@@ -1,11 +1,10 @@
 package migrations_test
 
-// The case the brief named as implement's —
-// "migrations/floors_test.go asserts the two agree and that no floor is above the
-// owner's head, so a raised floor is a review, not an edit" — and never wrote.
-// migrations/README.md states the floors as measured and adds "Lowering a floor is
-// a review, not an edit"; the only thing that made that sentence true was a
-// temporary probe the implementation commit describes and then deleted.
+// A floor is the number the SQL reaches, and no floor sits above the owner's
+// head, so a raised floor is a review rather than an edit. migrations/README.md
+// states the floors as measured and adds "Lowering a floor is a review, not an
+// edit"; what makes that sentence a gate rather than prose is the measurement
+// below, taken from the tree rather than repeated from the guide.
 //
 // The agreement of the two doors needs no case: each manifest writes
 // `RulesFrom: Migrations.RulesFrom`, one expression, so the module and its source
