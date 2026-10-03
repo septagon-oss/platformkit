@@ -24,7 +24,7 @@ package db_test
 // - the same two constructs leave the text *in*, so a body whose only mention of
 // the window is data it is writing answers "yes", gets wrapped, and its one
 // whole-table statement runs once per window over every row of the table —
-// which is what the round's `migration.windowed` change exists to make
+// which is what `migration.windowed` exists to make
 // impossible, and what `windowed` still cannot see.
 //
 // Both legs assert through the rows: `passes` counts the transactions that wrote a

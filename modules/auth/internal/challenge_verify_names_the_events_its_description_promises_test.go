@@ -27,8 +27,8 @@ package internal_test
 // is satisfied while the event is declared *somewhere* — so an edit that took
 // `auth.logged_in` off the challenge door would leave every case in this
 // repository green while a consumer reading the served document stopped learning
-// that this address signs people in. That is the exact hole round 3 wrote the
-// table to close, opened again by the operation left out of it.
+// that this address signs people in. That is the exact hole the
+// table was written to close, opened again by the operation left out of it.
 //
 // A row fails two ways, and both are wanted: the sentence must still be in the
 // Description (a promise removed is a promise unkept), and the event must still be

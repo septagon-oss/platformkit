@@ -1,6 +1,6 @@
 package internal_test
 
-// review 4 (decision 0039: HIGHs only). The second factor's sign-in leg, tried at
+// The second factor's sign-in leg, tried at
 // the address the module serves it at.
 //
 // Nothing in this repository has ever sent a request to

@@ -426,7 +426,7 @@ func TestTheGateRefusesASemicolonWhereTheEmitterWritesABrace(t *testing.T) {
 
 func TestComposeKeepsConsumerRulesAfterSharedUtilities(t *testing.T) {
 	t.Parallel()
-	// Carried from the round that predates cascade layers, when this asserted
+	// Carried from before cascade layers existed, when this asserted
 	// that a consumer's override of [data-component=button] survived after the
 	// utilities. That override is now refused outright (see the refusal test),
 	// which supersedes surviving after it; what still must hold is the two

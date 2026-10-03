@@ -234,8 +234,8 @@ func TestTheControlPlaneRefusalAtTheInstallationHostIsTheAnswerOfAnAddressNobody
 }
 
 // TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer closes the fourth
-// review's Unverified: Retry-After was asserted for the refusal a renderer answered, and
-// round 8 changed what happens when the renderer declines. The limit is worth nothing to a
+// Retry-After was asserted for the refusal a renderer answered, and the
+// decline path changed afterwards. The limit is worth nothing to a
 // person at a form if the answer that reaches them stops saying when to try again.
 func TestThePublicWriteLimitSaysWhenToComeBackAtBothEndsOfTheRenderer(t *testing.T) {
 	for _, shape := range []struct {

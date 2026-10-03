@@ -102,7 +102,7 @@ func layerBlockAt(sheet string, at int) string {
 }
 
 // TestAComponentStateRuleSharesTheComponentsLayerAheadOfTheClassLists is
-// the pin of an earlier round's the finding as cured. The role rule must share the
+// the pin of the cure. The role rule must share the
 // components layer with the utility on its own element — a layer ranks before
 // specificity, so an earlier layer loses whatever the selector says — and must be
 // emitted ahead of the class lists, so the equal-specificity ties a component's
@@ -159,8 +159,8 @@ func TestAComponentStateRuleSharesTheComponentsLayerAheadOfTheClassLists(t *test
 	}
 }
 
-// TestTheClientGateReadsAKeyframeNestedInAMediaBlock pins an earlier round's
-// the finding as cured at the depth the walk now reaches: css.WalkRules visits a
+// TestTheClientGateReadsAKeyframeNestedInAMediaBlock pins the cure at the depth the
+// walk now reaches: css.WalkRules visits a
 // @keyframes stop because the browser applies its declarations, and it recurses
 // through a nested at-rule, so the same colour hidden inside a @media block is
 // refused too. Nothing else in the tree composes the two together.

@@ -12,9 +12,9 @@ package ui_test
 // componentState() and base() — the sheets Compose merges — and
 // TestAttrMatchesReadsWhetherASelectorComparesAValue walks hand-written
 // selectors. A class can enter @layer components by a road no declaration list
-// names (that is what an earlier round's MEDIUM was), and a refusal can fail for a
-// spelling no hand-written case names (that is what an earlier round's and an earlier round's
-// HIGHs were). So this file reads the other artifact: the emitted sheet itself.
+// names, and a refusal can fail for a
+// spelling no hand-written case names. So this file reads the other artifact: the emitted
+// sheet itself.
 // For every class and every attribute the served sheet's own rules address, the
 // gate must refuse a consumer rule that addresses the same thing — in the `.name`
 // spelling, in the [class~="name"] spelling, and in the spellings of a name CSS
@@ -302,8 +302,8 @@ func isASCIILetterStart(text string) bool {
 }
 
 // TestAClassComparisonIsRefusedInEverySpellingANameHas pins the
-// spelling half of the cure. The change's HIGH was an attribute name written another
-// way; an earlier round's was a class name written another way. An attribute name is
+// spelling half of the cure: a refusal that reads one spelling of an attribute
+// name says nothing about a class name written another way. An attribute name is
 // case-insensitive and escapable, and the comparison operators are five tokens
 // plus `=`; a refusal that reads one of them reads the class namespace only
 // sometimes.

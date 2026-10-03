@@ -17,7 +17,7 @@ package main
 // and the kind exists precisely because the principal check still has to
 // run first. Measured: anonymous is 403 `AUTH_ANONYMOUS` today, and a
 // session is 200 — so the case cannot be satisfied by refusing everybody,
-// which is the shape the previous round's cure had.
+// which is the shape a refusal-for-everybody cure would have had.
 // 2. the door belongs to a tenant. A key is minted inside one tenant and its
 // resolution reads a row inside the tenant the Host resolved; presented at
 // another tenant's address it is a stranger, and this door — new, and the

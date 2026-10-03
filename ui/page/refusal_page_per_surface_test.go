@@ -10,10 +10,10 @@ package page_test
 // renderer wired the way apps/platformkit/fault.go wires it. That is the level at which a
 // person either sees a page in the language they asked for or does not.
 //
-// The first case is the pin: one finding (a refusal outside the host's
-// chain) and the finding (an English-only refusal page) meet at the two addresses an earlier round
-// changed — an address nobody mounted and a miss inside a mounted tree — and both hold when
-// the question comes through the router. The rest are the refusals whose answer never
+// The first case is the pin: two refusals — one outside the host's
+// chain, one a refusal page in English whatever the request asked — meet at the two
+// addresses a browser reaches, an address nobody mounted and a miss inside a mounted
+// tree, and both hold when the question comes through the router. The rest are the refusals whose answer never
 // reaches this package at all, because the guard that refuses them answers with
 // huma.WriteErr, which does not consult httpx.Options.Fault: the authorization denial
 // (six of the eight rows of fault.go's new table) and the public write limit.
@@ -181,8 +181,8 @@ const (
 )
 
 // TestTheRefusalOfAnAddressNobodyMountedSpeaksTheRequestThroughTheRouter is the pin, and it
-// passes: an earlier review's two findings meet at these two addresses, and what an earlier round
-// shipped holds when the question is asked of the router rather than of the renderer. An
+// passes: two refusals meet at these two addresses, and what the fix shipped holds
+// when the question is asked of the router rather than of the renderer. An
 // address nobody mounted and a file a mounted tree does not hold are the same refusal of the
 // same host, in the language the request brought, with the headers that say so and the
 // caching that says a refusal is nobody's to keep.
@@ -233,8 +233,8 @@ func TestTheRefusalOfAnAddressNobodyMountedSpeaksTheRequestThroughTheRouter(t *t
 // apps/platformkit/fault.go: "The application, not kit/app, decides this: a failure page is
 // chrome… and every guard in the kernel then answers a navigating client with this shell's
 // page" (ui/page/fault.go). ui/page/fault.go's new table names six refusals of the session
-// and the permission — AUTH_DENIED among them — and one finding was closed
-// by translating them.
+// and the permission — AUTH_DENIED among them — and this page is where
+// they are translated.
 //
 // The guard that asks for a permission refuses with huma.WriteErr
 // (kit/httpx/authorize.go, in authorize and deny), and Options.Fault is consulted in one

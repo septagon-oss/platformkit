@@ -17,8 +17,8 @@ package main
 // the name moves without the slug moving, a second host arrives and leaves, the last and the
 // primary host are refused, a suspension is reversed, and a delete is asked for twice — and
 // the name it releases is handed to the next customer by the last request below, which is
-// finding 1 (a retired tenant's hostname stayed unreachable forever) pinned at the door a
-// person actually knocks on rather than only at the service behind it.
+// the release of a hostname a retired tenant would otherwise have held forever,
+// pinned at the door a person actually knocks on rather than only at the service behind it.
 
 import (
 	"encoding/json"

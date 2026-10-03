@@ -199,7 +199,7 @@ func field(t *testing.T, body, name string) string {
 }
 
 // TestThePublicPageIsConditional. Rendering is the expensive half of the public
-// route — the review measured 2.25 seconds for one large body, on every
+// route — one large body measured 2.25 seconds to render, on every
 // anonymous request — so a reader who already has the page is told so and the
 // renderer never runs.
 func TestThePublicPageIsConditional(t *testing.T) {
