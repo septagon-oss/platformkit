@@ -238,7 +238,7 @@ a key, replace the recovery codes, withdraw a factor, revoke a session, sign out
 every browser. None of them is reachable from a bearer credential whatever its
 scopes, which is the half that kept a key scoped to one read from widening itself
 back to its holder with two POSTs. `kit/httpx/scoped_credential_test.go` pins both
-halves at the kernel, and `review_r4_a_scoped_key_is_held_to_its_scope_test.go`
+halves at the kernel, and `scoped_key_is_held_to_its_scope_test.go`
 drives them at the routes.
 
 The rule stops there, at the operations that spend it, and one operation in this

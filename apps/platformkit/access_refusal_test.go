@@ -7,10 +7,10 @@ package main
 // tenant and only them, the grant happens through the link the notice carries,
 // and the retry that follows succeeds.
 //
-// Every earlier refusal test in this directory asks one part — the language
-// (review_r6, review_r7, review_round4), the shape of the problem document,
-// the host and tenant resolution. None walked the whole page: none signed the
-// refused person back in after somebody granted what the page had named.
+// Every earlier refusal test in this directory asks one part — the language the
+// refusal is answered in, the shape of the problem document, the host and tenant
+// resolution. None walked the whole page: none signed the refused person back in
+// after somebody granted what the page had named.
 
 import (
 	"encoding/json"

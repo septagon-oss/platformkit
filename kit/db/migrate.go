@@ -164,8 +164,8 @@ var ErrContended = errors.New("db: migration is contended: it could not take a l
 // a grammar mistake in a header are all reported before anything of that owner is
 // applied. The first and the third are answered from the files, before a connection is
 // opened, so a run they refuse leaves the runner's own two tables uncreated as surely
-// as it leaves no history row: kit/db/review_guarantees_test.go counts the relations
-// such a run left and requires none, and migrations/review_floors_test.go asks the same
+// as it leaves no history row: kit/db/contention_err_contended_under_budget_deployment_named_test.go counts the relations
+// such a run left and requires none, and migrations/rule_floor_files_force_test.go asks the same
 // question by pointing at a database that is not there. Files behind a backfill the
 // worker owns wait for it, and the run returns nil, because that process is the only one
 // that can finish the work.
@@ -806,7 +806,7 @@ func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
 
 // stepBackToTheCompositionLock closes that window: the lock comes back, patiently and
 // bounded by the caller's context as holdCompositionLock says and as
-// review3_guard_floor_test.go pins for the first acquisition, and the budgets go back on
+// source_cannot_declare_floor_past_head_test.go pins for the first acquisition, and the budgets go back on
 // before the file's history row, so the transaction that records the file is a normal
 // transaction with the run's patience on it.
 //

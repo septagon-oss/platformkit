@@ -14,7 +14,7 @@ package internal_test
 // live step at the challenge route, one session. That shape stopped reaching the
 // statement when the challenge began to spend a first-factor window first, since
 // the tab without a refused sign-in behind it is turned away before the UPDATE
-// (`review_r5_two_tabs_answering_one_code_test.go`'s header says so, and
+// (`two_tabs_answering_one_code_test.go`'s header says so, and
 // `first_half_test.go:313` took the shape on at the service, where it honestly
 // states that it cannot tell the guarded UPDATE from the comparison above it).
 // What was left unowned was the simplest reading of the claim, which needs no

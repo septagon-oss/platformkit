@@ -5,7 +5,7 @@ package db_test
 // boundary of every statement after it, and a rule anchored at the front of a statement
 // (`^alter table`) then reads no action at all — no refusal, no marker offered, and the
 // drop or the rewrite in the ledger. The review's own file,
-// review7_quote_parity_test.go, pins the spelling it found: one lone double quote inside a
+// dollar_body_moves_neither_statement_boundary_nor_test.go, pins the spelling it found: one lone double quote inside a
 // `$tag$ … $tag$` body, which the splitter had begun counting as the start of a name.
 //
 // These two legs are the other two ways the same boundary moved, and they are here because

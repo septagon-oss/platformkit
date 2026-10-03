@@ -295,11 +295,11 @@ states the budgets and the contended report against a real database, the eightee
 grammar refusals, one case per rule beside the `allow=` that excepts it, the contract
 half refusing and then applying, the batched drain proved from `xmin`, and the files
 behind an unfinished drain waiting for the worker.
-`kit/db/review_rules_test.go` is the same table read from the other side: a rule with no
+`kit/db/rule_exception_refuses_marker_test.go` is the same table read from the other side: a rule with no
 exception refuses the marker that names it, the type-change rule catches the spelling
 without the `COLUMN` keyword, an autocommit `DROP INDEX CONCURRENTLY` has to survive its
 own success, an excepted data body runs once however it names the window, and `batch=0`
-is refused for the value it is. `kit/db/review_guarantees_test.go` holds what the runner
+is refused for the value it is. `kit/db/contention_err_contended_under_budget_deployment_named_test.go` holds what the runner
 owes and nothing else checked: the app role against both of its tables, `ErrContended`
 under a budget a deployment named, the fifty-batch bound and the run that resumes it,
 two drains of one file committing the work once, and a finished drain staying finished.
@@ -307,24 +307,24 @@ two drains of one file committing the work once, and a finished drain staying fi
 by holding a row the first window is about to write, and `kit/db/drain_commit_test.go`
 that the transaction which wrote the last window wrote the history row too, so the two
 tables never hold "every row written" and "a drain to resume" at once.
-`kit/app/review_drain_composed_test.go` boots the composition as the worker and waits
+`kit/app/drain_composed_test.go` boots the composition as the worker and waits
 for the tick to drain what the migration left, then applies the file that waited behind
 it; deleting the line that schedules that job fails this case and
-`kit/app/review3_drain_in_flight_boots_test.go`, which reaches a half-drained table
+`kit/app/drain_in_flight_boots_test.go`, which reaches a half-drained table
 through a boot rather than through a tick, and nothing else — measured over the whole
 suite on a copy with `scheduled := kernelJobs(transport)`, which reports those two cases
 in `kit/app` and passes every other package.
-`migrations/review_floors_test.go` proves each declared floor is the number the files
+`migrations/rule_floor_files_force_test.go` proves each declared floor is the number the files
 force, in both directions.
-`kit/db/review3_guard_floor_test.go` is the floor's third direction: the same rewrite
+`kit/db/source_cannot_declare_floor_past_head_test.go` is the floor's third direction: the same rewrite
 refused with no floor declared and refused with a floor of 50 over a source whose own
 head is 2, with nothing applied either way, and the release rule surviving that same
-floor. `kit/app/review3_drain_in_flight_boots_test.go` reaches a half-drained table
+floor. `kit/app/drain_in_flight_boots_test.go` reaches a half-drained table
 through the doors only — an installation that stopped at its own bound, then the worker
 an installation boots — and asks that the worker be alive and the table empty.
-`kit/db/review3_data_file_shape_test.go` refuses a two-statement data file with nothing
+`kit/db/data_body_that_binds_the_windows_own_name_is_refused_test.go` refuses a two-statement data file with nothing
 resumable left behind and the corrected file drained by the run that carried it, and
-`kit/db/review3_rule_reads_the_statement_test.go` that a
+`kit/db/rule_reads_the_statement_test.go` that a
 `DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
 `kit/db/data_file_shape_test.go` is the other two branches of that one rule: the data
 file with a schema file behind it, which `Migrate` leaves and `db.Backfill` empties so

@@ -8,7 +8,7 @@ package db_test
 // `tenants` and `users` down to each module's own, and the type `modules/auth` keys its
 // token hashes by. The top is now taken the way the window is (`ORDER BY key DESC LIMIT 1`),
 // so what the drain can window over stays the set of types with an ordering operator. The
-// review's `review12_a_data_file_is_drained_over_a_key_the_server_can_order_but_not_maximum_test.go`
+// review's `data_file_is_drained_over_a_key_the_server_can_order_but_not_maximum_test.go`
 // walks the first window of a uuid and a bytea table; what follows is the half that needs
 // two runs to see, and the half about the ledger row in between them:
 //

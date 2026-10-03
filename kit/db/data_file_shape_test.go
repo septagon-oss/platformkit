@@ -6,7 +6,7 @@ package db_test
 // A `phase=data` body of two statements is refused by the executor, because the window
 // wraps one body, and the refusal runs before the progress row exists: that row is what
 // every later run reads as "this drain started, resume it", and a body that never ran
-// once is not that. kit/db/review3_data_file_shape_test.go holds that refusal and the
+// once is not that. kit/db/data_body_that_binds_the_windows_own_name_is_refused_test.go holds that refusal and the
 // corrected file converging through `Migrate` — the owner's last pending file, with
 // nothing of its owner waiting behind it, so there is nothing to keep in order and the
 // run has a window to bound the work with.

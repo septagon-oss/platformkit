@@ -27,8 +27,8 @@ package db_test
 // declare — an id *is* such a constant, wherever the runner keeps it, and a case that opened
 // `refusals.go` by name could only ever hold the ids that stayed there, which is the tenth
 // review's fourth finding — and an id declared outside the file whose comment says it owns
-// them is refused here and by `review11_a_refusal_id_is_declared_wherever_the_runner_keeps_it_test.go`.
-// README's table is counted against the declarations by `review8_refusal_ids_are_the_table_test.go`,
+// them is refused here and by `refusal_id_is_declared_wherever_the_runner_keeps_it_test.go`.
+// README's table is counted against the declarations by `refusal_ids_are_the_table_test.go`,
 // and a refusal sentence written with an id inlined instead of declared is refused by name.
 // Printed ⊆ declared ⊆ tabled ⊆ declared ⊆ printed: that chain is the paragraph, and a missing
 // door case, table row or constant breaks it.
@@ -193,7 +193,7 @@ func refusalIDHomes(t *testing.T) map[string]string {
 var inlinedRefusalID = regexp.MustCompile(`"refusal ([a-z0-9-]+)`)
 
 // TestEveryRefusalIDTheRunnerDeclaresIsOneARefusalPrints is the half of the promise the id
-// comparison in review8_refusal_ids_are_the_table_test.go cannot make: that file holds
+// comparison in refusal_ids_are_the_table_test.go cannot make: that file holds
 // refusals.go and README.md to be one list, and a list both of them name can still be a name
 // nothing says. So every declared id — read off the whole package, not off the one file the
 // gate used to open by name — has to be one of the doors above walked through a run that

@@ -679,7 +679,7 @@ echo 'rehearsal step: each of the four report branches reaches the exit code its
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
 # the product of this file's line count, so the sampling is measured and not read: this
 # runs the step's own psql line, taken out of the step, for two seconds, and asks the
-# sample file how many times it filled. Case 2 of scripts/review_rehearsal_test.sh asks
+# sample file how many times it filled. Case 2 of scripts/rehearsal_contention_test.sh asks
 # the same question over that same line for three seconds. It used to run a
 # `psql -c <query> -c '\watch 0.1'` invocation, which psql answers once and then refuses
 # to repeat, and no case written that way could have sampled anything whatever it was
@@ -706,15 +706,15 @@ else
 fi
 
 # 5. The line the report is headed with, which two rounds of review wrote cases for and
-# nothing ran. `scripts/review5_rehearsal_provenance_test.sh` runs the step's own
+# nothing ran. `scripts/rehearsal_provenance_test.sh` runs the step's own
 # candidate line over a tree holding one uncommitted file, and
-# `scripts/review6_provenance_bigtree_test.sh` runs it over one holding five thousand:
+# `scripts/provenance_bigtree_test.sh` runs it over one holding five thousand:
 # the two answers part company there, because a `git status --porcelain | grep -q .` lets
 # `grep` close the pipe while `git` is still writing, and under `pipefail` the step takes
 # the 141 as "clean" and names a bare revision for a tree it built a binary out of. A
 # case nothing runs protects nothing, which is the same argument case 3b makes about the
 # branches above, so both are run here rather than left for whoever remembers.
-for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_bigtree_test.sh; do
+for provenance_case in rehearsal_provenance_test.sh provenance_bigtree_test.sh; do
 	if ! provenance_out=$(bash "$scripts/$provenance_case" 2>&1); then
 		printf 'FAIL: %s refuses the line the rehearsal report is headed with:\n%s\n' "$provenance_case" "$provenance_out" >&2
 		exit 1

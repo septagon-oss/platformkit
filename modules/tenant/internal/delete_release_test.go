@@ -3,7 +3,7 @@ package internal_test
 // T-0115 review round 1, finding 1 — the author's own case for the behaviour the
 // review demanded.
 //
-// `review_r1_a_retired_tenants_host_test.go` asks for exactly this and cannot run:
+// `retired_tenants_host_test.go` asks for exactly this and cannot run:
 // its helper is `fail := func(what string, err error) { t.Fatalf("%s: %v", what, err) }`,
 // with no `if err != nil` around the Fatal, so it fails at its first call whatever
 // the code does, printing the error it was handed as `<nil>`. That file belongs to

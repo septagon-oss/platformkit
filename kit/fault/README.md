@@ -110,7 +110,7 @@ this was written for are downstream of this repository — a consumer's
 pin moves. This guide does not name them: ADR 0009 keeps
 a private catalog's capabilities out of a public document, and a name published
 here is not withdrawable. That rule is checked rather than hoped for:
-`review2_public_guide_test.go` in this package refuses a kit guide naming a
-capability this tree does not hold, and `review3_public_documents_test.go` applies
+`public_guide_test.go` in this package refuses a kit guide naming a
+capability this tree does not hold, and `public_documents_test.go` applies
 the same rule to every markdown document the repository publishes, which is where
 a release note or an ADR is read for the name it should not carry.

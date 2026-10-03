@@ -21,7 +21,7 @@ package internal_test
 // The file carries a third case that arrived from elsewhere. Two tabs answering
 // one live step at the challenge route used to be the proof that the replay guard
 // is the UPDATE (`WHERE last_step < ?`) rather than a comparison — see
-// `review_r5_two_tabs_answering_one_code_test.go`. Since `000033` the tab without
+// `two_tabs_answering_one_code_test.go`. Since `000033` the tab without
 // a refused sign-in behind it is turned away at the door and never reaches that
 // statement, so the proof lives where the statement is the only guard left: two
 // transactions, one step, no HTTP in sight.

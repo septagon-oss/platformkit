@@ -123,7 +123,7 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 // This case reads the checked-in artefact, so what keeps it honest is the pair of
 // cases that read the running process: TestTheOpenAPIDocumentIsTheCompositionServed
 // boots the composition through appOptions and compares, and
-// review_round3_composition_publishes_its_own_contract_test.go reads the document
+// composition_publishes_its_own_contract_test.go reads the document
 // that process answers with and names the JSON key that is missing when the type is
 // erased. A composition that loses the type is red there; a case that reads only
 // this file would have stayed green beside a binary publishing {"schema":{}}.
@@ -391,7 +391,7 @@ func wireAt(t *testing.T, doc map[string]any, address string) map[string]any {
 // to os.WriteFile, so the flag wrote the document it had just named broken, and the
 // next run — the one make check does, with no flag and no message — compared the
 // served document against the broken file and called them equal. That measured
-// sequence is pinned by review_round1_wire_break_laundering_test.go.
+// sequence is pinned by wire_break_laundering_test.go.
 //
 // Nothing overrides a refusal, including UPDATE_GOLDEN=1. A planned break ships the
 // way this file's header and wire_compatibility_test.go say: land the new address,

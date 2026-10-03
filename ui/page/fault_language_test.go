@@ -4,7 +4,7 @@ package page_test
 // the kernel publishes the code a refusal travels in, this package holds the one
 // table from a code to a catalog key, the page is negotiated from the request, and
 // it says which language it is in — in the attribute and in the header. The
-// reviewer's case in review_round2_language_test.go is the one that was failing
+// reviewer's case in refusal_page_language_test.go is the one that was failing
 // when this change published the codes and stopped there; these are the cases for
 // the rest of the mechanism: every refusal the kernel publishes, in both of the
 // shell's languages, and the way a catalog has nothing to say, which must leave

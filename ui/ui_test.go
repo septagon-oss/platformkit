@@ -125,7 +125,7 @@ func TestTheGateRefusesWhatABrowserActsOnAndNotACharacter(t *testing.T) {
 // kernel's own classes, the root element or a --pk- property
 // (TestComposeRefusesConsumerSheetsThatEscapeTheClientLayer),
 // and a kernel role rule shares the components layer with the utilities on its
-// own element so its selector still decides (ui/review_round1_layers_test.go).
+// own element so its selector still decides (ui/kernel_role_rule_ranked_below_utility_test.go).
 func TestAConsumerRuleCannotDisplaceAComponentRule(t *testing.T) {
 	t.Parallel()
 	// The declaration the .flex utility makes, on a doubled selector: higher

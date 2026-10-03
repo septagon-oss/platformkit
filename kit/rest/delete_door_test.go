@@ -77,7 +77,7 @@ func deleteDoorRefused(t *testing.T, soft bool) {
 	}
 	var live int
 	if err := admin.QueryRowContext(t.Context(),
-		`SELECT count(*) FROM rest_review5_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
+		`SELECT count(*) FROM rest_write_door_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
 		t.Fatalf("read back the row the refused delete was about: %v", err)
 	}
 	if live != 1 {
@@ -93,7 +93,7 @@ func deleteDoorRefused(t *testing.T, soft bool) {
 		t.Fatalf("owner DELETE = %d %s, want 204", code, out)
 	}
 	if err := admin.QueryRowContext(t.Context(),
-		`SELECT count(*) FROM rest_review5_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
+		`SELECT count(*) FROM rest_write_door_plans WHERE id = $1 AND deleted_at IS NULL`, key).Scan(&live); err != nil {
 		t.Fatalf("read back the deleted row: %v", err)
 	}
 	if live != 0 {

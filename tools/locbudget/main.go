@@ -201,7 +201,7 @@ func (bu *Budget) Baseline(counts map[string]int, round int) {
 // the round then brought a file of 139, so `--check` refused the review for the
 // crime of reading the delivery. The reservation is measured from what this
 // repository already holds — the largest single acceptance-round test file here is
-// 499 lines, kit/httpx/review_surfaces_test.go — so a branch that expects to be
+// 499 lines, kit/httpx/control_plane_refusal_test.go — so a branch that expects to be
 // reviewed passes --allow 500 for the bucket a review file is counted in, which is
 // go_test, and leaves every other bucket unreserved, because a review round adds
 // no production Go and no shipped module.

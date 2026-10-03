@@ -55,7 +55,7 @@ const exemption = "platformkit:tenant-scoping-exempt"
 // a tenant policy: a policy would have to name a tenant the row does not have.
 // The one door on them is the REVOKE, and it is checked rather than asserted —
 // below, in this walk, from the catalog, and by running the statements from an
-// application connection in kit/db/review_guarantees_test.go. A table added to
+// application connection in kit/db/contention_err_contended_under_budget_deployment_named_test.go. A table added to
 // this list without that door is a table somebody else can write.
 var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 
