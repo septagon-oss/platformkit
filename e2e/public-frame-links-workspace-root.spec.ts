@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 
-// Decision 0020: the public frame enters the workspace at its root. This
-// pre-existing LOW mismatch is deferred in the round-6 review, not a HIGH hold
-// against the shared components. Keep the correct behavior executable.
+// Decision 0020: the anonymous public frame enters the workspace at its root,
+// the address apps/platformkit/modules.go pins, and offers nothing deeper into
+// it. A page with no entry at all is the same failure, so assert one exists.
 test('the anonymous public frame links only the workspace root', async ({ page }) => {
   const response = await page.goto('/');
   expect(response?.status()).toBe(200);

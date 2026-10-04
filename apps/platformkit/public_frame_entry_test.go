@@ -14,9 +14,9 @@ package main
 // where make check can reach it, because the browser job is not the only place a
 // composition may be checked, and a rewired Deps should fail here first.
 //
-// The case is written the way the deferred review wrote it: reach the answer
-// through the public page and the root it links, never through the deeper address
-// the invariant forbids.
+// The case reaches the answer the way a visitor does: through the public page
+// and the root it links, never through the deeper address the invariant forbids,
+// so a rewired Deps fails by moving the address a person is actually offered.
 
 import (
 	"io"
