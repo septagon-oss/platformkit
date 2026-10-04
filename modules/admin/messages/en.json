@@ -602,5 +602,17 @@
     "plural": {
       "": "This account's language changed since this page was drawn. Nothing was changed."
     }
+  },
+  "admin.account.language.revision": {
+    "translation": "This form did not bring the revision your language choice was read at. Nothing was changed.",
+    "plural": {
+      "": "This form did not bring the revision your language choice was read at. Nothing was changed."
+    }
+  },
+  "admin.account.language.unversioned": {
+    "translation": "This installation's account door answers no revisions, so a form cannot change the language. Nothing was changed.",
+    "plural": {
+      "": "This installation's account door answers no revisions, so a form cannot change the language. Nothing was changed."
+    }
   }
 }

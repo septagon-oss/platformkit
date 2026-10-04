@@ -17,6 +17,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -43,13 +44,44 @@ import (
 // way to edit a colleague — and an id handed to the shell would be an id the
 // browser wrote.
 //
-// Preferred answers the stored choice, empty when nobody chose. This command has
-// one writer — the person, their own row, one field — so it carries no expected
-// revision; see modules/user/migrations/000030_preferred_locale.up.sql for what
-// would have to be true of a second writer before one is added.
+// Preferred answers the stored choice, empty when nobody chose. This port carries no
+// expected revision: `Choose` is the intent it reads as written, and two of those
+// that arrive together leave the row at whichever landed last, each told what it
+// now holds by the row it gets back. The counted door is AccountLanguageVersion —
+// the one a form drawn from a read has to reach, and see it for why a second writer
+// of this field is ordinary rather than hypothetical. The counter itself and what
+// made it worth adding are modules/user/migrations/000032_user_language_revision.up.sql.
 type AccountLanguage interface {
 	Preferred(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) (locale string, err error)
 	Choose(ctx context.Context, tx db.Tx[db.Tenant], tag string) error
+}
+
+// AccountLanguageVersion is the account door for a composition whose choice is
+// counted: the same read, plus the number the read was taken at, and the same write
+// with that number brought back.
+//
+// It is a second port rather than more methods on AccountLanguage because the two
+// doors differ in what a lost write costs. `Choose` is an intent — "answer me in
+// Portuguese" — and the loser of two simultaneous intents is told which language it
+// now holds by the row it gets back. The control in the header is not an intent: it
+// is a picture of what the person's row said when the page was drawn, and a form
+// posted from an old picture writes an old choice over a new one. That is the
+// difference between a write that changes nothing and a write that quietly takes
+// somebody's later choice away, and only the revision decides which happened.
+//
+// A composition that wires no version here keeps the door it always had: the form
+// is drawn without a revision and `Choose` answers an intent, which is what that
+// port promises and what its documentation says. What it does not get is a form that
+// names a revision — the route refuses one rather than guessing which revision the
+// submission meant to bring, so the weaker door is reached only by a caller who
+// wrote the POST by hand and is told, in their own language, what is missing.
+type AccountLanguageVersion interface {
+	// Revision answers what revision this person's choice is held at, to draw into
+	// the form and bring back with the next choice.
+	Revision(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
+	// ChooseAt is Choose at the revision the form was drawn at. A revision the row
+	// has left behind is a conflict that writes nothing and publishes nothing.
+	ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], tag string, expectedRevision int64) error
 }
 
 // languageRel is the shell's own path for the account form; the composition of the
@@ -90,6 +122,20 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 			"principal", r.Principal.UserID.String(), "error", err)
 		return nil
 	}
+	// The revision the choice was drawn at, as a hidden field. It is what makes the
+	// submitted form a change from what the person saw rather than a change to
+	// whatever the row happens to hold by the time it lands — see
+	// AccountLanguageVersion. A door that answers no revision draws no save.
+	revision := ""
+	if deps.LanguageVersion != nil {
+		at, err := deps.LanguageVersion.Revision(ctx, tx)
+		if err != nil {
+			slog.Default().Warn("admin: the revision behind the account language could not be read, so the control is not offered",
+				"principal", r.Principal.UserID.String(), "error", err)
+			return nil
+		}
+		revision = strconv.FormatInt(at, 10)
+	}
 	// The empty option is the choice to stop choosing: the browser and the tenant's
 	// default answer again. It carries its label from the catalogue on every page,
 	// whether or not a choice is held — a control whose way back is worded by
@@ -117,6 +163,11 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 		components.Button(components.ButtonProps{
 			Label: chrome(r, "account.save", "Save language"), Type: "submit", Variant: "secondary", Size: "sm",
 		}),
+	}
+	if revision != "" {
+		controls = append([]g.Node{components.Input(components.InputProps{
+			Name: "expectedRevision", Type: "hidden", Value: revision,
+		})}, controls...)
 	}
 	if saved {
 		controls = append([]g.Node{components.Text(components.TextProps{
@@ -169,6 +220,14 @@ type accountForm struct {
 // expected revision) happen once, in the service, and this route adds none of its
 // own. A refusal is the shell's fault page in the person's own language; the
 // stored choice is unchanged there, because the command writes nothing it refuses.
+//
+// The form carries the revision its select box was drawn at, and with a versioned
+// door wired that revision is what the command compares — the control was drawn
+// from a read, so the submission is a change from something and not a bare intent.
+// A submission that names none to a door that counts them is refused here, writing
+// nothing: the only form that ever arrives with one is this one, so a POST without
+// it did not come from the control, and guessing the revision it should have brought
+// would be this route deciding that a stale page was current.
 func (p pages) mountAccountLanguage(app *httpx.Router) {
 	if p.Language == nil {
 		return
@@ -184,12 +243,41 @@ func (p pages) mountAccountLanguage(app *httpx.Router) {
 			if err != nil {
 				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 			}
-			if err := p.Language.Choose(ctx, tx, form.Get("locale")); err != nil {
+			if err := p.chooseLanguage(ctx, tx, form); err != nil {
 				return accountRefusal(r, p.shell, err)
 			}
 			return page.View{}, httpx.SeeOther(accountReturn(ctx, p.at.dashboard.at))
 		})
 }
+
+// chooseLanguage hands the submitted control to the module that owns people, at the
+// revision the control was drawn at when the composition's account door counts
+// them. An expected revision is read as the form wrote it: a field that is absent,
+// repeated or not a number is not a revision to compare, it is a form this route
+// did not draw, and the answer to that is a refusal that writes nothing.
+func (p pages) chooseLanguage(ctx context.Context, tx db.Tx[db.Tenant], form url.Values) error {
+	tag := form.Get("locale")
+	if p.LanguageVersion == nil {
+		if values := form["expectedRevision"]; len(values) != 0 {
+			return errAccountFormNoVersion
+		}
+		return p.Language.Choose(ctx, tx, tag)
+	}
+	values, ok := form["expectedRevision"]
+	if !ok || len(values) != 1 || values[0] == "" {
+		return errAccountFormRevision
+	}
+	at, err := strconv.ParseInt(values[0], 10, 64)
+	if err != nil {
+		return errAccountFormRevision
+	}
+	return p.LanguageVersion.ChooseAt(ctx, tx, tag, at)
+}
+
+// errAccountFormRevision and errAccountFormNoVersion are the shell's own refusals,
+// sentinels rather than problems because accountRefusal is what turns them into a
+// page, in the language of the person whose form this was.
+var errAccountFormRevision, errAccountFormNoVersion = errors.New("account form revision"), errors.New("account form no version")
 
 // accountRefusal is a refused language choice, in the language the person whose
 // choice it was is being answered in.
@@ -210,18 +298,8 @@ func (p pages) mountAccountLanguage(app *httpx.Router) {
 // sentence for a fault whose kind is unknown would put the shell's words over
 // whatever the service actually said, which is the one thing a refusal must not do.
 func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) {
-	var key, english, code string
-	var status int
-	switch {
-	case errors.Is(err, crud.ErrInvalid):
-		key, english = "account.language.unsupported",
-			"That is not a language this tenant serves you in. Nothing was changed."
-		status, code = http.StatusUnprocessableEntity, "INVALID_INPUT"
-	case errors.Is(err, crud.ErrConflict):
-		key, english = "account.language.stale",
-			"This account's language changed since this page was drawn. Nothing was changed."
-		status, code = http.StatusConflict, "CONFLICT"
-	default:
+	key, english, code, status := accountRefusalCopy(err)
+	if key == "" {
 		return page.View{}, rest.Fault(err)
 	}
 	line := chrome(r, key, english)
@@ -230,6 +308,31 @@ func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) 
 		v.Language = r.Locale.Language
 	}
 	return v, nil
+}
+
+// accountRefusalCopy is which sentence of the shell's own answers which fault, and
+// the status the fault carries. The empty key is the answer for a fault this control
+// has no sentence for — see accountRefusal.
+func accountRefusalCopy(err error) (key, english, code string, status int) {
+	switch {
+	case errors.Is(err, errAccountFormRevision):
+		return "account.language.revision",
+			"This form did not bring the revision your language choice was read at. Nothing was changed.",
+			"INVALID_INPUT", http.StatusUnprocessableEntity
+	case errors.Is(err, errAccountFormNoVersion):
+		return "account.language.unversioned",
+			"This installation's account door answers no revisions, so a form cannot change the language. Nothing was changed.",
+			"INVALID_INPUT", http.StatusUnprocessableEntity
+	case errors.Is(err, crud.ErrInvalid):
+		return "account.language.unsupported",
+			"That is not a language this tenant serves you in. Nothing was changed.",
+			"INVALID_INPUT", http.StatusUnprocessableEntity
+	case errors.Is(err, crud.ErrConflict):
+		return "account.language.stale",
+			"This account's language changed since this page was drawn. Nothing was changed.",
+			"CONFLICT", http.StatusConflict
+	}
+	return "", "", "", 0
 }
 
 // accountReturn is where the redirect goes: the page the person was reading, so

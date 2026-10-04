@@ -100,6 +100,29 @@ func (a accountLanguage) Choose(ctx context.Context, tx db.Tx[db.Tenant], tag st
 	return err
 }
 
+// Revision and ChooseAt are the same door counted. The read is the account door's
+// own — the choice and the number it moves with, from the one row, with no id to
+// lie about — and the write is the versioned command, so a form drawn at revision 2
+// that arrives after the person's other tab landed revision 3 is a conflict that
+// writes nothing and publishes nothing.
+//
+// The header's control is the caller that needed this: unlike a JSON client that
+// was never given the revision, it drew the choice from a read and shows it, and a
+// picture of an old row submitted back is a write from a read whether or not
+// anybody calls it one.
+func (a accountLanguage) Revision(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error) {
+	own, err := a.users.OwnLanguage(ctx, tx)
+	if err != nil {
+		return 0, err
+	}
+	return own.Revision, nil
+}
+
+func (a accountLanguage) ChooseAt(ctx context.Context, tx db.Tx[db.Tenant], tag string, expectedRevision int64) error {
+	_, err := a.users.SetPreferredLocaleAt(ctx, tx, expectedRevision, tag)
+	return err
+}
+
 // tenantLocaleManager is the tenant module's own question — may this caller set
 // this tenant's languages? — answered over the same authorizer the kernel
 // enforces with. The route guard asks first; this is the ask that happens inside

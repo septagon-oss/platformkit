@@ -47,6 +47,11 @@ type Shell struct {
 	// user module has no account to speak of, and the header shows the sign-out it
 	// has always shown. See AccountLanguage.
 	Language AccountLanguage
+	// LanguageVersion is the same door counted: the account control draws the
+	// revision its choice was read at and posts it back, so an old page cannot write
+	// an old choice over a new one. Nil draws no control over a form that cannot keep
+	// that promise; see AccountLanguageVersion.
+	LanguageVersion AccountLanguageVersion
 	// Installed are the languages this installation's copy is written in, which are
 	// the most a tenant may be served in. The composition read them off the
 	// catalogues it composed; the languages page offers them and no other, because a
@@ -198,7 +203,8 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		},
 		Frame: frame(a, nav, frameDeps{
 			Authorize: sh.Authorize, Storybook: sh.storybook,
-			Language: sh.Language, LanguagePath: sh.languagePath,
+			Language: sh.Language, LanguageVersion: sh.LanguageVersion,
+			LanguagePath: sh.languagePath,
 		}),
 		Tag:       "admin",
 		Back:      a.dashboard.at,
@@ -246,10 +252,11 @@ func Mount(s httpx.Surfaces, sh Shell) {
 // parameters because the frame is built once and read on every request, and a
 // fifth positional argument past a navigation value is a call nobody can read.
 type frameDeps struct {
-	Authorize    httpx.Authorizer
-	Storybook    func(context.Context) (export.Storybook, error)
-	Language     AccountLanguage
-	LanguagePath string
+	Authorize       httpx.Authorizer
+	Storybook       func(context.Context) (export.Storybook, error)
+	Language        AccountLanguage
+	LanguageVersion AccountLanguageVersion
+	LanguagePath    string
 }
 
 func frame(a addresses, nav page.Navigation, deps frameDeps) page.Frame {
