@@ -23,6 +23,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -94,7 +95,7 @@ type Options struct {
 	// It is the same fact as the configuration key `nats.app`, and New reconciles the
 	// two before anything reads either: an empty App takes the configured slug, and an
 	// App named while the key stays empty is written into the key as this App carries
-	// it, so one value places this app's tenants (migrations/000041), addresses its
+	// it, so one value places this app's tenants (migrations/000042), addresses its
 	// subjects (kit/events/providers/nats) and keys its payload contract
 	// (kit/events/catalog.go). Two spellings naming two apps are refused; a caller
 	// that stamps tenants from its own config.Config still reads its own empty key.
@@ -236,6 +237,44 @@ type App struct {
 	mods []module.Module
 	opts Options
 	log  *slog.Logger
+
+	// traces is the flush installTelemetry handed back: batched spans and the
+	// last metric interval have to be pushed before the process is gone, because a
+	// collector nobody told about does not come and fetch them. Nothing but a whole
+	// lifecycle needs it, so it is held here rather than passed around — see
+	// flushTelemetry for who calls it.
+	traces func(context.Context) error
+
+	// reports are what /ready says about the parts of the process that are not
+	// verdicts — today, the exporter's last success. Empty when measurement is off.
+	reports []health.Report
+
+	// telemetryOnce makes the flush one per process. Run and Runtime.Close both
+	// end a lifecycle and Run does both of them, so without it a traced process
+	// would shut its providers down twice and log the same failure twice.
+	telemetryOnce sync.Once
+}
+
+// flushTelemetry pushes what the exporters still hold, at most once per App.
+//
+// Two callers reach it, which is the whole reason it is a method with a Once
+// inside rather than a defer in one function: Run is told when the process ends and
+// flushes on the way out, and a caller that owns its listener is never inside Run at
+// all, for whom Runtime.Close is the only teardown there is. Both run it last, after
+// the listener, the work and the connection are gone, so a traced process's final act
+// is to hand over what its own handlers made. A process that goes through Run reaches
+// the Once twice and exports once.
+//
+// It cannot fail a shutdown. Spans and numbers nobody flushed are a loss of
+// information, and a shutdown that did not finish is a worse one, so the cause goes
+// to the log at the level a person looking for a missing trace will be reading, and
+// the error stays where the loss is: nowhere else.
+func (a *App) flushTelemetry(ctx context.Context) {
+	a.telemetryOnce.Do(func() {
+		if err := a.traces(ctx); err != nil {
+			a.log.ErrorContext(ctx, "app: telemetry was not flushed", "error", err)
+		}
+	})
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -281,7 +320,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	// Which app this is has one answer, and it reaches the composition by two
 	// routes: nats.app, the setting every shared name is formed from (migration
-	// 000041 places tenants by it, the transport addresses events with it, the
+	// 000042 places tenants by it, the transport addresses events with it, the
 	// reference application stamps new tenants with it), and Options.App, the same
 	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
 	// nothing below re-reads either input: the payload catalog, the relay's claim,
@@ -329,7 +368,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 			// names itself, it is the key two consumers read — the transport constructor
 			// (kit/events/providers/nats forms its subjects, its subscription filter and
 			// its connection name from settings.AppName) and migrationDeclaration, whose
-			// app is what migrations/000041 places tenants against. Left empty, this boot
+			// app is what migrations/000042 places tenants against. Left empty, this boot
 			// would scope its relay, its durables and its job lock by the option and form
 			// every other shared name as the deployment of one app: the same question
 			// answered twice, which is what the two-spellings refusal above exists to
@@ -415,13 +454,36 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
+	// The providers are chosen after the logger exists, because the first act is to
+	// say what was decided, and before anything is opened, so that a composition
+	// which fails a gate below has at least been described by a process that knew it
+	// would fail. A collector URL that is not a URL is a wiring mistake, like every
+	// other error this function returns.
+	traces, report, err := installTelemetry(ctx, cfg.Telemetry, log)
+	if err != nil {
+		return nil, err
+	}
+	var reports []health.Report
+	if report != nil {
+		reports = append(reports, report)
+	}
+	return &App{cfg: cfg, mods: mods, opts: opts, log: log, traces: traces, reports: reports}, nil
 }
 
 // Run migrates, then serves or works or both, and returns when ctx is done. It is
 // Start, whichever halves this process's role names, and Close; a caller that owns
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
+	// Registered first so it runs last — after the listener and the work have
+	// stopped and after Close has returned the connection, which is also what
+	// flushes, so this defer is the case Start never reached: a composition that
+	// failed a gate or an open still gets its spans out. It gets the same grace the
+	// requests got, on a context the cancelled shutdown cannot cut short.
+	defer func() {
+		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+		defer cancel()
+		a.flushTelemetry(grace)
+	}()
 	rt, err := a.Start(ctx)
 	if err != nil {
 		return err
@@ -630,7 +692,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (h
 	// probe can act on: is this instance's database reachable. Modules used to
 	// be able to contribute their own and none ever did in three repositories,
 	// so the list was this line and a loop over nothing.
-	health.Register(api, health.DatabaseCheck(conn))
+	health.Register(api, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 
 	// The gates. An operation that declares no authorization, one guarded by a
 	// permission no module defines, or one that would publish an event no
@@ -880,7 +942,7 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 // same address the web role listens on, so one orchestrator manifest describes
 // both roles. kit/health owns the shape, so the two roles answer alike.
 func (a *App) probes(conn *db.Conn) http.Handler {
-	return health.Mux(a.log, health.DatabaseCheck(conn))
+	return health.Mux(a.log, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 }
 
 // routeKind names the constructor a route used, for the one error that has to

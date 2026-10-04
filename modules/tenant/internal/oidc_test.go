@@ -54,6 +54,11 @@ var acmePeople = contracts.OIDCSettings{
 func twoTenants(t *testing.T, conn *db.Conn) (*contracts.Tenant, *contracts.Tenant) {
 	t.Helper()
 	svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
+	// The installation's own tenant before any customer's: `Create` mirrors its audit
+	// row into that tenant's trail and refuses when there is none to write it into,
+	// so a fixture with no operator tenant is one no lifecycle verb can run in. The
+	// world gains a tenant here; no assertion below changes.
+	installed(t, conn, svc)
 	var acme, globex *contracts.Tenant
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error

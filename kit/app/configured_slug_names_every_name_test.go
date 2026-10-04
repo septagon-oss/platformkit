@@ -1,7 +1,7 @@
 package app
 
 // The app a composition is has two sources: nats.app, the setting every shared name
-// is formed from (migrations/000041 places tenants by it, kit/events/providers/nats
+// is formed from (migrations/000042 places tenants by it, kit/events/providers/nats
 // addresses its subjects with it, apps/platformkit stamps new tenants with it), and
 // Options.App, the same fact spoken by whoever wires in code. Read separately they
 // answer one question twice, and a deployment that named itself only in

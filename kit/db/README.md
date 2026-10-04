@@ -37,7 +37,32 @@ that sets one for itself cannot leak it to the next; `database.lock_timeout` and
 a `MigrationBudget`. The budgets are the runner's patience, not the operator's: a
 migration that cannot take a lock in five seconds of *waiting* stops. The statement
 budget defaults to no bound because a legitimate index build on a large table is the
-statement a duration bound would kill. The same two values go on the session before
+statement a duration bound would kill. **The one exception is the file in autocommit
+mode, which runs with the lock budget off and the statement budget as configured.**
+What that statement waits for is the transactions
+already in the database ceasing to be able to see the table — the wait `CONCURRENTLY`
+exists to make — and the server implements it as a lock wait (`wait_event_type=Lock`,
+`wait_event=virtualxid`), so a configured lock budget reaches it and cancels it:
+measured on PostgreSQL 16, a build that finds one session holding a snapshot older
+than its own is cancelled at `55P03`, and what it leaves behind is an INVALID index
+that the file's own `IF NOT EXISTS`, the re-runnability the rule table demands of this
+mode, then excuses on the retry the refusal tells the operator to run — the rerun
+reports the file applied and the index does not exist. Two things about that wait are
+wider than the sentence above them, and an operator needs both. It is any older
+transaction, not one touching the table being built: measured on the same server, a
+build of one table waited 5.0s for a transaction whose only lock was a row of another.
+And with the lock budget off, nothing the runner owns ends the wait — `statement_timeout`
+is off by default and `app.Bootstrap` hands the run a context with no deadline of its
+own, so a boot stopped at this file waits as long as the oldest transaction in the
+database does. The one bound a deployment can put on it is
+`database.statement_timeout`, which is therefore a trade and not a safety: it refuses
+the build at that bound, and leaves the INVALID index above for the retry that then
+reports the file applied. Waiting is also the shape of the queue for the composition
+lock, which has no budget on it either: that wait is taken off the session rather than
+left on it, because the lock is taken a second time mid-run, after an autocommit file,
+on a session that by then still carries the statement budget — the lock budget came off
+for that file, and a statement budget bounds a lock wait as surely as it bounds the
+work done inside the lock. The same two values go on the session before
 every batch of a drain (`BackfillWith`, and through it `app.Drain`,
 `jobs.BackfillMigrations` and `platformkit migrate --drain`), because the fifty
 transactions behind a data file are the half that waits longest for rows the running
@@ -54,21 +79,25 @@ other replica's boot behind it. The retry is a command rather than a loop:
 role's boot composes — for somebody who is not deploying, and `--drain` finishes a
 backfill the migration left behind instead of waiting for the worker's tick.
 
-What the budgets are *not* put on is the whole window one `autocommit` file opens: its
-statement, and the `pg_advisory_lock` that takes the lock back after it. Both are left
-patient, and both are bounded by the caller's context alone. ADR 0011 is the reason for
-each half in turn. That statement is the one a run must not hold the lock across, and it
-waits for the transactions already in the database — that is what `CONCURRENTLY` is for,
-and no `lock_timeout` bounds that wait; a rebuild cut short at a budget is not a refused
-file but a half-built index left standing invalid. The wait to take the lock back is the
-queue of boots this upgrade is ahead of, which no other file's patience describes: the
-replica that gets the lock second has the first one's applied files to read and finds
-nothing pending, so a boot that waits and applies nothing beats one that refuses at five
-seconds and is read as a failed deploy. The budgets go back on before that file's history
-row, so what they bound is what a file waits *inside a transaction* — which is every other
-statement of the run, and every batch of a drain. When the caller's context runs out the
-operator gets a context deadline, not `ErrContended`: nothing was refused, the run did not
-finish.
+What the budgets are *not* put on is the window one `autocommit` file opens: its
+statement runs with the lock budget off, and the `pg_advisory_lock` that takes the lock
+back after it waits with both budgets off. Both halves are left patient, and each is
+bounded by what is left on it — the caller's context for both, `database.statement_timeout`
+for the statement alone. ADR 0011 is the reason for each half in turn. That statement is
+the one a run must not hold the lock across, and it waits for the transactions already in
+the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds that wait;
+a rebuild cut short at a budget is not a refused file but a half-built index left standing
+invalid. The wait to take the lock back is the queue of boots this upgrade is ahead of,
+which no other file's patience describes: the replica that gets the lock second has the
+first one's applied files to read and finds nothing pending, so a boot that waits and
+applies nothing beats one that refuses at five seconds and is read as a failed deploy. The
+statement budget is what survives of the window, because it is the bound the deployment
+named and ADR 0011 takes none away: with no duration bound either, nothing the runner owns
+would end a build that waits behind a transaction that never ends. The budgets go back on
+before that file's history row, so what they bound is what a file waits *inside a
+transaction* — which is every other statement of the run, and every batch of a drain. When
+the caller's context runs out the operator gets a context deadline, not `ErrContended`:
+nothing was refused, the run did not finish.
 
 **What each file cost.** Every applied file logs `db: applied migration` at info
 with the runner's own `duration_ms`, and a data file's line carries `batches=` beside

@@ -3,7 +3,7 @@
 // says nothing across two of them — both compositions mint uuids the same way and
 // name their modules with the same vocabulary — so the control plane has to know
 // which app it is answering for before it answers. The column is
-// migrations/000041_tenant_app; the reads that scope on it are here.
+// migrations/000042_tenant_app; the reads that scope on it are here.
 package internal_test
 
 import (
@@ -26,6 +26,15 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	acme := internal.NewService(nil, nil, "acme")
 	academy := internal.NewService(nil, nil, "academy")
+
+	// The installation's own tenant, which modules/tenant's Create now asks for before
+	// it writes anything: a schema that has never been bootstrapped holds no operator
+	// tenant to mirror a create's audit row into, and the create refuses. It is made by
+	// a service of no app, so it sits outside every app-scoped read below — the count
+	// this case asserts stays the count it was. The world gained a tenant; no
+	// expectation moved. main's `installed` helper, called here for the same reason
+	// every fixture in this package now calls it.
+	installed(t, conn, internal.NewService(nil, nil, ""))
 
 	mint := func(svc *internal.Service, slug, host string) uuid.UUID {
 		t.Helper()
@@ -114,7 +123,7 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 
 // TestATenantWrittenWithoutAnAppIsNotReadByOne is the floor under a row the service
 // did not write. The column's default takes the app the session declares and the
-// empty slug when it declares none (migrations/000041), so a raw insert lands on
+// empty slug when it declares none (migrations/000042), so a raw insert lands on
 // the app-less deployment — and an app that names itself must not read it, because
 // nothing stamped it as its own.
 func TestATenantWrittenWithoutAnAppIsNotReadByOne(t *testing.T) {

@@ -34,6 +34,15 @@ import (
 func TestATenantTheControlPlaneStampedIsTheTenantTheDeliveryReads(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 
+	// The installation's own tenant, which modules/tenant's Create now asks for before
+	// it writes anything: a schema that has never been bootstrapped holds no operator
+	// tenant to mirror a create's audit row into, and the create refuses. It is made by
+	// a service of no app, so it sits outside every app-scoped read below — the count
+	// this case asserts stays the count it was. The world gained a tenant; no
+	// expectation moved. main's `installed` helper, called here for the same reason
+	// every fixture in this package now calls it.
+	installed(t, conn, internal.NewService(nil, nil, ""))
+
 	const module, event = "billing", "billing.plan.created"
 	apps := []appname.Name{appname.MustParse("acme"), appname.MustParse("acme-billing")}
 

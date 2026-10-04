@@ -47,6 +47,7 @@ func TestTwoDeclarationsOfOneTenantArrivingAtOnceLeaveOneWholeSet(t *testing.T) 
 	// deployment of one app — the one this case was written against, and the only one
 	// it can be: a single composition owns the schema dbtest.Schema just migrated.
 	svc := internal.NewService(nil, []string{"en", "pt-PT"}, "")
+	installed(t, conn, svc)
 
 	var id uuid.UUID
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
