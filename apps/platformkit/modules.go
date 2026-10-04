@@ -276,11 +276,20 @@ func compose(cfg config.Config) composition {
 			// file a visitor may see. A module that named them would be naming a
 			// surface it does not serve (see web.Deps), and a composition that
 			// writes one is pinning an address the kernel composed — which is
-			// only safe because a test asks the running server: the sign-in page
-			// by TestPinnedAddresses, and the logo's file by
+			// only safe because a test asks the running server: the way in by
+			// TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file by
 			// TestThePublicPageLinksOnlyAddressesTheInstallationServes, which
 			// uploads a public file, sets it as the tenant's logo, reads the src
 			// back off the public home page and fetches it.
+			//
+			// The way in is the workspace root, not the sign-in page below it.
+			// pinnedSignIn stays the address the guard turns a refused caller
+			// towards, and the fault chrome keeps linking it; this line is what an
+			// anonymous visitor on a tenant's own host is offered, and a public
+			// frame may offer no address deeper into a workspace than its root.
+			// The root asks no permission of its own — httpx.SignedIn guards it —
+			// so the workspace decides whether the visitor gets a page or the
+			// form, and returns them to the root once they have signed in.
 			//
 			// The file address is the file module's public door as the surface
 			// composes it — /api/v1/public/<module>/<rel> — and not the /files/<id>
@@ -288,7 +297,7 @@ func compose(cfg config.Config) composition {
 			// address, and the module that claims the public root answers
 			// documents at /{slug}, so a two-segment /files/<id> is served by
 			// nothing at all.
-			SignInPath:    pinnedSignIn,
+			SignInPath:    pinnedWorkspace,
 			PublicFileURL: func(id string) string { return pinnedPublicFile + "/" + id },
 			// The refusal sentences the site's two addresses can answer with are the
 			// kernel layer's, so the site shows them to a visitor in the language the
