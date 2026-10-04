@@ -2449,6 +2449,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slaBreached": {
                 "type": "boolean"
               },
@@ -2480,7 +2483,8 @@
               "title",
               "status",
               "priority",
-              "slaBreached"
+              "slaBreached",
+              "revision"
             ],
             "type": "object"
           },
@@ -2545,6 +2549,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slaBreached": {
                 "type": "boolean"
               },
@@ -2576,7 +2583,8 @@
               "title",
               "status",
               "priority",
-              "slaBreached"
+              "slaBreached",
+              "revision"
             ],
             "type": "object"
           },
@@ -2641,6 +2649,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "revision": {
+                "type": "integer"
+              },
               "slaBreached": {
                 "type": "boolean"
               },
@@ -2672,7 +2683,8 @@
               "title",
               "status",
               "priority",
-              "slaBreached"
+              "slaBreached",
+              "revision"
             ],
             "type": "object"
           },
