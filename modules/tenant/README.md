@@ -112,7 +112,10 @@ where the write is missing from resource command discovery.
 language, and `own_row_column_rule_test.go` runs the column rule of 000031 at the
 application role: `slug`, `name`, `status`, `operator` and `created_at` are refused to
 the tenant's own transaction, and `default_locale`, `locale_revision` and `updated_at`
-are not. The tenant's own command is decided by the shared suite, not by a case in one
+are not. `tenant_soft_deletion_refusal_test.go` holds the same boundary on the column
+the split policy grants a tenant no `DELETE` of: writing `deleted_at` from a
+tenant-scoped transaction is refused and leaves the row active, so a soft delete is
+not an update around a policy. The tenant's own command is decided by the shared suite, not by a case in one
 world: `contracts/tenanttest` exercises `SetOwnLocale` — the grant it rechecks, the
 revision it compares, the declaration it already holds — through `RunService`, which
 both the fake and the SQL service pass, so a fake that drifted from the service on any

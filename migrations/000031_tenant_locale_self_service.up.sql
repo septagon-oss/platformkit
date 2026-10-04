@@ -77,7 +77,10 @@ CREATE POLICY tenant_locales_delete ON tenant_locales FOR DELETE
 --
 -- A tenant transaction may change its own languages and nothing else on its own
 -- row: `slug`, `name`, `status` and `operator` are the control plane's facts about
--- the customer, and `created_at` is a fact about the past. `default_locale`,
+-- the customer, `created_at` is a fact about the past, and `deleted_at` is the fact
+-- of whether the customer exists at all — which the split policy above refuses a
+-- tenant a DELETE of, and a soft delete through an UPDATE would have been the same
+-- refusal walked around by the one command the tenant is granted. `default_locale`,
 -- `locale_revision` and `updated_at` are what the self-service command writes, and
 -- a system transaction changes whatever it likes — the operator's `SetLocale`,
 -- `AddHost`, `Suspend` and `Create` keep every authority they had, because
@@ -101,7 +104,8 @@ BEGIN
 		OR NEW.name IS DISTINCT FROM OLD.name
 		OR NEW.status IS DISTINCT FROM OLD.status
 		OR NEW.operator IS DISTINCT FROM OLD.operator
-		OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+		OR NEW.created_at IS DISTINCT FROM OLD.created_at
+		OR NEW.deleted_at IS DISTINCT FROM OLD.deleted_at THEN
 		RAISE EXCEPTION 'a tenant transaction may change only its own languages'
 			USING ERRCODE = '42501';
 	END IF;

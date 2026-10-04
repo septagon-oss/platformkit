@@ -146,7 +146,7 @@ out, signs in and is still Portuguese; then the empty option takes the choice ba
 is the only case here that holds a real form, a real redirect and a real session, and
 it runs inside `make e2e`.
 
-The journey types none of that itself: it imports [../e2e/steps/admin.ts](../e2e/steps/admin.ts),
+The journey types none of that itself: it imports [../e2e/steps/admin.ts](../../e2e/steps/admin.ts),
 which is this module's browser steps exported — `signIn`, `signOut`,
 `chooseLanguage`, `clearLanguageChoice`, and the account control's locators. A spec
 that retypes the sign-in fields re-decides, every time, what the email box is called,

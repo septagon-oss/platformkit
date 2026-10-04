@@ -18,6 +18,11 @@ e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
 
+# The browser run's own status file. `make e2e` writes one wherever Playwright ran
+# from, and it records the outcome of a run rather than anything a build reads.
+# The repository root is where the kernel's own run lands, so it is named as well.
+/test-results/
+
 # Uploaded bytes. config.example.yaml puts them here, so a laptop needs no
 # absolute path and a container mounts a volume at it; see kit/config.Files.
 #
