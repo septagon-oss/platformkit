@@ -298,6 +298,9 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 //     that rolled back must run: house rule 9 said backwards.
 //   - A response under 500 that never reached the wire early and fits is stored
 //     whole, with its status, its Content-Type and the three headers a client acts on.
+//     An answer with no body — the redirect a page's own command answers with — is
+//     stored empty rather than as nothing: what makes a row replayable is that
+//     `response` is not NULL, and a 204 simply has no bytes to keep.
 //   - A response under 500 that is too big, or that already began (a Flush, a
 //     body past the buffer's bound), settles with a NULL response. It ran, and its
 //     answer is gone; releasing the claim instead is what makes a retry double-apply.
@@ -314,11 +317,18 @@ func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status 
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				status, c.tenant, c.actor, c.operation, c.key).Error
 		}
+		// A held answer is stored as bytes even when it has none: what a repeat reads
+		// to decide it may replay is `response IS NOT NULL`, and the redirect a page's
+		// own command answers with has no body to lose.
+		stored := body
+		if stored == nil {
+			stored = []byte{}
+		}
 		return tx.DB().Exec("UPDATE "+idempotencyTable+
-			" SET settled = true, status = ?, content_type = ?, headers = ?::jsonb, response = ?,"+
+			" SET settled = true, status = ?, content_type = ?, headers = ?::jsonb, response = ?::bytea,"+
 			" request_id = ?, expires_at = claimed_at + interval '24 hours'"+
 			" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
-			status, header.Get("Content-Type"), replayHeaderJSON(header), []byte(body), c.request,
+			status, header.Get("Content-Type"), replayHeaderJSON(header), stored, c.request,
 			c.tenant, c.actor, c.operation, c.key).Error
 	})
 }
@@ -367,10 +377,15 @@ type heldResponse struct {
 	contentType string
 	headers     map[string]string
 	body        []byte
-	requestID   string
-	settled     bool
-	stale       bool
-	hash        []byte
+	// holds is `response IS NOT NULL`, which is the only reading of "was an answer
+	// kept" that survives an answer with nothing in it: a page's own command
+	// redirects with a header and no body at all, and its bytes are nil because they
+	// are empty, not because there is no answer to replay.
+	holds     bool
+	requestID string
+	settled   bool
+	stale     bool
+	hash      []byte
 }
 
 // claimIdempotency is the three-way decision, in one transaction of its own: run,
@@ -441,7 +456,7 @@ func settledAnswer(c idempotencyClaim, h *heldResponse) idempotencyAnswer {
 		return inProgress()
 	case !bytes.Equal(h.hash, c.hash[:]):
 		return idempotencyAnswer{refuse: http.StatusUnprocessableEntity, code: CodeIdempotencyKeyReuse + ": this key was already used for a different request"}
-	case h.body == nil:
+	case !h.holds:
 		return idempotencyAnswer{refuse: http.StatusConflict, code: CodeIdempotencyResponseNotHeld + ": this command ran; its response is not held; read the result rather than sending it again"}
 	default:
 		return idempotencyAnswer{held: h}
@@ -476,7 +491,7 @@ type idempotencyAnswer struct {
 // claim that ended between our failed INSERT and this read, which the caller
 // answers by claiming again.
 func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
-	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, request_hash, request_id,"+
+	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
 		" now() - claimed_at >= interval '5 minutes' FROM "+idempotencyTable+
 		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 		c.tenant, c.actor, c.operation, c.key).Rows()
@@ -491,7 +506,7 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 		h       heldResponse
 		headers []byte
 	)
-	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.hash, &h.requestID, &h.stale); err != nil {
+	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.stale); err != nil {
 		return nil, err
 	}
 	if err := rows.Close(); err != nil {

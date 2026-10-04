@@ -802,3 +802,55 @@ func rowsOf(t *testing.T, f *fixture, table string) []string {
 	}
 	return out
 }
+
+// sendHX posts an empty form under a key the way a page's own command is posted:
+// htmx sets its request header, and the answer to a write that worked is a
+// redirect rather than a document.
+func sendHX(t *testing.T, h http.Handler, path, key string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "http://"+host+path, nil)
+	req.Header.Set("HX-Request", "true")
+	req.Header.Set(httpx.IdempotencyKeyHeader, key)
+	req.AddCookie(&http.Cookie{Name: httpx.CookieName(httpx.SessionCookie, false), Value: "present"})
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	return w
+}
+
+// TestARedirectIsReplayedAsTheSameRedirect. A page's command has no body to hold:
+// the answer to a revocation that worked is 204 with HX-Redirect for the htmx
+// client and 303 with Location for the native form, and the browser acts on the
+// header alone. A replay that lost those would send the person nowhere, and one
+// that refused for want of a body would refuse the one outcome this mechanism
+// exists for — the person who clicked, saw nothing, and clicked again.
+func TestARedirectIsReplayedAsTheSameRedirect(t *testing.T) {
+	api, router, _, runs, _ := setupNote(t)
+	op := huma.Operation{OperationID: "page-command", Method: http.MethodPost, Path: "/page-command"}
+	httpx.DeclareIdempotency(&op)
+	httpx.HTML(api.Surfaces(probe).App, op, httpx.Permission("note:write"),
+		func(ctx context.Context, _ *struct{}) (*httpx.Page, error) {
+			runs.Add(1)
+			return httpx.Redirect(ctx, "/there"), nil
+		})
+	path := page(api, "/page-command")
+
+	first := sendHX(t, router, path, keyA)
+	if first.Code != http.StatusNoContent || first.Header().Get("HX-Redirect") != "/there" {
+		t.Fatalf("the first caller got %d with HX-Redirect %q, want 204 to /there", first.Code, first.Header().Get("HX-Redirect"))
+	}
+	if first.Header().Get("Idempotency-Replay") != "" {
+		t.Errorf("the first response claimed to be a replay: %q", first.Header().Get("Idempotency-Replay"))
+	}
+
+	second := sendHX(t, router, path, keyA)
+	if second.Code != http.StatusNoContent || second.Header().Get("HX-Redirect") != "/there" {
+		t.Errorf("the repeat got %d with HX-Redirect %q and refusal %q, want the same redirect the first caller was given",
+			second.Code, second.Header().Get("HX-Redirect"), second.Header().Get(httpx.IdempotencyRefusalHeader))
+	}
+	if second.Header().Get("Idempotency-Replay") != "true" {
+		t.Errorf("the replay carried Idempotency-Replay %q, want true", second.Header().Get("Idempotency-Replay"))
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("the command ran %d times, want once", n)
+	}
+}
