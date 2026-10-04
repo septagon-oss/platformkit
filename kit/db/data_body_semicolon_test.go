@@ -5,7 +5,7 @@ package db_test
 // body, and a second statement would be run over a window of its own with no cursor
 // between them; split the file" (kit/db/backfill.go, drain).
 //
-// The refusal is right about the shape it was written for — `data_body_that_binds_the_windows_own_name_is_refused_test.go`
+// The refusal is right about the shape it was written for — `data_file_shape_test.go`
 // shows a body of two bounded UPDATEs, which no rule refuses and which the window cannot
 // run. What that case leaves open is the file the sentence is *wrong* about: a body that is
 // one statement to PostgreSQL because the semicolon sits inside a dollar-quoted value it is

@@ -26,7 +26,8 @@ package db_test
 // it fires when another rule did not. That is a fourth kind of question, and the sentence that
 // promises all eight are divided by the question each asks is true of seven.
 //
-// The count is the fact an operator acts on, and this task has already learned that twice: the
+// The count is the fact an operator acts on, and a prose total that disagrees with the
+// table beside it is a real failure here: the
 // guide's total used to say seven where its own table said eight, and
 // `rule_table_and_the_prose_that_counts_it_do_not_say_the_same_number_test.go`
 // holds that boundary by reading the table rather than trusting the prose. This case is the same

@@ -56,7 +56,7 @@ func TestTheRuleTableAndTheProseThatCountsItSayTheSameNumber(t *testing.T) {
 			claim, len(noneRules), strings.Join(noneRules, ", "))
 	}
 
-	// The same count, in the ADR that the brief asks to hold the rule.
+	// The same count, in the ADR that holds the rule.
 	adr := readDoc(t, "../../docs/adr/0011-migration-ownership.md")
 	adrRe := regexp.MustCompile(`(?i)those (one|two|three|four|five|six|seven|eight|nine|ten) rules`)
 	if a := adrRe.FindStringSubmatch(adr); a != nil {

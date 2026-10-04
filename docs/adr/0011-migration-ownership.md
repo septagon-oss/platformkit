@@ -322,14 +322,14 @@ head is 2, with nothing applied either way, and the release rule surviving that 
 floor. `kit/app/drain_in_flight_boots_test.go` reaches a half-drained table
 through the doors only — an installation that stopped at its own bound, then the worker
 an installation boots — and asks that the worker be alive and the table empty.
-`kit/db/data_body_that_binds_the_windows_own_name_is_refused_test.go` refuses a two-statement data file with nothing
-resumable left behind and the corrected file drained by the run that carried it, and
-`kit/db/rule_reads_the_statement_test.go` that a
-`DEFAULT` in one statement does not excuse a `NOT NULL` column in another.
-`kit/db/data_file_shape_test.go` is the other two branches of that one rule: the data
-file with a schema file behind it, which `Migrate` leaves and `db.Backfill` empties so
-the file behind it can apply, and a self-bounded body — no window, so no bound for a
-migration to hold it to — which waits for the worker even as the owner's last file.
+`kit/db/data_file_shape_test.go` owns the data-file shape: it refuses a two-statement data
+file with nothing resumable left behind and the corrected file drained by the run that
+carried it, and reaches the two branches that case cannot — the data file with a schema
+file behind it, which `Migrate` leaves and `db.Backfill` empties so the file behind it can
+apply, and a self-bounded body, no window and so no bound for a migration to hold it to,
+which waits for the worker even as the owner's last file.
+`kit/db/rule_reads_the_statement_test.go` says that a `DEFAULT` in one statement does not
+excuse a `NOT NULL` column in another.
 `apps/platformkit/migrate_test.go` shows `platformkit migrate` applying exactly the
 sources the composition selected — every owner and every one of its files — and the
 second run applying nothing further.

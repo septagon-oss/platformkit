@@ -1,22 +1,26 @@
 package db_test
 
-// This file is the delivery's case for the two drains a migration run
-// does not own, beside the one it does.
+// The shape a `phase=data` file has to have to be drained at all, and what a refusal of
+// that shape leaves behind.
 //
-// A `phase=data` body of two statements is refused by the executor, because the window
-// wraps one body, and the refusal runs before the progress row exists: that row is what
-// every later run reads as "this drain started, resume it", and a body that never ran
-// once is not that. kit/db/data_body_that_binds_the_windows_own_name_is_refused_test.go holds that refusal and the
-// corrected file converging through `Migrate` — the owner's last pending file, with
-// nothing of its owner waiting behind it, so there is nothing to keep in order and the
-// run has a window to bound the work with.
+// The rule table refuses a data file whose statement starts with ALTER, CREATE or DROP,
+// whose body never reads the window, or whose header will not parse. Nothing in it counts
+// statements: `data-with-ddl` fires on a leading word only, so a body of two bounded
+// UPDATEs passes every rule, is applied to the connection, and is refused afterwards by
+// `drain` ("a data file is one statement … split the file"). By then `beginDrain` has
+// written the progress row, and a row in `schema_migration_backfill` is precisely the
+// state kit/db reads as "this drain started, resume it": planOwner stops treating the
+// file as one that never ran and treats every later run as that resume, and every tick of
+// jobs.BackfillMigrations answers with the same refusal. `Migrate` runs
+// TestARefusedDataFileShapeLeavesNoDrainBehind's file as the owner's last pending file,
+// with nothing of its owner waiting behind it, so there is nothing to keep in order and
+// the run has a window to bound the work with.
 //
-// What follows is the other half of the same rule, which that case cannot reach: the
-// drain with a file behind it, which belongs to the worker because the release cannot
-// complete in this run either way, and the drain no window bounds at all, which belongs
-// to the worker whatever sits behind it — `allow=data-body-unbounded` says the body
-// bounds itself, so the fifty batches a migration gives itself are not a bound this run
-// can hold it to.
+// What the cases below reach that that one cannot: the drain with a file behind it,
+// which belongs to the worker because the release cannot complete in this run either way,
+// and the drain no window bounds at all, which belongs to the worker whatever sits behind
+// it — `allow=data-body-unbounded` says the body bounds itself, so the fifty batches a
+// migration gives itself are not a bound this run can hold it to.
 
 import (
 	"strings"
@@ -26,6 +30,84 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
+
+// twoBoundedStatements is the shape nothing refuses before the server does: both bodies
+// read the window, so neither is unbounded, and neither is DDL.
+const twoBoundedStatements = `-- pkit: phase=data
+-- pkit: batch=10
+-- pkit: table=probe
+UPDATE probe SET passes = passes + 1 WHERE id IN (SELECT id FROM batch);
+UPDATE probe SET done = true WHERE id IN (SELECT id FROM batch)`
+
+// twoBoundedStatementSource is that body as the owner's last pending file, which is the
+// only shape a migration runs: with a file behind it the release cannot complete either
+// way, and the drain is the worker's.
+func twoBoundedStatementSource(body string) db.MigrationSource {
+	return db.MigrationSource{Owner: "shape", Files: fstest.MapFS{
+		"000001_probe.up.sql": {Data: []byte(`CREATE TABLE probe (id bigint PRIMARY KEY, done boolean NOT NULL DEFAULT false, passes integer NOT NULL DEFAULT 0);
+INSERT INTO probe (id) SELECT g FROM generate_series(1, 25) g`)},
+		"000002_two.up.sql": {Data: []byte(body)},
+	}}
+}
+
+// TestARefusedDataFileShapeLeavesNoDrainBehind is the one refusal of a `phase=data` file
+// the rule table does not make, asserted through the rows a refused run leaves.
+//
+// The guard that refuses "an invalid later file must not let an earlier one change the
+// schema" (kit/db/migration_files.go) reads a data file against three rules, none of them
+// about how many statements it holds, so the refusal comes later, from `drain`, and by
+// then `beginDrain` has written the progress row that kit/db reads as a drain to resume.
+// What is asserted is the promise the README makes about a refusal — it leaves nothing
+// resumable, no history row, no half-written batch — and that the remedy the message
+// names, splitting the file, converges on the same schema with every row written once.
+//
+// What this case does not settle: the refusal is the executor's rather than the guard's.
+// Measured, and the reason the file's own earlier statement reached the schema — the same
+// source against an address that answers nothing returns
+//
+//	db: migrate: connect: failed to connect to `user=nobody database=platformkit`: …
+//
+// while every file the rule table refuses answers with its rule from that same address.
+// Refusing this shape in the rule table and refusing it in the executor are both
+// defensible; which one the runner answers with is not decided here.
+func TestARefusedDataFileShapeLeavesNoDrainBehind(t *testing.T) {
+	migrateURL, _ := dbtest.URLs(t)
+	err := db.Migrate(t.Context(), migrateURL, twoBoundedStatementSource(twoBoundedStatements))
+	if err == nil {
+		t.Fatal("a phase=data file with two statements reported success; the drain wraps one body, so it has to refuse two")
+	}
+	if !strings.Contains(err.Error(), "shape/000002_two.up.sql") {
+		t.Errorf("the refusal %q does not name the file whose shape it refuses", err)
+	}
+	admin := dbtest.Open(t, migrateURL)
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'shape' AND version = 2"); n != 0 {
+		t.Errorf("the refused file wrote %d history rows; the version never ran", n)
+	}
+	// This is the row the case exists for. Nothing drained — the body never ran
+	// once — and the table that says where a drain restarts holds a row for it.
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
+		t.Errorf("the refused run left %d drain progress row(s) behind; no row was ever written, and kit/db reads that row as a drain that started", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE passes <> 0"); n != 0 {
+		t.Errorf("the refused run wrote %d rows", n)
+	}
+
+	// The remedy the message names — split the file — converges on the same
+	// schema, with every row written exactly once and no progress left behind.
+	if err := db.Migrate(t.Context(), migrateURL, twoBoundedStatementSource(
+		`-- pkit: phase=data
+-- pkit: batch=10
+-- pkit: table=probe
+UPDATE probe SET passes = passes + 1, done = true WHERE id IN (SELECT id FROM batch)`)); err != nil {
+		t.Fatalf("the corrected file: %v", err)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE passes <> 1 OR done IS NOT TRUE"); n != 0 {
+		t.Errorf("%d rows are not the way the corrected drain leaves them", n)
+	}
+	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 0 {
+		t.Errorf("%d progress row(s) outlived the drain", n)
+	}
+}
 
 const twoStatementData = `-- pkit: phase=data
 -- pkit: batch=10

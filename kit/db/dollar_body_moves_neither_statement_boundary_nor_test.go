@@ -5,7 +5,7 @@ package db_test
 // constructs it knows — `--`, `/* … */`, `$tag$ … $tag$`, `E'…'` — "None of them can move
 // the boundary of what the guard sees."
 //
-// One of them can, and it is the one 97678f7 taught the statement splitter to count.
+// One of them can, and it is the one the statement splitter most recently learned to count.
 // `splitTopLevel` now toggles a `named` flag on every `"` it meets, and it meets the
 // bytes of a dollar-quoted body whole: `scanSQL` keeps a `$tag$ … $tag$` value intact in
 // `plain` — the text `splitStatements` is given — because a value is one value to the
@@ -17,16 +17,15 @@ package db_test
 // is not anchored and survives, which is why one of the three legs below passes today
 // and why the escape is about the anchor rather than about the name.
 //
-// This is the fault the same commit set out to close, one level earlier, and it is new in
-// it: on f1443b0 the same file was refused, because a double quote meant nothing to the
-// splitter and the statement boundary after the function body was where the server puts
-// it. The two controls below are that fact — the same function with no double quote, and
-// the same function with its quotes in pairs, both refused today — so the third leg is a
-// finding about the parity of a quote the reader should not be counting here at all, not
-// about the rule. Measured both ways: with the previous `splitTopLevel` restored in a
-// copy of the tree, all five legs of this case PASS (and the two legs 97678f7 added for
-// its own fix then FAIL, which is that commit's own `Verified:` paragraph reproduced); on
-// the delivered tree, two of the five fail. Nothing in this repository trips it today —
+// This is the same misreading one level earlier than the one that counting exists to close,
+// and new in it: before the splitter counted a dollar body at all, a double quote meant
+// nothing to it and the statement boundary after the function body was where the server puts
+// it, so this file was refused. The two controls below are that fact — the same function with
+// no double quote, and the same function with its quotes in pairs, both refused today — so the
+// third leg is about the parity of a quote nothing should be counting inside a value, not
+// about the rule. Measured both ways: with a splitter that ignores double quotes restored in a
+// copy of the tree, all five legs of this case PASS; on the delivered tree, two of the five
+// fail. Nothing in this repository trips it today —
 // `grep -rln --include='*.sql' '\$\$' migrations modules/*/migrations` names only
 // `migrations/000001_tenancy.up.sql`, and its three dollar bodies carry no double quote
 // at all — so this is a guard that mis-reads a future file, in the one direction no

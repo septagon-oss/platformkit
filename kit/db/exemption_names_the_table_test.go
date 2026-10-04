@@ -1,10 +1,10 @@
 package db_test
 
-// The reach of
-// the second finding, on the side of the line the finding did not stand on.
+// The exemption `index-not-concurrent` grants has to stop at the table a file creates,
+// whichever spelling the two names happen to use.
 //
-// The finding was that the exemption below `index-not-concurrent` compared the *spelling* of
-// a table name: `newMigrationText` recorded `reCreateTable`'s capture verbatim, so
+// The exemption once compared the *spelling* of a table name: `newMigrationText` recorded
+// `reCreateTable`'s capture verbatim, so
 // `CREATE TABLE "probe"` recorded `"probe"` and `CREATE INDEX … ON probe` asked for `probe`
 // and was refused — the file that ships its index in the file that creates the table, which
 // is the remedy the refusal itself names, answered with a rule it had not broken. The fix

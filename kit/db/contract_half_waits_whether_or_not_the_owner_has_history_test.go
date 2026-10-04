@@ -1,8 +1,8 @@
 package db_test
 
-// The release rule the brief names: "the runner refuses a
-// `contract` migration whose `expand` partner has not been applied for at least one release
-// (recorded in the ledger by version)".
+// A `phase=contract` migration waits for its `expand` partner to have been applied for at
+// least one release, recorded in the ledger by version, and a wait like that cannot be
+// enforced halfway through a release.
 //
 // `kit/db/README.md` states the guard without an condition on the installation: "A file the
 // rule table refuses, a contract half whose expansion has not applied, and a grammar mistake in
@@ -22,10 +22,11 @@ package db_test
 //
 // The second leg is the same half beside an expansion the same release offers at a later
 // version. There the run applies the contract first and the expansion after it, which is what
-// the brief's scope ("for an owner that already has history", line 154) and kit/db/README's
+// kit/db/README's
 // "An owner with no history at all is the exception both times: nobody is reading, and its files
-// apply in order" both appear to accept; the case is recorded here and not asserted, because
-// which way it is answered is the round's call. What is asserted is the first leg, where there
+// apply in order" appears to accept; the case is recorded here and not asserted, because which
+// order a release's own two files apply in is a decision about the runner that no README fixes,
+// and asserting one answer here would freeze it. What is asserted is the first leg, where there
 // is no order to apply in: the file names a version the owner has never had and never will.
 //
 // The third and fourth legs are the controls that hold today and have to hold after any fix:
@@ -94,8 +95,8 @@ func TestAContractHalfRefusesWhileTheVersionItWaitsForHasNotApplied(t *testing.T
 }
 
 // TestAContractHalfIsRefusedOnAnInstalledOwnerAndAppliedOnTheReleaseAfter is the pair of
-// controls: the same first release, refused once its owner has history (which is the leg every
-// round has run), and the ordinary shape — expansion applied, contract half shipped afterwards
+// controls: the same first release, refused once its owner has history (which is the leg the
+// runner answers today), and the ordinary shape — expansion applied, contract half shipped afterwards
 // — which applies. A fix for the legs above has to keep both answers.
 func TestAContractHalfIsRefusedOnAnInstalledOwnerAndAppliedOnTheReleaseAfter(t *testing.T) {
 	t.Run("installed owner, expansion not applied", func(t *testing.T) {

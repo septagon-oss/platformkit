@@ -23,7 +23,7 @@ package db_test
 // and still with no exception to except it, which is the leg that would catch a fix
 // that took the rule's teeth instead of its misreading;
 // - a body that is genuinely two statements *and* carries a value is still refused by the
-// executor, so the count still counts: `data_body_that_binds_the_windows_own_name_is_refused_test.go` shows the
+// executor, so the count still counts: `data_file_shape_test.go` shows the
 // valueless spelling of that file, and this is the one where the semicolon inside the
 // value is what a wrong split would have counted.
 //

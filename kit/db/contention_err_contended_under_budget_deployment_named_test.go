@@ -12,8 +12,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-// These cases pin the guarantees this task's specification named as the ones
-// implement had still to write a case for — that ErrContended is the contract
+// Four guarantees the runner makes that no other case in this package reaches: that
+// ErrContended is the contract
 // rather than a sentence, that a budget a deployment named is the budget in
 // force, that the runner's two tables are unreachable from an application
 // connection, and that a finished drain stays finished when the worker ticks

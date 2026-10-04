@@ -6,9 +6,8 @@ package db_test
 // Case 1 is about the floor. migrations/README.md: "A rule cannot be refused on a
 // file that is already applied somewhere: … So a source states the first version
 // it is guarded from … and the number is one past the highest file the rules
-// refuse today … Lowering a floor is a review, not an edit", and the task's
-// the brief.md promises a floors test that asserts "no floor is above the owner's
-// head". migrations/rule_floor_files_force_test.go asserts the two directions for the four
+// refuse today … Lowering a floor is a review, not an edit". The third direction is
+// "no floor is above the owner's" head. migrations/rule_floor_files_force_test.go asserts the two directions for the four
 // sources that exist; the kernel itself accepts any int64 a source writes, so a
 // floor above the head — one that skips versions no installation has seen — is a
 // guard switched off for the files that have not been written yet, and nothing
@@ -77,7 +76,7 @@ func TestASourceCannotDeclareAFloorPastItsOwnHead(t *testing.T) {
 	})
 
 	t.Run("and the floor does not reach the release rule", func(t *testing.T) {
-		// The same escape, pointed at the guard the brief is really about: a source
+		// The same escape, pointed at the release rule rather than the floor: a source
 		// whose floor is past its head must not be able to apply a contract half in
 		// the release that carries its expand. planOwner does not read RulesFrom,
 		// and this is the leg that says so from the outside.
