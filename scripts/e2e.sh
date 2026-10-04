@@ -158,7 +158,13 @@ done
 # The inbox the journey reads. It is a fixture, so its absence is a fixture
 # problem and must say so at once: a spec that could not reach it would otherwise
 # wait out its own timeout for a message that can never arrive.
-mail_url="${PLATFORMKIT_E2E_MAIL_URL:-http://127.0.0.1:8025}"
+# The address is the one the stack was actually published on: compose.yaml maps the
+# inbox's UI to ${PLATFORMKIT_MAIL_UI_PORT:-8025}, the Makefile carries the same default, and
+# a fixture that read a literal 8025 looked for the sink on a port nobody opened when the
+# stack was brought up elsewhere — the journey then died on its own precondition while
+# `make up` reported a healthy container. PLATFORMKIT_E2E_MAIL_URL still wins: it is how a
+# caller points the journey at an inbox that is not this stack's at all.
+mail_url="${PLATFORMKIT_E2E_MAIL_URL:-http://127.0.0.1:${PLATFORMKIT_MAIL_UI_PORT:-8025}}"
 mail_ready=false
 for _ in $(seq 1 30); do
 	if curl -fsS "$mail_url/api/v1/info" >/dev/null 2>&1; then mail_ready=true; break; fi

@@ -61,7 +61,7 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 		countRefusal(r.Context(), status)
 	}
 	id := requestIDFrom(r.Context())
-	if a.show(w, r, id, status, detail, false) {
+	if a.show(w, r, id, problem.New(status, detail), false) {
 		return
 	}
 	writeProblem(w, status, id, detail)
@@ -79,6 +79,14 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 // kit/health is its only caller, through the one-method port that package declares.
 // A route that has a host to resolve has a fail to call instead.
 //
+// It is handed the refusal rather than a status and a sentence because the two callers
+// of a refusal are not owed the same words: problem.Problem's Detail is what the monitor
+// diffs and the log quotes, and its Public half is what a person is shown, for the one
+// verdict whose detail names an internal check nobody standing at a browser can act on.
+// The document below writes Detail; the page reads Public. Nothing is invented here — a
+// probe that says nothing about which check broke is the answer this port already gave to
+// a person, and the reason kit/health logs it with its request id.
+//
 // The one thing that is not fail's here is the machine-readable answer. A page rendered
 // for a probe carries the reference, minted behind the negotiation as everywhere else;
 // the JSON answer withholds the instance member and the encoder's trailing newline,
@@ -86,12 +94,12 @@ func (a *API) fail(w http.ResponseWriter, r *http.Request, status int, detail st
 // writeProbeProblem. The person who is *shown* the failure and the monitor that parses
 // it are given the same verdict by the same encoder; what a monitor is owed is that the
 // bytes it reads do not move under it.
-func (a *API) Siteless(w http.ResponseWriter, r *http.Request, status int, detail string) {
+func (a *API) Siteless(w http.ResponseWriter, r *http.Request, refused *problem.Problem) {
 	id := requestIDFrom(r.Context())
-	if a.show(w, r, id, status, detail, true) {
+	if a.show(w, r, id, refused, true) {
 		return
 	}
-	writeProbeProblem(w, status, detail)
+	writeProbeProblem(w, refused.Status, refused.Detail)
 }
 
 // show asks the registered renderer for a page and reports whether it answered.
@@ -105,7 +113,7 @@ func (a *API) Siteless(w http.ResponseWriter, r *http.Request, status int, detai
 // place the question can be asked without being asked twice: it is the only branch that
 // renders a page, and a page has a language. A refusal handed to a program is a code,
 // the same in every language, and owes no lookup.
-func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int, detail string, siteless bool) bool {
+func (a *API) show(w http.ResponseWriter, r *http.Request, id string, refused *problem.Problem, siteless bool) bool {
 	if a.opts.Fault == nil || !WantsDocument(r) {
 		return false
 	}
@@ -122,9 +130,8 @@ func (a *API) show(w http.ResponseWriter, r *http.Request, id string, status int
 	if !siteless {
 		r = a.withHostTenant(r)
 	}
-	p := problem.New(status, detail)
-	p.Instance = "urn:request:" + id
-	return a.opts.Fault(w, r, p)
+	refused.Instance = "urn:request:" + id
+	return a.opts.Fault(w, r, refused)
 }
 
 // refuse is fail for the guards that run inside the huma chain: the authorization
@@ -168,7 +175,7 @@ func (a *API) refuse(ctx huma.Context, status int, detail string) {
 		// that declines has written nothing, which is what lets the document below
 		// answer in the same buffer.
 		ctx.SetStatus(status)
-		if a.show(w, r, id, status, detail, false) {
+		if a.show(w, r, id, problem.New(status, detail), false) {
 			return
 		}
 	}
@@ -203,6 +210,13 @@ func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 // does not: that is what curl, health checks, SDKs and monitoring send, and answering
 // them with a page would break exactly the clients that need the machine-readable body.
 //
+// A weight decides between the two sides when a caller names both: markup counts when
+// it is offered at least as generously as any JSON media type is, and a caller that
+// weighted `application/json` above `text/html` is asking to be handed a value. Reading
+// the header as a set instead of weighing it is what made the answer depend on the order
+// two entries happened to be written in — see offered, which is the one place that
+// number is read, and WantsValue, which is the same reading from the other side.
+//
 // An htmx request does not count either, which is the half of this rule that reads
 // backwards — htmx asks with `Accept: text/html,*/*`. It does not ask to be *shown*
 // anything: it is a controller in a page, and this composition's controller
@@ -215,8 +229,8 @@ func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 // what htmx gets on a success (see Redirect and Page), so this says only that a
 // refusal goes to the caller that parses it.
 // WantsValue reports the mirror half of the same negotiation: a client that named a
-// JSON media type and did not name markup is asking to be *handed* the answer. It is
-// exported for ui/page, which mounts a page as an ordinary operation and therefore has
+// JSON media type more generously than any markup is asking to be *handed* the answer. It
+// is exported for ui/page, which mounts a page as an ordinary operation and therefore has
 // to decide the same question when one of its handlers refuses — but the two halves are
 // not the same question, and the difference is deliberate.
 //
@@ -232,30 +246,60 @@ func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 // guard (ui/assets/js/htmx-config.js), and the fragments they swap are the success path.
 //
 // So the two predicates are one rule read from each side — a refusal is a page for a
-// caller that came to look at one, and a problem document for one that named a value —
-// and both readings live here rather than in the caller that needed them.
+// caller that came to look at one, and a problem document for one that named a value more
+// generously than it named markup — and both readings live here rather than in the caller
+// that needed them. They read the header through one function, offered, because two
+// readers of the same Accept header are two answers to when each one wins, and the two
+// answers drift on exactly the requests nobody thought to write a case for: the one that
+// names both representations with weights.
 func WantsValue(r *http.Request) bool {
 	if r == nil || r.Header.Get("HX-Request") == "true" {
 		return false
 	}
-	for _, offered := range strings.Split(r.Header.Get("Accept"), ",") {
-		media, params, _ := strings.Cut(strings.TrimSpace(offered), ";")
-		if strings.EqualFold(media, "text/html") || strings.EqualFold(media, "application/xhtml+xml") {
-			// Markup was offered, whatever its weight: this caller will look at the page.
-			return false
-		}
-		q := 1.0
-		if weight, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
-			if parsed, err := strconv.ParseFloat(weight, 64); err == nil {
-				q = parsed
+	markup, value := offered(r)
+	return value > markup
+}
+
+// offered is the one reading of a request's Accept header this kernel has: the highest
+// weight the caller gave markup, and the highest weight it gave a machine-readable value,
+// each negative when it named nothing of that kind. Both predicates read the header here
+// so the weights are compared, not the order the caller happened to write its entries
+// in: `application/json;q=0.5, text/html;q=1` and `text/html;q=1,
+// application/json;q=0.5` are one preference stated twice, and a negotiation that looked
+// at the first entry it liked answered them with two different documents.
+//
+// `q=0` is an explicit refusal rather than a low preference, so an entry weighted to zero
+// never counts as offered — that is the reading text/html;q=0 has always had here, now
+// read the same way on both sides. An unparsable weight falls back to 1, which is what
+// RFC 9110 says a missing weight means.
+//
+// A wildcard is deliberately in neither set. `*/*` is what curl, monitors, SDKs and
+// health checks send; counting it as markup would answer machines with a page, and
+// counting it as a value would answer a browser-shaped `text/html,*/*` with a body — the
+// same asymmetry WantsDocument's comment has always stated, now stated once.
+func offered(r *http.Request) (markup, value float64) {
+	markup, value = -1, -1
+	for _, entry := range strings.Split(r.Header.Get("Accept"), ",") {
+		media, params, _ := strings.Cut(strings.TrimSpace(entry), ";")
+		weight := 1.0
+		if q, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
+			if parsed, err := strconv.ParseFloat(q, 64); err == nil {
+				weight = parsed
 			}
 		}
-		if q > 0 && (strings.EqualFold(media, "application/json") ||
-			strings.EqualFold(media, problem.ContentType) || strings.EqualFold(media, "application/ld+json")) {
-			return true
+		if weight <= 0 {
+			continue
+		}
+		switch {
+		case strings.EqualFold(media, "text/html"), strings.EqualFold(media, "application/xhtml+xml"):
+			markup = max(markup, weight)
+		case strings.EqualFold(media, "application/json"),
+			strings.EqualFold(media, problem.ContentType),
+			strings.EqualFold(media, "application/ld+json"):
+			value = max(value, weight)
 		}
 	}
-	return false
+	return markup, value
 }
 
 func WantsDocument(r *http.Request) bool {
@@ -268,18 +312,6 @@ func WantsDocument(r *http.Request) bool {
 	if r.Header.Get("HX-Request") == "true" {
 		return false
 	}
-	for _, offered := range strings.Split(r.Header.Get("Accept"), ",") {
-		media, params, _ := strings.Cut(strings.TrimSpace(offered), ";")
-		if !strings.EqualFold(media, "text/html") && !strings.EqualFold(media, "application/xhtml+xml") {
-			continue
-		}
-		// `text/html;q=0` is an explicit refusal, not a preference.
-		if q, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
-			if weight, err := strconv.ParseFloat(q, 64); err == nil && weight <= 0 {
-				continue
-			}
-		}
-		return true
-	}
-	return false
+	markup, value := offered(r)
+	return markup >= value && markup > 0
 }

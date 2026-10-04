@@ -1,4 +1,22 @@
 {
+  "auth.verify.link_invalid": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Esse link de verificação não é válido ou já expirou; peça outro link.",
+    "plural": {
+      "": "Esse link de verificação não é válido ou já expirou; peça outro link."
+    }
+  },
+  "auth.verify.link_needed": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Esta morada precisa do link que vai no e-mail; peça outro link.",
+    "plural": {
+      "": "Esta morada precisa do link que vai no e-mail; peça outro link."
+    }
+  },
   "permission.role:manage": {
     "references": [
       "modules/auth/module.go"

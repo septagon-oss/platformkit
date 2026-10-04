@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -301,11 +302,12 @@ func (sawContext) Report(ctx context.Context) (string, error) {
 // poll running past the request it answered, unbounded, on a path probed every few
 // seconds. Handed context.Background() instead, nothing could stop it.
 func TestAReportSeesTheCancellationOfTheProbeThatAskedForIt(t *testing.T) {
-	h := health.Mux(nil, func(w http.ResponseWriter, _ *http.Request, status int, detail string) {
+	h := health.Mux(nil, func(w http.ResponseWriter, _ *http.Request, refused *problem.Problem) {
 		// Nothing fails in this composition, so the fault door must never be asked:
 		// the assertion below is about the report, and a probe that refused would
 		// never reach it.
-		t.Errorf("a readiness probe with every check passing asked the fault door for %d (%s)", status, detail)
+		t.Errorf("a readiness probe with every check passing asked the fault door for %d (%s)",
+			refused.Status, refused.Detail)
 	}, nil, sawContext{})
 
 	req := httptest.NewRequest(http.MethodGet, "http://"+tenantHost+"/ready", nil)

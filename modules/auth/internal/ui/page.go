@@ -67,7 +67,29 @@ const (
 	// maxTokenLength bounds the credential this page will read, and is the same
 	// limit the JSON door puts on its body field.
 	maxTokenLength = 128
+	// The two sentences this page refuses with, in the language they are authored in, and
+	// the catalogue entries that carry them in the others. The sentence stays in the code
+	// because it is what a program reads — the problem body an SDK parses says exactly
+	// this — and the key is what a person is shown, because ui/page renders a refusal in
+	// the language the reader asked for out of the catalogues the composition merged.
+	// A module with a page has a person reading its refusals, so it ships their copy the
+	// way it ships its permission labels: modules/auth/messages, under its own prefix.
+	linkInvalid    = "that verification link is invalid or has expired; request another link"
+	linkNeeded     = "this address needs the link from the email; ask for another one"
+	keyLinkInvalid = "auth.verify.link_invalid"
+	keyLinkNeeded  = "auth.verify.link_needed"
 )
+
+// refuse is one of this page's refusals, in both of the shapes one verdict has: the
+// sentence a program reads, as it has always been, and the key of the copy this module
+// ships for a person. Resolving that key is the shell's — it owns the catalogues, the
+// tenant's declared languages and the negotiation — and this module's share is the sentence
+// and the entry it is filed under.
+func refuse(status int, key, sentence string) error {
+	refused := problem.New(status, sentence)
+	refused.Key = key
+	return refused
+}
 
 // Pages is the chrome of this page, and the composition owns every word of it:
 // the palette, where the sheet is served, and where a person who has just
@@ -117,7 +139,15 @@ type verifyForm struct {
 }
 
 type verifyEmailQuery struct {
-	Token string `query:"token" maxLength:"128" doc:"The one-time credential the mail wrote into its link"`
+	// Token carries no `maxLength` tag on purpose. huma validates a request before any
+	// handler runs and answers a failure itself, in its problem JSON, which is the right
+	// answer for an API door and the wrong one for a page: the person who pasted a link
+	// with a stray character on the end was shown JSON in a browser window. The limit is
+	// this handler's to apply — the same 128, refused with the same verdict — so that the
+	// refusal arrives through the page seam every other refusal of this address arrives
+	// through, in the tenant's language, with the reference the person can quote. The JSON
+	// door at /api/v1/public/auth/verify-email keeps its own schema and its own 422.
+	Token string `query:"token" doc:"The one-time credential the mail wrote into its link"`
 }
 
 // Mount serves the link's page on the module's public face. cmd is the module's
@@ -143,16 +173,21 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 	page.Serve(public, shell, page.Route{
 		ID: "auth-verify-email-page", Method: http.MethodGet, Path: verifyEmailRel,
 		Summary: "The page the emailed verification link opens",
-		Errors:  []int{http.StatusUnauthorized, http.StatusServiceUnavailable},
+		Errors:  []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, httpx.Public(), func(ctx context.Context, _ page.Request, in *verifyEmailQuery) (page.View, error) {
 		if in.Token == "" {
-			return page.View{}, problem.New(http.StatusUnauthorized,
-				"this address needs the link from the email; ask for another one")
+			return page.View{}, refuse(http.StatusUnauthorized, keyLinkNeeded, linkNeeded)
+		}
+		if len(in.Token) > maxTokenLength {
+			// The verdict the schema used to answer with, kept where it belongs: a
+			// credential this long is not a link anybody clicked, and 422 is what every
+			// other refusal of an unusable request here says. It is refused before the
+			// lookup, so nothing reaches the store with a megabyte of query in it.
+			return page.View{}, refuse(http.StatusUnprocessableEntity, keyLinkInvalid, linkInvalid)
 		}
 		email, err := cmd.Addressee(ctx, in.Token)
 		if errors.Is(err, contracts.ErrCredentials) {
-			return page.View{}, problem.New(http.StatusUnauthorized,
-				"that verification link is invalid or has expired; request another link")
+			return page.View{}, refuse(http.StatusUnauthorized, keyLinkInvalid, linkInvalid)
 		}
 		if err != nil {
 			return page.View{}, err
@@ -199,13 +234,11 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 		}
 		token := form.Get("token")
 		if token == "" || len(token) > maxTokenLength {
-			return page.View{}, problem.New(http.StatusUnauthorized,
-				"that verification link is invalid or has expired; request another link")
+			return page.View{}, refuse(http.StatusUnauthorized, keyLinkInvalid, linkInvalid)
 		}
 		if err := cmd.Spend(ctx, token); err != nil {
 			if errors.Is(err, contracts.ErrCredentials) {
-				return page.View{}, problem.New(http.StatusUnauthorized,
-					"that verification link is invalid or has expired; request another link")
+				return page.View{}, refuse(http.StatusUnauthorized, keyLinkInvalid, linkInvalid)
 			}
 			return page.View{}, err
 		}

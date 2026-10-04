@@ -35,6 +35,18 @@ func requestIDFrom(ctx context.Context) string {
 	return r.ID
 }
 
+// RequestID returns the id of the request ctx belongs to, and "" for a context that
+// carries no request. It is the same string the response header answers in, the one the
+// log line carries and the one the problem body's instance URN is made of — so a page
+// that shows a reference, a body a monitor parses and the line an operator greps name one
+// request rather than three.
+//
+// It is exported because a refusal written by a *handler* is answered with a page by
+// ui/page rather than by this package, and the person reading that page is owed the same
+// reference the kernel's own guards have always put on it. The id is not this package's to
+// keep: kit/request owns the value, and every answer a request gets reads it from there.
+func RequestID(ctx context.Context) string { return requestIDFrom(ctx) }
+
 // requestID gives every request an id: the caller's, when they sent one worth
 // keeping, so a trace that starts at a proxy stays one trace; otherwise a fresh
 // UUID. It is echoed in the response header, so a caller who sent none can

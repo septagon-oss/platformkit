@@ -107,7 +107,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				applyPrivacy(out, v.Sensitive)
 				return out, nil
 			}
-			status, detail := refusal(err)
+			status, detail, key := refusal(err)
 			if status >= http.StatusInternalServerError {
 				return nil, err
 			}
@@ -129,10 +129,15 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			// who was refused by a module is looking at the page all the same, and the
 			// copy they are shown is not the reason the language was bought for the shell
 			// that mounted them. `fault` claims a language only over a sentence it actually
-			// replaced, so a verdict no catalogue speaks stays English and says so — and
-			// the reference is empty here because a handler's own 4xx carries no request id
-			// of its own.
-			refused := fault(asked, status, detail, r.Locale, "", s, 0)
+			// replaced, so a verdict no catalogue speaks stays English and says so.
+			//
+			// The reference is the request's own id, which is why a handler's refusal is
+			// quotable at all: the id middleware ran before this handler was reached, the
+			// response header answers with it, and the problem body the same refusal takes
+			// to a program carries it as its instance (kit/httpx's stampRequestID). A
+			// person who was refused by a page handler and is told to quote a number that
+			// was never written down is the reason this line passes it.
+			refused := fault(asked, status, detail, key, r.Locale, httpx.RequestID(ctx), s, 0)
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -210,10 +215,16 @@ func read(ctx context.Context, c Chrome) Request {
 }
 
 // refusal is an error's status and detail: a problem's own, or a 500.
-func refusal(err error) (int, string) {
+// refusal is a handler's error read as a verdict, the sentence it carries and the
+// catalogue key of the sentence this module ships for it, which is empty for every refusal
+// that does not name one. The key travels with the refusal rather than being derived from
+// the sentence because the sentence is the thing the key is the copy of — and because the
+// language the refusal is answered in is decided by the shell, which owns the catalogues
+// and the negotiation and none of it is this handler's business.
+func refusal(err error) (int, string, string) {
 	var p *problem.Problem
 	if errors.As(err, &p) {
-		return p.Status, p.Detail
+		return p.Status, p.Detail, p.Key
 	}
-	return http.StatusInternalServerError, ""
+	return http.StatusInternalServerError, "", ""
 }

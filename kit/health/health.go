@@ -39,6 +39,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -90,7 +91,12 @@ type Report interface {
 // request has no tenant transaction to resolve anything inside. So the port states the
 // constraint instead of leaving it as a comment: the thing that answers a probe's
 // failure is the door that never asks who owns the address.
-type Faults func(w http.ResponseWriter, r *http.Request, status int, detail string)
+// A refusal, and not a status and a sentence, because the two audiences of one probe
+// failure are owed different words: the monitor that diffs the problem document reads
+// Detail, which names the checks, and the person who navigated to /ready reads the
+// sentence the shell ships for the verdict. See problem.Problem's Diagnostic and the line
+// in Mux that says so.
+type Faults func(w http.ResponseWriter, r *http.Request, refused *problem.Problem)
 
 // Register mounts the two probes beside the API, on the router that carries
 // neither the request middleware nor a transaction. Both roles therefore answer
@@ -142,7 +148,19 @@ func Mux(log *slog.Logger, faults Faults, checks []Check, reports ...Report) htt
 		// *API to ask, and a second encoder of the problem shape is what fault.go exists
 		// to refuse. The port costs this package nothing it must not pay — no host is
 		// resolved, no transaction opened, no Accept header read (see Faults).
-		faults(w, r, http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", "))
+		//
+		// Which check failed is the monitor's and the operator's, and it is said twice:
+		// in the problem document a readiness stanza diffs, and in the log line below,
+		// joined to the request id a person reads back off a screenshot. It is not the
+		// browser's. A check's name is an internal thing — the names a composition
+		// registers are its subsystems — so a page that lists them tells the person in
+		// front of it nothing they can act on and tells anybody who asks what makes this
+		// installation run. The refusal therefore says which of its sentences a page may
+		// show, and the shell answers with the outage sentence its catalogue holds, in the
+		// language the reader asked in.
+		refused := problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", "))
+		refused.Diagnostic = true
+		faults(w, r, refused)
 		// The reference the page shows and the check that failed are joined here, in the
 		// one line an operator has to read: whoever is quoting `request 8f2c…` off a
 		// screenshot is quoting the string below.
