@@ -134,5 +134,23 @@
   },
   "screens.datetime": {
     "translation": "2006-01-02 15:04"
+  },
+  "screens.boolean_true": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Yes"
+  },
+  "screens.boolean_false": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "No"
+  },
+  "screens.number": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "%g"
   }
 }

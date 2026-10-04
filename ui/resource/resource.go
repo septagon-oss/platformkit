@@ -390,15 +390,83 @@ func details(o Options, r Resource, row map[string]any) g.Node {
 // catalogue, and the day-first order is a translation rather than a branch in the
 // renderer. kit/entity/display keeps the ISO layout as the source form, which is
 // what a shell with no catalogue renders.
+//
+// A boolean and a measured number are the two other values the renderer, and not
+// the row, writes: "Yes" is a word this package chose for `true`, and 12345.5 is a
+// shape the request's language decides. Both are asked of the catalogue on the same
+// terms as the enum above rather than answered here.
 func fieldValue(o Options, f entity.Field, value any) string {
 	if f.Type == entity.TypeTime {
 		return o.moment(value)
+	}
+	if value == nil {
+		// An absent field is nobody's word and nobody's number: the dash is what
+		// every other empty value on this screen says.
+		return display.Display(f, value)
+	}
+	switch f.Type {
+	case entity.TypeBool:
+		return o.boolean(value)
+	case entity.TypeInt, entity.TypeFloat:
+		return o.number(value)
 	}
 	shown := display.Display(f, value)
 	if len(f.Enum) > 0 {
 		shown = o.Label("enum."+display.Text(value), shown)
 	}
 	return shown
+}
+
+// boolean is the one word a screen writes over a value that has two answers. The
+// record says yes or no; the page says it in the reader's language, which is the
+// difference between data and copy — and "Yes" printed under pt-PT is copy that
+// stopped being true when the page changed language.
+func (o Options) boolean(value any) string {
+	on, ok := value.(bool)
+	if !ok {
+		return display.Text(value)
+	}
+	if on {
+		return o.Label("screens.boolean_true", "Yes")
+	}
+	return o.Label("screens.boolean_false", "No")
+}
+
+// number is one measured value in the layout this request's language writes numbers
+// in: English counts 12,345.5 with a comma and a point, Portuguese counts it with a
+// space and a comma, and the row carries neither. The key is the catalogue's hold on
+// the layout, and "%g" the source layout — the same shape of answer a date gets from
+// screens.datetime, so a language that groups differently says so in its copy and
+// not in this file. With no catalogue the number is what the value itself says.
+func (o Options) number(value any) string {
+	switch n := value.(type) {
+	case float64:
+		return o.Text("screens.number", "%g", n)
+	case float32:
+		return o.Text("screens.number", "%g", float64(n))
+	case int:
+		return o.Text("screens.number", "%d", n)
+	case int8:
+		return o.Text("screens.number", "%d", n)
+	case int16:
+		return o.Text("screens.number", "%d", n)
+	case int32:
+		return o.Text("screens.number", "%d", n)
+	case int64:
+		return o.Text("screens.number", "%d", n)
+	case uint:
+		return o.Text("screens.number", "%d", n)
+	case uint8:
+		return o.Text("screens.number", "%d", n)
+	case uint16:
+		return o.Text("screens.number", "%d", n)
+	case uint32:
+		return o.Text("screens.number", "%d", n)
+	case uint64:
+		return o.Text("screens.number", "%d", n)
+	default:
+		return display.Text(value)
+	}
 }
 
 // moment is one instant in the layout the request's language writes instants in.
