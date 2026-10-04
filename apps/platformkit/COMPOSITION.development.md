@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 13 modules · role `all`.
+App `platformkit` · environment `development` · 14 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 13 modules.
+pkit: platformkit in development builds 14 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: composition.Module needs no other module.
@@ -25,10 +25,13 @@ pkit: file.Module needs no other module.
 pkit: file.Module defines the permission file:read, file:manage, file:erase and file:retain.
 pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released and file.erased.
 pkit: file.Module handles file.deleted.
+pkit: change.Module needs no other module.
+pkit: change.Module defines the permission change:read, change:propose and change:decide.
+pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
 pkit: tenant.Module is built after user.Module.
 pkit: tenant.Module needs usercontracts.Service from user.Module.
 pkit: tenant.Module defines the permission tenant:manage.
-pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.oidc_set and tenant.oidc_cleared.
+pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set and tenant.oidc_cleared.
 pkit: web.Module is built after content.Module and site.Module.
 pkit: web.Module needs sitecontracts.Service from site.Module.
 pkit: web.Module needs contentcontracts.Service from content.Module.
