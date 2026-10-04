@@ -259,6 +259,13 @@ check-race: ## Run the concurrency kernel under -race
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
 # here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
 # /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+#
+# scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
+# about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
+# one window of the job where node and a browser exist. It starts nothing — it reads `make -n
+# check-e2e-guards` and .gitea/workflows/ci.yml — so unlike its two subjects it needs no node and
+# belongs here, where dropping them from the goal is red before a merge rather than in the job that
+# dropped them.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
@@ -266,6 +273,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	bash scripts/free_port_test.sh
+	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
