@@ -274,8 +274,11 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 	// defers above hand it back and close the pool it came from, which ends the backend and
 	// drops the key with it. Nothing is unlocked on the way out, which is the guarantee this
 	// point always made ("an unreleased one would go when the connection goes") minus the
-	// statement that could only ever be refused — the only ways to arrive here are the caller
-	// having cancelled or a file having failed. Nor is there a probe in its place: every
+	// statement that could only ever be refused. Those two defers are the whole unlock, and
+	// they run on every return: a run that applied all its files hands the key back when its
+	// backend exits, after Migrate has returned, and the only returns that reach them before
+	// the work is done are the caller having cancelled or a file having failed. Nor is there
+	// a probe in its place: every
 	// method on a *sql.Conn, PingContext included, goes through grabConn, which reads `done`
 	// before it takes `closemu`, so a Close completing in between returns a nil driver
 	// connection and a nil error (database/sql sql.go:2005, :2136). That is the nil a -race
