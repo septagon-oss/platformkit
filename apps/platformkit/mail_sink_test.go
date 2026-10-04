@@ -17,9 +17,9 @@ import (
 // account whose confirmation link no person will ever read. So `mailer` wires a
 // mailbox only where the configuration says `mailbox`, refuses-by-nothing other
 // wise (mail nil, which is what makes modules/auth answer a reasoned 503 and write
-// no row), and the four cases that read a confirmation link or a notice out of
-// this process's memory say so in their own setup. Every assertion in them is the
-// one it was written with: the sink they opt into hands back the same
+// no row), and every case that reads a confirmation link, an invitation link or a
+// notice out of this process's memory says so in its own setup. Every assertion in
+// them is the one it was written with: the sink they opt into hands back the same
 // *notification.Mailbox they have always read.
 func keepMailInTheProcess(t *testing.T, path string, cfg config.Config) (string, config.Config) {
 	t.Helper()
