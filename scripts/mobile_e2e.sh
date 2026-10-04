@@ -182,13 +182,17 @@ fi
 echo "mobile-e2e: serving on $port"
 run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 app_pid=$!
+# Liveness before the request, as in scripts/e2e.sh: a 200 from a process this
+# script did not fork is not this script's health check, and a run whose own
+# application died at the bind would otherwise go on to install and drive a
+# stranger's installation on the device.
 for _ in $(seq 1 60); do
-	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
 	if ! kill -0 "$app_pid" 2>/dev/null; then
 		echo "mobile-e2e: the application stopped before it served:" >&2
 		cat "$work/app.log" >&2
 		exit 1
 	fi
+	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
 	sleep 1
 done
 
