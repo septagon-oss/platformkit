@@ -24,6 +24,19 @@ if ! command -v node >/dev/null; then
 	exit 1
 fi
 
+# shellcheck source=scripts/free_port.sh
+. "$root/scripts/free_port.sh"
+
+# The machine has to be able to say whose socket is whose before this run is
+# allowed to trust a listener — see scripts/free_port.sh for why an answer on
+# /health is not the application's signature. The question is answered here, at the
+# same end as the node check, because a run that cannot prove what it serves is
+# refused before it builds a binary, creates a database or bootstraps a tenant.
+if ! port_attribution_works; then
+	echo "e2e: this machine cannot say which process is listening on a port — a listener this run started itself went unattributed, so neither ss -p nor lsof is answering. Gate 10 will not hand a browser an address it cannot prove it serves." >&2
+	exit 1
+fi
+
 # The port this run serves on, asked for rather than assumed — scripts/free_port.sh
 # says why. A caller that names one gets exactly that port or nothing: the browser
 # run at the end reads PLATFORMKIT_E2E_PORT as the address the harness is allowed to
@@ -34,9 +47,8 @@ fi
 #
 # This is settled before the database exists and before the binary is built: a run
 # that cannot be given the port it was promised has refused before it touched
-# anything.
-# shellcheck source=scripts/free_port.sh
-. "$root/scripts/free_port.sh"
+# anything. What it does not settle is who holds the port at the moment of the bind,
+# which is the question serve() below asks once the application is up.
 if [ -n "$requested_port" ]; then
 	if ! bind_free_port "$requested_port" >/dev/null; then
 		echo "e2e: something is already listening on $requested_port; set PLATFORMKIT_E2E_PORT to a port that is free, or unset it and let this run choose one." >&2
@@ -156,14 +168,29 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-serve() { # start the application on $port and wait for /health: 0 once it answers, 1 when the process died, 2 when it never answered
+serve() { # start the application on $port and wait for /health: 0 once this run's own process is serving it, 1 when that process died, 2 when nothing ever answered, 3 when a process this run did not start holds the port
 	echo "e2e: serving on $port"
 	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 	app_pid=$!
-	local waited=0
+	local waited=0 owners=""
 	while [ "$waited" -lt 60 ]; do
-		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then return 0; fi
+		# The process is asked before /health is, and the answer is not trusted until
+		# the operating system says the socket behind it belongs to this run. A listener
+		# that took the port while the binary was being built answers the probe, and an
+		# application that lost the bind answers nothing at all — the two are
+		# indistinguishable from the client's side, which is why a 200 cannot be the
+		# whole of what serving means here.
 		if ! kill -0 "$app_pid" 2>/dev/null; then return 1; fi
+		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
+			owners="$(port_listeners "$port")"
+			if printf '%s\n' "$owners" | grep -qx "$app_pid"; then return 0; fi
+			# Somebody else is answering, so this run's application can never bind the
+			# number it was configured with. The caller names the holder beside the
+			# application's own log, which by then says what the bind answered.
+			if [ -n "$owners" ]; then
+				return 3
+			fi
+		fi
 		sleep 1
 		waited=$((waited + 1))
 	done
@@ -174,20 +201,30 @@ serve() { # start the application on $port and wait for /health: 0 once it answe
 # binding it here — no portable mechanism hands a bound socket to a process about to
 # be exec'd, which is the note in scripts/free_port.sh. So a port this run chose for
 # itself is asked for again when the bind refuses it, and a run that would have been
-# refused a gate it did not cause moves. A port the caller named is never moved, and
-# an application that died of anything but the bind is reported as what it is rather
-# than retried into the noise.
+# refused a gate it did not cause moves; the same holds when the socket is found to
+# belong to somebody else before the bind is even attempted. A port the caller named
+# is never moved, and an application that died of anything but the port is reported
+# as what it is rather than retried into the noise.
 attempts=0
 until serve; do
 	status=$?
 	moved=""
-	if [ "$status" -eq 1 ] && [ -z "$requested_port" ] && [ "$attempts" -lt 3 ] &&
-		grep -qi 'address already in use' "$work/app.log" 2>/dev/null; then
+	if [ -z "$requested_port" ] && [ "$attempts" -lt 3 ] &&
+		{ [ "$status" -eq 3 ] ||
+			{ [ "$status" -eq 1 ] && grep -qi 'address already in use' "$work/app.log" 2>/dev/null; }; }; then
 		moved="$port"
 	fi
 	if [ -n "$moved" ]; then
 		attempts=$((attempts + 1))
 		echo "e2e: $moved was taken while the application was starting; choosing another." >&2
+		if [ "$status" -eq 3 ]; then
+			# The application is still starting and will die on the bind; stop it here,
+			# because a run that moves the port must not leave its own process behind
+			# holding nothing and answering to nothing.
+			kill "$app_pid" 2>/dev/null || true
+			wait "$app_pid" 2>/dev/null || true
+			app_pid=""
+		fi
 		if ! port="$(bind_free_port)"; then
 			echo "e2e: no free loopback port to serve on." >&2
 			exit 1
@@ -195,12 +232,15 @@ until serve; do
 		write_config
 		continue
 	fi
-	if [ "$status" -eq 2 ]; then
-		echo "e2e: the application never answered /health on $port:" >&2
-	else
-		echo "e2e: the application stopped before it served:" >&2
-	fi
+	case "$status" in
+	2) echo "e2e: the application never answered /health on $port:" >&2 ;;
+	3) echo "e2e: /health answered on $port, but the socket behind the answer is not this run's application, which could not bind a port somebody else was holding:" >&2 ;;
+	*) echo "e2e: the application stopped before it served:" >&2 ;;
+	esac
 	cat "$work/app.log" >&2
+	if holders="$(port_listeners "$port" 2>/dev/null)" && [ -n "$holders" ]; then
+		echo "e2e: $port is held by pid(s) ${holders//$'\n'/ }, which this run did not start; scripts/free_port.sh names who is meant to hold it" >&2
+	fi
 	exit 1
 done
 

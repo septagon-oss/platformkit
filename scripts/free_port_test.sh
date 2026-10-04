@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# The port a gate run serves on, and the two contracts that hang off it: a port
-# somebody is already listening on is refused rather than fought over, and the
-# browser run at the end of scripts/e2e.sh is told which port the application was
-# actually given.
+# The port a gate run serves on, and the three contracts that hang off it: a port
+# somebody is already listening on is refused rather than fought over; the answer to
+# "may I serve here" is never taken from a stranger's listener, so who holds a port is
+# read from the socket and the machine that reads it has proved it can; and the browser
+# run at the end of scripts/e2e.sh is told which port the application was actually
+# given.
 #
 # Node is the tool under test here, so it is a prerequisite and not something this
 # case installs — which is how scripts/e2e.sh treats it for the same reason.
@@ -90,6 +92,37 @@ else
 	else
 		echo "ok   twenty allocations all avoid the one port that is taken"
 	fi
+
+	# 3a. The other question about a port: not whether it may be taken, but who holds
+	#     it. scripts/e2e.sh depends on the answer before it trusts an HTTP 200 on
+	#     /health, because a 200 is the shape of the probe and not the signature of the
+	#     process behind it. The listener here is one this case started, on a port this
+	#     script allocated, so the expected answer is this pid and nothing else.
+	owners="$(port_listeners "$held_port" 2>/dev/null | tr '\n' ' ')"
+	if [ "$owners" != "$held_pid " ]; then
+		echo "FAIL: port_listeners said '$held_port' is held by '$owners', and the only listener there is pid $held_pid"
+		failures=$((failures + 1))
+	else
+		echo "ok   who holds a port is answered from the socket, and names the listener that is"
+	fi
+
+	# 3b. The same question asked of a port nothing is on. Silence is the answer gate 10
+	#     reads as "not mine yet", so it has to be silence and not a failure to ask.
+	free_probe="$(bind_free_port)"
+	if [ -n "$(port_listeners "$free_probe" 2>/dev/null)" ]; then
+		echo "FAIL: port_listeners named a holder for $free_probe, which nothing is listening on"
+		failures=$((failures + 1))
+	else
+		echo "ok   a port nobody listens on is reported as held by nobody"
+	fi
+
+	# 3c. And the machine has to have proved it can answer, because the stripped ss and
+	#     the container with no /proc return nothing for every question, and silence read
+	#     as "not mine" would then refuse every run. This is the check scripts/e2e.sh
+	#     makes for itself before it builds anything.
+	got=0
+	port_attribution_works >/dev/null 2>&1 || got=$?
+	check "this machine attributes a listening socket to the process that holds it" 0 "$got"
 fi
 
 # 4. scripts/e2e.sh refuses a port its caller named that somebody is holding, and
@@ -128,6 +161,26 @@ esac
 #    and refuses its journeys on any other address, so a run that moved the port
 #    without saying so would lose those journeys, and a run that told the app one
 #    port and the browser another would have the suite drive somebody else's.
+#    The same trust hangs off the answer to 3a: gate 10 must ask who owns the socket
+#    before it serves a browser through the port, and it must ask its own process
+#    first, because an application that lost the bind answers nothing while a
+#    stranger's listener answers everything. These three greps are that order, and
+#    they are what an earlier shape of the script failed: it took the first 200 on
+#    /health as proof of serving and drove ninety-odd journeys against somebody
+#    else's listener (the program's review of 2026-10-04).
+got=0
+grep -qF 'owners="$(port_listeners "$port")"' "$root/scripts/e2e.sh" || got=$?
+check "gate 10 asks the operating system whose socket answers before it names the port to Playwright" 0 "$got"
+got=0
+live="$(grep -nF 'kill -0 "$app_pid"' "$root/scripts/e2e.sh" | head -1 | cut -d: -f1)"
+asked="$(grep -nF 'curl -fsS "http://localhost:$port/health"' "$root/scripts/e2e.sh" | head -1 | cut -d: -f1)"
+if [ -n "$live" ] && [ -n "$asked" ] && [ "$live" -lt "$asked" ]; then
+	: ; else got=1; fi
+check "gate 10 asks its own process before it trusts the answer" 0 "$got"
+got=0
+grep -qF 'port_attribution_works' "$root/scripts/e2e.sh" || got=$?
+check "gate 10 refuses on a machine that cannot say whose listener it is" 0 "$got"
+
 got=0
 grep -qF 'PLATFORMKIT_E2E_PORT="$port"' "$root/scripts/e2e.sh" || got=$?
 check "gate 10 exports the port it chose, from the same variable as the URL it exports" 0 "$got"
@@ -145,4 +198,4 @@ if [ "$failures" -ne 0 ]; then
 	echo "free port: $failures case(s) failed" >&2
 	exit 1
 fi
-echo "free port: an allocation is bindable, a held port is refused before anything is touched, and the browser is told which port it got"
+echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, and the browser is told which port it got"
