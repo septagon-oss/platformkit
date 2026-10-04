@@ -8,10 +8,17 @@
 # `--- FAIL:` line anywhere, `context deadline exceeded` on the step in flight).
 # Raising the limit to 75 was a retry in another form. Split, the work is four
 # independent jobs that the two kernel runners — `stitch-core` and
-# `stitch-core-2` — take at once, each bounded at twice its own measured p95
-# rather than at whatever the longest neighbour needed. The measurements and the
-# arithmetic beside every number below are from the 13 `ci.yml` runs on main at
-# number ≥ 180, step spans read from each step's own `::group::` marker.
+# `stitch-core-2` — take at once, each bounded at twice a span it has measured
+# rather than at whatever the longest neighbour needed. Where a job has completed a
+# run of its own — `go-checks`, `race-and-vuln` and `e2e` at run 307, whose id is
+# 46460, the name the forge's API answers — that run prices it, because below twenty
+# runs a job's empirical p95 *is* its slowest run, and a step span read out of main's
+# merged job never carried the checkout, the fixture or the store the split gave each
+# job of its own. `scripts/ci_job_limits_cover_their_measured_runs_test.py` refuses a
+# limit under twice the slowest completed run the forge recorded for that job.
+# `design-editor` has completed no run of its own, and its arithmetic is still the 13
+# `ci.yml` runs on main at number ≥ 180, step spans read from each step's own
+# `::group::` marker.
 #
 # The fixture the jobs share — the database client, the broker, the app role — is one
 # script, `scripts/ci_setup.sh`, which each job calls with the units its suite dials.
@@ -42,12 +49,15 @@ jobs:
   go-checks:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × the measured p95 of what this job runs: `make check` p95 464s over 13
-    # runs (min 323, p50 372, max 526), the ratchet 0.3s, the setup and checkout
-    # about 55s — 1040s. The ceiling catches a job that lost a server, not one
-    # that is merely slow: at 45 minutes the same work had already been cut off
-    # eight times on main.
-    timeout-minutes: 18
+    # 2 × this job's own measured p95. It has had one run: job 46910 of run 307
+    # (id 46460, at 35fe554c), 05:12:12Z → 05:21:37Z = 565s, so 1130s, and minutes
+    # round up — 19 minutes, 1140s. The first price, 18, was main's step spans: `make check`
+    # p95 464s over 13 runs (min 323, p50 372, max 526), the ratchet 0.3s, setup
+    # and checkout about 55s — 1040s. That first run of the job itself ran past
+    # main's *maximum* of 526s, which is what the pin named above now refuses. The
+    # ceiling catches a job that lost a server, not one that is merely slow: at 45
+    # minutes the same work had already been cut off eight times on main.
+    timeout-minutes: 19
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -193,9 +203,15 @@ jobs:
   race-and-vuln:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × the measured p95: `make check-race` p95 420s (min 219, p50 294, max 433)
-    # plus govulncheck p95 20s plus about 55s of setup is 495s, doubled 990s.
-    timeout-minutes: 17
+    # 2 × this job's own measured p95: one run, job 46911 of run 307,
+    # 05:32:11Z → 05:41:34Z = 563s, so 1126s, rounded up — 19 minutes, 1140s. The
+    # first price, 17 (990s), was main's step spans: `make check-race` p95 420s
+    # (min 219, p50 294, max 433) plus govulncheck p95 20s plus about 55s of setup
+    # is 495s, doubled. The job ran 130s past that maximum, and the reason is the
+    # split itself: on main 464s of `make check` preceded the race run inside one
+    # job, so its step span never carried the checkout, the setup or the store this
+    # job starts for itself. The same pin refuses the under-price.
+    timeout-minutes: 19
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -291,8 +307,14 @@ jobs:
   design-editor:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × the measured p95 of the sum over 7 complete runs: min 1740s, p50 1745s,
-    # p95 1835s → 3670s. The number is ugly and it says why: two of its steps
+    # No completed run of this job of its own, so no run of its own can price it:
+    # its only run, job 46912 of run 307, reports all ten steps — checkout
+    # first among them — as failure with null start and end times, and the forge
+    # holds no log for it, so it contributes no span. This bound is therefore still
+    # main's: 2 × the measured p95 of the sum over 7 complete runs, min 1740s, p50
+    # 1745s, p95 1835s → 3670s, and the pin named at the head of this file has no
+    # row for a job with no completed run. The first run that reaches a verdict
+    # reprices it. The number is ugly and it says why: two of its steps
     # install a Chromium from two different Playwright pins (this directory pins
     # playwright 1.62.1, e2e pins @playwright/test ^1.63.0), and the second install
     # cannot reuse the first build. Aligning those pins is measured to take about
@@ -463,9 +485,13 @@ jobs:
   e2e:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × the measured p95: `make e2e` p95 113s over 7 runs (min 102, p50 104) plus
-    # the browser install's 57s plus about 55s of setup — 450s.
-    timeout-minutes: 8
+    # 2 × this job's own measured p95: one run, job 46913 of run 307,
+    # 05:25:06Z → 05:29:58Z = 292s, so 584s, rounded up — 10 minutes, 600s. The
+    # first price, 8 (480s), was main's step spans: `make e2e` p95 113s over 7 runs
+    # (min 102, p50 104) plus the browser install's 57s plus about 55s of setup —
+    # 450s. That run spent 61% of 480s, which is not a margin; the pin named at the
+    # head of this file refuses it now.
+    timeout-minutes: 10
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
