@@ -35,6 +35,7 @@ package page
 import (
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -72,9 +73,61 @@ var faultKeys = map[string]string{
 // and the confirmation the ask lands on. The test that reads this list is the
 // gate that keeps a part from shipping in English to a tenant served in
 // Portuguese, which is the defect the whole page exists to close.
+//
+// `fault.back` is the shell's own way out. Its words belong to the composition — a
+// product sends a stranger to its sign-in and a public site sends them home — so the
+// shell's label is the readable fallback and the catalogue carries the translation,
+// the same arrangement the verdict's sentence has with the guard's line.
 var refusalParts = []string{
 	"fault.missing", "fault.granter", "fault.ask", "fault.holds_the_row",
-	"fault.sent", "fault.sent_body",
+	"fault.sent", "fault.sent_body", "fault.back",
+}
+
+// backKey is that label; asked wherever the shell offers its way out.
+const backKey = "fault.back"
+
+// titleSuffix turns a verdict's sentence key into that verdict's heading: the two
+// halves of one page, one key apart, so the catalogue is read top to bottom as the
+// page is.
+const titleSuffix = ".title"
+
+// statusTitle is the refusal's heading in the request's language. What it says when
+// the catalogue has nothing for the verdict is what it always said — the status text
+// this server registers — because a heading invented for one verdict and not another
+// would name a cause nobody withheld.
+func statusTitle(loc *Locale, status int, detail string) string {
+	english := http.StatusText(status)
+	key, lookup := faultKey(detail, status)
+	if !lookup {
+		return english
+	}
+	return word0(loc, key+titleSuffix, english)
+}
+
+// backWay is the shell's label, translated the way the heading is.
+func backWay(loc *Locale, label string) string { return word0(loc, backKey, label) }
+
+// faultTitleKeys is every heading key this page can ask for: each key faultKey can
+// return, with the suffix on the end. catalogue_test.go reads it rather than a list,
+// so the day a tenth code or a fifth status joins the page its heading is demanded of
+// the catalogue in the same commit — which is the rule that already holds for the
+// sentences and the whole reason a heading was ever the English one.
+func faultTitleKeys() []string {
+	seen := map[string]bool{}
+	for _, key := range faultKeys {
+		seen[key] = true
+	}
+	for code := 100; code < 600; code++ {
+		if key, lookup := faultKey("", code); lookup {
+			seen[key] = true
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for key := range seen {
+		out = append(out, key+titleSuffix)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether
@@ -263,7 +316,7 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 		// an apology and nothing to quote.
 		line = line + " (request " + reference + ")"
 	}
-	v := Fault(status, line, back, backLabel)
+	v := document.Fault(status, statusTitle(loc, status, detail), line, back, backWay(loc, backLabel))
 	if language != "" {
 		v.Language = language
 	}
@@ -320,8 +373,8 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 	} else if reference != "" {
 		line = detail + " (request " + reference + ")"
 	}
-	p := document.RefusalProps{Status: status, Title: http.StatusText(status),
-		Sentence: line, Home: s.Back, HomeLabel: s.BackLabel}
+	p := document.RefusalProps{Status: status, Title: statusTitle(loc, status, detail),
+		Sentence: line, Home: s.Back, HomeLabel: backWay(loc, s.BackLabel)}
 	if ref.Code == httpx.CodePolicyDenied {
 		p.Missing, _ = word(loc, "fault.holds_the_row",
 			"You already hold what this needs; this row's own rule refused it: %s", ref.Reason)

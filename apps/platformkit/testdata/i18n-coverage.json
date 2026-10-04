@@ -1,13 +1,13 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-04T13:35:00Z",
+  "measured_utc": "2026-10-04T18:17:44Z",
   "pages": {
     "FAULT 404": {
-      "wrapped": 0,
+      "wrapped": 2,
       "readable": 4
     },
     "FAULT 405": {
-      "wrapped": 0,
+      "wrapped": 2,
       "readable": 4
     },
     "GET /": {
@@ -19,7 +19,7 @@
       "readable": 58
     },
     "GET /app/access-request/sent": {
-      "wrapped": 2,
+      "wrapped": 3,
       "readable": 4
     },
     "GET /app/admin/_gallery": {
@@ -44,7 +44,7 @@
     },
     "GET /app/billing/plans": {
       "wrapped": 2,
-      "readable": 62
+      "readable": 61
     },
     "GET /app/billing/plans/new": {
       "wrapped": 4,
@@ -52,7 +52,7 @@
     },
     "GET /app/billing/plans/{id}": {
       "wrapped": 4,
-      "readable": 67
+      "readable": 66
     },
     "GET /app/billing/plans/{id}/edit": {
       "wrapped": 4,
@@ -60,7 +60,7 @@
     },
     "GET /app/content/contents": {
       "wrapped": 2,
-      "readable": 60
+      "readable": 58
     },
     "GET /app/content/contents/new": {
       "wrapped": 4,
@@ -68,11 +68,11 @@
     },
     "GET /app/content/contents/{id}": {
       "wrapped": 4,
-      "readable": 74
+      "readable": 69
     },
     "GET /app/content/contents/{id}/edit": {
       "wrapped": 4,
-      "readable": 75
+      "readable": 74
     },
     "GET /app/site/settings": {
       "wrapped": 2,
@@ -84,7 +84,7 @@
     },
     "GET /app/task/tasks": {
       "wrapped": 2,
-      "readable": 62
+      "readable": 61
     },
     "GET /app/task/tasks/new": {
       "wrapped": 4,
@@ -92,7 +92,7 @@
     },
     "GET /app/task/tasks/{id}": {
       "wrapped": 4,
-      "readable": 82
+      "readable": 79
     },
     "GET /app/task/tasks/{id}/edit": {
       "wrapped": 4,
@@ -120,7 +120,7 @@
     },
     "GET /{slug}": {
       "wrapped": 0,
-      "readable": 6
+      "readable": 4
     }
   },
   "untranslated": 0

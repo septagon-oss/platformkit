@@ -96,34 +96,52 @@ const (
 // doubling turns each delimiter into the pair that means itself.
 var doubling = strings.NewReplacer(open, open+open, shut, shut+shut)
 
-// clear reserves the accented characters the accent pass is about to hand out, so
-// the two passes together are a bijection over the runes they touch: a payload
-// that already reads `á` ends up as `ạ`, and the un-mark turns it back.
-var clear = strings.NewReplacer(
-	"á", "ạ", "à", "ȧ", "é", "ẹ", "í", "ḭ", "ó", "ọ", "ú", "ṵ",
-	"Á", "Ạ", "À", "Ȧ", "É", "Ẹ", "Í", "Ḭ", "Ó", "Ọ", "Ú", "Ṳ")
-
-// accent is the vowel map a reader sees. Every output is one rune, so marking
-// never changes a string's length and never pushes a layout over its edge.
+// accent is the vowel map a reader sees, and it is a rotation rather than an
+// assignment. Each vowel walks one step along the four runes it can be written as
+// — plain, acute, dot-below, grave — and the grave steps back to plain, so the map
+// is a permutation over every rune it touches. A map that *reserved* the accented
+// forms (plain `a` to `á`, an existing `á` to `ạ`) would not be invertible for the
+// copy that already holds one: Vietnamese ships `ạ` and `ọ` as its own letters, and
+// reserving them is the same overwrite with a longer table. Rotating is what makes
+// [Unmark] the exact inverse for every string, at the cost of one visible quirk — a
+// payload's own `à` marks as plain `a`.
+//
+// Every output is one rune, so marking never changes a string's length and never
+// pushes a layout over its edge.
 var accent = strings.NewReplacer(
-	"a", "á", "e", "é", "i", "í", "o", "ó", "u", "ú",
-	"A", "Á", "E", "É", "I", "Í", "O", "Ó", "U", "Ú")
+	"a", "á", "á", "ạ", "ạ", "à", "à", "a",
+	"e", "é", "é", "ẹ", "ẹ", "è", "è", "e",
+	"i", "í", "í", "ḭ", "ḭ", "ì", "ì", "i",
+	"o", "ó", "ó", "ọ", "ọ", "ò", "ò", "o",
+	"u", "ú", "ú", "ṵ", "ṵ", "ù", "ù", "u",
+	"A", "Á", "Á", "Ạ", "Ạ", "À", "À", "A",
+	"E", "É", "É", "Ẹ", "Ẹ", "È", "È", "E",
+	"I", "Í", "Í", "Ḭ", "Ḭ", "Ì", "Ì", "I",
+	"O", "Ó", "Ó", "Ọ", "Ọ", "Ò", "Ò", "O",
+	"U", "Ú", "Ú", "Ṳ", "Ṳ", "Ù", "Ù", "U")
 
-// undoAccent and undoClear are the two passes inverted, applied in the other order.
-var (
-	undoAccent = strings.NewReplacer(
-		"á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u",
-		"Á", "A", "É", "E", "Í", "I", "Ó", "O", "Ú", "U")
-	undoClear = strings.NewReplacer(
-		"ạ", "á", "ȧ", "à", "ẹ", "é", "ḭ", "í", "ọ", "ó", "ṵ", "ú",
-		"Ạ", "Á", "Ȧ", "À", "Ẹ", "É", "Ḭ", "Í", "Ọ", "Ó", "Ṳ", "Ú")
-	undoubling = strings.NewReplacer(open+open, open, shut+shut, shut)
-)
+// unaccent is that rotation inverted, applied after the delimiters are undoubled.
+var unaccent = strings.NewReplacer(
+	"á", "a", "ạ", "á", "à", "ạ", "a", "à",
+	"é", "e", "ẹ", "é", "è", "ẹ", "e", "è",
+	"í", "i", "ḭ", "í", "ì", "ḭ", "i", "ì",
+	"ó", "o", "ọ", "ó", "ò", "ọ", "o", "ò",
+	"ú", "u", "ṵ", "ú", "ù", "ṵ", "u", "ù",
+	"Á", "A", "Ạ", "Á", "À", "Ạ", "A", "À",
+	"É", "E", "Ẹ", "É", "È", "Ẹ", "E", "È",
+	"Í", "I", "Ḭ", "Í", "Ì", "Ḭ", "I", "Ì",
+	"Ó", "O", "Ọ", "Ó", "Ò", "Ọ", "O", "Ò",
+	"Ú", "U", "Ṳ", "Ú", "Ù", "Ṳ", "U", "Ù")
+
+// undoubling is what a doubled delimiter reads back as.
+var undoubling = strings.NewReplacer(open+open, open, shut+shut, shut)
 
 // Mark wraps its payload in the pseudo-locale's delimiters and accents it. It is
-// the whole transformation, and [Unmark] is its exact inverse for every string.
+// the whole transformation, and [Unmark] is its exact inverse for every string —
+// including one that already holds an accented vowel, which is what the rotation
+// above is for.
 func Mark(payload string) string {
-	return open + accent.Replace(clear.Replace(doubling.Replace(payload))) + shut
+	return open + accent.Replace(doubling.Replace(payload)) + shut
 }
 
 // Unmark reads marked copy back. A string Mark did not produce is returned as
@@ -133,7 +151,7 @@ func Unmark(marked string) string {
 		return marked
 	}
 	body := marked[len(open) : len(marked)-len(shut)]
-	return undoClear.Replace(undoAccent.Replace(undoubling.Replace(body)))
+	return unaccent.Replace(undoubling.Replace(body))
 }
 
 // Wrapped says whether a string is marked copy: delimiting pair present, and

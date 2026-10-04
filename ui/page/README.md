@@ -75,7 +75,13 @@ that can refuse a request a person may be looking at answers through that render
 page is ever shown for is a key no copy can be written under. A refusal with no code is
 keyed by its status (`fault.404`, `fault.405`, `fault.500`, `fault.503`) — the four
 verdicts whose sentence `kit/httpx` writes and no module does, including the outage a
-guard answers when its own decision could not be made. What a translation replaces is the
+guard answers when its own decision could not be made. The page's other two words are
+keys as well: `fault.<key>.title` is the heading beside that verdict's sentence (the
+server's own status text is the fallback), and `fault.back` is the shell's way out — the
+composition owns its words, a product sending a stranger to its sign-in and a public site
+sending them home, and the catalogue carries the translation. `faultTitleKeys` derives the
+heading keys from the same table the sentences come from, so a tenth code or a fifth
+status owes its heading in the commit that added it. What a translation replaces is the
 sentence and not the guard's whole line: a refusal that carries a code keeps it
 (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a person reads back to
 support and an operator greps a log for. What a catalogue answers with is one thing and

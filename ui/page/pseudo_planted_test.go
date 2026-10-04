@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -81,6 +82,25 @@ func TestThePseudoLocaleGateNamesAPlantedLiteralByPageAndPath(t *testing.T) {
 	collected, err := legible.Scan([]byte(body), pseudo.Wrapped)
 	if err != nil {
 		t.Fatalf("legible.Scan: %v", err)
+	}
+	// The attribution itself: the brief's sentence is that the gate names the literal
+	// *with its page and its path*, and the line format is where that claim lives. The
+	// page's name is the caller's, the path is the document's, and the case below
+	// asserts the whole line rather than one half of it.
+	unreachable, declined := legible.Report(pageName, collected)
+	want := `TEXT GET /_planted html[1] > body[2] > div[1] > div[1]#text "Hard-coded"`
+	if !slices.Contains(unreachable, want) {
+		t.Fatalf("the report names no literal as\n%s\ngot:\n%s", want, strings.Join(unreachable, "\n"))
+	}
+	for _, line := range unreachable {
+		if !strings.HasPrefix(line, "TEXT "+pageName+" ") {
+			t.Errorf("a violation is reported outside the page that holds it: %q", line)
+		}
+	}
+	for _, line := range declined {
+		if !strings.HasPrefix(line, "DATA "+pageName+" ") {
+			t.Errorf("an exempt string is reported outside the page that holds it: %q", line)
+		}
 	}
 	var found []legible.String
 	for _, s := range legible.Violations(collected) {

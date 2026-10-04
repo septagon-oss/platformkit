@@ -37,6 +37,7 @@ func raisedFaults(t *testing.T) []string {
 	// and they are copy a person reads: a missing entry is the same defect one
 	// sentence down.
 	keys = append(keys, refusalParts...)
+	keys = append(keys, faultTitleKeys()...)
 	slices.Sort(keys)
 	return slices.Compact(keys)
 }
