@@ -29,11 +29,22 @@ fail() { echo "FAIL: $*" >&2; failed=$((failed + 1)); }
 say_ok() { if [ "$failed" = "${start:-0}" ]; then echo "ok   $*"; fi; }
 start=$failed
 
-# case 1 — a suite that passes is left alone: its exit code, and no death report.
+# case 1 — a suite that passes is left alone: its exit code, its own line, and no death
+# report. What may sit beside that line is the watcher's own samples and nothing else.
+#
+# `out` is not compared to `alive`: the watcher is started before the suite and writes to
+# the same descriptor, so a suite that prints immediately races its first sample and can
+# lose it. Case 2 makes that ordering a requirement (a sample must land while the suite
+# is alive), so requiring the watcher to be silent here contradicts it and leaves the
+# pair to be settled by the scheduler — which is a case that fails on timing alone, the
+# one defect class this task exists to remove. What this case can answer without a clock
+# is whether anything the report invented reached a passing suite.
 code=0; out="$(CI_BROWSER_WATCH_INTERVAL=1 bash "$report" run quiet bash -c 'echo alive' 2>&1)" || code=$?
 [ "$code" = 0 ] || fail "a passing suite: exit $code, want 0"
-[ "$out" = "alive" ] || fail "a passing suite printed something beside its own output: $out"
+grep -qx 'alive' <<<"$out" || fail "a passing suite lost its own output: $out"
 grep -qi 'death report' <<<"$out" && fail "a passing suite got a death report"
+beside="$(grep -vE -e '^alive$' -e '^quiet watch \+[0-9]+s browsers=[0-9]+ memory=[^ ]+ oom=[^ ]+$' <<<"$out" || true)"
+[ -z "$beside" ] || fail "a passing suite got output beside its own and the watcher's samples: $beside"
 say_ok "a passing suite keeps its exit code and prints no report"
 
 start=$failed
