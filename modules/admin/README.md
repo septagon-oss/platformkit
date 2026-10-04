@@ -146,6 +146,27 @@ out, signs in and is still Portuguese; then the empty option takes the choice ba
 is the only case here that holds a real form, a real redirect and a real session, and
 it runs inside `make e2e`.
 
+The journey types none of that itself: it imports [../e2e/steps/admin.ts](../e2e/steps/admin.ts),
+which is this module's browser steps exported — `signIn`, `signOut`,
+`chooseLanguage`, `clearLanguageChoice`, and the account control's locators. A spec
+that retypes the sign-in fields re-decides, every time, what the email box is called,
+and admin labels are catalogue copy now, so a rewording would break ten specs at once
+and say nothing about the change behind it. A step takes the label it must click as an
+argument rather than assuming English, because a step that clicks `Save language`
+cannot be used by the Portuguese half of the journey, and the Portuguese half is the
+point of the journeys that exist. `modules/admin/journey_steps_test.go` refuses the
+journey that re-invents them.
+
+The same rule runs the other way inside a page: when the Languages screen's save is
+refused, the line above the form is this module's own sentence for the refusal —
+`admin.languages.stale`, `.refused_unusable`, `.refused_tag`, `.refused` — named by
+the refusal's stable code (`LANGUAGE_UNUSABLE`, `LANGUAGE_TAG`, `AUTH_DENIED`) and
+the two revisions the request itself brought and re-read. What the command refused
+with is still an English Go error string, and it still reaches the log, which is
+where an English developer sentence belongs; a page that declares `pt-PT` and quotes
+`crud: conflict: this declaration was read at revision 2` over its form has told the
+reader one language and answered in another.
+
 ## Generated screens and a module's own pages
 
 The shell is composed last. It generates a register (list, new, row, commands) for every resource a module

@@ -73,6 +73,13 @@ func Display(f entity.Field, v any) string {
 	return "—"
 }
 
+// DateTimeLayout is how a screen writes an instant when no language has been
+// asked: the wire form is RFC 3339 with microseconds, which is right for a machine
+// and unreadable in a table cell, and the day/month order is one a reader's own
+// language decides. ui/resource asks its catalogue for the order instead and falls
+// back to this, which is why it is exported.
+const DateTimeLayout = "2006-01-02 15:04"
+
 // moment is how a screen writes an instant. The wire form is RFC 3339 with
 // microseconds, which is right for a machine and unreadable in a table cell.
 func moment(v any) string {
@@ -81,7 +88,7 @@ func moment(v any) string {
 	if err != nil {
 		return raw
 	}
-	return at.UTC().Format("2006-01-02 15:04")
+	return at.UTC().Format(DateTimeLayout)
 }
 
 // Humanize turns a JSON name or an enum value into something a person reads:

@@ -104,7 +104,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		// The one call in the application that takes cross-tenant access, at
 		// the one moment the kernel offers it, in the manifest a reviewer is
 		// already reading. See docs/adr/0006.
-		Routes: func(s httpx.Surfaces) { internal.RegisterRoutes(s.Ops, svc, deps.Invite, s.SystemToken()) },
+		Routes: func(s httpx.Surfaces) { internal.RegisterRoutes(s, svc, deps.Invite, s.SystemToken()) },
 	}
 }
 

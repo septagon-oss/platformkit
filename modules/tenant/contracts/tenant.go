@@ -185,6 +185,17 @@ func ValidLocale(tag string) (string, error) {
 	return strings.Join(parts, "-"), nil
 }
 
+// CodeLanguageUnusable names the refusal of a language this installation has no
+// copy for, and CodeLanguageTag the refusal of a string that is not a language tag
+// at all. They ride in front of the prose a refusal is made of, in the shape
+// kit/httpx's own refusals take (`AUTH_DENIED: …`), because that prose is a sentence
+// in the language this module was written in and a page that has to show the refusal
+// in another one has nothing to look its own sentence up with but a name.
+const (
+	CodeLanguageUnusable = "LANGUAGE_UNUSABLE"
+	CodeLanguageTag      = "LANGUAGE_TAG"
+)
+
 // SetLocale is what saying which languages one tenant is served in takes: the
 // default, and the list the negotiation may choose from.
 //

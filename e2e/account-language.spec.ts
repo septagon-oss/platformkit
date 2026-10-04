@@ -1,5 +1,14 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import {
+  accountLanguage,
+  accountLanguageStatus,
+  chooseLanguage,
+  clearLanguageChoice,
+  languageSelect,
+  signIn,
+  signOut,
+} from './steps/admin';
 
 // Gate 10, the brief's own acceptance line: a person uses the account control in the
 // shell, chooses Português, and the admin they are looking at becomes Portuguese
@@ -23,27 +32,7 @@ import AxeBuilder from '@axe-core/playwright';
 // after this one sign in as this same person on an English page, so a choice left
 // behind here is a Portuguese suite and ten failures that say nothing about the code.
 
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
-
-async function signIn(page: Page) {
-  await page.goto('/app/admin/login');
-  await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(/\/app$/);
-}
-
-test.afterEach(async ({ request }) => { await clearChoice(request) });
-
-// clearChoice posts the account command with the empty tag, which is what the
-// control's own empty option posts. It is the fixture's hygiene rather than the
-// assertion — the journey below asserts the form half — so it runs whatever the test
-// reached, and the command's unchanged-choice branch means posting it twice publishes
-// nothing.
-async function clearChoice(request: APIRequestContext) {
-  await request.post('/api/v1/user/users/language', { data: { locale: '' } });
-}
+test.afterEach(async ({ request }) => { await clearLanguageChoice(request) });
 
 test('a person choosing Português in the account control is answered in Portuguese, and again after signing out', async ({ page }) => {
   await signIn(page);
@@ -51,9 +40,9 @@ test('a person choosing Português in the account control is answered in Portugu
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();
 
-  const control = page.locator('[data-account-language]');
+  const control = accountLanguage(page);
   await expect(control).toBeVisible();
-  const select = control.locator('select[name="locale"]');
+  const select = languageSelect(page);
   await expect(select).toBeVisible();
   // What is on offer is the tenant's declaration, default first, and nothing else.
   // The empty value is the choice to stop choosing.
@@ -61,8 +50,7 @@ test('a person choosing Português in the account control is answered in Portugu
     options.map(option => option.value).filter(value => value !== ''));
   expect(offered).toEqual(['en', 'pt-PT']);
 
-  await select.selectOption('pt-PT');
-  await control.getByRole('button', { name: 'Save language', exact: true }).click();
+  await chooseLanguage(page, 'pt-PT', 'Save language');
 
   // Back to the page they were reading — a form post, not a swap — with the sentence
   // that says it landed, in the language they just asked for.
@@ -70,7 +58,7 @@ test('a person choosing Português in the account control is answered in Portugu
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
-  await expect(page.locator('[data-account-language-status]')).toHaveText('Idioma guardado.');
+  await expect(accountLanguageStatus(page)).toHaveText('Idioma guardado.');
   // The control reads the choice back rather than the browser, and its own button now
   // says it in the language it is written in.
   await expect(select).toHaveValue('pt-PT');
@@ -79,8 +67,7 @@ test('a person choosing Português in the account control is answered in Portugu
 
   // A choice, not page state: a new session for the same person keeps it, and the
   // English browser that follows it home does not overrule it.
-  await page.locator('[data-sign-out]').click();
-  await expect(page).toHaveURL(/\/app\/admin\/login$/);
+  await signOut(page);
   await signIn(page);
   await expect(page.locator('html')).toHaveAttribute('lang', 'pt-PT');
   await expect(page.getByRole('heading', { name: 'Painel', exact: true })).toBeVisible();
@@ -91,8 +78,7 @@ test('a person choosing Português in the account control is answered in Portugu
   // the browser and the tenant's default answer again. The button is clicked by its
   // Portuguese name because the page is Portuguese, which is the same fact the two
   // lines above assert, asserted of the control itself.
-  await select.selectOption('');
-  await control.getByRole('button', { name: 'Guardar idioma', exact: true }).click();
+  await chooseLanguage(page, '', 'Guardar idioma');
   await expect(page).toHaveURL(/\/app\?language=saved$/);
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
   await expect(page.getByRole('heading', { name: 'Dashboard', exact: true })).toBeVisible();

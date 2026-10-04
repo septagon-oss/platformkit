@@ -161,17 +161,26 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// what this mount is about to add — it is composed last, so nothing else
 	// will record them. A hand-written page counts as much as a generated one,
 	// and there is no second list to keep in step.
-	served := page.Served(s.Recorded())
-	own := ownScreens(served, resources)
-	for _, r := range resources {
-		served = append(served, r.Screen, r.Screen+"/new")
-	}
-	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at, a.languages.at)
+	// What is already answered, and what this shell is about to write by hand. The
+	// two are one list for the question a nav entry asks — does anything answer
+	// there? — and they have to be read together for the second question too:
+	// a resource whose screen this shell writes itself gets no generated second one.
+	// Reading only what is *already* recorded asked that question too early, because
+	// the hand-written pages are mounted below, so the resource a module wrote its
+	// own page for looked unclaimed and a register nobody asked for was mounted in
+	// front of it — which the surface gate refuses at boot.
+	recorded := append(page.Served(s.Recorded()),
+		a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at, a.languages.at)
 	if sh.Language != nil {
-		served = append(served, sh.languagePath)
+		recorded = append(recorded, sh.languagePath)
 	}
 	if sh.Roles != nil {
-		served = append(served, a.roles.at)
+		recorded = append(recorded, a.roles.at)
+	}
+	own := ownScreens(recorded, resources)
+	served := recorded
+	for _, r := range resources {
+		served = append(served, r.Screen, r.Screen+"/new")
 	}
 	nav := page.NewNavigation(sh.Nav, served, s.Required())
 	// A nav entry nothing answers is a mistake in a module's manifest, and it

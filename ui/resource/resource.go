@@ -17,6 +17,7 @@ package resource
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	g "maragu.dev/gomponents"
 
@@ -381,12 +382,35 @@ func details(o Options, r Resource, row map[string]any) g.Node {
 // "Resolved" wrote that word, so the screen is asked for it — at the same key the
 // form's option list and the table's cell are asked, because the same value in the
 // same tenant must not be two different words on two screens.
+//
+// An instant is the other value a language writes rather than names. Portuguese
+// puts the day before the month and English puts it after, and a record page that
+// prints "2026-10-02 13:05" at a tenant served in Portuguese has told that reader
+// an order their own language does not use — so the layout is a key of the
+// catalogue, and the day-first order is a translation rather than a branch in the
+// renderer. kit/entity/display keeps the ISO layout as the source form, which is
+// what a shell with no catalogue renders.
 func fieldValue(o Options, f entity.Field, value any) string {
+	if f.Type == entity.TypeTime {
+		return o.moment(value)
+	}
 	shown := display.Display(f, value)
 	if len(f.Enum) > 0 {
 		shown = o.Label("enum."+display.Text(value), shown)
 	}
 	return shown
+}
+
+// moment is one instant in the layout the request's language writes instants in.
+// Unparseable is not a thing the screen invents a shape for: what the value says is
+// what the screen prints, which is the answer kit/entity/display gives too.
+func (o Options) moment(value any) string {
+	raw := display.Text(value)
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return raw
+	}
+	return at.UTC().Format(o.Label("screens.datetime", display.DateTimeLayout))
 }
 
 // deleteForm is the destructive action: a real form, so it works without

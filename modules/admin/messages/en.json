@@ -575,5 +575,20 @@
     "plural": {
       "": "Delete"
     }
+  },
+  "admin.languages.stale": {
+    "translation": "This declaration was read at revision %d, and the tenant is on revision %d."
+  },
+  "admin.languages.refused_unusable": {
+    "translation": "No copy is shipped for that language, so this tenant cannot be served in it. Nothing was changed."
+  },
+  "admin.languages.refused_tag": {
+    "translation": "That is not a language tag. Nothing was changed."
+  },
+  "admin.languages.refused": {
+    "translation": "That declaration was refused (%s). Nothing was changed."
+  },
+  "admin.languages.refused_unknown": {
+    "translation": "That declaration was refused. Nothing was changed."
   }
 }

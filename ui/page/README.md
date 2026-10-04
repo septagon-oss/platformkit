@@ -120,7 +120,12 @@ language, not a region: a browser that asks for `pt-BR` is asking for Portuguese
 the tenant's own Portuguese answers it, in the region it declared. Behind that list
 the tenant adds its own set, its default at its head, which answers an unmatched request.
 The generated screens read their fixed labels (New, Edit, Delete, the count, the pager
-and the empty state) under `screens.*` keys with English fallbacks; entity names,
+and the empty state) under `screens.*` keys with English fallbacks. An instant is one
+of them: `screens.datetime` is the *layout* a language writes instants in — English
+`2006-01-02 15:04`, Portuguese `02/01/2006 15:04` — because the day-before-month order
+is a fact about the reader's language and not a format a renderer may hold constant;
+`kit/entity/display.DateTimeLayout` is the fallback a composition with no catalogue
+renders. Entity names,
 authentication API errors, client apps and notification templates still need their own
 authored messages and adoption. No translation management service or remote bundle is
 required by this local runtime seam.
