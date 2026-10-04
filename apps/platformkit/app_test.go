@@ -595,7 +595,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 			m.Routes(api.Surfaces(m.Name))
 		}
 	}
-	health.Register(api, health.DatabaseCheck(conn))
+	health.Register(api, []health.Check{health.DatabaseCheck(conn)})
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the composition does not declare itself: %v", err)
 	}
@@ -1495,30 +1495,48 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// applied — there would be no row to re-own and kit/db would be right to call
 	// an applied file that no release ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
-	// This is what lets a module ship a version above the kernel's highest
-	// without rewriting this fixture every time it does: a file that postdates
-	// the split lands here as a new row, applies normally in the upgrade, and is
-	// checked as new below. The direction the rule cuts is the reason a kernel
-	// file above somebody else's is not free: migrations/000034_outbox_request
-	// moves preSplitTop to 34, and modules/auth's 31, 32 and 33 fall back inside
-	// the old ledger and have to be adopted by name.
+	// lets a module ship a version above the kernel's highest without rewriting
+	// this fixture every time it does: a file that postdates the split lands here
+	// as a new row, applies normally in the upgrade, and is checked as new below.
+	// The direction the rule cuts is the reason a kernel file above somebody
+	// else's is not free, and it is the reason the ceiling is a fact the release
+	// states rather than the foundation's highest file: a source's Adopts list is
+	// exactly the versions the previous owner applied and this one now ships
+	// (docs/adr/0011), so the ceiling is the highest version any owner adopts back,
+	// and modules/auth's 31, 32 and 33 are inside the old ledger because auth names
+	// them. Had the ceiling been the foundation's own highest file, this delivery's
+	// migrations/000041_outbox_baggage would have pushed it to 41, dragged
+	// modules/audit's 35 to 37, modules/change's 38, modules/site's 39 and
+	// modules/file's 40 inside the pre-split ledger — where no adoption exists to
+	// re-own them — and kit/db would be right to call an applied file that no
+	// release ships a contradiction. A file above that ceiling applies in the
+	// upgrade below and is counted as a new row there, which is what lets any owner
+	// ship any version above it without rewriting this fixture.
 	var preSplitTop int64
 	for _, source := range sources {
-		if source.Owner != "platformkit" {
-			continue
-		}
-		entries, err := fs.ReadDir(source.Files, ".")
-		if err != nil {
-			t.Fatalf("read %s: %v", source.Owner, err)
-		}
-		for _, entry := range entries {
-			digits, _, _ := strings.Cut(entry.Name(), "_")
-			if version, err := strconv.ParseInt(digits, 10, 64); err == nil && version > preSplitTop {
-				preSplitTop = version
+		for _, adoption := range source.Adopts {
+			if adoption.Owner != "platformkit" {
+				continue
+			}
+			for _, version := range adoption.Versions {
+				if version > preSplitTop {
+					preSplitTop = version
+				}
 			}
 		}
 	}
 	for _, source := range sources {
+		// The foundation's own files were all in the release; a module's file was
+		// only in it if the module adopts that version back, which is the same
+		// statement in the other direction.
+		adopted := map[int64]bool{}
+		for _, adoption := range source.Adopts {
+			if adoption.Owner == "platformkit" {
+				for _, version := range adoption.Versions {
+					adopted[version] = true
+				}
+			}
+		}
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
 			t.Fatalf("read %s: %v", source.Owner, err)
@@ -1534,6 +1552,9 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 			digits, _, _ := strings.Cut(entry.Name(), "_")
 			version, err := strconv.ParseInt(digits, 10, 64)
 			if err != nil || version > preSplitTop {
+				continue
+			}
+			if source.Owner != "platformkit" && !adopted[version] {
 				continue
 			}
 			if version > top {
@@ -1604,7 +1625,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// whichever owner ships it: modules/file's retention hold and erasure proof is
 	// 000034 for that reason, and not the 30 it was written as when no owner held
 	// it — the kernel then shipped 000030_tenant_oidc, and this fixture would have
-	// flattened two files at one version into one ledger row.
+	// flattened two files at one version into one ledger row. This delivery's own
+	// 000041_outbox_baggage is the same event one more time: it was written as 29,
+	// held 31 and then 36 on its own branch, and 000041 is the first number no other
+	// owner had taken by the time this branch reached main.
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so a new migration has to arrive here and
@@ -1626,26 +1650,37 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// to 34, so a second 34 would arrive in this ledger under the same name, and
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
+	// It is also why this delivery's outbox baggage file is 000041: it held 36 on its
+	// own branch, and the merge with main gave 36 to modules/audit's request index.
+	// Because it is the kernel's own file above every module's, it also sits above
+	// preSplitTop, which is why the ceiling below is the highest adopted version and
+	// not the foundation's highest file — see legacyLayout.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l`
-	// at this head prints 41, of which the release this fixture is applied from
-	// shipped 34: fourteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21, 26,
-	// 28, 29, 30, 34) and twenty under modules/*/migrations/ (4, 7, 8, 10, 11, 13,
-	// 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33), all distinct. The
-	// seven that postdate the split — modules/audit's 000035, 000036 and 000037,
-	// modules/change's 000038, modules/site's 000039, modules/file's 000040 and
-	// modules/content's 000041 — are left out of the old ledger and apply under
-	// the owner that ships them
-	// (see legacyLayout). Each continues past the highest number anywhere in the
-	// composition, which is the rule this fixture exists to enforce.
+	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
+	// this head prints 42 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41) and twenty-seven under modules/*/migrations/ (4, 7, 8,
+	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36, 37,
+	// 38, 39, 40, 42), all at distinct versions. The release this fixture is applied
+	// from shipped 33 of them: the thirteen under migrations/ up to the adopted
+	// ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module
+	// adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27,
+	// 31, 32, 33), which is every version to modules/auth's 33, the highest number any
+	// owner names. The nine above it — the kernel's own 34 and 41, modules/audit's 35,
+	// 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
+	// modules/content's 42 — postdate that release, are not in the old installation's
+	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
+	// the owner that ships them and counts them as new rows. Each continues past the
+	// highest number anywhere in the composition, which is the rule this fixture
+	// exists to enforce.
 	//
-	// modules/content's body-character file is 000041 and not the 000035 it was
-	// written as for the same reason modules/file's is 000040: this fixture
-	// flattens every owner's files under one owner, 000035 to 000040 were all
-	// taken on main while the rich-text branch was still open, and 000035 is
-	// modules/audit's audit_context. One version, one row.
-	if len(before) != 34 {
-		t.Fatalf("the old layout applied %d files, want 34", len(before))
+	// modules/content's body-character file is 000042 and not the 000035 it was first
+	// merged as, for the reason this paragraph has now recorded four times: this
+	// fixture flattens every owner's files under one owner, and every number from 35
+	// to 41 was taken on main while the rich-text branch was still open — 000035 is
+	// modules/audit's audit_context and 000041 is the kernel's own outbox baggage.
+	// One version, one row.
+	if len(before) != 33 {
+		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
 
 	// The new release, through the path a person runs: bootstrap migrates with
@@ -1667,10 +1702,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the seven files above the
-	// kernel's 34 (modules/audit 35, 36 and 37, modules/change 38, modules/site 39
-	// modules/file 40 and modules/content 41, all absent from the old ledger) have
-	// to be accounted for: 41 files in the release, 41 rows.
+	// release ships is in the ledger, which is where the nine files above the
+	// adopted ceiling of 33 (the kernel's own 34 and 41, modules/audit 35, 36 and 37,
+	// modules/change 38, modules/site 39, modules/file 40 and modules/content 42, all
+	// absent from the old ledger) have to be accounted for: 42 files in the release,
+	// 42 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

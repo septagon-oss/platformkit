@@ -90,8 +90,9 @@ each message's `payload` where a validator reads, and checked in by
 without a type is published unchecked and counted as uncovered — the state a nil payload
 already meant — and a module that wants its payload in the document, and refused at the
 outbox before the row is written, declares it. `events.Replay` is the operator's verb for a terminal delivery, and
-`kit/trace` carries the W3C context from a request into the outbox row — it
-collects and exports nothing, which the metrics pillar still owns. That carrier now
+`kit/trace` carries the W3C context from a request into the outbox row — it fixes the
+format and collects nothing; the spans, the provider and the exporter are the entry
+below. That carrier now
 bounds the caller's `tracestate`: `trace.Parse` keeps whole entries up to
 `trace.MaxTraceState` (512 bytes) and drops the rest, because the string is stored in
 the outbox row and republished on every event the request caused, so an unbounded one
@@ -189,6 +190,118 @@ Two of these entries, one property: a tenant keeps somebody who can administer
 it. Each was written because the state was reachable, not because a race was
 reported, and each says below what it leaves open rather than leaving that to a
 reader who depends on it.
+
+**The kernel measures itself: one trace per request, and the tenant on every
+number.** Nothing in this runtime emitted a number at all — the register was
+`log/slog` JSON, and `go.mod` named OpenTelemetry zero times — so following one
+request ended where one process ended. `kit/telemetry` now holds the vocabulary and
+nothing else (the attribute keys, the request id as W3C Baggage, three instruments,
+a closed set of refusal classes), and `kit/app` installs the one `TracerProvider` and
+the one `MeterProvider` against an OTLP/gRPC collector, because that package is the
+only one whose closure may hold a provider. A span covers each of the four
+boundaries: the HTTP operation, named after the operation id and opened before
+routing so a probe and a 404 are inside one too; the transaction under `Tx`, one per
+transaction and none per statement; the outbox relay — one span for the pass, and one
+beside each event it hands to the transport, on that event's own trace and naming the
+tenant of the row it published, because a batch is read across every tenant and no
+tenant a pass span could name would name the rest; and the job run, with one span
+per tenant inside a run that walks them. The publisher's W3C context — both trace
+members and the baggage member that carries the request id — is written on the outbox
+row in the transaction that wrote the event, so the request that moved a
+state and the handler that reacted to it are one trace and not two that happen to sit
+next to each other, an operator reading a worker's span can quote the id the response
+header carried, and the trail's own `traceparent` column (migrations/000035)
+makes a row of the trail name the request and the trace that caused it. A request
+whose caller supplied an id that W3C cannot use as a trace id — a proxy's opaque
+handle, which the router accepts and echoes — opens a trace of its own instead of
+writing an event that names no trace at all; its trace joins to the log line and the
+row through the request id, which all three of them carry. Three numbers, each with a tenant dimension where one is
+known: `pkit.http.operation.duration`, `pkit.outbox.lag`, `pkit.http.refusals` by
+class — the last counted once per request, from the status the client was finally
+answered with, so the refusals the router writes for itself (a query value that is
+not an integer, a body that is not JSON, a handler that returned an error) are in it
+beside the ones the guards write. A number carries the tenant and never the request
+id: a metric attribute is part of a time series' identity, so a value unique to one
+request would be one series per request and a dashboard that can average nothing.
+The exemplar OpenTelemetry attaches to every measurement names the span it came
+from, which is how a number leads to an example of itself. A gauge keeps the value it
+was last given, so the
+relay that fills `pkit.outbox.lag` also writes the correction: a tenant's series for
+an event name it reported a wait for and can no longer find a row of — neither in the
+batch it is holding nor in the queue, where another worker may be publishing it this
+moment — is recorded at zero by the pass that reaches the end of the queue, which for a
+queue that keeps up is the next one, a second later. The read that decides which
+series that is asks the queue which series it still holds a row of, and names none of the
+ledger as bind parameters: a read whose size follows how many readings this process has taken
+is a statement the server can refuse inside the relay's own transaction, and a refused read
+there takes the batch with it — the queue's number would then be the reason the queue stopped
+draining. It asks once, on that last pass, and not on every batch: what the read costs is the
+queue's pending set, a drain takes that set `batch` rows at a time, and a pass holding a full
+batch has not reached the state the question is about. Without that correction the
+number would answer "how far behind is this tenant's queue now" with the wait of a row
+that went out yesterday, for as long as nobody published that name again. The ledger
+that owes the correction is per process, which is the scope the instrument has: a
+restart starts its collections from nothing. 102 of the 103
+boundaries the reference application registers as operations and module declarations —
+91 operations, 5 module jobs, 7 subscriptions — carry a tenant on their span; the one
+of those that does not is `file-reconcile`, a sweep whose question crosses every tenant
+by construction. Both terms are counted over this composition rather than remembered:
+an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
+the document the composition serves and which a committed case refuses to let drift
+from that file, and the two module terms are the jobs and subscriptions the
+composition's manifests register. That tally expressly does not count the four jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
+`schema-backfill` — and the run span of each carries no tenant either, for the same
+reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
+tenant it could name would name none of them.
+`file-reconcile` is the one module boundary that carries no tenant, not the only
+boundary that does not. Each kind the tally counts is pinned
+by a case that reads a span back and asks whose tenant it names: an operation in
+`kit/httpx`, a transaction and a subscription in `kit/events`, a tenant's share of a
+run in `kit/jobs`. The denominator moves when a route or a manifest moves, and the merge that
+regenerates that contract owes the count in the same change; the numerator is a construction and a
+case per kind, because every operation the count names is served behind the one chain that resolves
+the tenant before it routes (the one `a.api.UseMiddleware(a.tenant, a.traced, …)` in `kit/httpx/httpx.go`,
+named by what it calls rather than by a line a merge moves) which stamps both tenant keys as it resolves them. A Public operation
+answered at a host the loader knows nothing about goes on with neither key — no tenant to name, so
+none invented — and the tally counts a boundary by what it can name, not by one request: that
+answer is this boundary with no tenant, not a second boundary without one. With no endpoint
+configured nothing is installed at all, which is cheaper than a no-op, and an unreachable collector
+fails no boot, moves no health verdict and does not decide an exit code: `kit/health` reports its
+last success as a reading an operator sees, not as a check, and the last flush of a process that is
+leaving is a log line. The reading is kept per export, because the spans and the numbers are two
+services on two schedules: one answer for both let a metric tick that arrived clear a span batch
+that did not, and an operator asking about traces was answered with the metric pipeline's delivery.
+The half that failed is named; the half nobody asked about yet is silent rather than assumed down.
+One environment input is refused rather than honoured: OpenTelemetry merges `OTEL_RESOURCE_ATTRIBUTES`
+into the resource of every provider it is handed, so a deployment that names `pkit.tenant` or
+`pkit.tenant.id` there would export every tenant's spans and numbers under that one tenant's name;
+the boot stops, names the key and says what to do instead, and every other attribute the environment
+supplies still arrives on the resource.
+A bare `host:port` is accepted as the unencrypted endpoint it names, which
+is the form the example file prints. A composition notices one change: `health.Register` and
+`health.Mux` now take the checks as one slice and the reports as a trailing variadic, so the call
+that passed `Check` values passes `[]health.Check{…}`; each report then runs on the readiness
+request's own context — the one the checks run on — so a probe that hangs up or times out bounds
+the reading instead of leaving it running past the request it answered. Left open on purpose: no
+dashboard, which the brief refused, and no collector in a Helm chart, which is a deployment's
+stanza rather than this repository's. `make trace` starts a collector for the machine in front of
+you — `deploy/otel-collector.yaml`, printing every span and datapoint it receives to the container
+log — so the claim that the kernel is traced is checkable without an account at a trace backend.
+
+*Reused:* the existing `X-Request-ID` mechanism, `log/slog`, `kit/problem`'s one
+error shape, `health.Check` (a sibling type, not a fork), the T-0018 migration
+runner, `otelhttp` as the inbound span, and the SDK's own span recorder and manual
+reader as the test doubles. *Added:* `kit/telemetry`, the baggage column beside the
+envelope's two trace columns, the trail's own trace column, the four boundary spans,
+the publication span beside every event the relay hands over, and the three
+instruments.
+*Made reusable:* `health.Report`, `telemetry.Tracer` (taken per span, so a span
+arrives at the provider the process installed), `telemetry.Propagators`,
+`telemetry.SpanAttrs`, `telemetry.MetricAttrs`, `telemetry.Shared` and
+`telemetry.WithRequestID`, each
+documented at [kit/telemetry] (kit/telemetry/README.md), which carries the same three
+sentences for the package itself.
 
 **A migration now says what kind of migration it is, and the runner holds it to
 that shape.** A rewrite and a ten-million-row backfill were the same file: one

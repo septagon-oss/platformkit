@@ -36,6 +36,9 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Telemetry is where spans and numbers go. Its zero value exports nothing,
+	// which is the default the runtime ships with: see Telemetry.
+	Telemetry Telemetry `yaml:"telemetry"`
 	// Bootstrap is read by `platformkit bootstrap` alone; the server never
 	// looks at it. It is in the configuration surface so the one secret the
 	// command takes arrives the way every other secret does, through kit/config
@@ -67,6 +70,46 @@ type Flags struct {
 	// Values is the map itself, one level down so a deployment that names no flag
 	// writes no `flags:` block at all rather than an empty nested one.
 	Values map[string]bool `yaml:"values"`
+}
+
+// Telemetry is the measurement surface: one OTLP/gRPC collector, what this
+// process is called, and how much of what it starts is kept.
+//
+// Everything here is optional and the empty configuration exports nothing, which
+// is a decision rather than a default: a deployment that has not chosen a backend
+// pays nothing for spans it will never read, and still propagates a trace it was
+// handed and still leaves a trace context on every outbox row it writes, so the
+// trace continues into a process that does export. An unreachable collector, by
+// contrast, is never a failed boot: the exporter buffers, warns through
+// OpenTelemetry's own error handler and keeps serving.
+type Telemetry struct {
+	// OTLPEndpoint is the collector's URL — https://collector.example:4318, or a
+	// host:port for a collector on the same network with no TLS. Empty exports
+	// nothing.
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
+	// ServiceName is what a trace backend shows this process under. Every replica
+	// of one deployment answers the same name; two deployments differ.
+	ServiceName string `yaml:"service_name"`
+	// Client names the client this installation serves, and is written on the
+	// resource of every span and metric. It is empty by default, and empty is
+	// right for a shared installation: one process serving many tenants cannot
+	// name one client, and a resource attribute is the process's own fact. See
+	// kit/telemetry for why the tenant is never a resource attribute.
+	Client string `yaml:"client"`
+	// SampleRatio is the fraction of the traces this process *starts* that are
+	// kept, 0 to 1. A trace that arrives with a sampled parent stays kept whatever
+	// this says, so an event handled in a worker remains part of the request that
+	// caused it. It is a pointer because 0 is an answer and an omitted key is not:
+	// omitting it keeps every new trace.
+	SampleRatio *float64 `yaml:"sample_ratio"`
+}
+
+// Ratio is the sampling fraction, 1 when the key was omitted.
+func (t Telemetry) Ratio() float64 {
+	if t.SampleRatio == nil {
+		return 1
+	}
+	return *t.SampleRatio
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
@@ -332,6 +375,13 @@ const (
 	DefaultFilesMaxBytes = 25 << 20
 )
 
+// DefaultServiceName is what a trace backend shows a process under when the
+// deployment says nothing. A name is the one attribute that tells one deployment's
+// spans from another's, so it is never left empty: the SDK's own default is
+// "unknown_service:" plus the executable, which is a name no operator reads as
+// this application.
+const DefaultServiceName = "platformkit"
+
 // DefaultReadTimeout is how long a client has to send a whole request when a
 // deployment says nothing. Thirty seconds is generous for every route this
 // application has except an upload on a bad connection, which is the one a
@@ -388,6 +438,13 @@ var keys = []key{
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.
 	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
+	// The collector is an endpoint, and an endpoint is a deployment's fact about
+	// its own network, which is what an environment variable is for.
+	{"telemetry.otlp_endpoint", "PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT", func(c *Config) *string { return &c.Telemetry.OTLPEndpoint }, false},
+	{"telemetry.service_name", "PLATFORMKIT_TELEMETRY_SERVICE_NAME", func(c *Config) *string { return &c.Telemetry.ServiceName }, false},
+	// The fourth secret-shaped key, and not a secret: which customer a shared
+	// installation is serving is not sensitive, but a fleet sets it per deployment.
+	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -503,6 +560,12 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if err := c.Mail.validate(path); err != nil {
 		return Config{}, err
+	}
+	if r := c.Telemetry.SampleRatio; r != nil && (*r < 0 || *r > 1) {
+		return Config{}, fmt.Errorf("config %s: telemetry.sample_ratio is %v; it is a fraction of the traces this process starts, so between 0 and 1", path, *r)
+	}
+	if c.Telemetry.ServiceName == "" {
+		c.Telemetry.ServiceName = DefaultServiceName
 	}
 	if c.Audit.RetentionDays == 0 {
 		c.Audit.RetentionDays = DefaultRetentionDays

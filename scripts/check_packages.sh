@@ -67,8 +67,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
                 if (index(dep, p) != 1 && module[dep] != "" && contains(modules, module[dep])) bad = 0
             }
             # UUID exposes sql/driver values; that is not a database runner.
-            if (dep == "database/sql" && mode != "sql" && mode != "web") bad = 1
-            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web") bad = 1
+            # "trace" is kit/events: the W3C carrier is an interface over
+            # net/http.Header, so propagating a trace context reaches net/http while
+            # this package still opens no request and no connection.
+            if (dep == "database/sql" && mode != "sql" && mode != "web" && mode != "trace") bad = 1
+            if (dep ~ /^net\/http(\/|$)/ && mode != "provider" && mode != "web" && mode != "trace") bad = 1
             if (bad) {
                 print "OUT OF BOUNDS: " name " transitively depends on " dep > "/dev/stderr"
                 failed = 1
@@ -96,15 +99,31 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
         # the bound that matters is the other direction, refused by check("kit/fault", "").
-        richtextDeps = p "kit/richtext github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " richtextDeps
-        presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
-        markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         # A typed rich-text field reaches its parser and sanitizer through
         # kit/httpx. Keep this list explicit so a new renderer dependency is
         # visible at the page, screen and runner boundaries.
+        richtextDeps = p "kit/richtext github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
         richtext = p "kit/richtext github.com/yuin/goldmark github.com/yuin/goldmark/ast github.com/yuin/goldmark/extension github.com/yuin/goldmark/extension/ast github.com/yuin/goldmark/parser github.com/yuin/goldmark/renderer github.com/yuin/goldmark/renderer/html github.com/yuin/goldmark/text github.com/yuin/goldmark/util github.com/microcosm-cc/bluemonday github.com/microcosm-cc/bluemonday/css github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
-        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " richtext
+        # The OpenTelemetry API, and nothing above it: the API is what a package
+        # makes a span or records a number with, and it drags no exporter, no
+        # provider and no transport with it. The exporters, the SDK and gRPC belong
+        # to kit/app alone — the one package the runtime brief names as the home
+        # of a TracerProvider and a MeterProvider — which is why `providers` is the
+        # only list that admits them.
+        otel = "go.opentelemetry.io/otel go.opentelemetry.io/otel/metric go.opentelemetry.io/otel/trace go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp go.opentelemetry.io/auto/sdk github.com/go-logr/logr github.com/go-logr/stdr github.com/cespare/xxhash/v2 github.com/felixge/httpsnoop"
+        # kit/trace and kit/telemetry both sit in the kernel list: the first carries
+        # the W3C trace context a caller sent as a value, the second names the
+        # vocabulary of a span and a number. Neither owns an exporter or a provider.
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
+        presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
+        markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
+        # The provider edge for measurement: kit/app is the only package whose
+        # closure may hold an exporter, an SDK or a collector transport. A span
+        # anywhere else in the kernel reaches the collector through the global, so
+        # nothing else needs these, and a second package that could install a
+        # provider is a second answer to where the traces went.
+        measurement = otel " go.opentelemetry.io/otel/sdk go.opentelemetry.io/otel/sdk/metric go.opentelemetry.io/otel/exporters/otlp/otlptrace go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc go.opentelemetry.io/otel/exporters/otlp/internal google.golang.org/grpc google.golang.org/protobuf github.com/cenkalti/backoff/v5 github.com/grpc-ecosystem/grpc-gateway/v2 golang.org/x/net golang.org/x/sys golang.org/x/text google.golang.org/genproto/googleapis/api google.golang.org/genproto/googleapis/rpc go.opentelemetry.io/proto/otlp"
         check("kit/entity", uuid)
         check("kit/entity/display", uuid " " p "kit/entity")
         check("kit/locale", "")
@@ -147,10 +166,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # count is stored, exactly as it chooses an event transport. The
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
-        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "migrations", web, "web")
+        check("kit/app", kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
         check("kit/events/transport", uuid)
         check("kit/events/providers/memory", uuid " " delivery)
-        check("kit/events", outbox, sql, "sql")
+        check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,
             uuid " github.com/nats-io/nats.go github.com/nats-io/nkeys github.com/nats-io/nuid github.com/klauspost/compress golang.org/x/crypto golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("kit/tenancy/providers/topaz", identity,
@@ -162,6 +181,24 @@ printf '%s\n' "$metadata" | awk -F '|' '
         exit failed
     }
 '
+
+# The one measurement rule that has to hold everywhere, not only in the packages
+# named above: a second package able to build a provider is a second answer to where
+# the traces went, and `kit/telemetry/README.md` promises this in words. The closure
+# bound above can only speak for what `go list` was asked about, so this speaks for
+# every non-test Go file in the tree — the whole-tree form of the same sentence, and
+# the one the compiler has no opinion about. Test files are outside it on purpose:
+# the doubles this repository measures with are the SDK's own span recorder and
+# manual reader, which the package guide names as the reason.
+sdk="$(grep -rl --include='*.go' --exclude='*_test.go' \
+	-e 'go.opentelemetry.io/otel/sdk' -e 'go.opentelemetry.io/otel/exporters' "$root" 2>/dev/null |
+	 sed "s|^$root/||" | grep -v '^kit/app/' || true)"
+if [ -n "$sdk" ]; then
+	echo "MEASUREMENT BOUNDARY: an OpenTelemetry SDK or exporter is imported outside kit/app, which is the" >&2
+	echo "one package that installs the process's TracerProvider and MeterProvider:" >&2
+	printf '%s\n' "$sdk" | sed 's/^/  /' >&2
+	exit 1
+fi
 
 echo "package boundaries: portable cores, design, forms, documents, resources, pages, screens, the runner and selected providers passed"
 
