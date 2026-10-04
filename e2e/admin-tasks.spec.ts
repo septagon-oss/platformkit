@@ -80,7 +80,7 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
-test('review: an empty generated list keeps its message within the visible page', async ({ page }) => {
+test('an empty generated list keeps its message within the visible page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   const response = await page.goto('/app/content/contents');
   expect(response?.status()).toBe(200);
@@ -97,7 +97,7 @@ test('review: an empty generated list keeps its message within the visible page'
   expect(text.right, 'the empty-state message should not require horizontal table scrolling').toBeLessThanOrEqual(text.viewport);
 });
 
-test('review: the served Notice gallery keeps a readable text measure', async ({ page }) => {
+test('the served Notice gallery keeps a readable text measure', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const response = await page.goto('/app/admin/_gallery/preview?example=pk-ui.component.notice/long-copy-en&theme=light');
   expect(response?.status()).toBe(200);
