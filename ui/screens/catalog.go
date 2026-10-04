@@ -117,11 +117,11 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 			continue
 		}
 		if !readable {
-			// Only an account command is reachable here — CommandsFor asks each
-			// command's own guard, not the resource's — and what it needs to be drawn
-			// is its own summary and its own fields. The rest of the entry is a
-			// description of rows this caller may not read, and this document has
-			// always said nothing about those.
+			// What survives is only what this caller's own grants allow: CommandsFor
+			// asks each command's guard, not the resource's, and an account command
+			// (rest.CommandOptions.Self) is the case where that answer is yes while
+			// the rows stay unreadable. The entry keeps its name and those commands;
+			// the screen, the row schema and the write path describe rows not to read.
 			r.Schema.Fields, r.Screen, r.Immutable = nil, "", nil
 		}
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
