@@ -446,6 +446,15 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// IdempotencyKey declares that one submission of this command is performed once
+	// under one Idempotency-Key: the marking the OpenAPI document carries and the
+	// request gate acts on (kit/httpx/idempotency.go). It is a field of the command
+	// and not of the Spec because a read needs no key and only some commands need
+	// one — the rule being that a command whose effect is not already guarded by an
+	// expected revision is the one that asks, and one that declares the key without
+	// needing it costs a row and nothing else.
+	IdempotencyKey bool
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -495,6 +504,9 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	}
 	if len(events) > 0 {
 		op.Extensions = map[string]any{httpx.EventsExtension: events}
+	}
+	if opts.IdempotencyKey {
+		httpx.DeclareIdempotency(&op)
 	}
 	// The same declaration, recorded on the resource, so a shell generated
 	// from the catalog offers this door rather than inventing one — and recorded

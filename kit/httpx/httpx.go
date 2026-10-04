@@ -471,7 +471,13 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// carry one too. A person quoting a 404 and an operator reading the log have
 	// to land on the same request, and the 404 is the response most likely to be
 	// quoted.
-	inner.Use(a.respond, a.csrf, a.carry)
+	// idempotencyRecord sits immediately inside respond for the one reason respond
+	// states for itself: that is the place that knows what the client was finally
+	// given, and a stored answer must be the answer, not the one a handler meant to
+	// write before the commit failed. It is outside the transaction on purpose —
+	// inside it, the record of a response would be a fact a rollback could take
+	// back while the caller already holds the response.
+	inner.Use(a.respond, a.idempotencyRecord, a.csrf, a.carry)
 
 	// huma.NewAPI mounts its own documentation routes through the adapter it is
 	// handed, so the recorder declares those Public as they arrive: they serve
@@ -496,7 +502,13 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// Idempotency last, past every guard, and that place is the whole of its
+	// security: the claim carries the tenant and the caller the context resolved, so
+	// no header can supply either, and a caller the authorizer refused never leaves a
+	// key behind. Ahead of the handler and behind the body's ceiling, because the
+	// claim is written before the command runs and a claim written after it is a
+	// claim a crash takes with it.
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies, a.idempotency)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
@@ -662,8 +674,11 @@ func (a *API) ValidateDeclarations() error {
 			op.Extensions[SurfaceExtension] = string(classify(op.Path))
 		}
 	}
-	var bad, unanswerable []string
+	var bad, unanswerable, idempotent []string
 	for _, op := range a.Recorded() {
+		if why := idempotencyRefusal(op); why != "" {
+			idempotent = append(idempotent, describe(op)+": "+why)
+		}
 		auth, ok := declarationOf(op)
 		if !ok {
 			bad = append(bad, describe(op))
@@ -672,6 +687,11 @@ func (a *API) ValidateDeclarations() error {
 		if auth.Feature() != "" && a.opts.Entitle == nil {
 			unanswerable = append(unanswerable, describe(op)+" needs the "+auth.Feature()+" feature")
 		}
+	}
+	if len(idempotent) > 0 {
+		sort.Strings(idempotent)
+		return fmt.Errorf("httpx: %d operation(s) declare %s and cannot mean it:\n  %s",
+			len(idempotent), IdempotencyKeyHeader, strings.Join(idempotent, "\n  "))
 	}
 	if len(unanswerable) > 0 {
 		sort.Strings(unanswerable)
@@ -765,6 +785,35 @@ func (a *API) Events() []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// idempotencyRefusal names the reason a declaration of the idempotency key cannot
+// mean what it says, or "" when it can. Three shapes, each a mistake about what
+// the header is:
+//
+//   - A safe method: a key claims "run this once", and a GET is a read the kernel
+//     already answers from whatever the row says now.
+//   - The Public surface: it has no principal, so the key would be scoped to the
+//     whole tenant — a table any anonymous visitor can fill with keys and any
+//     other visitor of that tenant could then replay. An anonymous double submit is
+//     the public write limit's question, and this does not answer it.
+//   - A streamed body: the gate hashes the bytes, and the one route that reads its
+//     own has consumed them by the time any gate could look.
+func idempotencyRefusal(op *huma.Operation) string {
+	if !declaresIdempotency(op) {
+		return ""
+	}
+	switch {
+	case !unsafeMethod(op.Method):
+		return "a " + op.Method + " is a read, which has no outcome to make happen once"
+	case op.Extensions[StreamedBodyExtension] != nil:
+		return "the handler reads its own body, which leaves nothing for the request gate to hash"
+	}
+	s, _ := op.Extensions[SurfaceExtension].(string)
+	if Surface(s) == SurfacePublic {
+		return "the public surface has no principal to scope a key to, so any visitor of the tenant could replay another's"
+	}
+	return ""
 }
 
 func describe(op *huma.Operation) string {

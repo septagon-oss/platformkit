@@ -94,6 +94,56 @@
       "": "Demasiados envios a partir deste endereço. Espere e tente de novo."
     }
   },
+  "fault.IDEMPOTENCY_IN_PROGRESS": {
+    "references": [
+      "kit/httpx/idempotency.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Outro pedido com esta chave ainda está a ser executado. Espere e reenvie a mesma chave — não escreva nada de novo.",
+    "plural": {
+      "": "Outro pedido com esta chave ainda está a ser executado. Espere e reenvie a mesma chave — não escreva nada de novo."
+    }
+  },
+  "fault.IDEMPOTENCY_KEY_REUSE": {
+    "references": [
+      "kit/httpx/idempotency.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Esta chave já foi usada para um pedido diferente. O envio que está aqui não foi executado; para repetir a acção, comece um novo envio.",
+    "plural": {
+      "": "Esta chave já foi usada para um pedido diferente. O envio que está aqui não foi executado; para repetir a acção, comece um novo envio."
+    }
+  },
+  "fault.IDEMPOTENCY_KEY_INVALID": {
+    "references": [
+      "kit/httpx/idempotency.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "A chave deste envio não é um identificador válido. Nada foi executado.",
+    "plural": {
+      "": "A chave deste envio não é um identificador válido. Nada foi executado."
+    }
+  },
+  "fault.IDEMPOTENCY_RESPONSE_NOT_HELD": {
+    "references": [
+      "kit/httpx/idempotency.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Este pedido foi executado, mas a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo.",
+    "plural": {
+      "": "Este pedido foi executado, mas a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo."
+    }
+  },
+  "fault.IDEMPOTENCY_UNAVAILABLE": {
+    "references": [
+      "kit/httpx/idempotency.go",
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível registar este envio, e nada foi executado. Reenvie a mesma chave daqui a instantes.",
+    "plural": {
+      "": "Não foi possível registar este envio, e nada foi executado. Reenvie a mesma chave daqui a instantes."
+    }
+  },
   "fault.404": {
     "references": [
       "ui/page/fault.go"

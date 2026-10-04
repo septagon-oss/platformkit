@@ -182,3 +182,59 @@ Prerequisites: a `db.Conn`, a `TenantLoader`, an `Authorizer` and the
 authenticate hook; [apps/platformkit](../../apps/platformkit/modules.go) is the
 composition to copy. Tests run against the development database: `make up`,
 then `make test TEST_PACKAGES=./kit/httpx`.
+
+## One submission, one effect
+
+A state-changing operation may declare that a submission of it is performed once,
+under one `Idempotency-Key` request header: `httpx.DeclareIdempotency(&op)` adds
+the OpenAPI header parameter, which is both the marking the document publishes and
+the fact the request gate reads — one object, one gate, no second channel. A module
+gets there through `rest.CommandOptions{IdempotencyKey: true}` and a page through
+`page.Route{IdempotencyKey: true}`. Read [idempotency.go](idempotency.go) for the
+claim, the two clocks and the four refusals.
+
+The claim is written before the command runs, in a detached transaction of its own
+— a marker inside the request's own transaction is invisible to the concurrent
+repeat it exists to refuse — and the response the caller was finally given is
+recorded outside the transaction, immediately inside `respond`, which is the one
+place that knows what reached the wire. So the same key with the same bytes answers
+the stored response and runs nothing; the same key with other bytes is a different
+command and is refused 422; a repeat while the first is running is refused 409 with
+a `Retry-After`; a 5xx deletes the claim, because a refusal nobody received is not
+an answer to remember. `ValidateDeclarations` refuses, at boot, the three
+declarations that cannot mean what they say: a safe method, the Public surface
+(no principal to scope a key to), and a streamed body.
+
+The rows live in `platformkit_idempotency` (migration `000042`), keyed by tenant,
+caller, operation and key, written only by this package under its own system token,
+empty for a day after the answer and emptied by the `idempotency-purge` job
+(`httpx.PurgeIdempotency`, scheduled by `kit/app`). An in-flight marker is bounded
+at five minutes, which is the crash window's only exit.
+
+**Reused.** The claim joins the huma chain beside `a.publicWrites` and reuses
+`routeOf` as its operation identity; holding and replaying the response is the
+`buffer` `respond` already owns and the commit verdict in `a.transaction`; the
+detached write, its budget and its purge are the shape `kit/limit` wrote for
+`platformkit_limits`, whose migration this one follows line for line; refusals are
+`a.refuse`, `countRefusal` and the code block in `authorize.go`, translated through
+`ui/page/fault.go` like every other code; the browser half is an htmx extension over
+the `[data-request-notice]` nodes `ui/document` already renders and the `Ext` prop
+`ui/components` already emits; `kit/app` schedules the purge in `kernelJobs`.
+
+**Added.** `kit/httpx/idempotency.go`, migration `000042`, `ui/assets/js/command.js`
+and three declaration fields. Nothing existing could carry this: `kit/limit` counts a
+window under a key and has no response to replay; `modules/audit`'s
+`(tenant_id, event_id)` deduplication happens downstream of the decision, so it cannot
+answer a client whose response was lost; `modules/billing`'s `IdempotencyKey` is a key
+this platform hands a payment provider, one tier lower and pointed the other way. A
+capability module was the wrong shape on purpose — it would name no entity, need no
+`contracts/`, and put an HTTP request header behind a service port, which is the same
+mistake `kit/limit` being a package exists to avoid.
+
+**Made reusable.** The pattern that a route's request semantics can be *the* OpenAPI
+field rather than a parallel extension — one declaration, read by the document, the
+boot gate and the request gate; the two-clock kernel table (a short in-flight bound
+plus a long retention one) with a purge beside `limit-purge`; the five refusal codes
+with their sentences in the catalogue; and `ui/assets/js/command.js` itself, the
+kernel's first htmx extension, which is the piece `modules/tasks`'s hand-written
+`recovery.js` is now replaced by rather than copied by.

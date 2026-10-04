@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -518,6 +519,36 @@ func TestThereAreFewControllers(t *testing.T) {
 		if !strings.HasSuffix(name, ".js") {
 			t.Fatalf("%q is not a script", name)
 		}
+	}
+}
+
+// TestTheCommandControllerIsWithinItsByteBudget is the check the kernel makes on
+// its own browser code. command.js exists because four client scripts had each
+// written "a command happens once" for themselves; a kernel copy that grew to the
+// size of what it replaces has saved no client a byte, and the whole claim of
+// putting it here is that the clients then hold less script, not the same script
+// in a different repository. Bytes, not lines: tools/locbudget counts the js
+// bucket in lines and would price a comment the same as a statement.
+func TestTheCommandControllerIsWithinItsByteBudget(t *testing.T) {
+	t.Parallel()
+	f, err := ui.Assets(ui.Compose(design.Default())).Open("js/command.js")
+	if err != nil {
+		t.Fatalf("open the command controller: %v", err)
+	}
+	defer f.Close()
+	body, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("read the command controller: %v", err)
+	}
+	if len(body) > ui.CommandControllerBudget {
+		t.Fatalf("command.js is %d bytes; the budget is %d — the point of this controller is less client script, not more",
+			len(body), ui.CommandControllerBudget)
+	}
+	// The extension has to be defined before htmx reads a page's hx-ext, which is
+	// why it sits after htmx-config.js in the list rather than anywhere in it.
+	at := slices.Index(ui.Controllers, "command.js")
+	if at < slices.Index(ui.Controllers, "htmx.min.js") {
+		t.Fatal("command.js is loaded before htmx, which is the extension nobody defines")
 	}
 }
 

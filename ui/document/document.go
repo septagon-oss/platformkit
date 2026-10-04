@@ -174,8 +174,13 @@ func requestNotices(c Chrome) g.Node {
 // and Link keep their shared typed interfaces. The hidden, English-language DOM
 // wrapper remains Document's responsibility. A consumer may include these values
 // in its own export or composition without adding a second notice catalog.
-// These are presentation candidates, not request classification, automatic retry,
-// source persistence or an executable prototype.
+// These are presentation candidates, not request classification, source
+// persistence or an executable prototype. Automatic retry is the one item that has
+// since found a home: a form that opts into the command controller (hx-ext=
+// "command", ui/assets/js/command.js) retries its own submission under one key,
+// and the four notices below are what a person is left with when it stops. No
+// notice is added for that; the "check the result" one is already what an unknown
+// outcome means, and it is what the controller shows when the attempts run out.
 //
 // signIn is rendered as the recovery link when it is not empty; it is the
 // caller's to have checked. ui/page.RequestNoticeExamples applies the kernel's

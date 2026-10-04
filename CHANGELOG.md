@@ -60,6 +60,30 @@ shortcut a reader might reach for — the file raising the runner's own system-a
 T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
 reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
 
+**A command is done once, even when the network is not.** An operation may declare
+`Idempotency-Key` — `rest.CommandOptions{IdempotencyKey: true}` for a module's command,
+`page.Route{IdempotencyKey: true}` for a page's own POST, `httpx.DeclareIdempotency(&op)`
+for a route mounted by hand — and the OpenAPI header parameter is the declaration: the
+document publishes it, `ValidateDeclarations` refuses the three declarations that cannot
+mean what they say (a safe method, the public surface, a streamed body), and the request
+gate acts on that one object. The claim is written before the command runs, in a detached
+transaction of its own; the answer the caller was finally given is recorded after the
+commit. The same key and the same bytes then replay that answer and run nothing — byte for
+byte, `Location` and `HX-Redirect` included — the same key with other bytes is refused 422
+`IDEMPOTENCY_KEY_REUSE`, a repeat while the first is still running is refused 409
+`IDEMPOTENCY_IN_PROGRESS` with a `Retry-After`, a key that is not a lowercase UUID is
+refused 422, an answer too big to hold settles as "it ran; read the result", and a 5xx
+deletes the claim so a retry runs the command. The rows are
+`platformkit_idempotency` (`migrations/000042`), keyed by tenant, caller, operation and
+key under forced row-level security that no tenant transaction can read through, empty for
+a day, emptied by the `idempotency-purge` job. `ui/assets/js/command.js` is the kernel's
+first htmx extension: a form with `hx-ext="command"` mints one key per submission, keeps it
+in `sessionStorage` so a reload does not mint a second, retries the identical bytes on a
+transport failure with a bound of four, and stays quiet until the attempts run out — then
+the existing notice appears, because a conflict is still somebody else's and is never
+erased. Its budget is `ui.CommandControllerBudget`, 6144 bytes, checked by `make check`.
+Nothing changed for a form that did not opt in.
+
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
 `POST …/delete` — until them a suspended customer had no way back, a wrong name could not be corrected,

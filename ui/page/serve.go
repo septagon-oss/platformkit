@@ -57,6 +57,14 @@ type Granter struct{ Permission, Label string }
 type Route struct {
 	ID, Method, Path, Summary string
 	Errors                    []int
+
+	// IdempotencyKey marks a page's own POST as a command that happens once under
+	// one Idempotency-Key, which is what lets a form carrying hx-ext="command"
+	// retry its own submission after a lost response (ui/assets/js/command.js).
+	// A page route is where the kernel's own writes live — a session revoked, a
+	// role given — and a person who loses the response to one of those is exactly
+	// as unsure as one who loses an API call.
+	IdempotencyKey bool
 }
 
 // Handler is a page. It reads through ctx and knows the caller through r; what
@@ -87,6 +95,9 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 	}
 	if s.Chrome.SignIn != "" {
 		httpx.SignIn(&op, s.Chrome.SignIn)
+	}
+	if rt.IdempotencyKey {
+		httpx.DeclareIdempotency(&op)
 	}
 	httpx.HTML(r, op, auth, func(ctx context.Context, in *I) (*httpx.Page, error) {
 		r := read(ctx, s.Chrome)

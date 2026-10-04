@@ -65,6 +65,15 @@ var faultKeys = map[string]string{
 	httpx.CodeCSRFOrigin:        "fault.CSRF_ORIGIN",
 	httpx.CodePublicSetsACookie: "fault.PUBLIC_SETS_A_COOKIE",
 	httpx.CodeLimitExhausted:    "fault.LIMIT_EXHAUSTED",
+	// The idempotency refusals, one sentence each. A person whose submission is
+	// still in flight, whose key answers another body, or whose command ran with no
+	// answer kept is being told three different things, and a shell that ships one
+	// sentence for all three has shipped none of them.
+	httpx.CodeIdempotencyInProgress:      "fault.IDEMPOTENCY_IN_PROGRESS",
+	httpx.CodeIdempotencyKeyReuse:        "fault.IDEMPOTENCY_KEY_REUSE",
+	httpx.CodeIdempotencyKeyInvalid:      "fault.IDEMPOTENCY_KEY_INVALID",
+	httpx.CodeIdempotencyResponseNotHeld: "fault.IDEMPOTENCY_RESPONSE_NOT_HELD",
+	httpx.CodeIdempotencyUnavailable:     "fault.IDEMPOTENCY_UNAVAILABLE",
 }
 
 // refusalParts is every catalogue key the refusal page looks up besides the

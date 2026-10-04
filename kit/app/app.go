@@ -1121,6 +1121,14 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 		// `modules/auth`'s sweep would have made an installation that takes the limit
 		// and not the login page one that never forgets a row.
 		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
+		// The idempotency claims: one row per submission that declared a key, each
+		// with its stored answer and an expires_at a day after it ran. The window is
+		// what makes the table safe to keep at all — a stored response can carry
+		// personal data — and a window nobody enforces is a sentence nobody wrote.
+		// The same argument limit.Purge makes for its own table applies in full: this
+		// is the composition that owns the writers, and a module's sweep would leave
+		// an installation that took the kernel and not that module forgetting rows.
+		{Name: "idempotency-purge", Cron: purgeCron, Run: httpx.PurgeIdempotency},
 	}
 }
 

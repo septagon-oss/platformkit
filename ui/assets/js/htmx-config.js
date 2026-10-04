@@ -1,5 +1,9 @@
 // htmx-config.js retains rendered validation, request diagnostics and the
-// current form when authentication or transport fails. Writes are never replayed.
+// current form when authentication or transport fails. Writes are never replayed,
+// except by a form that asked for the command controller (hx-ext="command"), which
+// replays its own submission under one key — see command.js and
+// kit/httpx/idempotency.go. Nothing this file does changes for a request that did
+// not opt in: the retry is scoped to that attribute and lives in that file.
 //
 // First: a 422 is a response worth showing. htmx treats every 4xx as an error
 // and swaps nothing, which is right for a 500 and wrong for the one status this

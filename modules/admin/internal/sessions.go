@@ -80,7 +80,8 @@ func (p pages) mountSessions(app *httpx.Router) {
 	// carrying a session cookie unless it is same-site, and a <form> cannot send
 	// DELETE. The JSON route stays as it is for a client that can.
 	page.Serve(where, p.shell, page.Route{ID: "admin-session-revoke", Method: http.MethodPost, Path: p.at.sessionRevoke.rel,
-		Summary: "End one of this person's sessions", Errors: sessionsWriteFaults}, guard,
+		Summary: "End one of this person's sessions", Errors: sessionsWriteFaults,
+		IdempotencyKey: true}, guard,
 		func(ctx context.Context, r page.Request, in *sessionForm) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
 			if !live {
@@ -97,7 +98,8 @@ func (p pages) mountSessions(app *httpx.Router) {
 		})
 
 	page.Serve(where, p.shell, page.Route{ID: "admin-sessions-revoke-rest", Method: http.MethodPost, Path: p.at.sessionsRest.rel,
-		Summary: "End every session but this one", Errors: sessionsWriteFaults}, guard,
+		Summary: "End every session but this one", Errors: sessionsWriteFaults,
+		IdempotencyKey: true}, guard,
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
 			tx, live := httpx.TxFrom(ctx)
 			if !live {
@@ -190,7 +192,7 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 	}
 	if rest > 0 {
 		body = append(body, components.Divider(components.DividerProps{Text: "Everywhere else"}),
-			components.Form(components.FormProps{Action: revokeRest, Label: "End every session but this one"},
+			components.Form(components.FormProps{Action: revokeRest, Label: "End every session but this one", HTMXProps: components.HTMXProps{Ext: "command"}},
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
 						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"}))))
@@ -271,7 +273,7 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing) g.No
 				// about what a person sees first and not about which media query their
 				// browser matched. So this row carries no fill at all, and the page
 				// paints one filled control above the fold whoever is looking at it.
-				return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + device},
+				return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + device, HTMXProps: components.HTMXProps{Ext: "command"}},
 					components.Input(components.InputProps{
 						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
 					components.Button(components.ButtonProps{

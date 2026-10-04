@@ -325,6 +325,26 @@ const (
 	// grant was held and the policy refused this row. kit/rest answers it with the same
 	// code.
 	CodePolicyDenied = "POLICY_DENIED"
+	// The four idempotency refusals, and the reason four codes are four and not one:
+	// what the caller is told to do differs in each. A caller refused for a key that
+	// is in flight is told to wait and to send the same key; a caller whose key was
+	// used for another body is told the opposite — sending it again is the one thing
+	// that stays refused — and a caller whose key is not a token at all is told to
+	// mint one, which no retry fixes. Each is a code because each is a different
+	// sentence in ui/page/fault.go, and this file's own comment about LIMIT_EXHAUSTED
+	// is the lesson: a refusal without a constant has no table row and arrives
+	// untranslated. See kit/httpx/idempotency.go.
+	CodeIdempotencyInProgress = "IDEMPOTENCY_IN_PROGRESS"
+	// CodeIdempotencyKeyReuse names a different command wearing an old name.
+	CodeIdempotencyKeyReuse = "IDEMPOTENCY_KEY_REUSE"
+	// CodeIdempotencyKeyInvalid is a key that is not a token.
+	CodeIdempotencyKeyInvalid = "IDEMPOTENCY_KEY_INVALID"
+	// CodeIdempotencyResponseNotHeld is the answer that says a command ran and its
+	// response is gone: the only way onward is a read, not another write.
+	CodeIdempotencyResponseNotHeld = "IDEMPOTENCY_RESPONSE_NOT_HELD"
+	// CodeIdempotencyUnavailable is the claim that could not be written. Nothing ran
+	// and nothing was written, so the honest answer is the one it gives.
+	CodeIdempotencyUnavailable = "IDEMPOTENCY_UNAVAILABLE"
 )
 
 // notHere answers the control plane's own answer: the 404 an address nobody

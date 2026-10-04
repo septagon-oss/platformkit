@@ -71,16 +71,29 @@ var scripts embed.FS
 // JavaScript is there" is answered by reading one slice.
 //
 // htmx is first because the others configure it. The remaining scripts enhance
-// themes, requests, confirmation, sign-in, component interaction and gallery controls.
+// themes, requests, confirmation, command recovery, sign-in, component
+// interaction and gallery controls. command.js is the only one of them measured in
+// bytes rather than lines, and CommandControllerBudget says why.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
 	"theme.js",
 	"confirm.js",
+	"command.js",
 	"session.js",
 	"components.js",
 	"gallery.js",
 }
+
+// CommandControllerBudget is the most browser code the command controller may
+// be, in bytes. It is measured in bytes and not in the lines tools/locbudget
+// counts because the claim is about one file rather than one bucket, and because
+// the reason the mechanism lives here at all is that four client scripts each
+// wrote it again: a kernel controller that grew to the size of the scripts it
+// replaces has saved nobody anything. ui keeps the number beside the list it
+// governs, and TestTheCommandControllerIsWithinItsByteBudget reads these same
+// embedded bytes to check it.
+const CommandControllerBudget = 6144 // bytes, utf8
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
 // eight bytes of their SHA-256 as hex. A page puts the fingerprint in the
