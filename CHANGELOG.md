@@ -30,7 +30,7 @@ names no tenant, because the key is a UUID and the path is the only thing that s
 rollout filter stays wide on purpose and the check is what decides. An unset slug keeps both older addresses, as
 it always did.
 **A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
-non-null `app` column (`migrations/000042_tenant_app`), stamped when the composition creates a tenant and
+non-null `app` column (`migrations/000043_tenant_app`), stamped when the composition creates a tenant and
 never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
 all filter on it, and `tenants_operator` is unique per app rather than per database. The back-fill proves
 its input or refuses. A tenant already in the table joins this app when every host it holds is one the

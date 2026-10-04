@@ -95,7 +95,7 @@ type Options struct {
 	// It is the same fact as the configuration key `nats.app`, and New reconciles the
 	// two before anything reads either: an empty App takes the configured slug, and an
 	// App named while the key stays empty is written into the key as this App carries
-	// it, so one value places this app's tenants (migrations/000042), addresses its
+	// it, so one value places this app's tenants (migrations/000043), addresses its
 	// subjects (kit/events/providers/nats) and keys its payload contract
 	// (kit/events/catalog.go). Two spellings naming two apps are refused; a caller
 	// that stamps tenants from its own config.Config still reads its own empty key.
@@ -320,7 +320,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	}
 	// Which app this is has one answer, and it reaches the composition by two
 	// routes: nats.app, the setting every shared name is formed from (migration
-	// 000042 places tenants by it, the transport addresses events with it, the
+	// 000043 places tenants by it, the transport addresses events with it, the
 	// reference application stamps new tenants with it), and Options.App, the same
 	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
 	// nothing below re-reads either input: the payload catalog, the relay's claim,
@@ -368,7 +368,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 			// names itself, it is the key two consumers read — the transport constructor
 			// (kit/events/providers/nats forms its subjects, its subscription filter and
 			// its connection name from settings.AppName) and migrationDeclaration, whose
-			// app is what migrations/000042 places tenants against. Left empty, this boot
+			// app is what migrations/000043 places tenants against. Left empty, this boot
 			// would scope its relay, its durables and its job lock by the option and form
 			// every other shared name as the deployment of one app: the same question
 			// answered twice, which is what the two-spellings refusal above exists to

@@ -106,6 +106,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
         # the bound that matters is the other direction, refused by check("kit/fault", "").
+        # A typed rich-text field reaches its parser and sanitizer through
+        # kit/httpx. Keep this list explicit so a new renderer dependency is
+        # visible at the page, screen and runner boundaries.
+        richtextDeps = p "kit/richtext github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
+        richtext = p "kit/richtext github.com/yuin/goldmark github.com/yuin/goldmark/ast github.com/yuin/goldmark/extension github.com/yuin/goldmark/extension/ast github.com/yuin/goldmark/parser github.com/yuin/goldmark/renderer github.com/yuin/goldmark/renderer/html github.com/yuin/goldmark/text github.com/yuin/goldmark/util github.com/microcosm-cc/bluemonday github.com/microcosm-cc/bluemonday/css github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
         # The OpenTelemetry API, and nothing above it: the API is what a package
         # makes a span or records a number with, and it drags no exporter, no
         # provider and no transport with it. The exporters, the SDK and gRPC belong
@@ -116,10 +121,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/trace and kit/telemetry both sit in the kernel list: the first carries
         # the W3C trace context a caller sent as a value, the second names the
         # vocabulary of a span and a number. Neither owns an exporter or a provider.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry"
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
-        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
         # The provider edge for measurement: kit/app is the only package whose
         # closure may hold an exporter, an SDK or a collector transport. A span
         # anywhere else in the kernel reaches the collector through the global, so

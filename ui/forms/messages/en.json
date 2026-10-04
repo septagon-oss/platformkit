@@ -1,0 +1,38 @@
+{
+  "forms.richtext.help": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Formatting help"
+  },
+  "forms.richtext.paragraphs": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Paragraphs: leave a blank line; a hard break ends with \\."
+  },
+  "forms.richtext.headings": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Headings: ## through ####."
+  },
+  "forms.richtext.marks": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Bold **text**, italic *text*, strike ~~text~~, inline `code`."
+  },
+  "forms.richtext.links": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Links: [label](https://example.com) or [label](/page)."
+  },
+  "forms.richtext.lists": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Lists: - item, 1. item or - [ ] task; up to three levels."
+  },
+  "forms.richtext.blocks": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Quote: > text; code: ```language; rule: ---."
+  },
+  "forms.richtext.tables": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Tables: | heading | with a | --- | separator."
+  },
+  "forms.richtext.images": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."
+  }
+}

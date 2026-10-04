@@ -440,7 +440,7 @@ watcher=$!
 write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
   # The declaration this release asks an installation for, written the way an
   # operator writes it. The copy holds the one tenant the base revision bootstrapped,
-  # served at server.public_host above, and migrations/000042_tenant_app places an
+  # served at server.public_host above, and migrations/000043_tenant_app places an
   # existing tenant under this app only when every host it holds is listed here —
   # a boot that declares no hosts places nothing and then refuses, which is the
   # refusal for an operator who has not written this line, not for this step. A

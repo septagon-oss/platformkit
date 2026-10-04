@@ -56,7 +56,8 @@
 
   function updateTextarea(input) {
     const counter = input.closest('[data-component="textarea"]')?.querySelector('[data-textarea-counter-target="display"]');
-    if (counter) counter.textContent = String([...input.value].length) + (input.maxLength > 0 ? ` / ${input.maxLength}` : '');
+    const maxChars = Number(input.dataset.maxChars || input.maxLength);
+    if (counter) counter.textContent = String([...input.value].length) + (maxChars > 0 ? ` / ${maxChars}` : '');
     if (input.dataset.controller !== 'autoresize') return;
     const style = getComputedStyle(input);
     const line = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5;

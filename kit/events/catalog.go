@@ -83,7 +83,7 @@ func (d Declared) Schema() *Schema { return SchemaOf(d.Payload) }
 // emits, and no tenant, actor, locale or feature flag widens or narrows the check
 // another publisher meets (decision 0028's shared instance). The app segment comes
 // from the composition and from tenants.app, which no route rewrites
-// (migrations/000042). The pointer swap makes install safe beside concurrent
+// (migrations/000043). The pointer swap makes install safe beside concurrent
 // publishes; readers take no lock, and the mutex below covers only the replace.
 var catalog atomic.Pointer[catalogue]
 
