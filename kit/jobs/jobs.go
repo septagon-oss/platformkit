@@ -26,9 +26,13 @@ import (
 	"time"
 
 	"github.com/robfig/cron/v3"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -185,20 +189,41 @@ func (s *Scheduler) Run(ctx context.Context) error {
 // A job that fails is logged and scheduled again; there is no retry of its own,
 // because the next tick is the retry. A Parallel job takes no lock.
 func (s *Scheduler) run(ctx context.Context, j Job) {
+	ctx, span := telemetry.Tracer().Start(ctx, j.Name+" run",
+		trace.WithAttributes(telemetry.SpanAttrs(ctx)...))
+	// One attribute, three values, written once on the way out — registered after
+	// the End below, so it runs before it — because a span that says "ok" merely
+	// because a new return path forgot to change a variable is worse than a span
+	// that says nothing.
+	outcome := "ok"
+	defer func() {
+		span.SetAttributes(attribute.String("pkit.job.outcome", outcome))
+		span.End()
+	}()
 	if !j.Parallel {
 		unlock, ok, err := db.TryLock(ctx, s.conn, "job:"+j.Name)
 		if err != nil {
+			outcome = "lock refused"
 			s.log.ErrorContext(ctx, "jobs: could not take the lock", "job", j.Name, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return
 		}
 		if !ok {
+			// The visible half of what an advisory lock costs, and the one no log
+			// level shows during an incident: this replica wanted to run the job and
+			// another one holds it.
+			outcome = "another replica"
 			s.log.DebugContext(ctx, "jobs: another instance is running this", "job", j.Name)
 			return
 		}
 		defer unlock()
 	}
 	if err := j.Run(ctx, s.conn); err != nil {
+		outcome = "error"
 		s.log.ErrorContext(ctx, "jobs: job failed", "job", j.Name, "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	}
 }
 
@@ -287,8 +312,20 @@ func PerTenantConcurrent(ctx context.Context, conn *db.Conn, lister TenantLister
 			return
 		}
 		tenant := tenants[i]
-		if err := fn(tenancy.WithTenant(ctx, tenant), conn, tenant); err != nil {
+		// One span per tenant, under the job's: a job that took nine seconds over
+		// four hundred tenants has one tenant that took eight of them, and that is
+		// the fact a reader needs. This path holds both names — a job that lists
+		// tenants is given the slug with the row — so it writes both, and the id is
+		// what joins this span to the delivery spans of that tenant's events. One
+		// span per scheduled run above this one, and none per tenant iteration of a
+		// job that names none.
+		tctx, span := telemetry.Tracer().Start(ctx, tenant.Slug+" tenant",
+			trace.WithAttributes(telemetry.SpanAttrs(tenancy.WithTenant(ctx, tenant))...))
+		defer span.End()
+		if err := fn(tenancy.WithTenant(tctx, tenant), conn, tenant); err != nil {
 			slog.ErrorContext(ctx, "jobs: a tenant failed; continuing with the rest", "tenant", tenant.Slug, "error", err)
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			failed[i] = fmt.Errorf("tenant %s: %w", tenant.Slug, err)
 		}
 	}

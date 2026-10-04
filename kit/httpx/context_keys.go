@@ -1,13 +1,13 @@
 package httpx
 
-// context_keys.go declares the two keys the request path shares — the response
-// buffer and the request transaction — together, because a key whose type is
-// unexported is a slot nothing outside this package can fill. The keys with an
-// exported accessor of their own stay beside the middleware that puts them there:
-// the connection in authenticate.go, and the call's own three facts in
-// kit/request, which is where the outbox and the audit trail read them from.
-// TxFrom is here because a handler reading the transaction is reading a key, not
-// a middleware.
+// context_keys.go declares the three keys the request path shares — the response
+// buffer, the request transaction and the note of the tenant a request resolved
+// — together, because a key whose type is unexported is a slot nothing outside
+// this package can fill. The keys with an exported accessor of their own stay
+// beside the middleware that puts them there: the connection in authenticate.go,
+// and the call's own three facts in kit/request, which is where the outbox and
+// the audit trail read them from. TxFrom is here because a handler reading the
+// transaction is reading a key, not a middleware.
 
 import (
 	"context"
@@ -16,8 +16,9 @@ import (
 )
 
 type (
-	bufferKey struct{}
-	txKey     struct{}
+	bufferKey     struct{}
+	txKey         struct{}
+	answerNoteKey struct{}
 )
 
 // TxFrom returns the request's tenant transaction, opening it if this is the

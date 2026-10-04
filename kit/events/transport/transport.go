@@ -47,6 +47,16 @@ type Event struct {
 	// inherit. kit/trace owns the format; nothing here parses it.
 	TraceParent string
 	TraceState  string
+	// Baggage is the W3C correlation member of the same propagation set, and it
+	// is the request id the router wrote on the publisher's context. The trace
+	// members above say which span this event happened under; this says which
+	// request — the one string an operator can quote from a response header, a
+	// log line and a customer's ticket. It is spelled as W3C spells it and absent
+	// when the publisher had nothing to leave, exactly as the pair above: the
+	// envelope carries it as a PlatformKit extension attribute beside the two the
+	// distributed tracing extension names, and it reaches the delivery's span and
+	// every span the handler opens below it. See migrations/000041.
+	Baggage string
 	// RequestID is the id the call was answered with (X-Request-ID), and ClientIP
 	// is the peer address of the connection it arrived on — never a header a
 	// client could write. They arrive with the event because they are readable
@@ -54,6 +64,12 @@ type Event struct {
 	// into its outbox row, and the relay reads them back onto the delivery. Empty
 	// is the normal case, and it means the same thing an empty TraceParent
 	// means: no request caused this, so there is no call to name.
+	//
+	// RequestID holds the same fact as Baggage in the other form: Baggage is the
+	// trace's correlation member spelled as W3C spells one (`pkit.request_id=<id>`),
+	// put back on the handler's context so its spans name the request; RequestID
+	// is the bare id, which is what the audit trail answers "which call" with,
+	// without parsing a header. One write, two readers.
 	RequestID string
 	ClientIP  string
 }

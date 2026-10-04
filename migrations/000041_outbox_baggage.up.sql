@@ -1,0 +1,42 @@
+-- The publisher's correlation member, beside its trace members.
+--
+-- 000028 put the W3C *trace* context on the row, so a delivery is a child of the
+-- request that caused the event. That leaves the pair half-way: the operator who has
+-- the response in front of them quotes the request id it carried — X-Request-ID is
+-- the one identifier a person, a log line and a customer's ticket all agree on — and
+-- the worker's span could not answer it, because the id travels as W3C Baggage and
+-- Baggage is a third member of the same propagation set, which 000028 did not store.
+-- So a request that published an event was joinable to its delivery by trace id
+-- alone, and only by somebody who already had the trace id.
+--
+-- Baggage is the standard carrier for a correlation value that is not a trace parent
+-- (kit/telemetry names it and writes it), and this column is the same value the
+-- router put on the request's own context, injected by the same propagator and read
+-- back by the same one. Nothing here invents a header, a payload member or a second
+-- correlation system: it stores the third member of the set the row already carried
+-- two of, so the request id reaches the delivery span, and the handler's transaction
+-- spans below it, the way the request's own spans already do.
+--
+-- This file is 41 and not the 29 it was written as, nor the 31 or the 36 it held
+-- on its own branch. The release that gave each tenant its languages took 000029
+-- while this one held 29, merging main took 30 for 000030_tenant_oidc, modules/auth
+-- 31, 32 and 33 for its factors, and modules/file 34 for its retention hold, and
+-- the merge with main 7999bdc then took 36 for modules/audit's request index, with
+-- 35, 37, 38, 39 and 40 gone beside it. Two owners at one version is not a
+-- collision in the ledger, which keys on (owner, version); it is a collision in the
+-- two places that flatten every owner into one: the upgrade fixture, which rebuilds
+-- the pre-split world by applying this release's files under the foundation's own
+-- name (apps/platformkit/app_test.go, legacyLayout), and the same test's count of
+-- what the release ships, which is one row per version. So the unreleased file is
+-- the one that moves, and it moves past the highest number anywhere in the
+-- composition.
+--
+-- Nullable, and NULL is the ordinary case rather than a defect: the baggage is empty
+-- whenever the publisher had no request to leave one behind — a periodic job, a
+-- worker reacting to another event, a request whose id Baggage itself will not carry
+-- (kit/telemetry.WithRequestID refuses those) — and a row written before this file
+-- has nothing to carry at all. An expand, and an unsafe one it is not: one nullable
+-- column on a table whose readers name their columns (the relay), added without a
+-- default, so no row is rewritten and no rewrite is scheduled for the contract half.
+
+ALTER TABLE platformkit_outbox ADD COLUMN baggage text;

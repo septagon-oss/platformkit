@@ -2,14 +2,19 @@
 // through the process that handled it and into the events it caused.
 //
 // It is a carrier, not a tracer: there is no span collection, no exporter and
-// no sampling decision here, because the metrics pillar (decision 0052 §3 item 6)
-// owns those and has not landed. What this package fixes is the format and the
-// one question an event can answer — which request caused me — so that a
-// collector added later has something to join to rather than a format to
-// retrofit. The id is the same identifier the log line carries as request_id and
+// no sampling decision here, because kit/telemetry names that vocabulary and
+// kit/app installs the one provider (decision 0052 §3 item 6). What this package
+// fixes is the format and the one question an event can answer — which request
+// caused me — so the outbox row and the envelope carry a W3C context in a process
+// that installed no provider at all, and a collector has something to join to.
+// The id is the same identifier the log line carries as request_id and
 // the problem body carries as its instance, which is what makes the join real
 // today: an event's traceparent names the request that caused it in the terms
-// every log of that request already uses.
+// every log of that request already uses. Where a request's id cannot be a trace
+// id — an opaque handle a proxy chose — the trace is minted and the join runs the
+// other way, through the request id the row, the envelope and the log all carry.
+// Every accepted request leaves a trace either way; only work nobody asked for
+// carries none.
 package trace
 
 import (
@@ -148,7 +153,10 @@ func New() Context {
 // traceparent are then one identifier rather than three that happen to agree.
 // An id that is not 32 hex characters — a proxy's opaque handle, within the
 // length httpx accepts — cannot be a W3C trace id, and this says so rather than
-// hashing something into a shape it does not have.
+// hashing something into a shape it does not have. Saying so is not the same as
+// leaving the request untraced: whoever opened that request mints a trace of its
+// own (kit/httpx's request-id middleware does) and keeps the id it answered with.
+// What this returns is the join, not the whole of a trace.
 func FromRequestID(id string) (Context, bool) {
 	id = strings.ReplaceAll(id, "-", "")
 	if !hexID(id, 32) {

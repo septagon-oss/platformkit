@@ -7,8 +7,12 @@ import (
 	"log/slog"
 	"sync"
 
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"gorm.io/gorm"
 
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -186,7 +190,11 @@ func RunSystem(ctx context.Context, c *Conn, tok tenancy.SystemToken, fn func(ct
 	// readiness probe and every host resolution open one, and a log line per
 	// probe is a log nobody reads.
 	slog.DebugContext(ctx, "db: cross-tenant transaction", "reason", tok.Reason())
-	return c.db.WithContext(ctx).Transaction(func(gtx *gorm.DB) error {
+	ctx, span := telemetry.Tracer().Start(ctx, "cross-tenant transaction",
+		trace.WithAttributes(append(telemetry.SpanAttrs(ctx),
+			attribute.String("pkit.system.reason", tok.Reason()))...))
+	defer func() { span.End() }()
+	err := c.db.WithContext(ctx).Transaction(func(gtx *gorm.DB) error {
 		if err := gtx.Exec("SELECT set_config('platformkit.system_access', 'true', true)").Error; err != nil {
 			return fmt.Errorf("db: set system access: %w", err)
 		}
@@ -196,6 +204,11 @@ func RunSystem(ctx context.Context, c *Conn, tok tenancy.SystemToken, fn func(ct
 		}
 		return sealed(gtx, "", "true")
 	})
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
 }
 
 // Pending is a tenant transaction that has not been opened yet.
@@ -210,9 +223,10 @@ type Pending struct {
 	conn   *Conn
 	tenant tenancy.Tenant
 
-	mu  sync.Mutex
-	gtx *gorm.DB
-	err error
+	mu   sync.Mutex
+	gtx  *gorm.DB
+	err  error
+	span trace.Span
 }
 
 type pendingKey struct{}
@@ -251,19 +265,48 @@ func (p *Pending) Tx(ctx context.Context) (Tx[Tenant], error) {
 		return Tx[Tenant]{}, p.err
 	}
 	if p.gtx == nil {
+		// The span opens with the transaction and not with the Pending: a request
+		// that never queries opens neither, which is the whole reason Pending
+		// exists, and a span for a transaction that never happened would be the
+		// trace equivalent of a log line about a query nobody sent.
+		//
+		// One span per opened transaction, under whatever span the work already sits
+		// in — a request's, a job run's, an event delivery's — which is what makes
+		// "SQL under Tx" a boundary a reader can see: the span's duration is the
+		// transaction's, from BEGIN to the commit that was checked, and every
+		// statement the runner issued is inside it. Not one span per statement:
+		// kit/db's own promise is that GORM is the SQL executor and nothing else — no
+		// callbacks, no plugins — and a per-statement span is bought with a callback
+		// and a map of open statements. A transaction that took 40ms says what a
+		// reader needs to know in one span; the question "which of its four
+		// statements was the slow one" is answered by the statement log, not by a
+		// trace of this shape.
+		ctx, span := telemetry.Tracer().Start(ctx, "database transaction",
+			trace.WithAttributes(telemetry.SpanAttrs(ctx)...))
 		gtx := p.conn.db.WithContext(ctx).Begin()
 		if gtx.Error != nil {
 			p.err = fmt.Errorf("db: begin: %w", gtx.Error)
+			endErr(span, p.err)
 			return Tx[Tenant]{}, p.err
 		}
 		if err := gtx.Exec("SELECT set_config('platformkit.tenant_id', ?, true)", p.tenant.ID.String()).Error; err != nil {
 			_ = gtx.Rollback().Error
 			p.err = fmt.Errorf("db: set tenant: %w", err)
+			endErr(span, p.err)
 			return Tx[Tenant]{}, p.err
 		}
-		p.gtx = gtx
+		p.gtx, p.span = gtx, span
 	}
 	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, nil
+}
+
+// endErr is how a database failure reaches a span: the error itself, and a status,
+// so a trace viewer marks the span red instead of leaving a reader to infer the
+// outcome from the absence of a commit.
+func endErr(span trace.Span, err error) {
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	span.End()
 }
 
 // Err is the failure that stopped the transaction opening, if one did.
@@ -285,19 +328,34 @@ func (p *Pending) handle() *gorm.DB {
 func (p *Pending) Close(keep bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	gtx := p.gtx
-	p.gtx = nil
+	gtx, span := p.gtx, p.span
+	p.gtx, p.span = nil, nil
 	if gtx == nil {
 		return nil
+	}
+	if span != nil {
+		// Ended before the outcome is returned, whatever it is: the transaction is
+		// over the moment the decision was made, and a rolled back one is the answer
+		// a reader of a failed request is looking for.
+		defer span.End()
 	}
 	if !keep {
 		return gtx.Rollback().Error
 	}
 	if err := sealed(gtx, p.tenant.ID.String(), ""); err != nil {
 		_ = gtx.Rollback().Error
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
 		return err
 	}
-	return gtx.Commit().Error
+	err := gtx.Commit().Error
+	if err != nil && span != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	return err
 }
 
 // sealed refuses to commit a transaction that ends under different settings

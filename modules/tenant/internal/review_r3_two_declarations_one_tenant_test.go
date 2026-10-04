@@ -44,6 +44,7 @@ import (
 func TestTwoDeclarationsOfOneTenantArrivingAtOnceLeaveOneWholeSet(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	svc := internal.NewService(nil, []string{"en", "pt-PT"})
+	installed(t, conn, svc)
 
 	var id uuid.UUID
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
