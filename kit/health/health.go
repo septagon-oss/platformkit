@@ -59,6 +59,22 @@ type Check interface {
 	Check(ctx context.Context) error
 }
 
+// Report is one thing an operator reads about the process that is not a verdict:
+// the exporter's last success, a queue's depth, a certificate's expiry. It is a
+// separate type from Check because the two answer different questions and only one
+// of them moves traffic: /ready refuses a request when a Check fails, and a Report
+// never does. That difference is why the trace exporter's health is a Report — a
+// replica that is serving its tenants perfectly must not be pulled out of the
+// rotation because the tracing backend is down — and why a Check-shaped "nice to
+// know" is the mistake this type exists to prevent.
+//
+// The string is the answer, and the error is the reason it is a worrying one, or
+// nil. Both reach /ready, and neither decides it.
+type Report interface {
+	Name() string
+	Report(ctx context.Context) (string, error)
+}
+
 // There is no Func adapter. One existed to turn a closure into a Check and
 // nothing outside this package's own tests ever used it: there is one Check in
 // the application, DatabaseCheck below, and a second one arrives with the type
@@ -68,8 +84,8 @@ type Check interface {
 // neither the request middleware nor a transaction. Both roles therefore answer
 // the same bytes from the same handler, which is what the deployment's one
 // probe stanza already assumed. See Mux, and httpx.API.Probes.
-func Register(api *httpx.API, checks ...Check) {
-	api.Probes(Mux(slog.Default(), checks...), livePath, readyPath)
+func Register(api *httpx.API, checks []Check, reports ...Report) {
+	api.Probes(Mux(slog.Default(), checks, reports...), livePath, readyPath)
 }
 
 // Mux is the two probes. It is a plain net/http mux because that is all a probe
@@ -81,7 +97,7 @@ func Register(api *httpx.API, checks ...Check) {
 // learn twice. It was two implementations of two routes until the web role's
 // probes had to stop resolving a tenant, at which point the one that already
 // did not was the answer.
-func Mux(log *slog.Logger, checks ...Check) http.Handler {
+func Mux(log *slog.Logger, checks []Check, reports ...Report) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -92,13 +108,48 @@ func Mux(log *slog.Logger, checks ...Check) http.Handler {
 	mux.HandleFunc("GET "+readyPath, func(w http.ResponseWriter, r *http.Request) {
 		failed := failures(r.Context(), log, checks)
 		if len(failed) == 0 {
-			write(w, http.StatusOK, `{"status":"ok"}`, "application/json")
+			write(w, http.StatusOK, ready(r.Context(), reports), "application/json")
 			return
 		}
 		body, _ := json.Marshal(problem.New(http.StatusServiceUnavailable, "not ready: "+strings.Join(failed, ", ")))
 		write(w, http.StatusServiceUnavailable, string(body), problem.ContentType)
 	})
 	return mux
+}
+
+// ready is readiness's body: the same two bytes it has always been when there is
+// nothing to say, and the reports appended when a composition registers them. The
+// verdict is unchanged either way — a Report cannot move it — so an existing probe
+// stanza reads the same answer as before. Keys are sorted by encoding/json, so the
+// bytes do not depend on the order two reports were registered in.
+//
+// The reports run on the probe request's context, the same one failures is handed:
+// a Report that asks a database or an upstream is bounded by the client that asked,
+// so a probe that hangs up or times out stops the work instead of leaving a
+// goroutine per poll running past the request. A Report run on context.Background()
+// could not be cancelled by anything.
+func ready(ctx context.Context, reports []Report) string {
+	if len(reports) == 0 {
+		return `{"status":"ok"}`
+	}
+	seen := map[string]string{}
+	for _, r := range reports {
+		msg, err := r.Report(ctx)
+		if err != nil {
+			msg = msg + ": " + err.Error()
+		}
+		seen[r.Name()] = msg
+	}
+	body, err := json.Marshal(struct {
+		Status  string            `json:"status"`
+		Reports map[string]string `json:"reports"`
+	}{"ok", seen})
+	if err != nil {
+		// A map of strings cannot fail to marshal, so this line is unreachable and
+		// the answer it gives is the one that was true before reports existed.
+		return `{"status":"ok"}`
+	}
+	return string(body)
 }
 
 func write(w http.ResponseWriter, status int, body, contentType string) {

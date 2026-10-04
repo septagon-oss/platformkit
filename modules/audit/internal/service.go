@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
@@ -49,19 +50,40 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
 	}
+	// The call that caused the event, from the event: this transaction is the
+	// relay's, not the request's, and the three facts stopped being readable when
+	// the request ended. kit/events carried them off kit/request into the outbox
+	// row for exactly this moment. An empty one is stored as NULL — "no request
+	// caused this" is an answer, and the empty string is not an address.
+	//
+	// The trace is stored as the one string the envelope carried, traceparent, and
+	// not also as its second field: see migrations/000035 and the expression index
+	// migrations/000037 builds over that field. The trail row's own TraceID is read
+	// out of that column on the way back — see List and traceIDOf.
+	//
 	// The ids the payload mentions are lifted out here, once, so that reading
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload))).Error
+		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent)).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}
 	return nil
+}
+
+// nilIfEmpty is the absence the column stores: a request that never happened
+// leaves NULL, which is what migrations/000035 says an absence means, and not a
+// second word for the same fact.
+func nilIfEmpty(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 // List is a page of this tenant's trail, newest first. It is a hand-written
@@ -88,6 +110,15 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 		if q.Record != uuid.Nil {
 			g = g.Where("records @> ?", pq.Array([]uuid.UUID{q.Record}))
 		}
+		// Which call, and which trace. The trace id is the second field of the
+		// stored traceparent, which is the only place it exists — see 000035 and
+		// the expression index 000037 builds over that same split_part.
+		if q.Request != "" {
+			g = g.Where("request_id = ?", q.Request)
+		}
+		if q.TraceID != "" {
+			g = g.Where("split_part(traceparent, '-', 2) = ?", q.TraceID)
+		}
 		if !q.Since.IsZero() {
 			g = g.Where("occurred_at >= ?", q.Since)
 		}
@@ -110,7 +141,46 @@ func (s *Service) List(_ context.Context, tx db.Tx[db.Tenant], q contracts.Query
 	if err != nil {
 		return nil, 0, fmt.Errorf("audit: read the trail: %w", err)
 	}
+	// The trail stores one string per trace; the page answers with the id a query
+	// and a trace backend answer from. Read after the scan rather than written
+	// beside the column, so the row cannot disagree with the string it came from.
+	for _, e := range rows {
+		if id := traceIDOf(e.Traceparent); id != uuid.Nil {
+			row := id
+			e.TraceID = &row
+		}
+	}
 	return rows, total, nil
+}
+
+// traceIDOf is the trace a stored traceparent names, as the UUID a query can
+// answer from. The envelope carries W3C's traceparent; the 32 hex digits inside
+// it are the same number, and the contract's row hands over that number rather
+// than making every caller of the trail parse a header to get it.
+//
+// An event that arrived with no trace context (a periodic job, an untraced
+// deployment), or with one this file cannot read, has none, and the nil pointer
+// is the honest answer rather than the zero UUID: "no trace" and "the trace whose
+// id is all zeros" are different facts.
+func traceIDOf(field string) uuid.UUID {
+	const hexdigits = "0123456789abcdefABCDEF"
+	// traceparent is "00-<32 hex>-<16 hex>-<2 hex>": the version, the trace id,
+	// the parent id, the flags. Read by position rather than by splitting on "-"
+	// so that a version this file has never seen, whose fields may not be these
+	// three, is refused rather than half-parsed into a wrong id.
+	if len(field) != 55 || field[2] != '-' || field[35] != '-' || field[52] != '-' {
+		return uuid.Nil
+	}
+	for i := 3; i < 35; i++ {
+		if !strings.ContainsRune(hexdigits, rune(field[i])) {
+			return uuid.Nil
+		}
+	}
+	id, err := uuid.Parse(field[3:35])
+	if err != nil {
+		return uuid.Nil
+	}
+	return id
 }
 
 // mentioned is every uuid the payload names, at any depth and inside an array.

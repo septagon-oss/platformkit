@@ -3,7 +3,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"net"
 	"net/http"
 	"time"
 
@@ -118,15 +117,12 @@ func ClientOf(r *http.Request) contracts.Client {
 	if r == nil {
 		return contracts.Client{}
 	}
-	ip := r.RemoteAddr
-	if host, _, err := net.SplitHostPort(ip); err == nil {
-		ip = host
-	}
 	// No X-Forwarded-For. A header a client can write is not an address, and a
 	// deployment behind a proxy that rewrites RemoteAddr gets the right one
 	// anyway; trusting the header here would let anybody record any address in
-	// somebody else's session list.
-	return contracts.Client{UserAgent: r.UserAgent(), IP: ip}
+	// somebody else's session list. The parse itself is kit/httpx's — one parser
+	// in the tree, for the rule two modules used to spell out separately.
+	return contracts.Client{UserAgent: r.UserAgent(), IP: httpx.ClientAddr(r)}
 }
 
 // Cookies mints and clears this module's two cookies.

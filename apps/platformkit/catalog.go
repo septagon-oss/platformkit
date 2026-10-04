@@ -6,6 +6,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/billing"
+	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/site"
@@ -46,6 +47,7 @@ func catalogues() xtext.Catalog {
 		audit.Catalogue(),
 		auth.Catalogue(),
 		billing.Catalogue(),
+		change.Catalogue(),
 		content.Catalogue(),
 		file.Catalogue(),
 		site.Catalogue(),

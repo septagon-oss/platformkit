@@ -5,11 +5,14 @@
 # `scripts/check_public_api.py` compares the exported surface with the supported
 # tag. Both existed as instructions in a README and ran when a person remembered.
 #
-# This workflow is scheduled and reports. It is deliberately not a required check
-# on a pull request, for two reasons that are each other's opposite: the published
-# version is a fact about the proxy, not about the diff, and scripts/PUBLIC-API.md
-# asks that the API comparison stay out of `make check` because it resolves
-# published revisions over a network. Since v1.1.0 it compares the exported surface
+# This workflow is scheduled and reports. It is not a required check on a pull
+# request, and since T-0118 that is a narrower statement than it was: the
+# comparison that *is* a gate — the baselined one, refusing an incompatibility
+# beyond the reviewed list — runs in `make check` as `check-apidiff` and in the
+# check job, on the diff. What stays here is the part whose verdict is about the
+# published version rather than about the change: the unbearalled comparison, and
+# the public-module build through the proxy with no workspace and no replace to
+# fall back on. Since v1.1.0 it compares the exported surface
 # against that tag with no accepted-break baseline, so the step is a clean-line gate:
 # it passes while nothing new breaks, and a break that reaches `main` is found the
 # Tuesday after rather than never.

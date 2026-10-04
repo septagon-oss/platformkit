@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -184,6 +184,40 @@ check-fixtures: ## Compile the Go program every design test embeds
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+# The rehearsal and the public-API comparison, both of which existed as steps
+# nobody was forced to run: `make rehearse` needed an operator who remembered it,
+# and the apidiff workflow said "deliberately not a required check" and ran on a
+# Sunday. Both answer a question no other gate here can — what this release's
+# migrations cost on a table the size the installation actually has, and which
+# exported name a pinned consumer compiled against last time — and a question
+# answered only after a version is published is a review of the damage.
+#
+# The base is v1.1.0 for both, because that is the release consumers are on and
+# it is the tag scripts/PUBLIC-API.md already names. The seed is the fixture the
+# rehearsal script documents, because a migration measured against an empty table
+# is a migration measured against nothing.
+#
+# The cost is measured, not assumed: against a copy of the v1.1.0 ledger seeded
+# with 10,000 rows per table, the rehearsal of this tree's nine pending files ran
+# in 19 s of wall clock (commit b7a0354's Verified: line names the run), and
+# check-apidiff takes about a minute. Both sit inside the 75-minute ceiling
+# 8a3297a set for the check job. When that ceiling gets tight, T-0219 splits the
+# job; nothing is removed from `check` to fit it.
+REHEARSE_BASE ?= v1.1.0
+REHEARSE_ARGS ?= --base-ref $(REHEARSE_BASE) --seed scripts/testdata/rehearse/seed.sql
+APIDIFF_BASELINE ?= scripts/baselines/public-api-$(REHEARSE_BASE).json
+
+check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The baseline is the reviewed set of incompatibilities the release already owed
+# at the merge base of this change; `--baseline` then refuses a *new* one and a
+# vanished one, so a documented breaking line cannot hide an accidental one.
+# Regenerating it is its own deliberate act: --write-baseline at the base commit,
+# committed alone, with the diff of the list as the review.
+check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
+	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -209,8 +243,14 @@ fmt-check: ## Fail when any file is not gofmt'd
 # two halves are composed and where the only test that can watch a write in one
 # module queue behind a write in the other lives.
 # RACE_PACKAGES overrides the list when a change reaches somewhere else.
+# modules/change is in the standing list rather than one change's override because
+# the whole point of the object is a lock: the proposal is taken FOR UPDATE before
+# the subject is, and two applies of two proposals over one subject settle by that
+# order. An author who cannot run the two commands concurrently cannot tell a lock
+# that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
-	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... ./apps/platformkit
+	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
+	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
@@ -218,11 +258,12 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
 
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/check_pin_rehearsal_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package
@@ -234,5 +275,40 @@ image: ## Build the container image
 up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres, NATS, Valkey and the object store and drop their volumes
-	docker compose down -v
+# The collector is a profile rather than a second service in `up` because the
+# two goals that must never fail — `make test` and `make check` — sit on `up`,
+# and a third container is a third thing that can fail: an image pull that
+# cannot be served offline, a port that is taken. A developer reads spans, not
+# test results, so the wait is behind its own goal.
+#
+# The port follows PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT: one variable
+# moves the container's mapping and the two messages below, and a machine with
+# 4317 taken overrides it once.
+#
+# The wait watches the container and not the port, and that too is measured: the
+# published port is answered by docker-proxy, which accepts a connection whether
+# or not the process behind it is alive, so a dial reported "up" for a collector
+# that had already died of its configuration — and `--wait` reported "Healthy" for
+# the same dying process, because the scratch image declares no healthcheck and has
+# no shell to probe with. Status running with no restart recorded, held three
+# seconds, is the readiness there is. `up` is given --force-recreate because
+# Compose compares the Compose file and not the file a bind mount points at: with
+# the flag left out it reported the old container "Running" a minute after that
+# container's configuration had been edited under it.
+PLATFORMKIT_OTLP_PORT ?= 4317
+trace: ## Start the local OTLP collector that prints every span it receives
+	docker compose --profile telemetry up -d --force-recreate collector
+	@timeout 60 bash -c 'c=$$(docker compose --profile telemetry ps -q collector); \
+	  good=0; \
+	  while [ $$good -lt 3 ]; do \
+	    if [ "$$(docker inspect -f "{{.State.Status}} {{.RestartCount}}" $$c)" != "running 0" ]; then exit 1; fi; \
+	    good=$$((good + 1)); sleep 1; \
+	  done' \
+	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
+	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
+
+# The profile is named here as well, because `down` is the file's teardown: a
+# goal that stopped two containers and left a third holding port 4317 would half
+# finish the one job it has. It stays destructive of volumes, as before.
+down: ## Stop Postgres, NATS, Valkey, the object store and the collector, and drop their volumes
+	docker compose --profile telemetry down -v

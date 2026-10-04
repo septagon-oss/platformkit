@@ -28,6 +28,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
+	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
@@ -195,7 +196,14 @@ func compose(cfg config.Config) composition {
 	plans, billingModule := billing.Module(billing.Deps{Tenants: active, Payments: billing.Manual()})
 
 	contents, contentModule := content.Module(content.Deps{})
-	sites, siteModule := site.Module(site.Deps{})
+	// The installation's flags, read by kit/config out of the flags block and
+	// answered once for the whole process: configFlags targets nobody, not even by
+	// tenant. One evaluator is built here, for the one door that asks it a question.
+	var flagEval configFlags
+	if cfg.Flags != nil {
+		flagEval = cfg.Flags.Values
+	}
+	sites, siteModule := site.Module(site.Deps{Gate: settingsGate{eval: flagEval}})
 	_, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
@@ -265,6 +273,13 @@ func compose(cfg config.Config) composition {
 		RetentionDays: cfg.Audit.RetentionDays,
 		Feature:       "audit-trail",
 	}))
+	// Change control, over the one subject this product applies proposals for:
+	// the site settings composed just above. The subject list and the flag are both
+	// written in apps/platformkit/change.go, and this line is where they meet the
+	// manifest — so the six proposal routes are mounted, the three permissions are
+	// declared, and the settings door answers 409 with the proposal address when the
+	// installation turns the switch on.
+	mods = append(mods, change.Module(change.Deps{Subjects: changeSubjects(sites, site.NewLockedReader())}))
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted, so
 	// composing it earlier would generate screens for a prefix of the

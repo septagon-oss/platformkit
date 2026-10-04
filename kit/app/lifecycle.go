@@ -178,7 +178,14 @@ func (a *App) Declarations() error {
 // Call Start once per App. The connection it opens, and the transport this role
 // selects, belong to the Runtime it returns, and Close is the only release of
 // either — including a transport the application injected in Options.Transport,
-// which Close releases like one Start built. A second Start on the same App
+// which Close releases like one Start built.
+//
+// The flush is here because Close is the only teardown a caller that owns its
+// listener has. Run flushes because Run is told when the process ends; this path is
+// not Run, and a process that started and stopped inside one export interval would
+// otherwise keep none of the trace it recorded. It runs last, after the connection is
+// released, in the order Run leaves the same act in, and its failure is logged rather
+// than returned: spans nobody read are not a shutdown that failed to finish. A second Start on the same App
 // migrates again and opens a second connection over the same configuration, and
 // an injected transport is the same instance both Runtimes then share, so closing
 // either releases what the other is still using. A new lifecycle needs a new App.
@@ -340,9 +347,9 @@ func (r *Runtime) Work(ctx context.Context) error {
 }
 
 // Close releases the transport, the connection, the event shapes this composition
-// declared and then the cache, and is safe to call more than once: the second call
-// returns the first call's result. Call it once the served requests and the work
-// have stopped — an in-flight handler holds a
+// declared, then the cache, then flushes what the exporters still hold, and is safe
+// to call more than once: the second call returns the first call's result. Call it
+// once the served requests and the work have stopped — an in-flight handler holds a
 // detached transaction on this pool, and a running Work keeps its ticks until its
 // own context is done. Work started after this returns is refused: what Close
 // released — the connection, the cache, and the transport whether Start built it
@@ -365,12 +372,20 @@ func (r *Runtime) Close() error {
 		if r.declaredRelease != nil {
 			r.declaredRelease()
 		}
-		// Last, because nothing depends on it and a store that refused its own
-		// release must not hide a pool that refused one first. A cache is a belief;
-		// the truth it was about is in the database.
+		// Last of the resources, because nothing depends on it and a store that
+		// refused its own release must not hide a pool that refused one first. A
+		// cache is a belief; the truth it was about is in the database.
 		if err := r.cache.Close(); r.closeErr == nil {
 			r.closeErr = err
 		}
+		// And last of everything, because the flush is what the process still owes
+		// the collector rather than a resource it holds: not the caller's context,
+		// whatever it is by now — Close is called from shutdown paths whose context
+		// is already cancelled, and the flush needs the same bounded grace Run gives
+		// it rather than an immediate deadline.
+		grace, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		r.app.flushTelemetry(grace)
 	})
 	return r.closeErr
 }

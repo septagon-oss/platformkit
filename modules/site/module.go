@@ -26,12 +26,25 @@ import (
 // belongs to a tenant by carrying its id, which row-level security matches on.
 // It is a struct rather than no parameter so that the day it needs something,
 // every call site gains a named field instead of a new argument.
-type Deps struct{}
+type Deps struct {
+	// Gate stands on the settings route and answers whether this tenant's settings
+	// may be written directly. nil writes them, which is what every composition
+	// that has not decided otherwise wants. See contracts.WriteGate for why the
+	// question is asked here and answered elsewhere.
+	Gate contracts.WriteGate
+}
 
 // permissions is what the manifest declares. kit/app checks every route's
 // declaration against it at boot, so a route guarded by a permission that is
 // not here fails startup instead of denying everyone forever.
 var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Label: "manage the site"}}
+
+// NewLockedReader returns the same settings service Module builds, as the one
+// interface a caller about to write needs (see contracts.LockedReader for why that
+// is a second interface and not a method on Service). It costs a second value
+// because a Service has no fields — everything it needs arrives with the
+// transaction — so there is nothing here to keep in step with anything else.
+func NewLockedReader() contracts.LockedReader { return internal.NewService() }
 
 // Module is the manifest, and the service it is built on.
 //
@@ -42,7 +55,7 @@ var permissions = []module.Permission{{Key: contracts.PermissionSiteManage, Labe
 // neither module had a generated screen. The kernel has the shape now, and this
 // is the module that shows what it takes: a Load that answers with the defaults
 // rather than a 404, a Save, and a Face saying what a visitor may see.
-func Module(_ Deps) (contracts.Service, module.Module) {
+func Module(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",
@@ -54,6 +67,15 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 			return svc.Settings(ctx, tx)
 		},
 		Save: func(ctx context.Context, tx db.Tx[db.Tenant], in *contracts.SiteSettings) (*contracts.SiteSettings, error) {
+			// The gate stands on the door a person types into, not on Service.Save.
+			// That distinction is the whole use of it: the apply of a proposal comes
+			// through Service.Save, and a gate that refused both would be a wall
+			// rather than a door — the change could be proposed and never applied.
+			if deps.Gate != nil {
+				if err := deps.Gate.Check(ctx, tx); err != nil {
+					return nil, err
+				}
+			}
 			return svc.Save(ctx, tx, in)
 		},
 		// The name, the navigation and the colour scheme. The rest — the home

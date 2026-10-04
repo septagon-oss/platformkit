@@ -61,7 +61,12 @@ database:
   # time stops and says it is contended, and may be run again), and no bound on a
   # statement at all — a legitimate index build on a large table is the statement
   # a duration bound would kill. Set statement_timeout only where a bound on the
-  # longest statement is worth refusing a real build for.
+  # longest statement is worth refusing a real build for, and know what that
+  # refusal costs: a nontransactional file (-- pkit: autocommit=true) is the one
+  # file the lock budget does not cover, so this is the only bound its wait has,
+  # and a build this stops is left INVALID — the retry the refusal asks for says
+  # the file is applied and does not rebuild the index. kit/db/README.md carries
+  # both halves.
   # lock_timeout: 5s
   # statement_timeout: 0
 
@@ -103,6 +108,41 @@ cache:
 log:
   # debug | info | warn | error
   level: "info"
+
+# Where spans and numbers go. Every key is optional and the empty default exports
+# nothing at all, which is a decision rather than an omission: a deployment that has
+# chosen no backend pays nothing for traces nobody will read, and it still propagates
+# the trace context it was handed and still leaves one on every outbox row it writes,
+# so a trace continues into a process that does export. One TracerProvider and one
+# MeterProvider live in kit/app; the vocabulary — the attribute keys and the three
+# instruments — is kit/telemetry, which holds no provider and so never reaches a
+# collector on its own. Traces are OTLP/gRPC, and the three numbers are
+# pkit.http.operation.duration, pkit.outbox.lag and pkit.http.refusals by class.
+telemetry:
+  # The collector's gRPC endpoint: "collector.example:4317", or a host:port on a
+  # network that needs no TLS. `make trace` starts one on localhost:4317 that prints
+  # whatever arrives to its own container log. An unreachable collector is never a
+  # failed boot: the
+  # exporter buffers, warns through OpenTelemetry's own error handler and keeps
+  # serving, and kit/health reports its last success as a reading an operator sees
+  # and that never moves the verdict. PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT.
+  otlp_endpoint: ""
+  # What the trace backend shows this process under. Every replica of one
+  # deployment answers the same name; empty means "platformkit" rather than the
+  # SDK's own "unknown_service:" plus the executable. PLATFORMKIT_TELEMETRY_SERVICE_NAME.
+  service_name: ""
+  # Names the client this installation serves, written on the resource of every
+  # span and metric. Empty is right for a shared installation — one process serving
+  # many tenants cannot name one client, which is the same reason the tenant is a
+  # span attribute and never a resource one. PLATFORMKIT_TELEMETRY_CLIENT.
+  client: ""
+  # Fraction of the traces this process *starts* that are kept, 0 to 1. A trace that
+  # arrives with a sampled parent stays kept whatever this says, so a worker handling
+  # an event stays inside the request that caused it. Omitted keeps every new trace —
+  # 0 is an answer and an omitted key is not, which is why it is commented rather than
+  # written as an empty value. This key is read from the file alone: no environment
+  # variable names it, because a sampling decision is reviewed with the file.
+  # sample_ratio: 1.0
 
 # The optional identity provider. An empty issuer — which is the default — means
 # there is none, and the two OIDC routes are not registered at all: a route that
@@ -181,3 +221,21 @@ files:
   # lives. An entry with no class name, or one that is not a positive duration,
   # fails the load rather than quietly deleting nothing.
   retention: {}
+
+# Feature flags, under `values:` because the block is a pointer to the map and an
+# installation with no flags writes no `flags:` section at all. One boolean per
+# key, read the way every other value here is read: through kit/config, with an
+# environment override, and refused at load if
+# the key is spelled wrong. A flag never grants a permission, narrows a tenant's
+# scope or replaces a plan's entitlement (kit/flags/README.md); it switches an
+# optional product behaviour on or off for this installation.
+#
+# change.control.site-settings is the one this application reads. Off, the site
+# form writes the tenant's settings, which is what it has always done. On, that
+# door answers 409 and names the proposal address instead: the write goes in as a
+# proposal, and an account that did not put it forward applies it. The key is
+# named in apps/platformkit/change.go, beside the consumer that reads it, and an
+# absent key means off rather than whatever the loader's zero value happened to be.
+flags:
+  values:
+    change.control.site-settings: false
