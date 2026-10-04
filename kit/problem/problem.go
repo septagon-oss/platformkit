@@ -33,6 +33,28 @@ type Problem struct {
 	// "urn:request:<request id>", which is the same id the log line carries, so
 	// a report of "I got a 500" is one grep away from the reason.
 	Instance string `json:"instance,omitempty"`
+	// Key names the catalogue entry whose sentence a person is *shown* for this refusal.
+	// Detail is a sentence about the request, and whoever wrote it usually wrote it for
+	// the person reading the refusal — which is why it is what the page says. A module
+	// that ships a page ships copy for its own verdicts too, in its own catalogue and its
+	// own languages, and pasting one translated string into one page would leave the other
+	// languages unasked-for. So it names the entry here and the shell resolves it in the
+	// language the request asked for. Empty means Detail is the sentence, which is the
+	// case for almost every refusal, and a catalogue with no entry for the key is the same
+	// answer: the writer's own sentence, in the language it was written in.
+	//
+	// ui/page owns this lookup and kit/httpx never reads it: the verdict is one value in
+	// two shapes (docs/adr/0015), and the key chooses the words of the human one.
+	Key string `json:"-"`
+	// Diagnostic says Detail names something only an operator can act on — an internal
+	// check, a driver's message, a path. The problem document a monitor diffs and the log
+	// line keep it; a person is shown the sentence the presentation layer ships for the
+	// verdict instead, and it is not echoed beside it. This is not a refusal kept secret:
+	// the status is the same verdict, the reference is the same one a person quotes back,
+	// and Retry-After is the same number. It is the same judgement a 500 already makes by
+	// answering with no detail at all, spelled out for the refusal that has a diagnostic
+	// worth keeping and worth keeping out of a browser window.
+	Diagnostic bool `json:"-"`
 
 	// cause is the server-side error. It is never serialized; Unwrap exposes
 	// it to the logger, which is the only thing allowed to see it.

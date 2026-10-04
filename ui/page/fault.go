@@ -47,17 +47,23 @@ import (
 	"github.com/septagon-oss/platformkit/ui/document"
 )
 
-// faultKeys is the one table from a refusal the kernel published to the catalog key this
-// shell's sentence for it lives under.
+// faultKeys is the inventory of the refusal codes kit/httpx publishes that this shell
+// ships a sentence for, and the catalogue gate in catalogue_test.go reads it as one: a
+// code in the kernel with no key beside it is a refusal a Portuguese tenant is answered
+// in English, and nobody has to notice.
 //
 // The code is namespaced, because a kernel refusal and a module's own copy share one
-// catalog and "AUTH_DENIED" on its own is a name either of them could want. A code with no
-// entry is shown the kernel's sentence, which is the same answer a shell with no catalog
-// gets — and two codes are absent on purpose rather than by oversight, for one reason:
-// CodeWriteElsewhere names the address the write belongs at and CodePlanExcludes names
-// the feature to ask the plan for, and a sentence that carries something the caller has
-// to *have* cannot be replaced by one that only describes it — this mechanism swaps a
-// sentence and does not interpolate an argument.
+// catalog and "AUTH_DENIED" on its own is a name either of them could want — and because
+// this shell claims the `fault.` prefix against every catalogue that comes after it
+// (kit/locale/providers/xtext refuses a later source a key under it), the codes named
+// here are the codes allowed to be shown under that prefix. A module with a page of its
+// own, and so with copy for refusals only it makes, names its entry on the refusal itself
+// instead: see problem.Problem's Key and sentence. Two codes are absent here on purpose
+// rather than by oversight, for one reason: CodeWriteElsewhere names the address the write
+// belongs at and CodePlanExcludes names the feature to ask the plan for, and a sentence
+// that carries something the caller has to *have* cannot be replaced by one that only
+// describes it — this mechanism swaps a sentence and does not interpolate an argument. Neither is carried
+// by any catalogue either, which is the same refusal stated as data.
 var faultKeys = map[string]string{
 	httpx.CodeAnonymous:         "fault.AUTH_ANONYMOUS",
 	httpx.CodeDenied:            "fault.AUTH_DENIED",
@@ -89,7 +95,8 @@ var refusalParts = []string{
 }
 
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether
-// there is one to look for at all.
+// there is one to look for at all. It is the answer for a refusal that names no key of
+// its own — every guard's, and the verdicts nobody coded.
 //
 // A guard writes "<CODE>: <sentence>", so the prefix is the lookup and not the
 // copy: the code is in the JSON body and in the log line whatever the page says in
@@ -178,6 +185,15 @@ func FaultHandler(s Shell) httpx.Fault {
 		if status == 0 {
 			status = http.StatusInternalServerError
 		}
+		// Two refusals do not answer a person with their Detail. A Diagnostic one names
+		// something only an operator can act on, so the page is left with the verdict and
+		// the catalogue's sentence for it; the detail stays in the problem body and the log
+		// line. A refusal that names a Key is a writer that ships copy for its own verdict
+		// and wants it resolved in the reader's language rather than repeated in one.
+		detail, key := p.Detail, p.Key
+		if p.Diagnostic {
+			detail = ""
+		}
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
 		loc := refusalLocale(s.Messages, r, req.Tenant)
@@ -185,12 +201,12 @@ func FaultHandler(s Shell) httpx.Fault {
 		// a shell whose chrome has labels of its own renders them here as it does on every
 		// page Serve mounts, and not in English because the request was refused.
 		req.Locale = loc
-		v, ok := granted(r, loc, status, p.Detail, requestID(p.Instance), s)
+		v, ok := granted(r, loc, status, detail, requestID(p.Instance), s)
 		if !ok {
 			// Retry-After is read here, before the status is written, because after
 			// WriteHeader the guard's header is the one thing a rewrite of this function
 			// could lose sight of — and it is the only number the page is allowed to say.
-			v = fault(r, status, p.Detail, loc, requestID(p.Instance), s, retryAfter(w.Header()))
+			v = fault(r, status, detail, key, loc, requestID(p.Instance), s, retryAfter(w.Header()))
 		}
 
 		body := s.Frame(ctx, req, v.Body)
@@ -265,14 +281,16 @@ func FaultHandler(s Shell) httpx.Fault {
 // short catalogue sentence drops, and it is copy rather than code.
 const deniedPermissionKey = "fault.AUTH_DENIED.permission"
 
-func fault(r *http.Request, status int, detail string, loc *Locale, reference string, s Shell, wait int) View {
+func fault(r *http.Request, status int, detail, key string, loc *Locale, reference string, s Shell, wait int) View {
 	line := detail
 	if strings.TrimSpace(line) == "" {
-		// A 500 carries no detail on purpose: the reason is in the log, not for the
-		// browser. The sentence has to be true and useful without it.
+		// A 500 carries no detail on purpose, and neither does a diagnostic: the reason is
+		// in the log, not for the browser. The sentence has to be true and useful without
+		// it — and when the catalogue speaks this verdict, which it does for both of the
+		// languages this package ships, that copy replaces this line below.
 		line = "Something went wrong while handling this."
 	}
-	line, language := sentence(line, loc, status, detail)
+	line, language := sentence(line, loc, status, detail, key)
 	// A missing grant names the grant and who can give it (UX walkthroughs, 2026-09-30: an editor who signed
 	// in met "Não pode fazer isto." and could not say what to ask for; the administrator helping her could not
 	// tell what to give). The guard already wrote the permission into its detail and the translated sentence
@@ -388,20 +406,30 @@ func retryAfter(h http.Header) int {
 // permission, the subsystem or the address the guard wrote into its detail stays
 // on the page. A deployment whose English copy differs from the guard's wording
 // says its own and the guard's, and both name the same verdict.
-func sentence(line string, loc *Locale, status int, detail string) (text, language string) {
+func sentence(line string, loc *Locale, status int, detail, key string) (text, language string) {
 	text = line
 	if loc == nil {
 		return text, ""
 	}
-	key, lookup := faultKey(detail, status)
-	if !lookup {
-		return text, ""
+	if key == "" {
+		var lookup bool
+		key, lookup = faultKey(detail, status)
+		if !lookup {
+			return text, ""
+		}
 	}
 	shipped := loc.Text(key, line)
 	if shipped == line {
 		return text, ""
 	}
 	_, guardSaid := strings.CutPrefix(loc.Language, sourceLanguage)
+	// The guard's own line stands beside the shipped copy only where the guard wrote one
+	// for this page. A refusal with no detail to show — a diagnostic, or a 500 whose
+	// reason is in the log — has already said that its sentence is not the person's, and
+	// echoing an empty detail after the catalogue's line would be a dash over nothing.
+	if detail == "" {
+		return shipped, loc.Language
+	}
 	if code, rest, named := strings.Cut(detail, ": "); named {
 		if guardSaid {
 			return code + ": " + shipped + " " + sourceMark + " " + rest, loc.Language
@@ -444,7 +472,7 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 		(ref.Code != httpx.CodeDenied && ref.Code != httpx.CodePolicyDenied) {
 		return document.View{}, false
 	}
-	line, language := sentence("", loc, status, detail)
+	line, language := sentence("", loc, status, detail, "")
 	if line == "" {
 		line = strings.TrimPrefix(detail, ref.Code+": ")
 	}
