@@ -54,12 +54,12 @@ func WithServed(ctx context.Context, askedFor string) context.Context {
 // that spells its own port is left exactly as the row spells it — which is how an
 // installation that declares a public port of its own wins over the socket: the
 // composition carries the port server.public_host names onto this host, so an
-// installation reached through a port mapping mails the port its people use and not
-// the port behind the mapping, and no request is consulted for it. The port this
+// installation reached through a port mapping mails the port its people use and
+// not the port behind the mapping, and no request is consulted for it. What this
 // function can contribute is the other case: an installation that declares no
-// public port, served at a port of its own. It is the one this process accepted the
-// connection on, which httpx.ServedAuthority read
-// off the socket where the event was published: a caller who writes a port we do not
+// public port and is served at a port of its own. That port is the one this
+// process accepted the connection on, which httpx.ServedAuthority read off the
+// socket where the event was published: a caller who writes a port we do not
 // serve is answered at the port we do, and that is the port the link carries.
 func servedPort(ctx context.Context, host string) string {
 	askedFor, _ := ctx.Value(servedKey{}).(string)
