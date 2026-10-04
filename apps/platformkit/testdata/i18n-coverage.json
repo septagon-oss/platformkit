@@ -1,0 +1,127 @@
+{
+  "version": 1,
+  "measured_utc": "2026-10-04T13:35:00Z",
+  "pages": {
+    "FAULT 404": {
+      "wrapped": 0,
+      "readable": 4
+    },
+    "FAULT 405": {
+      "wrapped": 0,
+      "readable": 4
+    },
+    "GET /": {
+      "wrapped": 0,
+      "readable": 7
+    },
+    "GET /app": {
+      "wrapped": 0,
+      "readable": 58
+    },
+    "GET /app/access-request/sent": {
+      "wrapped": 2,
+      "readable": 4
+    },
+    "GET /app/admin/_gallery": {
+      "wrapped": 0,
+      "readable": 252
+    },
+    "GET /app/admin/health": {
+      "wrapped": 0,
+      "readable": 51
+    },
+    "GET /app/admin/login": {
+      "wrapped": 6,
+      "readable": 17
+    },
+    "GET /app/auth/roles": {
+      "wrapped": 0,
+      "readable": 79
+    },
+    "GET /app/auth/sessions": {
+      "wrapped": 0,
+      "readable": 62
+    },
+    "GET /app/billing/plans": {
+      "wrapped": 2,
+      "readable": 62
+    },
+    "GET /app/billing/plans/new": {
+      "wrapped": 4,
+      "readable": 70
+    },
+    "GET /app/billing/plans/{id}": {
+      "wrapped": 4,
+      "readable": 67
+    },
+    "GET /app/billing/plans/{id}/edit": {
+      "wrapped": 4,
+      "readable": 70
+    },
+    "GET /app/content/contents": {
+      "wrapped": 2,
+      "readable": 60
+    },
+    "GET /app/content/contents/new": {
+      "wrapped": 4,
+      "readable": 64
+    },
+    "GET /app/content/contents/{id}": {
+      "wrapped": 4,
+      "readable": 74
+    },
+    "GET /app/content/contents/{id}/edit": {
+      "wrapped": 4,
+      "readable": 75
+    },
+    "GET /app/site/settings": {
+      "wrapped": 2,
+      "readable": 61
+    },
+    "GET /app/site/settings/edit": {
+      "wrapped": 4,
+      "readable": 71
+    },
+    "GET /app/task/tasks": {
+      "wrapped": 2,
+      "readable": 62
+    },
+    "GET /app/task/tasks/new": {
+      "wrapped": 4,
+      "readable": 80
+    },
+    "GET /app/task/tasks/{id}": {
+      "wrapped": 4,
+      "readable": 82
+    },
+    "GET /app/task/tasks/{id}/edit": {
+      "wrapped": 4,
+      "readable": 88
+    },
+    "GET /app/tenant/tenants": {
+      "wrapped": 0,
+      "readable": 54
+    },
+    "GET /app/user/users": {
+      "wrapped": 2,
+      "readable": 59
+    },
+    "GET /app/user/users/new": {
+      "wrapped": 4,
+      "readable": 57
+    },
+    "GET /app/user/users/{id}": {
+      "wrapped": 4,
+      "readable": 77
+    },
+    "GET /app/user/users/{id}/edit": {
+      "wrapped": 4,
+      "readable": 69
+    },
+    "GET /{slug}": {
+      "wrapped": 0,
+      "readable": 6
+    }
+  },
+  "untranslated": 0
+}

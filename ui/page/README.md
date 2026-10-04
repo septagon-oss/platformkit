@@ -86,10 +86,16 @@ a language some of its words are not in. `View.Language` is how a page says whic
 two it is: the admin shell's dashboard and health pages, whose copy is Go strings rather
 than keys, declare the source language rather than the request's, and
 `TestEveryPageSaysTheSameLanguageTwice` in the reference application holds `<html lang>`
-and `Content-Language` to one answer. Nothing yet refuses a page that declares a
-language a literal in its own body is not written in; that gate — every page rendered
-under a pseudo-locale, which turns every key a catalogue carries into a marker so a
-literal no entry covers shows — is unshipped.
+and `Content-Language` to one answer. What refuses a page whose body holds a literal
+no catalogue answers is the pseudo-locale gate: the reference application renders every
+document its composition declares in `en-XA`, where
+[kit/locale/providers/pseudo](../../kit/locale/providers/pseudo) wraps what a catalogue
+answered, [ui/legible](../legible) reads the document back and exempts what is data, and
+`make check` prints the share that reached a catalogue and refuses any fall below
+`apps/platformkit/testdata/i18n-coverage.json`. What it finds is a list of pages and
+paths, not a verdict about a declared language: a page can still declare `pt-PT` while
+one of its own strings is English — the banner above is on that list — and the number
+rises only as each of them is given a key.
 
 The [reference application](../../apps/platformkit/catalog.go) composes the copy
 each layer ships — this package's refusal sentences, `ui/resource`'s screen
