@@ -1,0 +1,43 @@
+# The collector config for `make trace`: it prints what it receives, to the
+# container log, and keeps nothing. Written for otel/opentelemetry-collector;
+# the release notes rename receivers and exporters occasionally, so the image
+# tag `make trace` pins and this file move together.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  batch:
+    # Short on purpose: the real pipeline's batch is a latency the operator
+    # learns to expect, and a developer waiting thirty seconds for one span
+    # would read the local stack as broken. send_batch_size is below the
+    # processor's own default, which is a number for a collector carrying a
+    # production load; the max stays unset because setting it below the size is
+    # a configuration this collector refuses to start on.
+    timeout: 2s
+    send_batch_size: 512
+
+exporters:
+  # `debug` is the exporter that prints — one line per span and per metric
+  # datapoint on stdout, which is what `docker compose logs collector` reads.
+  # The sampling keeps the first few of every request leg and then one in two
+  # hundred, so a developer's own request is printed whole while a page of
+  # metrics from a polling browser does not fill the terminal.
+  debug:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [debug]

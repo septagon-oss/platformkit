@@ -25,8 +25,9 @@ The body on the broker is **CloudEvents 1.0 in structured content mode**:
 `specversion`, `id`, `source` (`/<module>`), `type` (the event name), `subject`,
 `time`, `datacontenttype`, `data`, plus `tenantid` as a **required** extension
 where the specification leaves extensions optional — an event with no tenant has
-no transaction to deliver it in — and `traceparent`/`tracestate` when a request
-caused the event. `Event` stays the programming model and the outbox keeps
+no transaction to deliver it in — `traceparent`/`tracestate` when a request caused
+the event, and `baggage` when that request had an id to leave behind. `Event` stays
+the programming model and the outbox keeps
 storing columns; `MarshalJSON`/`UnmarshalJSON` in
 [`transport/cloudevents.go`](transport/cloudevents.go) own the wire form.
 
@@ -72,10 +73,16 @@ Four consequences, each a test rather than an assurance:
   claimed in `platformkit_handled` before the handler runs, which is why the
   reconciliation `reconcile` logs a line rather than an incident. Independent
   sinks that are not `Consume` must supply the same durable idempotency.
-* **The trace context is stored with the row** (`000028_outbox_trace.up.sql`,
-  nullable) and carried onto the envelope by the relay, because by relay time the
-  request is gone. `kit/trace` fixes the W3C format and collects nothing: no span
-  is exported or sampled until the metrics pillar lands a collector.
+* **The trace context is stored with the row** (`000028_outbox_trace.up.sql` and
+  `000041_outbox_baggage.up.sql`, all nullable) and carried onto the envelope by the
+  relay, because by relay time the request is gone. `kit/trace` fixes the W3C format and
+  collects nothing: it holds no span, no exporter and no sampling decision.
+  `kit/telemetry` names the vocabulary of a span, and this package opens three of them —
+  one relay pass, one publication per row and one delivery, the last two parented from the
+  context stored on the row and each naming the tenant of the row it published — so the
+  trace does continue into the handler. The provider and its exporter are installed by
+  `kit/app` alone: a composition that configures no endpoint propagates a context and
+  exports nothing. See [kit/telemetry](../telemetry/README.md).
 
 The NATS constructors have moved out of the SQL package. Replace
 `events.JetStream(...)` with `nats.JetStream(...)` and

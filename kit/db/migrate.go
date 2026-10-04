@@ -596,12 +596,18 @@ type runner struct {
 // The first call of a run finds nothing on the session and needs nothing done about
 // it; the call that follows an autocommit file does not, and goes through
 // stepBackToTheCompositionLock, which takes the budgets off for this wait and puts them
-// back the way the sentence above has it.
+// back the way the sentence above has it. They have to be taken off rather than left
+// alone: the queue for an advisory lock is a lock wait like any other — measured, with
+// lock_timeout in force pg_advisory_lock answers 55P03 like any other wait — and by
+// that second call the lock budget has already come off for the statement above it, so
+// what that call still takes off is the statement budget, which bounds a wait for a
+// lock as surely as it bounds the work done inside one.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
 	}
-	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+	_, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
+	if err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
@@ -622,33 +628,49 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 }
 
 // unbudgeted is both budgets off, spelled the way PostgreSQL spells "no limit", and is
-// what the runner puts on its own session for the window it is without the composition
-// lock. Zero — rather than leaving the setting alone — because the run's session is
-// where the file budgets already sit: `apply` puts them there before choosing how to run
-// the file, and `SET LOCAL` is a warning outside a transaction block, which is the one
-// block this window has none of.
+// what the runner puts on its own session for the one wait it does not mean to refuse at
+// all: the queue for the composition lock. Zero — rather than leaving the setting alone —
+// because the run's session is where the file budgets already sit: `apply` puts them there
+// before choosing how to run the file, and `SET LOCAL` is a warning outside a transaction
+// block, which is the one block this window has none of. Both settings and not one,
+// because a statement budget bounds a wait for a lock as surely as it bounds the work done
+// inside the lock, and by the time the lock is reached a second time mid-run the session
+// still carries the statement budget the autocommit statement was sent under.
 const unbudgeted = "SET lock_timeout TO '0'; SET statement_timeout TO '0'"
+
+// noLockBudget is the other half of that window: the lock budget off and the statement
+// budget left where the deployment put it, for the `autocommit` statement itself. ADR
+// 0011 names that one budget and no other — "such a statement waits for the transactions
+// already in the database, that is what CONCURRENTLY is for, and no `lock_timeout` bounds
+// the wait" — because the server implements that wait as a lock wait
+// (`wait_event_type=Lock`, `wait_event=virtualxid`): the build takes a lock on each
+// transaction it has to outlive. Measured against a session holding nothing but an open
+// snapshot on the table, which is exactly the transaction a concurrent build exists to wait
+// for: with the run's lock budget on the session the file's own `REINDEX (CONCURRENTLY)`
+// was cancelled at 2.06s and left `probe_c0_idx_ccnew` behind INVALID; the same statement
+// over the same hold, with the lock budget off, waited 5.06s and rebuilt it with nothing
+// invalid left. The first is a migration refused for the crime of doing the thing the mode
+// exists to do, in the middle of the work, which is the state this kernel exists not to
+// leave.
+//
+// The statement budget stays on, because it is the bound an installation named on purpose.
+// It defaults to no bound precisely so that a legitimate build on a large table survives
+// it, and a deployment that shortens it has chosen to refuse a build that waits too long
+// rather than boot behind the oldest transaction in the database — the one bound the run
+// otherwise owns on a wait that ends when somebody else's transaction does. ADR 0011 takes
+// no lock budget; it asks nothing of that trade.
+const noLockBudget = "SET lock_timeout TO '0'"
 
 // stepAwayFromTheCompositionLock opens the window one `autocommit` file opens, and is
 // the half of ADR 0011 that runs before its statement: the lock goes down, because a
 // build that waits for the transactions already in the database, held under the lock
 // every other replica's boot queues behind, was measured deadlocking the queue.
 //
-// The budgets go down with it, for the statement as well as for the wait to come back.
-// ADR 0011 says so of that statement — "such a statement waits for the transactions
-// already in the database, that is what CONCURRENTLY is for, and no `lock_timeout`
-// bounds the wait" — and `apply`'s own comment has always said it, but until this
-// window was one statement of both, the budgets stayed on the session for the statement
-// itself and contradicted it. Measured against a session holding nothing but an open
-// snapshot on the table, which is exactly the transaction a concurrent build exists to
-// wait for: with the run's two-second budget on the session the file's own
-// `REINDEX (CONCURRENTLY)` was cancelled at 2.06s and left `probe_c0_idx_ccnew` behind
-// INVALID; the same statement on the same table over the same hold, with the budgets
-// taken off, waited 5.06s and rebuilt it with nothing invalid left. The first is a
-// migration refused for the crime of doing the thing the mode exists to do, in the middle
-// of the work, which is the state this kernel exists not to leave.
+// The lock budget goes down with the lock and the statement budget stays on for the
+// statement; both come off for the wait to come back. The two constants above each carry
+// the measurement for their own half.
 func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
-	if err := r.setBudgets(ctx, unbudgeted); err != nil {
+	if err := r.setBudgets(ctx, noLockBudget); err != nil {
 		return err
 	}
 	return r.releaseCompositionLock(ctx)
@@ -660,12 +682,17 @@ func (r *runner) stepAwayFromTheCompositionLock(ctx context.Context) error {
 // before the file's history row, so the transaction that records the file is a normal
 // transaction with the run's patience on it.
 //
-// Measured on a machine running several suites at once, with the budgets left on the
-// session for this wait, the second run to reach this point answered itself with
-// ErrContended at five seconds: a wait the run was told to be patient about, reported to
-// the operator as a contention to retry, from a run that had the first one's applied
-// files to read and would have found nothing pending.
+// Both budgets come off for the reach and not the lock's alone, because the statement
+// above left the session still carrying the run's statement budget, and that one bounds a
+// wait for a lock as surely as it bounds the work inside one. Measured on a machine
+// running several suites at once, with it left on for this wait, the second run to reach
+// this point answered itself with ErrContended at five seconds: a wait the run was told to
+// be patient about, reported to the operator as a contention to retry, from a run that had
+// the first one's applied files to read and would have found nothing pending.
 func (r *runner) stepBackToTheCompositionLock(ctx context.Context) error {
+	if err := r.setBudgets(ctx, unbudgeted); err != nil {
+		return err
+	}
 	if err := r.holdCompositionLock(ctx); err != nil {
 		return err
 	}
@@ -688,9 +715,9 @@ func (r *runner) apply(ctx context.Context, migration migration) (drainReport, e
 		// both at once deadlocks the queue; ADR 0011 carries the deadlock DETAIL. What
 		// two replicas may then both reach is a statement the rule table already
 		// demands be re-runnable, and recordRerunnableHistory turns a lost race into a
-		// file that applied rather than a boot that failed. The budgets step down with
-		// the lock, both for the statement and for the wait to come back: see the two
-		// methods, which carry why each half is unbudgeted.
+		// file that applied rather than a boot that failed. The lock budget steps down
+		// with the lock for the statement, and both step down for the wait to come back:
+		// the two methods name which half is whose, and which budget a deployment keeps.
 		if err := r.stepAwayFromTheCompositionLock(ctx); err != nil {
 			return drainReport{}, err
 		}

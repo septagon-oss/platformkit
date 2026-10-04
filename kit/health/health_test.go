@@ -53,7 +53,7 @@ func serve(t *testing.T, checks ...health.Check) (http.Handler, *db.Conn) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, checks...)
+	health.Register(api, checks)
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the probes are not declared: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestReadinessIs503WhenTheDatabaseIsDown(t *testing.T) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, health.DatabaseCheck(app))
+	health.Register(api, []health.Check{health.DatabaseCheck(app)})
 
 	if got := probe(t, router, tenantHost, "/ready").Code; got != http.StatusOK {
 		t.Fatalf("/ready with a live database = %d, want 200", got)
@@ -225,7 +225,7 @@ func TestTheProbesNeverResolveTheHost(t *testing.T) {
 		Cache:   cache.Memory("pkit"),
 		Tenants: slow, Conn: app, Authorize: sites{}, Authenticate: anonymous,
 	})
-	health.Register(api, check{name: "queue"})
+	health.Register(api, []health.Check{check{name: "queue"}})
 
 	// Both hosts: the pod address an orchestrator uses, and a tenant's own
 	// name, which is what a probe through an ingress arrives as.
@@ -259,7 +259,7 @@ func TestReadinessAnswersWithinTheProbeTimeout(t *testing.T) {
 		Authorize:    sites{},
 		Authenticate: anonymous,
 	})
-	health.Register(api, health.DatabaseCheck(app))
+	health.Register(api, []health.Check{health.DatabaseCheck(app)})
 	if err := app.Close(); err != nil {
 		t.Fatalf("close the pool: %v", err)
 	}
@@ -277,5 +277,47 @@ func TestReadinessAnswersWithinTheProbeTimeout(t *testing.T) {
 	}
 	if !strings.Contains(res.Body.String(), "database") {
 		t.Errorf("/ready does not name the check: %s", res.Body.String())
+	}
+}
+
+// sawContext is a Report that answers with what the context it was handed said
+// when it ran, which is the only way a test can tell the probe request's context
+// from a fresh one nobody can cancel.
+type sawContext struct{}
+
+func (sawContext) Name() string { return "context" }
+
+func (sawContext) Report(ctx context.Context) (string, error) {
+	if ctx.Err() != nil {
+		return "cancelled", nil
+	}
+	return "still running", nil
+}
+
+// TestAReportSeesTheCancellationOfTheProbeThatAskedForIt: a Report is run on the
+// readiness request's context, the one Check is run on. A Report that asks a
+// database or an upstream is then bounded by the client that asked — an orchestrator
+// that times out, a curl that hangs up — instead of leaving a handler goroutine per
+// poll running past the request it answered, unbounded, on a path probed every few
+// seconds. Handed context.Background() instead, nothing could stop it.
+func TestAReportSeesTheCancellationOfTheProbeThatAskedForIt(t *testing.T) {
+	h := health.Mux(nil, nil, sawContext{})
+
+	req := httptest.NewRequest(http.MethodGet, "http://"+tenantHost+"/ready", nil)
+	ctx, cancel := context.WithCancel(req.Context())
+	t.Cleanup(cancel)
+	cancel()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req.WithContext(ctx))
+	if body := w.Body.String(); !strings.Contains(body, "cancelled") {
+		t.Fatalf("/ready answered %s, want the report to have seen the probe's own cancellation: a Report "+
+			"handed a context nothing can cancel outlives the request that asked for it", body)
+	}
+
+	// And the same handler with a probe that is still there answers with the
+	// reading, so the assertion above is about the context and not about the path.
+	if live := probe(t, h, tenantHost, "/ready"); !strings.Contains(live.Body.String(), "still running") {
+		t.Errorf("/ready with a live probe answered %s, want the report's reading", live.Body.String())
 	}
 }
