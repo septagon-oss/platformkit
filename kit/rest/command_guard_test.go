@@ -189,7 +189,8 @@ func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 	}
 }
 
-// TestAReaderIsNotOfferedTheWriteDoors is the second finding from the same review. The
+// TestAReaderIsNotOfferedTheWriteDoors asks a caller without the write permission what
+// their list looks like. The
 // list screen has taken a `writable bool` since before this branch existed, and its
 // comment claims "a person who may not is not shown a form that would refuse them" —
 // but no test asked a caller without the write permission what their list looked like.

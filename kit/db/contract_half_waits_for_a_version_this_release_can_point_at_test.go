@@ -1,16 +1,16 @@
 package db_test
 
 // A contract half beside an expansion the same release runs *after* it waits for
-// the version it names. This is the answer to the question the brief wrote and
-// deliberately left unpinned: the case records the question and says that which way
-// it is answered is the delivery's decision, not the case's to pin.
+// the version it names, rather than applying in an order nobody chose. Which way that
+// pair was answered was open; the decision the guard makes is written out below, and the
+// legs assert what that decision refuses and what it still applies.
 //
 // The decision is this: `expand=` names a version of the same owner that comes *before* the
 // half that waits for it, and one this release actually lists. It is bounded the way a
 // source's `RulesFrom` floor is bounded — a self-declared number judged against the files the
 // source can point at rather than trusted — because the owner's files apply in order and a
 // number at or above the half's own version names an expansion no order of applying reaches
-// first. the brief's "its files apply in order" and `planOwner`'s "a contract half may not run in
+// first. migrations/README.md's "its files apply in order" and `planOwner`'s "a contract half may not run in
 // the same release as the expansion it removes" cannot both govern a file that names a later
 // version, so the rule refuses it and says so, on a fresh installation as on an installed one:
 // the fresh one is where an unbounded number does the damage, because the half applies, the
@@ -41,7 +41,7 @@ func TestAContractHalfWaitsForAVersionThisReleaseCanPointAt(t *testing.T) {
 		files fstest.MapFS
 	}{
 		{
-			// The ordering the brief left unpinned on purpose, answered here. The
+			// The ordering a release's own two files apply in, pinned here. The
 			// run applies a release's files in version order, so the half at
 			// version 2 runs before the expansion at version 3 — the release that adds
 			// the thing and takes it away in one go, which is the thing the guard is for.

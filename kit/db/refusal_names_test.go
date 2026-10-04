@@ -1,19 +1,17 @@
 package db_test
 
 // Two of the runner's runtime refusal ids — `data-table-missing` and
-// `data-key-not-primary-key` — were written down only in the task's own specification:
-// `grep -rn "data-table-missing" --include=*.go --include=*.md .` found the string in one
-// reviewer's comment and nowhere else, so an operator handed the id by a log line or a
-// runbook found nothing in the repository that refused them, and the id could drift from
+// `data-key-not-primary-key` — were printed by a refusal and named by nothing else in the
+// repository: an operator handed the id by a log line or a
+// runbook found nothing that refused them, and the id could drift from
 // the sentence it stands for with no gate noticing.
 //
-// The fix is that the refusal prints its own id — `refusal <id>: <what was found>; <what
+// The refusal prints its own id — `refusal <id>: <what was found>; <what
 // to do>` — and this case reads it back off the message of a run that really refused. Each
 // leg therefore asserts two things about the one sentence: the id in front of it, and the
 // words that were the whole message before the id was added. Asserting only the id would
 // pass a change that replaced the sentence with the id, which tells an operator less than
-// they were told before; asserting only the sentence is what the repository did before this
-// round, and it is what let the two names drift apart.
+// they were told before; asserting only the sentence is what let the two names drift apart.
 //
 // The last leg reads this package's own README.md. The table there is the operator's copy of
 // the same list, and a doc a test cannot disbelieve is a list rather than a gate. The
@@ -24,8 +22,8 @@ package db_test
 // passed. The ids are therefore read out of the places they come from rather than repeated:
 // `refusalDoors` below is counted against every refusal constant this package's non-test files
 // declare — an id *is* such a constant, wherever the runner keeps it, and a case that opened
-// `refusals.go` by name could only ever hold the ids that stayed there, which is the tenth
-// review's fourth finding — and an id declared outside the file whose comment says it owns
+// `refusals.go` by name could only ever hold the ids that stayed there. An id declared
+// outside the file whose comment says it owns
 // them is refused here and by `refusal_id_is_declared_wherever_the_runner_keeps_it_test.go`.
 // README's table is counted against the declarations by `refusal_ids_are_the_table_test.go`,
 // and a refusal sentence written with an id inlined instead of declared is refused by name.
@@ -249,7 +247,7 @@ func readmeOf(t *testing.T) string {
 
 // TestTheRuntimeRefusalIDsAreTheOnesTheRunnerDocuments reads the operator's copy of the
 // list out of this package's own README.md, beside the legs above that print each id. One
-// without the other is the finding: a table that names an id nothing prints, or a sentence
+// without the other is the failure this leg guards: a table that names an id nothing prints, or a sentence
 // that prints one nothing names.
 func TestTheRuntimeRefusalIDsAreTheOnesTheRunnerDocuments(t *testing.T) {
 	readme := []byte(readmeOf(t))

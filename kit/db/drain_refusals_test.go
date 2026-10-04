@@ -1,14 +1,14 @@
 package db_test
 
-// This file walks the two drain refusals the specification's own
-// refusal table names — the brief.md's `data-table-missing` and `data-key-not-primary-key`
-// ("the `table=` name does not resolve in this database"; "the table has no
-// single-column primary key", both "correctable") — which are implemented in
+// This file walks the two drain refusals this package's own
+// refusal table names — `data-table-missing`, for a `table=` this database does not
+// hold, and `data-key-not-primary-key`, for "the table has no single-column primary key
+// to window over" — which are implemented in
 // kit/db/backfill.go (`primaryKey`, `tableExistsSQL`) and are not reached by any case in
 // the repository: `grep -rn "single-column" kit/db/*_test.go` finds them only in comments
 // describing a table that does have one.
 //
-// They are in the brief's deliverable 5 ("the guards, the refusals, …"), and the shape
+// They are the refusals an operator meets first, and the shape
 // they refuse is the ordinary mistake — a junction table keyed by two columns, or a
 // `table=` for an owner nobody selected. A branch no case walks is a branch that can
 // stop firing with nothing noticed, and the honest answer about a table the window cannot

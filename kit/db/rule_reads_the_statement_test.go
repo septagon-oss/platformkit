@@ -1,12 +1,11 @@
 package db_test
 
-// The
-// one rule one finding did not reach.
+// One rule of the three that read a statement's text,
+// and the one the split does not reach.
 //
-// That finding was that `alter-column-type` matched a keyword rather than the
-// operation, and the fix moved the predicate inside a single statement
+// `alter-column-type` matches the operation inside a single statement
 // (`rewritesAColumnType` walks `f.statements` and requires both halves in one of
-// them). `add-column-not-null` was left reading the whole body: it fires when
+// them). `add-column-not-null` reads the whole body instead: it fires when
 // ADD COLUMN, NOT NULL and the absence of DEFAULT agree over the file. A file
 // with two statements therefore answers the rule with a word that belongs to the
 // other statement — `ALTER COLUMN … SET DEFAULT` is about a different column

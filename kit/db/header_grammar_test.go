@@ -3,11 +3,11 @@ package db_test
 // A header the
 // grammar accepts and then reads as something other than what the file says.
 //
-// The specification's own grammar (the brief, "The header grammar") states the rule
-// this case holds:
+// The header grammar `parseHeader` implements, and the one pair it reads past its own
+// domain:
 //
-// 	"A `reason=` value runs to the end of its line and may contain spaces, so it
-// 	must be the last pair on that line."
+// 	a `reason=` value runs to the end of its line and may contain spaces, so it
+// 	must be the last pair on that line
 //
 // "must" is the domain, and the domain is what `parseHeader` refuses everything
 // else outside of — every other key whose value is out of range, every repeated
@@ -34,10 +34,9 @@ package db_test
 //
 // The other two cases in this file are pins rather than complaints, and each marks
 // the boundary of what was found. The autocommit shape the rule table points at
-// (`autocommit=true` for a concurrent build) is a *two*-statement file, which
-// the brief records as a measured decision — "A file with more than one statement in
-// this mode is not caught by a parser: … The message is Postgres', the rule is
-// ours". What is pinned here is the half a release depends on: the file that never
+// (`autocommit=true` for a concurrent build) is a *two*-statement file, and nothing
+// parses it: PostgreSQL refuses the second statement (error 25001) before any rule
+// reads the file — the message is the server's, the rule is ours. What is pinned here is the half a release depends on: the file that never
 // ran leaves no index and no ledger row, so the next run is the same file again.
 
 import (
@@ -67,7 +66,7 @@ ALTER TABLE probe DROP COLUMN c`)}
 	}
 	// The column is the assertion, and it does not care which refusal the remedy
 	// is: a `DROP COLUMN` whose header declares a contract half has to be read, not
-	// run. Refusing the line (what the brief's "must be the last pair" implies) and
+	// run. Refusing the line (what "must be the last pair on that line" requires) and
 	// reading the pair (which leaves the file waiting for an expansion that never
 	// applied) both land here.
 	admin := dbtest.Open(t, migrateURL)
@@ -83,7 +82,7 @@ ALTER TABLE probe DROP COLUMN c`)}
 // refuses the run — so the whole-table-in-one-transaction execution this shape
 // would otherwise have run does not happen.
 //
-// What it records is how narrow the finding above is, and what the operator is told:
+// What it records is how narrow the hole above is, and what the operator is told:
 // a refusal that names the marker rather than the phase that was eaten.
 func TestADataPhaseWrittenAfterReasonIsCaughtByTheMarkerNotThePhase(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
@@ -106,9 +105,9 @@ UPDATE probe SET done = true WHERE id IN (SELECT id FROM batch)`)},
 }
 
 // TestAnAutocommitFileThatDidNotRunLeavesNothingBehind pins the state half of the
-// shape the brief accepts: the two-statement autocommit file is refused by PostgreSQL
-// (error 25001) rather than by a rule, and the delivery's reasoning for that is
-// recorded in the specification. What has to be true, and is, is that a file which
+// shape left to PostgreSQL: the two-statement autocommit file is refused by the server
+// (error 25001) rather than by a rule, the message being the server's and the refusal
+// ours. What has to be true, and is, is that a file which
 // did not run wrote nothing down — no index, no ledger row — so the operator's next
 // run is the same file and not a repair.
 //

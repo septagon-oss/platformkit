@@ -29,8 +29,8 @@ package db_test
 // 	a space before the colon            applied=1 err=<nil>
 //
 // The five unread ones run the author's whole-table UPDATE as one transaction inside the
-// migration — the harm `data-body-unbounded` exists to refuse, and the harm the brief names
-// ("a backfill inside the migration's transaction holds every row") — and then record the
+// migration — the harm `data-body-unbounded` exists to refuse: a backfill run inside the
+// migration's transaction holds every row it touches — and then record the
 // version, which makes the bytes immutable: migrations/README.md's own remedy for an applied
 // file is "add a new migration", and the marker the author already wrote can never be added.
 // `phase=contract` fails closed by luck (the `drop-column` rule reads the SQL whatever the

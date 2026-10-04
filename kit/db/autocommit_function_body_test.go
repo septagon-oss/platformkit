@@ -1,7 +1,7 @@
 package db_test
 
-// How far the
-// first finding's principle reaches past the two refusals it was reported against.
+// A refusal no `allow=` can reach is decided from what PostgreSQL reads as one statement,
+// not from the guard's own split of the file — and that reaches past its two refusals.
 //
 // The principle the case adopted is that a refusal no `allow=` can reach may not be decided
 // from a reading that is wrong about where a value ends — because the file it refuses is not
@@ -26,7 +26,7 @@ package db_test
 // the change for that reason — the split cuts at the semicolon after the `DELETE`, and the
 // piece that begins `create index concurrently` is read as the file's own statement — and the
 // control beside it, a file whose own statement is the plain `CREATE INDEX CONCURRENTLY`, is
-// refused exactly as it always was, which is the leg that would catch a round that answered the
+// refused exactly as it always was, which is the leg that would catch a fix that answered the
 // false positive by taking the rule's teeth away.
 
 import (

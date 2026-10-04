@@ -15,7 +15,8 @@ package db_test
 // `platformkit_outbox`, and module/user, auth, audit, billing, content, file, notification
 // and site each create an `id uuid PRIMARY KEY` — and `modules/auth` keys its token hashes
 // `bytea PRIMARY KEY`. So no `phase=data` file can drain any table this kernel ships, and
-// the brief's own first consumer ("`search`'s second migration … changes a table") is one
+// the ordinary thing a `phase=data` file is written for — a later migration changing
+// a table this kernel ships — is one
 // of them. Measured end to end through the release step the delivery wrote: with the
 // ten-thousand-row fixture on a copy of the previous release,
 //

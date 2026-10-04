@@ -20,8 +20,8 @@ package db_test
 // `unused-allow` refuses the author who tried to declare the risk.
 //
 // The harm is the three rules' own: a full rewrite under `ACCESS EXCLUSIVE`, a `SHARE` lock over
-// a table with writers, and a column taken away from the release that is running. The brief's
-// deliverable 3 states each of them is "refused with the rule's name".
+// a table with writers, and a column taken away from the release that is running. Each of
+// the three is refused with the rule's name, which is what the table promises.
 //
 // Every leg asserts the fixed behaviour — the rule the repository's own table names, and what
 // the catalogue holds afterwards — and each has a control written as a plain statement, which

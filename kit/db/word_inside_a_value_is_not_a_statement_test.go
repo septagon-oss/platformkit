@@ -20,10 +20,9 @@ package db_test
 // no nontransactional statement in it is excused by a word inside a value.
 //
 // Whether a rule carries a marker is a different question from whether it reads a value's
-// contents, and both of these rules state none: migrations/README.md's table says `none` for
-// both, the brief's says "none: it is a fact about Postgres, not a judgement", and the same
-// the brief table over the same three rules calls them "immutable as stated, **correctable as
-// authored**: they refuse the shape". The first three legs are the file that is not correctable
+// contents, and migrations/README.md's table says `none` for both of these rules: a file one
+// of them misreads carries no `allow=` and no remedy the header grammar would accept. The
+// first three legs are the file that is not correctable
 // as authored; the next two are the rule whose teeth a value takes; the last is the same
 // misreading on the `CREATE TABLE` capture, which decides an exemption.
 //
@@ -97,9 +96,11 @@ func TestADataValueThatSpellsConcurrentlyIsStillOneWindowedStatement(t *testing.
 }
 
 // TestAnAutocommitFileWhoseOnlyConcurrentlyIsDataIsStillRefused is the same misreading on the
-// side where it costs the guard rather than the author. migrations/README.md's table says
-// `autocommit-without-concurrently` fires on "`autocommit=true` with nothing nontransactional
-// in the file"; the brief's says "in a file with no `CONCURRENTLY` statement". The first file
+// side where it costs the guard rather than the author. migrations/README.md's table fires
+// `autocommit-without-concurrently` on "`autocommit=true` with no `CONCURRENTLY` statement in
+// the file or in a body it stores". A rule that instead counted the word wherever the file's
+// text carries it would answer that question of a file whose only `CONCURRENTLY` is data. The
+// first file
 // below has no nontransactional statement — the words are inside a value the function body
 // writes — and the control beside it, word for word the same file without that value, is
 // refused. A value, which is data, answers the one question this rule exists to make

@@ -21,7 +21,7 @@ package db_test
 // file applies as an ordinary expand file with nothing said about it.
 //
 // The first leg is the control: the same file with the keyword is refused today,
-// which is what makes the second leg a finding about the spelling rather than a
+// which is what makes the second leg an assertion about the spelling rather than a
 // complaint about the rule.
 
 import (

@@ -18,9 +18,8 @@ package db_test
 // and a bounded file is refused as unbounded — and the remedy its refusal
 // offers (`allow=data-body-unbounded`) sends the body unwrapped, where the
 // window relation it names does not exist (42P01), after the owner's earlier
-// file has already applied. That is the harm the previous round closed for a
-// `--` inside a `'…'`, over again through the other spellings PostgreSQL
-// accepts;
+// file has already applied. That is the harm of a `--` inside a `'…'`, reached again
+// through the other spellings PostgreSQL accepts;
 // - the same two constructs leave the text *in*, so a body whose only mention of
 // the window is data it is writing answers "yes", gets wrapped, and its one
 // whole-table statement runs once per window over every row of the table —
