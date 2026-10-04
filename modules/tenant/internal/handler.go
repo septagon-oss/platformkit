@@ -33,7 +33,7 @@ import (
 // and no wildcard satisfies the grant even there.
 const path = "/tenants"
 
-// RegisterRoutes mounts the five control-plane routes.
+// RegisterRoutes mounts the five control-plane routes and the tenant's own two.
 //
 // They are written by hand rather than mounted from a rest.Spec because a
 // tenant is not a crud.Entity: it carries no tenant_id, so the generic
@@ -45,7 +45,12 @@ const path = "/tenants"
 // system transaction cannot widen a tenant one: db.Detached is what says so out
 // loud. The consequence is written down where it matters — a tenant created
 // here is created whether or not the response afterwards reaches the caller.
-func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
+func RegisterRoutes(s httpx.Surfaces, svc contracts.Service, invite contracts.Inviter, token tenancy.SystemToken) {
+	// The tenant's own door first, because it is the one a customer uses: the
+	// control-plane routes below all take a system transaction and name a tenant,
+	// and this one has no tenant to name.
+	mountOwnLanguages(s, svc)
+	r := s.Ops
 	system := func(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 		conn, ok := httpx.ConnFrom(ctx)
 		if !ok {

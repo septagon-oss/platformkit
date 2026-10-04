@@ -299,19 +299,21 @@ func (f *Fake) validLocales(in contracts.SetLocale) ([]string, error) {
 	spoken := f.spoken()
 	defaultTag, err := contracts.ValidLocale(in.Default)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		return nil, fmt.Errorf("%w: %s: %w", crud.ErrInvalid, contracts.CodeLanguageTag, err)
 	}
 	if spoken != nil && !spoken[defaultTag] {
-		return nil, fmt.Errorf("%w: %s is not a language this installation has copy for", crud.ErrInvalid, defaultTag)
+		return nil, fmt.Errorf("%w: %s: %s is not a language this installation has copy for",
+			crud.ErrInvalid, contracts.CodeLanguageUnusable, defaultTag)
 	}
 	set := make([]string, 0, len(in.Supported))
 	for _, tag := range in.Supported {
 		canonical, err := contracts.ValidLocale(tag)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+			return nil, fmt.Errorf("%w: %s: %w", crud.ErrInvalid, contracts.CodeLanguageTag, err)
 		}
 		if spoken != nil && !spoken[canonical] {
-			return nil, fmt.Errorf("%w: %s is not a language this installation has copy for", crud.ErrInvalid, canonical)
+			return nil, fmt.Errorf("%w: %s: %s is not a language this installation has copy for",
+				crud.ErrInvalid, contracts.CodeLanguageUnusable, canonical)
 		}
 		if canonical != defaultTag && !slices.Contains(set, canonical) {
 			set = append(set, canonical)

@@ -23,9 +23,11 @@ package internal
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 
 	g "maragu.dev/gomponents"
 
@@ -46,7 +48,7 @@ func (p pages) mountLanguages(app *httpx.Router) {
 	page.Serve(namespace(app, "tenant"), p.shell, page.Route{ID: "admin-languages", Method: http.MethodGet,
 		Path: p.at.languages.rel, Summary: "Which languages this tenant is served in"}, guard,
 		func(ctx context.Context, r page.Request, _ *page.Empty) (page.View, error) {
-			return p.languagesView(ctx, r, "")
+			return p.languagesView(ctx, r, nil)
 		})
 
 	page.Serve(namespace(app, "tenant"), p.shell, page.Route{ID: "admin-languages-set", Method: http.MethodPost,
@@ -79,8 +81,16 @@ func (p pages) mountLanguages(app *httpx.Router) {
 			if !named || refused.Status >= http.StatusInternalServerError {
 				return page.View{}, err
 			}
-			_, detail := rest.FieldErrors(refused, nil)
-			return p.languagesView(ctx, r, detail)
+			// What travels to the view is the refusal's *name* and the revision this
+			// form was drawn at, not the command's English sentence: the person reading
+			// this page reads it in their own language, and a reason that arrived as
+			// `crud: conflict: this declaration was read at revision 2 …` would be a
+			// page that declares Portuguese and answers in English over the one line
+			// that matters. The command's own error still reaches the log, which is
+			// where an English developer sentence belongs.
+			return p.languagesView(ctx, r, &refusal{
+				status: refused.Status, code: refusalCode(refused.Detail), readAt: expected,
+			})
 		})
 }
 
@@ -96,14 +106,67 @@ type languagesForm struct {
 // ui/resource's generated forms give, so one 422 means one thing in this shell.
 var unreadableForm = problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 
+// refusal is a declaration this page would not write, told in the facts the page
+// holds rather than in the words the command refused with.
+type refusal struct {
+	// status is what the command answered: 409 means somebody else's declaration
+	// went in first, any other 4xx is a pair the command would not accept at all.
+	status int
+	// code is the refusal's stable name — LANGUAGE_UNUSABLE, LANGUAGE_TAG,
+	// AUTH_DENIED — which is the part of a problem document that is not English.
+	code string
+	// readAt is the revision this very form was drawn at, which is the half of a
+	// stale refusal the person can act on and the half no re-read can recover.
+	readAt int64
+}
+
+// line is the refusal in the language the page is written in. The two revisions a
+// stale refusal names are the one this form brought and the one the row holds now,
+// both of which this request knows; the sentence that puts them in an order a
+// Portuguese reader reads is the catalogue's.
+func (n refusal) line(text func(key, fallback string, args ...any) string, heldAt int64) string {
+	switch {
+	case n.status == http.StatusConflict:
+		return text("stale", "This declaration was read at revision %d, and the tenant is on revision %d.",
+			n.readAt, heldAt)
+	case n.code == tenantcontracts.CodeLanguageUnusable:
+		return text("refused_unusable",
+			"No copy is shipped for that language, so this tenant cannot be served in it. Nothing was changed.")
+	case n.code == tenantcontracts.CodeLanguageTag:
+		return text("refused_tag", "That is not a language tag. Nothing was changed.")
+	case n.code != "":
+		return text("refused", "That declaration was refused (%s). Nothing was changed.", n.code)
+	}
+	return text("refused_unknown", "That declaration was refused. Nothing was changed.")
+}
+
+// refusalCode is the name a refusal carries. A problem's detail is `CODE: prose` for
+// a refusal kit/httpx or this module made, and `crud: invalid: CODE: prose` once
+// kit/rest has classified it; the name is the only part of either that a translator
+// cannot re-word.
+func refusalCode(detail string) string {
+	for _, prefix := range []string{"crud: invalid: ", "crud: conflict: ", "crud: not found: "} {
+		detail = strings.TrimPrefix(detail, prefix)
+	}
+	code, _, _ := strings.Cut(detail, ":")
+	for _, r := range code {
+		// A name is upper-case letters and underscores; anything else means this
+		// detail is prose from beginning to end and there is nothing to look up.
+		if r != '_' && !(r >= 'A' && r <= 'Z') {
+			return ""
+		}
+	}
+	return code
+}
+
 // languagesView is the page: the installation's languages on offer, this tenant's
 // declaration marked, and the warning above the save.
-func (p pages) languagesView(ctx context.Context, r page.Request, detail string) (page.View, error) {
-	text := func(key, fallback string) string {
+func (p pages) languagesView(ctx context.Context, r page.Request, notice *refusal) (page.View, error) {
+	text := func(key, fallback string, args ...any) string {
 		if r.Locale == nil {
-			return fallback
+			return fmt.Sprintf(fallback, args...)
 		}
-		return r.Locale.Text("admin.languages."+key, fallback)
+		return r.Locale.Text("admin.languages."+key, fallback, args...)
 	}
 	tx, live := httpx.TxFrom(ctx)
 	if !live {
@@ -150,10 +213,10 @@ func (p pages) languagesView(ctx context.Context, r page.Request, detail string)
 	// subtitle lands, so reading the page top-down gives title, what happened,
 	// what is on offer.
 	switch {
-	case detail != "":
+	case notice != nil:
 		body = append(body, components.Text(components.TextProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"role": "alert"}},
-			Content:        detail,
+			Content:        notice.line(text, current.Revision),
 			Color:          "danger",
 			Element:        "p",
 			Measure:        true,

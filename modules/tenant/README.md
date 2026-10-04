@@ -56,6 +56,19 @@ writers cannot each believe they are first.
   says holds `tenant:locale_manage`. It offers the languages this installation's
   catalogues carry and no others, and posts the pair with the revision the page was
   drawn at.
+- `GET /api/v1/tenant/languages` reads the declaration and the revision it is held
+  at; `PUT` to the same address replaces it. Both are the app surface, both are
+  guarded by `tenant:locale_manage`, both run on the request's own tenant
+  transaction, and no argument of either names a tenant — the request resolved to
+  one. They perform `SetOwnLocale`, the same command the page posts to, so the form
+  and the JSON door cannot decide one fact differently. `modules/admin` writes the
+  screen; this module writes the door, which is what a client that is not a browser
+  has to have.
+- The same write is discoverable: the module registers the `tenant/languages`
+  resource (a singleton — one declaration per tenant, no create, no delete) and
+  records the command beside it, so a shell generated from
+  `/api/v1/app/resources` offers the door rather than inventing one, and reads its
+  `endpoint` instead of guessing an address it cannot derive.
 - `tenants.locale_revision` is read: `SetOwnLocale` refuses a declaration read at a
   revision the row has left behind with `crud.ErrConflict`, so the person sees which
   declaration they overwrote rather than losing it.
@@ -69,8 +82,11 @@ writers cannot each believe they are first.
 
 ### Limits
 
-There is no JSON door of its own: the page is the door, and a `PUT
-/api/v1/tenant/languages` is the product's share, not this module's. The removal
+The screen at `/app/tenant/languages` is written by `modules/admin` and this module
+leaves it that way: registering the resource means the generated screens would
+collide with it, and the shell mounts the hand-written page instead (its own
+resource-screen check). What the resource carries is the API and the catalog entry,
+not a second page. The removal
 warning the page shows is the truthful generic one — this module keeps no inventory
 of what content exists in which language, and a count invented here would be a
 number nothing can check. The last language cannot be removed by construction: every
@@ -87,6 +103,11 @@ the outbox, and the `audit_events` row with a non-null actor; it then posts the 
 form against the revision it moved and shows none of the three changed.
 `apps/platformkit/tenant_languages_page_test.go` follows the link a dashboard gives
 the administrator and expects a page with controls for each served language.
+`modules/tenant/internal/language_api_route_test.go`
+(`TestTenantLanguagesHaveAnAppAPICommand`) mounts the manifest against a real
+`httpx.API` and refuses a build where the command has no `PUT
+/api/v1/tenant/languages` route, or where that route is on the wrong surface, or
+where the write is missing from resource command discovery.
 `modules/tenant/internal` covers the operator's door and the floor under the last
 language, and `own_row_column_rule_test.go` runs the column rule of 000031 at the
 application role: `slug`, `name`, `status`, `operator` and `created_at` are refused to
@@ -97,7 +118,7 @@ are not.
 
 ### Permissions
 
-The manifest in `modules/tenant/module.go` (`permissions`) declares two keys: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`), which guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts six routes with it: `list`, `create`, `read`, `suspend`, `add-host` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. The second key, `tenant:locale_manage`, guards nothing in `modules/tenant/internal/handler.go`: it is what the section above asks inside its own transaction, and what the admin page's sidebar link is offered on.
+The manifest in `modules/tenant/module.go` (`permissions`) declares two keys: `tenant:manage` (constant `PermissionTenantManage` in `modules/tenant/contracts/permissions.go`), which guards every route in the module and the "Tenants" nav entry for the screen `tenant/tenants`. `RegisterRoutes` in `modules/tenant/internal/handler.go` mounts six routes with it: `list`, `create`, `read`, `suspend`, `add-host` and `invite`. The `invite` route is mounted only when `Deps.Invite` is set. The second key, `tenant:locale_manage`, guards the tenant's own two routes — `GET` and `PUT /api/v1/tenant/languages`, mounted by `mountOwnLanguages` in `modules/tenant/internal/own_languages.go` on the app surface — and is the permission the resource above declares for both its read and its write. It is also what `SetOwnLocale` asks again inside its own transaction, which is what makes the route guard an early refusal rather than the whole answer, and what the admin page's sidebar link is offered on.
 
 ### Object scope
 
@@ -113,7 +134,7 @@ The code shows no ownership or separation-of-duties rule beyond these.
 
 ### Public faces
 
-None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for the kernel (`httpx.TenantLoader`), not a route. The module uses no `kit/limit`.
+None on the control plane. No route uses `httpx.Public()` — the tenant's own two routes are guarded by a permission and by being signed in, not by anonymity. `Service.ByHost` is host resolution for the kernel (`httpx.TenantLoader`), not a route. The module uses no `kit/limit`.
 
 ### The operator boundary
 
