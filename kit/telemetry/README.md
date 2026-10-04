@@ -109,7 +109,7 @@ claims: on `main` the merge is its own base, so both commands print 8 there and 
 dependency, and the tool reads that same boolean off `origin/main`, so its reading turns true.
 
 The ratio this delivery reports beside it — 102 of the 103 operation and module-declared
-boundaries, the composition's own four jobs (its relay, its two purges and its migration drain)
+boundaries, the composition's own five jobs (its relay, its three purges and its migration drain)
 excluded and named as excluded in `CHANGELOG.md` — is counted over that composition, which is the
 product's share: its operation term is the `operationId` entries of the contract the composition
 publishes (`apps/platformkit/testdata/openapi.json`, which a committed case refuses to let drift

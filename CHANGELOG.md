@@ -331,11 +331,11 @@ by construction. Both terms are counted over this composition rather than rememb
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
 the document the composition serves and which a committed case refuses to let drift
 from that file, and the two module terms are the jobs and subscriptions the
-composition's manifests register. That tally expressly does not count the four jobs
-this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
-`schema-backfill` — and the run span of each carries no tenant either, for the same
-reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
-tenant it could name would name none of them.
+composition's manifests register. That tally expressly does not count the five jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge`,
+`idempotency-purge` and `schema-backfill` — and the run span of each carries no tenant
+either, for the same reason `file-reconcile`'s does: each is one pass over every
+tenant's rows, so the one tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only
 boundary that does not. Each kind the tally counts is pinned
 by a case that reads a span back and asks whose tenant it names: an operation in
