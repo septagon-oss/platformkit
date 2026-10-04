@@ -116,7 +116,7 @@ func Load(fallback string, sources ...Source) Catalog {
 		}
 	}
 	return &files{messages: messages, tags: tags, fallback: fallbackTag,
-		matcher: language.NewMatcher(tags)}
+		matcher: language.NewMatcher(tags), carried: merged}
 }
 
 // Source is one owner's catalogues, as files, plus the key prefixes that
@@ -186,8 +186,16 @@ func read(source Source, fallback string) map[string]map[string]string {
 	entries := map[string]map[string]string{}
 	for _, path := range paths {
 		name := strings.TrimSuffix(path, ".json")
-		if _, err := language.Parse(name); err != nil {
+		tag, err := language.Parse(name)
+		if err != nil {
 			panic(fmt.Sprintf("xtext: %s/%s is not a supported language tag: %v", source.Name, path, err))
+		}
+		// `language.Parse` accepts the pseudo-locale's tag, so a file written in it
+		// would load and a page would declare a language a deployment serves. The
+		// pseudo copy is what a test wraps the real catalogue in
+		// (kit/locale/providers/pseudo); no source may ship it as a language.
+		if tag.String() == pseudoTag {
+			panic(fmt.Sprintf("xtext: %s/%s is the pseudo-locale tag, which belongs to the test provider and no catalogue may ship it", source.Name, path))
 		}
 		body, err := fs.ReadFile(source.FS, path)
 		if err != nil {
@@ -403,6 +411,12 @@ func verbs(copy string) string {
 	return strings.Join(slots, " ")
 }
 
+// pseudoTag is the pseudo-locale's BCP-47 tag, spelled out here rather than read
+// from kit/locale/providers/pseudo: that package must stay out of every production
+// dependency closure, and one tag string is the whole of what this refusal needs
+// from it. The refusal's own test is pseudo_test.go's TestNoSourceMayShipThePseudoTag.
+const pseudoTag = "en-XA"
+
 var verbPattern = regexp.MustCompile(`%(\[[0-9]+\])?([-+# 0]*[0-9.]*[a-zA-Z])`)
 
 // files is the provider Load composed: the merged copy, and the languages the
@@ -413,6 +427,24 @@ type files struct {
 	tags     []language.Tag
 	fallback language.Tag
 	matcher  language.Matcher
+	// carried is the merged copy, keyed by the tag spelled out then by the key. It is
+	// the same map Load already built for its own argument rule, read back.
+	carried map[string]map[string]string
+}
+
+// Carries says whether one language answers this key with copy of its own, rather
+// than with the readable text a call site passed. It exists because a formatter
+// cannot say: `Text` answers a key with no entry in exactly the same words it would
+// answer a translation that happens to read like its source, so the two look alike
+// from the page. The pseudo-locale gate asks, so the number it prints counts
+// sentences a translator has never been shown rather than sentences whose
+// Portuguese happens to match the English.
+//
+// A language nobody loaded carries nothing, which is the honest answer and not a
+// panic: this is a question about a file set, not a wiring error.
+func (f *files) Carries(language, key string) bool {
+	_, ok := f.carried[language][key]
+	return ok
 }
 
 // Languages is the set a request may be answered in, spelled as tags. A copy is
