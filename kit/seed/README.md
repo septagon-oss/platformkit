@@ -33,6 +33,16 @@ reconciliation logic. The reference application composes them in
 
 ## Limits
 
+A writer may carry a declared value as `Target.CreateOnly`: the fields its record's
+creation applies and no later run reconciles, because the declared value is read
+against the run's clock (`+3d` means three days from the run that wrote the row)
+and the field itself belongs to whoever holds the record afterwards. `Decide` never
+reads them, so a rerun of the same file reads as unchanged; `Create` applies them
+and `Update` must not. The alternative is a value that moves with every clock and
+so reports an update on every run forever, rewriting a field a person can change
+through its own screen. `apps/platformkit`'s task writer is the one writer that uses
+it, for a declared `dueAt`.
+
 The demo refusal reads `tenants.demo` under the run's own transaction, not the
 `tenancy.Tenant` value on the context, so a caller that builds its own tenant value
 cannot bring demo records to a tenant whose row says false. A prune whose owner row
@@ -43,7 +53,12 @@ somebody has deleted the row through the product.
 A command's seed run carries a person. `seedGrants` refuses one that carries
 nobody, and the command resolves `--as` to a user of the target tenant inside that
 tenant's own transaction before any grant is asked; the roles it checks are the
-rows the tenant holds, not a credential a caller asserts.
+rows the tenant holds, not a credential a caller asserts. Both of the people a run
+names are asked whether they can still sign in: `seedOperator` refuses an operator
+whose account the installation tenant has deactivated, and `seedActor` refuses a
+person named by `--as` who is not active, because a deactivated row keeps its hash
+and its roles and would otherwise authorise a write through somebody the tenant
+switched off.
 
 A tenant's own creation is the one run with nobody to ask, and it arrives through
 `Service.ApplyProvisioned` rather than through a hole in `Apply`. Its proof is

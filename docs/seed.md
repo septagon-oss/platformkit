@@ -158,16 +158,26 @@ records:
 The user writer injects `email`; creation calls `Invite`, then `SetRoles` and
 `SetPassword` through that service. The normal invitation event and its effects
 remain in force. The password is never a file field or plan value. On first
-creation only, it comes from `PLATFORMKIT_DEMO_PASSWORD`, or a freshly generated
-password shared for that person and printed once to stderr, where the run that
-hashed it stands. `Plan` never generates or displays a secret, and the server
-never logs one. The generated value is not returned through a create result:
-nothing in this checkout carries a secret out of a tenant hook to a request
-caller, and a password printed for a transaction that later rolled back names
-nobody's credential. What the managed `signIn` fact compares is whether the row
-holds a credential at all, so a rerun never resets a person's password and never
-repeats the print. Empty or invalid supplied passwords refuse at the user
-module's own policy before the row is written.
+creation only, it comes from `PLATFORMKIT_DEMO_PASSWORD`, or from a password this
+run generates for that one person. A generated value is handed to the caller that
+asked for the run and reaches no output stream on its own: `Apply` collects it,
+and `seedCommand` prints it once to stderr *after its transaction has committed*
+(`printMintedCredentials` in `apps/platformkit/seed_credentials.go`). Printing it
+from inside the write was the old shape, and it was wrong twice — a run that
+rolled back afterwards had already published a credential belonging to nobody, and
+the same hook also runs inside the server when an operator creates a `demo: true`
+tenant through the tenant route, where the process's two output streams are its
+log and the operator is on the far side of a socket. `Plan` never generates or
+displays a secret, and the server logs none. The generated value is not returned
+through a create result: nothing in this checkout carries a secret out of a tenant
+hook to a request caller, so **a deployment that creates demo tenants through the
+route and names no `PLATFORMKIT_DEMO_PASSWORD` gets people whose credential nobody
+can learn** — the hash is written, the password is not recoverable, and the
+walkthrough has nobody to sign in as. Set `demo.password`, or create the tenant and
+run `platformkit seed --demo`, which prints. What the managed `signIn` fact
+compares is whether the row holds a credential at all, so a rerun never resets a
+person's password and never repeats the print. Empty or invalid supplied
+passwords refuse at the user module's own policy before the row is written.
 
 **Demo binary (`demo/files.yaml`, keyless identity):**
 
@@ -226,15 +236,26 @@ path before this example can be applied successfully.
 apiVersion: platformkit.seed/v1
 resource: tasks
 records:
-  - key: welcome-tour
-    fields: {title: Take the tour, priority: normal, dueAt: "+3d"}
-    commands:
-      - {name: assign, user: "users/marta@example.test"}
+  - key: take-the-tour
+    fields:
+      title: Take the tour of the site
+      priority: high
+      dueAt: "+3d"
+      assignee: users/marta@example.test
 ```
 
-Task has no natural key, so `key` lives in `seed_keys`; the task writer calls
-the Spec write core and `task.Service.Assign`. A plain reference has grammar
-`<writer-alias>/<key>` in a writer-declared reference argument. The alias
+This is the file `apps/platformkit/seed/demo/tasks.yaml`, quoted as it is written.
+Task's natural key is `title` — the one line a task is named by, and the writer
+declares it — so a run finds a seeded task beside a manually created one with the
+same line, and `key` in the file addresses the record within the file. The writer
+declares **no commands**: assignment is the `assignee` reference field above, not
+a `commands:` entry, and `kit/seed` refuses a command a writer does not offer
+before it reads a row. A seeded task is created through the Spec write core and,
+where a person is named, assigned by `task.Service.Assign`.
+
+`dueAt` is resolved against the run's injected clock and applied when the record
+is **created** — see *Time, audit and external effects*. A plain reference has
+grammar `<writer-alias>/<key>` in a writer-declared reference argument. The alias
 and key are case-sensitive except for normalization performed by the owner's
 natural-key rule. The target must be in the files for this run, or already
 resolvable by its writer in this tenant; a missing target refuses with both
@@ -550,10 +571,16 @@ its own typed refusal, which is preserved with the same source wrapper.
    it is confined to a tenant that came into being in the same transaction and can
    only create. The demo password is config's `demo.password`
    (`PLATFORMKIT_DEMO_PASSWORD`), not a value the hook returns to its caller; no
-   generated secret travels through a create result. A deployment that names none
-   gets one minted per person by the seed's own `SetPassword` call and printed
-   once to stderr, because an invited person nobody can sign in as is not a
-   demonstration.
+   generated secret travels through a create result, because `tenant.Hook` returns
+   only an error and this delivery does not widen a contract owned by another task.
+   A deployment that names none gets one minted per person by the seed's own
+   `SetPassword` call. Where that minted value goes is decided by the run, not by
+   the writer: a command collects it and prints it once after its commit, and a
+   creation hook, which has no caller to hand it to, keeps the hash and prints
+   nothing — see the demo-password paragraph under *Files and grammar* and
+   `apps/platformkit/seed_credentials.go`. What this shape refuses to do is write a
+   minted credential to the process's output, which inside a running server is its
+   log.
 
 ## Time, audit and external effects
 
@@ -568,6 +595,13 @@ process timezone changes the result. Money, if a writer has any, remains
 At a pinned clock of 2026-10-01 10:30 UTC, a timestamp `+3d` is
 2026-10-04T10:30:00Z, a date `-2y` is 2024-10-01, and `monday 09:00` is
 2026-10-05T09:00:00Z.
+
+A relative date is read once, by the run that **creates** the record, and is not a
+value any later run reconciles (`Target.CreateOnly`; `kit/seed/README.md` names the
+rule). A declaration of `+3d` therefore gives the task a deadline three days after
+the tenant was seeded and then leaves it where a person can move it — a field
+whose declared value moves with every clock would report an update on every run
+forever, which is the opposite of this contract's idempotence rule.
 
 An event published during a seeded owner write carries the same W3C trace
 context as the run. The command creates one if none was received. Extend the
@@ -688,10 +722,11 @@ Two of the items this contract first asked for are **not delivered here**. A
 manual-write revision race has no owner to race against yet: no Spec in this
 checkout takes an expected revision, so a run serializes on the row locks
 `crud.GetForUpdate` takes until T-0138 lands one (see *Ordering, transaction and
-concurrency* above). And file orphan cleanup has nothing to sweep, because a seed
-run writes no file bytes: `apps/platformkit/seed.go` names three writers —
-content, site and user — and the starter and demo files declare pages, one site
-record and people's roles only.
+concurrency* above). And file orphan cleanup has nothing to sweep: a seed run
+uploads its one demo asset and writes no other file bytes —
+`apps/platformkit/seed.go` names five writers (content, site, user, task and
+file) and the starter and demo files declare pages, one site record, people's
+roles, three pieces of work and one image.
 
 ## Ten module questions and limits
 

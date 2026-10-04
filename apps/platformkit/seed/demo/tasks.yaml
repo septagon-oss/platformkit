@@ -5,12 +5,14 @@
 # same validation, the same task.created event, and, where a person is named, the
 # same task.assigned one.
 #
-# No deadline is declared here on purpose. The task module mounts its Spec with a
-# create hook that marks a task breached when its deadline is already behind it,
-# and that hook belongs to the route the hook was written for; a seed that named a
-# past deadline would be a seed that skipped the breach. Relative dates are the
-# seeder's grammar and the owners that take them through their service use it —
-# kit/seed/README.md's Limits names what this writer does not.
+# No deadline is declared on a task whose deadline is already behind it. The task
+# module mounts its Spec with a create hook that marks such a task breached, and
+# that hook belongs to the route it was written for; a seed that named a past
+# deadline would be a seed that skipped the breach. `dueAt` below is three days
+# ahead of the run that writes the row, which the seeder's own grammar resolves
+# against the run's clock and applies on creation only — kit/seed/README.md's
+# Limits and docs/seed.md's *Time, audit and external effects* say why a moving
+# value is never reconciled.
 apiVersion: platformkit.seed/v1
 resource: tasks
 records:
@@ -18,6 +20,7 @@ records:
     fields:
       title: Take the tour of the site
       priority: high
+      dueAt: "+3d"
       assignee: users/marta@example.test
   - key: write-the-first-page
     fields:
