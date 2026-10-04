@@ -32,7 +32,7 @@ it always did.
 **A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
 non-null `app` column (`migrations/000043_tenant_app`), stamped when the composition creates a tenant and
 never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
-all filter on it, and `tenants_operator` is unique per app rather than per database. The back-fill proves
+all filter on it, the installation a verb audits into included, and `tenants_operator` is unique per app rather than per database. The back-fill proves
 its input or refuses. A tenant already in the table joins this app when every host it holds is one the
 boot declares in `app.hosts`, or when an operator named it in `app.tenant_apps`; anything else is listed
 by slug and the migration writes nothing. `db.MigrateDeclaring` is the one door a boot has for a fact the
@@ -67,7 +67,7 @@ a name a tenant answers at could not be taken away, and ending a customer was no
 plane offered. Each publishes its own event (`tenant.renamed`, `tenant.reactivated`,
 `tenant.host_removed`, `tenant.deleted`), and each of the seven verbs that move a lifecycle now writes
 *two* audit rows in the transaction that wrote the column: one in the customer's own trail and one
-`tenant.lifecycle_recorded` mirror in the installation's, so "who suspended Acme, and when" is answered
+`tenant.lifecycle_recorded` mirror in the writing app's own installation, so "who suspended Acme, and when" is answered
 without reading a tenant's rows. `audit_events.traceparent` carries the request's W3C trace into both
 (`modules/audit`'s `000035_audit_context.up.sql` — expand-only, nullable, no backfill),
 which is what makes them one act rather than two rows that happen to share a second. A refusal writes

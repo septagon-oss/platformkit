@@ -523,20 +523,32 @@ func (s *Service) audience(tx db.Tx[db.System], subject *contracts.Tenant) (uuid
 	return s.installation(tx)
 }
 
-// installation is the operator tenant's id and slug — the scope every lifecycle
-// verb mirrors its row into. The predicate is the one the partial unique index
+// installation is this app's operator tenant — the scope every lifecycle verb of
+// this app mirrors its row into. The predicate is the one the partial unique index
 // tenants_operator serves, and the read is inside the writing transaction rather
 // than cached at boot, because which tenant is the installation's is a row and not
 // a build flag.
 //
+// It is scoped to the app like every other read here, and that is the whole of the
+// read's shape: migrations/000043 made tenants_operator unique on (app) rather than
+// on the constant true, so a database of many compositions holds one operator each,
+// and an unscoped `LIMIT 1` answers with whichever operator the table happens to
+// return first. The row an app mirrors into is the one whose audit its own operator
+// reads and whose app its own relay claims (kit/events' RelayApp claims an outbox
+// row by the tenant's app), so mirroring into another app's installation puts the
+// verb in a trail its own installation will never read — and names a customer that
+// trail has never seen.
+//
 // Answering none is a refusal, not an empty scope: a verb that cannot write both
-// audit rows writes neither. Every request that could reach one of these commands
-// was authorized at the operator tenant's own host, so the state this names is an
-// installation that is not installed — unreachable, and worth one query to say so
-// rather than to audit from one side.
+// audit rows writes neither, and another app's operator is not this app's
+// installation. Every request that could reach one of these commands was authorized
+// at the operator tenant's own host, so the state this names is an installation that
+// is not installed — unreachable, and worth one query to say so rather than to audit
+// from one side.
 func (s *Service) installation(tx db.Tx[db.System]) (uuid.UUID, error) {
 	var ids []uuid.UUID
-	err := tx.DB().Table("tenants").Where("operator AND deleted_at IS NULL").Limit(1).Pluck("id", &ids).Error
+	err := tx.DB().Table("tenants").
+		Where("operator AND app = ? AND deleted_at IS NULL", s.app.String()).Limit(1).Pluck("id", &ids).Error
 	if err != nil {
 		return uuid.Nil, crud.Classify(err)
 	}

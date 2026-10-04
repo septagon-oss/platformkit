@@ -27,14 +27,15 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 	acme := internal.NewService(nil, nil, "acme")
 	academy := internal.NewService(nil, nil, "academy")
 
-	// The installation's own tenant, which modules/tenant's Create now asks for before
-	// it writes anything: a schema that has never been bootstrapped holds no operator
-	// tenant to mirror a create's audit row into, and the create refuses. It is made by
-	// a service of no app, so it sits outside every app-scoped read below — the count
-	// this case asserts stays the count it was. The world gained a tenant; no
-	// expectation moved. main's `installed` helper, called here for the same reason
-	// every fixture in this package now calls it.
-	installed(t, conn, internal.NewService(nil, nil, ""))
+	// Each app's own installation, which modules/tenant's Create asks for before it
+	// writes anything: a lifecycle verb mirrors its audit copy into the installation of
+	// the app that is writing, and an installation of no app is no app's (that is what
+	// migrations/000043's tenants_operator unique on (app) says). So the world gains two
+	// tenants, one per app, and the reads below see this app's own installation as the
+	// tenant of this app that it is — while academy's is the row an app-blind read would
+	// answer with, which is the point of the count assertions.
+	installedAs(t, conn, acme, "acme-installation", "acme.ops.example.com")
+	installedAs(t, conn, academy, "academy-installation", "academy.ops.example.com")
 
 	mint := func(svc *internal.Service, slug, host string) uuid.UUID {
 		t.Helper()
@@ -68,13 +69,16 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 			t.Errorf("the other app's Get of acme's id = %v, want it as absent", err)
 		}
 
-		// The list an operator's screen reads is one app's tenants, and the count is
-		// the whole of the assertion: the second app's row is in the same table.
+		// The list an operator's screen reads is one app's tenants, and the names are
+		// the whole of the assertion: academy, its installation and its customer are in
+		// the same table and none of them appears here. Acme's own installation does,
+		// because it is a tenant of acme like any other — and it is first, because it
+		// was created first.
 		list, err := acme.List(ctx, tx)
 		if err != nil {
 			return err
 		}
-		if len(list) != 1 || list[0].Slug != "acme" {
+		if len(list) != 2 || list[0].Slug != "acme-installation" || list[1].Slug != "acme" {
 			names := make([]string, 0, len(list))
 			for _, tn := range list {
 				names = append(names, tn.Slug)
@@ -100,7 +104,11 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 	}
 
 	// One operator per app rather than per database: two installations that share
-	// the schema have nothing to do with each other, and each needs its own.
+	// the schema have nothing to do with each other, and each needs its own. Asked of
+	// two apps that have none yet — acme and academy installed theirs at the top of
+	// this case, and that is what a boot does.
+	beacon := internal.NewService(nil, nil, "beacon")
+	cedar := internal.NewService(nil, nil, "cedar")
 	operate := func(svc *internal.Service, slug string) error {
 		return dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			_, err := svc.Create(ctx, tx, contracts.NewTenant{
@@ -108,13 +116,13 @@ func TestTwoAppsOfOneDatabaseSeeNothingOfEachOther(t *testing.T) {
 			return err
 		})
 	}
-	if err := operate(acme, "acme-ops"); err != nil {
-		t.Errorf("acme's operator tenant: %v, want one operator per app", err)
+	if err := operate(beacon, "beacon-ops"); err != nil {
+		t.Errorf("beacon's operator tenant: %v, want one operator per app", err)
 	}
-	if err := operate(academy, "academy-ops"); err != nil {
-		t.Errorf("academy's operator tenant: %v, want one operator per app", err)
+	if err := operate(cedar, "cedar-ops"); err != nil {
+		t.Errorf("cedar's operator tenant: %v, want one operator per app", err)
 	}
-	if err := operate(acme, "acme-ops-again"); err == nil {
+	if err := operate(beacon, "beacon-ops-again"); err == nil {
 		t.Error("a second operator tenant inside one app was accepted; tenants_operator is unique on (app)")
 	} else if !errors.Is(err, crud.ErrConflict) {
 		t.Errorf("a second operator tenant of one app = %v, want the conflict the index answers", err)
