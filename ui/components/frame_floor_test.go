@@ -1,14 +1,14 @@
 package components
 
-// frame_floor_test.go pins the five properties of the frame the design floor
+// frame_floor_test.go pins the four properties of the frame the design floor
 // refuses without a browser: the tabbable brand link carries its own colour,
 // the inverse column names the colour that reads on it, the sentence in the
-// footer is bounded, a heading breaks a token no dictionary has, and so does
-// the breadcrumb carrying a record's name. Each is also a rule the sheet must
-// carry: ui/style/emission_test.go asserts that every enumerable class —
-// BreakAnywhere with them — compiles to a declaration. What that sheet paints
-// on a real element is read in the browser by e2e/frame-floor.spec.ts, because
-// Compose lives above this package.
+// footer is bounded, and the content region — not the heading, not the
+// breadcrumb — carries the one rule that breaks a token no dictionary has. Each
+// is also a rule the sheet must carry: ui/style/emission_test.go asserts that
+// every enumerable class — BreakAnywhere with them — compiles to a declaration.
+// What that sheet paints on a real element is read in the browser by
+// e2e/frame-floor.spec.ts, because Compose lives above this package.
 
 import (
 	"strings"
@@ -150,33 +150,36 @@ func TestTheInverseColumnNamesTheColourThatReadsOnIt(t *testing.T) {
 	}
 }
 
-// TestTheBreadcrumbBreaksTheNameItCarries: the current crumb is a row's name, and a name can be one
-// token nobody can hyphenate. overflow-wrap inherits, so the rule sits on the list and covers every
-// crumb, its separator and the links between them.
-func TestTheBreadcrumbBreaksTheNameItCarries(t *testing.T) {
+// TestTheFrameBreaksATokenNothingCanHyphenate: a row's name can be one token nobody can hyphenate — a
+// UUID pasted into a title, a commit hash, a URL — and a token with no break opportunity sets the
+// min-content width of the column it sits in, so the page scrolls sideways. overflow-wrap: anywhere is
+// the value that takes part in that sizing and the property inherits, so the frame's content region
+// carries the one rule and every heading, breadcrumb and table cell below it breaks. It may not sit on
+// those components: the design tool builds text only where the element itself computes ordinary line
+// breaking (`overflow-wrap: normal`), so a break rule on Heading or Breadcrumb leaves every card,
+// toolbar and document that contains one out of a client's design document. What the browser does with
+// the inherited value is read in e2e/frame-floor.spec.ts.
+func TestTheFrameBreaksATokenNothingCanHyphenate(t *testing.T) {
 	t.Parallel()
-	out := draw(t, Breadcrumb(BreadcrumbProps{Items: []BreadcrumbItem{
+	out := draw(t, Shell(ShellProps{}, ShellSlots{
+		Main: []g.Node{Heading(HeadingProps{Level: 1, Text: "Album"})},
+	}))
+	if cls := classOf(t, out, "<main", "<main"); !hasClass(cls, "break-anywhere") {
+		t.Errorf("the content region carries %q, so one unbreakable name widens the page it is on", cls)
+	}
+	// One rule, not three: the components the region holds carry none of their own, which is what keeps
+	// them projectable, and a second rule on a descendant would be the same defect one level down.
+	crumbs := draw(t, Breadcrumb(BreadcrumbProps{Items: []BreadcrumbItem{
 		{Label: "Tasks", Href: "/app/task/tasks"},
 		{Label: strings.Repeat("a", 60), Current: true},
 	}}))
-	if cls := classOf(t, out, "<ol", "<ol"); !hasClass(cls, "break-anywhere") {
-		t.Errorf("the breadcrumb list carries %q, so the record's own name widens the page it is on", cls)
-	}
-}
-
-// TestAHeadingBreaksAnUnbreakableToken: overflow-wrap: anywhere is the value
-// that takes part in intrinsic min-content sizing, so the long token in a
-// heading stops setting the width of the column it sits in. break-words is not,
-// which is why it would have been a rule that reads like the fix.
-func TestAHeadingBreaksAnUnbreakableToken(t *testing.T) {
-	t.Parallel()
-	for _, tc := range []struct {
-		level int
-		tag   string
-	}{{1, "<h1 "}, {2, "<h2 "}, {3, "<h3 "}} {
-		out := draw(t, Heading(HeadingProps{Level: tc.level, Text: "aaaaaaaaaaaa"}))
-		if cls := classOf(t, out, tc.tag, tc.tag); !hasClass(cls, "break-anywhere") {
-			t.Errorf("an h%d carries %q, so one long token in it widens the page", tc.level, cls)
+	for _, component := range []struct{ anchor, tag, markup string }{
+		{"<main", "<h1 ", out},
+		{"<ol", "<ol ", crumbs},
+	} {
+		if cls := classOf(t, component.markup, component.anchor, component.tag); hasClass(cls, "break-anywhere") {
+			t.Errorf("%s carries %q, so the design tool refuses it as text that breaks mid-word: "+
+				"the frame's content region already sets the rule and it inherits", component.tag, cls)
 		}
 	}
 }

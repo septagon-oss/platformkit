@@ -124,22 +124,21 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
 	//
-	// The frame's floor fixes move it again, twice over: three utilities
-	// and one colour pair join the sheet for the brand link, the footer's bound and
-	// the heading break, and then the inverse sidebar column gains a text colour and
-	// the breadcrumb a break rule. A leaf-by-leaf diff before and after those two
-	// commits changes /css and /sha256 and nothing else — no token, icon, example or
-	// schema — which is what this assertion has always had to be re-measured for.
+	// The frame's floor fixes move it: three utilities and one colour pair join the sheet for the brand
+	// link, the footer's bound and the frame's break rule, and the inverse sidebar column gains a text
+	// colour. A leaf-by-leaf diff before and after those two commits changes /css and /sha256 and nothing
+	// else — no token, icon, example or schema — which is what this assertion has always had to be
+	// re-measured for.
 	//
-	// The field's own measure moves it a third time, and this time the sheet does
-	// not: `max-w-sm` was already in it, bought by the footer's bound, so /css is
-	// byte-identical and what differs is 17 of the 6,406 leaves under `examples` —
-	// the rendered HTML of the thirteen input, select, textarea, form and
-	// table-empty examples, plus the four child span offsets the form example
-	// carries. No token, icon, schema or css leaf moves. Measured by exporting the
-	// tree before and after the four edited component files and walking both JSONs.
-	if legacy.SHA256 != "80454979b693ea804cc402676632b13d6dac2fbcd82c994907b629f32690df95" {
-		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
+	// The sentences under a control are bounded by the bound the footer's sentence already took, so /css
+	// does not move again; 17 of the 6,406 leaves under `examples` do — the rendered HTML of the input,
+	// select, textarea, form and table-empty examples, plus the child span offsets the form example
+	// carries. The field element itself bounds nothing: the design tool projects no composition whose own
+	// sizing is constrained, so a max-width on the field's flex column is a client's design document that
+	// no longer contains their forms (measured at this head: 44 refusals). The break rule that stops a
+	// page scrolling sideways sits on the frame's content region for the same reason — see clShellMain.
+	if legacy.SHA256 != "0a6afbdb05bffe2181177684f23a9ef59d142563a93e8b9f1fd4b26d55b04249" {
+		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
 	first := layoutExport(t, captures)

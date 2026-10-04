@@ -169,10 +169,14 @@ test('a record names itself, in the list, on the record and in the tab', async (
   await expect(page).toHaveTitle(new RegExp(member.name));
 });
 
-// Item 4, second half. A heading with no break rule lets one long token set the min-content width of
-// the column it sits in, so the page scrolls sideways — measured before the fix at *both* 390 and
-// 1440, which is the point: there was no rule to participate in sizing at all. overflow-wrap:
-// anywhere is the value that does; break-words is the one that reads like the fix and is not.
+// Item 4, second half. A page with no break rule lets one long token set the min-content width of the
+// column the heading sits in, so it scrolls sideways — measured before the fix at *both* 390 and 1440,
+// which is the point: there was no rule to participate in sizing at all. overflow-wrap: anywhere is the
+// value that does; break-words is the one that reads like the fix and is not. The rule sits on the
+// frame's content region and inherits, which is what makes this a measurement of the heading's *computed*
+// style rather than of a class on it: `components.clShellMain` sets it, and the Heading component
+// carries none of its own because the design tool projects text only where the element computes ordinary
+// line breaking.
 test('a heading breaks a token nothing can hyphenate', async ({ browser }) => {
   test.setTimeout(90_000);
   for (const width of [390, 1440]) {
@@ -187,7 +191,7 @@ test('a heading breaks a token nothing can hyphenate', async ({ browser }) => {
     console.log(`  overflowing @${width}px: ${JSON.stringify(m.overflowing.slice(0, 8))}`);
     expect(m.scroll_width_overflow, diagnosed(m, `a record titled with one ${unbreakable.length}-character token scrolls sideways at ${width}px`)).toBe(false);
     expect(box.right, `the heading itself is wider than the viewport at ${width}px`).toBeLessThanOrEqual(width);
-    expect(box.style, `the heading carries no break rule at ${width}px`).toBe('anywhere');
+    expect(box.style, `the heading inherits no break rule from the frame at ${width}px`).toBe('anywhere');
   }
 });
 

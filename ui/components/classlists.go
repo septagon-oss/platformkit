@@ -40,7 +40,20 @@ var (
 	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().
 			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
 			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
-	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6)
+	// clShellMain carries the break rule for everything the frame shows. A row's name can be one token
+	// nobody can hyphenate — a UUID pasted into a title, a commit hash, a URL — and a token with no break
+	// opportunity sets the min-content width of the flex column it sits in, so the page scrolls sideways.
+	// overflow-wrap: anywhere is the value that takes part in that sizing (break-words is not, which is why
+	// it reads like the fix and is not), and `overflow-wrap` inherits, so one rule on the content region
+	// reaches the heading, the breadcrumb, the table cell and the label. It sits here rather than on the
+	// heading because the design tool projects a component from what that component itself computes: its
+	// text rows and blocks are refused unless `overflow-wrap` and `word-break` are `normal` ("ordinary
+	// Unicode line breaking"), and a break rule on the Heading or Breadcrumb component made every card,
+	// toolbar and document that contains one unprojectable: 74 such refusals in its own suite at the
+	// head this cure replaces.
+	// Captured on its own, a component still computes `normal`, so the document it projects stays faithful
+	// to what was observed; the sideways-scrolling page is the frame's problem and the frame owns it here.
+	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6).BreakAnywhere()
 	clShellFooter = style.New().PaddingX(style.S6).PaddingY(style.S4).FontSize(style.TextXS).
 			TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
 	// clShellFooterMeasure bounds what a composition puts *inside* the footer. The footer itself keeps
@@ -246,15 +259,18 @@ var (
 			Transition(style.TransitionColors).Merge(clFocusRing)
 
 	// Inputs.
-	// A field is a column of copy with a control in it — label, control, help sentence, error — and the
-	// design floor refuses a body measure above 75 characters. A field takes the frame's measure by
-	// default: the same 24rem the footer's sentence and document.Bare's container take (64ch at the 12px
-	// a help line sets, 55ch at the 14px a label sets). A field that asks to span its grid column takes
-	// the other list and with it a control as wide as the column, which is why the two sentences below
-	// hold a bound of their own: on a full-width field the only thing between a 1100px paragraph and the
-	// floor is that bound. The two lists are alternatives rather than a merge because the sheet emits
-	// classes in sorted order, so a `max-w-none` could never override a `max-w-sm` on one element.
-	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).MaxWScaled(style.MaxWSM)
+	// A field is a column of copy with a control in it — label, control, help sentence, error. The two
+	// lists below are alternatives rather than a merge because the sheet emits classes in sorted order, so
+	// a `max-w-none` could never override a `max-w-sm` on one element.
+	//
+	// Neither list bounds the field's own width. A measure on this element — the same 24rem the footer's
+	// sentence takes — is what refused to reach a client's design document: the design tool projects a
+	// composition only when its sizing is unconstrained (`composition constrained sizing requires further
+	// conversion`), so a max-width on a flex column put every Input, Select, Textarea, Checkbox, Form and
+	// document selection out of the projection — 44 refusals at the head this cure replaces. The measure the design floor
+	// reads is the measure of the *sentences*, and those are paragraphs: they are bounded where they are
+	// written, on clHelp and clFieldErr below, which the projection carries as a wrapping paragraph.
+	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
 	clFieldWrapFull = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).Width(style.SFull)
 	clLabel         = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
 	// clHelp bounds the sentence the way clShellFooterMeasure bounds the frame's own: the floor divides a
@@ -419,12 +435,12 @@ var (
 	clTextNoWrap    = style.New().WhitespaceNowrap()
 	clTruncate      = style.New().Truncate()
 
-	// clHeadingBase carries the break rule every level inherits: a name that is one long token (a UUID
-	// pasted into a title, a commit hash, a URL) has no break opportunity, so it sets the min-content
-	// width of the column it sits in and the page scrolls sideways. overflow-wrap: anywhere is the value
-	// that participates in that sizing; break-words is not. See the case in e2e/.
+	// clHeadingBase carries no break rule of its own. A heading does have to break a token nothing can
+	// hyphenate, and it does so because the frame's content region sets overflow-wrap: anywhere and the
+	// property inherits — see clShellMain. On the component it would be refused by the design tool, which
+	// builds text only under ordinary Unicode line breaking.
 	clHeadingBase = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).
-			FontWeight(style.FontSemibold).BreakAnywhere()
+			FontWeight(style.FontSemibold)
 	clHeadingLevel = map[int]style.ClassList{
 		1: style.New().FontSize(style.Text3XL),
 		2: style.New().FontSize(style.Text2XL),
@@ -654,12 +670,12 @@ var (
 	clCardVertical   = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
 
 	// Breadcrumb.
-	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
-			ListStyle("none").Margin(style.S0).Padding(style.S0).BreakAnywhere()
 	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
-	// hyphenate (a UUID pasted into a title, a hash, a URL). overflow-wrap inherits, so one rule on the
-	// list covers every crumb and its separator; without it the entry measured 1352px wide inside a
-	// 390px viewport and the page scrolled sideways even after the heading below it broke.
+	// hyphenate: without a break rule the entry measured 1352px wide inside a 390px viewport and the page
+	// scrolled sideways. The rule that stops it is the frame's — clShellMain, inherited by every crumb and
+	// its separator — and not one on this list, which the design tool projects as text.
+	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
+			ListStyle("none").Margin(style.S0).Padding(style.S0)
 	clBreadcrumbSep = style.New().TextColor(style.FgTertiary)
 	clBreadcrumbCur = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium)
 

@@ -27,11 +27,14 @@ func wrapperClass(t *testing.T, node g.Node) string {
 	return ""
 }
 
-// TestEveryGeneratedControlSpansTheFormsMeasure: a field that asks for nothing
-// takes the frame's bounded measure, so the generated form has to ask for the
-// full one on every control it draws, or one form shows two widths (the selects
-// fell to 384px beside 1136px inputs on /app/task/tasks/new). The expected class
-// is read from the component itself, so this pins the request, not a class list.
+// TestEveryGeneratedControlSpansTheFormsMeasure: the generated form asks for the
+// full measure on every control it draws, so one form never shows two widths —
+// the shape that arrived on /app/task/tasks/new, where the selects fell to one
+// width beside inputs at another. The field element bounds nothing of its own
+// (clFieldWrap), so the request is what tells the two lists apart: an explicit
+// `width: 100%` against a field left to its container, which differs as soon as
+// a composition stops stretching its children. The expected class is read from
+// the component itself, so this pins the request, not a class list.
 func TestEveryGeneratedControlSpansTheFormsMeasure(t *testing.T) {
 	full := wrapperClass(t, components.Input(components.InputProps{Name: "x", FullWidth: true}))
 	bounded := wrapperClass(t, components.Input(components.InputProps{Name: "x"}))
