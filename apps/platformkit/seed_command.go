@@ -75,7 +75,12 @@ func seedCommand(args []string) error {
 	}
 
 	var plan seed.Plan
+	var minted []mintedCredential
 	err = app.RunCommand(context.Background(), cfg, func(ctx context.Context, system db.Tx[db.System]) error {
+		// Whatever passwords this run mints land in `minted` and are printed below,
+		// after the commit: a command line has somebody reading it, a create
+		// transaction has nobody, and neither of the two is a log.
+		ctx = withMinted(ctx, &minted)
 		// One trace for the run, minted here because a command line inherits no
 		// request to inherit one from. Every owner event the run causes carries
 		// it into the outbox (kit/events reads it there), which is what lets a
@@ -122,15 +127,21 @@ func seedCommand(args []string) error {
 		return err
 	}
 	fmt.Print(plan.String())
+	// After the plan, and after the commit: a credential printed for a run that
+	// then rolled back names a person who does not exist. This is the only place
+	// a minted password reaches an output stream, and the only run that reaches it
+	// is the one with somebody at the other end of it — see mintedCredential.
+	printMintedCredentials(minted)
 	return nil
 }
 
-// seedOperator asks the installation tenant's own user and role services two
-// questions: is the person behind the credential who they say they are, and does
-// that person hold tenant:manage where the installation lives. Both are reads of
-// rows, in the transaction the command already opened, through the modules that
-// own those rows — the same three reads kit/httpx makes of a request, with the
-// request replaced by a credential no shell history holds.
+// seedOperator asks the installation tenant's own user and role services three
+// questions: is the person behind the credential who they say they are, can that
+// person still sign in, and does that person hold tenant:manage where the
+// installation lives. All three are reads of rows, in the transaction the command
+// already opened, through the modules that own those rows — the same three reads
+// kit/httpx makes of a request, with the request replaced by a credential no shell
+// history holds.
 //
 // tenant:manage is the permission the command is actually exercising: it acts on
 // a tenant other than the operator's own. A tenant's administrator is not by
@@ -155,6 +166,16 @@ func seedOperator(ctx context.Context, c composition, system db.Tx[db.System], c
 		}
 		if !person.CheckPassword(cfg.Seed.OperatorPassword) {
 			return errors.New("seed: the operator credential matches nobody: this run writes nothing")
+		}
+		// Asked after the password, so a wrong credential never reports that the
+		// address it names has been switched off, and asked at all because a hash
+		// and a set of roles survive a deactivation: the row keeps everything that
+		// would make its old password a seed grant. CanSignIn is the user module's
+		// own answer, and the one kit/httpx asks of a session — which is the
+		// promise this function's comment makes, and a promise a deactivated
+		// operator's credential cannot keep.
+		if !person.CanSignIn() {
+			return fmt.Errorf("seed: %s is not an active person of the installation tenant, so this run names no operator", cfg.Seed.OperatorEmail)
 		}
 		held, err := c.auth.Permissions(ctx, tx, []string(person.Roles))
 		if err != nil {

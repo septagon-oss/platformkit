@@ -15,7 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"mime"
-	"os"
 	"path"
 	"slices"
 	"strings"
@@ -185,10 +184,20 @@ func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resou
 // What goes on the context is the principal and not the actor, for the reason
 // spelled out where the two are set below: a seeded row says who ran it, and does
 // not claim somebody signed in to write it.
+//
+// The person must be an active one. A deactivated row keeps its hash and its
+// roles, and a run that read the roles anyway would authorise a write through a
+// person the tenant has switched off — the same reason kit/httpx refuses a
+// session whose user is not active, on the side of the run that names who the
+// writes belong to rather than the side that proves who is standing at the
+// terminal (see seedOperator).
 func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Tenant], email string) (context.Context, error) {
 	person, err := users.ByEmail(ctx, tx, email)
 	if err != nil {
 		return ctx, fmt.Errorf("seed: this run writes as %s, who is not a person of this tenant: %w", email, err)
+	}
+	if person.Status != usercontracts.StatusActive {
+		return ctx, fmt.Errorf("seed: this run writes as %s, who is %s and not an active person of this tenant, so this run names nobody", email, person.Status)
 	}
 	// The principal, and deliberately not the actor. tenancy.Actor means "the
 	// person whose session this is", and no session wrote a seeded row: the run
@@ -418,9 +427,10 @@ type userSeeder struct {
 	users usercontracts.Service
 	// demoPassword is config's Demo.Password: the one password a demonstration's
 	// people sign in with. It is the deployment's answer to a record that asks for
-	// a credential, and an empty one asks the run to mint a per-person password
-	// and print it once — see commands. The loader refuses any seed field named
-	// for a password, so this value has exactly one door into a seed run.
+	// a credential, and an empty one asks the run to mint one per person and hand
+	// it to the caller that ran it — see commands and mintedCredential. The loader
+	// refuses any seed field named for a password, so this value has exactly one
+	// door into a seed run.
 	demoPassword string
 }
 
@@ -553,7 +563,7 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 	// row holds a hash the answer is settled — see signInHeld — so the deployment
 	// password reaches an invited person and never overwrites a chosen one.
 	if seedText(t.Fields["signIn"]) == signInDeclared && row.PasswordHash == "" {
-		password, generated := w.demoPassword, false
+		password := w.demoPassword
 		if password == "" {
 			// No deployment answer means this demonstration names its people but
 			// not their credential, and an invited person who cannot be signed in
@@ -562,20 +572,17 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 			if password, err = generatePassword(); err != nil {
 				return seed.Snapshot{}, err
 			}
-			generated = true
+			// The minted secret goes to whoever asked for this run and not to the
+			// process's output — see mintedCredential. A run nothing is collecting
+			// for keeps only the hash, which is the honest answer for a create
+			// transaction with no caller on the other side to receive it.
+			mintInto(ctx, row.Email, password)
 		}
 		if err := w.users.SetPassword(ctx, tx, row.ID, password); err != nil {
 			return seed.Snapshot{}, err
 		}
 		if row, err = w.users.Get(ctx, tx, row.ID); err != nil {
 			return seed.Snapshot{}, err
-		}
-		// To stderr, once, and never to a log: it is a password, and after this
-		// line nothing holds it but the hash. A create transaction that rolls back
-		// after printing discards the person it was minted for, and the line then
-		// names a credential that belongs to nobody.
-		if generated {
-			fmt.Fprintf(os.Stderr, "\n  password for %s: %s\n  It is not stored and will not be shown again.\n\n", row.Email, password)
 		}
 	}
 	fields := map[string]any{
@@ -613,7 +620,7 @@ func (taskSeeder) Resource() seed.Resource {
 	}
 }
 
-func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
+func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, now time.Time) (seed.Target, error) {
 	priority := seedText(r.Fields["priority"])
 	if priority == "" {
 		priority = taskcontracts.PriorityNormal
@@ -637,9 +644,25 @@ func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string
 			assignee = id
 		}
 	}
-	return seed.Target{Fields: map[string]any{
+	target := seed.Target{Fields: map[string]any{
 		"title": seedText(r.Fields["title"]), "priority": priority, "assignee": assignee,
-	}}, nil
+	}}
+	// A declared deadline reaches its owner. `dueAt: "+3d"` is the seed format's
+	// relative date and the run's clock is what resolves it — the same instant the
+	// row's own timestamps came from — so the demonstration's work is due when the
+	// file that opened it says it is. It is a create-only fact for the reason
+	// kit/seed/decide.go gives: a deadline is a person's field once the task
+	// exists, and a value that moves with the clock is never reconciled. A date the
+	// grammar does not read is refused here, at the record's own line, and the run
+	// writes nothing.
+	if expr := seedText(r.Fields["dueAt"]); expr != "" {
+		due, err := seed.ResolveDate(now, expr, false)
+		if err != nil {
+			return seed.Target{}, fmt.Errorf("dueAt: %w", err)
+		}
+		target.CreateOnly = map[string]any{"dueAt": due}
+	}
+	return target, nil
 }
 
 func (taskSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, forUpdate bool) (seed.Snapshot, error) {
@@ -675,6 +698,7 @@ func (taskSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, f
 func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
 	row, err := task.Spec.CreateRow(ctx, tx, &taskcontracts.Task{
 		Title: seedText(t.Fields["title"]), Priority: seedText(t.Fields["priority"]),
+		DueAt: seedTime(t.CreateOnly["dueAt"]),
 	})
 	if err != nil {
 		return seed.Snapshot{}, err
@@ -684,7 +708,10 @@ func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 
 // Update changes the priority and, where the file names a different person,
 // assigns. The title is how the record was found, so it is not in the patch: a
-// run that renamed a task would be a run that closed one and wrote another.
+// run that renamed a task would be a run that closed one and wrote another. The
+// deadline is not in the patch either, and for the same kind of reason: the file
+// declared it as the record's creation date plus a span (see Target), and a
+// person who moved it through the task screen moved it for good.
 func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
 	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{"priority": seedText(t.Fields["priority"])})
 	if err != nil {
@@ -867,6 +894,20 @@ func seedText(v any) string {
 	// spaces around it, so a target that kept them would differ from the stored
 	// row on every run forever. The canonical value is the one the owner keeps.
 	return strings.TrimSpace(s)
+}
+
+// seedTime is a create-only date read the way its owner's field is stored: a
+// pointer, with anything else read as no date at all rather than as a zero one.
+// A date only ever arrives here from a writer that resolved it in Target, so
+// anything but a time.Time is a writer that put the wrong thing in the map — and
+// "no deadline" is the answer a wrong value earns, not a midnight nobody asked
+// for.
+func seedTime(v any) *time.Time {
+	t, ok := v.(time.Time)
+	if !ok {
+		return nil
+	}
+	return &t
 }
 
 // seedCommands names the commands a record asks for out of the ones its writer
