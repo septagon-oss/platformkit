@@ -6,7 +6,7 @@ package internal
 // declaration, replace it at the revision it was read at, refuse a language with no
 // copy and an empty default, publish one event. What it did not have was an address.
 // The only way in was the HTML page modules/admin writes, which makes the fact
-// unreachiable from anything that is not a browser — a native shell reading
+// unreachable from anything that is not a browser — a native shell reading
 // /api/v1/app/resources found a tenant it could not set the language of, and a
 // script that wanted to move a customer to Portuguese had to post form fields at a
 // screen. So: GET and PUT at the module's own app address, both performing the one
