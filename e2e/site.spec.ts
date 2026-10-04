@@ -16,9 +16,15 @@ const slug = `welcome-${stamp}`;
 test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
+  // The frame enters the workspace at its root: the address the public page is
+  // allowed to offer is /app, and the root is what turns a visitor who has no
+  // session towards the form. The link is therefore followed rather than the form
+  // navigated to directly — the journey goes through the only door a public page
+  // may name and still arrives at the same form and the same landing.
+  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app');
 
-  await page.goto('/app/admin/login');
+  await page.getByRole('link', { name: 'Sign in to the admin' }).click();
+  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
