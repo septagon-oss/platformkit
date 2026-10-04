@@ -112,7 +112,11 @@ where the write is missing from resource command discovery.
 language, and `own_row_column_rule_test.go` runs the column rule of 000031 at the
 application role: `slug`, `name`, `status`, `operator` and `created_at` are refused to
 the tenant's own transaction, and `default_locale`, `locale_revision` and `updated_at`
-are not.
+are not. The tenant's own command is decided by the shared suite, not by a case in one
+world: `contracts/tenanttest` exercises `SetOwnLocale` — the grant it rechecks, the
+revision it compares, the declaration it already holds — through `RunService`, which
+both the fake and the SQL service pass, so a fake that drifted from the service on any
+of the three is a red suite and not a consumer that tested against the wrong answer.
 
 ## Authorization
 

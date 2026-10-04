@@ -10,6 +10,7 @@ package tenanttest
 import (
 	"context"
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 
@@ -34,6 +35,31 @@ type Fixture struct {
 	// makes "an idempotent command says nothing" a thing the suite can check,
 	// rather than a claim the returned entity cannot support.
 	Published func() []string
+	// OwnWorld builds a committed world with seed and then runs body as the tenant
+	// seed created. A self-only command — the one where no id names the subject —
+	// takes a tenant transaction, which is a second transaction on a second
+	// connection, and a second transaction cannot act on a tenant this one wrote
+	// and never committed. So the world such a command needs is a world of its own,
+	// and only the harness that opens a connection can build it. Required by the
+	// cases in ownCases, which fail rather than skip without it.
+	OwnWorld func(seed func(context.Context, db.Tx[db.System]) (*contracts.Tenant, error), body func(Own) error) error
+	// LocaleDoor opens or closes the door `SetOwnLocale` rechecks inside its own
+	// transaction: false is somebody inside their own tenant who does not hold
+	// locale_manage. Both harnesses wire it because both decide it — the service
+	// asks the authorizer composition wired, the fake answers from the knob — and a
+	// guard tested against one implementation is a guard the other can skip quietly.
+	LocaleDoor func(allowed bool)
+}
+
+// Own is one case's world seen from inside the tenant: the transaction a request
+// to this tenant's own host would run in, and the events that world has published,
+// reported the way Fixture.Published reports them. A case about a self-only command
+// reads these and not the fixture's because the two worlds are two transactions: the
+// declaration and its trail belong to the one that wrote them.
+type Own struct {
+	Ctx       context.Context
+	Tx        db.Tx[db.Tenant]
+	Published func() []string
 }
 
 // Harness builds one Fixture and calls run with it. It is written this way
@@ -45,7 +71,9 @@ type Harness func(t *testing.T, run func(Fixture))
 // contracts.Service passes it, or it is not one.
 func RunService(t *testing.T, h Harness) {
 	t.Helper()
-	for name, run := range cases() {
+	all := cases()
+	maps.Copy(all, ownCases())
+	for name, run := range all {
 		t.Run(name, func(t *testing.T) {
 			h(t, func(f Fixture) { run(t, f) })
 		})
@@ -383,6 +411,169 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 	}
+}
+
+// ownCases is the tenant's own declaration of its languages: the only command in
+// this contract whose subject is the transaction it is given. It is in the shared
+// suite rather than only in the module's own Postgres tests because both
+// implementations decide it — the service rechecks the grant, locks the one row
+// row-level security leaves it, counts the revision and refuses a stale one, the
+// fake keeps a map and copies each rule — and a fake that drifted would let every
+// module that tests against it accept a declaration the shipped service refuses.
+func ownCases() map[string]func(*testing.T, Fixture) {
+	// own builds the world and then speaks as the tenant inside it. Two doors have
+	// to be wired before any decision below means anything: the committed tenant to
+	// be inside and an answer at the grant the command rechecks. A harness that
+	// wired neither would run these cases against no world at all, and its
+	// refusals would read as decisions.
+	own := func(t *testing.T, f Fixture, body func(*testing.T, Fixture, Own)) {
+		t.Helper()
+		if f.OwnWorld == nil || f.LocaleDoor == nil {
+			t.Fatal("this harness wired neither Fixture.OwnWorld nor Fixture.LocaleDoor, " +
+				"so the tenant's own language command is untested against this implementation")
+		}
+		f.LocaleDoor(true)
+		err := f.OwnWorld(func(ctx context.Context, tx db.Tx[db.System]) (*contracts.Tenant, error) {
+			return f.Service.Create(ctx, tx, acme())
+		}, func(w Own) error {
+			body(t, f, w)
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("acting as the tenant: %v", err)
+		}
+	}
+	// held is the declaration as the tenant's own transaction reads it — the read a
+	// refusal is checked against, because "nothing was written" is a claim about the
+	// row, not about what the refused call happened to return.
+	held := func(t *testing.T, f Fixture, w Own) contracts.Locale {
+		t.Helper()
+		got, err := f.Service.OwnLocale(w.Ctx, w.Tx)
+		if err != nil {
+			t.Fatalf("OwnLocale: %v", err)
+		}
+		return got
+	}
+	return map[string]func(*testing.T, Fixture){
+		"a tenant declares the languages it is served in": func(t *testing.T, f Fixture) {
+			own(t, f, func(t *testing.T, f Fixture, w Own) {
+				born := held(t, f, w)
+				got, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{
+					Default: "pt-PT", Supported: []string{"en", "PT-pt", "pt-PT"},
+				})
+				if err != nil {
+					t.Fatalf("SetOwnLocale: %v", err)
+				}
+				if got.DefaultLocale != "pt-PT" || !slices.Equal(got.Locales, []string{"en"}) {
+					t.Errorf("the tenant is served in %q with %v, want pt-PT with en behind it, spelled once", got.DefaultLocale, got.Locales)
+				}
+				// The count is what the next declaration is compared against, and the
+				// command that made the change is the one that moves it.
+				if got.LocaleRevision != born.Revision+1 {
+					t.Errorf("the revision is %d after one accepted declaration, want %d", got.LocaleRevision, born.Revision+1)
+				}
+				if after := held(t, f, w); after.Default != "pt-PT" || !slices.Equal(after.Supported, []string{"en"}) || after.Revision != born.Revision+1 {
+					t.Errorf("the tenant's own transaction reads %+v, want the declaration it just made", after)
+				}
+				if n := len(ownDeclarations(w)); n != 1 {
+					t.Errorf("the tenant's transaction published %d locale_set events, want the one its declaration is", n)
+				}
+			})
+		},
+
+		"the declaration the tenant already holds changes nothing and says nothing": func(t *testing.T, f Fixture) {
+			own(t, f, func(t *testing.T, f Fixture, w Own) {
+				in := contracts.SetLocale{Default: "pt-PT", Supported: []string{"en"}}
+				first, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, held(t, f, w).Revision, in)
+				if err != nil {
+					t.Fatalf("SetOwnLocale: %v", err)
+				}
+				// The same pair again, brought at the revision the first declaration was
+				// read at: an operator who retried the request that already landed changed
+				// nothing, so nothing is written, nothing is counted and nothing is said —
+				// however old the revision the retry carries.
+				again, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, first.LocaleRevision-1, in)
+				if err != nil {
+					t.Fatalf("SetOwnLocale again: %v", err)
+				}
+				if again.LocaleRevision != first.LocaleRevision {
+					t.Errorf("the repeat moved the revision to %d, where it was %d", again.LocaleRevision, first.LocaleRevision)
+				}
+				if n := len(ownDeclarations(w)); n != 1 {
+					t.Errorf("the tenant's transaction published %d locale_set events, want the one its declaration is", n)
+				}
+			})
+		},
+
+		"a declaration read at an old revision is refused and writes nothing": func(t *testing.T, f Fixture) {
+			own(t, f, func(t *testing.T, f Fixture, w Own) {
+				born := held(t, f, w)
+				if _, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
+					contracts.SetLocale{Default: "pt-PT", Supported: []string{"en"}}); err != nil {
+					t.Fatalf("SetOwnLocale: %v", err)
+				}
+				// Somebody else declared in the meantime, and this form still says it was
+				// read before that. Winning the row would erase the other declaration, so
+				// the stale one loses — and loses without a trace, the same as every other
+				// refusal.
+				_, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision,
+					contracts.SetLocale{Default: "en", Supported: []string{"pt-PT"}})
+				if !errors.Is(err, crud.ErrConflict) {
+					t.Errorf("a declaration read at revision %d = %v, want ErrConflict", born.Revision, err)
+				}
+				after := held(t, f, w)
+				if after.Default != "pt-PT" || !slices.Equal(after.Supported, []string{"en"}) || after.Revision != born.Revision+1 {
+					t.Errorf("the refused declaration left %+v behind; a refusal writes nothing", after)
+				}
+				if n := len(ownDeclarations(w)); n != 1 {
+					t.Errorf("the tenant's transaction published %d locale_set events, want the one its declaration is", n)
+				}
+			})
+		},
+
+		"somebody inside the tenant without the grant to manage its languages is refused": func(t *testing.T, f Fixture) {
+			own(t, f, func(t *testing.T, f Fixture, w Own) {
+				born := held(t, f, w)
+				f.LocaleDoor(false)
+				row, err := f.Service.SetOwnLocale(w.Ctx, w.Tx, born.Revision, contracts.SetLocale{Default: "pt-PT"})
+				if err == nil {
+					t.Error("a caller with no locale_manage wrote the tenant's languages")
+				}
+				if row != nil {
+					t.Errorf("the refusal returned a tenant row %+v; a refusal answers with nothing", row)
+				}
+				// The shape of the refusal — which problem document, which code — belongs
+				// to the door that answers it, and is held there. What this suite holds
+				// both implementations to is the decision and the untouched row: a fake
+				// that let this caller through would pass every module that tests against
+				// it a declaration the shipped service refuses.
+				if after := held(t, f, w); after.Default != born.Default || !slices.Equal(after.Supported, born.Supported) || after.Revision != born.Revision {
+					t.Errorf("the refusal left %+v, where the tenant was %+v", after, born)
+				}
+				if n := len(ownDeclarations(w)); n != 0 {
+					t.Errorf("a refused declaration published %d locale_set events; a refusal says nothing", n)
+				}
+			})
+		},
+	}
+}
+
+// ownDeclarations counts the language events in the tenant's own world, so a case
+// reads the fact it is about rather than the tenant's creation, which the world was
+// built with. Both harnesses report their whole list — the real one reads its own
+// transaction's outbox rows, the fake its own record — and the same filter decides
+// both, which is the point of a shared suite.
+func ownDeclarations(w Own) []string {
+	if w.Published == nil {
+		return nil
+	}
+	var got []string
+	for _, name := range w.Published() {
+		if name == contracts.EventLocaleSet {
+			got = append(got, name)
+		}
+	}
+	return got
 }
 
 // published asserts the exact sequence of events, which is how an idempotent

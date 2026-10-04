@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/google/uuid"
@@ -28,14 +29,18 @@ var errRollback = errors.New("rolled back on purpose")
 func TestServiceConforms(t *testing.T) {
 	tenanttest.RunService(t, func(t *testing.T, run func(tenanttest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-		// Built with the dependency the reference application passes, not with nil:
-		// a suite run against a service missing it tests a service nobody composes,
-		// and the cases below that read the installation's languages would be silent.
-		svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+		// Built with the dependencies the reference application passes, not with nil:
+		// a suite run against a service missing them tests a service nobody composes,
+		// and the cases below that read the installation's languages, or ask whether
+		// this caller may write at all, would be silent.
+		door := &localeDoor{allowed: true}
+		svc := internal.NewServiceWithLocaleManager(nil, tenanttest.InstallationLanguages(), door)
 		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
 				Ctx: ctx, Tx: tx, Service: svc,
-				Published: func() []string { return outbox(t, tx) },
+				Published:  func() []string { return outbox(t, tx) },
+				LocaleDoor: door.allow,
+				OwnWorld:   ownWorld(t, conn),
 			})
 			return errRollback
 		})
@@ -45,10 +50,72 @@ func TestServiceConforms(t *testing.T) {
 	})
 }
 
+// localeDoor is the Postgres harness's contracts.LocaleManager: one answer a case
+// flips. It is the same switch the fake's AllowSetOwnLocale is, so the shared
+// suite drives both implementations through the same door.
+type localeDoor struct {
+	mu      sync.Mutex
+	allowed bool
+}
+
+func (d *localeDoor) MaySetOwnLocale(context.Context, db.Tx[db.Tenant]) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.allowed, nil
+}
+
+func (d *localeDoor) allow(allowed bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.allowed = allowed
+}
+
+// ownWorld is the Postgres harness's Fixture.OwnWorld. seed runs in a transaction
+// of its own that commits: a tenant-scoped transaction is a second transaction on
+// a second connection, and the only tenant it can act on is one another
+// transaction committed. body then runs as that tenant — the tenant in its context
+// is the setting row-level security binds its own connection to — and whatever it
+// did is rolled back when it returns, as the fixture's own transaction is, because
+// a case reads its world from inside and the schema outlives neither.
+func ownWorld(t *testing.T, conn *db.Conn) func(
+	seed func(context.Context, db.Tx[db.System]) (*contracts.Tenant, error),
+	body func(tenanttest.Own) error,
+) error {
+	return func(seed func(context.Context, db.Tx[db.System]) (*contracts.Tenant, error), body func(tenanttest.Own) error) error {
+		var who tenancy.Tenant
+		if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			created, err := seed(ctx, tx)
+			if err != nil {
+				return err
+			}
+			who = created.Tenancy()
+			return nil
+		}); err != nil {
+			return err
+		}
+		err := db.Run(tenancy.WithTenant(t.Context(), who), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			if err := body(tenanttest.Own{
+				Ctx: ctx, Tx: tx,
+				Published: func() []string { return outbox(t, tx) },
+			}); err != nil {
+				return err
+			}
+			return errRollback
+		})
+		if err != nil && !errors.Is(err, errRollback) {
+			return err
+		}
+		return nil
+	}
+}
+
 // outbox is what has been published in this transaction, in order. It is what
 // makes the suite's silence assertions real: an idempotent command that
-// published a second time is visible here and nowhere else.
-func outbox(t *testing.T, tx db.Tx[db.System]) []string {
+// published a second time is visible here and nowhere else. Either transaction may
+// be named, because a control-plane case publishes into a cross-tenant one and a
+// tenant's own command publishes into its tenant one; in both the rows a caller
+// may see are the ones its own transaction wrote.
+func outbox[S db.Scope](t *testing.T, tx db.Tx[S]) []string {
 	t.Helper()
 	var names []string
 	err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Pluck("name", &names).Error

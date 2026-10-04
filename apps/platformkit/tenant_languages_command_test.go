@@ -32,7 +32,29 @@ import (
 // Referer, the session cookie the sign-in client already carries.
 func postLanguages(t *testing.T, cfg config.Config, client *http.Client, revision string) (int, string) {
 	t.Helper()
-	form := url.Values{"default": {"pt-PT"}, "supported": {"en"}, "localeRevision": {revision}}
+	return postLanguagesForm(t, cfg, client, url.Values{
+		"default": {"pt-PT"}, "supported": {"en"}, "localeRevision": {revision},
+	})
+}
+
+// postOtherLanguages submits the *other* declaration — English the default, Portuguese
+// behind it — at the revision a page was drawn at. A stale form that brought back the
+// pair the row already holds would be a retry of a write that landed, and the module
+// answers that with no write and no event at any revision (the shared suite case
+// "the declaration the tenant already holds changes nothing and says nothing" decides
+// it against both implementations). The form below is the case the revision floor
+// exists for: the row holds something else, so the write would lose it.
+func postOtherLanguages(t *testing.T, cfg config.Config, client *http.Client, revision string) (int, string) {
+	t.Helper()
+	return postLanguagesForm(t, cfg, client, url.Values{
+		"default": {"en"}, "supported": {"pt-PT"}, "localeRevision": {revision},
+	})
+}
+
+// postLanguagesForm is the request both forms above make, with redirects left for the
+// case to read: where a save lands is part of the answer under test.
+func postLanguagesForm(t *testing.T, cfg config.Config, client *http.Client, form url.Values) (int, string) {
+	t.Helper()
 	noRedirect := *client
 	noRedirect.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req, err := http.NewRequest(http.MethodPost, "http://"+cfg.Server.Addr+"/app/tenant/languages",
@@ -158,12 +180,16 @@ func TestAnAdministratorSetsTheTenantsLanguagesAndTheTrailHoldsIt(t *testing.T) 
 
 	// A stale write is refused and leaves nothing behind: not the row, not the
 	// count of events, not a second audit record. The old revision the person's
-	// other tab read is the evidence, and it stays the evidence.
+	// other tab read is the evidence, and it stays the evidence. The form brings the
+	// other declaration, deliberately: a stale form carrying the pair the row already
+	// holds changes nothing and is answered as a retry, further down, and neither
+	// case is the one the floor below is for. What the floor is for is this form —
+	// the row holds something else, so letting it through would lose a declaration.
 	// A page refuses by answering itself, with the sentence above the form — the
 	// same choice the roles screen makes, so nobody loses the set they were choosing.
 	// What is asserted is that the answer is not a redirect (the write did not
 	// happen), that it names the revision, and that nothing below it moved.
-	code, body := postLanguages(t, cfg, admin, before)
+	code, body := postOtherLanguages(t, cfg, admin, before)
 	if code == http.StatusSeeOther {
 		t.Errorf("a stale languages form redirected as if it had written")
 	}
@@ -185,6 +211,34 @@ func TestAnAdministratorSetsTheTenantsLanguagesAndTheTrailHoldsIt(t *testing.T) 
 	}
 	if still := revision(); still != after {
 		t.Errorf("the refused write moved locale_revision from %s to %s", after, still)
+	}
+
+	// The other half of the same floor, at the same stale revision: a form carrying
+	// the pair the row already holds — a browser retry of a save that landed, an
+	// administrator who pressed save twice. Nothing would change if it were applied,
+	// so nothing is applied: the page answers the way a save does and the row, the
+	// revision and the trail stay where the accepted write left them. This is the
+	// composition's share of the suite case "the declaration the tenant already
+	// holds changes nothing and says nothing".
+	if code, body := postLanguages(t, cfg, admin, before); code != http.StatusSeeOther {
+		t.Errorf("a stale form carrying the declaration the tenant holds = %d, want 303 like any saved form: %s",
+			code, firstLineOf(body))
+	}
+	if still := revision(); still != after {
+		t.Errorf("a form carrying the declaration already held moved locale_revision from %s to %s", after, still)
+	}
+	var retriedEvents, retriedAudits int
+	if err := owner.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM platformkit_outbox WHERE name = 'tenant.locale_set'`).Scan(&retriedEvents); err != nil {
+		t.Fatal(err)
+	}
+	if err := owner.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM audit_events WHERE name = 'tenant.locale_set'`).Scan(&retriedAudits); err != nil {
+		t.Fatal(err)
+	}
+	if retriedEvents != eventsAgain || retriedAudits != auditsAgain {
+		t.Errorf("the retry left %d events and %d audit rows, where the refusal above left %d and %d",
+			retriedEvents, retriedAudits, eventsAgain, auditsAgain)
 	}
 }
 
