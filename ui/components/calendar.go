@@ -58,11 +58,20 @@ type CalendarDay struct {
 	Events []CalendarEvent
 }
 
+// calendarRetainsRange reports whether a read with no result still supplies the
+// strip of days each of whose href points into the range it no longer displays.
+func calendarRetainsRange(p CalendarProps) bool {
+	return (p.State.Status == MediaFailed || p.State.Status == MediaRefused) && len(p.DateStrip.Days) != 0
+}
+
 func (p CalendarProps) Validate() error {
 	if err := aggregateState(p.Label, p.State, len(p.Events) > 0 || p.SelectedID != ""); err != nil {
 		return err
 	}
 	if !p.State.ready() {
+		if retainedNavigation(p.State.Status, p.Views, p.Previous, p.Next, p.Today, p.DateStrip.Previous, p.DateStrip.Next) || calendarRetainsRange(p) {
+			return fmt.Errorf("Calendar: absent content must clear navigation into the previous result")
+		}
 		return nil
 	}
 	if !required(p.ID, p.TimeZone, p.TimeZoneLabel, p.Language, p.AllDayLabel, p.AgendaLabel, p.GridLabel, p.FallbackText) || !utcInstant(p.NowUTC) || p.FirstWeekday < 0 || p.FirstWeekday > 6 {

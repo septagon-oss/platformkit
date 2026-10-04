@@ -45,6 +45,17 @@ type MasonrySlots struct {
 	ItemActions func(Photo) g.Node
 }
 
+// photoThumb wraps one collection item's media in its link. A disabled collection
+// keeps its items readable but offers no destination to follow: an anchor with no
+// href is inert to pointer, keyboard and enhancement alike, which is the shape a
+// disabled navigation choice takes everywhere else.
+func photoThumb(disabled bool, href string, media ...g.Node) g.Node {
+	if disabled {
+		return h.A(append([]g.Node{h.Role("link"), g.Attr("aria-disabled", "true"), g.Attr("tabindex", "-1")}, media...)...)
+	}
+	return h.A(append([]g.Node{h.Href(href)}, media...)...)
+}
+
 func validatePhotoMedia(p MediaProps) error {
 	switch p.Status {
 	case "", MediaReady:
@@ -117,17 +128,17 @@ func PhotoGalleryWithSlots(p PhotoGalleryProps, slots StateSlots) g.Node {
 		if item.ID == p.SelectedID && ready {
 			selected = i
 		}
-		link := []g.Node{h.Href(item.Href), g.Attr("data-photo-index", itoa(i)), g.Attr("aria-label", item.PositionText), photoMedia(item.Media)}
-		if ready {
+		link := []g.Node{g.Attr("data-photo-index", itoa(i)), g.Attr("aria-label", item.PositionText), photoMedia(item.Media)}
+		if ready && !p.Disabled {
 			link = append(link, g.Attr("data-photo-open", p.ID))
 		}
-		thumbs = append(thumbs, h.A(link...))
-		if ready {
+		thumbs = append(thumbs, photoThumb(p.Disabled, item.Href, link...))
+		if ready && !p.Disabled {
 			templates = append(templates, h.Template(g.Attr("data-photo-template", itoa(i)), g.Attr("data-photo-position", item.PositionText), photoMedia(item.Full)))
 		}
 	}
 	var viewer g.Node
-	if len(p.Items) > 0 {
+	if len(p.Items) > 0 && !p.Disabled {
 		index := max(selected, 0)
 		var image g.Node
 		if selected >= 0 && p.ViewerOpen {
@@ -184,7 +195,8 @@ func MasonryWithSlots(p MasonryProps, slots MasonrySlots) g.Node {
 		if slots.ItemActions != nil {
 			action = slots.ItemActions(item)
 		}
-		items = append(items, h.Div(g.Attr("data-masonry-item", ""), h.Class(style.New().MarginBottom(gapOr(p.Gap, style.S4)).Compile()), h.A(h.Href(item.Href), g.Attr("aria-label", item.PositionText), photoMedia(item.Media)), action))
+		items = append(items, h.Div(g.Attr("data-masonry-item", ""), h.Class(style.New().MarginBottom(gapOr(p.Gap, style.S4)).Compile()),
+			photoThumb(p.Disabled, item.Href, g.Attr("aria-label", item.PositionText), photoMedia(item.Media)), action))
 	}
 	base, sm, lg := p.Columns, p.SMColumns, p.LGColumns
 	if base == 0 {
