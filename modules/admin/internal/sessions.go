@@ -192,7 +192,15 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 	}
 	if rest > 0 {
 		body = append(body, components.Divider(components.DividerProps{Text: "Everywhere else"}),
-			components.Form(components.FormProps{Action: revokeRest, Label: "End every session but this one", HTMXProps: components.HTMXProps{Ext: "command"}},
+			// The verb attribute is what makes the opt-in real. `hx-ext` names the extension
+			// to htmx; it does not make htmx own the submission, and a `<form method=post
+			// action=…>` the browser submits natively is a request no script is still alive
+			// to retry — the page is gone with the response. With hx-post the submission is
+			// htmx's, command.js holds the key across the retry, and httpx.Redirect answers
+			// it with HX-Redirect, so the browser still navigates to the list exactly as it
+			// did before. Without JavaScript the native action remains and the form works.
+			components.Form(components.FormProps{Action: revokeRest, Label: "End every session but this one",
+				HTMXProps: components.HTMXProps{Ext: "command", Post: revokeRest}},
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
 						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"}))))
@@ -273,7 +281,15 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing) g.No
 				// about what a person sees first and not about which media query their
 				// browser matched. So this row carries no fill at all, and the page
 				// paints one filled control above the fold whoever is looking at it.
-				return components.Form(components.FormProps{Action: revokeOne, Label: "End the session on " + device, HTMXProps: components.HTMXProps{Ext: "command"}},
+				// Same opt-in as the bulk form above, and for the same reason: the key is
+				// only worth minting for a submission something can send a second time.
+				// The id is part of that promise: the controller scopes a kept key to the
+				// page, the form and the principal, and these N forms post to one address,
+				// so without an id of its own a row would retry another row's revocation.
+				return components.Form(components.FormProps{
+					ComponentProps: components.ComponentProps{ID: "session-revoke-" + rest.Text(row.ID)},
+					Action:         revokeOne, Label: "End the session on " + device,
+					HTMXProps: components.HTMXProps{Ext: "command", Post: revokeOne}},
 					components.Input(components.InputProps{
 						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
 					components.Button(components.ButtonProps{
