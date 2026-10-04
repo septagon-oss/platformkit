@@ -6,6 +6,13 @@
 #   scripts/ci_browser_report.sh --watch <label> [interval]  — one line every interval, until killed
 #   scripts/ci_browser_report.sh run <label> <command...>    — watch a suite, report if it fails
 #
+# Two variables name where a `run` leaves a record of itself, both optional:
+# CI_BROWSER_WATCH_SAMPLE_FILE takes the file each sample line is appended to as it
+# goes out, and CI_BROWSER_WATCH_PID_FILE takes the file that names the watcher this
+# run started. A caller that has to *know* a sample was taken, or has to ask whether
+# its own watcher survived, reads one of these instead of counting processes or
+# guessing at a delay — see the cases in scripts/ci_browser_report_test.sh.
+#
 # Task T-0219 read the logs of runs 219, 225, 235, 239 and 271. Five of them report
 # `locator.click: Target crashed` or `locator.screenshot: Protocol error
 # (Page.captureScreenshot): Unable to capture screenshot`, and what the reader sees
@@ -45,7 +52,7 @@ kernel_memory() {
 # can grep. `browsers=` counts the processes the suite owns: if it goes to zero while
 # the suite is still running, the answer to "why did the click fail" is already there.
 sample_line() {
-	local label="$1" elapsed="$2" browsers memory oom
+	local label="$1" elapsed="$2" browsers memory oom line
 	browsers="$(ps -eo args 2>/dev/null | grep -cE '[c]hrom|[p]laywright' || true)"
 	memory="n/a"
 	if [ -r /sys/fs/cgroup/memory.current ] && [ -r /sys/fs/cgroup/memory.max ]; then
@@ -56,7 +63,17 @@ sample_line() {
 		oom="$(awk '/^oom /{print $2}' /sys/fs/cgroup/memory.events 2>/dev/null)"
 		oom="${oom:--}"
 	fi
-	echo "$label watch +${elapsed}s browsers=$browsers memory=$memory oom=$oom"
+	line="$label watch +${elapsed}s browsers=$browsers memory=$memory oom=$oom"
+	echo "$line"
+	# The same line, a second time, where a caller can wait for it. The log is what
+	# the samples exist for, but a log line is not something a process can block on:
+	# asking "was a sample taken while the suite was still running?" would then have
+	# to be answered by a sleep, and a sleep is a guess about the schedule. The file
+	# is the event — the line is there when the sample has been taken — and costs
+	# nothing when no one names it.
+	if [ -n "${CI_BROWSER_WATCH_SAMPLE_FILE:-}" ]; then
+		printf '%s\n' "$line" >> "$CI_BROWSER_WATCH_SAMPLE_FILE"
+	fi
 }
 
 # The full account: what the kernel said, what the cgroup says, which browsers were
@@ -122,6 +139,15 @@ case "${1:-}" in
 		# The watcher's own stdout is the job's: the samples are written as they are
 		# taken, so a step the job limit takes down leaves them in the log regardless.
 		watch_loop "$label" "${CI_BROWSER_WATCH_INTERVAL:-30}" & watcher=$!
+		# Name this run's watcher, when the caller asked for that. The case that checks
+		# no watcher outlives its suite used to count every `ci_browser_report.sh` in
+		# the host's process table, and this host runs several checkouts' `make check`
+		# beside each other, each with its own watcher of this same script: a
+		# neighbour's watcher starting one moment later is a red here for nothing this
+		# rehearsal did. The pid this run started is the honest subject of that question.
+		if [ -n "${CI_BROWSER_WATCH_PID_FILE:-}" ]; then
+			printf '%s\n' "$watcher" >> "$CI_BROWSER_WATCH_PID_FILE"
+		fi
 		trap 'stop_watcher' EXIT
 		"$@"
 		code=$?
