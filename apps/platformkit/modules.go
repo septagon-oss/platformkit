@@ -164,6 +164,12 @@ func compose(cfg config.Config) composition {
 	auths, authModule := auth.Module(auth.Deps{
 		Users:  users,
 		Notify: notify,
+		// The passkey doors refuse in the language the request asked for, and the
+		// words are the installation's whole catalogue rather than this module's
+		// own directory: the composition is what loads every catalogue there is,
+		// and a module that read its own messages file could not answer in a
+		// language a UI catalogue carries.
+		Messages: installed,
 		// The same sender and the same host lookup the notification module
 		// takes, handed to the one module that has to put a secret in a message
 		// without it becoming a row first: a set-password link belongs in the

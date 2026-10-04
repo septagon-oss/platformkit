@@ -36,7 +36,7 @@ import (
 // None of these is mounted on whether auth.factor_key was set, unlike the TOTP
 // enrolment routes: a passkey writes no secret, so a deployment with no factor key
 // has nothing to be unable to do here (contracts.ErrNoFactorKey says so).
-func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys, cookies Cookies) {
+func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys, cookies Cookies, words PasskeyWords) {
 	app := surfaces.App
 
 	httpx.Register(app, huma.Operation{
@@ -69,7 +69,7 @@ func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys,
 		Description: "The passkey half of the sign-in /login refused to finish. The request is the same one whether or not this address holds a passkey - no allow list is sent, so this leg cannot be asked who has one.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusTooManyRequests},
-	}, httpx.Public(), handleBeginPasskeyAssertion(passkeys))
+	}, httpx.Public(), handleBeginPasskeyAssertion(passkeys, words))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-challenge-passkey-verify",
@@ -82,7 +82,7 @@ func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys,
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventLoggedIn, contracts.EventFactorUsed, contracts.EventFactorSuspect,
 		}},
-	}, httpx.Public(), handleFinishPasskeyAssertion(passkeys, cookies))
+	}, httpx.Public(), handleFinishPasskeyAssertion(passkeys, cookies, words))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-login-passkey-begin",
@@ -92,7 +92,7 @@ func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys,
 		Description: "The usernameless ceremony: no address is offered and none is learned. A tenant that has not enabled passkey sign-in is refused with the reason, which is the one thing this leg refuses on its own.",
 		Tags:        []string{"auth"},
 		Errors:      []int{http.StatusForbidden, http.StatusTooManyRequests},
-	}, httpx.Public(), handleBeginPasskeySignIn(passkeys))
+	}, httpx.Public(), handleBeginPasskeySignIn(passkeys, words))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-login-passkey-verify",
@@ -105,7 +105,7 @@ func RegisterPasskeyRoutes(surfaces httpx.Surfaces, passkeys contracts.Passkeys,
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventLoggedIn, contracts.EventFactorUsed, contracts.EventFactorSuspect,
 		}},
-	}, httpx.Public(), handleFinishPasskeyAssertion(passkeys, cookies))
+	}, httpx.Public(), handleFinishPasskeyAssertion(passkeys, cookies, words))
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "auth-passkey-sign-in-set",
@@ -172,7 +172,15 @@ func handleFinishPasskeyRegistration(passkeys contracts.Passkeys) func(context.C
 		}
 		factor, err := passkeys.FinishPasskeyRegistration(ctx, tx, userID, in.Body.Ceremony, response, in.Body.Name)
 		if err != nil {
-			return nil, passkeyRefusal(err)
+			// English on purpose, and not an oversight: this leg answers the
+			// enrolment form, which sits on a screen whose copy this repository
+			// writes in English and declares as English (sessionsPage sets
+			// Language: writtenHere). A translated refusal under an English heading,
+			// in an element declaring English, is the mismatch
+			// review_r9_login_refusal_language_test.go exists to catch. The sign-in
+			// legs take the request's language because that page's own words are
+			// translated.
+			return nil, passkeyRefusal(ctx, err, PasskeyWords{})
 		}
 		out := &factorOutput{}
 		out.Body = *factor
@@ -180,7 +188,7 @@ func handleFinishPasskeyRegistration(passkeys contracts.Passkeys) func(context.C
 	}
 }
 
-func handleBeginPasskeyAssertion(passkeys contracts.Passkeys) func(context.Context, *passkeyBeginAssertionInput) (*passkeyChallengeOutput, error) {
+func handleBeginPasskeyAssertion(passkeys contracts.Passkeys, words PasskeyWords) func(context.Context, *passkeyBeginAssertionInput) (*passkeyChallengeOutput, error) {
 	return func(ctx context.Context, in *passkeyBeginAssertionInput) (*passkeyChallengeOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -188,13 +196,13 @@ func handleBeginPasskeyAssertion(passkeys contracts.Passkeys) func(context.Conte
 		}
 		challenge, err := passkeys.BeginPasskeyAssertion(ctx, tx, in.Body.Email)
 		if err != nil {
-			return nil, passkeyRefusal(err)
+			return nil, passkeyRefusal(ctx, err, words)
 		}
 		return passkeyChallenge(challenge), nil
 	}
 }
 
-func handleBeginPasskeySignIn(passkeys contracts.Passkeys) func(context.Context, *struct{}) (*passkeyChallengeOutput, error) {
+func handleBeginPasskeySignIn(passkeys contracts.Passkeys, words PasskeyWords) func(context.Context, *struct{}) (*passkeyChallengeOutput, error) {
 	return func(ctx context.Context, _ *struct{}) (*passkeyChallengeOutput, error) {
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -202,7 +210,7 @@ func handleBeginPasskeySignIn(passkeys contracts.Passkeys) func(context.Context,
 		}
 		challenge, err := passkeys.BeginPasskeySignIn(ctx, tx)
 		if err != nil {
-			return nil, passkeyRefusal(err)
+			return nil, passkeyRefusal(ctx, err, words)
 		}
 		return passkeyChallenge(challenge), nil
 	}
@@ -213,11 +221,11 @@ func handleBeginPasskeySignIn(passkeys contracts.Passkeys) func(context.Context,
 // command reads it back. A caller cannot pick the door by what it sends, and a
 // prompt begun where a password was expected is refused where none is — at the same
 // cost and with the same answer as a bad signature.
-func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies) func(context.Context, *passkeyVerifyInput) (*sessionOutput, error) {
+func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies, words PasskeyWords) func(context.Context, *passkeyVerifyInput) (*sessionOutput, error) {
 	return func(ctx context.Context, in *passkeyVerifyInput) (*sessionOutput, error) {
 		r, _ := httpx.RequestFrom(ctx)
 		if !httpx.SameSite(r) {
-			return nil, problem.New(http.StatusForbidden,
+			return nil, words.refuse(ctx, http.StatusForbidden, keyPasskeyOffPage,
 				"answer the passkey prompt from the sign-in page itself")
 		}
 		tx, err := transaction(ctx)
@@ -230,7 +238,7 @@ func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies) 
 		}
 		session, identity, err := passkeys.FinishPasskeyAssertion(ctx, tx, in.Body.Ceremony, response, ClientOf(r))
 		if err != nil {
-			return nil, passkeyRefusal(err)
+			return nil, passkeyRefusal(ctx, err, words)
 		}
 		return &sessionOutput{
 			SetCookie: cookies.Session(session.ID, session.ExpiresAt),
@@ -240,30 +248,30 @@ func handleFinishPasskeyAssertion(passkeys contracts.Passkeys, cookies Cookies) 
 }
 
 // passkeyRefusal is the mapping these operations share: every refusal this half
-// can answer, with the sentence a person can act on, and the status that says who
-// can act on it.
-func passkeyRefusal(err error) error {
+// can answer, with the sentence a person can act on in the language they asked to
+// be answered in, and the status that says who can act on it.
+func passkeyRefusal(ctx context.Context, err error, words PasskeyWords) error {
 	switch {
 	case errors.Is(err, contracts.ErrPasskeySignInOff):
 		// 403, and named: this is not the caller's fault and not the server's —
 		// it is a tenant's decision, correctable by that tenant's administrator.
-		return problem.New(http.StatusForbidden,
+		return words.refuse(ctx, http.StatusForbidden, keyPasskeySignInOff,
 			"this organisation does not sign in with a passkey on its own; sign in with your password, then add a passkey")
 	case errors.Is(err, contracts.ErrPasskeyExpired):
-		return problem.New(http.StatusNotFound,
+		return words.refuse(ctx, http.StatusNotFound, keyPasskeyPromptExpired,
 			"that enrolment has expired or was never begun here; begin again")
 	case errors.Is(err, contracts.ErrPasskeyExists):
 		return problem.New(http.StatusUnprocessableEntity,
 			"that passkey is already enrolled for another account on this site; remove it there first")
 	case errors.Is(err, contracts.ErrCredentials):
-		return problem.New(http.StatusUnauthorized,
+		return words.refuse(ctx, http.StatusUnauthorized, keyPasskeyNoAnswer,
 			"that passkey prompt expired or did not answer; try again")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		// One sentence for the whole of the ceremony half, asked of the address and
 		// never of the account: the leg that mints a prompt is a public write, and a
 		// person told to wait a few minutes can do exactly that, whereas a person
 		// told their passkey is wrong goes and removes a factor they did not need to.
-		return problem.New(http.StatusTooManyRequests,
+		return words.refuse(ctx, http.StatusTooManyRequests, keyPasskeyTooManyPrompts,
 			"this device has asked for too many passkey prompts; wait a few minutes and try again")
 	}
 	return refusal(err)

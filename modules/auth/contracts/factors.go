@@ -54,6 +54,18 @@ var (
 	ErrNoFactorKey = errors.New("auth: no factor key is configured")
 )
 
+// ProblemSecondFactorRequired is the RFC 9457 type a login answers with when the
+// first proof arrived and the second did not. The status cannot say it — 401 is
+// also "those credentials are not right", and the two answers send a person in
+// opposite directions — and the detail is copy a person reads, in the language
+// the request asked for, which makes it a poor thing to test.
+//
+// It exists because the answer to the refusal is a control on the page the
+// refusal appears on: a sign-in form that learns a second factor is missing can
+// then offer the door that answers it. That page reads this type rather than
+// reading the sentence, so translating the sentence moves no control.
+const ProblemSecondFactorRequired = "urn:auth:second-factor-required"
+
 // Factor parameters, in the module that enforces them rather than in
 // configuration: a deployment that lengthens the window or thins the codes has
 // weakened itself, and the rule of this file is that weakness is not a knob.

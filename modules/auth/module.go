@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -137,6 +138,15 @@ type Deps struct {
 	// exist is the user module's decision and not this one's; with no
 	// Provisioner, `provision` refuses as `existing` does.
 	Provisioner contracts.Provisioner
+
+	// Messages is the application's whole catalogue of copy, this module's
+	// included, and it is what lets the passkey doors refuse a person in the
+	// language they asked to be answered in: a browser ceremony is read on the
+	// sign-in page, and that page's own words are translated. Wired from the
+	// composition (apps/platformkit/catalog.go), which is what knows every
+	// catalogue that ships; with none, every refusal this module answers is
+	// English, which is what it was before the field existed.
+	Messages locale.Messages
 
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
@@ -262,7 +272,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 			// before this file existed. The relying party's display name is the tenant's
 			// own row's Name, so Deps carries no installation-wide name for a platform
 			// prompt and nothing here is a fact about one customer.
-			internal.RegisterPasskeyRoutes(s, svc, cookies)
+			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
