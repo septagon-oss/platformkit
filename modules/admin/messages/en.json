@@ -590,5 +590,17 @@
   },
   "admin.languages.refused_unknown": {
     "translation": "That declaration was refused. Nothing was changed."
+  },
+  "admin.account.language.unsupported": {
+    "translation": "That is not a language this tenant serves you in. Nothing was changed.",
+    "plural": {
+      "": "That is not a language this tenant serves you in. Nothing was changed."
+    }
+  },
+  "admin.account.language.stale": {
+    "translation": "This account's language changed since this page was drawn. Nothing was changed.",
+    "plural": {
+      "": "This account's language changed since this page was drawn. Nothing was changed."
+    }
   }
 }

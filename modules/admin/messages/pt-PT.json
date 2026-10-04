@@ -590,5 +590,17 @@
   },
   "admin.languages.refused_unknown": {
     "translation": "Essa declaração foi recusada. Nada foi alterado."
+  },
+  "admin.account.language.unsupported": {
+    "translation": "Isso não é uma das línguas em que esta organização responde. Nada foi alterado.",
+    "plural": {
+      "": "Isso não é uma das línguas em que esta organização responde. Nada foi alterado."
+    }
+  },
+  "admin.account.language.stale": {
+    "translation": "A língua desta conta mudou desde que esta página foi desenhada. Nada foi alterado.",
+    "plural": {
+      "": "A língua desta conta mudou desde que esta página foi desenhada. Nada foi alterado."
+    }
   }
 }

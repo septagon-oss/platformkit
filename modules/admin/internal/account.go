@@ -13,6 +13,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -183,10 +185,51 @@ func (p pages) mountAccountLanguage(app *httpx.Router) {
 				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
 			}
 			if err := p.Language.Choose(ctx, tx, form.Get("locale")); err != nil {
-				return page.View{}, rest.Fault(err)
+				return accountRefusal(r, p.shell, err)
 			}
 			return page.View{}, httpx.SeeOther(accountReturn(ctx, p.at.dashboard.at))
 		})
+}
+
+// accountRefusal is a refused language choice, in the language the person whose
+// choice it was is being answered in.
+//
+// The module that owns people answers in its own words — "pt is not a language
+// this tenant is served in" — and those words name the fault for the log, the
+// problem document and whoever is debugging it. A page is not a log line: the
+// person standing in front of it chose from a list this installation drew, and the
+// sentence that tells them what happened is the shell's own copy, asked at the key
+// every other word of this control is asked at. English copy under a page that
+// declares Portuguese lies in the same shape as the page that was English to
+// everybody, so the declared language follows the sentence actually on the page
+// (the rule ui/page/fault.go applies to the kernel's refusals, applied here to the
+// shell's).
+//
+// A fault this function has no sentence for is handed over as it arrived: an
+// outage, a permission, a 500 with no detail to print. Inventing a translated
+// sentence for a fault whose kind is unknown would put the shell's words over
+// whatever the service actually said, which is the one thing a refusal must not do.
+func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) {
+	var key, english, code string
+	var status int
+	switch {
+	case errors.Is(err, crud.ErrInvalid):
+		key, english = "account.language.unsupported",
+			"That is not a language this tenant serves you in. Nothing was changed."
+		status, code = http.StatusUnprocessableEntity, "INVALID_INPUT"
+	case errors.Is(err, crud.ErrConflict):
+		key, english = "account.language.stale",
+			"This account's language changed since this page was drawn. Nothing was changed."
+		status, code = http.StatusConflict, "CONFLICT"
+	default:
+		return page.View{}, rest.Fault(err)
+	}
+	line := chrome(r, key, english)
+	v := page.Fault(status, code+": "+line, s.Back, s.BackLabel)
+	if line != english && r.Locale != nil {
+		v.Language = r.Locale.Language
+	}
+	return v, nil
 }
 
 // accountReturn is where the redirect goes: the page the person was reading, so

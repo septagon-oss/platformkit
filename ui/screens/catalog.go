@@ -35,8 +35,16 @@ type Catalog struct {
 }
 
 // Entry is one resource as a shell sees it. There is no Readable field because
-// an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists.
+// a resource whose rows this caller may neither read nor write is not in the
+// document at all: what a caller may not look at, they are not told exists.
+//
+// The one thing that is independent of the rows is an account command — a door
+// whose subject is the caller and which no row argument names — and a caller who
+// may open it is told so, because decision 0019 is that a shell places a command
+// from this document and an executable command nobody can discover is a door that
+// exists only for the shell that guessed its address. Such an entry carries the
+// resource's name and its command and nothing else: no screen, no row schema and
+// no write address, because those describe rows the caller may not look at.
 type Entry struct {
 	entity.Schema
 	Name *entity.Name `json:"name,omitempty"`
@@ -101,12 +109,21 @@ type Command struct {
 func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
-		if !r.Readable(ctx) {
-			continue
-		}
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		readable := r.Readable(ctx)
+		if !readable && len(r.Commands) == 0 {
+			continue
+		}
+		if !readable {
+			// Only an account command is reachable here — CommandsFor asks each
+			// command's own guard, not the resource's — and what it needs to be drawn
+			// is its own summary and its own fields. The rest of the entry is a
+			// description of rows this caller may not read, and this document has
+			// always said nothing about those.
+			r.Schema.Fields, r.Screen, r.Immutable = nil, "", nil
+		}
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
