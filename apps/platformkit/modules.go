@@ -4,8 +4,10 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 
@@ -117,7 +119,7 @@ func compose(cfg config.Config) composition {
 		Languages: installed.Languages(),
 	})
 	active := tenantcontracts.Active{Service: tenants}
-	hosts := tenantHosts{tenants: tenants}
+	hosts := tenantHosts{tenants: tenants, published: publishedPort(cfg.Server.PublicHost)}
 	mail := mailer(cfg)
 	notify, notificationModule := notification.Module(notification.Deps{
 		// The app adapts, so notification never names user or tenant: both
@@ -373,14 +375,61 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 // first row of a list ordered by it (migrations/000020). It used to pick
 // whichever name sorted first, which meant adding admin.acme.example.com moved
 // every future link onto it.
-type tenantHosts struct{ tenants tenantcontracts.Service }
+//
+// published is the port the installation is reached at, read once out of
+// server.public_host, and "" when that address names none: see publishedPort.
+type tenantHosts struct {
+	tenants   tenantcontracts.Service
+	published string
+}
 
 func (h tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
 	hosts, err := h.tenants.Hosts(ctx, tx)
 	if err != nil || len(hosts) == 0 {
 		return "", err
 	}
+	// A host of record is a name and nothing else: the tenant module refuses a
+	// port in one, because kit/httpx resolves a request by matching the name in
+	// its Host header against this column. So the port a published installation
+	// is reached at cannot live in the row, and the row alone is the whole of an
+	// address only when the installation answers at its scheme's default port.
+	//
+	// An installation published behind a mapping — a container run -p 38591:8080,
+	// a compose `ports:` entry, a NodePort — answers the browser at one port and
+	// its own socket at another, and the socket cannot tell anybody the first.
+	// server.public_host is where the installation says it, and this is the one
+	// line that carries it onto every link this application mails, since both of
+	// the builders (auth's reset link and notification's notice link) make their
+	// URL out of what is returned here. A link with no declared port keeps
+	// falling back to the port the request was answered on, which
+	// modules/auth/internal/served.go appends; a host that already spells a port
+	// is left exactly as it is spelled, which is the rule that fallback already
+	// honours, so the two never disagree.
+	if h.published != "" {
+		if _, _, err := net.SplitHostPort(hosts[0]); err != nil {
+			return hosts[0] + ":" + h.published, nil
+		}
+	}
 	return hosts[0], nil
+}
+
+// publishedPort is the port the address in declared says its installation is
+// reached at, and "" when it names none or does not read as an authority at all.
+//
+// It is a port and not a name: which name a link carries is the tenant's row's
+// answer, and one customer's people are never sent to another's front door by a
+// configuration value. kit/config already refuses anything that is not a host
+// with an optional port here, so the empty answer means "not declared", which is
+// every deployment that answers at 443 or at a port the browser does not write.
+func publishedPort(declared string) string {
+	name, port, err := net.SplitHostPort(declared)
+	if err != nil || name == "" {
+		return ""
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return ""
+	}
+	return port
 }
 
 // recipients is the adapter that lets the notification module send an email

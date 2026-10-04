@@ -6,7 +6,12 @@ server:
   # Address the HTTP server listens on.
   addr: ":8080"
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
-  # derived from it, and tenant subdomains are resolved against it.
+  # derived from it, and tenant subdomains are resolved against it. Its port, if
+  # it names one, is the port a person types — so an installation published on a
+  # port that is not the one addr listens on (docker run -p 38591:8080, a compose
+  # ports: entry) names its public port here, and every emailed link carries it;
+  # leave it off and a link falls back to the port a request arrived on, which is
+  # the port behind the mapping, and nobody outside it can reach that.
   public_host: "platformkit.localhost:8080"
   # The host the installation itself is reached at: the only address that
   # serves the control plane (/ops and /api/v1/ops/…). It is a host and not a
