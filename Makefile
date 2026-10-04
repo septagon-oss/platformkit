@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -267,6 +267,23 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_pin_rehearsal_test.sh
 	bash scripts/free_port_test.sh
 	./scripts/check_imports.sh
+
+# Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
+# prose, because each one can only be shown by starting scripts/e2e.sh against a port somebody else
+# is holding: a foreign listener that takes the port mid-build (scripts/e2e_port_taken_during_build_
+# test.sh) and a socket table that answers every question about ownership with silence
+# (scripts/e2e_unattributed_listener_test.sh). Both answer the question `free_port_test.sh` cannot:
+# whether gate 10, when it is really run, refuses.
+#
+# They are NOT in `check`, and that is a measured reason and not an omission. Each one needs node —
+# e2e.sh stops at its node check before it prints anything either case greps for, and an absent node
+# would read as a broken refusal. CI installs node two steps after `make check` (`.gitea/workflows/
+# ci.yml`: setup-node, then the browser, then `make e2e`), so a wiring into `check` would red that
+# job for a reason that has nothing to do with the change under review. They run in the e2e job, next
+# to the gate they guard, where node, the browser and Postgres all exist; 17s for both there.
+check-e2e-guards: ## Run gate 10's two port-refusal pins (needs node, a browser and the test database)
+	bash scripts/e2e_unattributed_listener_test.sh
+	bash scripts/e2e_port_taken_during_build_test.sh
 
 fmt: ## Format every package
 	go fmt ./...

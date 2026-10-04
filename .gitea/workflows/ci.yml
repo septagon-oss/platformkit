@@ -219,6 +219,16 @@ jobs:
       # used to stand last behind every other gate, which is why the failure that
       # named it said nothing about it. It now follows the Go gates and its own
       # browser, and the budget verdict still runs after it.
+      # Gate 10's two refusals to drive an application it did not start, before the gate they guard.
+      # They stand here rather than in the `make check` step above for one measured reason: each one
+      # starts scripts/e2e.sh, which stops at its own node check before it prints anything either case
+      # greps for, and node appears two steps after `make check`. Here node, the browser, python3 (the
+      # decoy listener; `make check`'s own check-apidiff step proves it on this runner) and Postgres all
+      # exist. 17s for both on a development box, 2026-10-04; the mid-build case waits on gate 10's own
+      # log and so costs its build when the cure is intact and its whole run when it is not.
+      - name: Gate 10's port refusals (make check-e2e-guards)
+        run: make check-e2e-guards
+
       - name: make e2e
         run: make e2e
 
