@@ -127,9 +127,16 @@ func (s *Service) choose(ctx context.Context, tx db.Tx[db.Tenant], expected *int
 	if err := crud.Update(ctx, tx, u, "preferred_locale", "locale_revision", "updated_at"); err != nil {
 		return nil, err
 	}
-	return u, events.Publish(ctx, tx, contracts.EventLanguageSet, contracts.LanguageSet{
+	// The row and its event are one decision. An outbox that refuses the event
+	// refuses the choice with it — a preference nobody will ever be told about is
+	// a preference that was never made — and the command hands back no row, so no
+	// caller can read a change that did not commit.
+	if err := events.Publish(ctx, tx, contracts.EventLanguageSet, contracts.LanguageSet{
 		UserID: u.ID, Was: was, Now: tag, At: db.Now(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+	return u, nil
 }
 
 // OwnLanguage is the account door's read: the choice and the revision to bring
