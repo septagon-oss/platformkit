@@ -254,12 +254,17 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
+# Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the two
+# promises it makes — the port it refuses, and the port it hands Playwright — otherwise fail as a
+# wrong number in a browser run rather than as a red gate here. See scripts/free_port.sh for why
+# the answer is no longer the literal 8099, and scripts/free_port_test.sh for the ten cases.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
+	bash scripts/free_port_test.sh
 	./scripts/check_imports.sh
 
 fmt: ## Format every package

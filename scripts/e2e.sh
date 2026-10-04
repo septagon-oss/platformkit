@@ -14,7 +14,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-port="${PLATFORMKIT_E2E_PORT:-8099}"
+requested_port="${PLATFORMKIT_E2E_PORT:-}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
 database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
@@ -22,6 +22,32 @@ database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
 if ! command -v node >/dev/null; then
 	echo "e2e: node is not installed; gate 10 needs it. See e2e/package.json." >&2
 	exit 1
+fi
+
+# The port this run serves on, asked for rather than assumed — scripts/free_port.sh
+# says why. A caller that names one gets exactly that port or nothing: the browser
+# run at the end reads PLATFORMKIT_E2E_PORT as the address the harness is allowed to
+# write through (e2e/session-recovery.spec.ts refuses every other), so serving
+# elsewhere would have this run drive somebody else's application. A caller that
+# names none takes what the kernel allocates, which is what lets two runs on one
+# host go at the same time.
+#
+# This is settled before the database exists and before the binary is built: a run
+# that cannot be given the port it was promised has refused before it touched
+# anything.
+# shellcheck source=scripts/free_port.sh
+. "$root/scripts/free_port.sh"
+if [ -n "$requested_port" ]; then
+	if ! bind_free_port "$requested_port" >/dev/null; then
+		echo "e2e: something is already listening on $requested_port; set PLATFORMKIT_E2E_PORT to a port that is free, or unset it and let this run choose one." >&2
+		exit 1
+	fi
+	port="$requested_port"
+else
+	if ! port="$(bind_free_port)"; then
+		echo "e2e: no free loopback port to serve on." >&2
+		exit 1
+	fi
 fi
 
 # A URL with the database swapped for this run's own. Everything else — host,
@@ -84,7 +110,11 @@ psql "$(swap "$admin_url")" -v ON_ERROR_STOP=1 -q \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platformkit_app;" \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO platformkit_app;"
 
-cat >"$work/config.yaml" <<YAML
+# A function rather than the heredoc in place, because the port appears twice in it
+# and a run that lost the port it was offered between the choice and the bind
+# rewrites the whole file for its next attempt rather than patching two lines.
+write_config() {
+	cat >"$work/config.yaml" <<YAML
 server:
   addr: "127.0.0.1:$port"
   public_host: "localhost:$port"
@@ -102,6 +132,8 @@ audit:
 files:
   dir: "$work/files"
 YAML
+}
+write_config
 
 password="e2e-$(date +%s)-password"
 # Runtime overrides belong to the caller's application, not this fixture, so
@@ -124,22 +156,52 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-if command -v ss >/dev/null && ss -ltn 2>/dev/null | grep -q ":$port "; then
-	echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
-	exit 1
-fi
+serve() { # start the application on $port and wait for /health: 0 once it answers, 1 when the process died, 2 when it never answered
+	echo "e2e: serving on $port"
+	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
+	app_pid=$!
+	local waited=0
+	while [ "$waited" -lt 60 ]; do
+		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then return 0; fi
+		if ! kill -0 "$app_pid" 2>/dev/null; then return 1; fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	return 2
+}
 
-echo "e2e: serving on $port"
-run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
-app_pid=$!
-for _ in $(seq 1 60); do
-	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
-	if ! kill -0 "$app_pid" 2>/dev/null; then
-		echo "e2e: the application stopped before it served:" >&2
-		cat "$work/app.log" >&2
-		exit 1
+# Nothing closes the window between the port being offered above and the application
+# binding it here — no portable mechanism hands a bound socket to a process about to
+# be exec'd, which is the note in scripts/free_port.sh. So a port this run chose for
+# itself is asked for again when the bind refuses it, and a run that would have been
+# refused a gate it did not cause moves. A port the caller named is never moved, and
+# an application that died of anything but the bind is reported as what it is rather
+# than retried into the noise.
+attempts=0
+until serve; do
+	status=$?
+	moved=""
+	if [ "$status" -eq 1 ] && [ -z "$requested_port" ] && [ "$attempts" -lt 3 ] &&
+		grep -qi 'address already in use' "$work/app.log" 2>/dev/null; then
+		moved="$port"
 	fi
-	sleep 1
+	if [ -n "$moved" ]; then
+		attempts=$((attempts + 1))
+		echo "e2e: $moved was taken while the application was starting; choosing another." >&2
+		if ! port="$(bind_free_port)"; then
+			echo "e2e: no free loopback port to serve on." >&2
+			exit 1
+		fi
+		write_config
+		continue
+	fi
+	if [ "$status" -eq 2 ]; then
+		echo "e2e: the application never answered /health on $port:" >&2
+	else
+		echo "e2e: the application stopped before it served:" >&2
+	fi
+	cat "$work/app.log" >&2
+	exit 1
 done
 
 cd e2e
@@ -187,6 +249,7 @@ if "$default_output"; then
 	output_args=(--output "$results")
 fi
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
+	PLATFORMKIT_E2E_PORT="$port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
