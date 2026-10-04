@@ -265,6 +265,18 @@ func (s *Service) SetOwnLocale(ctx context.Context, tx db.Tx[db.Tenant], expecte
 		Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
+	// The set behind the default lives in its own rows and Locales is not a column,
+	// so the lock alone says nothing about it: deciding "nothing changed" against
+	// the field this read left empty would refuse a retry of the tenant's own
+	// declaration, count a revision nobody changed, and say so in the trail — the
+	// idempotence below would hold only for a tenant served in one language. Read
+	// the held declaration the way every read of it does, under the lock this
+	// transaction now holds over the row.
+	held, err := s.current(tx, id)
+	if err != nil {
+		return nil, err
+	}
+	t.Locales = held.Locales
 	if t.DefaultLocale == wanted[0] && slices.Equal(t.Locales, wanted[1:]) {
 		// Nothing changed: no write, no revision, no event, however stale the
 		// revision the caller brought. A retry of what the row already says lost
