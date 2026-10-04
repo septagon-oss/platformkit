@@ -17,7 +17,7 @@ const scripts = readFileSync(resolve(root, 'ui/ui.go'), 'utf8')
 
 const pageFaults = new WeakMap<Page, string[]>();
 
-test('review: a DataList loading transition reserves its final geometry', async ({ page }) => {
+test('a DataList loading transition reserves its final geometry', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await specimen(page, 'pk-ui.component.data-list/loading-en', '', '<p id="review-next">Content after the list</p>');
   await page.waitForLoadState('networkidle');
@@ -34,7 +34,7 @@ test('review: a DataList loading transition reserves its final geometry', async 
   expect(Math.abs(after!.y - before!.y), 'loading should reserve space instead of moving the following content').toBeLessThanOrEqual(1);
 });
 
-for (const kind of ['side-panel', 'detail-sheet']) test(`review: a delayed ${kind} swap cannot reopen a closed selection`, async ({ page }) => {
+for (const kind of ['side-panel', 'detail-sheet']) test(`a delayed ${kind} swap cannot reopen a closed selection`, async ({ page }) => {
   const response = snapshot.examples.find((entry: { id: string }) => entry.id === `pk-ui.component.${kind}/default-en`).html;
   await page.route('**/review-details/a', route => route.fulfill({ contentType: 'text/html', body: response }));
   await specimen(page, `pk-ui.component.${kind}/closed-en`,
@@ -53,7 +53,7 @@ for (const kind of ['side-panel', 'detail-sheet']) test(`review: a delayed ${kin
   await expect(page.locator('#detail-en')).toBeHidden();
 });
 
-for (const kind of ['side-panel', 'detail-sheet']) test(`review: modified ${kind} link activation retains native navigation`, async ({ page }) => {
+for (const kind of ['side-panel', 'detail-sheet']) test(`modified ${kind} link activation retains native navigation`, async ({ page }) => {
   await specimen(page, `pk-ui.component.${kind}/closed-en`,
     '<a id="review-open" href="/items/a" data-detail-open="detail-en">Read item</a>');
   const allowed = await page.locator('#review-open').evaluate(link => link.dispatchEvent(
