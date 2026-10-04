@@ -43,6 +43,20 @@ type Deps struct {
 	// breach is free and anything faster is a query per tenant per tick for
 	// nobody's benefit. A test sets it lower.
 	SweepEvery time.Duration
+
+	// Gate is the door in front of the five routes this module mounts: asked once
+	// the row is locked and the body merged, before anything is written, and never
+	// at all when nothing is wired here. It answers whether these fields may be
+	// written directly, which is not this module's question to answer — it owns the
+	// task's invariants, and the answer belongs to an installation with an opinion
+	// about which of its promises need a second pair of eyes.
+	//
+	// The reference application wires one over modules/change; a composition that
+	// wires nothing writes tasks exactly as it always did. This is the shape
+	// modules/site's Deps.Gate takes, one level out from the singleton's Save closure
+	// it had to be written into there: a Spec mounts its own routes, so the door has
+	// to be handed in rather than written around them.
+	Gate rest.Gate
 }
 
 // sweepEvery is the default interval. See Deps.SweepEvery.
@@ -62,7 +76,9 @@ var spec = rest.Spec[*contracts.Task]{
 	// make somebody responsible without moving the status and without
 	// task.assigned; one that could set slaBreached would forge the fact the
 	// SLA report counts. Each of the four has a route.
-	Immutable: []string{"assigneeId", "slaBreached", "resolvedAt", "resolution"},
+	// The one list of them, in the contracts package, which also decides what an
+	// apply refuses and what the gate may name: one sentence, three doors.
+	Immutable: contracts.CommandOwnedFields,
 	// What AfterCreate publishes, so the create operation declares it and the
 	// boot gate can check it against Events below. See internal.BreachOnArrival.
 	HookEvents: []string{contracts.EventSLABreached},
@@ -81,6 +97,22 @@ var permissions = []module.Permission{
 // NewService constructs task lifecycle commands for application composition.
 // Pass the returned value through Deps.Service to share it with task routes.
 func NewService() contracts.Service { return internal.NewService() }
+
+// NewLockedReader returns the same task service Module builds, as the one interface
+// a caller about to diff a task needs (see contracts.LockedReader for why that is a
+// second interface and not a method on Service). It costs a second value because the
+// service has no fields — everything it needs arrives with the transaction — so
+// there is nothing here to keep in step with anything else.
+func NewLockedReader() contracts.LockedReader { return internal.NewService() }
+
+// NewWriter returns that service again, as the whole-row write an approved proposal
+// comes through (contracts.Writer). The one door of its kind: the gate stands in
+// front of the five routes and never here, because a gate on both sides is a wall —
+// the approved change could be proposed and never applied. What makes it safe is that
+// it is single, named, and audited, and a caller that reached for it outside an apply
+// would be composition code, which is the trust boundary the tenant model already
+// draws.
+func NewWriter() contracts.Writer { return internal.NewService() }
 
 // NewServiceWithPolicy adds resource decisions to assignment and resolution.
 // The caller still owns route grants, current identity and tenant transactions.
@@ -131,6 +163,7 @@ func New(deps Deps) module.Module {
 	// needs the service, and the service is constructed here.
 	mounted := spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
+	mounted.Gate = deps.Gate
 	return module.Module{
 		Name:        "task",
 		Migrations:  Migrations.Files,

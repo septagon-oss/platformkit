@@ -61,6 +61,26 @@ it, so a row the request's tenant may not write answers 404 whatever the body
 omits — on a table whose read policy shows one shared list to every tenant,
 row-level security lets the row be read, and it is the write that refuses.
 
+`Gate` is the door in front of a write, asked after those checks, after the row is
+locked and the body merged, and before anything is written: this row, these fields,
+now, in the caller's own transaction. It exists because the generic PATCH is mounted
+from this file — a rule that stood in a module's own `Save` covered one door per
+module and left the other three open, which is what `modules/site` had to do on its
+singleton. The fields it is asked about are computed from the merged entity's
+canonical JSON and never from the request's key list, which is what makes a body
+that resends the current value not a change and a generated form that redraws the
+whole record writable. A command carries no field list: the kernel cannot know what a
+command writes without running it, and running it is the write, so the question names
+the command's verb and the answer — `modules/change`'s `contracts.Protection` in the
+reference application — says what that verb moves. A gate that refuses writes
+nothing, publishes nothing and runs no hook, and it is not an authorization decision:
+the grants answer whether this caller may write at all, the gate answers whether the
+write needs a second pair of eyes first, whichever caller it is. `Mount` refuses a
+`Gate` on an entity with no `revision` field, because a write refused on the grounds
+that the row may have moved has to be able to say what it moved to; the kernel moves
+that number in the same `UPDATE` as the data, which is why no entity behind a gate
+moves it by hand.
+
 That compare is `crud.RecheckTenant`, and it lives in
 [kit/crud](../crud/crud.go) because the rule already lived there, inside
 `Update`. A second compare in `kit/rest` — that package reading the row's
@@ -99,3 +119,23 @@ resource; `Offers` and `OperationWords` are the two accessors any later shell re
 the ratchet written beside the versioned catalogue
 (`apps/platformkit/catalog_version_test.go`) is the pattern for every additive key that
 catalogue gains next.
+
+## Composition (T-0138)
+
+**Reused** — `crud.GetForUpdate` for the lock the gate is asked beneath, `crud.RecheckTenant`
+and `crud.Update` unchanged (the gate hands them the same entity and the same column list),
+`Spec.Immutable`'s mount-time name check as the model for refusing an incoherent door, and
+the error mapping every other write here already uses: a gate that returns `crud.ErrConflict`
+gets 409 and a gate that returns a problem document gets that document, so the door needed no
+new status. **Added** — `Spec.Gate`, `rest.Gate`, `rest.Write`, the four verb constants,
+`RevisionField` and the one `Changed` computation over the merged entity's canonical JSON:
+nothing in `kit/rest` or `kit/crud` had a pre-write hook (only `AfterCreate`/`AfterDelete`,
+which run after the write) and no way to ask "which fields does this write move" — which is
+the question `modules/change` asks and the one a request body cannot answer honestly. **Made
+reusable** — the same `Check` answers the JSON PATCH, the DELETE, a generated form's POST, an
+in-process `Spec.Update` beneath a worker and a lifecycle command, because they share
+`updateRow`/`deleteRow` and this stands in those rather than in a router; the kernel's own
+`revision` bump rides the one `UPDATE`, so an entity that grows the field gets a number a
+diff can quote without writing a trigger, a column of its own or a second writer; and a
+command is asked about by verb, which is what leaves a command nobody annotated still
+answered by the module that owns the row.
