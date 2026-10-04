@@ -193,6 +193,19 @@ check-ui: ## Fail when a layer's markup reaches past the tokens or emits a class
 check-fixtures: ## Compile the Go program every design test embeds
 	cd tools/designexport/openpencil && node --import ./register.mjs --test fixtures-compile.test.mjs
 
+# The number decision 0075's i18n row reads: the share of the words a person reads on
+# a served page that a catalogue reached. It renders every document the reference
+# composition serves in the pseudo-locale, prints the ratio and the list of what went
+# around a catalogue, and refuses a fall below testdata/i18n-coverage.json — which is
+# both the floor and the set of pages measured. -v is what prints: `check`'s suite runs
+# through gotestsum, whose format drops the output of a passing test, so a number that
+# is only a log line on a green run is a number nobody reads. The gate therefore runs
+# twice — once here, printed, and once inside the suite, silent — which is what keeps
+# `check`'s fresh test boundary the whole suite with nothing taken off it, the boundary
+# scripts/check_architecture_test.sh pins.
+check-i18n: ## Print the share of words a person reads that a translator can reach, and fail below the floor
+	go test ./apps/platformkit -run '^TestThePseudoLocaleGate$$' -count=1 -v
+
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
@@ -262,7 +275,7 @@ fmt-check: ## Fail when any file is not gofmt'd
 # that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
-	./modules/change/... ./apps/platformkit
+	./modules/change/... ./kit/locale/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
@@ -338,7 +351,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-i18n check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh

@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	eventnats "github.com/septagon-oss/platformkit/kit/events/providers/nats"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -80,7 +81,7 @@ type composition struct {
 	// messages is this application's one catalogue — the same value the shells
 	// below are given — carried here so the failure page the kernel renders is
 	// worded from it rather than from a second read of the same files.
-	messages xtext.Catalog
+	messages locale.Messages
 }
 
 // compose constructs complete dependencies in order: users, tenants,
@@ -113,7 +114,24 @@ func appSlug(cfg config.Config) appname.Name {
 	return slug
 }
 
-func compose(cfg config.Config) composition {
+// compose is the wiring this binary ships: the copy it serves is the copy it
+// installed.
+func compose(cfg config.Config) composition { return composeCopy(cfg, catalogues(), nil) }
+
+// composeCopy is compose with its copy supplied. `installed` is the merged catalogue
+// and stays the answer to "which languages exist"; `served`, when non-nil, is the
+// provider the shells format with, and is how a test renders the shipped graph in a
+// pseudo-locale (kit/locale/providers/pseudo) without a second composition. No
+// production caller passes one — main.go, start.go, bootstrap.go and migrate.go call
+// compose — and the compiler is what keeps it that way.
+//
+// `served` reaches the shells and the fault page only. The languages a tenant may be
+// served in stay read off `installed`: en-XA is a measuring locale and never a
+// language a person is answered in.
+func composeCopy(cfg config.Config, installed xtext.Catalog, served locale.Messages) composition {
+	if served == nil {
+		served = installed
+	}
 	// auth.AdministeringRoles is what makes "the last person who can still
 	// administer this tenant" answerable at all: the user module owns who holds
 	// a role, the auth module owns what a role grants, and neither reads the
@@ -132,7 +150,6 @@ func compose(cfg config.Config) composition {
 		Granting: roles,
 	})
 
-	installed := catalogues()
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles},
 		Invite:   firstAdmin{users: users},
@@ -294,7 +311,7 @@ func compose(cfg config.Config) composition {
 			// kernel layer's, so the site shows them to a visitor in the language the
 			// tenant is served in. What the site writes itself — the bar, the footer,
 			// the empty states — stays in the source language and says so.
-			Messages: installed,
+			Messages: served,
 		}),
 	}
 	// The trail is this reference product's worked example of something a plan
@@ -325,7 +342,7 @@ func compose(cfg config.Config) composition {
 	mods = append(mods, admin.Module(admin.Deps{
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Sessions: auths,
 		Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
-		Messages: installed, Locale: loginLocale,
+		Messages: served, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
 		SignIn: pinnedSignInAPI,
 		// The way in for a person the tenant has no account for. Nil here and
@@ -395,7 +412,7 @@ func compose(cfg config.Config) composition {
 	roles.auth = auths
 	personas = declaredRoles(mods)
 	return composition{modules: mods, wires: wires, tenants: tenants, users: users, auth: auths,
-		notify: notify, mail: mail, plans: plans, messages: installed,
+		notify: notify, mail: mail, plans: plans, messages: served,
 		access: accessReach{users: users, notify: notify, may: roles.May},
 		// The words a refusal is allowed to use: the label of the grant that gates
 		// role management, read off the manifest that defines it rather than
