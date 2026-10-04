@@ -76,6 +76,12 @@ func (p MapViewProps) Validate() error {
 		return err
 	}
 	if !p.State.ready() {
+		// A read that returned nothing keeps no route into what it returned last
+		// time: the refusal this renderer writes names only the state, but the same
+		// Props are captured as typed input, where a stale href would travel.
+		if retainedNavigation(p.State.Status, p.Views) {
+			return fmt.Errorf("MapView: absent content must clear navigation into the previous result")
+		}
 		return nil
 	}
 	if !required(p.ID, p.MapLabel, p.ListLabel, p.StatusLabel, p.MapUnavailableText, p.ZoomInLabel, p.ZoomOutLabel, p.SnapshotText) || !coordinate(p.Viewport.Latitude, p.Viewport.Longitude) || p.Viewport.Zoom < 0 || p.Viewport.Zoom > 24 {
