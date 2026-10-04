@@ -45,11 +45,18 @@ const maxAuthority = 253
 // naming no port is how a browser says it reached us at the scheme's default, which
 // is the case for every installation fronted by a proxy that terminates on 443 and
 // forwards to a port of its own — whose internal port must not become a public
-// address. An installation whose *public* port is a non-default one declares it in
-// its host record, which is the one spelling a mailed link is built from without
-// consulting any request (see servedPort in modules/auth/internal/served.go). A
-// request with no socket at all — a job, a replay, a handler driven in-process — is
-// served nowhere, and carries nothing, the same absence TraceParent means.
+// address. An installation whose *public* port is neither the scheme's default nor
+// the one its socket listens on — a container published with -p 38591:8080, a
+// compose ports: entry, a NodePort — cannot be answered by either half of this: the
+// header's port is a claim and the socket's is the private one. Such an installation
+// declares the public port in server.public_host, and the application writes that
+// port onto the host of record it hands its link builders, which is then the one
+// spelling a mailed link is built from without consulting any request, and one this
+// function leaves alone (see servedPort in modules/auth/internal/served.go: a host
+// that already spells a port is never rewritten by the socket). What is left here is
+// the port of an installation that declares no public one. A request with no socket
+// at all — a job, a replay, a handler driven in-process — is served nowhere, and
+// carries nothing, the same absence TraceParent means.
 func ServedAuthority(r *http.Request) string {
 	if r == nil || len(r.Host) > maxAuthority {
 		return ""
