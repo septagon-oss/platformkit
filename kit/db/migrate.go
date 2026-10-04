@@ -271,33 +271,21 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 
 	run := &runner{conn: conn, budget: budget}
 	// The composition lock is a session lock and this function owns the session: the two
-	// defers above hand the session back and close the pool it came from, which ends the
-	// backend, which drops the key with it. So the run's last act on its session is not a
-	// statement — nothing is unlocked on the way out, and the teardown is what releases the
-	// key. This is the same guarantee the file has always made ("an unreleased one would go
-	// when the connection goes") with the redundant half of it dropped: the explicit
-	// `pg_advisory_unlock` could only be refused, because the only ways to reach this point
-	// are the caller having cancelled or a file having failed, and a session on its way out
-	// is a session that may already be gone. Measured here without the statement: the two
-	// cancellation cases cost 1.073s over five runs each — 0.1s a run, with
-	// `SELECT pg_sleep(30)` in the file and the caller's context cancelled inside it — and
-	// kit/db/migration_cancellation_lock_test.go, which reads `pg_locks` for the key after
-	// Migrate returned, says nothing holds it.
-	//
-	// That statement was also the one place this run spoke on its session after it stopped
-	// trusting it, and review 4 caught it being refused by crashing:
-	// `(*sql.Conn).ExecContext` reached `(*sql.DB).execDC` with a nil driver connection at
-	// migrate.go:617. The window is in the standard library — `(*sql.Conn).grabConn` reads
-	// `done` before it takes `closemu`, so a `Close` that completes in between hands back a
-	// nil connection and a nil error (database/sql, sql.go:2005 and :2136) — and which
-	// `Close` won it there the review did not say and this round could not reproduce: 400
-	// runs of those two cases under -race on a cluster with nothing else on them stayed
-	// green. No statement is the right answer to "the session may be gone", because every
-	// method on a *sql.Conn goes through that same grabConn; ending the session is. The
-	// window the run itself opens for an `autocommit` file is the different case, and it
-	// still puts the key down with a statement — mid-run the session is the run's own, and
-	// the statement below it is the one that must wait for the transactions already in the
-	// database. See stepAwayFromTheCompositionLock.
+	// defers above hand it back and close the pool it came from, which ends the backend and
+	// drops the key with it. Nothing is unlocked on the way out, which is the guarantee this
+	// point always made ("an unreleased one would go when the connection goes") minus the
+	// statement that could only ever be refused — the only ways to arrive here are the caller
+	// having cancelled or a file having failed. Nor is there a probe in its place: every
+	// method on a *sql.Conn, PingContext included, goes through grabConn, which reads `done`
+	// before it takes `closemu`, so a Close completing in between returns a nil driver
+	// connection and a nil error (database/sql sql.go:2005, :2136). That is the nil a -race
+	// run of the two cancellation cases reached in this call on 2026-10-04; ending the
+	// session is what a session that may be gone answers, and the defers already do it —
+	// kit/db/migration_cancellation_lock_test.go reads pg_locks for the key after Migrate
+	// returned and finds nothing holding it. The window an `autocommit` file opens *inside* a
+	// run is the different case, and it still puts the key down with a statement: mid-run the
+	// session is the run's own, and the statement below it must wait for the transactions
+	// already in the database. See stepAwayFromTheCompositionLock.
 	if err := run.holdCompositionLock(ctx); err != nil {
 		return err
 	}
