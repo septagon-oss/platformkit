@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -287,8 +288,21 @@ type Refusal struct {
 	SubjectID     uuid.UUID `json:"subjectId"`
 	Path          string    `json:"path"`
 	Permission    string    `json:"permission"`
+	// Fields names, in the entity's own json names, the protected fields this
+	// write would have changed. It is here because the answer a person acting on
+	// this refusal needs is "which field has to go through the proposal door": a
+	// refusal that named the subject but not the field sends them to propose a
+	// change that will be refused for the same reason. Empty means the whole row is
+	// protected, which is what a gate over a one-row-per-tenant entity answers —
+	// site settings is that gate today, and it has no field list to give.
+	Fields []string `json:"fields,omitempty"`
 }
 
 func (r *Refusal) Error() string {
-	return fmt.Sprintf("change: this write is proposed at %s first, which needs %s", r.Path, r.Permission)
+	what := "the whole row"
+	if len(r.Fields) > 0 {
+		what = strings.Join(r.Fields, ", ")
+	}
+	return fmt.Sprintf("change: this write changes %s on %s/%s, and is proposed at %s first, which needs %s",
+		what, r.SubjectModule, r.SubjectEntity, r.Path, r.Permission)
 }

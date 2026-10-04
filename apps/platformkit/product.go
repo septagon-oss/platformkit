@@ -42,6 +42,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
@@ -53,6 +54,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/task"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
@@ -77,11 +79,18 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Provides[auditcontracts.Plan](),
 		pkit.Provides[tenancy.Policy](),
 		pkit.Provides[sitecontracts.WriteGate](),
+		// The door in front of one record's generated writes. The type is kit/rest's
+		// own because a Spec hands that door to the routes it mounts; a second
+		// product opinion about a different record's writes names its own port rather
+		// than colliding on this one, and the resolver refuses two providers of the
+		// same key rather than letting a gate be whichever module built last.
+		pkit.Provides[rest.Gate](),
 		pkit.Provides[webcontracts.Links](),
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
 		pkit.Contributes[tenantcontracts.Hook](),
+		pkit.Contributes[changecontracts.SubjectBinding](),
 	}
 	if cfg.Server.StorybookDir != "" {
 		decls = append(decls, pkit.Provides[admincontracts.Storybook]())
@@ -115,6 +124,12 @@ func product(cfg config.Config) *pkit.Module {
 			flagEval = cfg.Flags.Values
 		}
 		pkit.Put[sitecontracts.WriteGate](w, settingsGate{eval: flagEval})
+		// The task desk's five generated routes get the same kind of door, over the
+		// same one evaluator and a different key: which of a task's fields this
+		// installation will not let one account move alone is apps/platformkit/change.go,
+		// and modules/task hands the answer to its own mount because a Spec mounts its
+		// own routes (task.Deps.Gate).
+		pkit.Put[rest.Gate](w, taskGate(flagEval))
 		// The two addresses the public site links and does not serve. They are
 		// written here because they are this product's facts: which shell it
 		// composed, and which door of which module answers for a file a visitor may
@@ -155,6 +170,15 @@ func product(cfg config.Config) *pkit.Module {
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
+		// A task is this product's second change subject, and it needs no service to
+		// be named: the locked read a diff is made against and the whole-row write an
+		// approved proposal comes through are two named constructors of the module that
+		// owns the table (task.NewWriter says why the gate never stands on that write).
+		// Which of a task's fields this installation will not let one account move is
+		// apps/platformkit/change.go's opinion, over the switch this module already
+		// holds — which is why the subject is contributed here, needing nobody, and not
+		// from access below, which had to wait for a site service to read its own.
+		pkit.Put[changecontracts.SubjectBinding](w, taskSubjectBinding(task.NewWriter(), task.NewLockedReader()))
 		if cfg.Server.StorybookDir != "" {
 			pkit.Put[admincontracts.Storybook](w, admincontracts.Storybook(operatorStorybook(cfg.Server.StorybookDir)))
 		}
@@ -162,10 +186,12 @@ func product(cfg config.Config) *pkit.Module {
 	}, decls...)
 }
 
-// access is the reach an ask for access has in this product, and the one subject
-// this product puts under change control. Both are joins across modules it
+// access is the reach an ask for access has in this product, and the site settings
+// subject this product puts under change control. Both are joins across modules it
 // composes — auth knows which of a tenant's roles manage roles, user knows who
-// holds them, notification writes the notice — and in none of them.
+// holds them, notification writes the notice — and in none of them. The product's
+// second subject, the task, is contributed by product, which needs no service to
+// name one (pkit counts one contribution per contributing module).
 //
 // It is composed second to last because it is the first thing here that can name
 // a person, a notice, an authorizer and a site at once. The two values it fills
@@ -188,18 +214,16 @@ func access(ask *accessReach) *pkit.Module {
 		// not a token, so forwarding the notice grants nothing — the form behind it
 		// is guarded by the same door the API is.
 		*ask = accessReach{users: users, notify: notices, may: pkit.Get[usercontracts.Granting](w).May}
-		// The site settings the shell writes are the one subject this product
-		// applies proposals for, and the flag that gates them is this application's
-		// own (apps/platformkit/change.go says which, and why a module that knew
-		// would be a module with a customer in it). It is contributed here because
-		// a subject is a site settings row, and this is the first module in the
-		// composition that has a site service to read one with.
-		// One contribution each: a module contributes the one of a contract it
-		// is, so a product with a second subject writes a second contributing
-		// module rather than a slice the resolver would refuse.
-		for _, subject := range changeSubjects(sites, site.NewLockedReader()) {
-			pkit.Put[changecontracts.SubjectBinding](w, subject)
-		}
+		// The site settings the shell writes are the subject this module contributes:
+		// a subject is a row, and this is the first module in the composition with a
+		// site service to read one with. The flag that gates that write is this
+		// application's own (apps/platformkit/change.go says which, and why a module
+		// that knew would be a module with a customer in it).
+		// One contribution each: a module contributes the one of a contract it is, so
+		// this product's second subject — the task — is contributed by the product
+		// module, which needs nobody and can build it from two named constructors, and
+		// a slice the resolver would refuse is what a loop over both here would be.
+		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, site.NewLockedReader()))
 		return module.Module{Name: "access"}, nil
 	},
 		pkit.Needs[usercontracts.Service](),

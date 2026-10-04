@@ -10,8 +10,10 @@ it was reviewed at or not at all.
 Which writes need it is not one of them. There is no `rest.Spec` here (a Spec is
 five routes on a collection, three of which write whatever the body says; a
 proposal moves through four named commands with an actor rule each), no HTML, no
-nav entry, no job, and no flag read: a capability that decided which of its host's
-operations were sensitive would be a capability with a product in it.
+nav entry and no job: a capability that decided which of its host's
+operations were sensitive would be a capability with a product in it. It reads a switch in
+exactly one place, and only where a composition built the switch into it — `Gate` below, with
+a `Key` somebody else chose and a `WayOn` somebody else serves.
 
 ## Composition
 
@@ -41,6 +43,17 @@ module's `WriteGate` question answered by one flag, wired into
 over `kit/config`'s flags block). One `SubjectBinding` per subject, written out by
 one author, checked by the compiler; `change.Deps.Subjects` empty means no subject
 exists and every proposal for one is `contracts.ErrUnsupportedSubject`.
+
+The reference application binds a second subject the same way — `task`, over
+`taskcontracts.LockedReader` and `taskcontracts.Writer` — and puts a door in front of the
+writes that subject is reachable through. `change.NewGate` takes the product's switch key, the
+address a refusal points at, the subject the door writes and a `contracts.Protection`;
+`change.Door` hands the result to `rest.Spec.Gate`; and the answer is given in field names,
+because `contracts.Refusal` carries `Fields` and a person refused at a PATCH has to be told
+which field, and where the change goes instead. What this module owns is the shape of that
+answer — ask the subject owner before the switch, so an unreachable provider never refuses a
+write nobody protected, and refuse with an address rather than a wall. What it owns in none of
+them is a key, a subject, or a field of anybody's row.
 
 **Reused** — `kit/crud.GetForUpdate` for the row lock and `kit/db.Tx[db.Tenant]`
 for the caller's transaction; `kit/events.Publish` for the one event per
@@ -74,6 +87,18 @@ a reviewer cannot eyeball). Nothing existing could carry either: the reuse
 inventory ran `grep -rn "Proposer"` across `kit modules apps ui` and found nothing,
 and the one working implementation of this pattern is a client's fee review, which
 is the reason for the object and not a unit the kernel could import.
+
+The round that made the object reach a write added `contracts.Protection` (a subset question:
+of the fields this write moves, which may not be written without a proposal),
+`contracts.SubjectRef` and `contracts.DirectWrite` as the door's description of a write, the
+reusable `Gate`/`NewGate`/`Door` answer, and `Refusal.Fields`. **Reused** rather than written:
+`kit/rest`'s `Spec.Gate` at the lock-merge-write seam, `kit/flags`' `Evaluator` for the switch,
+`kit/problem`'s 503 for a switch that did not answer, `crud.ErrConflict` for the refusal, and
+`kit/tenancy.ActorFrom` with `db.TenantOf` for who is asking — so the switch is evaluated for
+the tenant the request resolved to, not for the process that happens to serve it. **Made
+reusable**: a module that publishes its field vocabulary, as `modules/task` publishes
+`ProtectableFields` and `CommandOwnedFields`, stands behind a door because one composition
+wrote one `Gate` — and because nothing in this module read a name, a key or a subject to do it.
 
 **Made reusable** — the port list: any module with a row worth protecting can be
 proposed-and-applied by writing `Lock` and `Save` over its own table, and any host
@@ -208,12 +233,23 @@ device, because no device-facing surface asks for one.
 
 ## Limits
 
-`modules/site`'s settings row is the only subject composed, in the reference
-application, which makes `PUT /api/v1/site/settings` the only write change
-control routes there. A subject nobody binds is `ErrUnsupportedSubject` — the
-list in `apps/platformkit` is what makes a subject exist, and the one gate is
-one flag (`change.control.site-settings`), off by default, one boolean for the
-installation rather than per tenant; unreadable, it refuses the write.
+`modules/site`'s settings row and `modules/task`'s tasks are the two subjects composed in the
+reference application, which makes `PUT /api/v1/site/settings`, `PATCH /api/v1/task/tasks/{id}`
+and `DELETE /api/v1/task/tasks/{id}` the writes change control routes there. A subject nobody
+binds is `ErrUnsupportedSubject` — the list in `apps/platformkit` is what makes a subject
+exist. Each subject is one flag (`change.control.site-settings`, `change.control.task-sla`),
+off by default, one boolean for the installation rather than per tenant; unreadable, it refuses
+the write it gates and nothing else. Which task fields are protected (`slaDeadline`,
+`priority`) is that application's opinion, intersected with `taskcontracts.ProtectableFields`
+and written in `apps/platformkit/change.go` — nowhere in this module.
+
+Two doors stay open by decision rather than by oversight, and they are the same one: a proposal
+is a diff over a row measured against a revision, so **a create is not gated** (there is no
+proposal about a row that does not exist yet, and gating create would make an entity
+uncreatable while its switch was on — the first run of the test found that) and **there is no
+proposal for a delete**. A delete changes every value the row held, so a row holding a
+protected value cannot be deleted while the switch is on; empty the field or turn the switch
+off, which is a product's decision, not a bypass this module invents.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
