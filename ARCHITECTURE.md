@@ -630,8 +630,10 @@ already use. [ui/resource](ui/resource/) renders list, detail and form screens
 from an entity schema and rows the same way; [ui/screens](ui/screens/) adapts an
 `httpx.Resource` to it, mounts the screens its mounted routes answer and describes the
 resource catalog at `/api/v1/app/resources`. Value words — how a boolean, an enum or an
-instant reads — are [kit/entity/display](kit/entity/display/display.go)'s, with
-`kit/rest` delegating. The admin module and downstream storefronts call these
+instant reads — start as [kit/entity/display](kit/entity/display/display.go)'s source
+form, with `kit/rest` delegating; a generated record page that has a catalogue asks it for
+the boolean's word, the enum's word, the instant's layout and the number's shape, so the
+source form is what a shell with no catalogue renders. The admin module and downstream storefronts call these
 packages rather than maintaining separate document or stylesheet machinery.
 
 The shared [Video](ui/components/video.go) component uses native playback and
