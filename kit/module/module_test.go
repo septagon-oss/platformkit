@@ -310,6 +310,52 @@ func TestAManifestMayNameAnEventWithoutNamingItsPayload(t *testing.T) {
 
 // TestValidateRefusesAMoveTheRedirectCouldNotHonour: a moved address is a whole path
 // on both sides, never a row pointing at itself, and one old address has one owner.
+// TestValidateRefusesAManifestThatDeclaresOneEventTwoWays is the manifest half of
+// one emitter per name: the namespace rule makes it impossible for two manifests to
+// declare one event, so the manifest that can still write one name twice is its own,
+// and a manifest that does has promised two documents for one event. Nothing down
+// the line can read that pair honestly — kit/app's list is joined by name, and a
+// joined list has already kept whichever promise came first — so the composition is
+// refused here, beside the other answers about the manifest, in one list.
+func TestValidateRefusesAManifestThatDeclaresOneEventTwoWays(t *testing.T) {
+	oneShape := Module{Name: "ledger", Declared: []events.Declared{
+		events.Declare[numberPayload]("ledger.posted"),
+		events.Declare[sameDocument]("ledger.posted"),
+	}}
+	if err := Validate([]Module{oneShape}); err != nil {
+		t.Fatalf("two spellings of one document were refused: %v", err)
+	}
+
+	twoWays := Module{Name: "ledger", Declared: []events.Declared{
+		events.Declare[numberPayload]("ledger.posted"),
+		events.Declare[textPayload]("ledger.posted"),
+	}}
+	err := Validate([]Module{twoWays})
+	if err == nil {
+		t.Fatal("a manifest that declares one event two ways was accepted")
+	}
+	for _, want := range []string{`module "ledger"`, "ledger.posted", "integer", "string"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the refusal does not name %q: %v", want, err)
+		}
+	}
+}
+
+// numberPayload and sameDocument are two Go types for one document, and
+// textPayload is a type for another one: the pair the case above refuses and the
+// pair it must not.
+type (
+	numberPayload struct {
+		Number int64 `json:"number"`
+	}
+	sameDocument struct {
+		Number int64 `json:"number"`
+	}
+	textPayload struct {
+		Number string `json:"number"`
+	}
+)
+
 func TestValidateRefusesAMoveTheRedirectCouldNotHonour(t *testing.T) {
 	ok := Module{Name: "pets", Moved: []Move{{From: "/pets", To: "/app/pets"}}}
 	if err := Validate([]Module{ok}); err != nil {

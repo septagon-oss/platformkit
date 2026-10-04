@@ -348,16 +348,22 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	//
 	// What is answered here, rather than claimed, is the one thing about the catalog a
 	// boot can answer free of effects: whether this composition spells an event name
-	// another live composition already chose another way. Refusing that at Start would
+	// another live composition already chose another way, or spells one name two ways
+	// inside itself. Refusing that at Start would
 	// spend the three dry registrations and the API built to serve on the way to a
 	// sentence about two manifests (0074 rule 1); refusing it after the connection
 	// would spend the deployment too. Two boots that both read the catalog before
 	// either wrote it are answered by the claim, which is taken before the first
 	// effect and refuses whichever one reaches it second.
-	declared := declaredEvents(mods)
-	if err := events.CheckDeclared(declared); err != nil {
+	//
+	// The gate reads every declaration the manifests wrote, not one per name: a list
+	// joined by name has already chosen which of two promises to keep before anything
+	// reads it to be told it may not choose. declaredEvents is the same list once this
+	// refusal has passed, and is what the boot installs and the document renders.
+	if err := events.CheckDeclared(allDeclaredEvents(mods)); err != nil {
 		return nil, err
 	}
+	declared := declaredEvents(mods)
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is
@@ -1083,9 +1089,15 @@ var kernelModule = module.Module{
 	},
 }
 
-// declaredEvents is every event every manifest declares, de-duplicated by name.
-// Two modules may not emit one name — module.Validate refuses that as a
-// namespace violation — so the first declaration seen is the only one.
+// declaredEvents is every event every manifest declares, de-duplicated by name — the
+// list once the gate above has passed, which is what the boot installs and what the
+// AsyncAPI document renders and counts coverage over, each name said once.
+//
+// The de-duplication says nothing about which spelling stood, because after that gate
+// every spelling of one name is one shape: module.Validate refuses a manifest that
+// declares one name under two payloads and the namespaced-emit rule refuses two
+// manifests that emit one name, so a name has one emitter and one shape or the
+// composition never reached here.
 func declaredEvents(mods []module.Module) []events.Declared {
 	var out []events.Declared
 	seen := map[string]bool{}
@@ -1095,6 +1107,18 @@ func declaredEvents(mods []module.Module) []events.Declared {
 				seen[e.Name], out = true, append(out, e)
 			}
 		}
+	}
+	return out
+}
+
+// allDeclaredEvents is every declaration every manifest wrote, in build order, with
+// nothing dropped. It is the input to the catalog's gate: the disagreement it refuses
+// is between two declarations of one name, and a caller that hands the gate a list
+// already joined by name has answered the question before asking it.
+func allDeclaredEvents(mods []module.Module) []events.Declared {
+	var out []events.Declared
+	for _, m := range mods {
+		out = append(out, m.Emits()...)
 	}
 	return out
 }
