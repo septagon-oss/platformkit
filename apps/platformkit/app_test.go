@@ -287,11 +287,14 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// the trail this test already read is something its plan includes.
 	//
 	// Content: written, published, and then read at the same host by a caller
-	// with no session at all — which is what publishing means. The script in
-	// the body is not in the page: the renderer leaves raw HTML out and the
-	// sanitizer refuses what is left.
+	// with no session at all — which is what publishing means. Raw HTML is
+	// refused on write, before it can become a published page.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
+		`{"slug":"unsafe","title":"Unsafe","body":"<script>alert(1)</script>"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "raw HTML") {
+		t.Fatalf("unsafe content = %d %s, want a raw HTML refusal", code, body)
+	}
 	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
-		`{"slug":"About Us","title":"About Acme","kind":"page","body":"# About\n\n<script>alert(1)</script>\n\nWe make **things**."}`)
+		`{"slug":"About Us","title":"About Acme","kind":"page","body":"## About\n\nWe make **things**."}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", contentPath, code, body)
 	}
@@ -299,7 +302,16 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", ""); code != http.StatusNotFound {
 		t.Errorf("an unpublished page = %d %s, want 404", code, body)
 	}
-	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
+	// The author is not the publisher: the module refuses the person who wrote the
+	// page, by name, and the page goes live when a second holder of the permission
+	// asks for it. The installation invites that person here for the same reason it
+	// invites everybody else later.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusConflict ||
+		!strings.Contains(body, "author") {
+		t.Fatalf("self-publication = %d %s, want a 409 naming authorship", code, body)
+	}
+	publisher := signIn(t, cfg, acmeHost, publisherIn(t, cfg, admin, "publisher@acme.localhost"), publisherPass)
+	if code, body = do(t, cfg, publisher, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
 		t.Fatalf("publish = %d %s, want 200", code, body)
 	}
 	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", "")
@@ -307,7 +319,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Fatalf("the published page = %d %s", code, body)
 	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "alert(1)") {
-		t.Errorf("the published page carries the script somebody typed into it:\n%s", body)
+		t.Errorf("the published page carries unsafe markup:\n%s", body)
 	}
 
 	// Site: what a theme reads, saved by an administrator and read by nobody
@@ -1645,20 +1657,28 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// not the foundation's highest file — see legacyLayout.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 41 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41) and twenty-six under modules/*/migrations/ (4, 7, 8,
+	// this head prints 42 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41) and twenty-seven under modules/*/migrations/ (4, 7, 8,
 	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36, 37,
-	// 38, 39, 40), all at distinct versions. The release this fixture is applied from
-	// shipped 33 of them: the thirteen under migrations/ up to the adopted ceiling
-	// (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module adopts
-	// back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32,
-	// 33), which is every version to modules/auth's 33, the highest number any owner
-	// names. The eight above it — the kernel's own 34 and 41, modules/audit's 35, 36
-	// and 37, modules/change's 38, modules/site's 39 and modules/file's 40 — postdate
-	// that release, are not in the old installation's ledger, and legacyLayout leaves
-	// them out; the upgrade below applies them under the owner that ships them and
-	// counts them as new rows. Each continues past the highest number anywhere in the
-	// composition, which is the rule this fixture exists to enforce.
+	// 38, 39, 40, 42), all at distinct versions. The release this fixture is applied
+	// from shipped 33 of them: the thirteen under migrations/ up to the adopted
+	// ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module
+	// adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27,
+	// 31, 32, 33), which is every version to modules/auth's 33, the highest number any
+	// owner names. The nine above it — the kernel's own 34 and 41, modules/audit's 35,
+	// 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
+	// modules/content's 42 — postdate that release, are not in the old installation's
+	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
+	// the owner that ships them and counts them as new rows. Each continues past the
+	// highest number anywhere in the composition, which is the rule this fixture
+	// exists to enforce.
+	//
+	// modules/content's body-character file is 000042 and not the 000035 it was first
+	// merged as, for the reason this paragraph has now recorded four times: this
+	// fixture flattens every owner's files under one owner, and every number from 35
+	// to 41 was taken on main while the rich-text branch was still open — 000035 is
+	// modules/audit's audit_context and 000041 is the kernel's own outbox baggage.
+	// One version, one row.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -1682,10 +1702,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the eight files above the
+	// release ships is in the ledger, which is where the nine files above the
 	// adopted ceiling of 33 (the kernel's own 34 and 41, modules/audit 35, 36 and 37,
-	// modules/change 38, modules/site 39 and modules/file 40, all absent from the old
-	// ledger) have to be accounted for: 41 files in the release, 41 rows.
+	// modules/change 38, modules/site 39, modules/file 40 and modules/content 42, all
+	// absent from the old ledger) have to be accounted for: 42 files in the release,
+	// 42 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

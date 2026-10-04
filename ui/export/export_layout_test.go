@@ -124,6 +124,9 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
 	//
+	// Prose is a shared component: its selector now reads the component's own
+	// data-component hook. The site owns data-prose in its client sheet.
+	//
 	// The frame's floor fixes move it: four utilities and one colour pair join the sheet for the brand
 	// link, the footer's bound, the frame's break rule and the table's opt-out from it, and the inverse
 	// sidebar column gains a text colour. A leaf-by-leaf diff before and after those commits changes /css
@@ -137,7 +140,10 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sizing is constrained, so a max-width on the field's flex column is a client's design document that
 	// no longer contains their forms (measured at this head: 44 refusals). The break rule that stops a
 	// page scrolling sideways sits on the frame's content region for the same reason — see clShellMain.
-	if legacy.SHA256 != "d09d7f712ed071ce02f8e6de85c90484e9d2fa12d5fb848ee2a85dd2d08e7071" {
+	//
+	// Both deltas above are one side's own before-and-after. The digest is neither side's number: it is
+	// this merged tree's export, printed by the refusal below and copied once the merge was in place.
+	if legacy.SHA256 != "7354088a4a87fafc8a324c2541d0f578337a040c07908204e488effe6a6b0356" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

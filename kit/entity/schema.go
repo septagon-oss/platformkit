@@ -3,6 +3,7 @@ package entity
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,8 @@ type Field struct {
 	// name refuses to mount, because a name no renderer knows used to draw a
 	// plain text input in silence.
 	Widget string `json:"widget,omitempty"`
+	// MaxLength is the declared character ceiling a generated control shows.
+	MaxLength int `json:"maxLength,omitempty"`
 	// Present is how a *read* renders the value: `ui:"present:person"`. It must be
 	// a name Presentations admits, and a Spec whose entity names anything else
 	// refuses to mount for the same reason Widget does — a name no renderer knows
@@ -126,7 +129,7 @@ type Field struct {
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week",
 }
 
 // Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
@@ -250,6 +253,7 @@ func derive(t reflect.Type) []Field {
 			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
 		}
+		f.MaxLength, _ = strconv.Atoi(sf.Tag.Get("maxLength"))
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")
 		}

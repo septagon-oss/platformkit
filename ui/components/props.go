@@ -183,9 +183,11 @@ type TextareaProps struct {
 	MaxRows      int    `json:"maxRows,omitempty"`
 	MinLength    int    `json:"minLength,omitempty"`
 	MaxLength    int    `json:"maxLength,omitempty"`
-	ShowCount    bool   `json:"showCount,omitempty"`
-	AutoResize   bool   `json:"autoResize,omitempty"`
-	FullWidth    bool   `json:"fullWidth,omitempty"`
+	// CharacterLimitOnly shows the limit without HTML's UTF-16 maxlength gate.
+	CharacterLimitOnly bool `json:"characterLimitOnly,omitempty"`
+	ShowCount          bool `json:"showCount,omitempty"`
+	AutoResize         bool `json:"autoResize,omitempty"`
+	FullWidth          bool `json:"fullWidth,omitempty"`
 }
 
 // CheckboxProps defines properties for a checkbox input.
