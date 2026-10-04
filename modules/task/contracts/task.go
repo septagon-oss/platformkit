@@ -100,6 +100,20 @@ type Task struct {
 	// ResolvedAt and Resolution close the loop. Both are set by Service.Resolve.
 	ResolvedAt *time.Time `json:"resolvedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;hide:list" doc:"When the task was resolved" readOnly:"true"`
 	Resolution string     `json:"resolution,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list" doc:"How the task was resolved"`
+	// Revision counts this row's writes, from 1. It is what a diff can be quoted
+	// against: a proposal records the number it was made at, and the apply refuses
+	// unless the row is still on it (modules/change's stale-base rule), so a change
+	// approved against one deadline can never land over another.
+	//
+	// The same reason modules/site's Settings gave for growing the column: "somebody
+	// diffing these needs a number". Every Go write of the row moves it — the
+	// generated PATCH, each of the three commands, and Writer.Save — which is why a
+	// reviewer's stale-base refusal is always explainable. A database trigger was
+	// refused: it would move the number on writes nobody diffs, invisible to the
+	// column list crud.Update is handed, and the refusal it caused would name a
+	// change nobody could point at.
+	Revision int64 `json:"revision" gorm:"not null;default:1" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
+
 	// Changes is what the save that published this payload moved. It is the trail's
 	// field and not the entity's: see events.Change and events.Recorder. The kernel's
 	// own write door fills it from the row that write made, just before it publishes
@@ -119,6 +133,32 @@ type Task struct {
 func (t *Task) SetChanges(changes []events.Change) {
 	t.Changes = changes
 }
+
+// CommandOwnedFields are the fields a route of their own owns. rest.Spec's
+// Immutable reads this list, so one sentence is the source for the PATCH refusal,
+// the apply refusal and — through the composition — the gate's answer. A second
+// spelling of the same four names would be one more thing to keep honest.
+var CommandOwnedFields = []string{"assigneeId", "slaBreached", "resolvedAt", "resolution"}
+
+// ProtectableFields names the fields of a task a proposal may move — which is the
+// same list, from two sides, as "the fields an installation may put behind change
+// control": a field no apply could write is a field no queue could review, and a
+// field a reviewer must see is a field nobody should type directly. Two readers, one
+// sentence, so neither can drift: the composition intersects it with the
+// installation's own switch, and Writer.Save writes exactly these columns.
+//
+// A task is an SLA object, so the deadline and the urgency in the promise are the two
+// worth a second pair of eyes; title and description are here because a queue that
+// could not correct a mis-typed title is a queue people route around.
+//
+// What is not here is a fact of the same kind. The four CommandOwnedFields belong to
+// their commands outright, and so does status: Assign moves open to acknowledged and
+// publishes task.assigned, Resolve sets resolvedAt and publishes task.resolved, and a
+// proposal that could set either field alone would leave a person responsible for a
+// task nobody resolved. This list is the module's vocabulary and not a decision —
+// which of these fields is protected at which installation is answered by the
+// composition's Protection over the installation's own switch.
+var ProtectableFields = []string{"title", "description", "priority", "dueAt", "slaDeadline", "source", "sourceRef"}
 
 // TableName pins the table, so the entity and migrations/000004 agree.
 func (Task) TableName() string { return "tasks" }
@@ -209,4 +249,37 @@ type Service interface {
 	// neither resolved nor already breached. The sweep calls it once a minute
 	// for every overdue task, so it publishes at most once per task.
 	CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Task, error)
+}
+
+// LockedReader is the read a diff is made against: the task with its row locked
+// FOR UPDATE, so the revision beside the diff is the revision nobody else can move
+// while this transaction is open.
+//
+// It is a second interface and not a method on Service for the reason modules/site
+// gives for its own: adding a method to an exported interface is an API break for
+// every consumer that implemented it, and a caller that needs the plain lifecycle
+// should not be handed the locked row by the interface it already had.
+type LockedReader interface {
+	TaskForUpdate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*Task, error)
+}
+
+// Writer is the door an approved proposal comes through: the whole-row write, on
+// the fields a proposal is allowed to carry.
+//
+// It is not a method on Service, for the same reason LockedReader is not, and it is
+// not the generic PATCH: a PATCH refuses an immutable field with a 422, and a
+// merged proposal document is not a caller reaching for a command-owned field, it
+// is the *current* row with one field changed. So this method checks the merged
+// document against the locked row rather than against a request body, and refuses
+// (crud.ErrInvalid, naming the field) one that moves a command-owned field or the
+// status — because assigneeId belongs to Assign, which moves the status and
+// publishes task.assigned, and a proposal that wrote the field alone would leave a
+// person responsible and nobody told.
+//
+// The write publishes task.task.updated like any other write of the row and moves
+// revision, so the apply leaves a trail and a number. There is exactly one such
+// door, it is not behind the gate (a gate on both sides is a wall), and what makes
+// it safe is that it is named, single and audited — not that it is hidden.
+type Writer interface {
+	Save(ctx context.Context, tx db.Tx[db.Tenant], in *Task) (*Task, error)
 }

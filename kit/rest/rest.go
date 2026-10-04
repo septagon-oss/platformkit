@@ -186,6 +186,26 @@ type Spec[T crud.Entity] struct {
 	// but the outbox.
 	HookEvents []string
 
+	// Gate is the door in front of a write: asked once the row is locked and the
+	// body merged, before anything is written, and never at all when nothing is
+	// set. It answers one question — may these fields be written directly, by this
+	// caller, now — and it is asked here, in the orchestration the JSON routes and
+	// the in-process resources share, rather than in each module's service, because
+	// a module cannot gate a route it does not write: the generic PATCH is mounted
+	// from this file, and a gate that stood only in a module's own Save covered one
+	// door and left the other three open. See gate.go for the two rules that make it
+	// a door rather than a wall.
+	//
+	// It is not authorization, which happened already, at the permission guard, and
+	// at crud.RecheckTenant below it. This is the write's own state question, the one
+	// a change-control composition answers: modules/change asks whether the write has
+	// to be proposed first, and this package knows nothing about proposals.
+	//
+	// An entity behind a Gate has to carry the RevisionField, and Mount refuses one
+	// that does not: a door that refuses a write because the row may have moved is a
+	// door that cannot say whether it has, and a refusal nobody can act on.
+	Gate Gate
+
 	// The hooks run inside the request's transaction, after the write and
 	// after the event, so a hook can publish more events or write more rows and
 	// all of it commits together.
@@ -193,7 +213,9 @@ type Spec[T crud.Entity] struct {
 	// There is no AfterUpdate, and the absence is a decision rather than an
 	// omission: nothing in three repositories ever set one, and a hook nobody
 	// writes is a parameter every reader of this struct has to rule out. A
-	// module that needs one adds it back in the commit that uses it.
+	// module that needs one adds it back in the commit that uses it. Its other
+	// half — the question asked before a write rather than after — is Gate, above,
+	// which is the hook this repository was missing.
 	AfterCreate func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 	AfterDelete func(ctx context.Context, tx db.Tx[db.Tenant], e T) error
 }
@@ -416,6 +438,12 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	// fields, and the diff is no field: it answers `{"changes":[…]}` with "there is no
 	// field \"changes\"", which is the same refusal in the other door's words.
 	discardDiff(e)
+	// The create door is not gated, and the gate's own invariant is why: a proposal
+	// is a diff against a row that has a revision, so there is no proposal to make
+	// about a row that does not exist yet, and a gate here would be the only way
+	// past a field it refuses — a wall. Protecting a record's protected fields means
+	// guarding the writes that change a record somebody else may have already read:
+	// the patch, the delete, and the commands that declare them.
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
@@ -436,6 +464,14 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// replaced — history that did not happen, in the one table whose job is to have
 	// happened. See reportDiff.
 	before := rowCopy(e)
+	// The same locked row, in the two encodings the gate compares. A door asks which
+	// fields this write moves, and answers by comparing bytes rather than by reading
+	// the body's keys: a form that resends the current value changes nothing, and a
+	// gate that read the keys would refuse it. See changedNames.
+	beforeJSON, err := jsonSnapshot(e)
+	if err != nil {
+		return e, err
+	}
 	columns, err := merge(e, fields, s.Immutable, values)
 	if err != nil {
 		return e, err
@@ -455,12 +491,36 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		}
 		return e, nil
 	}
+	// The order below is a decision and not an accident, because it is the order of
+	// the answers a caller gets. An invalid body is refused before it is told which
+	// of its fields is protected: a 422 about a malformed deadline says something the
+	// caller can fix, and a 409 about a protected deadline on a request that was
+	// never going to be valid would send them to propose a change that fails the same
+	// way. Whose row it is comes next, before a word is said about its fields. Then
+	// the gate, and only then the write.
+	if err := entityValidate(ctx, e); err != nil {
+		return e, err
+	}
+	if err := crud.RecheckTenant(tx, e); err != nil {
+		return e, err
+	}
+	changed, err := changedNames(fields, beforeJSON, e)
+	if err != nil {
+		return e, err
+	}
+	if err := s.gate(ctx, tx, id, VerbUpdate, "", changed); err != nil {
+		return e, err
+	}
 	if err := s.prepareRichText(ctx, tx, e, columns); err != nil {
 		return e, err
 	}
-	// Write only the submitted columns and timestamp. Untouched fields retain
-	// the preceding committed values used for validation and the emitted event.
-	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
+	// Write only the submitted columns, the timestamp and the row's own revision.
+	// Untouched fields retain the preceding committed values used by validation and
+	// the emitted event. The revision moves in this one UPDATE and not in a second
+	// statement: there is no window where the number and the value disagree, and no
+	// trigger moving it behind a write this file would then have to explain.
+	write := append(append([]string{}, columns...), "updated_at")
+	if err := crud.Update(ctx, tx, e, s.bumpRevision(fields, e, write)...); err != nil {
 		return e, err
 	}
 	// The diff is computed after that write and before the event, because crud.Update
@@ -555,6 +615,21 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.RecheckTenant(tx, e); err != nil {
 		return e, err
 	}
+	// A delete is the largest write there is: every value the row held goes, so the
+	// fields it held are the fields it changes, and a protected value makes the
+	// delete protected with it. It is the one verb whose own request says nothing —
+	// there is no body to read a field list from — which is why the answer is
+	// computed from the row instead, and why leaving this door out of a gate would
+	// be a way past it that nobody had to write.
+	if s.Gate != nil {
+		changed, err := changedNames(crud.Fields[T](), nil, e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.gate(ctx, tx, id, VerbDelete, "", changed); err != nil {
+			return e, err
+		}
+	}
 	// A record that stops existing shows nothing, so its uses end in the same
 	// transaction that removes its row. A ledger row that outlived its record is a
 	// file panel that links to a record no route answers, and — once the release
@@ -572,6 +647,12 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // CommandOptions is what a command may differ from its Spec in. It is a struct
 // and not two more parameters because a command that differs in nothing has to
 // be able to say so in one word: rest.CommandOptions{}.
+//
+// What a command writes is deliberately not among the things it can say here.
+// The kernel cannot know it without running the command, and running it is the
+// write; a list copied onto the command would be a second, editable copy of a
+// fact the module already holds, and one the author could simply forget to
+// write. The door asks the module by verb instead — Spec.Gate says how.
 type CommandOptions struct {
 	// Auth is who may run this command. The zero value is the Spec's own write
 	// permission, which is right for a command that moves a row an
@@ -696,6 +777,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		var in I
 		if body != nil {
 			in = *body
+		}
+		if err := spec.commandGate(ctx, tx, id, verb, opts); err != nil {
+			var zero T
+			return zero, err
 		}
 		return run(ctx, tx, id, in)
 	}
@@ -861,6 +946,9 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = s.operationsFault()
+	}
+	if bad == "" {
+		bad = s.gateFault()
 	}
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
