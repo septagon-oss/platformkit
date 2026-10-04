@@ -58,9 +58,9 @@ func canon(text string) string {
 //
 // A hyphen never exempts on its own: `Hard-coded`, `Sign-in` and `Follow-up` all
 // count as copy. The residual risk is stated where it can be read — `of-PT` passes as
-// a language tag and `onboarding-2026-checklist` as an opaque token — and it is
-// bounded by the report printing every exempt string, so nothing the number chose not
-// to count is hidden.
+// a language tag, `onboarding-2026-checklist` as an opaque token and `and/or` as a
+// relative address — and it is bounded by the report printing every exempt string,
+// so nothing the number chose not to count is hidden.
 func Exempt(text string) bool {
 	text = canon(text)
 	if text == "" {
@@ -87,9 +87,7 @@ func machine(token string) bool {
 	if isMachineKey(token) || isOpaqueToken(token) {
 		return true
 	}
-	// An address of any kind — a path, a media type, a URL — is data. Nothing
-	// written as copy needs a slash to say it.
-	if strings.Contains(token, "/") {
+	if address(token) {
 		return true
 	}
 	for _, grammar := range tokenGrammars {
@@ -99,6 +97,31 @@ func machine(token string) bool {
 	}
 	return false
 }
+
+// address says whether one token is an address rather than a word: a path from the
+// root or from here, or a pair of machine-shaped segments joined by a slash. It is
+// not "anything with a slash", which is the mistake this rule used to make: a
+// toggle's label, a column that reads `N/A` and a choice between two words are all
+// spelled with a slash and all copy somebody wrote in Go.
+func address(token string) bool {
+	return absolute.MatchString(token) || relative.MatchString(token) || client.MatchString(token)
+}
+
+// The three address shapes. `absolute` is a path; `client` is a product tag and its
+// version, which is the shape a stored User-Agent takes and the one data shape
+// allowed its capitals — a product spells itself however it likes.
+//
+// `relative` is the one that costs something: every segment of `text/plain` and
+// `uploads/2026/chiller.pdf` is lowercase ASCII with an address's punctuation, and
+// so is `and/or`. The condition that makes a media type a media type is a condition
+// on spelling, and a lowercase pair joined by a slash satisfies it. That is the
+// over-reach this rule accepts, and `Report` prints it rather than hiding it; what
+// it replaces is the version that exempted `Yes/No` on its way to exempting `text/plain`.
+var (
+	absolute = regexp.MustCompile(`^(?:\.\.?|~)?/(?:[A-Za-z0-9._~%+@-]+/?)*$`)
+	relative = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]*(?:/[a-z0-9._+-]+)+$`)
+	client   = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9.+-]*/\d+(?:\.\d+)*$`)
+)
 
 // The shapes the grammars below spell, written once.
 const (

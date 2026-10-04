@@ -16,10 +16,17 @@ package main
 //  3. Each one is requested with Accept: text/html and Accept-Language: pt-PT, which
 //     asks two questions at once: did this string reach a key, and does the one
 //     language this deployment ships answer that key.
-//  4. ui/legible extracts what a person reads and exempts what is data.
+//  4. ui/legible extracts what a person reads, exempts what is data by shape, and is
+//     handed the values this file typed through the workspace API — a task's title and
+//     a page's body are sentences somebody typed, and no catalogue can hold them, so
+//     they belong in neither number and `MarkDatum` is the only rule that can say so.
 //  5. The numbers are compared with testdata/i18n-coverage.json, which is both the
 //     floor and the set: coverage may only rise, untranslated may only fall, and the
 //     pages measured may not quietly change.
+//
+// Every string is then printed: `TEXT` for one that went around a catalogue and `DATA`
+// for one the number declined to count, with the rule that declined it. Nothing the
+// measurement chose not to count is left out of the report.
 //
 // It issues no write: every request is a GET. The rows it reads were seeded through
 // the workspace API before the walk, which is the only thing here that touches data.
@@ -105,7 +112,13 @@ func TestThePseudoLocaleGate(t *testing.T) {
 	seeds := seed(t, cfg, admin)
 
 	measured := map[string]coverage{}
-	var skips, violations []string
+	var skips, unreachable, declined []string
+	say := func(page string, collected []legible.String) {
+		measured[page] = count(collected)
+		copy, data := legible.Report(page, collected)
+		unreachable = append(unreachable, copy...)
+		declined = append(declined, data...)
+	}
 	for _, route := range documentRoutes(mounted) {
 		page := pageName(route)
 		at, ok := instantiate(route.Path, seeds)
@@ -140,10 +153,7 @@ func TestThePseudoLocaleGate(t *testing.T) {
 			rec.End()
 			continue
 		}
-		measured[page] = count(collected)
-		for _, s := range legible.Violations(collected) {
-			violations = append(violations, fmt.Sprintf("TEXT %s %s %s", page, s.Path, quote(s.Text)))
-		}
+		say(page, legible.MarkDatum(collected, seeds.typed))
 		rec.End()
 	}
 	for _, fault := range refusalDocs(t, admin) {
@@ -160,10 +170,7 @@ func TestThePseudoLocaleGate(t *testing.T) {
 			rec.End()
 			continue
 		}
-		measured[fault.Page] = count(collected)
-		for _, s := range legible.Violations(collected) {
-			violations = append(violations, fmt.Sprintf("TEXT %s %s %s", fault.Page, s.Path, quote(s.Text)))
-		}
+		say(fault.Page, legible.MarkDatum(collected, seeds.typed))
 		if code < http.StatusBadRequest {
 			t.Errorf("%s: %s answered %d, which is not a refusal", fault.Page, fault.Path, code)
 		}
@@ -175,14 +182,14 @@ func TestThePseudoLocaleGate(t *testing.T) {
 	if os.Getenv("UPDATE_I18N_FLOOR") == "1" {
 		writeFloor(t, now)
 	}
-	check(t, wanted, now, violations, skips)
+	check(t, wanted, now, unreachable, declined, skips)
 }
 
 // check prints the number on every run, passing included, then refuses what fell.
 // t.Log is not evidence: `make check` runs the suite through gotestsum, whose format
 // drops the output of a passing test, so the report is printed and the target passes
 // -v.
-func check(t *testing.T, wanted report, got report, violations, skips []string) {
+func check(t *testing.T, wanted report, got report, unreachable, declined, skips []string) {
 	t.Helper()
 	totals := func(pages map[string]coverage) coverage {
 		var out coverage
@@ -200,7 +207,7 @@ func check(t *testing.T, wanted report, got report, violations, skips []string) 
 		have.Wrapped, have.Readable, have.percent(), len(got.Pages),
 		want.Wrapped, want.Readable, want.percent(), got.Untranslated)
 	fmt.Printf("i18n coverage measured %s; %d pages skipped, %d strings not copy\n",
-		got.MeasuredUTC, len(skips), got.Untranslated)
+		got.MeasuredUTC, len(skips), len(declined))
 
 	if wanted.Version != floorVersion && os.Getenv("UPDATE_I18N_FLOOR") != "1" {
 		t.Errorf("%s records version %d and this build reads %d; regenerate it rather than guessing at a shape",
@@ -253,8 +260,11 @@ func check(t *testing.T, wanted report, got report, violations, skips []string) 
 	for _, skip := range skips {
 		fmt.Println("SKIP", skip)
 	}
-	for _, violation := range violations {
-		fmt.Println(violation)
+	for _, line := range declined {
+		fmt.Println(line)
+	}
+	for _, line := range unreachable {
+		fmt.Println(line)
 	}
 }
 
@@ -284,9 +294,24 @@ func pageName(route httpx.MountedRoute) string { return route.Method + " " + rou
 // seeds are the rows the walk needs, created through the workspace API. An id this
 // file invented would answer a refusal page and be counted as the record screen.
 type seeds struct {
-	ids  map[string]string
-	slug string
+	ids   map[string]string
+	slug  string
+	typed []string
 }
+
+// What seed types into each field, named once so the request body and the list of
+// values handed to legible.MarkDatum cannot drift apart. Every one of these is a
+// sentence a person typed into a form: a task's title, a page's title and body, a
+// plan's name. They are data, they appear on the record screens the walk renders, and
+// no catalogue will ever hold any of them — so they belong in neither number, and the
+// report says which of them it declined to count, and why.
+const (
+	seededTaskTitle = "Pump room inspection"
+	seededPlanName  = "Pro, billed monthly"
+	seededPageSlug  = "about-us"
+	seededPageTitle = "About us"
+	seededPageBody  = "We fix chillers."
+)
 
 // instantiate fills one path pattern from a row of the resource it names. `{slug}` is
 // the public site's one published page.
@@ -382,13 +407,13 @@ func seed(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 		}
 		return field(t, answer, "id")
 	}
-	out.ids["/app/task/tasks/"] = created(tasksPath, `{"title":"Pump room inspection","priority":"high"}`)
+	out.ids["/app/task/tasks/"] = created(tasksPath, `{"title":"`+seededTaskTitle+`","priority":"high"}`)
 	// The plan is written where the composition says a plan is written — the ops door —
 	// and read back through the tenant's own, which is the page a person is shown.
 	out.ids["/app/billing/plans/"] = created("/api/v1/ops"+strings.TrimPrefix(plansPath, "/api/v1"),
-		`{"code":"pro-monthly","name":"Pro, billed monthly","priceCents":2900,"currency":"EUR","active":true}`)
+		`{"code":"pro-monthly","name":"`+seededPlanName+`","priceCents":2900,"currency":"EUR","active":true}`)
 	content := created(contentPath,
-		`{"slug":"about-us","title":"About us","body":"We fix chillers.","kind":"page"}`)
+		`{"slug":"`+seededPageSlug+`","title":"`+seededPageTitle+`","body":"`+seededPageBody+`","kind":"page"}`)
 	out.ids["/app/content/contents/"] = content
 	if content != "" {
 		// The public site answers a page only once it is published, and publishing is
@@ -397,7 +422,7 @@ func seed(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 			contentPath+"/"+content+"/publish", `{}`); code != http.StatusOK {
 			t.Logf("publish = %d %s", code, answer)
 		} else {
-			out.slug = "about-us"
+			out.slug = seededPageSlug
 		}
 	}
 	// The bootstrap created one person, and that person is the row the user record
@@ -412,6 +437,7 @@ func seed(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 			out.ids["/app/user/users/"] = list.Items[0].ID
 		}
 	}
+	out.typed = []string{seededTaskTitle, seededPlanName, seededPageSlug, seededPageTitle, seededPageBody}
 	return out
 }
 

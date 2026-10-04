@@ -7,6 +7,11 @@ element siblings numbered). `Violations` are the strings that went around a cata
 `Exempted` are the ones the number does not count. `Exempt(text)` is the exemption
 rule, and `Reached` is the decision handed in by whoever marks the copy —
 `pseudo.Wrapped` in the gate — so this package names no locale and no delimiter.
+`MarkDatum(collected, values)` marks the strings the application itself holds as what a
+person typed, and `Report(label, collected)` prints the verdict one document at a time:
+`TEXT <label> <path> "text"` for every string that went around a catalogue and
+`DATA <label> <path> "text" <why>` for every string it declined to count, with the rule
+that declined.
 
 It reads documents and writes nothing: no I/O, no clock, no tenant, so a case asserts
 the whole list against a literal.
@@ -22,18 +27,25 @@ where it sits, because a predicate satisfiable by position is one somebody would
 satisfy by position. A mixed line ("Delete task 4b2a…") is therefore reported: the
 word that is not a shape is a sentence somebody wrote in Go. Dates exempt only in the
 numeric forms this kernel renders; a page that spells `Monday, 4 October 2026` is a
-page whose month names nobody translated, and that is reported.
+page whose month names nobody translated, and that is reported. An address exempts by
+shape — a path from the root, a media type, a product tag and its version — and not by
+holding a slash, because `Yes/No` and `Show/Hide` hold one and are copy. What no rule
+over a shape can decide is which sentences a person typed: "Pump room inspection" and
+"Back to the workspace" are the same kind of text, and only the write that stored the
+first knows it, which is why the gate hands its own seeded values to `MarkDatum`.
 
 **Reused** — `golang.org/x/net/html` (`html.Parse`, already a requirement) rather than
 a second HTML reader, and the raw-text skip that falls out of the parse tree: a
 `<script>` body is a text node whose parent names it. **Added** — the scan and the
 exemption grammar; nothing in the tree read a rendered document back (`grep -rln
 "html.Parse"` returned two test files) and there was no exemption rule to extend.
-**Made reusable** — the scan and `Exempt` are a client's own gate's two halves: a
-product renders its pages under the same pseudo-locale, calls `Scan` with
-`pseudo.Wrapped`, and floors its own ratio, without this package knowing what a page,
-a route or a client is.
+**Made reusable** — the scan, `Exempt`, `MarkDatum` and `Report` are one client's own
+gate's halves: a product renders its pages under the same pseudo-locale, calls `Scan` with
+`pseudo.Wrapped`, marks what it typed, and floors its own ratio, without this package
+knowing what a page, a route or a client is.
 
-Known over-reach, printed rather than hidden: `of-PT` passes as a language tag and a
-16-character slug holding a digit passes as an opaque token. A report lists every
-exempt string, so what the number declined to count stays reviewable.
+Known over-reach, printed rather than hidden: `of-PT` passes as a language tag, a
+16-character slug holding a digit passes as an opaque token, and `and/or` reads as a
+relative address because every one of its segments is spelled the way an address
+segment is. `Report` prints every exempt string with the reason, so what the number
+declined to count stays reviewable.

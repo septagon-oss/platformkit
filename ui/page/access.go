@@ -68,7 +68,7 @@ func MountAccess(r *httpx.Router, s Shell) {
 		v := View{Title: title, Status: http.StatusOK, Body: []g.Node{
 			components.Toolbar(components.ToolbarProps{Title: title}),
 			components.Alert(components.AlertProps{Tone: "success", Message: body, Bordered: true}),
-			components.Link(components.LinkProps{Label: s.BackLabel, Href: s.Back}),
+			components.Link(components.LinkProps{Label: backWay(loc, s.BackLabel), Href: s.Back}),
 		}}
 		if loc != nil {
 			v.Language = loc.Language

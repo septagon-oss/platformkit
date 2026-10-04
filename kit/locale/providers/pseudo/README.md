@@ -25,7 +25,8 @@ its `Carries`, which is how an ask is known to have been answered rather than ec
 itself and the ask recorder: no formatter wrapper existed in the tree (`grep -rn
 "locale.Formatter"` returns the one alias in `ui/page/locale.go`), and
 `golang.org/x/text` ships no pseudolocales to import, so the reversible wrap, the
-two-pass vowel map that stays a bijection over accented input, and the serial
+vowel rotation that stays a bijection over any payload — including copy whose own
+letters are accented, as Vietnamese and Portuguese write them — and the serial
 page-attribution rule are this package's. **Made reusable** — the recorder's worklist
 (`Unanswered`, per key, per page, per language) is any client's own translation
 backlog, and `Carries` on `xtext.Catalog` answers "is this key translated?" for
