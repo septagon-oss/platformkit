@@ -81,11 +81,25 @@ func TestServiceConforms(t *testing.T) {
 // and refuses: the rule lives in the service, and this is where it costs a fixture
 // one line. No assertion of any test that calls it changed; the world gained a
 // tenant.
+//
+// The service it is given is the app the installation belongs to: tenants_operator
+// is unique on (app) (migrations/000043_tenant_app), so an installation is one app's
+// and an app whose own installation is absent is refused rather than served by
+// another's. A case of two apps therefore installs one each - `installedAs`, because
+// tenants_slug names one installation per slug.
 func installed(t *testing.T, conn *db.Conn, svc contracts.Service) {
+	t.Helper()
+	installedAs(t, conn, svc, "installation", "ops.example.com")
+}
+
+// installedAs is `installed` under the slug and host a case needs, which is what a
+// world of several apps needs: the installation is per app, and tenants_slug is
+// unique across the schema, so two of them cannot share the one spelling.
+func installedAs(t *testing.T, conn *db.Conn, svc contracts.Service, slug, host string) {
 	t.Helper()
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
-			Slug: "installation", Name: "This installation", Host: "ops.example.com",
+			Slug: slug, Name: "This installation", Host: host,
 		})
 		return err
 	})
