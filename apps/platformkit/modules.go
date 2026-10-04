@@ -339,7 +339,7 @@ func compose(cfg config.Config) composition {
 			decls: []pkit.Declaration{pkit.Provides[sitecontracts.Service]()},
 			puts:  func(w *pkit.Wiring) { pkit.Put[sitecontracts.Service](w, sites) },
 		},
-		// file stores bytes for whoever opens them; nothing composed asks it to.
+		// file hands out no contract; content and web are handed its opener as a value.
 		"file": {known: true},
 		"web": {
 			known: true,
