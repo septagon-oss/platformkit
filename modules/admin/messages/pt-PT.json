@@ -602,5 +602,17 @@
     "plural": {
       "": "A língua desta conta mudou desde que esta página foi desenhada. Nada foi alterado."
     }
+  },
+  "admin.account.language.revision": {
+    "translation": "Este formulário não trouxe a revisão em que a sua língua foi lida. Nada foi alterado.",
+    "plural": {
+      "": "Este formulário não trouxe a revisão em que a sua língua foi lida. Nada foi alterado."
+    }
+  },
+  "admin.account.language.unversioned": {
+    "translation": "A porta de conta desta instalação não responde por revisões, por isso um formulário não pode alterar a língua. Nada foi alterado.",
+    "plural": {
+      "": "A porta de conta desta instalação não responde por revisões, por isso um formulário não pode alterar a língua. Nada foi alterado."
+    }
   }
 }

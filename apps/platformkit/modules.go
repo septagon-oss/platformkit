@@ -261,8 +261,12 @@ func compose(cfg config.Config) composition {
 		Modules: mods, Authorize: auths, Tenants: tenants, Roles: auths, Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: accountLocale{users: users}.Locale,
 		// The account control in the shell's header, wired to the same service the
-		// page language reads: read to draw the select, written by the command.
-		Language: accountLanguage{users: users},
+		// page language reads: read to draw the select, written by the command. Twice,
+		// because this composition's account door counts its choices: the control draws
+		// the revision it read at and posts it back, so the person's other tab wins by
+		// refusing the stale form rather than by losing the write.
+		Language:        accountLanguage{users: users},
+		LanguageVersion: accountLanguage{users: users},
 		// The languages this installation's copy is written in, which are the most
 		// the tenant's own languages page may offer. Read off the catalogues this
 		// function composed, named once and handed down.

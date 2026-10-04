@@ -96,6 +96,15 @@ asked first and this shell's title for the page answers when nobody did — see
   on this page — offering the languages the request's tenant declared, its default
   first, and an empty option that takes the choice back. `Deps.Language` is nil
   draws no control: a composition with nobody to ask renders no promise.
+- `admin.Deps.LanguageVersion` (`internal.AccountLanguageVersion`) is the same door
+  counted. The control's select box is a picture of what the row said when the page
+  was drawn, so the form carries a hidden `expectedRevision` beside it and the route
+  writes through `ChooseAt`: a page left open while the person's other tab chose
+  answers 409 in their own language and changes nothing, where an uncounted form
+  would have written the older choice back over the newer one. A composition that
+  wires no version here keeps the intent door it always had — the form is drawn
+  without a revision — and the route refuses any form that names one, rather than
+  guessing the revision a door that counts nothing was meant to compare.
 - The tenant's own languages are `/app/tenant/languages` (GET and POST), offered in
   the sidebar to whoever `Authorizer` says holds `tenant:locale_manage` — the same
   question `Service.SetOwnLocale` asks inside its transaction, so the link and the

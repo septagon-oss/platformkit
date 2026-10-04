@@ -36,6 +36,11 @@ import (
 // implementation and the name beside the Deps field that takes it.
 type AccountLanguage = internal.AccountLanguage
 
+// AccountLanguageVersion is the shell's counted account door: the revision the
+// choice was read at, and the write that refuses one the row has left behind. See
+// internal.AccountLanguageVersion.
+type AccountLanguageVersion = internal.AccountLanguageVersion
+
 // Roles is what the shell needs of the auth module to administer roles. See
 // internal.Roles: the alias keeps the declaration beside its one implementation
 // and the name beside the Deps field that takes it.
@@ -80,6 +85,11 @@ type Deps struct {
 	// person's own choice, read to draw it and written through the module that owns
 	// people. Nil draws no control. See AccountLanguage.
 	Language AccountLanguage
+
+	// LanguageVersion is the same door counted: the control draws the revision its
+	// choice was read at and posts it back, so a page left open cannot write an old
+	// choice over a new one. See AccountLanguageVersion.
+	LanguageVersion AccountLanguageVersion
 
 	// Installed are the languages this installation's copy is written in: the set
 	// the tenant's own languages page offers, and the most a tenant may declare. The
@@ -130,11 +140,15 @@ func Module(deps Deps) module.Module {
 				Tenants:   deps.Tenants,
 				Roles:     deps.Roles,
 				Language:  deps.Language,
-				Installed: deps.Installed,
-				Theme:     theme(deps.Theme),
-				Storybook: deps.Storybook,
-				Messages:  deps.Messages,
-				Locale:    deps.Locale,
+				// Counted, when this composition's account door counts: the same value
+				// is not assumed, because a composition whose choice carries no counter
+				// has no revision to draw and says so by wiring nothing here.
+				LanguageVersion: deps.LanguageVersion,
+				Installed:       deps.Installed,
+				Theme:           theme(deps.Theme),
+				Storybook:       deps.Storybook,
+				Messages:        deps.Messages,
+				Locale:          deps.Locale,
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.

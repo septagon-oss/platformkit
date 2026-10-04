@@ -53,4 +53,32 @@ func TestTheAccountLanguagePortIsTheUserCommandSeenFromTheShell(t *testing.T) {
 	if got, _ := port.Preferred(ctx, tx, ada.ID); got != "" {
 		t.Fatalf("Preferred after clearing = %q, want empty", got)
 	}
+
+	// The counted door: the revision the shell draws is the one the write brings
+	// back, it moves once per accepted change, and a change brought at a revision the
+	// row has left behind is refused rather than quietly applied — which is the whole
+	// reason the header's form carries one.
+	at, err := port.Revision(ctx, tx)
+	if err != nil {
+		t.Fatalf("Revision: %v", err)
+	}
+	if err := port.ChooseAt(ctx, tx, "pt-PT", at); err != nil {
+		t.Fatalf("ChooseAt(pt-PT, %d): %v", at, err)
+	}
+	moved, err := port.Revision(ctx, tx)
+	if err != nil {
+		t.Fatalf("Revision after a change: %v", err)
+	}
+	if moved != at+1 {
+		t.Fatalf("revision after one accepted change = %d, want %d", moved, at+1)
+	}
+	if err := port.ChooseAt(ctx, tx, "en", at); err == nil {
+		t.Fatal("ChooseAt at the revision the row has left behind was accepted")
+	}
+	if got, _ := port.Preferred(ctx, tx, ada.ID); got != "pt-PT" {
+		t.Fatalf("the refused counted change wrote %q", got)
+	}
+	if again, _ := port.Revision(ctx, tx); again != moved {
+		t.Fatalf("the refused counted change moved the revision to %d, want %d", again, moved)
+	}
 }
