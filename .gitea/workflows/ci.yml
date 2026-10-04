@@ -90,10 +90,30 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install the database client
+      # Two tools the operating system is asked for, one step, because a step that
+      # installs one of them and not the other half of the question is what this line
+      # is: `psql` answers the migration rehearsal, and `ss` answers gate 10's question
+      # "whose socket is this?", which scripts/free_port.sh refuses to answer from
+      # itself, because a 200 on /health says something is listening and not that the
+      # listener is mine.
+      #
+      # The package is not optional here, and the image does not provide it. This job's
+      # image is pinned — gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is
+      # the digest job 49823 of run 49357 names when it creates the container — and that
+      # digest ships neither `ss` nor `lsof`. Measured 2026-10-04 by running this
+      # repository inside it (`docker run -v $PWD:/w:ro -w /w … bash
+      # scripts/free_port_test.sh`): the case stopped after four `ok` lines with exit 2,
+      # at the first question about who holds a port. `make check` runs that file, and
+      # `make check-e2e-guards` and `make e2e` both call scripts/e2e.sh, which asks the
+      # same question of itself and refuses the run when the machine cannot answer — so
+      # without this line three of this job's own steps are red for a reason no change
+      # in the tree caused. The same run with iproute2 installed answered all sixteen
+      # cases and exited 0. Case 6 of scripts/free_port_test.sh refuses a future edit
+      # that takes the package back out, and says which steps would refuse to run.
+      - name: Install the database client and the socket probe
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends postgresql-client
+          apt-get install --yes --no-install-recommends postgresql-client iproute2
 
       - name: Start NATS with JetStream on this job's network
         id: nats

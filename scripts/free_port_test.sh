@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# The port a gate run serves on, and the three contracts that hang off it: a port
+# The port a gate run serves on, and the four contracts that hang off it: a port
 # somebody is already listening on is refused rather than fought over; the answer to
 # "may I serve here" is never taken from a stranger's listener, so who holds a port is
-# read from the socket and the machine that reads it has proved it can; and the browser
-# run at the end of scripts/e2e.sh is told which port the application was actually
-# given.
+# read from the socket and the machine that reads it has proved it can; the browser run
+# at the end of scripts/e2e.sh is told which port the application was actually given;
+# and the CI job that asks these questions installs the tool the answer comes from.
 #
 # Node is the tool under test here, so it is a prerequisite and not something this
 # case installs — which is how scripts/e2e.sh treats it for the same reason.
@@ -194,8 +194,36 @@ else
 	echo "ok   gate 10 carries no literal default port"
 fi
 
+# 6. And the machine that runs these cases has to have been given the tool. 3a and 3c
+#    are asked of ss or lsof, and the CI job that runs this file pins an image that
+#    ships neither: gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is the
+#    digest job 49823 of run 49357 names when it creates the container, and running this
+#    file inside that digest (2026-10-04) printed four `ok` lines and then died here at
+#    3a with exit 2. Three of that job's steps ask the question — `make check` runs this
+#    file, and `make check-e2e-guards` and `make e2e` run scripts/e2e.sh, which asks it
+#    of itself and refuses the whole browser run on a machine that cannot answer — so
+#    the job buys the tool before the first of them. This is the case that refuses the
+#    edit that forgets it, which is the shape the failure had: a red gate whose cause
+#    lives in a workflow file nobody was reading.
+ci="$root/.gitea/workflows/ci.yml"
+installed="$(grep -nE 'apt-get install' "$ci" | head -1 | cut -d: -f1 || true)"
+asks="$(grep -nE '^[[:space:]]+run: make (check|check-e2e-guards|e2e)$' "$ci" | head -1 | cut -d: -f1 || true)"
+if [ -z "$installed" ] || [ -z "$asks" ]; then
+	echo "FAIL: ci.yml must install the probe and run a step that needs it (install line '$installed', first step that asks '$asks')"
+	failures=$((failures + 1))
+elif ! sed -n "${installed}p" "$ci" | grep -qE '(^|[[:space:]])(iproute2|lsof)([[:space:]]|$)'; then
+	echo "FAIL: ci.yml installs no tool that can say whose socket it is, so 3a, check-e2e-guards and make e2e refuse; the line reads:"
+	printf '    %s\n' "$(sed -n "${installed}p" "$ci")"
+	failures=$((failures + 1))
+elif [ "$installed" -ge "$asks" ]; then
+	echo "FAIL: ci.yml installs the socket probe at line $installed, at or after the step that needs an answer at $asks"
+	failures=$((failures + 1))
+else
+	echo "ok   ci.yml installs a socket probe (line $installed) ahead of the first step that asks whose listener it is ($asks)"
+fi
+
 if [ "$failures" -ne 0 ]; then
 	echo "free port: $failures case(s) failed" >&2
 	exit 1
 fi
-echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, and the browser is told which port it got"
+echo "free port: an allocation is bindable, a held port is refused before anything is touched, the listener is named by pid before the answer is trusted, the browser is told which port it got, and the CI job installs the tool that answers"
