@@ -242,12 +242,14 @@ type App struct {
 	// — and each of them asks this for the connection on the request that needs it.
 	held *heldConn
 
-	// traces is the flush installTelemetry handed back: batched spans and the
-	// last metric interval have to be pushed before the process is gone, because a
-	// collector nobody told about does not come and fetch them. Nothing but a whole
-	// lifecycle needs it, so it is held here rather than passed around — see
-	// flushTelemetry for who calls it.
-	traces func(context.Context) error
+	// measurement is this deployment's telemetry, planned here and installed by a
+	// Start that got all the way through. Batched spans and the last metric interval
+	// have to be pushed before the process is gone, because a collector nobody told
+	// about does not come and fetch them — and a composition that was refused never
+	// asked to be traced anywhere. Nothing but a whole lifecycle needs either half,
+	// so they are held here rather than passed around — see flushTelemetry for who
+	// calls the flush.
+	measurement *telemetryPlan
 
 	// reports are what /ready says about the parts of the process that are not
 	// verdicts — today, the exporter's last success. Empty when measurement is off.
@@ -269,13 +271,17 @@ type App struct {
 // is to hand over what its own handlers made. A process that goes through Run reaches
 // the Once twice and exports once.
 //
+// A plan that was never installed flushes nothing, so the Run whose Start failed
+// and the Close of a Runtime that outlived a failed transport both answer with the
+// silence of a process that made nothing to hand over.
+//
 // It cannot fail a shutdown. Spans and numbers nobody flushed are a loss of
 // information, and a shutdown that did not finish is a worse one, so the cause goes
 // to the log at the level a person looking for a missing trace will be reading, and
 // the error stays where the loss is: nowhere else.
 func (a *App) flushTelemetry(ctx context.Context) {
 	a.telemetryOnce.Do(func() {
-		if err := a.traces(ctx); err != nil {
+		if err := a.measurement.flush(ctx); err != nil {
 			a.log.ErrorContext(ctx, "app: telemetry was not flushed", "error", err)
 		}
 	})
@@ -418,12 +424,16 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	// The providers are chosen after the logger exists, because the first act is to
-	// say what was decided, and before anything is opened, so that a composition
-	// which fails a gate below has at least been described by a process that knew it
-	// would fail. A collector URL that is not a URL is a wiring mistake, like every
-	// other error this function returns.
-	traces, report, err := installTelemetry(ctx, cfg.Telemetry, log)
+	// The collector is settled here, after the logger exists and before anything is
+	// opened, so that a composition which fails a gate below has at least been
+	// described by a process that knew it would fail, and so that a collector URL
+	// that is not a URL is a wiring mistake, like every other error this function
+	// returns. What is settled is the plan: the address, the exporters and the
+	// resource. The providers themselves go in front of the process at the end of
+	// Start, because installing them is the one change a boot makes in its process
+	// that no release gives back, and a composition refused below is a composition
+	// that never asked to be traced anywhere (see telemetryPlan).
+	measurement, report, err := planTelemetry(ctx, cfg.Telemetry, log)
 	if err != nil {
 		return nil, err
 	}
@@ -432,7 +442,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		reports = append(reports, report)
 	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
-		held: &heldConn{}, traces: traces, reports: reports}, nil
+		held: &heldConn{}, measurement: measurement, reports: reports}, nil
 }
 
 // heldConn is the application connection of a composition that builds its routes
@@ -478,10 +488,14 @@ func (h *heldConn) read(context.Context) (*db.Conn, bool) {
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
 	// Registered first so it runs last — after the listener and the work have
-	// stopped and after Close has returned the connection, which is also what
-	// flushes, so this defer is the case Start never reached: a composition that
-	// failed a gate or an open still gets its spans out. It gets the same grace the
-	// requests got, on a context the cancelled shutdown cannot cut short.
+	// stopped and after Close has returned the connection. A whole boot flushes
+	// through Close; this defer is the case that never got there, and since the
+	// install moved to the end of Start it is a quiet one: a composition that failed
+	// a gate or an open installed nothing, so it has no spans of its own to get out.
+	// It stays because Run is the door a process ends through, and because the Once
+	// inside flushTelemetry makes arriving twice and arriving once one call. It gets
+	// the same grace the requests got, on a context the cancelled shutdown cannot cut
+	// short.
 	defer func() {
 		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
 		defer cancel()

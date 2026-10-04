@@ -167,10 +167,12 @@ func (a *App) Declarations() error {
 // Runtime, nothing listening, and everything it opened already released. Which of
 // those failures cost a caller its own lifecycle is what RefusedBeforeEffects
 // answers: a refusal above the connection was answered with nothing spent, and one
-// below it reached the deployment. The one piece of process state a Start changes is
-// the composition's declared event shapes, claimed above the connection and given
-// back by Close — see below, because where the claim sits is the whole answer about
-// what a refused composition costs.
+// below it reached the deployment. The two pieces of process state a Start touches
+// are the composition's declared event shapes, claimed above the connection and
+// given back by Close — see below, because where the claim sits is the whole answer
+// about what a refused composition costs — and the process's telemetry providers,
+// installed by the last statement of a Start that had nothing left to refuse, so a
+// boot that comes back with no Runtime changed no process but its own.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -302,6 +304,15 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 			return nil, err
 		}
 	}
+	// The process's providers go up here, as the boot's last act and the only thing
+	// it changes in the process for good. Everything above this line can still be
+	// refused — a gate, the pool, the store, the schema, a broker — and every refusal
+	// above it returns a nil Runtime, which README says changes nothing in the process
+	// it was asked in. Installing is the one effect no Close gives back: a pool is
+	// closed, a claim is released, a replaced tracer provider is not reinstated, only
+	// overwritten by the next boot. So a composition that never started never takes
+	// over the export destination of the application that is serving.
+	a.measurement.install(ctx)
 	// The claim this boot took is the Runtime's to give back, after its connection,
 	// its transport and whatever else this call opened: a refusal between the claim
 	// and here released it on the way out, so this is the only path that keeps one.

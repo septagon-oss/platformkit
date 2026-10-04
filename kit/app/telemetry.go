@@ -6,21 +6,29 @@ package app
 // kit/events and kit/jobs make spans and record numbers through the OpenTelemetry
 // API and kit/telemetry's vocabulary, and never import this file's packages.
 //
-// The install happens once per process, in New, and that is a fact about
-// OpenTelemetry rather than a preference: each global delegates to the provider
-// installed *first*, and a later install changes only what a provider lookup
-// answers and the tracers made after it. The kernel's tracers are taken as each span
-// opens (telemetry.Tracer), so a span answers to the provider that was installed when
-// it opened; its meter was taken once, when kit/telemetry was first used, so the
-// instruments of the process answer to the first provider installed here and to no
-// later one. Either way a second install in this package would buy a process two
-// answers to one question and use the first.
+// The install happens once per *started* application, at the end of Start, and the
+// half of it that survives is a fact about OpenTelemetry rather than a preference:
+// each global delegates to the provider installed *first*, and a later install
+// changes only what a provider lookup answers and the tracers made after it. The
+// kernel's tracers are taken as each span opens (telemetry.Tracer), so a span
+// answers to the provider that was installed when it opened; its meter was taken
+// once, when kit/telemetry was first used, so the instruments of the process answer
+// to the first provider installed here and to no later one. Either way a second
+// install in this package would buy a process two answers to one question and use
+// the first — which is why a composition that is refused gets no vote. Installing is
+// the one change a boot makes in its process that no release gives back: the pool,
+// the store, the transport and the event shapes a composition declares all come back
+// on a refused boot or a Close, and otel.SetTracerProvider has no undo worth doing,
+// because a "previous" provider is only the last one somebody else installed. So it
+// belongs where the boot stops being refusable, and a plan carries the decision from
+// the gate that reads the configuration to the call that installs it (telemetryPlan).
 //
 // Tracing and metrics are off when telemetry.otlp_endpoint is empty, and "off"
-// here means *nothing is installed*: the global's default provider is already the
+// here means *no provider is installed*: the global's default provider is already the
 // no-op one, so installing a no-op would buy nothing and would spend the one
 // install a process gets — which is what lets a test, or an embedding application,
-// install a recorder of its own instead.
+// install a recorder of its own instead. The propagator is still installed, because
+// a process that exports nothing still carries the trace it was handed.
 
 import (
 	"context"
@@ -212,10 +220,49 @@ var (
 	_ sdkmetric.Exporter    = metricExporter{}
 )
 
-// installTelemetry chooses the providers and installs them. It returns the
-// shutdown that flushes both, and the health.Report that names the exporter's
-// last success — nil when nothing is exported, because an exporter that does not
-// exist has no success to report and "off" is what an operator should read.
+// telemetryPlan is one deployment's measurement, decided and refused with nothing
+// yet changed in the process. New makes it and Start installs it.
+//
+// The split is the answer to what installing costs: a provider put in front of the
+// process stays there, and the best an undo could do is reinstate whichever provider
+// was standing last before it, which is a fact about other people's boots rather than
+// a release. So the address, the exporters and the resource are settled at the plan,
+// where every collector problem this file can find is still answered free of the pool,
+// the migration and the port, and the two SDK providers are made and installed by
+// Start, whose last act it is. A composition refused above that is refused with the
+// process's providers exactly where they were, which is what README's "a refused
+// build changes nothing in the process" means for the trace pipeline.
+type telemetryPlan struct {
+	cfg config.Telemetry
+	log *slog.Logger
+
+	// where is the collector's address as collector normalises it, and "" exactly
+	// when telemetry.otlp_endpoint is empty. That is what "off" means here: an
+	// address to install nothing behind.
+	where string
+
+	// traces, metrics and res are made at the plan, not at the install, so that a
+	// header or a TLS pair no exporter can use stops the boot beside a bad endpoint,
+	// above everything a deployment pays for. Neither exporter has reached the
+	// network by then: the OTLP clients dial on their first export.
+	traces  sdktrace.SpanExporter
+	metrics sdkmetric.Exporter
+	res     *sdkresource.Resource
+
+	// rec is the record the two wrappers write and the report kit/health reads. It
+	// exists from the plan, because the question /ready asks has an honest answer —
+	// "no export attempted yet" — before anything is installed.
+	rec *exported
+
+	// shutdown is the flush install hands back, and nil until it runs: what a
+	// process still owes a collector is a debt of the providers it installed.
+	shutdown func(context.Context) error
+}
+
+// planTelemetry answers every refusal this file can answer and installs nothing.
+// It returns the plan, the health.Report that names the exporter's last success —
+// nil when nothing will be exported, because an exporter that does not exist has no
+// success to report and "off" is what an operator should read — and the refusal.
 //
 // An endpoint that is not a URL is refused: a typo in a key that decides where
 // spans go should stop the boot, not leave a process half-traced. A bare host:port is
@@ -224,17 +271,17 @@ var (
 // unreachable is not either: the exporters buffer, warn through OpenTelemetry's own
 // error handler, and the application starts — and the last flush of a process that
 // is leaving says the same thing in the log rather than as an exit code.
-func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logger) (func(context.Context) error, health.Report, error) {
-	otel.SetTextMapPropagator(telemetry.Propagators())
+func planTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logger) (*telemetryPlan, health.Report, error) {
+	plan := &telemetryPlan{cfg: cfg, log: log, rec: &exported{}}
 	if cfg.OTLPEndpoint == "" {
 		log.DebugContext(ctx, "telemetry: measurement is off; telemetry.otlp_endpoint is empty")
-		return func(context.Context) error { return nil }, nil, nil
+		plan.shutdown = func(context.Context) error { return nil }
+		return plan, nil, nil
 	}
 	where, err := collector(cfg.OTLPEndpoint)
 	if err != nil {
 		return nil, nil, err
 	}
-	rec := &exported{}
 	traces, err := exportertrace.New(ctx, exportertrace.WithEndpointURL(where))
 	if err != nil {
 		return nil, nil, fmt.Errorf("app: telemetry: %w", err)
@@ -247,22 +294,38 @@ func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logge
 	if err != nil {
 		return nil, nil, err
 	}
+	plan.where, plan.traces, plan.metrics, plan.res = where, traces, metrics, res
+	return plan, plan.rec, nil
+}
+
+// install makes the two providers and puts them, and this deployment's propagators,
+// in front of the process. Start calls it as the last thing a boot does, with nothing
+// left to refuse, and it answers nothing: an install that could still fail would have
+// to be given back, which is the cost this position exists to avoid.
+func (p *telemetryPlan) install(ctx context.Context) {
+	otel.SetTextMapPropagator(telemetry.Propagators())
+	if p.where == "" {
+		// Measurement off: the global's no-op provider is already what an empty
+		// address wants, and spending the process's one install on it would only
+		// stand between this process and a recorder its host wants to install.
+		return
+	}
 	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(traceExporter{SpanExporter: traces, rec: rec}),
+		sdktrace.WithBatcher(traceExporter{SpanExporter: p.traces, rec: p.rec}),
 		// ParentBased, so a request that arrived sampled stays one trace through
 		// the outbox and the worker: the ratio is the decision for a trace this
 		// process starts and never a veto on one it was handed.
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(cfg.Ratio()))),
-		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.TraceIDRatioBased(p.cfg.Ratio()))),
+		sdktrace.WithResource(p.res),
 	)
 	mp := sdkmetric.NewMeterProvider(
-		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter{Exporter: metrics, rec: rec})),
-		sdkmetric.WithResource(res),
+		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter{Exporter: p.metrics, rec: p.rec})),
+		sdkmetric.WithResource(p.res),
 	)
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mp)
-	log.InfoContext(ctx, "telemetry: exporting", "endpoint", where, "service", cfg.ServiceName,
-		"client", cfg.Client, "sample_ratio", cfg.Ratio())
+	p.log.InfoContext(ctx, "telemetry: exporting", "endpoint", p.where, "service", p.cfg.ServiceName,
+		"client", p.cfg.Client, "sample_ratio", p.cfg.Ratio())
 	// One shutdown for both, and both are flushed even if one of them cannot be
 	// delivered. An export that failed at the end of a process's life is not a
 	// shutdown that failed: it is the same fact the health.Report above carries —
@@ -273,14 +336,37 @@ func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logge
 	// to the log, with the address, where an operator debugging the pipeline reads
 	// it. Every other error Join can answer is an export error too — a provider that
 	// has already shut down says so by returning nil — so nothing else is hidden.
-	shutdown := func(ctx context.Context) error {
+	p.shutdown = func(ctx context.Context) error {
 		if err := errors.Join(tp.Shutdown(ctx), mp.Shutdown(ctx)); err != nil {
-			log.ErrorContext(ctx, "telemetry: the last batch of spans or metrics did not reach the collector",
-				"endpoint", where, "service", cfg.ServiceName, "error", err)
+			p.log.ErrorContext(ctx, "telemetry: the last batch of spans or metrics did not reach the collector",
+				"endpoint", p.where, "service", p.cfg.ServiceName, "error", err)
 		}
 		return nil
 	}
-	return shutdown, rec, nil
+}
+
+// flush pushes what this composition's own providers still hold. It is nothing at
+// all for a plan nobody installed — a composition that never started has no trace of
+// its own in a collector it never reached — and nothing for a deployment that named
+// no address to send it to.
+func (p *telemetryPlan) flush(ctx context.Context) error {
+	if p == nil || p.shutdown == nil {
+		return nil
+	}
+	return p.shutdown(ctx)
+}
+
+// installTelemetry decides, refuses and installs in one call. New and Start use the
+// two halves separately, because only a boot can say when it has stopped being
+// refusable; this is the whole sequence for a caller that has no boot and wants the
+// answer anyway, which is every test of what a collector answered.
+func installTelemetry(ctx context.Context, cfg config.Telemetry, log *slog.Logger) (func(context.Context) error, health.Report, error) {
+	plan, report, err := planTelemetry(ctx, cfg, log)
+	if err != nil {
+		return nil, nil, err
+	}
+	plan.install(ctx)
+	return plan.shutdown, report, nil
 }
 
 // resource is the trace's and the metric's origin: service.name always, and
