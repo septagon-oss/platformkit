@@ -440,6 +440,7 @@ func baseClasses() []string {
 	add(New().BreakAll())
 	add(New().BreakWords())
 	add(New().BreakAnywhere())
+	add(New().BreakNormal())
 	add(New().Flex1())
 	add(New().FlexGrow())
 	add(New().FlexGrow0())

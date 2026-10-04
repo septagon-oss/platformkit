@@ -150,6 +150,29 @@ func TestTheInverseColumnNamesTheColourThatReadsOnIt(t *testing.T) {
 	}
 }
 
+// TestTheTableKeepsItsOwnColumnsToReadBy: the frame's break rule reaches everything the frame shows,
+// and a table is the one region that must refuse it. overflow-wrap: anywhere takes part in intrinsic
+// min-content sizing, so the longest unbreakable token in any column decides how narrow every other
+// column becomes: measured on a generated list at 320px with the rule allowed to inherit, the row link's
+// own target fell from two wrapped lines to a band 18px tall, under the 24px minimum the accessibility
+// audit enforces. A table too wide for the page is reached by scrolling its bordered region — what
+// clTableWrap's overflow is for, and what e2e/scroll-regions.spec.ts pins — so its cells break only
+// where Unicode says they may.
+func TestTheTableKeepsItsOwnColumnsToReadBy(t *testing.T) {
+	t.Parallel()
+	out := draw(t, Table(TableProps{
+		Columns: []TableColumn{{Key: "title", Label: "Title"}},
+		Rows:    []TableRow{{ID: "album", Cells: map[string]any{"title": "An album of people and places"}}},
+	}))
+	table := classOf(t, out, "<table", "<table")
+	if !hasClass(table, "break-normal") {
+		t.Errorf("the table carries %q, so one unbreakable cell narrows every column beside it", table)
+	}
+	if hasClass(table, "break-anywhere") {
+		t.Errorf("the table carries %q as well, which is the rule it is opting out of", table)
+	}
+}
+
 // TestTheFrameBreaksATokenNothingCanHyphenate: a row's name can be one token nobody can hyphenate — a
 // UUID pasted into a title, a commit hash, a URL — and a token with no break opportunity sets the
 // min-content width of the column it sits in, so the page scrolls sideways. overflow-wrap: anywhere is

@@ -108,7 +108,12 @@ were drawn here, so the cure is here too.
   inherits to every heading, breadcrumb and cell below it, rather than on the
   Heading or Breadcrumb component: the tool builds text only where the element
   itself computes ordinary line breaking, so the rule belongs to the page, which
-  is the thing that was scrolling sideways. And one `sm` step for everything the
+  is the thing that was scrolling sideways. `BreakNormal` is its opt-out, and one
+  region takes it: the table. A cell that broke anywhere let the longest token in
+  any column set how narrow every other column became — on a generated list at
+  320px the row link's target fell to an 18px band, under the 24px the
+  accessibility audit enforces — and a table too wide for the page is already
+  reached by scrolling its own named region. And one `sm` step for everything the
   frame draws outside `<main>`, because a page is allowed two body sizes and the
   chrome took three.
 - **Made reusable** — `e2e/design_floor.ts`: the floor's eight rules, the

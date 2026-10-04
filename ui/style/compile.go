@@ -780,6 +780,7 @@ const (
 	classBreakWords        = "break-words"
 	classBreakAll          = "break-all"
 	classBreakAnywhere     = "break-anywhere"
+	classBreakNormal       = "break-normal"
 	classTabularNums       = "tabular-nums"
 	classObjectCover       = "object-cover"
 	classObjectContain     = "object-contain"

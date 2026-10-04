@@ -267,9 +267,9 @@ var (
 	// sentence takes — is what refused to reach a client's design document: the design tool projects a
 	// composition only when its sizing is unconstrained (`composition constrained sizing requires further
 	// conversion`), so a max-width on a flex column put every Input, Select, Textarea, Checkbox, Form and
-	// document selection out of the projection — 44 refusals at the head this cure replaces. The measure the design floor
-	// reads is the measure of the *sentences*, and those are paragraphs: they are bounded where they are
-	// written, on clHelp and clFieldErr below, which the projection carries as a wrapping paragraph.
+	// document selection out of the projection — 44 refusals at the head this cure replaces. The measure
+	// the design floor reads is the measure of the *sentences*: those are paragraphs, bounded where they
+	// are written, on clHelp and clFieldErr below, which the projection carries as a wrapping paragraph.
 	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
 	clFieldWrapFull = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).Width(style.SFull)
 	clLabel         = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
@@ -560,7 +560,17 @@ var (
 	// Table.
 	clTableWrap = style.New().Width(style.SFull).Overflow(style.OverflowAuto).
 			Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderPrimary)
-	clTable       = style.New().Width(style.SFull).FontSize(style.TextSM).TextColor(style.FgPrimary)
+	// clTable opts the table out of the frame's break rule (clShellMain sets
+	// overflow-wrap: anywhere, and the property inherits). A name that cannot be hyphenated has to
+	// break somewhere, and the frame's answer for the regions a person reads is to break it; the
+	// table's answer is already built and pinned elsewhere. `anywhere` takes part in intrinsic
+	// min-content sizing, so letting it reach a cell lets the longest token in any column decide how
+	// far every other column is squeezed: on a generated list at 320px the row link's own target fell
+	// from two wrapped lines to an 18px band, under the 24px the accessibility audit enforces. A wide
+	// table is reached by scrolling its bordered region, which is what clTableWrap's overflow is for
+	// and what e2e/scroll-regions.spec.ts and design-audit.spec.ts pin.
+	clTable = style.New().Width(style.SFull).FontSize(style.TextSM).TextColor(style.FgPrimary).
+		BreakNormal()
 	clTableHead   = style.New().Bg(style.SurfaceSecondary).TextAlign(style.TextLeft)
 	clTableThBase = style.New().FontWeight(style.FontSemibold).
 			FontSize(style.TextXS).Uppercase().Tracking(style.TrackingWider).TextColor(style.FgMuted)

@@ -124,11 +124,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
 	//
-	// The frame's floor fixes move it: three utilities and one colour pair join the sheet for the brand
-	// link, the footer's bound and the frame's break rule, and the inverse sidebar column gains a text
-	// colour. A leaf-by-leaf diff before and after those two commits changes /css and /sha256 and nothing
-	// else — no token, icon, example or schema — which is what this assertion has always had to be
-	// re-measured for.
+	// The frame's floor fixes move it: four utilities and one colour pair join the sheet for the brand
+	// link, the footer's bound, the frame's break rule and the table's opt-out from it, and the inverse
+	// sidebar column gains a text colour. A leaf-by-leaf diff before and after those commits changes /css
+	// and /sha256 and nothing else — no token, icon, example or schema — which is what this assertion has
+	// always had to be re-measured for.
 	//
 	// The sentences under a control are bounded by the bound the footer's sentence already took, so /css
 	// does not move again; 17 of the 6,406 leaves under `examples` do — the rendered HTML of the input,
@@ -137,7 +137,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// sizing is constrained, so a max-width on the field's flex column is a client's design document that
 	// no longer contains their forms (measured at this head: 44 refusals). The break rule that stops a
 	// page scrolling sideways sits on the frame's content region for the same reason — see clShellMain.
-	if legacy.SHA256 != "0a6afbdb05bffe2181177684f23a9ef59d142563a93e8b9f1fd4b26d55b04249" {
+	if legacy.SHA256 != "d09d7f712ed071ce02f8e6de85c90484e9d2fa12d5fb848ee2a85dd2d08e7071" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

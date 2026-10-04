@@ -446,6 +446,13 @@ func (cl ClassList) BreakAll() ClassList { return cl.append(classBreakAll) }
 // overflows its column keeps overflowing it under BreakWords.
 func (cl ClassList) BreakAnywhere() ClassList { return cl.append(classBreakAnywhere) }
 
+// BreakNormal sets `overflow-wrap: normal`: this text breaks only at the break
+// opportunities Unicode gives it, whatever an ancestor asked for. It is the opt-out
+// a region takes when breaking mid-token would destroy a layout the frame settles
+// another way — a table, whose columns are what the row is read by, and which is
+// reached sideways through its own scroll region instead.
+func (cl ClassList) BreakNormal() ClassList { return cl.append(classBreakNormal) }
+
 // GridCols applies a CSS grid template with N equally-sized columns
 // ("grid-cols-N"). Use together with Display(DisplayGrid).
 func (cl ClassList) GridCols(n int) ClassList { return cl.append(classGridCols(n)) }
