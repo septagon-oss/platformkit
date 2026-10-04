@@ -34,6 +34,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -42,6 +43,8 @@ import (
 // mounts it; everything below is the same for every entity, which is why it is
 // written once.
 type Spec[T crud.Entity] struct {
+	// RichTextFiles resolves richtext image references in the request transaction.
+	RichTextFiles richtext.Files
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -345,11 +348,19 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 				return nil, nil
 			})
 	}
+	for _, field := range schema.Fields {
+		if field.Widget == "richtext" {
+			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
+		}
+	}
 }
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
 	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
+		return e, err
+	}
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
@@ -382,6 +393,9 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 			return e, err
 		}
 		return e, nil
+	}
+	if err := s.prepareRichText(ctx, tx, e, columns); err != nil {
+		return e, err
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain
 	// the preceding committed values used by validation and the emitted event.
@@ -693,6 +707,21 @@ func (s Spec[T]) check() {
 		bad = widgetFault(crud.Fields[T]())
 	}
 	if bad == "" {
+		for _, field := range crud.Fields[T]() {
+			if field.Widget != "richtext" {
+				continue
+			}
+			if field.Type != entity.TypeString && field.Type != entity.TypeText {
+				bad = fmt.Sprintf("richtext field %q must be a string", field.Name)
+				break
+			}
+			if s.RichTextFiles == nil {
+				bad = fmt.Sprintf("richtext field %q needs a Files port", field.Name)
+				break
+			}
+		}
+	}
+	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
 	}
 	if bad != "" {
@@ -827,6 +856,16 @@ func transaction(ctx context.Context) (db.Tx[db.Tenant], error) {
 // errors as the five routes here, and one mapping is the point: a module that
 // wrote its own would be a second opinion about what a 404 means.
 func Fault(err error) error {
+	if fieldErr, ok := errors.AsType[*richTextFieldError](err); ok {
+		p := &richTextProblem{
+			Problem: problem.New(http.StatusUnprocessableEntity, fieldErr.Error()),
+			field:   fieldErr.field, issues: fieldErr.refused.Issues,
+		}
+		for _, issue := range fieldErr.refused.Issues {
+			p.Errors = append(p.Errors, fmt.Sprintf("%s: line %d: %s: %s", fieldErr.field, issue.Line, issue.Construct, issue.Remedy))
+		}
+		return p
+	}
 	switch {
 	case errors.Is(err, tenancy.ErrPolicyUnavailable), errors.Is(err, tenancy.ErrInvalidPolicyRequest):
 		return problem.New(http.StatusServiceUnavailable, "POLICY_UNAVAILABLE: authorization is temporarily unavailable")

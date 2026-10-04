@@ -75,8 +75,11 @@ func Textarea(p TextareaProps) g.Node {
 	if p.MinLength > 0 {
 		area = append(area, g.Attr("minlength", itoa(p.MinLength)))
 	}
-	if p.MaxLength > 0 {
+	if p.MaxLength > 0 && !p.CharacterLimitOnly {
 		area = append(area, h.MaxLength(itoa(p.MaxLength)))
+	}
+	if p.MaxLength > 0 && p.CharacterLimitOnly {
+		area = append(area, g.Attr("data-max-chars", itoa(p.MaxLength)))
 	}
 	if p.ErrorMessage != "" {
 		area = append(area, g.Attr("aria-invalid", "true"))

@@ -48,6 +48,7 @@ var Hooks = []string{
 	"data-htmx-modal-open-value",
 	"data-lines",
 	"data-loading",
+	"data-max-chars",
 	"data-modal-backdrop",
 	"data-modal-body",
 	"data-modal-cancel",
