@@ -157,6 +157,12 @@
     const input = root.querySelector('[data-quantity-value]');
     if (input) { input.setAttribute('aria-invalid', String(!current)); input.setCustomValidity(current ? '' : input.dataset.quantityInvalid); }
   }
+  // A disabled section keeps its content readable but offers no action. The
+  // renderers put no destination or enhancement hook inside one; the photo
+  // enhancement rechecks that state all the same, as [data-detail-open] does.
+  function disabledWithin(node) {
+    return !!node.closest('[disabled], [aria-disabled="true"]');
+  }
   function showPhoto(gallery, index) {
     const template = gallery.querySelector(`template[data-photo-template="${index}"]`);
     const viewer = gallery.querySelector('[data-photo-viewer]');
@@ -248,7 +254,7 @@
       }
     }
     const photo = event.target.closest('[data-photo-open]');
-    if (photo && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
+    if (photo && !disabledWithin(photo) && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
       const gallery = document.getElementById(photo.dataset.photoOpen);
       if (showPhoto(gallery, Number(photo.dataset.photoIndex))) {
         event.preventDefault();
@@ -315,7 +321,7 @@
   });
   document.addEventListener('keydown', event => {
     const viewer = event.target.closest('[data-photo-viewer]');
-    if (viewer && !event.target.closest('input, textarea, select, [contenteditable]')) {
+    if (viewer && !disabledWithin(viewer) && !event.target.closest('input, textarea, select, [contenteditable]')) {
       const direction = { ArrowLeft: '-1', ArrowRight: '1', Home: 'first', End: 'last' }[event.key];
       if (direction) { event.preventDefault(); movePhoto(viewer, direction); }
     }

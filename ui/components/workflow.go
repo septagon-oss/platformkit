@@ -38,6 +38,27 @@ func aggregateState(label string, state ContentState, payload bool) error {
 	return nil
 }
 
+// retainedNavigation reports whether a read that returned no result still carries
+// the navigation into one. View switches, range controls and the days of a
+// displayed range are places inside the result set that is no longer displayed:
+// the HTML omits them, but a typed capture of the same Props would export them.
+// An empty read keeps its navigation, because its result is present; loading
+// keeps it, because the same read is still outstanding.
+func retainedNavigation(status MediaStatus, choices []ChoiceLink, links ...*ChoiceLink) bool {
+	if status != MediaFailed && status != MediaRefused {
+		return false
+	}
+	if len(choices) != 0 {
+		return true
+	}
+	for _, link := range links {
+		if link != nil {
+			return true
+		}
+	}
+	return false
+}
+
 func sharedSection(p ComponentProps, name, label string, children ...g.Node) g.Node {
 	nodes := append(baseAttrs(p), classes(clDataList.Compile(), p.Class), g.Attr("data-component", name),
 		g.Attr("data-shared-content", ""), g.Attr("aria-label", label))
