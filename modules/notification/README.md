@@ -172,10 +172,17 @@ What this module does not do, stated here rather than only in the branch that le
 a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
 sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
 send against 000030 (`TestARedeliveredSendWritesOneSentRow`), one tenant's writes against
-another tenant's rows (`TestOneTenantsLedgerIsNotAnothers`,
-`TestAnotherTenantWritesNothingOfThisTenants`), the sender commands against a caller that
-names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`) and a wired carrier through
-its ledger row (`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`).
+another tenant's rows with a caller both transactions name (`TestOneTenantsLedgerIsNotAnothers`,
+`TestAnotherTenantThatHoldsTheKeyWritesNothingOfThisTenants`), the sender commands against a
+caller that names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`) and a wired
+carrier through its ledger row
+(`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`).
+`TestAnotherTenantWritesNothingOfThisTenants` is the same cross-tenant conversation with an
+actorless fixture, and it stands red for that reason alone: its first line is a `Put` by a
+transaction that names no caller, which the rule above refuses before any of its isolation
+assertions is reached. The case named above makes the same attempts with a caller named —
+which is the assertion that the separation comes from the row's policy and not from who was
+asking.
 `providers/gomail`'s assertions run against an in-process relay in its own package, so what
 a real relay answers — DKIM as the far end verifies it, STARTTLS negotiation, AUTH — is
 observed by no test here.
