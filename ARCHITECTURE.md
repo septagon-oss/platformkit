@@ -726,10 +726,10 @@ their numbers into prose; run `make check-loc` and `make check-packages`.
 jobs the two kernel runners take at once: `go-checks` (`make check`, and the budget
 ratchet last), `race-and-vuln` (`make check-race`, then `govulncheck`),
 `design-editor` (the native editor and browser checks) and `e2e` (`make e2e`). Each
-is bounded at twice its own measured p95, because one job that ran all of them in
-sequence was cut off at its deadline eight times on main with every test that had
-run already passed. It is Gitea's because GitHub
-Actions is disabled for this repository; [the retained GitHub
+is bounded at twice a measured span: the job's own completed run where it has one,
+or main's step spans where it has none. One job that ran them all in sequence was
+cut off at its deadline eight times on main, every test that had run already
+passed. It is Gitea's because GitHub Actions is disabled here; [the retained GitHub
 workflows](.github/workflows/ci.yml) are retained and never run here — their guard
 names GitHub's server URL — and they carry one `check` job rather than the four above:
 splitting them is deferred by name. An absent GitHub check establishes nothing. A
