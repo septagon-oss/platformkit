@@ -160,7 +160,11 @@ What this module does not do, stated here rather than only in the branch that le
   push carrier gets `Delivery.Target` empty, because device tokens, browser subscriptions
   and tenant endpoint URLs live outside this module.
 - **No expected revision.** No command in this module takes one, as none in the reference
-  module does; the sender row is read under `FOR UPDATE` where a lost update would matter.
+  module does; the three sender commands read the row under `FOR UPDATE`, which is where a
+  lost update would matter. `Put`'s lock is asserted by no test here, and none can be
+  written in this package: the window it closes lies between that command's own read and
+  its write, and an ask from another transaction can only reach the row after the write,
+  where the row is locked whichever way the read went.
 - **Not measured as an evidence indicator.** `internal.Coverage` computes
   `delivery_ledger_coverage` as requested channels with a terminal row over all requested
   ones; the repository has no `tools/pillars.py` to report it through, so the ratio is a

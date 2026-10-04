@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -76,7 +77,7 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 	}
 	in.Status = contracts.SenderPending // whatever the caller asked for is refused here
 	in.Key = nil
-	existing, err := s.live(tx)
+	existing, err := s.locked(tx)
 	if err != nil {
 		return nil, err
 	}
@@ -194,10 +195,21 @@ func (s *Senders) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	return crud.Delete[*contracts.Sender](tx, id, true)
 }
 
-// live is the tenant's one live sender row, or nil.
-func (s *Senders) live(tx db.Tx[db.Tenant]) (*contracts.Sender, error) {
+// locked is the tenant's one live sender row, or nil, with the row's write lock
+// held if there is one.
+//
+// Put reads the row it replaces under its own lock because what it writes is
+// decided by what it read: the status, token and proof of a sender on the same
+// (domain, selector) pair survive the write, and a read with no lock can be
+// answered from a moment that has already gone. A Verify that commits between
+// that read and this write is then undone — status back to pending, proof and
+// verified_at cleared — with no error to anybody and a sender_set row that says
+// "pending", which is the trail of a write nobody asked for. Verify and Delete
+// take the same lock on the same row, so the three commands cannot interleave.
+func (s *Senders) locked(tx db.Tx[db.Tenant]) (*contracts.Sender, error) {
 	var row contracts.Sender
-	err := tx.DB().Where("deleted_at IS NULL").Take(&row).Error
+	err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("deleted_at IS NULL").Take(&row).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		return nil, nil
