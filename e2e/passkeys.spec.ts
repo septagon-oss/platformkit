@@ -12,11 +12,13 @@ import { expect, test, type CDPSession, type Page } from '@playwright/test';
 // The ceremony legs are the auth module's published routes, called from the page
 // with the page's own cookie jar: the browser half (navigator.credentials) and
 // the server half (the two POSTs) both run, and nothing between them is
-// synthesised. The journey stops at the ceremony: the screens and the operator's
-// switch behind the usernameless door are named as the remaining edits in the
-// delivery report, and the brief's second tenant, served on a second host in the
-// same browser, is among them — `platformkit bootstrap` refuses to make a second
-// tenant, so the fixture has to be given one first.
+// synthesised. The journey stops at the ceremony: the operator's switch behind
+// the usernameless door has no screen of its own, which the delivery report names
+// as the remaining edit. The brief's second tenant, served at a second host in
+// one browser, is walked in e2e/passkey-second-tenant.spec.ts — and not here, for
+// the reason that file gives: what this file can say about another tenant's
+// relying party is the client's rule, because no second tenant is served at any
+// address this page reaches.
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? '';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
@@ -195,9 +197,13 @@ test('the device keeps the passkey the browser made for the host that asked, and
   expect(stored.credentials.map(credential => credential.rpId)).toEqual(['localhost']);
 
   // Asked for another host's relying party, the browser refuses, and no request
-  // leaves the page. This is the brief's cross-host refusal, and it is the
-  // client that performs it: a credential made on one tenant's host is not a
-  // credential on another's, whoever is holding the browser. The name the
+  // leaves the page. This is the client's half of the brief's cross-host refusal,
+  // and it is the client that performs it: a credential made on one tenant's host
+  // is not a credential on another's, whoever is holding the browser. The client's
+  // half only: Chromium refuses an rpId this origin cannot claim before any server
+  // is asked, so no second tenant takes part in this case. The half where a second
+  // tenant's own server asks and the platform still says no is
+  // e2e/passkey-second-tenant.spec.ts. The name the
   // refusal arrives under is SecurityError — the page's own origin is not inside
   // the relying party it was asked to sign for, which the client sees before it
   // ever looks at the credentials it holds. NotAllowedError, the other name this

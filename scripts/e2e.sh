@@ -9,6 +9,18 @@
 # link find it. Failed browser results survive separately so a retry is not needed
 # to inspect them.
 #
+# It boots a second installation of its own too — a second database, a second
+# port, a second tenant reached at `tenantb.localhost` — because one claim in
+# this repository can only be walked by a browser that opens two tenants at two
+# hosts: a passkey made at one tenant's host is not a passkey at another's.
+# `platformkit bootstrap` refuses a second tenant where one exists, which is the
+# rule that keeps it in the binary, so the second tenant is a second
+# installation of its own and not a second row. It is the supported way to make
+# a tenant with an administrator who can sign in; the control-plane route that
+# answers that question answers only at the installation's own host, and this
+# fixture deliberately has none — `e2e/surfaces.spec.ts` pins that a customer
+# host serves no control plane.
+#
 # It is a script rather than four lines in the Makefile because the teardown has
 # to happen whichever step failed, and a recipe cannot trap.
 set -euo pipefail
@@ -20,6 +32,7 @@ requested_port="${PLATFORMKIT_E2E_PORT:-}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
 database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
+second_database="${database}_two"
 
 if ! command -v node >/dev/null; then
 	echo "e2e: node is not installed; gate 10 needs it. See e2e/package.json." >&2
@@ -108,16 +121,28 @@ psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; 
 
 work="$(mktemp -d)"
 results=""
-app_pid=""
+# The two pids this run forked and must stop. serve() names its process app_pid
+# under a nameref into one or the other, because that is the name
+# scripts/free_port_test.sh pins inside it.
+app_process=""
+second_pid=""
 created=false
+second_created=false
 cleanup() {
 	status=$?
-	if [ -n "$app_pid" ]; then
-		kill "$app_pid" 2>/dev/null || true
-		wait "$app_pid" 2>/dev/null || true
+	if [ -n "$app_process" ]; then
+		kill "$app_process" 2>/dev/null || true
+		wait "$app_process" 2>/dev/null || true
+	fi
+	if [ -n "$second_pid" ]; then
+		kill "$second_pid" 2>/dev/null || true
+		wait "$second_pid" 2>/dev/null || true
 	fi
 	if "$created"; then
 		psql_admin -c "DROP DATABASE $database WITH (FORCE);" >/dev/null || echo "e2e: could not remove $database" >&2
+	fi
+	if "$second_created"; then
+		psql_admin -c "DROP DATABASE $second_database WITH (FORCE);" >/dev/null || echo "e2e: could not remove $second_database" >&2
 	fi
 	rm -rf "$work"
 	if [ -n "$results" ]; then
@@ -154,6 +179,14 @@ psql "$(swap "$admin_url")" -v ON_ERROR_STOP=1 -q \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platformkit_app;" \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO platformkit_app;"
 
+echo "e2e: a second database, for the tenant on the second host"
+psql_admin -c "CREATE DATABASE $second_database;" >/dev/null
+second_created=true
+psql "$(swap "$admin_url" "$second_database")" -v ON_ERROR_STOP=1 -q \
+	-c "GRANT USAGE ON SCHEMA public TO platformkit_app;" \
+	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platformkit_app;" \
+	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO platformkit_app;"
+
 # A function rather than the heredoc in place, because the port appears twice in it
 # and a run that lost the port it was offered between the choice and the bind
 # rewrites the whole file for its next attempt rather than patching two lines.
@@ -184,32 +217,67 @@ mail:
   from: "PlatformKit E2E <e2e@platformkit.test>"
 YAML
 }
-write_config
+
+# The second installation's own file, for the tenant no customer of the first is
+# served at. Same rule as write_config: the port appears twice, so a run that has
+# to move the second port rewrites the file rather than patching two lines.
+write_second_config() {
+	cat >"$work/second.yaml" <<YAML
+server:
+  addr: "127.0.0.1:$second_port"
+  public_host: "tenantb.localhost:$second_port"
+  docs: false
+  storybook_dir: "$work/storybook"
+database:
+  url: "$(swap "$app_url" "$second_database")"
+  migrate_url: "$(swap "$admin_url" "$second_database")"
+nats:
+  url: "${PLATFORMKIT_TEST_NATS_URL:-nats://localhost:4222}"
+log:
+  level: "warn"
+audit:
+  retention_days: 365
+files:
+  dir: "$work/files-two"
+YAML
+}
 
 password="e2e-$(date +%s)-password"
+second_password="e2e-two-$(date +%s)-password"
 # Runtime overrides belong to the caller's application, not this fixture, so
 # the function execs after clearing them, and is therefore only ever called in
 # a subshell: the explicit one around bootstrap, and the fork `&` makes for the
 # server. Were the body itself a subshell, bash would put a shell of its own
 # between this script and the backgrounded application; cleanup would stop that
 # shell and orphan the application, still on the port, for the next run to hit.
+# The bootstrap password is the one this fixture hands the administrator it is
+# about to create, and each installation gets its own: it arrives through
+# PLATFORMKIT_BOOTSTRAP_PASSWORD and is never a flag.
 run_app() {
-	for variable in "${!PLATFORMKIT_@}"; do unset "$variable"; done
-	export PLATFORMKIT_BOOTSTRAP_PASSWORD="$password"
+	export PLATFORMKIT_BOOTSTRAP_PASSWORD="$1"
+	shift
+	for variable in "${!PLATFORMKIT_@}"; do
+		case "$variable" in PLATFORMKIT_BOOTSTRAP_PASSWORD) ;; *) unset "$variable" ;; esac
+	done
 	exec "$work/platformkit" "$@"
 }
-echo "e2e: one tenant and one administrator"
-# --language is the tenant's own declaration, not the deployment's: e2e/localization.spec.ts
-# drives a Portuguese browser and expects the sign-in page in Portuguese, and the only thing
-# that makes a tenant served in a second language is somebody saying so. A tenant created
-# without it is served in the one language the copy is written in.
-(run_app bootstrap --config "$work/config.yaml" \
-	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
-	--language pt-PT) >/dev/null
 
-serve() { # start the application on $port and wait for /health: 0 once this run's own process is serving it, 1 when that process died, 2 when nothing ever answered, 3 when a process this run did not start holds the port
+# serve starts one installation on one port and waits for /health — the config,
+# the port, the log, the bootstrap password, and the name of the variable that
+# holds the process it forked. The status codes are the reason it is a function
+# rather than a block: 0 once this run's own process is serving it, 1 when that
+# process died, 2 when nothing ever answered, 3 when a process this run did not
+# start holds the port. The second installation asks the same question of the
+# same owner of the answer — scripts/free_port_test.sh pins these very lines,
+# which is why this one takes its names (the pid variable included, under the
+# nameref) rather than a copy of its own. The pid arrives by name because cleanup
+# has to reach the process the moment it exists, and a run that loses a port must
+# stop its own holder before it moves.
+serve() {
+	local config="$1" port="$2" log="$3" secret="$4" pid_name="$5"
+	local -n app_pid="$pid_name"
 	echo "e2e: serving on $port"
-	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
+	run_app "$secret" run --config "$config" >"$log" 2>&1 &
 	app_pid=$!
 	local waited=0 owners=""
 	while [ "$waited" -lt 60 ]; do
@@ -236,6 +304,16 @@ serve() { # start the application on $port and wait for /health: 0 once this run
 	return 2
 }
 
+write_config
+echo "e2e: one tenant and one administrator"
+# --language is the tenant's own declaration, not the deployment's: e2e/localization.spec.ts
+# drives a Portuguese browser and expects the sign-in page in Portuguese, and the only thing
+# that makes a tenant served in a second language is somebody saying so. A tenant created
+# without it is served in the one language the copy is written in.
+(run_app "$password" bootstrap --config "$work/config.yaml" \
+	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
+	--language pt-PT) >/dev/null
+
 # Nothing closes the window between the port being offered above and the application
 # binding it here — no portable mechanism hands a bound socket to a process about to
 # be exec'd, which is the note in scripts/free_port.sh. So a port this run chose for
@@ -245,7 +323,7 @@ serve() { # start the application on $port and wait for /health: 0 once this run
 # is never moved, and an application that died of anything but the port is reported
 # as what it is rather than retried into the noise.
 attempts=0
-until serve; do
+until serve "$work/config.yaml" "$port" "$work/app.log" "$password" app_process; do
 	status=$?
 	moved=""
 	if [ -z "$requested_port" ] && [ "$attempts" -lt 3 ] &&
@@ -260,9 +338,9 @@ until serve; do
 			# The application is still starting and will die on the bind; stop it here,
 			# because a run that moves the port must not leave its own process behind
 			# holding nothing and answering to nothing.
-			kill "$app_pid" 2>/dev/null || true
-			wait "$app_pid" 2>/dev/null || true
-			app_pid=""
+			kill "$app_process" 2>/dev/null || true
+			wait "$app_process" 2>/dev/null || true
+			app_process=""
 		fi
 		if ! port="$(bind_free_port)"; then
 			echo "e2e: no free loopback port to serve on." >&2
@@ -279,6 +357,77 @@ until serve; do
 	cat "$work/app.log" >&2
 	if holders="$(port_listeners "$port" 2>/dev/null)" && [ -n "$holders" ]; then
 		echo "e2e: $port is held by pid(s) ${holders//$'\n'/ }, which this run did not start; scripts/free_port.sh names who is meant to hold it" >&2
+	fi
+	exit 1
+done
+
+# The second tenant, and the installation that serves it.
+#
+# `platformkit bootstrap` refuses a second tenant once one exists — the rule
+# that keeps it safe to ship — so the second tenant is stood up as an
+# installation of its own, at a host no customer of the first is served at. It
+# is the same binary, the same migrations and the same supported commands a
+# second deployment runs; what the browser sees is two tenants on two hosts.
+#
+# Its port is asked of the same allocator, and only now: the first installation's
+# port may have moved while it was being served, so a second port chosen beside
+# that earlier number could collide with the number this run finally serves on.
+if ! second_port="$(bind_free_port)"; then
+	echo "e2e: no free loopback port to serve the second tenant on." >&2
+	exit 1
+fi
+while [ "$second_port" = "$port" ]; do
+	if ! second_port="$(bind_free_port)"; then
+		echo "e2e: no free loopback port to serve the second tenant on." >&2
+		exit 1
+	fi
+done
+write_second_config
+echo "e2e: a second tenant, at tenantb.localhost:$second_port"
+(run_app "$second_password" bootstrap --config "$work/second.yaml" \
+	--tenant e2eb --host tenantb.localhost --name "End to end two" \
+	--admin-email admin@tenantb.test) >/dev/null
+# The same move-when-taken rule as the first installation: this port was chosen
+# by nobody outside the run, so a run that loses it moves rather than driving a
+# stranger's page.
+attempts=0
+until serve "$work/second.yaml" "$second_port" "$work/second.log" "$second_password" second_pid; do
+	status=$?
+	moved=""
+	if [ "$attempts" -lt 3 ] &&
+		{ [ "$status" -eq 3 ] ||
+			{ [ "$status" -eq 1 ] && grep -qi 'address already in use' "$work/second.log" 2>/dev/null; }; }; then
+		moved="$second_port"
+	fi
+	if [ -n "$moved" ]; then
+		attempts=$((attempts + 1))
+		echo "e2e: $moved was taken while the second tenant's application was starting; choosing another." >&2
+		if [ "$status" -eq 3 ]; then
+			kill "$second_pid" 2>/dev/null || true
+			wait "$second_pid" 2>/dev/null || true
+			second_pid=""
+		fi
+		if ! second_port="$(bind_free_port)"; then
+			echo "e2e: no free loopback port to serve the second tenant on." >&2
+			exit 1
+		fi
+		while [ "$second_port" = "$port" ]; do
+			if ! second_port="$(bind_free_port)"; then
+				echo "e2e: no free loopback port to serve the second tenant on." >&2
+				exit 1
+			fi
+		done
+		write_second_config
+		continue
+	fi
+	case "$status" in
+	2) echo "e2e: the second tenant's application never answered /health on $second_port:" >&2 ;;
+	3) echo "e2e: /health answered on $second_port, but the socket behind the answer is not the second tenant's application, which could not bind a port somebody else was holding:" >&2 ;;
+	*) echo "e2e: the second tenant's application stopped before it served:" >&2 ;;
+	esac
+	cat "$work/second.log" >&2
+	if holders="$(port_listeners "$second_port" 2>/dev/null)" && [ -n "$holders" ]; then
+		echo "e2e: $second_port is held by pid(s) ${holders//$'\n'/ }, which this run did not start; scripts/free_port.sh names who is meant to hold it" >&2
 	fi
 	exit 1
 done
@@ -327,10 +476,16 @@ if "$default_output"; then
 	results="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/platformkit-e2e-results.XXXXXX")"
 	output_args=(--output "$results")
 fi
+# PLATFORMKIT_E2E_SECOND_URL is the same installation reached at a host the first
+# tenant is not served at. Chromium resolves *.localhost to the loopback address
+# itself, so no /etc/hosts entry and no operator is needed to reach it.
 PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_PORT="$port" \
+	PLATFORMKIT_E2E_SECOND_URL="http://tenantb.localhost:$second_port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
 	PLATFORMKIT_E2E_MAILPIT_URL="$mailpit_url" \
+	PLATFORMKIT_E2E_SECOND_EMAIL="admin@tenantb.test" \
+	PLATFORMKIT_E2E_SECOND_PASSWORD="$second_password" \
 	npx playwright test "${output_args[@]}" "$@"
