@@ -69,6 +69,17 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # Full history, and this is the only job that owes it: the budget verdict at the foot of the job
+      # walks `git rev-list $base..HEAD` over the commits that touched a ceiling
+      # (scripts/check_budget_ratchet.sh:59), so a shallow fetch here would read that verdict green
+      # across commits nobody fetched. `scripts/ci_checkout_history_test.sh` pins both halves — this
+      # line stays deep while that walk exists, and no other job goes deep without one.
+      #
+      # This job therefore keeps the exposure the two above lose: its checkout was still fetching 49
+      # minutes into run 49357, and its ceiling is 75. Bounding it from here would mean either a
+      # shallow fetch (which takes the budget verdict's commits away) or a stall timeout (which turns
+      # the wait into a faster red and nothing else). What answers it is outside this file: the forge's
+      # git-http throughput under a contended queue, or T-0219's split of these steps across runners.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
@@ -426,9 +437,21 @@ jobs:
     runs-on: pkit-ci-linux-amd64
     timeout-minutes: 45
     steps:
+      # One commit, because nothing in this job reads another. `fetch-depth: 0` asks for every branch
+      # and every tag — at the time of writing 128 heads and 199 tags, the `v1.1.2-proof.*` tag every
+      # delivery pushes among them — in a single fetch that carries no deadline of its own. At
+      # b6f1e93 that fetch was still running when this job's 45 minutes expired: the job log writes
+      # `##[error]context deadline exceeded` at 22:15:51 inside `Fetching the repository`, and the
+      # forge reported the job's only failed step as `Run actions/checkout@…`, which is the line that
+      # refused the head while every real step of the job was reported skipped. The same action
+      # fetched the single ref its post step needed in 26 seconds in that same log. What the fetch was
+      # bought for is nothing: `grep -rnwi --exclude-dir=node_modules git tools/designexport/openpencil`
+      # answers 0 lines, so its four steps (npm ci, npm audit, `npm test`, which builds a Go program
+      # per test, and the browser observations) read no git object. Verified locally in a `--depth=1
+      # --single-branch` clone of the same head: 586 native design tests, 0 failures.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       # Every design test embeds a real Go program and builds it before observing

@@ -266,11 +266,20 @@ check-race: ## Run the concurrency kernel under -race
 # check-e2e-guards` and .gitea/workflows/ci.yml — so unlike its two subjects it needs no node and
 # belongs here, where dropping them from the goal is red before a merge rather than in the job that
 # dropped them.
+#
+# scripts/ci_checkout_history_test.sh asks which history each CI job fetches and which of its steps
+# reads it. It is here because the answer was wrong in the direction that costs a delivery: at
+# b6f1e93 the design job spent all 45 of its minutes inside actions/checkout's full-history fetch —
+# every branch and every tag, for a job whose steps read no git object — and the forge refused the
+# head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
+# workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
+# history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/ci_checkout_history_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	bash scripts/free_port_test.sh
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
