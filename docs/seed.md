@@ -82,7 +82,18 @@ resource across starter and demo files; duplicate keys across kinds refuse.
 declared field its writer's `Target` carries nowhere — an unknown name, or a
 read-only field such as a task's `status` or `resolvedAt` — refuses at that
 field's own line before the record's row, mapping and event, which is the same
-rule `commands` already answers to: a run writes what it read.
+rule `commands` already answers to: a run writes what it read. A declared
+*value* the writer cannot hand to its owner answers the same way: YAML reads
+`priority: 5`, `kind: 7`, `visibility: 0` and `dueAt: 2026-10-10` as a number,
+a date and not as text, and a writer that read one as an empty field would put
+its own default in front of an answer somebody did write, commit it as a CREATE,
+map the key, and call the row it defaulted unchanged on every run after — so the
+value refuses at its own line, naming what it is (`priority is written as the
+number 5`). Only a field the record leaves out is an absent one, and a writer's
+default answers an absent field and nothing else: `visibility: ""` is declared,
+and refuses as the visibility it is, where no `visibility` asks for public. A
+field written with no value (`priority:`) carries no answer, so it reads as a
+field left out.
 `commands` is an ordered list of named owner commands with their arguments;
 the writer declares the command names and their desired-state comparator. A
 command such as publish is called only while its target state differs. The
@@ -203,8 +214,12 @@ records were loaded from: a run that read its records from one tree uploads the
 assets in that tree and nothing else. The upload's name is the last part of that
 path, a declared `contentType` must be the type that name already has, and
 `visibility` is the module's own `public` or `private` — public is what a record
-that names none asks for, and a third answer refuses the record. The file writer
-uploads those bytes through `file.Service.Upload` once. It writes no bytes over an
+that names none asks for, a third answer refuses the record, and so does a
+visibility written as anything but text: `visibility: 0` is a value the record
+declared, and reading it as none would store an upload public that its record
+did not. A record that wants its bytes read by signed URL only says `private`.
+The file writer uploads those bytes through `file.Service.Upload` once. It writes
+no bytes over an
 existing upload: a rerun reads back the name, media type, visibility and SHA-256
 the row carries, finds the four equal, and uploads nothing, because re-uploading
 would leave a new row and new bytes on every deploy with the old ones behind. The
@@ -279,8 +294,12 @@ row's other fields while the assignee stayed in place would report a change the 
 did not make, on every run after it.
 
 `dueAt` is resolved against the run's injected clock and applied when the record
-is **created** — see *Time, audit and external effects*. A plain reference has
-grammar `<writer-alias>/<key>` in a writer-declared reference argument. The alias
+is **created** — see *Time, audit and external effects*. The grammar is relative
+(`+3d`, `+2y`, `friday 09:00`) and an absolute date refuses the record with those
+words: YAML reads an unquoted `2026-10-10` as a date of its own, and a deadline
+fixed on disk is one no rerun can honour, so it is refused rather than read as no
+deadline. A plain reference has grammar `<writer-alias>/<key>` in a writer-declared
+reference argument. The alias
 and key are case-sensitive except for the normalization the target's owner
 performs: a writer names that normalization in `Resource.CanonicalKey`, and
 provenance, the prune keep-set and reference lookup all go through it, so a

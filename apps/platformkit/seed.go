@@ -257,15 +257,22 @@ func (contentSeeder) Resource() seed.Resource {
 }
 
 func (contentSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
-	kind := seedText(r.Fields["kind"])
-	if kind == "" {
+	text, err := seedTexts(r, "kind", "title", "body")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	// No kind written is the module's default for the question; a kind the file
+	// wrote — as a number, as nothing at all — is a declaration, and it goes to the
+	// check below, which answers it as content's own enum.
+	kind, given := text["kind"]
+	if !given {
 		kind = contentcontracts.KindPage
 	}
 	if kind != contentcontracts.KindPage && kind != contentcontracts.KindPost {
 		return seed.Target{}, fmt.Errorf("kind %q is not %s or %s", kind, contentcontracts.KindPage, contentcontracts.KindPost)
 	}
 	return seed.Target{
-		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": seedText(r.Fields["title"]), "body": seedText(r.Fields["body"]), "kind": kind},
+		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": text["title"], "body": text["body"], "kind": kind},
 		Commands: seedCommands(r, "publish"),
 	}, nil
 }
@@ -303,8 +310,8 @@ func (w *contentSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.
 
 func (w *contentSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
 	row, err := content.Spec.CreateRow(ctx, tx, &contentcontracts.Content{
-		Slug: seedText(t.Fields["slug"]), Title: seedText(t.Fields["title"]),
-		Body: seedText(t.Fields["body"]), Kind: seedText(t.Fields["kind"]),
+		Slug: t.Fields["slug"].(string), Title: t.Fields["title"].(string),
+		Body: t.Fields["body"].(string), Kind: t.Fields["kind"].(string),
 	})
 	if err != nil {
 		return seed.Snapshot{}, err
@@ -394,7 +401,11 @@ func (siteSeeder) Resource() seed.Resource {
 // own spelling would have site.Save accept a home slug no page wears, and a
 // visitor at "/" reading a settings row about an address nothing serves.
 func (siteSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
-	ref := seedText(r.Fields["homeSlug"])
+	text, err := seedTexts(r, "homeSlug")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	ref := text["homeSlug"]
 	alias, key, found := strings.Cut(ref, "/")
 	if !found || alias != "contents" || key == "" {
 		return seed.Target{}, fmt.Errorf("homeSlug names the page a site opens on as contents/<slug>, not %q", ref)
@@ -420,11 +431,11 @@ func (w *siteSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], _ seed.Key, 
 // anybody has saved anything, and Save is the only door that writes it — the
 // door the settings screen uses, with the event that says the site moved.
 func (w *siteSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
-	return w.write(ctx, tx, seedText(t.Fields["homeSlug"]))
+	return w.write(ctx, tx, t.Fields["homeSlug"].(string))
 }
 
 func (w *siteSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], _ seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
-	return w.write(ctx, tx, seedText(t.Fields["homeSlug"]))
+	return w.write(ctx, tx, t.Fields["homeSlug"].(string))
 }
 
 func (w *siteSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error {
@@ -492,7 +503,11 @@ func (userSeeder) Resource() seed.Resource {
 }
 
 func (w userSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
-	fields := map[string]any{"email": usercontracts.CanonicalEmail(r.Key), "displayName": seedText(r.Fields["displayName"])}
+	text, err := seedTexts(r, "displayName", "signIn")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	fields := map[string]any{"email": usercontracts.CanonicalEmail(r.Key), "displayName": text["displayName"]}
 	roles, err := seedRoles_(r.Fields["roles"])
 	if err != nil {
 		return seed.Target{}, err
@@ -503,7 +518,7 @@ func (w userSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.U
 	// the answer has arrived yet, which is what makes a deployment that sets
 	// PLATFORMKIT_DEMO_PASSWORD after provisioning a tenant still able to give its
 	// demo people a credential. See signInHeld for the other side.
-	if seedText(r.Fields["signIn"]) == signInDeclared {
+	if text["signIn"] == signInDeclared {
 		fields["signIn"] = signInDeclared
 	}
 	return seed.Target{Fields: fields}, nil
@@ -554,7 +569,7 @@ func (w userSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key,
 }
 
 func (w userSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
-	row, err := w.users.Invite(ctx, tx, seedText(t.Fields["email"]), seedText(t.Fields["displayName"]))
+	row, err := w.users.Invite(ctx, tx, t.Fields["email"].(string), t.Fields["displayName"].(string))
 	if err != nil {
 		return seed.Snapshot{}, err
 	}
@@ -566,7 +581,7 @@ func (w userSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 // was asked not to do. A person's name is theirs; a demo file that changed one
 // fails here, loudly, rather than overwriting whoever that address belongs to.
 func (w userSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
-	if want, have := seedText(t.Fields["displayName"]), seedText(cur.Fields["displayName"]); want != have {
+	if want, have := t.Fields["displayName"].(string), cur.Fields["displayName"].(string); want != have {
 		return seed.Snapshot{}, fmt.Errorf(
 			"user owns a person after the invitation: this seed changes no name (had %q, the file asks %q)", have, want)
 	}
@@ -601,7 +616,7 @@ func (w userSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], row *user
 	// The credential a seed gives is the one a person does not have yet. Once a
 	// row holds a hash the answer is settled — see signInHeld — so the deployment
 	// password reaches an invited person and never overwrites a chosen one.
-	if seedText(t.Fields["signIn"]) == signInDeclared && row.PasswordHash == "" {
+	if signIn, asked := t.Fields["signIn"].(string); asked && signIn == signInDeclared && row.PasswordHash == "" {
 		password := w.demoPassword
 		if password == "" {
 			// No deployment answer means this demonstration names its people but
@@ -660,12 +675,39 @@ func (taskSeeder) Resource() seed.Resource {
 }
 
 func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string]uuid.UUID, now time.Time) (seed.Target, error) {
-	priority := seedText(r.Fields["priority"])
-	if priority == "" {
+	// The deadline first, because it is the one declared value YAML reads into a
+	// type of its own: `dueAt: 2026-10-10` arrives as a date, and the grammar's own
+	// answer is the honest refusal. A fixed day on disk is a deadline no rerun can
+	// honour — this format resolves a deadline against the run that writes the row —
+	// so it is refused in the words that say what to write instead, and not read as
+	// the absence of a deadline.
+	if _, fixed := r.Fields["dueAt"].(time.Time); fixed {
+		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00, and an absolute date names a day no rerun can honour")
+	}
+	// The deadline first, because it is the one declared value YAML reads into a
+	// type of its own: an unquoted `dueAt: 2026-10-10` arrives as a date, and the
+	// honest refusal is the grammar's own sentence. This format resolves a deadline
+	// against the run that writes the row, so a fixed day on disk is one no rerun
+	// can honour, and it is refused in the words that say what to write instead —
+	// not read as the absence of a deadline, which is what a silent default would
+	// hand the record instead.
+	if _, fixed := r.Fields["dueAt"].(time.Time); fixed {
+		return seed.Target{}, errors.New("dueAt: the seed resolves a deadline against the run that writes the row, so it is +3d, +2y or friday 09:00; an absolute date names a day no rerun can honour")
+	}
+	text, err := seedTexts(r, "title", "priority", "assignee", "dueAt")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	// A task nobody gave a priority to is an ordinary one. The default answers
+	// nobody having answered, not a value this run could not read: `priority: 5`
+	// is the number 5, and a run that turned it into `normal` would commit the
+	// task, map its key and never report the record again.
+	priority, given := text["priority"]
+	if !given {
 		priority = taskcontracts.PriorityNormal
 	}
 	assignee := uuid.Nil
-	if ref := seedText(r.Fields["assignee"]); ref != "" {
+	if ref := text["assignee"]; ref != "" {
 		id, known := resolved[ref]
 		if !known {
 			return seed.Target{}, fmt.Errorf("assignee %q names no person this seed knows", ref)
@@ -684,7 +726,7 @@ func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string
 		}
 	}
 	target := seed.Target{Fields: map[string]any{
-		"title": seedText(r.Fields["title"]), "priority": priority, "assignee": assignee,
+		"title": text["title"], "priority": priority, "assignee": assignee,
 	}}
 	// A declared deadline reaches its owner. `dueAt: "+3d"` is the seed format's
 	// relative date and the run's clock is what resolves it — the same instant the
@@ -694,7 +736,7 @@ func (taskSeeder) Target(ctx context.Context, r seed.Record, resolved map[string
 	// exists, and a value that moves with the clock is never reconciled. A date the
 	// grammar does not read is refused here, at the record's own line, and the run
 	// writes nothing.
-	if expr := seedText(r.Fields["dueAt"]); expr != "" {
+	if expr := text["dueAt"]; expr != "" {
 		due, err := seed.ResolveDate(now, expr, false)
 		if err != nil {
 			return seed.Target{}, fmt.Errorf("dueAt: %w", err)
@@ -736,7 +778,7 @@ func (taskSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, f
 
 func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
 	row, err := task.Spec.CreateRow(ctx, tx, &taskcontracts.Task{
-		Title: seedText(t.Fields["title"]), Priority: seedText(t.Fields["priority"]),
+		Title: t.Fields["title"].(string), Priority: t.Fields["priority"].(string),
 		DueAt: seedTime(t.CreateOnly["dueAt"]),
 	})
 	if err != nil {
@@ -755,7 +797,7 @@ func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 // for good.
 func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
 	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{
-		"title": seedText(t.Fields["title"]), "priority": seedText(t.Fields["priority"]),
+		"title": t.Fields["title"].(string), "priority": t.Fields["priority"].(string),
 	})
 	if err != nil {
 		return seed.Snapshot{}, err
@@ -845,7 +887,11 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 		return seed.Target{}, err
 	}
 	name := path.Base(r.Asset)
-	if declared := seedText(r.Fields["name"]); declared != "" && declared != name {
+	text, err := seedTexts(r, "name", "contentType", "visibility")
+	if err != nil {
+		return seed.Target{}, err
+	}
+	if declared := text["name"]; declared != "" && declared != name {
 		return seed.Target{}, fmt.Errorf("a file record's key names its asset %q, not %q", name, declared)
 	}
 	// The media type is the name's, because the name is the record's own answer
@@ -853,15 +899,18 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 	// reading a declared contentType and then storing the extension's answer would
 	// be reading the field and throwing it away.
 	contentType := mime.TypeByExtension(strings.ToLower(path.Ext(name)))
-	if declared := seedText(r.Fields["contentType"]); declared != "" && declared != contentType {
+	if declared := text["contentType"]; declared != "" && declared != contentType {
 		return seed.Target{}, fmt.Errorf("a file record's asset %q has media type %q, not %q", name, contentType, declared)
 	}
 	// Visibility travels to the owner's Upload. Which reader a stored file answers
 	// is the record's own declaration, and the module's two visibilities are the
 	// only answers: a seed that named one of them for every record would hand an
-	// anonymous reader the bytes a file declared private.
-	visibility := seedText(r.Fields["visibility"])
-	if visibility == "" {
+	// anonymous reader the bytes a file declared private. Public answers a record
+	// that wrote no visibility, and never one this run could not read — a record
+	// whose `visibility: 0` was read as absent would be a private upload that
+	// anybody can open, keyed and reported as settled.
+	visibility, given := text["visibility"]
+	if !given {
 		visibility = filecontracts.VisibilityPublic
 	}
 	if visibility != filecontracts.VisibilityPublic && visibility != filecontracts.VisibilityPrivate {
@@ -908,7 +957,7 @@ func (fileSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _
 }
 
 func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
-	name := seedText(t.Fields["name"])
+	name := t.Fields["name"].(string)
 	body, uploaded := t.CreateOnly["asset"].([]byte)
 	if !uploaded {
 		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no asset bytes to upload", name)
@@ -919,8 +968,8 @@ func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 	// accessor rather than a transaction.
 	row, err := w.svc.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
 		filecontracts.Upload{
-			Name: name, ContentType: seedText(t.Fields["contentType"]),
-			Visibility: seedText(t.Fields["visibility"]), Declared: -1, Body: bytes.NewReader(body),
+			Name: name, ContentType: t.Fields["contentType"].(string),
+			Visibility: t.Fields["visibility"].(string), Declared: -1, Body: bytes.NewReader(body),
 		})
 	if err != nil {
 		return seed.Snapshot{}, err
@@ -959,7 +1008,7 @@ func assetFingerprint(body []byte) string {
 // asset beside the record changed after the upload, and there is no command that
 // puts new bytes behind a row that already has some.
 func (fileSeeder) Update(_ context.Context, _ db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
-	if seedText(t.Fields["asset"]) != seedText(cur.Fields["asset"]) {
+	if want, have := t.Fields["asset"].(string), cur.Fields["asset"].(string); want != have {
 		return seed.Snapshot{}, errors.New("file: the asset beside this record changed since its upload, and the seed writes no bytes over an existing upload")
 	}
 	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
@@ -1004,16 +1053,76 @@ func seedRolesSorted(roles []string) []string {
 	return []string(usercontracts.CanonicalRoles(roles))
 }
 
-// seedText is a seed field read as text. A file that puts a number or a list where a
-// sentence belongs reads as empty, and the owner's own validation is what
-// refuses it — with its own text, at its own boundary, rather than through a
-// second type check invented here.
-func seedText(v any) string {
-	s, _ := v.(string)
-	// Trimmed, because the owners trim: content stores a title without the
-	// spaces around it, so a target that kept them would differ from the stored
-	// row on every run forever. The canonical value is the one the owner keeps.
-	return strings.TrimSpace(s)
+// seedTexts reads the fields a writer takes from a record as the text its owners
+// hold, and refuses the first value that is not text.
+//
+// What the file left out and what it wrote as something else are different facts,
+// and the answer keeps them apart: a name appears in the map only when the record
+// wrote one, so `kind: page` answers "page", `kind:` and no `kind` at all answer
+// "nobody answered", and `kind: ""` answers the empty text that was written. Only
+// the middle case is an absent field, and an absent field is the only thing a
+// writer's default answers. A default is what this application says when nobody
+// did; saying it on top of the number 7 commits an answer nobody gave, reports
+// CREATE for it and maps the key — and the next run compares the row it defaulted
+// against the same default, calls it unchanged, and never surfaces the record
+// again. So the value refuses, at the record's own line, named as what it is. It is
+// the rule kit/seed holds one level up: decide.go refuses a declared field no
+// writer applies, because a declaration the run reads and then throws away is a
+// declaration nobody honoured (house rule 7). Reading a value and replacing it is
+// the same write.
+//
+// Text is carried, not judged, and trimmed, because the owners trim: content stores
+// a title without the spaces around it, so a target that kept them would differ
+// from the stored row on every run forever, and the canonical value is the one the
+// owner keeps. `priority: whenever` is text, so it reaches task's own validation and
+// comes back as task's own sentence at this record's line; a check invented here
+// would own the same answer twice, in two words, from two places. Empty text goes on
+// like any other, and its owner answers it as it answers anybody who typed nothing
+// into its form: task defaults an empty priority to `normal`; content and file hold
+// no default for a kind or a visibility, and refuse it.
+//
+// A writer's own Target and Snapshot maps are read back as `.(string)`, not through
+// this function, because whatever is in them this file put there. A value of another
+// type there is a broken run rather than a person's file, and a read that turned it
+// into "" would write an empty title out of our own bug instead of showing it. One
+// record field is read the same way it is written: signIn is asked for or not asked
+// for, Target writes the ask only when the file made it, so its reader asks the map
+// the same question.
+func seedTexts(r seed.Record, names ...string) (map[string]string, error) {
+	text := make(map[string]string, len(names))
+	for _, name := range names {
+		value, declared := r.Fields[name]
+		if !declared || value == nil {
+			continue // YAML's no value is a field the file left out
+		}
+		sentence, ok := value.(string)
+		if !ok {
+			return nil, fmt.Errorf("%s is written as %s, not as text: a value the record declares is never the field it left out, which is the only thing a default answers",
+				name, seedShape(value))
+		}
+		text[name] = strings.TrimSpace(sentence)
+	}
+	return text, nil
+}
+
+// seedShape says what a value that is not text is, in the words a person would use
+// about the file: `the number 7`, not `7 (int)` — the first thing they have to put
+// back is the type they typed.
+func seedShape(value any) string {
+	switch v := value.(type) {
+	case bool:
+		return fmt.Sprintf("the boolean %t", v)
+	case int, int64, uint64, float64:
+		return fmt.Sprintf("the number %v", v)
+	case time.Time:
+		return fmt.Sprintf("the date %s", v.Format(time.RFC3339Nano))
+	case []any:
+		return "a list"
+	case map[string]any:
+		return "a mapping"
+	default:
+		return fmt.Sprintf("a %T", v)
+	}
 }
 
 // seedTime is a create-only date read the way its owner's field is stored: a
