@@ -39,13 +39,13 @@ func aggregateState(label string, state ContentState, payload bool) error {
 }
 
 // retainedNavigation reports whether a read that returned no result still carries
-// the navigation into one. View switches, range controls and the days of a
-// displayed range are places inside the result set that is no longer displayed:
-// the HTML omits them, but a typed capture of the same Props would export them.
+// the navigation into one. View switches, range chips and billing-period toggles
+// are places inside the result set that is no longer displayed: the HTML omits
+// them, but a typed capture of the same Props would export them.
 // An empty read keeps its navigation, because its result is present; loading
 // keeps it, because the same read is still outstanding.
 func retainedNavigation(status MediaStatus, choices []ChoiceLink, links ...*ChoiceLink) bool {
-	if status != MediaFailed && status != MediaRefused {
+	if !absentRead(status) {
 		return false
 	}
 	if len(choices) != 0 {
@@ -57,6 +57,29 @@ func retainedNavigation(status MediaStatus, choices []ChoiceLink, links ...*Choi
 		}
 	}
 	return false
+}
+
+// retainedDayStrip reports the same verdict for a strip of days: every day's href
+// is a route into the range the read no longer has, and the strip's own paging
+// links are two more. The days are a []DateChoice rather than []ChoiceLink, so
+// they join the rule here rather than at each call site.
+func retainedDayStrip(status MediaStatus, strip DateStripProps) bool {
+	return absentRead(status) && (len(strip.Days) != 0 || strip.Previous != nil || strip.Next != nil)
+}
+
+// absentRead is the half of the rule both helpers decide on: a read that failed or
+// was refused returned no result to hold navigation for.
+func absentRead(status MediaStatus) bool { return status == MediaFailed || status == MediaRefused }
+
+// navigationLink wraps content in its destination. A disabled component keeps the
+// content readable but offers no destination to follow: an anchor with no href is
+// inert to pointer, keyboard and enhancement alike, which is the shape a disabled
+// navigation choice takes everywhere else.
+func navigationLink(disabled bool, href string, children ...g.Node) g.Node {
+	if disabled {
+		return h.A(append([]g.Node{h.Role("link"), g.Attr("aria-disabled", "true"), g.Attr("tabindex", "-1")}, children...)...)
+	}
+	return h.A(append([]g.Node{h.Href(href)}, children...)...)
 }
 
 func sharedSection(p ComponentProps, name, label string, children ...g.Node) g.Node {

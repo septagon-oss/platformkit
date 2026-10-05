@@ -105,6 +105,9 @@ func (p PricingTiersProps) Validate() error {
 		return err
 	}
 	if !p.State.ready() {
+		if retainedNavigation(p.State.Status, p.Periods) {
+			return fmt.Errorf("PricingTiers: absent content must clear navigation into the previous result")
+		}
 		return nil
 	}
 	if err := validatePlans(p.Plans, p.CurrentPlanID, p.CurrentPlanText); err != nil {

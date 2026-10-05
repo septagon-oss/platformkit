@@ -94,6 +94,14 @@ func DateStrip(p DateStripProps) g.Node {
 	return h.Nav(append(baseAttrs(p.ComponentProps), g.Attr("data-component", "date-strip"), g.Attr("aria-label", p.Label), Flex(FlexProps{Gap: "2", Wrap: true}, days...))...)
 }
 
+// dateStripUnder renders a strip of days under the state of the component that
+// owns it. Each day is a navigation choice, so a disabled Calendar or SlotPicker
+// keeps the dates readable and offers none of them to follow.
+func dateStripUnder(p DateStripProps, disabled bool) g.Node {
+	p.Disabled = p.Disabled || disabled
+	return DateStrip(p)
+}
+
 type Slot struct {
 	ID           string    `json:"id"`
 	StartUTC     time.Time `json:"startUTC"`
@@ -174,6 +182,9 @@ func (p SlotPickerProps) Validate() error {
 		return err
 	}
 	if !p.State.ready() {
+		if retainedDayStrip(p.State.Status, p.DateStrip) {
+			return fmt.Errorf("SlotPicker: absent content must clear navigation into the previous result")
+		}
 		return nil
 	}
 	if !required(p.ID, p.Name, p.TimeZone, p.TimeZoneLabel, p.SnapshotText) || p.Quantity <= 0 || !utcInstant(p.NowUTC) {
@@ -241,7 +252,7 @@ func SlotPickerWithSlots(p SlotPickerProps, slots StateSlots) g.Node {
 		}
 		choices = append(choices, h.Label(h.Class(clChoice.Compile()), h.Input(input...), g.Text(strings.Join(copy, " · "))))
 	}
-	return sharedSection(p.ComponentProps, "slot-picker", p.Label, stateBody(p.State, slots), DateStrip(p.DateStrip), Text(TextProps{Content: p.SnapshotText, Size: "sm"}),
+	return sharedSection(p.ComponentProps, "slot-picker", p.Label, stateBody(p.State, slots), dateStripUnder(p.DateStrip, p.Disabled), Text(TextProps{Content: p.SnapshotText, Size: "sm"}),
 		h.FieldSet(h.Legend(h.Class(clLabel.Compile()), g.Text(p.Label)), Flex(FlexProps{Wrap: true, Gap: "2"}, choices...)),
 		g.If(p.ErrorText != "", h.P(h.ID(p.ID+"-error"), h.Class(clFieldErr.Compile()), g.Text(p.ErrorText))))
 }
