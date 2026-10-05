@@ -135,7 +135,7 @@ selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")"
 export PATH="$selected_root/bin:$PATH"
 for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
-    kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
+    kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
     kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts; do

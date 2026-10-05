@@ -42,7 +42,7 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request modules/task/domain design ui/forms
+parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
@@ -83,7 +83,14 @@ printf '%s\n' "$metadata" | awk -F '|' '
         p = "github.com/septagon-oss/platformkit/"
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
-        delivery = p "kit/events/transport " p "kit/events/internal/delivery"
+        # kit/appname is a value package beside kit/trace: its closure is the
+        # standard library and the UUID type a tenant id already is. It is in the
+        # delivery group because that is where an address is formed — subject,
+        # filter, durable — and every other name two apps could share (cookie,
+        # job lock, limit bucket, stored path) is formed by the same grammar. A
+        # package that reaches it reaches only values; nothing reaches back.
+        appname = p "kit/appname"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         # kit/trace is in the outbox bound and the kernel one because the trace
         # context of a request is stored with the event the request caused, and
@@ -136,6 +143,9 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The W3C trace context is a value: the standard library and nothing
         # else. It is a carrier, not a tracer, and its closure is the proof.
         check("kit/trace", "")
+        # The one door for shared names: stdlib and UUID, or the package that is
+        # supposed to name nothing but a slug would be holding a runner.
+        check("kit/appname", uuid)
         # Which call, from where, on which trace: a value the request leaves
         # behind, so the standard library and kit/trace and nothing else. Reading
         # net/http here would put a server in the closure of every worker.
@@ -146,8 +156,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The one store kit/cache speaks to: the port package and one client, and
         # the four commands the adapter issues are asserted in its own test rather
         # than here — this line is what the provider may link, which is the only
-        # direction the compiler cannot refuse.
-        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config",
+        # direction the compiler cannot refuse. kit/appname rides in with kit/config:
+        # the config decodes its own app slug through the door, so a provider that
+        # reads configuration reaches the slug values and nothing else.
+        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config " appname,
             uuid " github.com/redis/go-redis/v9 github.com/cespare/xxhash/v2 go.uber.org/atomic golang.org/x/sync golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("modules/task/domain", "")
         check("design", "")
@@ -167,7 +179,7 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
         check("kit/app", kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
-        check("kit/events/transport", uuid)
+        check("kit/events/transport", uuid " " appname)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,

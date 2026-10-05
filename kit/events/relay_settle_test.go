@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
@@ -63,7 +64,7 @@ func TestAFullBatchLeavesTheCorrectionToTheQueueEnd(t *testing.T) {
 	t.Cleanup(restore)
 
 	for pass := 1; pass <= 2; pass++ {
-		if n, err := relayBatch(t.Context(), conn, memory.New()); err != nil || n != batch {
+		if n, err := relayBatch(t.Context(), conn, memory.New(), appname.Name("")); err != nil || n != batch {
 			t.Fatalf("relay pass %d: moved %d rows, err %v, want a full batch of %d", pass, n, err, batch)
 		}
 	}
