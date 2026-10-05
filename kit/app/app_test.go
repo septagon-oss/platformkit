@@ -162,7 +162,7 @@ func TestBootMigratesAndServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 
 	// The probes as an orchestrator sends them: at the pod's address, which
 	// names no tenant, so no transaction is opened at all.
@@ -372,17 +372,61 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-func waitFor(t *testing.T, addr string) {
+// migrationGrace is how long a boot may go without anything in front of it
+// before its listener counts as broken. It covers the steps between taking the
+// composition key and opening the socket; it is not the budget for the queue,
+// which is the queue's own.
+const migrationGrace = 20 * time.Second
+
+// compositionLockKey is the migration key kit/db takes before a boot serves
+// (compositionLockKey in kit/db/migrate.go). It is named here rather than
+// imported because the harness watches the queue from outside that package.
+const compositionLockKey = 7240101
+
+// waitFor asks until the listener answers, and stops as soon as the boot has
+// no reason left to wait. Run migrates before it serves, and migration takes the
+// database-wide composition key: a boot queued behind another app's migration is
+// a correct boot that has not had its turn, which no clock can tell apart from a
+// dead listener. Postgres can, so the wait watches pg_locks (dbtest.Open, the
+// handle kit/db's own lock cases watch with) for a request waiting on that key in
+// this boot's own database, keeps
+// waiting while one exists, and refuses once none does and the grace is spent.
+//
+// kit/app/boot_waits_for_migration_queue_test.py holds that key for 35 seconds
+// from another session and fails this harness if a boot it started anyway
+// returns non-zero. A boot that never listens stays bounded by the test binary's
+// own timeout, which is the honest bound: a listener that never opens is stuck,
+// not slow.
+func waitFor(t *testing.T, migrateURL, addr string) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
-	for time.Now().Before(deadline) {
+	ctx := t.Context()
+	watch := dbtest.Open(t, migrateURL)
+
+	queueing := func() bool {
+		var waiting int
+		err := watch.QueryRowContext(ctx, `SELECT count(*) FROM pg_locks
+			WHERE locktype = 'advisory' AND objid = $1 AND NOT granted
+			  AND database = (SELECT oid FROM pg_database
+			                 WHERE datname = current_database())`, compositionLockKey).Scan(&waiting)
+		if err != nil {
+			t.Fatalf("read the migration queue: %v", err)
+		}
+		return waiting > 0
+	}
+
+	grace := time.Now().Add(migrationGrace)
+	for {
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
 			return
 		}
+		if queueing() {
+			grace = time.Now().Add(migrationGrace)
+		} else if time.Now().After(grace) {
+			t.Fatalf("nothing is listening on %s and no migration is queueing ahead of it", addr)
+		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -453,7 +497,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -473,7 +517,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)
@@ -539,7 +583,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 
 	// A worker serves the two probes and nothing else.
 	for _, path := range []string{"/health", "/ready"} {
@@ -634,7 +678,7 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 
 	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
 		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
@@ -678,7 +722,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 
 	// The document is for a caller the installation recognises: the resources it
 	// may reach, not everybody's.
@@ -738,7 +782,7 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- b.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
 	}
@@ -775,7 +819,7 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -809,7 +853,7 @@ func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
 	req.Host = tenantHost
