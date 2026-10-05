@@ -139,7 +139,9 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // hostPattern is a hostname: labels of letters, digits and hyphens, separated
 // by dots. It is deliberately narrower than the DNS allows — no underscores, no
 // trailing dot, no port — because kit/httpx has already normalised the incoming
-// Host header to exactly this shape before it asks the loader.
+// Host header to exactly this shape before it asks the loader. A port is not the
+// key a tenant is resolved by, so a published installation declares its public
+// port in server.public_host, the key a mailed link reads a port from.
 var hostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 // ValidSlug normalises and checks a slug.

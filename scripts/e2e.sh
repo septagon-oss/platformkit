@@ -3,9 +3,11 @@
 #
 # It boots the application the way a person would and then drives it with a
 # browser: a database of its own, migrated from nothing; one tenant and one
-# administrator, created by `platformkit bootstrap`; the binary on a port; one
-# Playwright spec; and then the application fixture is removed again. Failed
-# browser results survive separately so a retry is not needed to inspect them.
+# administrator, created by `platformkit bootstrap`; the binary on a port; the
+# Playwright specs; and then the application fixture is removed again. Mails go to
+# compose.yaml's mailpit catcher, which is where the journeys that open a mailed
+# link find it. Failed browser results survive separately so a retry is not needed
+# to inspect them.
 #
 # It is a script rather than four lines in the Makefile because the teardown has
 # to happen whichever step failed, and a recipe cannot trap.
@@ -60,6 +62,36 @@ else
 		echo "e2e: no free loopback port to serve on." >&2
 		exit 1
 	fi
+fi
+
+# The development mail catcher: compose.yaml's mailpit service. The application is
+# pointed at its SMTP port and the journeys are pointed at its HTTP API, because a
+# mailed link nobody can read is the failure the front-door journeys exist for.
+#
+# The three names are derived here, from the two ports compose.yaml publishes, rather
+# than by the `e2e` recipe. The reason is who else calls this script: `./scripts/e2e.sh
+# some-spec.spec.ts` is how somebody runs one journey, and that caller carries the
+# stack's ports in its environment but none of the recipe's derived names, so a
+# recipe-side derivation left the direct call dialling the default 8025 while the
+# catcher it was given answered on another port. A caller that reaches a catcher at some
+# other address - a CI job whose services answer by container name, not on localhost -
+# sets the three names itself, and wins over the derivation.
+mail_host="${PLATFORMKIT_E2E_MAIL_HOST:-localhost}"
+mail_port="${PLATFORMKIT_E2E_MAIL_PORT:-${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}}"
+mailpit_url="${PLATFORMKIT_E2E_MAILPIT_URL:-http://${mail_host}:${PLATFORMKIT_MAILPIT_PORT:-8025}}"
+
+# Asked for before the binary is built, not after the browser starts clicking. With
+# no catcher the application boots happily and logs the messages it will not send
+# (apps/platformkit's mailer wires the in-process mailbox when no host is set), so the
+# journey that reads a mailed link fails on a 30-second poll against a URL nobody
+# answered, pointing at Playwright rather than at the stack that is missing.
+if ! curl -fsS --max-time 5 "$mailpit_url/api/v1/info" >/dev/null 2>&1; then
+	echo "e2e: no Mailpit API at $mailpit_url, and the mailed-link journeys read the link a run sends out of it." >&2
+	echo "     docker compose up -d --wait mailpit starts compose.yaml's catcher on the ports this run reads:" >&2
+	echo "     PLATFORMKIT_MAILPIT_SMTP_PORT=${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025} is the server the application dials," >&2
+	echo "     PLATFORMKIT_MAILPIT_PORT=${PLATFORMKIT_MAILPIT_PORT:-8025} is this API. A catcher elsewhere is named by" >&2
+	echo "     PLATFORMKIT_E2E_MAIL_HOST, PLATFORMKIT_E2E_MAIL_PORT and PLATFORMKIT_E2E_MAILPIT_URL." >&2
+	exit 1
 fi
 
 # A URL with the database swapped for this run's own. Everything else — host,
@@ -143,6 +175,13 @@ audit:
   retention_days: 365
 files:
   dir: "$work/files"
+# The one mail server this run dials, and the reason the journeys can read a link at
+# all: kit/config refuses a host with no sender, so both halves are written here.
+# No secret: a catcher accepts anything and authenticates to nobody.
+mail:
+  host: "$mail_host"
+  port: $mail_port
+  from: "PlatformKit E2E <e2e@platformkit.test>"
 YAML
 }
 write_config
@@ -293,4 +332,5 @@ PLATFORMKIT_E2E_URL="http://localhost:$port" \
 	PLATFORMKIT_E2E_FIXTURE_DATABASE="$database" \
 	PLATFORMKIT_E2E_EMAIL="admin@e2e.test" \
 	PLATFORMKIT_E2E_PASSWORD="$password" \
+	PLATFORMKIT_E2E_MAILPIT_URL="$mailpit_url" \
 	npx playwright test "${output_args[@]}" "$@"

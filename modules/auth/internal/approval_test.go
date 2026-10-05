@@ -138,7 +138,8 @@ func TestPendingRegistrationRefusesEvenAPreexistingPasswordToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return auths.Reset(ctx, tx, token, authtest.Password+" changed")
+		_, err := auths.Reset(ctx, tx, token, authtest.Password+" changed", contracts.Client{})
+		return err
 	})
 	if !errors.Is(err, crud.ErrConflict) {
 		t.Fatalf("pending password token = %v", err)

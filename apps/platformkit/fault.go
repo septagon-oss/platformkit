@@ -67,6 +67,13 @@ const (
 	// What moved is where its documents are (/app/<module>/…), and the public
 	// doors, which took their own prefix.
 	pinnedSignInAPI = "/api/v1/auth/login"
+	// pinnedRegisterAPI is the registration door as the public surface composes
+	// it: /api/v1/public/<module>/… The shell's register form posts there, and
+	// TestPinnedAddresses asks the running server that it answers. The login
+	// door above keeps the workspace address because that is where it always
+	// was; this door is anonymous and public, so it lives where an anonymous
+	// caller is answered.
+	pinnedRegisterAPI = "/api/v1/public/auth/register"
 	// pinnedPublicFile is the file module's public door: a visitor who may see a
 	// file asks it there, and only there, because the public surface is the one
 	// that answers an anonymous caller and refuses to set a cookie while doing

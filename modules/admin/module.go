@@ -41,6 +41,22 @@ type Roles = internal.Roles
 // sessions screen. See internal.Sessions.
 type Sessions = internal.Sessions
 
+// Registration is the shell's offer of a way in for a person with no account:
+// which form the page renders, and the door it posts to. See Deps.Registration.
+type Registration = internal.Registration
+
+// RegistrationKind is which registration form the shell renders.
+type RegistrationKind = internal.RegistrationKind
+
+const (
+	// RegistrationKindEmail asks for an address alone; the person is then
+	// invited and chooses a password from the mail.
+	RegistrationKindEmail = internal.RegistrationKindEmail
+	// RegistrationKindPassword takes a password and its confirmation, and the
+	// account waits for the mailbox link before it can sign in.
+	RegistrationKindPassword = internal.RegistrationKindPassword
+)
+
 // Deps is what the shell cannot make for itself.
 type Deps struct {
 	// Modules is the composition, for navigation. The shell draws the sidebar
@@ -56,6 +72,15 @@ type Deps struct {
 	// shell naming another module's door, so the composition names it, and
 	// apps/platformkit's test asks the running server that it answers.
 	SignIn string
+
+	// Registration is the composition saying that a person with no account may
+	// make one. Nil — the default — means the sign-in page shows the password
+	// door and nothing else: offering a form that posts to a route nobody
+	// mounted is a door painted on a wall, which is the same argument that keeps
+	// the forgot page off a composition with no auth module. Only the
+	// composition knows whether it wired a registration service, so only the
+	// composition sets this.
+	Registration *Registration
 
 	// Authorize is the same value the kernel enforces with. The sidebar shows a
 	// link only when the caller may follow it, and asking the authorizer is
@@ -134,8 +159,9 @@ func Module(deps Deps) module.Module {
 				// The one call in this module that crosses a tenant boundary,
 				// in the manifest a reviewer is already reading. It is what the
 				// tenant switcher lists. See docs/adr/0006.
-				Token:  s.SystemToken(),
-				SignIn: deps.SignIn,
+				Token:        s.SystemToken(),
+				SignIn:       deps.SignIn,
+				Registration: deps.Registration,
 			})
 		},
 	}
