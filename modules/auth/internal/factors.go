@@ -182,19 +182,15 @@ func (s *Service) ListFactors(ctx context.Context, tx db.Tx[db.Tenant], userID u
 
 // WithdrawFactor ends one factor of either kind, and refuses to end the last.
 //
-// "The last" means the last that could still answer, not the last row. A credential
-// retired as suspect answers nothing for the rest of its life — recordPasskeyUse
-// refuses it on every prompt — so it is the record of a factor that was, and not a
-// way in. Counting rows would let one of those stand in for a usable factor: the
-// account would "hold two" while one of them could never sign anybody in, and the
-// withdrawal that left a person holding only that row would be allowed. That is the
-// lockout rule 8 refuses, waved through by a number that looked right. So the count
-// is of the factors beside this one that could still answer, and nothing is taken
-// away unless this one could too: removing a retired credential is allowed however
-// little else is here, and removing the last usable one is refused whatever else the
-// tables hold. A successful withdrawal therefore never leaves a person who could
-// answer a second factor unable to — and the two-tabs case still settles on one
-// success, because the loser's locked scan re-reads the rows the winner deleted.
+// "The last" means the last that could still answer, not the last row: a credential
+// retired as suspect answers nothing for the rest of its life, so counting it as a way
+// in let a dead row stand for a usable factor, and the withdrawal that left a person
+// holding only that row was answered with success — rule 8's lockout, waved through by
+// a number that looked right. What is counted is therefore the factors beside this one
+// that could still answer, and nothing is taken away unless this one could too: a
+// retired credential is withdrawable however little else is here, the last usable one is
+// refused whatever else the tables hold. Two tabs still settle on one success: the loser's
+// locked scan re-reads the rows the winner deleted.
 //
 // The count and the delete are one decision under one lock: SELECT ... FOR UPDATE
 // over this person's factor rows takes every row a concurrent withdrawal could be

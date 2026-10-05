@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -431,13 +432,10 @@ func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (
 // captured assertion replayable until it expired, which is a sign-in for anybody
 // who can POST one body twice, with no biometric and no new ceremony.
 //
-// The tenant's policy is rechecked below for the door it governs, in the same
-// transaction that would open the session, and not only at the begin leg. An
-// administrator who shut the usernameless door while a prompt stood open meant to
-// shut it now, not at the moment the next ceremony begins: the setting is this
-// tenant's fact about what may open a session here, and a command that answered
-// from a policy read minutes earlier would open a session the tenant had just
-// refused.
+// The tenant's policy is rechecked below for the door it governs, in the transaction that
+// would open the session: an administrator who shut the usernameless door while a prompt
+// stood open meant to shut it now, and a command answering from the policy as of the nonce
+// would open a session the tenant had just refused.
 //
 // The first-factor proof is spent after that and before the session, when and only
 // when the row says the ceremony was begun at the second-factor door. That is the
@@ -471,15 +469,12 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	if !spent {
 		return nil, nil, contracts.ErrCredentials
 	}
-	// The usernameless door, rechecked in this transaction. The second-factor door
-	// is not governed by this setting — a passkey answers a password whether or not
-	// a passkey may replace one — so the read is asked of the door the row names
-	// rather than of every answer, and a tenant that shut the door pays nothing for
-	// the question. The answer is 403 and not 401 because nothing was wrong with
-	// what the person offered; the refusal is the tenant's decision, said as
-	// BeginPasskeySignIn says it. It is reached after the nonce was spent and the
-	// attempt charged, before the signature is credited, so it opens no session,
-	// spends no first-factor proof and publishes nothing.
+	// The usernameless door, rechecked in this transaction; the second-factor door is not
+	// governed by this setting, since a passkey answers a password whether or not one may
+	// replace it. 403 and not 401: nothing was wrong with what the person offered, and the
+	// refusal is the tenant's own decision, said as BeginPasskeySignIn says it. It comes
+	// after the nonce was spent and the attempt charged, before the signature is credited,
+	// so it opens no session, spends no first-factor proof and publishes nothing.
 	if door == contracts.PasskeyCeremonySignIn {
 		enabled, err := s.passkeySignInEnabled(ctx, tx)
 		if err != nil {
@@ -489,12 +484,14 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 			return nil, nil, contracts.ErrPasskeySignInOff
 		}
 	}
+	var holds []passkeyCredentialRow
 	owner := func(rawID, userHandle []byte) (webauthn.User, error) {
-		user, holds, err := s.passkeyOwner(ctx, tx, rawID, userHandle)
+		user, rows, err := s.passkeyOwner(ctx, tx, rawID, userHandle)
 		if err != nil {
 			return nil, err
 		}
-		return passkeyUser{user: user, holds: holds}, nil
+		holds = rows
+		return passkeyUser{user: user, holds: credentialsOf(rows)}, nil
 	}
 	user, cred, err := rp.ValidatePasskeyLogin(owner, *session, parsed)
 	if err != nil {
@@ -504,7 +501,7 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	if !ok || !who.user.CanSignIn() {
 		return nil, nil, contracts.ErrCredentials
 	}
-	factor, err := s.recordPasskeyUse(ctx, tx, who.user.ID, cred)
+	factor, err := s.recordPasskeyUse(ctx, tx, who.user.ID, cred, holds)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -522,41 +519,46 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	})
 }
 
-// passkeyOwner answers the SDK's discoverable lookup: whose credential is this, and
-// what else do they hold. The credential id is public and spends nothing, so
-// reading it before the signature is checked is not a lookup an attacker drives —
-// and the RLS policy makes another tenant's row invisible here, which is the
-// database half of "a passkey for tenant A never answers at tenant B".
+// passkeyOwner answers the SDK's discoverable lookup: whose credential is this, and the
+// rows that say what they hold. The credential id is public and spends nothing, so
+// reading it before the signature is checked is not a lookup an attacker drives — and
+// the RLS policy makes another tenant's row invisible here, which is the database half
+// of "a passkey for tenant A never answers at tenant B". The rows travel back to the
+// caller rather than being read again, because recordPasskeyUse writes against the
+// counter this read handed the library.
 //
 // The user handle is checked to be this credential's owner's id rather than merely
 // present: the library compares it against the user it is given, and the row is the
 // only thing that could tie a key to a person.
-func (s *Service) passkeyOwner(ctx context.Context, tx db.Tx[db.Tenant], rawID, userHandle []byte) (*usercontracts.User, []webauthn.Credential, error) {
+func (s *Service) passkeyOwner(ctx context.Context, tx db.Tx[db.Tenant], rawID, userHandle []byte) (*usercontracts.User, []passkeyCredentialRow, error) {
 	userID, err := uuid.FromBytes(userHandle)
 	if err != nil {
 		return nil, nil, crud.ErrNotFound
 	}
-	var rows []passkeyCredentialRow
+	var match []passkeyCredentialRow
 	if err := tx.DB().Where("credential_id = ? AND user_id = ?", rawID, userID).
-		Find(&rows).Error; err != nil {
+		Find(&match).Error; err != nil {
 		return nil, nil, err
 	}
-	if len(rows) == 0 {
+	if len(match) == 0 {
 		return nil, nil, crud.ErrNotFound
 	}
 	user, err := s.users.Get(ctx, tx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
-	holds, err := s.passkeyCredentials(ctx, tx, userID)
+	rows, err := s.passkeyCredentials(ctx, tx, userID)
 	if err != nil {
 		return nil, nil, err
 	}
-	return user, credentialsOf(holds), nil
+	return user, rows, nil
 }
 
-// recordPasskeyUse is the clone rule and the counter, in that order, with the
-// decision inside the statement that makes it.
+// recordPasskeyUse is the clone rule and the counter, in that order, with the decision
+// inside the statement that makes it. holds is the rows the ceremony's own lookup read:
+// the counter this write must not move is the one the signature was validated against,
+// and a second read could name a counter another assertion had already advanced — which
+// would let this answer *lower* the stored count rather than refuse.
 //
 // The library's UpdateCounter already set CloneWarning on the credential it handed
 // back, applying the standard's own exception that two zero counters are not a
@@ -567,32 +569,29 @@ func (s *Service) passkeyOwner(ctx context.Context, tx db.Tx[db.Tenant], rawID, 
 // they are for any wrong answer. "Your passkey was flagged as cloned" is a sentence
 // that helps whoever cloned it more than the person it was cloned from.
 //
-// The counter is written as a compare-and-set against the value this answer was
-// validated against, not as a plain write. Without it two assertions carrying the
-// same counter both validate against one stored value — each reads the row before
-// either has written it — and both are accepted, which is the clone rule arriving
-// one commit too late. `sign_count = ?` makes the write decide: the loser of the
-// race waits on the row lock Postgres holds for the winner's UPDATE, re-checks its
-// predicate against the version that write produced, affects no row, and is refused
-// exactly as a replay is refused at the keyboard. The read may therefore stay
-// unlocked: what it is allowed to be stale about is the thing the predicate re-reads
-// under the lock, and locking a credential for the whole of a signature check would
-// serialise every prompt on the row rather than settle the one counter that collided.
+// The write is a compare-and-set, and `sign_count = ?` is the member that makes it one.
+// Without it two assertions carrying one counter both validate against one stored value —
+// each reads the row before either has written it — and both open a session, the clone rule
+// arriving one commit too late. With it the loser waits on the row lock the winner's UPDATE
+// holds, Postgres re-checks its predicate against the version that write produced, it
+// affects no row, and the person is refused as for a replay. The lookup's read may stay
+// unlocked: what it may be stale about is what the predicate re-reads under that lock.
 //
-// A refused loser writes no verdict: the counters it saw were stale, and the clone
-// rule fires on the next answer, which reads the counter the winner wrote. What it
-// cannot do is open a session, and that is the thing the rule is for.
+// A refused answer writes no verdict — its counter was stale, and the clone rule fires
+// on the next answer against the winner's — and what it cannot do is open a session.
 //
 // It reports the factor's id so the successful use can name what answered.
-func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, cred *webauthn.Credential) (uuid.UUID, error) {
-	var row passkeyCredentialRow
-	if err := tx.DB().Where("credential_id = ? AND user_id = ?", cred.ID, userID).
-		First(&row).Error; err != nil {
-		if errors.Is(err, crud.ErrNotFound) {
-			return uuid.Nil, contracts.ErrCredentials
-		}
-		return uuid.Nil, err
+func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID,
+	cred *webauthn.Credential, holds []passkeyCredentialRow) (uuid.UUID, error) {
+	at := slices.IndexFunc(holds, func(row passkeyCredentialRow) bool {
+		return bytes.Equal(row.CredentialID, cred.ID)
+	})
+	if at < 0 {
+		// The library answers for a credential out of the list it was handed, so a
+		// signature this cannot place is one nobody here was asked to sign.
+		return uuid.Nil, contracts.ErrCredentials
 	}
+	row := holds[at]
 	if cred.Authenticator.CloneWarning {
 		// The verdict has to outlive the refusal that delivers it. A 401 rolls the
 		// request's transaction back — kit/httpx commits only below 400 — so a flag

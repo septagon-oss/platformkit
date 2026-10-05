@@ -224,7 +224,7 @@ refusal and the record in one statement.
   as suspect is a row and not a way in, so it neither stands in for a usable factor
   when the last one is being withdrawn nor waits for a favour it cannot use
   (`TestASuspectPasskeyDoesNotPermitWithdrawingTheLastUsableFactor`,
-  `TestARetiredPasskeyIsWithdrawnWhileAUsableOneStays`). What is *not* here is the administrator's control for that row (the
+  `TestARetiredPasskeyIsWithdrawnAsTheRowThatItIs`). What is *not* here is the administrator's control for that row (the
   product's), any page, and any attestation policy: this module holds no
   manufacturer registry, so which AAGUID made an authenticator stays a specialist
   fact rather than a shared module's table.

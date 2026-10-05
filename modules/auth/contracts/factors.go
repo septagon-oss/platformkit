@@ -35,11 +35,10 @@ var (
 	// withdrew their only factor has, without meaning to, turned the account back
 	// into a password.
 	//
-	// "Only factor" is counted among the factors that could still answer. A
-	// credential retired as suspect (auth.factor_suspect) is refused on every
-	// prompt from then on, so it is a row and not a way in: an account holding one
-	// retired credential and one live one holds one factor, and withdrawing the
-	// live one is this refusal even though the tables still hold two rows.
+	// "Only factor" is counted among the factors that could still answer: a
+	// credential retired as suspect (auth.factor_suspect) answers no prompt, so an
+	// account holding one retired and one live credential holds one factor, and
+	// withdrawing the live one is this refusal though the tables hold two rows.
 	ErrLastFactor = errors.New("auth: that is the last factor on this account")
 
 	// ErrNoFactor is RotateRecoveryCodes' refusal to hand out recovery codes to a
@@ -174,11 +173,9 @@ type Factors interface {
 	// default: a factor is chosen, never imposed.
 	ListFactors(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]*Factor, error)
 
-	// WithdrawFactor ends one factor. The last one is ErrLastFactor — the last
-	// that could still answer, which is what the refusal is a refusal of: a
-	// credential this module retired as suspect answers nothing and does not count
-	// as a way in, so removing it is allowed and removing the last usable factor is
-	// not, whatever else the tables hold.
+	// WithdrawFactor ends one factor. The last one is ErrLastFactor — the last that
+	// could still answer, which is what the refusal is a refusal of: a credential this
+	// module retired as suspect does not count as a way in, and does not wait for one.
 	WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userID, factor uuid.UUID) error
 
 	// RotateRecoveryCodes spends every unused code this person has and issues a
