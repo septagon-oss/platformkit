@@ -32,5 +32,302 @@
     "plural": {
       "": "Tasks"
     }
+  },
+  "field.title": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Title",
+    "plural": {
+      "": "Title"
+    }
+  },
+  "field.title.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Short summary of the task",
+    "plural": {
+      "": "Short summary of the task"
+    }
+  },
+  "field.description": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Description",
+    "plural": {
+      "": "Description"
+    }
+  },
+  "field.description.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Detailed description of the task",
+    "plural": {
+      "": "Detailed description of the task"
+    }
+  },
+  "field.status": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Status",
+    "plural": {
+      "": "Status"
+    }
+  },
+  "field.status.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Lifecycle state",
+    "plural": {
+      "": "Lifecycle state"
+    }
+  },
+  "field.priority": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Priority",
+    "plural": {
+      "": "Priority"
+    }
+  },
+  "field.priority.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Task priority",
+    "plural": {
+      "": "Task priority"
+    }
+  },
+  "field.source": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Source",
+    "plural": {
+      "": "Source"
+    }
+  },
+  "field.source.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Origin of the task",
+    "plural": {
+      "": "Origin of the task"
+    }
+  },
+  "field.sourceRef": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Source ref",
+    "plural": {
+      "": "Source ref"
+    }
+  },
+  "field.sourceRef.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Reference into the source system",
+    "plural": {
+      "": "Reference into the source system"
+    }
+  },
+  "field.assigneeId": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Assignee id",
+    "plural": {
+      "": "Assignee id"
+    }
+  },
+  "field.assigneeId.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "User responsible for the task",
+    "plural": {
+      "": "User responsible for the task"
+    }
+  },
+  "field.dueAt": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Due at",
+    "plural": {
+      "": "Due at"
+    }
+  },
+  "field.dueAt.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Soft target completion time",
+    "plural": {
+      "": "Soft target completion time"
+    }
+  },
+  "field.slaDeadline": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Sla deadline",
+    "plural": {
+      "": "Sla deadline"
+    }
+  },
+  "field.slaDeadline.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Hard SLA deadline; a breach is measured against this",
+    "plural": {
+      "": "Hard SLA deadline; a breach is measured against this"
+    }
+  },
+  "field.slaBreached": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Sla breached",
+    "plural": {
+      "": "Sla breached"
+    }
+  },
+  "field.slaBreached.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "True once the deadline elapsed with the task unresolved",
+    "plural": {
+      "": "True once the deadline elapsed with the task unresolved"
+    }
+  },
+  "field.resolvedAt": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resolved at",
+    "plural": {
+      "": "Resolved at"
+    }
+  },
+  "field.resolvedAt.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "When the task was resolved",
+    "plural": {
+      "": "When the task was resolved"
+    }
+  },
+  "field.resolution": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resolution",
+    "plural": {
+      "": "Resolution"
+    }
+  },
+  "field.resolution.help": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "How the task was resolved",
+    "plural": {
+      "": "How the task was resolved"
+    }
+  },
+  "enum.open": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Open",
+    "plural": {
+      "": "Open"
+    }
+  },
+  "enum.acknowledged": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Acknowledged",
+    "plural": {
+      "": "Acknowledged"
+    }
+  },
+  "enum.in_progress": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "In progress",
+    "plural": {
+      "": "In progress"
+    }
+  },
+  "enum.resolved": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Resolved",
+    "plural": {
+      "": "Resolved"
+    }
+  },
+  "enum.closed": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Closed",
+    "plural": {
+      "": "Closed"
+    }
+  },
+  "enum.low": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Low",
+    "plural": {
+      "": "Low"
+    }
+  },
+  "enum.normal": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Normal",
+    "plural": {
+      "": "Normal"
+    }
+  },
+  "enum.high": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "High",
+    "plural": {
+      "": "High"
+    }
+  },
+  "enum.critical": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "Critical",
+    "plural": {
+      "": "Critical"
+    }
   }
 }
