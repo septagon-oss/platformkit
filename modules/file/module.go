@@ -85,6 +85,13 @@ type Deps struct {
 	// enforced at upload, against the sum of what the tenant already holds.
 	QuotaBytes int64
 
+	// MaxImagePixels is the largest frame the image pass decodes: a file whose
+	// header claims more is refused rather than allocated. Zero means
+	// contracts.DefaultMaxImagePixels. It is a dependency for the reason
+	// MaxBytes is — one deployment's users send phone photos and another's send
+	// scans of posters — and it bounds a decode rather than a download.
+	MaxImagePixels int
+
 	// ReconcileEvery replaces the daily orphan sweep with an interval, for a
 	// test that cannot wait until four in the morning. Zero means the schedule.
 	ReconcileEvery time.Duration
@@ -154,7 +161,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	case quota < 0:
 		quota = 0 // said out loud: this deployment has no quota
 	}
-	svc := internal.NewService(deps.Storage, max, quota)
+	svc := internal.NewService(deps.Storage, max, quota, deps.MaxImagePixels)
 	// The sweep is constructed here and given its capability in Routes, which
 	// is the one moment the kernel offers one: a job is built before the API
 	// exists. See internal/reconcile.go for why it is not jobs.PerTenant.

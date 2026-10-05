@@ -237,7 +237,7 @@ func compose(cfg config.Config) composition {
 	// below, which is the port modules/content and modules/web declare for that.
 	files, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
-		QuotaBytes: cfg.Files.QuotaBytes,
+		QuotaBytes: cfg.Files.QuotaBytes, MaxImagePixels: cfg.Files.MaxImagePixels,
 		// Which class lives how long is the deployment's table (files.retention
 		// in the config file) and who to walk is the tenant module's answer; this
 		// line only hands the two to the module. A deployment that names no class
@@ -247,7 +247,8 @@ func compose(cfg config.Config) composition {
 		Retention: cfg.Files.Retention, Tenants: active,
 	})
 	contentFiles := file.RichTextFiles{Opener: files}
-	contents, contentModule := content.Module(content.Deps{Files: contentFiles})
+	contentUses := file.RecordUses{Service: files}
+	contents, contentModule := content.Module(content.Deps{Files: contentFiles, Uses: contentUses})
 	sites, siteModule := site.Module(site.Deps{Gate: settingsGate{eval: flagEval}})
 
 	mods := []module.Module{
