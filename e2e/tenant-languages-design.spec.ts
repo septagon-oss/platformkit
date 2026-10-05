@@ -1,14 +1,8 @@
 import { expect, test } from '@playwright/test';
-
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
+import { signIn } from './steps/admin';
 
 test('the tenant languages page keeps one content column at phone and desktop widths', async ({ page }) => {
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signIn(page);
   await page.goto('/app/tenant/languages');
   await expect(page.locator('select[name="default"]')).toBeVisible();
 
