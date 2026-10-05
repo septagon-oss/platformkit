@@ -1905,28 +1905,41 @@ async function localFontFaces(page) {
 // The waits for the panel's Local-fonts toggle to change state, named.
 //
 // Playwright's default expect timeout is 5 s, one number handed to every control in
-// a suite whose own measured duration on the CI runner is p50 92.7 s and p99 96.3 s
+// a suite whose own measured duration on the CI runner is p50 72.4 s and p99 96.3 s
 // (the 285 samples of `Core and schema-generated forms inherit native … local fonts`
-// in the job logs task T-0219 read over 72 runs). A control of a 90-second test
-// should not be waited for with a 5-second guess, and run 251 is what that guess
-// costs: the toggle came back "not visible within 5s" on a runner at load, the case
-// was refused, and run 237 — same file, same step, same profile — passed it.
+// in the job logs task T-0219 read over 72 runs — `zgrep -h "inherit native .* through
+// local fonts" logs/*.gz`, whose durations are p50 72.4 s, p95 94.6 s, p99 96.3 s and
+// slowest 97.6 s; the estimator moves the p99 by two hundred milliseconds, not by
+// seconds). A control of a 70-second test should not be waited for with a 5-second
+// guess, and run 251 is what that guess costs: the toggle came back "not visible within
+// 5s" on a runner at load, the case was refused, and run 237 — same file, same step,
+// same profile — passed it.
 //
 // What this bound is NOT is 10 × a measured p99 of the toggle. The toggle's own
 // duration is in no log anywhere — the job logs the file, not the wait inside it — and
 // this delivery cannot run the suite to measure it, because it needs the built editor
-// image. So the line below is a cap, not a fit, and it is priced from the one bound in
-// this file that is real: the test's own 120 s (`{ timeout: 120000 }` below). One
-// quarter of that, so that no single control can eat the test that holds it and leave
-// the reader with `test timed out after 120000ms` instead of the name of the control
-// that never appeared. Six times the 5 s default it replaces.
+// image. So the line below is a cap, not a fit: six times the 5 s default it replaces,
+// and a small fraction of the case's own bound below, so that a control which runs out
+// names itself in the failure rather than leaving the reader with `test timed out …`
+// and no control named.
 //
 // `timed` under it is the measurement the number is waiting for: every wait below
 // prints what it took, into the step's own output, so the p99 no log holds today
-// arrives with the next run of the job and the next reader can put 10 × it here. Raising this
-// bound past a quarter of the test's own means raising that test timeout with it — and
-// at p50 92.7 s / p99 96.3 s the test is already inside 1.24 × of its own bound, which
-// is the design owner's arithmetic to do, not a share of this split.
+// arrives with the next run of the job and the next reader can put 10 × it here.
+//
+// The case's own `{ timeout: … }` is a different bound, priced by the rule rather than
+// capped, because this case does have a measured p99: the 96.303 s above, which is what
+// `scripts/local_fonts_case_timeout_covers_its_measured_runs_test.py` names. Ten times it
+// is 963.03 s; the number below is that rounded up to 17 minutes. The 120 s it replaces
+// was 1.24 × that same p99 with a slowest sample of 97.6 s — a retry waiting to happen
+// rather than a bound — and 120 s was the number this comment used to price itself
+// against, which is how a cap ended up standing in for a fit. A remeasurement reprices
+// `MEASURED_P99_MS` in the pin and the number below together; the pin refuses a case
+// bound under ten times whatever p99 the pin names.
+//
+// Four instantiations share the declaration below. Were all four to hang to this bound,
+// the suite would run past the design job's own 62-minute ceiling, and that ceiling is
+// the bound for a hang: a case that never ends is not a case that is slow.
 const localFontsToggle = 30_000
 
 // timed records what one wait took, whether it answered or ran out. The number goes to
@@ -1974,7 +1987,7 @@ for (const [field, choices, editFamilyCopy = true, dashed = false, centered = fa
   ['tone', ['neutral', 'info', 'danger']], ['size', ['md', 'sm', 'lg']], ['size', ['md', 'xs', '2xl'], false, false, true],
   ['tone', ['neutral', 'info', 'danger'], true, true],
 ])
-test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}, centered=${centered}`, { timeout: 120000 }, async t => {
+test(`Core and schema-generated forms inherit native ${field} properties through local fonts, history and two worker saves: editFamilyCopy=${editFamilyCopy}, dashed=${dashed}, centered=${centered}`, { timeout: 1_020_000 }, async t => {
   await verifyBuild()
   const exportSource = await sourceFixture(t, `package main
 import (
