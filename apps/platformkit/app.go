@@ -118,6 +118,13 @@ func kernelOf(c composition) *pkit.Module {
 // personas themselves are still seeded by seedRoles, the tenant module's own
 // creation hook — the engine has no seam for a starting role, and pkit's doc
 // says as much.
+//
+// The list is the composed manifests' own: compose fills personas from
+// declaredRoles rather than from a literal written here, so this is the whole of
+// what a new tenant is seeded with and the composition adds no grant of its own.
+// module.Validate refuses a manifest that declares a role granting what the
+// manifest does not define before any of it is reached (kit/app calls it on every
+// manifest); what these lines check is the merged list, across every module.
 func startingRoles() []pkit.Role {
 	roles := make([]pkit.Role, 0, len(personas))
 	for _, r := range personas {

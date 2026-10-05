@@ -38,6 +38,16 @@ PLATFORMKIT_TEST_S3_ENDPOINT ?= localhost:$(PLATFORMKIT_S3_PORT)
 PLATFORMKIT_TEST_S3_BUCKET_PREFIX ?= platformkit-test
 PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
 PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
+
+# The development mail catcher compose.yaml's mailpit service publishes. The two
+# ports are all this recipe says: what the application dials and what the journeys
+# read are derived from them by scripts/e2e.sh, the only reader, so the name of the
+# catcher exists in one file (compose.yaml) and the address is worked out in the one
+# place that uses it. An operator who moves the stack moves the journeys with it.
+PLATFORMKIT_MAILPIT_SMTP_PORT ?= 1025
+PLATFORMKIT_MAILPIT_PORT ?= 8025
+export PLATFORMKIT_MAILPIT_SMTP_PORT
+export PLATFORMKIT_MAILPIT_PORT
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
@@ -293,6 +303,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
+	# Where a run finds the mail catcher. The journeys that open a mailed link are
+	# the only proof the address the application dials is right, and they cannot say
+	# which of the two addresses in this repository they were pointed at: a caller
+	# that runs one spec directly used to dial compose.yaml's default port while the
+	# catcher it had been given answered on another one, and the journey blamed
+	# Playwright. This case asks the script itself, in under a second, with no stack.
+	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
@@ -320,7 +337,7 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
+up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
 	docker compose up -d --wait
 
 # The collector is a profile rather than a second service in `up` because the
@@ -358,5 +375,5 @@ trace: ## Start the local OTLP collector that prints every span it receives
 # The profile is named here as well, because `down` is the file's teardown: a
 # goal that stopped two containers and left a third holding port 4317 would half
 # finish the one job it has. It stays destructive of volumes, as before.
-down: ## Stop Postgres, NATS, Valkey, the object store and the collector, and drop their volumes
+down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
 	docker compose --profile telemetry down -v

@@ -67,7 +67,8 @@ line is the version this repository is verified with. Make selects that exact
 toolchain for its commands and child scripts, including the formatter; a different
 installed Go does not change the verification version. The Go command downloads the
 selected toolchain if it is not already available.
-From the repository root, start the development PostgreSQL, NATS and Valkey services:
+From the repository root, start the development PostgreSQL, NATS, Valkey, object
+store and mail catcher services:
 
 ```sh
 docker compose ps
@@ -75,11 +76,13 @@ make up
 make check
 ```
 
-Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT` and `PLATFORMKIT_VALKEY_PORT` if
-the default ports are in use, retaining those values for every command. Never use
-production test credentials: tests create and remove database schemas. `make down`
-deletes the Compose volumes as well as stopping services; it is not a test step.
-The Valkey service is optional in a way the other two are not: `kit/cache` boots
+Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT`, `PLATFORMKIT_VALKEY_PORT`,
+`PLATFORMKIT_S3_PORT` and `PLATFORMKIT_MAILPIT_SMTP_PORT` /
+`PLATFORMKIT_MAILPIT_PORT` if the default ports are in use, retaining those values
+for every command. Never use production test credentials: tests create and remove
+database schemas. `make down` deletes the Compose volumes as well as stopping
+services; it is not a test step.
+The Valkey service is optional in a way the others are not: `kit/cache` boots
 without a store, so its adapter's conformance suite skips when nothing answers the
 Valkey port and names the skip, and every other case in `make check` runs either way.
 Exporting `PLATFORMKIT_TEST_VALKEY_URL` yourself runs those cases against what you
@@ -116,7 +119,15 @@ is a separate goal because -race roughly doubles the suite.
 passes before committing.
 
 Browser checks also require Node, npm, `psql`, `curl`, Playwright Chromium and `ss` or `lsof`.
-Install the browser dependencies once, then run with the same service ports:
+The journeys that open a link the application mails read it from compose.yaml's
+mailpit catcher, so [scripts/e2e.sh](scripts/e2e.sh) refuses a run with nothing
+answering that address rather than letting the journey time out on a mail nobody
+received; `make up` starts it. The two catcher ports name everything else:
+[scripts/e2e.sh](scripts/e2e.sh) derives the address the application dials and the
+address its journeys read from `PLATFORMKIT_MAILPIT_SMTP_PORT` and
+`PLATFORMKIT_MAILPIT_PORT`, so a caller that runs one spec directly reaches the
+catcher its own stack publishes rather than the default port. Install the browser
+dependencies once, then run with the same service ports:
 
 ```sh
 npm --prefix e2e ci
