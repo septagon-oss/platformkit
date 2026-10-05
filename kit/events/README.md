@@ -25,15 +25,24 @@ The body on the broker is **CloudEvents 1.0 in structured content mode**:
 `specversion`, `id`, `source` (`/<module>`), `type` (the event name), `subject`,
 `time`, `datacontenttype`, `data`, plus `tenantid` as a **required** extension
 where the specification leaves extensions optional — an event with no tenant has
-no transaction to deliver it in — `traceparent`/`tracestate` when a request caused
-the event, and `baggage` when that request had an id to leave behind. `Event` stays
+no transaction to deliver it in — `app` as the slug of the app whose process
+published it, absent for a deployment that names none, `traceparent`/`tracestate`
+when a request caused the event, and `baggage` when that request had an id to leave
+behind. `Event` stays
 the programming model and the outbox keeps
 storing columns; `MarshalJSON`/`UnmarshalJSON` in
 [`transport/cloudevents.go`](transport/cloudevents.go) own the wire form.
 
 The subject is `platformkit.<tenant>.<module>.<event>`
 ([`transport/subject.go`](transport/subject.go)), so a tenant's backlog is an
-address and a durable can be per tenant (decision 0053 §1). Subscriptions keep
+address and a durable can be per tenant (decision 0053 §1). A composition that names
+its app publishes at `platformkit.<app>.<tenant>.<module>.<event>` and filters
+`platformkit.<app>.*.<module>.<event>` first
+(`appname.Subject`, `appname.Filters`) — one segment, spelled by the package that
+owns the name, and no envelope member the relay has to invent: the address and the
+`app` extension are two spellings of the same fact, and `UnmarshalJSON` refuses a
+document whose `subject` disagrees with the `(app, tenantid, type)` it carries.
+Subscriptions keep
 one durable per (module, event) and filter `platformkit.*.<module>.<event>`, plus
 `platformkit.<module>.<event>` while the rollout window below is open
 (`transport.Filters`); an operator who wants one tenant's queue filters that
@@ -130,6 +139,26 @@ refused before the transaction opens, and it writes nothing and emits nothing.
 `Purge` leaves an outbox row that a dead letter still describes, because that row
 is the payload's only copy and a replay of it has to be reachable; clearing the
 dead letter is what lets the history window take the row.
+
+`events.MoveLedger(ctx, conn, app, requestedBy)` is the drain for an installation that
+began as a deployment of one app and later set `nats.app`. `appname.Durable` puts the
+app in front of every consumer name, and `platformkit_handled` and `platformkit_dead_letters`
+key their rows by that name, so from the boot that sets the slug onward every claim the
+deployment ever earned sits on the far side of the rename: the same event, handled once
+already, answered again as a first delivery. The drain is one transaction under its own
+system capability: `SHARE ROW EXCLUSIVE … NOWAIT` on each of the two tables, always in
+that order, then a copy of each unscoped ledger onto the app's prefix that carries
+`handled_at`, `name`, `error` and `failed_at` verbatim — the purge ages on them — and a
+delete of exactly the rows that copy read, and one `platformkit.ledger_moved` record per
+tenant whose claims moved, in the same commit. A delivery mid-claim holds the table lock
+and the move refuses, naming itself, having written and emitted nothing; `kit/app` runs
+the step once at boot, before it makes any subscription, logs a refusal rather than
+crashing on it, and schedules the `ledger-move` job to finish it. An app that names
+nothing has no prefix to move onto, so for it the step answers with the zero report and
+kit/app neither schedules the job nor declares the event — see [`ledger.go`](ledger.go)
+for the reasoning and the cases beside it. `kit/db`'s `phase=data` window refuses the
+same act against a table keyed by anything other than the tenant, which is why this is a
+drain its owner owns in a job rather than a migration.
 
 ## Limits
 
