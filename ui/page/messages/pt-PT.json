@@ -186,6 +186,15 @@
       "": "Já tem o que isto pede; a regra desta registo recusou-o: %s"
     }
   },
+  "fault.reference": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "(pedido",
+    "plural": {
+      "": "(pedido"
+    }
+  },
   "fault.back": {
     "references": [
       "apps/platformkit/fault.go"

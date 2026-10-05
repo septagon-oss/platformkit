@@ -35,9 +35,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -208,6 +210,15 @@ func check(t *testing.T, wanted report, got report, unreachable, declined, skips
 		want.Wrapped, want.Readable, want.percent(), got.Untranslated)
 	fmt.Printf("i18n coverage measured %s; %d pages skipped, %d strings not copy\n",
 		got.MeasuredUTC, len(skips), len(declined))
+	// Every page's own two integers, on every run, passing included: the aggregate is a
+	// number a change can hide inside, and the reviewer of a regeneration has to be
+	// able to read which page moved without re-running the walk with a flag on.
+	for _, page := range slices.Sorted(maps.Keys(got.Pages)) {
+		measured, floor := got.Pages[page], wanted.Pages[page]
+		fmt.Printf("i18n coverage per page %s %d/%d (%s); floor %d/%d (%s)\n",
+			page, measured.Wrapped, measured.Readable, measured.percent(),
+			floor.Wrapped, floor.Readable, floor.percent())
+	}
 
 	if wanted.Version != floorVersion && os.Getenv("UPDATE_I18N_FLOOR") != "1" {
 		t.Errorf("%s records version %d and this build reads %d; regenerate it rather than guessing at a shape",
@@ -251,6 +262,17 @@ func check(t *testing.T, wanted report, got report, unreachable, declined, skips
 				"catalogue that owns it — not a regenerated floor inside the change that lowered it.",
 				page, ratio(have), ratio(floor))
 		}
+	}
+	// The whole application, on the same cross-multiplication and for the same reason.
+	// Each page's own ratio cannot see this one: copy added to a page already at zero
+	// leaves that page where it was while lowering the share of the words a person
+	// reads that a translator can reach — and the pages that sit at zero today are
+	// exactly where an untranslated string is cheapest to add.
+	if int64(have.Wrapped)*int64(want.Readable) < int64(want.Wrapped)*int64(have.Readable) {
+		t.Errorf("this tree covers %s of the copy a person reads across %d documents and the floor recorded %s: "+
+			"coverage may only rise. Every page holding its own ratio is no defence — the total is the "+
+			"number a reader of this application gets, and it fell.",
+			ratio(have), len(got.Pages), ratio(want))
 	}
 	if got.Untranslated > wanted.Untranslated {
 		t.Errorf("this tree asks %d keys no catalogue answers and the floor recorded %d: untranslated copy "+

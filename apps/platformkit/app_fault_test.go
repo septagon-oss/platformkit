@@ -64,10 +64,16 @@ func TestAWholeApplicationAnswersABrowserWithAPageAndAClientWithAValue(t *testin
 	if at < 0 {
 		t.Fatalf("no reference on the page: %s", trimHTML(body))
 	}
+	// The identifier now travels in its own element: the words that name it are copy a
+	// catalogue reaches and the identifier is data, so the page renders them as two
+	// strings rather than one sentence a translator could never finish
+	// (ui/page/fault.go's referenceSaid). What is read back out of the page is still
+	// the bare id, tags stripped, and the standard below is unchanged.
 	id := body[at+len(marker):]
 	if end := strings.IndexByte(id, ')'); end > 0 {
 		id = id[:end]
 	}
+	id = strings.TrimSuffix(strings.TrimPrefix(id, "<code>"), "</code>")
 	if len(id) != 36 || strings.Count(id, "-") != 4 {
 		t.Errorf("the reference is %q, which is not the request id a log line is found by", id)
 	}
