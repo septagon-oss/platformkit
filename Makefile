@@ -313,6 +313,14 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
 # `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
 # line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+#
+# scripts/ci_go_cache_test.sh asks the same kind of question about the Go build cache T-0277 gave the
+# two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
+# this change's promises can be undone from somewhere else — the key by anyone who moves the digest
+# into a `hashFiles` expression, which act_runner answers "" for rather than failing, and the brief's
+# "never cache test results across commits" by anyone who folds `-count=1` into `GOFLAGS` — so both
+# halves are pinned where they live: the workflow, and the two goals that run the suite. It starts
+# nothing and reads no database, which is what makes it a `check` line and not a job step.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
@@ -320,6 +328,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/ci_go_cache_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
