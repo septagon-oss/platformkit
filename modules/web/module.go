@@ -57,7 +57,7 @@ type Deps struct {
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	if deps.Site == nil || deps.Content == nil {
 		panic("web: Deps.Site and Deps.Content are required; the site renders what they publish")
 	}

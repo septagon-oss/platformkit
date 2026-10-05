@@ -70,9 +70,13 @@ itself.
 
 `Deps.Administration` answers which of a tenant's roles grant the permission
 that can grant every other one back. It is required, and a composition that
-omits it panics at `user.Module`: who holds a role is this module's table and
+omits it panics at `user.New`: who holds a role is this module's table and
 what a role grants is the auth module's, so neither reads the other's rows and
-the application joins them — see `apps/platformkit/modules.go`.
+the application joins them — see `usercontracts.Administration` in
+`apps/platformkit/product.go`. `Deps.Granting` is the one adapter it accepts
+unwired: the answer is the authentication service's, that service is built after
+this module because it looks people up here, and the auth module fills the
+holder's `Ask` in its own build (an unfilled holder refuses the roles write).
 
 `Provision` is what `platformkit bootstrap` calls to create the first
 administrator with a password; the argon2id parameters are constants here.

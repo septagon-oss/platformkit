@@ -147,7 +147,7 @@ type Deps struct {
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
-func Module(deps Deps) (contracts.Auth, module.Module) {
+func New(deps Deps) (contracts.Auth, module.Module) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
 			panic("auth: choose only one registration lifecycle")
