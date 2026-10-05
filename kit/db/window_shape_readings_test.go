@@ -398,8 +398,11 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// The bound is reached, so the case costs a tick's worth of windows; its own context is the
-// deadline that turns a regression to no bound at all into a failure rather than a hang.
+// The bound is reached, so the case costs a tick's worth of windows — 10000 of them, committed
+// one transaction at a time — and its own context is the deadline that turns a regression to no
+// bound at all into a failure rather than a hang. That deadline is priced by `drainWatchdog`
+// below, from what the machine running the case drains, because a deadline guessed at one
+// machine's rate is a case that fails on load rather than on its cause.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -416,7 +419,7 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), drainWatchdog(t, migrateURL, files))
 	defer cancel()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
 	if errors.Is(err, context.DeadlineExceeded) {
@@ -437,4 +440,58 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'ticks' AND version = 2"); n != 0 {
 		t.Errorf("%d history rows for a version whose drain stopped short", n)
 	}
+}
+
+// What one tick drains, and what one measuring window of it is given: the count is `workerBackfillBatches`
+// in migration_header.go, which the report the case asserts names, and the window is the first slice of
+// the very drain whose length it prices — 5 s is a rate (≈1400-1800 batches under the gate's load).
+const (
+	tickDrainBatches = 10_000
+	tickRateWindow   = 5 * time.Second
+	// What the harness leaves. `go test` stops a package at ten minutes, and `make check`, which
+	// runs every package at once, measured this whole one at 5m41.7s with the case inside it: call
+	// the rest five minutes. Four is what that leaves the drain, because a run that used the whole
+	// four would be reported as the harness's own stop, which is a failure nobody in this file can
+	// read. The ceiling is the harness's arithmetic, not a fitted margin: ten times the measurement
+	// reaches it at a 24 s drain, so a slower machine is given a bound below ten times — three times
+	// the 120.5 s the last gate actually observed.
+	tickWatchdogCeiling = 4 * time.Minute
+)
+
+// drainWatchdog prices the deadline that turns "this drain has no bound" into a failure from the
+// machine running it, because the work it waits for is 10000 committed transactions and the wall
+// time that takes is the host's transaction rate: 21.2 s and 24.9 s here at load 33, 19–34 s
+// unloaded, and 120.5–121.0 s — past the 120 s this case used to hard-code, twice, in one gate run
+// — while four packages and another task's gate shared the host. Ten times the measurement is the
+// rule for a bound that must exist, so the measurement is taken in the run: the drain's first five
+// seconds are timed here, and the drain gets ten times the length that rate extrapolates to under
+// the ceiling above — 1403, 1595 and 1809 batches per 5 s measured, drains of 27-36 s, each inside.
+//
+// The window is the same call over the same files, so it measures what the run below does, and what it
+// commits stands: the run resumes from the cursor the window leaves, which is the drain's own promise.
+func drainWatchdog(t *testing.T, migrateURL string, files fstest.MapFS) time.Duration {
+	t.Helper()
+	admin := dbtest.Open(t, migrateURL)
+	before := countRows(t, admin, "SELECT count(*) FROM probe")
+	ctx, cancel := context.WithTimeout(t.Context(), tickRateWindow)
+	defer cancel()
+	started := time.Now()
+	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
+	elapsed := time.Since(started)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("the window that measures the drain's rate ended with %v rather than the deadline it was given", err)
+	}
+	// A window commits the file's own batch size — five, which the report below asserts — so the rows the window added count its batches.
+	batches := (countRows(t, admin, "SELECT count(*) FROM probe") - before) / 5
+	if batches < 10 {
+		t.Fatalf("the measuring window drained %d batches in %s, too few to price a drain on", batches, elapsed.Round(time.Millisecond))
+	}
+	full := time.Duration(float64(elapsed) * tickDrainBatches / float64(batches))
+	watchdog := 10 * full
+	if watchdog > tickWatchdogCeiling {
+		watchdog = tickWatchdogCeiling
+	}
+	t.Logf("the drain of %d batches gets %s: the window drained %d batches in %s, so this machine's whole drain is %s, and the deadline is ten times that under a ceiling of %s",
+		tickDrainBatches, watchdog, batches, elapsed.Round(time.Millisecond), full, tickWatchdogCeiling)
+	return watchdog
 }
