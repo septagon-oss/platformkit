@@ -1892,10 +1892,12 @@ async function writeEditorFontFixtures(temporary) {
 // enumeration of a process 1928-2664 ms, every later one 1-58 ms.
 //
 // So the enumeration is taken here, before the toggle is touched, and what it returns
-// is checked rather than discarded. Nothing is waited for more generously: the default
-// bound stays, because the cold cache is no longer inside the window it measures — with
-// this order the first cycle of a cold process answered in 188 ms, against the
-// 1928-2459 ms that same first cycle cost while the enumeration sat inside the wait.
+// is checked rather than discarded. This is not a wider wait: with this order the first
+// cycle of a cold process answered in 188 ms, against the 1928-2459 ms that same first
+// cycle cost while the enumeration sat inside the window. What the waits around the
+// toggle themselves cost is the decision made below, and on this tree it is a named
+// bound rather than Playwright's default — priced from the test's own timeout, and not
+// from the enumeration, which this warm-up takes out from under every one of them.
 async function localFontFaces(page) {
   const faces = await page.evaluate(async () => Promise.all((await window.queryLocalFonts()).map(async face =>
     [...new Uint8Array(await (await face.blob()).arrayBuffer())])))
