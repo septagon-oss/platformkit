@@ -26,8 +26,8 @@ func persistedDemo(tx db.Tx[db.Tenant]) (bool, error) {
 func lookupKey(tx db.Tx[db.Tenant], resource Resource, value string) (Key, bool, error) {
 	key := Key{Value: value}
 	var id *uuid.UUID
-	err := tx.DB().Raw(`SELECT record_id FROM seed_keys WHERE tenant_id = ? AND module = ? AND entity = ? AND key = ?`,
-		db.TenantOf(tx).ID, resource.Module, resource.Entity, value).Row().Scan(&id)
+	err := tx.DB().Raw(`SELECT record_id, kind FROM seed_keys WHERE tenant_id = ? AND module = ? AND entity = ? AND key = ?`,
+		db.TenantOf(tx).ID, resource.Module, resource.Entity, value).Row().Scan(&id, &key.Kind)
 	if errors.Is(err, sql.ErrNoRows) {
 		if resource.NaturalKey == "" {
 			key.Value = ""

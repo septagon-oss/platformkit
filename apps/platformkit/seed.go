@@ -139,9 +139,10 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 }
 
 // seedGrants is the grant check a seed run passes for every record it is about
-// to write: the roles the run carries, the permissions those roles hold, and the
-// resource's own permission compared between them — the same three reads
-// kit/httpx makes of a request, in the seed's own transaction.
+// to write: the roles the person it writes as holds in this transaction right
+// now, the permissions those roles hold, and the resource's own permission
+// compared between them — the same three reads kit/httpx makes of a request, in
+// the seed's own transaction.
 //
 // It refuses a run that carries no person rather than assuming one. That is the
 // point of it: seeding is not its own authority. Whoever runs it holds, through
@@ -153,21 +154,40 @@ func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System
 type seedGrants struct{ auth authcontracts.Auth }
 
 func (g seedGrants) Check(ctx context.Context, tx db.Tx[db.Tenant], r seed.Resource, _ seed.Action) error {
+	// The one run with nobody to ask is the tenant's own creation, and the
+	// conditions that make it safe are state, not a claim: see
+	// seed.Service.ApplyProvisioned (the tenant holds no seeded record and every
+	// record the files name is still absent) and seedProvisioner below (the tenant
+	// holds no person). Together they mean this run can only give a tenant that
+	// does not exist yet the records every tenant of this application is created
+	// with. Anything else names a person — and the branch is taken before the
+	// person is read again below, because the caller a create request happened to
+	// authenticate is not a person of a tenant that has no people in it yet.
+	if seed.Provisioning(ctx) {
+		return nil
+	}
 	caller, ok := tenancy.PrincipalFrom(ctx)
 	if !ok || len(caller.Roles) == 0 {
-		// The one run with nobody to ask is the tenant's own creation, and the
-		// conditions that make it safe are state, not a claim: see
-		// seed.Service.ApplyProvisioned (the tenant holds no seeded record and
-		// every record the files name is still absent) and seedProvisioner below
-		// (the tenant holds no person). Together they mean this run can only
-		// give a tenant that does not exist yet the records every tenant of this
-		// application is created with. Anything else names a person.
-		if seed.Provisioning(ctx) {
-			return nil
-		}
 		return fmt.Errorf("seed: %s/%s: this run carries no person and no roles", r.Module, r.Entity)
 	}
-	held, err := g.auth.Permissions(ctx, tx, caller.Roles)
+	// The roles on the context were read when the run resolved --as, and a snapshot
+	// is not an authority. A transaction that took this person's roles after that
+	// read has committed by the time a run that waited comes back to write, and the
+	// row this run is about to author would be its own. So the question is put to
+	// what the tenant's rows say now, in this transaction — the same person's roles
+	// and status, re-read, the same permission compared against them — and not to
+	// what the context remembers them being.
+	actor, err := crud.Get[*usercontracts.User](tx, caller.UserID)
+	if err != nil {
+		return fmt.Errorf("seed: %s/%s: the person this run writes as cannot be asked again: %w", r.Module, r.Entity, err)
+	}
+	if actor.Status != usercontracts.StatusActive {
+		return fmt.Errorf("seed: %s/%s: this run writes as %s, who is %s and holds nothing here", r.Module, r.Entity, actor.Email, actor.Status)
+	}
+	if len(actor.Roles) == 0 {
+		return fmt.Errorf("seed: %s/%s: this run writes as %s, who now holds no roles", r.Module, r.Entity, actor.Email)
+	}
+	held, err := g.auth.Permissions(ctx, tx, actor.Roles)
 	if err != nil {
 		return err
 	}
@@ -210,7 +230,13 @@ func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Ten
 }
 
 // contentSeeder seeds pages and posts. Slug is the natural key the file names a
-// record by, so the seed finds a page the way a person does: by its address.
+// record by, so the seed finds a page the way a person does: by its address. An
+// address is the owner's to spell, though — contracts.Slugify is what the write
+// path runs and what the public read path looks up by — so this writer asks for
+// the record's key the same way, and meets the row where the module put it. A
+// seed that compared `About The Team` to the `about-the-team` it had just written
+// would be a seed that patched the same page on every run, publishing an event
+// nobody asked for, forever.
 type contentSeeder struct{ svc contentcontracts.Service }
 
 func (contentSeeder) Resource() seed.Resource {
@@ -233,7 +259,7 @@ func (contentSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.
 		return seed.Target{}, fmt.Errorf("kind %q is not %s or %s", kind, contentcontracts.KindPage, contentcontracts.KindPost)
 	}
 	return seed.Target{
-		Fields:   map[string]any{"slug": r.Key, "title": seedText(r.Fields["title"]), "body": seedText(r.Fields["body"]), "kind": kind},
+		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": seedText(r.Fields["title"]), "body": seedText(r.Fields["body"]), "kind": kind},
 		Commands: seedCommands(r, "publish"),
 	}, nil
 }
@@ -244,7 +270,7 @@ func (w *contentSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.
 		// Provenance has no id, so this is the natural-key lookup. A seed run may
 		// meet a manually created page with the same slug; the service decides
 		// whether that row is its own to touch, and this only says what is there.
-		rows, _, err := crud.List[*contentcontracts.Content](tx, crud.Query{Limit: 2, Filter: map[string]any{"slug": key.Value}})
+		rows, _, err := crud.List[*contentcontracts.Content](tx, crud.Query{Limit: 2, Filter: map[string]any{"slug": contentcontracts.Slugify(key.Value)}})
 		if err != nil {
 			return seed.Snapshot{}, err
 		}
@@ -706,14 +732,18 @@ func (w taskSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 	return w.assign(ctx, tx, assigned(row), t)
 }
 
-// Update changes the priority and, where the file names a different person,
-// assigns. The title is how the record was found, so it is not in the patch: a
-// run that renamed a task would be a run that closed one and wrote another. The
-// deadline is not in the patch either, and for the same kind of reason: the file
-// declared it as the record's creation date plus a span (see Target), and a
-// person who moved it through the task screen moved it for good.
+// Update changes the title and priority and, where the file names a different
+// person, assigns. The title is in the patch because the file declares it as a
+// field of the record and the record is named by its key, not by its title: a
+// run that says the tour task is called "Edited title" means the row it already
+// wrote to be called something else. The deadline is not in the patch, and for
+// the opposite reason: the file declared it as the record's creation date plus a
+// span (see Target), and a person who moved it through the task screen moved it
+// for good.
 func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
-	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{"priority": seedText(t.Fields["priority"])})
+	row, err := task.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{
+		"title": seedText(t.Fields["title"]), "priority": seedText(t.Fields["priority"]),
+	})
 	if err != nil {
 		return seed.Snapshot{}, err
 	}

@@ -30,10 +30,14 @@ type Resource struct {
 }
 
 // Key pairs a seed name with the owner's existing row ID, when provenance has
-// one. A natural-key writer can resolve Value without an ID.
+// one. A natural-key writer can resolve Value without an ID. Kind is the file
+// kind that mapping was written by, empty when no mapping names the record: a
+// run needs it because provenance is what prune reads, and a record declared by
+// the demo file but mapped by the starter's earlier run is a demo record.
 type Key struct {
 	Value    string
 	RecordID uuid.UUID
+	Kind     string
 }
 
 // Writer is implemented by each owning resource at composition. Create,
@@ -246,6 +250,10 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		return Plan{}, err
 	}
 	var references []Reference
+	// A resource is described once, whatever number of kinds' files declare it: the
+	// references below belong to its Writer, and appending them per document would
+	// turn one honest declaration into the duplicate Order rightly refuses.
+	listed := make(map[string]bool)
 	for _, doc := range documents {
 		writer := s.writers[doc.Resource]
 		if writer == nil {
@@ -265,7 +273,10 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 				plan.Warnings = append(plan.Warnings, fmt.Sprintf("%s/%s i18n skipped: translation writer unavailable", doc.Resource, record.Key))
 			}
 		}
-		references = append(references, r.References...)
+		if !listed[r.Alias] {
+			listed[r.Alias] = true
+			references = append(references, r.References...)
+		}
 	}
 	resolved := make(map[string]uuid.UUID)
 	ordered, err := Order(documents, references, func(resource, key string) (bool, error) {
@@ -346,6 +357,16 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 				}
 				item.RecordID = current.ID
+			} else if owned && key.Kind != entry.Kind {
+				// The row needs no write and the provenance does. A record that moved
+				// from one kind's file to another's keeps its ID, its history and its
+				// owner's row untouched, but the mapping is what prune reads, and a
+				// mapping still naming the file that stopped declaring it is a licence
+				// for that file's next run to delete a record the other file declares.
+				// The mapping follows the declaration; the record does not move.
+				if err := putKey(tx, r, entry.Record.Key, entry.Kind, current.ID); err != nil {
+					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
+				}
 			}
 		}
 		resolved[entry.Resource+"/"+entry.Record.Key] = current.ID
@@ -384,11 +405,23 @@ func (s *Service) existing(ctx context.Context, tx db.Tx[db.Tenant], alias, key 
 }
 
 // prune visits referring resources before their targets. Only mappings from a
-// file that explicitly opts into pruning are candidates; an unowned row is
-// never inferred from a missing YAML record.
+// file that explicitly opts into pruning are candidates; an unowned row is never
+// inferred from a missing YAML record. A key any loaded document declares is
+// never a candidate either — a record that moved between two kinds' files is
+// still declared, and the run that finds it in the other file must not delete it
+// through the file that let it go.
 func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Document, apply bool, plan *Plan) error {
 	byAlias := make(map[string][]Document)
+	declared := make(map[string]map[string]bool)
 	for _, doc := range docs {
+		keys := declared[doc.Resource]
+		if keys == nil {
+			keys = make(map[string]bool)
+			declared[doc.Resource] = keys
+		}
+		for _, record := range doc.Records {
+			keys[record.Key] = true
+		}
 		if doc.Prune {
 			byAlias[doc.Resource] = append(byAlias[doc.Resource], doc)
 		}
@@ -429,10 +462,7 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 		writer := s.writers[alias]
 		resource := writer.Resource()
 		for _, doc := range byAlias[alias] {
-			keep := make(map[string]bool, len(doc.Records))
-			for _, record := range doc.Records {
-				keep[record.Key] = true
-			}
+			keep := declared[alias]
 			keys, err := ownedKeys(tx, resource, doc.Kind)
 			if err != nil {
 				return fmt.Errorf("seed: %s: %w", doc.Source, err)

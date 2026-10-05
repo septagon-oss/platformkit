@@ -16,7 +16,9 @@ canonical comparison and domain validation. A page is created, patched and delet
 through `rest.Spec`'s write core — the body its JSON route runs, exported so that a
 seed cannot grow a second spelling of it — and its lifecycle moves through
 `content.Service.Publish`. A person is created through the user module's own
-invitation. `auth.Service.Permissions` is what the grant check reads.
+invitation. `auth.Service.Permissions` is what the grant check reads, and the
+actor's own row, re-read through `crud` in the run's transaction at the moment it
+asks, is where it reads the roles from.
 
 **Added:** `seed_keys` under database RLS and an explicit `Writer` service were
 needed because no existing table records seed provenance and no existing kit
@@ -50,15 +52,34 @@ is already gone costs its mapping and the run continues: the write that finds no
 is never refused, and a file with `prune: true` does not fail every later run once
 somebody has deleted the row through the product.
 
+A reference declaration belongs to a `Writer`, not to a file, so a resource's
+references are read once however many kinds declare it — `pages` may name its
+parent edge in `starter/pages.yaml` and `demo/pages.yaml` without the second file
+making the graph a duplicate. And a key any file in the run declares is never a
+prune candidate, whichever kind's mapping holds it: a record that moved from the
+starter file to the demo file keeps its row, its ID and its history, and the only
+thing that moves is its `seed_keys` mapping, which follows the file that declares
+it now. Without that move the file which let the record go would delete a record
+the other file still declares, and would do it in the same run that reported the
+record `UNCHANGED`.
+
 A command's seed run carries a person. `seedGrants` refuses one that carries
 nobody, and the command resolves `--as` to a user of the target tenant inside that
 tenant's own transaction before any grant is asked; the roles it checks are the
-rows the tenant holds, not a credential a caller asserts. Both of the people a run
+rows the tenant holds, not a credential a caller asserts. Those rows are read
+again, in the run's own transaction, at the moment each grant is asked, because
+what `--as` resolved is a snapshot of a few seconds earlier and a snapshot is not
+an authority: a transaction that revoked the actor's roles or switched the person
+off in the meantime has committed, and the run refuses rather than writing a row
+whose author holds nothing. Both of the people a run
 names are asked whether they can still sign in: `seedOperator` refuses an operator
 whose account the installation tenant has deactivated, and `seedActor` refuses a
 person named by `--as` who is not active, because a deactivated row keeps its hash
 and its roles and would otherwise authorise a write through somebody the tenant
-switched off.
+switched off. What no read closes is the revocation that commits after the last
+grant is asked and before the run commits: only a lock on the person's row would,
+and `seedActor` deliberately does not take one, because a seed run holds its
+transaction across every record it writes and would hold the lock with it.
 
 A tenant's own creation is the one run with nobody to ask, and it arrives through
 `Service.ApplyProvisioned` rather than through a hole in `Apply`. Its proof is

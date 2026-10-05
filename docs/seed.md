@@ -122,8 +122,11 @@ records:
     commands: [{name: publish}]
 ```
 
-The content writer injects `slug` from `key`, uses the Spec write core for the
-row and `content.Service.Publish` for lifecycle. A separate
+The content writer injects `slug` from `key` through `content.Slugify`, the
+owner's own normalisation, uses the Spec write core for the
+row and `content.Service.Publish` for lifecycle. The writer spells the address the
+way the module stores and looks it up, so a record keyed `About The Team` meets the
+page the module named `about-the-team` instead of writing it again on every run. A separate
 `starter/site.yaml` singleton record with `key: settings` and
 `fields: {homeSlug: home, title: Example}` calls `site.Service.Save`. Its `key`
 is a stable singleton identifier, never a second site row. The site writer
@@ -247,7 +250,10 @@ records:
 This is the file `apps/platformkit/seed/demo/tasks.yaml`, quoted as it is written.
 Task's natural key is `title` — the one line a task is named by, and the writer
 declares it — so a run finds a seeded task beside a manually created one with the
-same line, and `key` in the file addresses the record within the file. The writer
+same line, and `key` in the file addresses the record within the file. The two do
+not have to agree, and the shipped file's do not: provenance maps `take-the-tour`
+to the row this run wrote, `title` is a declared field of that record, and the
+writer patches it, so editing the line in the file edits the same task. The writer
 declares **no commands**: assignment is the `assignee` reference field above, not
 a `commands:` entry, and `kit/seed` refuses a command a writer does not offer
 before it reads a row. A seeded task is created through the Spec write core and,
@@ -264,15 +270,19 @@ source and target names. Cross-tenant lookup is impossible through the passed
 
 **Prune (`demo/tasks.yaml`, removal):** `prune: true` at the file top means
 delete previously seed-owned keys for that tenant/resource/kind which are now
-absent, through the owner's delete command. No file or `prune: false` leaves
-removed records untouched. Pruning uses `seed_keys` provenance for natural
+absent from every file this run loaded, through the owner's delete command. A key
+the other kind's file still declares is not absent, and a record that moved
+between the two keeps its row: its mapping moves to the file that declares it now,
+which is what makes the file that let it go stop owning it. No file or `prune:
+false` leaves removed records untouched. Pruning uses `seed_keys` provenance for natural
 and keyless resources, refuses if the owner protects the record (including
 the last administrator), and removes the mapping only with a successful
 deletion. A seed file cannot prune a manually created record it has never
 owned. An unowned natural-key row that already equals the target is reported
 `UNCHANGED` and remains unowned; if it differs, seeding refuses an occupied
-key rather than overwriting somebody's manual record. No provenance-only
-write is hidden behind `UNCHANGED`.
+key rather than overwriting somebody's manual record. `UNCHANGED` hides no write
+to an owner's row; the one thing it can still move is the record's own mapping,
+when the file that declares it changed kind.
 `Resource` declares whether the owner has a delete command. `prune: true`
 for a writer without one refuses at preflight; auth roles and site settings
 currently have no such command. A new owner command must exist before those
@@ -676,7 +686,12 @@ answer, and a prune whose row is already gone — and, in `apps/platformkit`,
 refusal and the command), `reference_seed_test.go`, `seeded_home_test.go`,
 `seed_attribution_test.go`, `seed_audit_trail_test.go` and
 `seed_concurrent_runs_test.go`. Each is named for the behaviour it pins rather
-than for a row of this table.
+than for a row of this table. `kit/seed/kind_references_test.go` and
+`kit/seed/kind_move_prune_test.go` cover one resource declared in two kinds —
+its references and its provenance — and `seed_revoked_actor_grants_test.go`,
+`seed_task_title_update_test.go` and `seed_slug_normalization_test.go` cover the
+grant re-read against a revocation that committed mid-run, an edited title on the
+row the file already wrote, and the owner's canonical slug.
 
 | Case name | Fake setup and action | Required result |
 | --- | --- | --- |
