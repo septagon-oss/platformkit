@@ -353,6 +353,61 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+      # Ahead of every step that brings in node and Chromium, behind every step that compiles. Two
+      # measurements set this position, and the first version of it got both backwards.
+      #
+      # What a step of this job is worth depends on the minutes it covers. `make check` ran 22:48:52 →
+      # 22:59:12, `make check-race` to 23:08:45 and govulncheck to 23:09:12 (run 50923, job 51417) —
+      # every package, every test binary and the -race build are compiled by here — and behind this
+      # line the job asks the compiler for almost nothing: `make check`'s own `build:` goal already
+      # compiled ./..., which includes apps/platformkit and tools/designexport, so gate 10's
+      # `go build -o … ./apps/platformkit` (scripts/e2e.sh:137) and the editor suite's three
+      # `go run ./tools/designexport` (editor/replacement.test.mjs:1696, 1790, 2013) take from a cache
+      # holding only that build goal 2.89s and 0.49s — the two final links — measured here at -p=4
+      # against a GOCACHE seeded by `go build -buildvcs=false -o /dev/null ./...`, which took 37.94s,
+      # and 28.73s and 2.85s against an empty one. So the position costs this job 3.4s of compile, and
+      # what it decides is whether the next run finds this archive at all — the ~80s of wall clock the
+      # measurement above this job's own naming step says its two cold builds owe to it.
+      #
+      # And position decides whether the step happens at all. That same job lost its runner with this
+      # step still in front of it: the last byte of its log is the Chromium suite's sampler at 23:17:11,
+      # `completed_at` is 23:31:36, and the fourteen minutes twenty-five seconds between them are why
+      # the forge reported this step — and every other step it had not reached — as failure with no
+      # line of it executed. See this file's header. A save that stands behind ~24 minutes of browser
+      # work (this file's own figure for the editor step alone is 15m24s serial) is a save that may
+      # never run, and the `design` job's copy of this step, twelve steps earlier in the same run,
+      # wrote its archive in 9 seconds. The archive is worth nothing to the next run if the run that
+      # writes it is lost on the way to it. scripts/ci_go_cache_test.sh case 12 refuses a save that
+      # moves back behind node.
+      #
+      # The guards on the step itself are unchanged and still why they are what they are. `success()`
+      # keeps a job that already failed from spending its remaining minutes uploading;
+      # `cache-hit != 'true'` because an exact hit means the archive under this key is already the one
+      # this job just used, and on a miss `restore` leaves `cache-hit` unset rather than false
+      # (src/restoreImpl.ts, actions/cache v6.1.0), which is why the test reads `!= 'true'`;
+      # `continue-on-error` answers the one shape of failure that would otherwise reach the job — the
+      # library downgrades an unreachable or refused cache server to a warning, but restoreImpl still
+      # calls `core.setFailed` on a thrown error and saveImpl warns and exits 0, so the flag is
+      # written as the property, not because the library is trusted.
+      #
+      # What it costs, measured here rather than assumed: GOMODCACHE (496 MB, the whole build list)
+      # plus the 781 MB of GOCACHE that `go build ./...` alone leaves behind is 1.3 GB raw, 400 MB
+      # gzipped, 56 s of single-threaded gzip. This job's archive is larger than that — the -race
+      # build and every test binary are in it — so if this step's own log reports `Cache Size:` above
+      # about 2 GiB, the narrowing is `path:` GOMODCACHE only, same keys: a build cache that costs
+      # more to ship than to recompile is not a cache, and the module download is the dearer byte on a
+      # runner. The 117 MB `design` reports for the same two paths is a floor for that number, not the
+      # number.
+      - name: Save the Go module and build cache
+        if: success() && steps.gocache.outputs.key != '' && steps.restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.gocache.outputs.key }}
+          path: |
+            ${{ steps.gocache.outputs.modcache }}
+            ${{ steps.gocache.outputs.gocache }}
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
@@ -526,37 +581,6 @@ jobs:
             curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
             node --import ./register.mjs --test "preview/$test_file"
           done
-
-      # After the two editor steps and not after `make e2e`, because the Go work does not end at gate
-      # 10: the editor suite runs `go run ./tools/designexport` for itself (editor/replacement.test.mjs
-      # lines 1696, 1790 and 2013), so a save placed above it would ship an archive missing the one
-      # program this job's own design tooling recompiles. The budget verdict below reads no Go —
-      # scripts/check_budget_ratchet.sh asks git and wc — so this is the last step with a compiler
-      # behind it, and `success()` keeps a job that already failed from spending its remaining minutes
-      # uploading. `cache-hit != 'true'` because an exact hit means the archive under this key is
-      # already the one this job just used; on a miss, including a prefix hit, the save repopulates
-      # under the new key, and on a miss `restore` leaves `cache-hit` unset rather than false
-      # (src/restoreImpl.ts, actions/cache v6.1.0), which is why the test reads `!= 'true'`.
-      # continue-on-error answers the one shape of failure that would otherwise reach the job: the
-      # library downgrades an unreachable or refused cache server to a warning, but restoreImpl still
-      # calls `core.setFailed` on a thrown error and saveImpl warns and exits 0 — the flag is written
-      # as the property, not because the library is trusted.
-      #
-      # What this step costs, measured here rather than assumed: GOMODCACHE (496 MB, the whole build
-      # list) plus the 781 MB of GOCACHE that `go build ./...` alone leaves behind is 1.3 GB raw,
-      # 400 MB gzipped, 56 s of single-threaded gzip. This job's cache is larger — the -race build and
-      # every test binary are in it — so if this step's own log reports `Cache Size:` above about
-      # 2 GiB, the narrowing is `path:` GOMODCACHE only, same keys: a build cache that costs more to
-      # ship than to recompile is not a cache, and the module download is the dearer byte on a runner.
-      - name: Save the Go module and build cache
-        if: success() && steps.gocache.outputs.key != '' && steps.restore.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: ${{ steps.gocache.outputs.key }}
-          path: |
-            ${{ steps.gocache.outputs.modcache }}
-            ${{ steps.gocache.outputs.gocache }}
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the
