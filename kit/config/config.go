@@ -634,7 +634,8 @@ func Load(path string, overrides ...Override) (Config, error) {
 	// half of one. What it does *not* refuse is a slug naming no tenant that exists:
 	// the mapping is written by somebody who may be describing the tenant they are
 	// about to create, and the migration that finds a tenant nobody mapped is the
-	// one that refuses (migrations/000046_tenant_app_place_refusal.up.sql).
+	// one that refuses (migrations/000045_tenant_app_refusal.up.sql), and only of a
+	// boot that named itself: see the guard on migrations/000046_tenant_app_place.
 	if c.App.TenantAppsFile != "" {
 		fromFile, err := readTenantApps(c.App.TenantAppsFile)
 		if err != nil {

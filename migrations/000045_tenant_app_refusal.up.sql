@@ -16,6 +16,15 @@
 -- be allowed to proceed by silence. What it does not do is decide anything: it is
 -- called with the list of tenants nobody named, and it refuses unless it was called
 -- with none.
+--
+-- Which caller may hand it a list is not its decision either, and that matters: a
+-- boot that named no app asserts nothing about whose anybody's tenant is, and the
+-- placement that stopped it would be refusing this release to every single-app
+-- deployment (see the guard on the statement at the bottom of
+-- migrations/000046_tenant_app_place.up.sql). So the caller asks the question and
+-- this prints the answer, which is the only division of the two jobs that keeps the
+-- sentence in one place while leaving "who is answerable for a row" with the
+-- statement that writes the row.
 CREATE FUNCTION platformkit_refuse_unplaced_tenants(unplaced text) RETURNS text
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -32,4 +41,4 @@ END
 $$;
 
 COMMENT ON FUNCTION platformkit_refuse_unplaced_tenants(text) IS
-	'platformkit: refuses a placement that left a tenant with no app, naming every such tenant and what the boot declared; called by the data placement with the list it computed, and by nothing that can answer for a tenant itself';
+	'platformkit: refuses a placement that left a tenant with no app, naming every such tenant and what the boot declared; called by the data placement with the list it computed, only of a boot that named itself, and by nothing that can answer for a tenant itself';

@@ -34,8 +34,13 @@ slug — 000043's own default for a session that named no app — and the file t
 checksummed and immutable, so an operator who sets `nats.app` and `app.hosts` afterwards holds a database of
 tenants nobody placed and a release that runs nothing for them. `migrations/000045_tenant_app_refusal` and
 `migrations/000046_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
-app whose declared hosts cover every host it holds, and a tenant neither speaks for stops the drain by name,
-having written nothing, so the operator's corrected retry is the same walk. The refusal is a function rather than
+app whose declared hosts cover every host it holds, and a tenant neither speaks for stops a boot that named
+itself, by name and having written nothing, so that operator's corrected retry is the same walk. A boot that
+named no app is not stopped, and that half is the line `make check`'s rehearsal drew (v1.1.0 to this tree,
+measured 2026-10-05): such a boot asserts nobody's tenant, the copy it migrates is a previous release's database
+holding one tenant, and refusing it refuses this release to every single-app deployment, so it places what an
+operator's mapping names and leaves the rest exactly as it found them — still on the legacy durable, still
+served, because the move renames nothing for a tenant no app claims. The refusal is a function rather than
 the `DO` block 000043 carries because a windowed statement cannot read what it has just written — a
 data-modifying CTE sees the snapshot it started with — so the placement computes the tenants it could not place
 and hands the list over. The declaration has to be on the session that drains, not the one that migrated, so

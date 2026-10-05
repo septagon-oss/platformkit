@@ -439,12 +439,19 @@ watcher=$!
 
 write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
   # The declaration this release asks an installation for, written the way an
-  # operator writes it. The copy holds the one tenant the base revision bootstrapped,
-  # served at server.public_host above, and migrations/000043_tenant_app places an
-  # existing tenant under this app only when every host it holds is listed here —
-  # a boot that declares no hosts places nothing and then refuses, which is the
-  # refusal for an operator who has not written this line, not for this step. A
-  # --dump copy holding tenants served elsewhere still refuses, and names them.
+  # operator writes it: hosts and no nats.app, which is what this step has always
+  # handed the candidate, and the shape of a deployment that has not taken a slug.
+  # Read what that does to the one tenant the copy holds rather than assuming it.
+  # The migrate command of apps/platformkit always declares a slug, here the empty
+  # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
+  # and the empty-slug placement 000046 then finds nothing it may write and refuses
+  # nothing: a boot that named no app asserts nothing about whose anybody is, and a
+  # tenant left app-less belongs to nobody in particular. The guard, and its reason,
+  # are on that file. What this step measures is that upgrade: the release applies
+  # over an app-less database of the previous release size. An operator who names
+  # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
+  # account for gets the sentence 000045 puts there, which names the tenant and
+  # writes nothing.
   hosts:
     - "rehearse.localhost"'
 set +e
