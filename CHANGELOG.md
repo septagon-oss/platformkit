@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+**The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
+consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
+installation that sets `nats.app` after running without one finds every claim it already earned on the far
+side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
+is the drain for those two tables — one transaction, `SHARE ROW EXCLUSIVE … NOWAIT` on each, always in that
+order, a copy of each unscoped ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and
+`failed_at` verbatim because the purge ages on them, then a delete of exactly the rows the copy read, and one
+`platformkit.ledger_moved` record per tenant whose claims moved. A delivery mid-claim holds the table lock and
+the move refuses, naming itself, having written and emitted nothing; `kit/app` runs the step once at boot,
+before any subscription exists — the gap between "the durable is scoped" and "the ledger is scoped" is the
+window — logs a refusal rather than crashing on it, and schedules `ledger-move` to finish it. That job, the
+record's declaration and the channel that describes it belong only to a deployment that names an app: with no
+slug there is no prefix to move onto, so the step answers with the zero report and the manifest declares no
+event no run could publish. `kit/db`'s `phase=data` window refuses the same act on a table keyed by something
+other than the tenant, which is why this is a drain its owner owns in a job and not a migration. The envelope
+carries the same fact: `transport.Event` gains `App`, published as the CloudEvents extension attribute `app`
+and absent for an app-less publisher, and its `subject` is the one `appname.Subject` forms, so `UnmarshalJSON`
+can refuse a document whose subject disagrees with the `(app, tenantid, type)` it carries and
+`jetstream.Publish` refuses to write an event that names another app at its own address. A document that names
+no app is refused at an app-scoped address and at no other: nothing was ever written at a scoped address
+unstamped, and the alternative would let a forged app-less message run a handler whose claim ledger is the only
+thing that makes it exactly-once.
+
 **A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
 the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
 key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
@@ -309,7 +332,9 @@ the document the composition serves and which a committed case refuses to let dr
 from that file, and the two module terms are the jobs and subscriptions the
 composition's manifests register. That tally expressly does not count the four jobs
 this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
-`schema-backfill` — and the run span of each carries no tenant either, for the same
+`schema-backfill` — nor the fifth, `ledger-move`, which only a deployment that names
+`nats.app` schedules and whose one pass renames every tenant's delivery ledger; the run
+span of each carries no tenant either, for the same
 reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
 tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only

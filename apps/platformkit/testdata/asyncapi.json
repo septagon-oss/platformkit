@@ -1888,48 +1888,6 @@
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
     },
-    "platformkit.ledger_moved": {
-      "address": "platformkit.*.platformkit.ledger_moved",
-      "description": "Published at platformkit.{tenantId}.platformkit.ledger_moved; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
-      "messages": {
-        "platformkit.ledger_moved": {
-          "contentType": "application/json",
-          "name": "platformkit.ledger_moved",
-          "payload": {
-            "properties": {
-              "app": {
-                "type": "string"
-              },
-              "claims": {
-                "type": "integer"
-              },
-              "dead": {
-                "type": "integer"
-              },
-              "durables": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              "requestedBy": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "app",
-              "claims",
-              "dead"
-            ],
-            "type": "object"
-          },
-          "summary": "platformkit — platformkit.ledger_moved",
-          "title": "platformkit.ledger_moved"
-        }
-      },
-      "summary": "Every tenant's delivery of platformkit.ledger_moved.",
-      "title": "platformkit.ledger_moved"
-    },
     "security.access_requested": {
       "address": "platformkit.*.security.access_requested",
       "description": "Published at platformkit.{tenantId}.security.access_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -4074,23 +4032,6 @@
         }
       ],
       "summary": "The platformkit module publishes platformkit.event_replayed.",
-      "tags": [
-        {
-          "name": "platformkit"
-        }
-      ]
-    },
-    "platformkit.ledger_moved": {
-      "action": "send",
-      "channel": {
-        "$ref": "#/channels/platformkit.ledger_moved"
-      },
-      "messages": [
-        {
-          "$ref": "#/channels/platformkit.ledger_moved/messages/platformkit.ledger_moved"
-        }
-      ],
-      "summary": "The platformkit module publishes platformkit.ledger_moved.",
       "tags": [
         {
           "name": "platformkit"

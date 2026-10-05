@@ -425,7 +425,7 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
 	// lands in the tenant's trail beside the actions it re-ran, with the
 	// operator as its actor.
-	mods = append(mods, kernelModule)
+	mods = append(mods, kernelModule(opts.App))
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
@@ -837,7 +837,7 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
 func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
-	return []jobs.Job{
+	list := []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
 		// scheduler — and with it the purges and every module's job — for as long
@@ -851,28 +851,38 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
 		}},
-		// The delivery ledger move, run again. work calls the same step once, before
-		// it makes any subscription, and a refusal there is not fatal — a delivery
-		// mid-claim holds the table lock for at most handlerTimeout. This line is what
-		// finishes a move that boot could not, on the scheduler's own advisory lock
-		// (appname.JobLock), so two replicas of one app contend on one move and never
-		// move each other's rows twice. Once the ledger is scoped it moves nothing and
-		// emits nothing; it is the price of not having to know when to stop.
-		{Name: "ledger-move", Every: ledgerMoveEvery, Run: func(ctx context.Context, conn *db.Conn) error {
-			_, err := events.MoveLedger(ctx, conn, app, "job:ledger-move")
-			return err
-		}},
-		// The counters table is written by whoever holds a limiter, and this
-		// composition is one of them: httpx counts anonymous public writes on the
-		// limiter the runner hands it. kit/limit wrote the condition for this line in
-		// advance — "the moment a second module adopts this, the purge belongs beside
-		// the outbox's" — and the condition arrived with the public write limit. The
-		// last field of every key here is an address a caller chooses, so a table
-		// nobody empties grows at somebody else's rate; leaving the purge in
-		// `modules/auth`'s sweep would have made an installation that takes the limit
-		// and not the login page one that never forgets a row.
-		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
 	}
+	// The delivery ledger move, run again. work calls the same step once, before
+	// it makes any subscription, and a refusal there is not fatal — a delivery
+	// mid-claim holds the table lock for at most handlerTimeout. This line is what
+	// finishes a move that boot could not, on the scheduler's own advisory lock
+	// (appname.JobLock), so two replicas of one app contend on one move and never
+	// move each other's rows twice. Once the ledger is scoped it moves nothing and
+	// emits nothing; it is the price of not having to know when to stop.
+	//
+	// And only for a deployment that names itself, which is the condition the move
+	// answers to in its own body: appname.DurablePrefix is the empty string when no
+	// app is named, so there is no name to move the rows onto and events.MoveLedger
+	// returns the zero report on every pass. Scheduling a step that cannot act on any
+	// input this process can give it would buy two advisory-lock passes a minute that
+	// report nothing; its absence here is what says which shape the process is in.
+	if app.Named() {
+		list = append(list, jobs.Job{Name: "ledger-move", Every: ledgerMoveEvery,
+			Run: func(ctx context.Context, conn *db.Conn) error {
+				_, err := events.MoveLedger(ctx, conn, app, "job:ledger-move")
+				return err
+			}})
+	}
+	// The counters table is written by whoever holds a limiter, and this
+	// composition is one of them: httpx counts anonymous public writes on the
+	// limiter the runner hands it. kit/limit wrote the condition for this line in
+	// advance — "the moment a second module adopts this, the purge belongs beside
+	// the outbox's" — and the condition arrived with the public write limit. The
+	// last field of every key here is an address a caller chooses, so a table
+	// nobody empties grows at somebody else's rate; leaving the purge in
+	// `modules/auth`'s sweep would have made an installation that takes the limit
+	// and not the login page one that never forgets a row.
+	return append(list, jobs.Job{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge})
 }
 
 // ledgerMoveEvery is how often the worker retries a delivery-ledger move that boot
@@ -1034,14 +1044,28 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 // at the INSERT, and a channel in the AsyncAPI document. Without it the kernel
 // would emit an event its own catalogue knows nothing about, and
 // event_schema_coverage would count events it does not.
-var kernelModule = module.Module{
-	Name: module.KernelName,
-	Declared: []events.Declared{
+//
+// The manifest takes the app because one of these three doors is not open to every
+// deployment. platformkit.ledger_moved is emitted only by events.MoveLedger, and
+// that step has nothing to do when no app is named — appname.DurablePrefix is then
+// the empty string, so there is no scoped name to rename a ledger onto and the step
+// answers with the zero report and no event at all (kit/events/ledger.go, and
+// TestAnAppThatNamesNothingMovesNothing beside it). A declaration is a promise about
+// what this composition emits, so the name is declared by the deployments that can
+// emit it and by nobody else: an app-less one would carry a channel every subscriber
+// waits on forever, a subscription whose backlog is empty by construction, and a
+// catalogue entry no publish consults. The same condition keeps the retry job out of
+// kernelJobs above; two lines, one rule.
+func kernelModule(app appname.Name) module.Module {
+	declared := []events.Declared{
 		events.Declare[events.ReplayRecord](events.EventReplayed),
-		events.Declare[events.LedgerMovedRecord](events.EventLedgerMoved),
 		events.Declare[Denied](EventDenied),
 		events.Declare[AccessRequested](EventAccessRequested),
-	},
+	}
+	if app.Named() {
+		declared = append(declared, events.Declare[events.LedgerMovedRecord](events.EventLedgerMoved))
+	}
+	return module.Module{Name: module.KernelName, Declared: declared}
 }
 
 // declaredEvents is every event every manifest declares, de-duplicated by name.
