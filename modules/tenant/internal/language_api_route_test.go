@@ -60,6 +60,13 @@ func TestTenantLanguagesHaveAnAppAPICommand(t *testing.T) {
 		}
 		for _, command := range resource.Commands {
 			if command.Endpoint == "/api/v1/tenant/languages" {
+				// The door is a replace, so it answers PUT — and the catalog has to say
+				// so, because a shell that followed the POST convention this document
+				// otherwise implies would be refused at the address it was given.
+				if command.Method != http.MethodPut {
+					t.Errorf("the tenant language command is reached by %q, its route answers %q",
+						command.Method, http.MethodPut)
+				}
 				return
 			}
 		}

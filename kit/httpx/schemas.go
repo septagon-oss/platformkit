@@ -130,7 +130,16 @@ type Command struct {
 	// resource's reads do not. The catalog publishes it for those commands and
 	// only those, so a document that could be derived still is.
 	Endpoint string
-	Fields   []entity.Field
+	// Method is the verb this command's route answers, and empty means POST —
+	// the verb every command kit/rest mounts answers with, and the one a shell
+	// written before this key existed already assumes. A command that is a
+	// replace rather than a verb beneath its resource is mounted at its
+	// resource's own address with the verb that replace carries (a tenant's
+	// languages are PUT, because saying "these" twice is the same declaration),
+	// and the catalog says so rather than advertising an address that answers
+	// that verb with 405. See screens.Command.Method.
+	Method string
+	Fields []entity.Field
 	// Run performs the command with the values a caller submitted, inside the
 	// request's own transaction, and is the closure the command's HTTP route
 	// calls. It has to be here because docs/adr/0007 promises a derived screen
