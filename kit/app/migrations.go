@@ -65,13 +65,20 @@ func migrationDeclaration(cfg config.Config) (db.Declaration, error) {
 
 // Drain finishes the data migrations a release left half-drained, which is the
 // worker's job on a tick (jobs.BackfillMigrations) and this door for a rehearsal or
-// an operator who is not going to wait for the tick. It calls the same db.BackfillWith
+// an operator who is not going to wait for the tick. It calls the same db.BackfillDeclaring
 // the worker calls, over the same sources the composition selected and with the same
 // budgets the configuration named, which is what makes a measurement of it worth
 // anything: the step that reports what a drain cost is not free to run it on different
 // patience from the one that will run it in production.
 func Drain(ctx context.Context, cfg config.Config, mods []module.Module) error {
-	return db.BackfillWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...)
+	// The declaration the same boot's Migrate carried, because the drain is where a
+	// file that places rows runs: see db.BackfillDeclaring for why session state
+	// cannot stay on the connection that set it.
+	decl, err := migrationDeclaration(cfg)
+	if err != nil {
+		return err
+	}
+	return db.BackfillDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...)
 }
 
 // MigrationSources keeps the foundation first and modules in composition order.

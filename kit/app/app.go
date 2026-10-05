@@ -852,12 +852,14 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 			return events.Purge(ctx, conn)
 		}},
 	}
-	// The delivery ledger move, run again. work calls the same step once, before
-	// it makes any subscription, and a refusal there is not fatal — a delivery
-	// mid-claim holds the table lock for at most handlerTimeout. This line is what
-	// finishes a move that boot could not, on the scheduler's own advisory lock
+	// The delivery ledger move, run again. work calls the same step before it
+	// makes any subscription and opens no consumer until it answers, so this line
+	// is not the boot's rescue. It is the pass that runs the step under the
+	// scheduler's own advisory lock
 	// (appname.JobLock), so two replicas of one app contend on one move and never
-	// move each other's rows twice. Once the ledger is scoped it moves nothing and
+	// move each other's rows twice, and a claim an unscoped writer inserts after
+	// boot's move is renamed on the next tick. Once the ledger is scoped it moves
+	// nothing and
 	// emits nothing; it is the price of not having to know when to stop.
 	//
 	// And only for a deployment that names itself, which is the condition the move
@@ -885,13 +887,62 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	return append(list, jobs.Job{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge})
 }
 
-// ledgerMoveEvery is how often the worker retries a delivery-ledger move that boot
-// refused. It is a retry, not a poll: the act is idempotent and does nothing once
-// the ledger is scoped, and the wait it bounds is the double-handling window
-// kit/events/ledger.go states — long enough that a mid-claim delivery has certainly
-// finished (handlerTimeout is 25 s), short enough that a deployment is not running
-// in the window until the next hour.
+// ledgerMoveEvery is how often the worker runs the delivery-ledger move on the
+// scheduler. The act is idempotent and does nothing once the ledger is scoped,
+// so this is the price of not having to know when to stop: long enough that a
+// mid-claim delivery has certainly finished (handlerTimeout is 25 s), short
+// enough that a claim an unscoped writer adds between two boots is renamed soon.
 const ledgerMoveEvery = 2 * time.Minute
+
+// ledgerMoveRetry is how long the worker waits before it asks again for a move a
+// mid-claim delivery refused, and it is shorter than the retry job's cadence
+// because the cause is bounded: events.handlerTimeout says a handler holds the
+// durable for at most 25 s, so a refusal is a delivery that is nearly finished,
+// not a condition an operator has to be woken for. A deployment waits this long,
+// at most, between being told to start and serving its tenants' events.
+const ledgerMoveRetry = 5 * time.Second
+
+// moveLedger renames this deployment's delivery ledgers and will not report
+// done until they have moved. It is the gate in front of every subscription the
+// worker makes, which is why a refusal is waited out and not logged past: the
+// rows that stop a handler running a second time are keyed by the durable, and
+// until the rename commits a scoped consumer is replaying work the ledger
+// already holds under the old name (kit/events/ledger.go states the window).
+//
+// Waiting is not crashlooping. The process is up, its probes answer, its jobs
+// are not yet scheduled and no handler runs, so nothing is done twice and
+// nothing is lost; the refusal it is waiting for writes no row and emits no
+// event, and the log line names the app and the reason every time it is asked
+// again. An app that names itself nothing moves nothing by definition —
+// appname.DurablePrefix is empty and MoveLedger answers the zero report — so
+// the gate is open for it on the first pass, which is the same answer the
+// kernel job below gives by not being scheduled at all.
+func (a *App) moveLedger(ctx context.Context, conn *db.Conn) error {
+	for {
+		report, err := events.MoveLedger(ctx, conn, a.opts.App, "boot")
+		if err == nil {
+			if report.Claims != 0 || report.Dead != 0 {
+				a.log.InfoContext(ctx, "app: the delivery ledger moved", "app", a.opts.App.String(),
+					"subscriptions", report.Subscriptions, "claims", report.Claims,
+					"dead_letters", report.Dead, "tenants", report.Tenants)
+			}
+			return nil
+		}
+		// A stop is a stop: the refusal that ends this loop is the context, not
+		// the database, and a process told to leave returns nothing an orchestrator
+		// would read as a crash.
+		if ctx.Err() != nil {
+			return nil
+		}
+		a.log.WarnContext(ctx, "app: the delivery ledger did not move, holding its subscriptions until it does",
+			"app", a.opts.App.String(), "retry", ledgerMoveRetry.String(), "error", err)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(ledgerMoveRetry):
+		}
+	}
+}
 
 // drainMigrations is the worker's schedule for the data migrations this
 // composition owns. It is built here rather than inside kernelJobs because it
@@ -901,8 +952,19 @@ const ledgerMoveEvery = 2 * time.Minute
 // would be left behind forever, and "resumable" would mean "somebody runs a command
 // nobody has read about".
 func (a *App) drainMigrations() jobs.Job {
+	// The declaration travels with the tick for the reason db.BackfillDeclaring
+	// gives: a placement runs where the drain runs, and the composition is the only
+	// party that still knows what it named itself when the tick arrives. A
+	// declaration this configuration cannot make is a refused worker, not a drain
+	// that places nothing and calls it a tick — the same sentence Migrate writes
+	// about the same setting, one step later.
+	decl, err := migrationDeclaration(a.cfg)
+	if err != nil {
+		return jobs.Job{Name: jobs.BackfillJobName, Every: jobs.BackfillEvery,
+			Run: func(context.Context, *db.Conn) error { return err }}
+	}
 	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL,
-		migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
+		migrationBudget(a.cfg.Database), decl, MigrationSources(a.mods)...)
 }
 
 // work is the worker role: the kernel's own jobs, every module's jobs, and every
@@ -928,19 +990,16 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 			subs = append(subs, s)
 		}
 	}
-	// The ledgers move before any subscription is made. The gap between "the
-	// durable is scoped" and "the ledger is scoped" is the double-handling window
-	// kit/events/ledger.go states, and a consumer made first would open it for as
-	// long as the move takes. A refusal at boot is not fatal and is logged: a
-	// deployment must not crashloop because a delivery was mid-claim, and the
-	// kernel job below runs the same step again until it is not.
-	if report, err := events.MoveLedger(ctx, conn, a.opts.App, "boot"); err != nil {
-		a.log.WarnContext(ctx, "app: the delivery ledger did not move",
-			"app", a.opts.App.String(), "error", err)
-	} else if report.Claims != 0 || report.Dead != 0 {
-		a.log.InfoContext(ctx, "app: the delivery ledger moved", "app", a.opts.App.String(),
-			"subscriptions", report.Subscriptions, "claims", report.Claims,
-			"dead_letters", report.Dead, "tenants", report.Tenants)
+	// The ledgers move before any subscription is made, and moveLedger is what
+	// makes that ordering a fact rather than an intention: a refusal parks the
+	// worker here until the rename commits, and no consumer exists while it waits.
+	// Consuming over a ledger that has not moved is the double-handling window
+	// kit/events/ledger.go states, widened from "as long as the move takes" to "as
+	// long as the retry takes" — an event already handled keys its claim under the
+	// old durable, so the first scoped delivery inserts a second claim and runs the
+	// handler again before any retry tick can arrive.
+	if err := a.moveLedger(ctx, conn); err != nil {
+		return err
 	}
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err

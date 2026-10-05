@@ -162,8 +162,10 @@ whose `tenants.app` is empty belong to whichever deployment runs app-less beside
 one and are left where its consumer looks for them. A delivery mid-claim therefore
 holds the durable and the move refuses, naming itself, having written and emitted
 nothing; `kit/app` runs
-the step once at boot, before it makes any subscription, logs a refusal rather than
-crashing on it, and schedules the `ledger-move` job to finish it. An app that names
+the step at boot and opens no consumer until it answers, so a refusal waits — the
+worker that consumed over an unscoped ledger would replay events whose claims are
+committed under the old name, which is the harm the move exists to close — and the
+`ledger-move` job runs the step again on the scheduler's lock. An app that names
 nothing has no prefix to move onto, so for it the step answers with the zero report and
 kit/app neither schedules the job nor declares the event — see [`ledger.go`](ledger.go)
 for the reasoning and the cases beside it. `kit/db`'s `phase=data` window refuses the

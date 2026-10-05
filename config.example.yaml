@@ -241,6 +241,14 @@ app:
   # host can place. Every value goes through the slug's grammar, and the mapping
   # has to cover every tenant left over or the migration refuses the run.
   tenant_apps: {}
+  # The same placement as a file: one <tenant-slug>=<app-slug> line each, blank
+  # lines and # comments allowed. It exists for a mapping too long to read in a
+  # YAML blob, and is merged into the map above at load, the inline map winning a
+  # disagreement. A line that is not a pair, a tenant mapped twice to two apps or
+  # an app that is not a slug refuses the load; a slug naming a tenant that does
+  # not exist yet does not, because the mapping may be describing the tenant the
+  # operator is about to create.
+  # tenant_apps_file: /etc/platformkit/tenant-apps.txt
 
 # Feature flags, under `values:` because the block is a pointer to the map and an
 # installation with no flags writes no `flags:` section at all. One boolean per

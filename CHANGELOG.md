@@ -19,13 +19,34 @@ having written and emitted nothing. The table lock this step first took, and a p
 and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
 the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while
 both apps' consumers ran, and walking every unscoped row on the way renamed another app's tenants' claims into a
-durable its consumer never listens to — the harm the move exists to close. `kit/app` runs the step once at boot,
-before any subscription is made — the gap between "the durable is scoped" and "the ledger is scoped" is the
-window — logs a refusal rather than crashing on it, and schedules `ledger-move` to run it again until it is not.
+durable its consumer never listens to — the harm the move exists to close. `kit/app` runs the step at boot,
+before any subscription is made, and opens no consumer until it answers (`App.moveLedger`): a refusal is waited
+out and logged, not logged past, because a scoped consumer started over a ledger that has not yet moved replays
+an event whose claim is already committed under the old durable — a second claim, a second handler run, and the
+window the move exists to close opened for as long as the retry takes. The process is up while it waits, its
+probes answer and no handler runs; `ledger-move` runs the step again on the scheduler's own lock.
 That job, the record's declaration and the channel that describes it belong only to a deployment that names an
 app: with no slug there is no prefix to move onto, so the step answers with the zero report and the manifest
 declares no event no run could publish. `kit/db`'s `phase=data` window refuses the same act on a table keyed by
 something other than the tenant, which is why this is a drain its owner owns in a job and not a migration.
+**Naming an app places the tenants that already exist.** An app-less boot stamped `tenants.app` with the empty
+slug — 000043's own default for a session that named no app — and the file that proved the NULLs is applied,
+checksummed and immutable, so an operator who sets `nats.app` and `app.hosts` afterwards holds a database of
+tenants nobody placed and a release that runs nothing for them. `migrations/000045_tenant_app_refusal` and
+`migrations/000046_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
+app whose declared hosts cover every host it holds, and a tenant neither speaks for stops the drain by name,
+having written nothing, so the operator's corrected retry is the same walk. The refusal is a function rather than
+the `DO` block 000043 carries because a windowed statement cannot read what it has just written — a
+data-modifying CTE sees the snapshot it started with — so the placement computes the tenants it could not place
+and hands the list over. The declaration has to be on the session that drains, not the one that migrated, so
+`db.BackfillDeclaring` carries `db.Declaration` to the drain (`app.Drain` and the worker's `schema-backfill` job
+both go through it). `app.tenant_apps_file` is the same mapping as a file of `slug=app` lines for an operator
+whose mapping is too long to read in a YAML blob: `kit/config` reads it at load, the inline map wins a
+disagreement, and a line that is not a pair, a tenant mapped twice to two apps or an app that is not a slug
+refuses the load — a slug naming no tenant yet does not, because the mapping may describe a tenant about to be
+created. `pkit.App.Slug` is the kernel half of the composition's own name: `appname.Parse` over the string
+`NewApp` was given, asked by `compose`, so a composition named `Collect EU` fails `Validate` and `Build` rather
+than shipping an app-less durable under an app-scoped address.
 **The envelope carries the app that published it.** `transport.Event` gains `App`, produced and read as the
 CloudEvents extension attribute `app`, and a process that names itself publishes at the address with that token
 in front (`transport.AppSubject`), while a process that names nothing publishes where this kernel has always

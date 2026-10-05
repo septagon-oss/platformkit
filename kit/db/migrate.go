@@ -222,12 +222,12 @@ func (d Declaration) declare(ctx context.Context, conn *sql.Conn) error {
 	var declared string
 	if d.App != nil {
 		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app', $1, false)`, *d.App).Scan(&declared); err != nil {
-			return fmt.Errorf("db: migrate: declaring the app: %w", err)
+			return fmt.Errorf("declaring the app: %w", err)
 		}
 	}
 	if len(d.Hosts) > 0 {
 		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app_hosts', $1, false)`, strings.Join(d.Hosts, ",")).Scan(&declared); err != nil {
-			return fmt.Errorf("db: migrate: declaring the hosts: %w", err)
+			return fmt.Errorf("declaring the hosts: %w", err)
 		}
 	}
 	if len(d.Tenants) > 0 {
@@ -237,7 +237,7 @@ func (d Declaration) declare(ctx context.Context, conn *sql.Conn) error {
 		}
 		slices.Sort(pairs)
 		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app_tenants', $1, false)`, strings.Join(pairs, ",")).Scan(&declared); err != nil {
-			return fmt.Errorf("db: migrate: declaring the tenant mapping: %w", err)
+			return fmt.Errorf("declaring the tenant mapping: %w", err)
 		}
 	}
 	return nil
@@ -266,7 +266,7 @@ func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBu
 	defer conn.Close()
 
 	if err := decl.declare(ctx, conn); err != nil {
-		return err
+		return fmt.Errorf("db: migrate: %w", err)
 	}
 
 	run := &runner{conn: conn, budget: budget}

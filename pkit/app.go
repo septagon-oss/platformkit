@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
 
@@ -18,6 +19,23 @@ type App struct {
 
 // NewApp starts an app.
 func NewApp(name string) *App { return &App{name: name} }
+
+// Slug is the composition's name in the form the runtime needs: the token every
+// name two apps could share is formed from (appname.Durable, appname.Subject).
+// NewApp takes a plain string and cannot answer with an error — a total
+// constructor that refused a name would panic — so the question is asked here,
+// and compose asks it, which is where Validate, Explain and Build already gather
+// a composition's problems. A name a subject token cannot hold is the app that
+// publishes at an app-scoped address while its durable names no app: the
+// disagreement AddressMismatch refuses at delivery time and events.Consume
+// refuses at boot, arrived at here, before either is reachable.
+func (a *App) Slug() (appname.Name, error) {
+	slug, err := appname.Parse(a.name)
+	if err != nil {
+		return "", fmt.Errorf("pkit: %s: %w", a.name, err)
+	}
+	return slug, nil
+}
 
 // Use composes these modules into the app.
 func (a *App) Use(ms ...*Module) *App { a.uses = append(a.uses, ms...); return a }
@@ -188,6 +206,9 @@ func (m *Module) declares(key any, kinds ...kind) bool {
 func (a *App) compose(d Deployment) (*plan, []module.Module, error) {
 	p, issues := a.resolve(d)
 	var errs []error
+	if _, err := a.Slug(); err != nil {
+		errs = append(errs, err)
+	}
 	for _, in := range issues {
 		errs = append(errs, fmt.Errorf("pkit: %s: %s: %w", a.name, in.method, in.err))
 	}

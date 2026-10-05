@@ -305,6 +305,21 @@ func Backfill(ctx context.Context, migrateURL string, sources ...MigrationSource
 // one that matters most here, and a drain that always ran on the default would run the
 // work on a patience its own deployment had refused.
 func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
+	return BackfillDeclaring(ctx, migrateURL, budget, Declaration{}, sources...)
+}
+
+// BackfillDeclaring is BackfillWith plus what the boot declares about itself, the
+// same three settings MigrateDeclaring puts on its session.
+//
+// It exists because a drain opens its own connection and its own transaction per
+// window, and the declaration a schema half reads is session state: a placement of
+// tenants left behind by a boot that declared its slug and hosts is placed by
+// nothing at all on the door that drains it, which is 000043's bug again in the one
+// half of the release where the placement actually runs (planOwner leaves a data
+// file to this door whenever the owner has history). kit/app.Drain and the worker's
+// drain job both come through here for that reason; the door that declares nothing
+// places nothing, which is what the file's own refusal is for.
+func BackfillDeclaring(ctx context.Context, migrateURL string, budget MigrationBudget, decl Declaration, sources ...MigrationSource) error {
 	if err := budget.validate(); err != nil {
 		return fmt.Errorf("db: backfill: %w", err)
 	}
@@ -324,6 +339,11 @@ func BackfillWith(ctx context.Context, migrateURL string, budget MigrationBudget
 	defer conn.Close()
 	if err := requireLedger(ctx, conn); err != nil {
 		return err
+	}
+	// Session state, on the connection every window of this run will take: the same
+	// three settings, read the same way, declared before the ledger is read.
+	if err := decl.declare(ctx, conn); err != nil {
+		return fmt.Errorf("db: backfill: %w", err)
 	}
 	pending, _, err := pendingMigrations(ctx, conn, migrations)
 	if err != nil {
