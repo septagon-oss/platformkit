@@ -193,7 +193,9 @@ record per tenant whose claims moved goes into the same commit. The claims of a 
 whose `tenants.app` is empty belong to whichever deployment runs app-less beside this
 one and are left where its consumer looks for them. A delivery mid-claim therefore
 holds the durable and the move refuses, naming itself, having written and emitted
-nothing; and a delivery that names no app declares its tenant and then re-reads
+nothing — and what can now stand in front of it is app-less traffic in a tenant nobody
+has placed under, which is the traffic a rollout that names its app stops, and the boot
+gate waits it out on the retry it already had; and a delivery that names no app declares its tenant and then re-reads
 `tenants.app` inside the transaction that writes its claim, because a tenant that took an
 app while the delivery was being read is the one fact about it the placement changes
 underneath it, and a second nonlocking read answers that just as fast as the first. Such a delivery writes
