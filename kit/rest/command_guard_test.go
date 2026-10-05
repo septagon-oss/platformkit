@@ -1,15 +1,16 @@
 package rest_test
 
-// This file exists because of a review, and says so.
+// A mounted command carries the command's own guard, and a screen shows only what its
+// caller may do. One command answers through two doors — the screen's form post and the
+// API's JSON post — so the promise is worth exactly what the guard behind both is worth.
+// The failure that hides here is the worst one available in a permissions system: a door
+// that is invisible and still open. Hiding a control is presentation; refusing the route
+// is authorisation; a page looks the same either way to whoever wrote it.
 //
-// The commit that mounted commands onto screens claimed each route carries "the
-// command's own guard", and that the screen shows only what its caller may do. Both
-// sentences were written by the person who wrote the code, and no test asked a caller
-// who does not hold the grant what they actually receive. The claim was a description
-// of intent, not a verified behaviour, and the class of bug it hides is the worst one
-// available in a permissions system: a door that is invisible and still open.
-//
-// So: three questions, each answerable only by running the mounted application.
+// So: what a caller who does not hold the grant is offered, what the same caller can
+// post anyway through each door in its own encoding, and what a mount does when a
+// command is named after a verb a screen already serves. Each is answerable only by
+// running the mounted application — an authorizer stubbed to refuse agrees in advance.
 
 import (
 	"context"
