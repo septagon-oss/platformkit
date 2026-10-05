@@ -180,14 +180,21 @@ func AddressMismatch(app appname.Name, subject string, ev Event) error {
 			return fmt.Errorf("events: message names app %s, which is not the app reading it (%s), whatever its address %q is", doc, app, subject)
 		}
 	} else if app.Named() {
-		// An app that names itself reads only messages that name it — both copies.
-		// There is no rollout window hiding here: the app segment of the address and
-		// the app member of the envelope arrived in the same build, so no process
-		// ever wrote at the scoped address without stamping it. A no-app document
-		// that has come to rest on this app's address is therefore something other
-		// than this kernel's own delivery, and the claim ledger that answers to that
-		// address is the one thing standing between a redelivery and a handler run
-		// twice.
+		// An app that names itself reads only messages that name it — both copies. The
+		// refusal rests on a condition and not on a fact about history: within this
+		// build the app segment of the address and the `app` member of the envelope are
+		// written by the same statement, so a message this kernel published at a scoped
+		// address carries the stamp. That is not something an installation can infer about
+		// what was already in its stream. A deployment that scoped its subjects before an
+		// envelope could carry the member — a broker left holding traffic from a build
+		// that names the durable and the subject and nothing else — has unstamped
+		// messages at its own scoped address, and the moment it sets a slug this refusal
+		// applies to them: they are terminated, their outbox rows stay pending, and the
+		// fix is to drain the stream or drop the slug, not to widen the check, because
+		// the claim ledger that answers to that address is the one thing between a
+		// redelivery and a handler run twice. The condition is named here and in
+		// `kit/appname` rather than checked in code, because the only honest test of it
+		// is what the operator's broker holds.
 		return fmt.Errorf("events: message stored at %q names no app, and app %s reads only messages that name it as their %s in tenant %s", subject, app, ev.Name, ev.TenantID)
 	}
 	if subject == appname.Subject(app, ev.TenantID, ev.Name) {

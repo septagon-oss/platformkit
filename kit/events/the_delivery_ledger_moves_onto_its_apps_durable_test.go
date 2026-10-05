@@ -540,7 +540,7 @@ func TestADeliveryMidClaimRefusesTheMove(t *testing.T) {
 	}
 }
 
-// TestAMovedClaimIsInvisibleToTheOtherTenant is pillar line 1: the copy carries
+// TestAMovedClaimIsVisibleOnlyToItsOwnTenant is pillar line 1: the copy carries
 // tenant_id verbatim, so FORCE ROW LEVEL SECURITY answers to the moved row exactly
 // as it answered to the row it replaced. It fails the day the copy writes the
 // mover's tenant instead of the row's.
