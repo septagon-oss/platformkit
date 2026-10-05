@@ -26,21 +26,11 @@ func TestRemovingAnyProviderFromTheReferenceCompositionIsRefused(t *testing.T) {
 		"site":         "sitecontracts.Service",
 	} {
 		c := compose(cfg)
-		kept := c.modules[:0:0]
-		removed := false
-		for _, m := range c.modules {
-			if m.Name == provider {
-				removed = true
-				continue
-			}
-			kept = append(kept, m)
-		}
-		if !removed {
+		if !namesAModule(c.modules, provider) {
 			t.Errorf("the reference composition does not build %s, so its removal was not tested", provider)
 			continue
 		}
-		c.modules = kept
-		_, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
+		_, err := sentencesOf(cfg, provider).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 		if err == nil || !strings.Contains(err.Error(), contract) {
 			t.Errorf("removing %s.Module must be refused naming %s; Plan returned %v", provider, contract, err)
 		}

@@ -35,8 +35,8 @@ import (
 // sentencesOf is the application's sentence with only its app in hand, for a
 // case that asks the resolver a question and reads nothing else. The two values
 // sentences also returns belong to the composition's own chrome.
-func sentencesOf(cfg config.Config) *pkit.App {
-	a, _, _ := sentences(cfg)
+func sentencesOf(cfg config.Config, without ...string) *pkit.App {
+	a, _, _ := sentences(cfg, without...)
 	return a
 }
 
