@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -110,7 +112,7 @@ func TestAJobRunSpanSaysHowItEnded(t *testing.T) {
 	failed := Job{Name: "round4_failed", Every: time.Minute, Parallel: true,
 		Run: func(context.Context, *db.Conn) error { return errors.New("the round-4 job failed") }}
 
-	s := NewScheduler(conn, slog.New(slog.NewTextHandler(discard{}, nil)), succeeded, failed)
+	s := NewScheduler(conn, slog.New(slog.NewTextHandler(discard{}, nil)), appname.Name(""), succeeded, failed)
 	s.run(t.Context(), succeeded)
 	s.run(t.Context(), failed)
 

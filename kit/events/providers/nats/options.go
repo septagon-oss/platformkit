@@ -22,5 +22,14 @@ func Connect(settings config.NATS) (transport.Transport, error) {
 	if settings.CACert != "" {
 		options = append(options, nats.RootCAs(settings.CACert))
 	}
-	return JetStream(settings.URL, options...)
+	// The empty setting is the deployment of one app, which connects and publishes
+	// the addresses this kernel formed before the app segment — see NATS.AppName.
+	// Refusing it here would make the reference composition's own broker transport
+	// unbuildable, and every caller of Connect that expects a TLS or credential
+	// failure would wait for a connection that was never attempted.
+	app, err := settings.AppName()
+	if err != nil {
+		return nil, fmt.Errorf("events: %w", err)
+	}
+	return JetStream(app, settings.URL, options...)
 }

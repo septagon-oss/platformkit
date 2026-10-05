@@ -126,8 +126,8 @@ make e2e
 
 Browser installation may require permission to install system packages.
 The [test script](scripts/e2e.sh) removes its database and uploads, retaining failed
-Playwright results at the printed temporary path. Concurrent runs need distinct
-`PLATFORMKIT_E2E_PORT` values. [Makefile](Makefile) owns the command definitions;
+Playwright results at the printed temporary path, and serves on a port of its own unless
+`PLATFORMKIT_E2E_PORT` names one, which the run then uses exactly. [Makefile](Makefile) owns the command definitions;
 [RELEASE.md](RELEASE.md) describes the separate publication procedure.
 
 For a behavior change, demonstrate the failing case and its correction.
