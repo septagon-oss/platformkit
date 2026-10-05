@@ -131,7 +131,9 @@ type Passkeys interface {
 	// It writes one row and publishes one event in the caller's own transaction,
 	// and refuses without either: setting the value that is already set changes
 	// nothing and publishes nothing, so the trail says that the door was turned,
-	// and not that somebody pressed a button.
+	// and not that somebody pressed a button. Shutting it reaches the ceremonies
+	// already begun as well as the ones not yet begun: FinishPasskeyAssertion
+	// re-reads this row before it credits a signature.
 	//
 	// It returns the state the tenant is in afterwards, which is the same answer
 	// for a call that changed it and for a call that found it already so — the
@@ -149,5 +151,12 @@ type Passkeys interface {
 	// An unknown credential, a credential of another tenant, a person who cannot
 	// sign in, a wrong signature and a spent or expired ceremony are one answer
 	// at one cost — ErrCredentials — for the reason Login gives for its three.
+	//
+	// The usernameless door is guarded by this command too, not only by
+	// BeginPasskeySignIn: an administrator who shut it while a prompt stood open
+	// is obeyed by that prompt, because the setting is this tenant's present fact
+	// about what may open a session here rather than a fact as of the moment the
+	// nonce was minted. That refusal is ErrPasskeySignInOff, and it opens no
+	// session and publishes nothing.
 	FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, response json.RawMessage, from Client) (*Session, *Identity, error)
 }

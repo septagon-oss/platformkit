@@ -211,21 +211,35 @@ refusal and the record in one statement.
   names the quieter half: which factor answered. Whether a passkey may be the whole
   sign-in, with no password offered first, is the tenant's own row in
   `passkey_settings`, read per request; `TestTheUsernamelessDoorIsTheTenantsOwnRow`
-  is that read. What is *not* here is the administrator's control for that row (the
+  is that read, and the read is asked of the answer as well as the prompt — a tenant
+  that shut the door while a ceremony stood open is refused that ceremony
+  (`TestDisablingPasskeySignInRefusesAnOutstandingCeremony`), because the setting is
+  what may open a session here now rather than as at the moment a nonce was minted.
+  The counter is written as a compare-and-set (`UPDATE … WHERE id = ? AND
+  clone_warning = false AND sign_count = ?`), so two assertions carrying one counter
+  settle on one accepted session rather than two, which is the clone rule surviving
+  the interleaving a prompt-per-tab browser creates on its own
+  (`TestConcurrentPasskeyAssertionsRejectARepeatedCounter`). And the refusal to take
+  the last factor away counts the factors that can still answer: a credential retired
+  as suspect is a row and not a way in, so it neither stands in for a usable factor
+  when the last one is being withdrawn nor waits for a favour it cannot use
+  (`TestASuspectPasskeyDoesNotPermitWithdrawingTheLastUsableFactor`,
+  `TestARetiredPasskeyIsWithdrawnWhileAUsableOneStays`). What is *not* here is the administrator's control for that row (the
   product's), any page, and any attestation policy: this module holds no
   manufacturer registry, so which AAGUID made an authenticator stays a specialist
   fact rather than a shared module's table.
 * **Bearer tokens are in** (the brief's item 4) — see the next section, and its
   own list of what is still open there.
-* **No factor page, and the sign-in page has no second step.** `ui` and the
-  admin shell never call `/api/v1/auth/challenge/verify` (only this module's
-  routes and its tests name that path), so a person who enrols a factor through
-  the JSON routes cannot answer the second half from the reference app's sign-in
-  page — the page shows the refusal text and stops. The JSON path does work, and
-  is tested at its address: a correct code there is a 200 and a session cookie.
-  The page work is the shell's, and until it lands, enrolling a factor from a
-  screen that does not know about the challenge route locks a person out of that
-  screen.
+* **No factor page, and the sign-in page answers a passkey, not a code.** The
+  reference app's sign-in page carries the second step for the half that is a
+  ceremony: `modules/admin/internal/pages.go` wires the refusal's own form to
+  `/challenge/passkey/begin` and `/challenge/passkey/verify` and
+  `ui/assets/js/passkeys.js` drives the prompt, which is what
+  `e2e/passkey-second-factor-door.spec.ts` and `e2e/passkeys.spec.ts` walk in a
+  browser. No page calls `/api/v1/auth/challenge/verify`: a TOTP or a recovery
+  code is still answered over the JSON route, which works and is tested at its
+  address — a correct code there is a 200 and a session cookie — while the page
+  shows the refusal text and stops. The code-entry work is the shell's.
 
 ## Bearer tokens for a person's own integrations
 

@@ -431,6 +431,14 @@ func (s *Service) BeginPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant]) (
 // captured assertion replayable until it expired, which is a sign-in for anybody
 // who can POST one body twice, with no biometric and no new ceremony.
 //
+// The tenant's policy is rechecked below for the door it governs, in the same
+// transaction that would open the session, and not only at the begin leg. An
+// administrator who shut the usernameless door while a prompt stood open meant to
+// shut it now, not at the moment the next ceremony begins: the setting is this
+// tenant's fact about what may open a session here, and a command that answered
+// from a policy read minutes earlier would open a session the tenant had just
+// refused.
+//
 // The first-factor proof is spent after that and before the session, when and only
 // when the row says the ceremony was begun at the second-factor door. That is the
 // line that keeps a passkey from weakening the pair: a valid signature over a
@@ -462,6 +470,24 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	}
 	if !spent {
 		return nil, nil, contracts.ErrCredentials
+	}
+	// The usernameless door, rechecked in this transaction. The second-factor door
+	// is not governed by this setting — a passkey answers a password whether or not
+	// a passkey may replace one — so the read is asked of the door the row names
+	// rather than of every answer, and a tenant that shut the door pays nothing for
+	// the question. The answer is 403 and not 401 because nothing was wrong with
+	// what the person offered; the refusal is the tenant's decision, said as
+	// BeginPasskeySignIn says it. It is reached after the nonce was spent and the
+	// attempt charged, before the signature is credited, so it opens no session,
+	// spends no first-factor proof and publishes nothing.
+	if door == contracts.PasskeyCeremonySignIn {
+		enabled, err := s.passkeySignInEnabled(ctx, tx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if !enabled {
+			return nil, nil, contracts.ErrPasskeySignInOff
+		}
 	}
 	owner := func(rawID, userHandle []byte) (webauthn.User, error) {
 		user, holds, err := s.passkeyOwner(ctx, tx, rawID, userHandle)
@@ -541,6 +567,22 @@ func (s *Service) passkeyOwner(ctx context.Context, tx db.Tx[db.Tenant], rawID, 
 // they are for any wrong answer. "Your passkey was flagged as cloned" is a sentence
 // that helps whoever cloned it more than the person it was cloned from.
 //
+// The counter is written as a compare-and-set against the value this answer was
+// validated against, not as a plain write. Without it two assertions carrying the
+// same counter both validate against one stored value — each reads the row before
+// either has written it — and both are accepted, which is the clone rule arriving
+// one commit too late. `sign_count = ?` makes the write decide: the loser of the
+// race waits on the row lock Postgres holds for the winner's UPDATE, re-checks its
+// predicate against the version that write produced, affects no row, and is refused
+// exactly as a replay is refused at the keyboard. The read may therefore stay
+// unlocked: what it is allowed to be stale about is the thing the predicate re-reads
+// under the lock, and locking a credential for the whole of a signature check would
+// serialise every prompt on the row rather than settle the one counter that collided.
+//
+// A refused loser writes no verdict: the counters it saw were stale, and the clone
+// rule fires on the next answer, which reads the counter the winner wrote. What it
+// cannot do is open a session, and that is the thing the rule is for.
+//
 // It reports the factor's id so the successful use can name what answered.
 func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, cred *webauthn.Credential) (uuid.UUID, error) {
 	var row passkeyCredentialRow
@@ -575,7 +617,7 @@ func (s *Service) recordPasskeyUse(ctx context.Context, tx db.Tx[db.Tenant], use
 	// clone warning was set between the read and the write is refused by the
 	// predicate rather than by whoever got there first.
 	res := tx.DB().Model(&passkeyCredentialRow{}).
-		Where("id = ? AND clone_warning = false", row.ID).
+		Where("id = ? AND clone_warning = false AND sign_count = ?", row.ID, row.SignCount).
 		Update("sign_count", int64(cred.Authenticator.SignCount))
 	if res.Error != nil {
 		return row.ID, fmt.Errorf("auth: record a passkey use: %w", res.Error)

@@ -182,6 +182,20 @@ func (s *Service) ListFactors(ctx context.Context, tx db.Tx[db.Tenant], userID u
 
 // WithdrawFactor ends one factor of either kind, and refuses to end the last.
 //
+// "The last" means the last that could still answer, not the last row. A credential
+// retired as suspect answers nothing for the rest of its life — recordPasskeyUse
+// refuses it on every prompt — so it is the record of a factor that was, and not a
+// way in. Counting rows would let one of those stand in for a usable factor: the
+// account would "hold two" while one of them could never sign anybody in, and the
+// withdrawal that left a person holding only that row would be allowed. That is the
+// lockout rule 8 refuses, waved through by a number that looked right. So the count
+// is of the factors beside this one that could still answer, and nothing is taken
+// away unless this one could too: removing a retired credential is allowed however
+// little else is here, and removing the last usable one is refused whatever else the
+// tables hold. A successful withdrawal therefore never leaves a person who could
+// answer a second factor unable to — and the two-tabs case still settles on one
+// success, because the loser's locked scan re-reads the rows the winner deleted.
+//
 // The count and the delete are one decision under one lock: SELECT ... FOR UPDATE
 // over this person's factor rows takes every row a concurrent withdrawal could be
 // deciding about, so two tabs each holding a different factor cannot both see
@@ -212,7 +226,23 @@ func (s *Service) WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userI
 	if !found {
 		return crud.ErrNotFound
 	}
-	if len(held)+len(keys) <= 1 {
+	usable, answers := 0, kind == "totp" // a TOTP row answers as long as it is here
+	for _, row := range held {
+		if row.ID != factor {
+			usable++
+		}
+	}
+	for _, row := range keys {
+		if row.CloneWarning {
+			continue
+		}
+		if row.ID == factor {
+			answers = true
+		} else {
+			usable++
+		}
+	}
+	if answers && usable == 0 {
 		return contracts.ErrLastFactor
 	}
 	target := any(&totpRow{})
