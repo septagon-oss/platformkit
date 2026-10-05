@@ -65,7 +65,7 @@ func TestOneEventNameHasOneShapeInOneProcess(t *testing.T) {
 			return events.Publish(ctx, tx, "ledger.posted", map[string]any{"number": "wrong type"})
 		})
 	}
-	if err := publishNumber(); err == nil || !strings.Contains(err.Error(), `the payload is not what app "collect" declared`) {
+	if err := publishNumber(); err == nil || !strings.Contains(err.Error(), "the payload is not what the module declared") {
 		t.Fatalf("the live application did not install its event schema: %v", err)
 	}
 	admin := dbtest.Open(t, first.Database.MigrateURL)
@@ -90,7 +90,7 @@ func TestOneEventNameHasOneShapeInOneProcess(t *testing.T) {
 		}
 		// The refusal installed nothing, so the shape the live application answers
 		// under is the one it declared, and it is still the one its outbox checks.
-		if err := publishNumber(); err == nil || !strings.Contains(err.Error(), `the payload is not what app "collect" declared`) {
+		if err := publishNumber(); err == nil || !strings.Contains(err.Error(), "the payload is not what the module declared") {
 			t.Errorf("the live application's event schema changed beside a refused boot: %v", err)
 		}
 		var count int
