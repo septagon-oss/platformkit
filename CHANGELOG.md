@@ -211,27 +211,26 @@ the page keeps the accent its own stylesheet carries. The site asks once per mod
 the one value paints two schemes it cannot both read: a `system` site now declares the
 light answer at `:root`, the dark answer at `[data-theme="dark"]` and in the same
 preference rule `ui/style/theme.go` uses, and a visitor who switches modes sees a colour
-that reads in the one they are in. The shipped default is the measurement that says how
-wide the hole was: `#2563eb`, what the column default and every installation that never
-opened the settings screen paints, reads 4.4981:1 on the light canvas — under the 4.5:1
-floor by two thousandths — and 3.2618:1 as `fg-brand` on a dark card. It is now
-painted as `#4164b0` and `#618ef1`, which read. The default then moved. A `char(7)`
-that defaults to a colour the paint refuses leaves the row, the settings form and the
-page disagreeing about every tenant that never opened the form, and no `#rrggbb` can be
-that default: the accent is body copy on a light canvas in one mode and on a dark canvas
-in the other, which needs those two grounds 4.5 x 4.5 = 20.25:1 apart, and
-`design.Default()` puts them 18.28:1 apart — of 32768 colours sampled on a step of 8 in
-each channel it issues none unchanged in both modes. So `DefaultPrimaryColor`, the
-column default (`000042`) and the form now name *no colour*, `Validate` fills in
-nothing, and a site that holds none is painted the accent of the palette its own sheet
-links, mode by mode, which is the colour that palette's gate certified. A row that
-already carries a colour keeps it: `000042` moves the default and runs no `UPDATE`,
-because a migration cannot tell the colour somebody typed from the default that used to
-be there. What stays open is the wire — the field's `pattern` still refuses an empty
-string, so a client says "none" by leaving the field out, and widening that pattern is a
-B3 change to the device contract. `SiteSettings.Validate` still refuses only what is not six hex digits:
-legibility is decided where the colour is painted, because a row saved before this gate
-existed is painted by whichever code answers the page, not by the one that wrote it.
+that reads in the one they are in. `#2563eb` is the colour that measurement is asked about: the shipped default, what
+the column and every installation that never opened the settings screen paints, reads
+4.4981:1 on the light canvas — under the 4.5:1 floor by two thousandths — and 3.2618:1
+as `fg-brand` on a dark card, and the paint answers with `#4164b0` and `#618ef1`, which
+read. The default was moved to *no colour* partway through this delivery and is
+withdrawn: the device contract publishes `primaryColor` with
+`pattern ^#[0-9a-fA-F]{6}$`, `apps/platformkit/wire_compatibility_test.go` rule B3
+refuses a change to a published shape whichever way it moves, so an empty string is not
+a value the field may hold, and the round trip a client takes — read the site's colour,
+save it back — was answered 422. A site whose row holds none is still painted the accent
+of the palette its own sheet links, mode by mode, which is where the arithmetic no
+single `#rrggbb` survives (body copy has to read on grounds 4.5 x 4.5 = 20.25:1 apart,
+and `design.Default()` puts them 18.28:1 apart) is answered: by the door that paints,
+not by a constant. Letting a tenant *choose* "none of my own" over the API is the
+product's share, and it is a B3 break to the device contract — it ships the way
+/api/v1/admin did, with a new address and an alias row, not inside a fix round.
+`SiteSettings.Validate` fills an empty colour with the default and refuses whatever else
+is not six hex digits: legibility is decided where the colour is painted, because a row
+saved before this gate existed is painted by whichever code answers the page, not by the
+one that wrote it.
 
 **The site's quotation bar is now gated the way the field's edge is.** `bodyContrast`
 named the boundary of a text field and no other, while `modules/web/internal/style.go`
