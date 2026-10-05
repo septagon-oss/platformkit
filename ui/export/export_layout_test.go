@@ -183,7 +183,22 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// 99,877); no example used a retained range or period control, so only these
 	// captures and this digest move. The disabled slot-picker capture changes one
 	// leaf, its HTML: its days now render as labelled non-links.
-	if legacy.SHA256 != "bde4cea3da4b49a206e5643a7d8c7d1f2df27adb45c0944950f7f15e237feec6" {
+	//
+	// The branch was rebased onto origin/main, and main moves this export on its
+	// own: prose joins the sheet as a shared component, and the frame's floor fixes
+	// put break-normal on a table and max-w-sm on the sentence under a control.
+	// Both of those reach the families above, because those elements are rendered
+	// by the class lists main changed, so the captured HTML of the shared
+	// families' examples moves with them. Measured by exporting this tree and the
+	// revision this branch held before the rebase and walking both documents leaf
+	// by leaf: 99,877 leaves become 99,892; 166 change, 15 are added and none is
+	// removed. Of the 166, two are /css and /sha256; the other 164 are the html
+	// (and two child-offset) leaves of examples, all of them main's
+	// break-normal or max-w-sm, and the 15 added leaves are prose's own example
+	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
+	// digest below is that measurement of this tree, printed by the refusal above
+	// the re-measure and copied from it.
+	if legacy.SHA256 != "6f102a89a2217b98e60e68a1d89a9c74138b8645a1bfbe08f1e917de89d020b0" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
