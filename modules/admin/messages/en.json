@@ -41,6 +41,12 @@
       "": "Open %s"
     }
   },
+  "admin.dashboard.count_number": {
+    "translation": "%d",
+    "plural": {
+      "": "%d"
+    }
+  },
   "admin.dashboard.healthy": {
     "translation": "Every check passes.",
     "plural": {
@@ -614,5 +620,8 @@
     "plural": {
       "": "This installation's account door answers no revisions, so a form cannot change the language. Nothing was changed."
     }
+  },
+  "admin.account.language.unreadable": {
+    "translation": "This form could not be read, so nothing was changed."
   }
 }

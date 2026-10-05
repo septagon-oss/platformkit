@@ -93,7 +93,7 @@ func bootstrap(args []string) error {
 		// INSERT, so the set is the one the installation has copy for.
 		if len(spoken) > 0 {
 			_, err = c.tenants.SetLocale(ctx, tx, t.ID, tenantcontracts.SetLocale{
-				Default: t.DefaultLocale, Supported: spoken,
+				Default: t.DefaultLocale, Supported: spoken, ExpectedRevision: &t.LocaleRevision,
 			})
 		}
 		return err

@@ -89,7 +89,7 @@ func TestEnglishRecoveryCopyKeepsItsLanguageInAPortugueseDocument(t *testing.T) 
 	if notices != 4 {
 		t.Fatalf("recovery notices = %d, want 4", notices)
 	}
-	fault := page.Fault(404, "", "/", "Home")
+	fault := page.Fault(nil, 404, "", "/", "Home")
 	root = parseDocument(t, render(t, page.Document(c, page.Request{}, fault, g.Group(fault.Body))))
 	if root.Attr[0].Key != "lang" || root.Attr[0].Val != "en" {
 		t.Fatal("English generated fault inherited the shell's Portuguese language")

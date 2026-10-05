@@ -162,7 +162,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	}
 	// A command over the whole collection posts beside the list it acts on, and
 	// above the pager so a person who changes page has not lost the door.
-	body = append(body, commandForms(o, r.Commands, at, true)...)
+	body = append(body, commandForms(o, r, at, true)...)
 	body = append(body, components.Pagination(components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
@@ -207,7 +207,7 @@ func Detail(r Resource, o Options, row map[string]any, writable bool) document.V
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, r.Commands, item, false)...)
+	body = append(body, commandForms(o, r, item, false)...)
 	return document.View{Title: named, Body: body}
 }
 
@@ -267,9 +267,19 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 }
 
 // Control adapts an entity field to the portable form control, preserving the
-// generated screens' existing labels, choices and name-derived DOM identity.
+// generated screens' existing labels, choices and name-derived DOM identity. It is the
+// answer a shell with no catalogue gives: a caller that has a request's language asks
+// Options for the same control instead, and the labels, choices and help text come
+// through it.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(f, Options{}), Value: value, Error: fieldErr, Immutable: immutable})
+	return Options{}.Control(f, value, fieldErr, immutable)
+}
+
+// Control is Control with this request's language behind it: the field's label, its
+// note and the words of its choices are the catalogue's, and a control drawn on a
+// translated page in a language the catalogue speaks is not drawn in English.
+func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
+	return forms.Control(forms.ControlProps{Field: formField(f, o), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField projects display words at the screen boundary. The portable form

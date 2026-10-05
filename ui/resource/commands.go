@@ -58,13 +58,13 @@ func (c Command) Action(item string) string {
 // commandForms is one form per command that belongs on this screen: the ones that
 // act on a whole list are not offered beside a single row, and a command that acts
 // on a row has no meaning above a table of many.
-func commandForms(o Options, commands []Command, item string, collection bool) []g.Node {
-	out := make([]g.Node, 0, len(commands))
-	for _, c := range commands {
+func commandForms(o Options, r Resource, item string, collection bool) []g.Node {
+	out := make([]g.Node, 0, len(r.Commands))
+	for _, c := range r.Commands {
 		if c.Collection != collection {
 			continue
 		}
-		out = append(out, commandForm(o, c, item))
+		out = append(out, commandForm(o, r, c, item))
 	}
 	return out
 }
@@ -73,21 +73,30 @@ func commandForms(o Options, commands []Command, item string, collection bool) [
 // edit form uses, so a command that takes an assignee gets the same picker a field of
 // that type gets, and a command that takes none is a button and not a guess about what
 // it might want.
-func commandForm(o Options, c Command, item string) g.Node {
+//
+// Every word of it is asked of the page's catalogue before it is said, on the same
+// terms as a field's label and an enum's word. The Summary, the Description and the
+// labels of the arguments are this installation's words laid over the module's own
+// declarations, so a page that printed them as declared would answer a Portuguese
+// reader in the language the API was written in — on the translated page the control
+// sits on. The keys are addressed by module, entity and verb, because "publish" is a
+// verb several entities share and the sentence each one shows is its own.
+func commandForm(o Options, r Resource, c Command, item string) g.Node {
+	at := "command." + r.Schema.Module + "." + r.Schema.Entity + "." + c.Verb
 	// The form's accessible name is the sentence the module wrote for the API, and
 	// the button is the short verb phrase: a page with three command forms on it has
 	// to tell a reader what each one is for, and three buttons reading "Assign",
 	// "Resolve", "Archive" with no prose is a guess about consequence.
 	label := c.Label
 	if c.Description != "" {
-		label = c.Description
+		label = o.Label(at+".description", c.Description)
 	}
 	controls := make([]g.Node, 0, len(c.Fields)+1)
 	for _, f := range c.Fields {
-		controls = append(controls, Control(f, "", "", false))
+		controls = append(controls, o.Control(f, "", "", false))
 	}
 	controls = append(controls, components.Button(components.ButtonProps{
-		Label: c.Label, Type: "submit", Size: "md",
+		Label: o.Label(at, c.Label), Type: "submit", Size: "md",
 	}))
 	return components.Form(components.FormProps{Action: c.Action(item), Label: label}, controls...)
 }

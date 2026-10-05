@@ -329,6 +329,43 @@ func cases() map[string]func(*testing.T, Fixture) {
 			published(t, f, contracts.EventCreated, contracts.EventLocaleSet)
 		},
 
+		"an operator declaration read at a superseded revision is refused": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			// The counter is the tenant's, not the door's: one declaration lands and
+			// moves it, and the page that read the set before that landed has a number
+			// the row no longer holds.
+			born := created.LocaleRevision
+			if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, contracts.SetLocale{
+				Default: "pt-PT", Supported: []string{"en"},
+			}); err != nil {
+				t.Fatalf("SetLocale: %v", err)
+			}
+			stale := born
+			row, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, contracts.SetLocale{
+				Default: "en", Supported: []string{"pt-PT"}, ExpectedRevision: &stale,
+			})
+			if !errors.Is(err, crud.ErrConflict) {
+				t.Errorf("a declaration read at revision %d returned %v, want a conflict", born, err)
+			}
+			if row != nil {
+				t.Error("a refused declaration returned a row, which is how a stale page reads as a saved one")
+			}
+			// And nothing moved: the set, its count and the trail are the accepted
+			// declaration's, not the refused one's.
+			after, err := f.Service.Get(f.Ctx, f.Tx, created.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if after.DefaultLocale != "pt-PT" || !slices.Equal(after.Locales, []string{"en"}) || after.LocaleRevision != born+1 {
+				t.Errorf("the refused declaration left %q %v at revision %d, want pt-PT [en] at %d",
+					after.DefaultLocale, after.Locales, after.LocaleRevision, born+1)
+			}
+			published(t, f, contracts.EventCreated, contracts.EventLocaleSet)
+		},
+
 		"saying the same languages again changes nothing and says nothing": func(t *testing.T, f Fixture) {
 			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
 			if err != nil {

@@ -205,8 +205,8 @@ func primaryOf(was []string, host string, primary bool) string {
 
 // SetLocale mirrors internal.Service.SetLocale: the default first and the set
 // behind it sorted, the same two rules the real one applies — that a tag is a tag,
-// and that it is one this installation has copy for — and the same silence when
-// nothing changed.
+// and that it is one this installation has copy for — the same revision it counts and
+// refuses a superseded one with, and the same silence when nothing changed.
 func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, in contracts.SetLocale) (*contracts.Tenant, error) {
 	wanted, err := f.validLocales(in)
 	if err != nil {
@@ -219,6 +219,17 @@ func (f *Fake) SetLocale(ctx context.Context, _ db.Tx[db.System], id uuid.UUID, 
 		return nil, crud.ErrNotFound
 	}
 	changed := t.DefaultLocale != wanted[0] || !slices.Equal(t.Locales, wanted[1:])
+	if changed && in.ExpectedRevision != nil && *in.ExpectedRevision != t.LocaleRevision {
+		// The same refusal as the tenant's own door, on the same counter: an operator
+		// who read the set before somebody else saved it is refused, and the fake that
+		// let it through would be the fake a product's page was tested against.
+		f.mu.Unlock()
+		return nil, fmt.Errorf("%w: this declaration was read at revision %d and the tenant is on revision %d",
+			crud.ErrConflict, *in.ExpectedRevision, t.LocaleRevision)
+	}
+	if changed {
+		t.LocaleRevision++
+	}
 	t.DefaultLocale, t.Locales, t.UpdatedAt = wanted[0], wanted[1:], db.Now()
 	f.tenants[id] = t
 	f.mu.Unlock()

@@ -67,6 +67,41 @@ var faultKeys = map[string]string{
 	httpx.CodeLimitExhausted:    "fault.LIMIT_EXHAUSTED",
 }
 
+// faultTitles is every verdict a refusal page of this installation is headed with.
+//
+// The list is what the catalogue is checked against, in both directions, so it is
+// written from what the kernel and the modules actually answer with rather than from
+// `net/http`'s whole table: a name no route can return is copy nobody would ever read
+// (a status this list does not carry keeps the standard library's name, which is what
+// it was before this existed), and a name a route does return has to be one the
+// deployment's Portuguese can say.
+var faultTitles = []int{
+	http.StatusBadRequest,
+	http.StatusUnauthorized,
+	http.StatusForbidden,
+	http.StatusNotFound,
+	http.StatusMethodNotAllowed,
+	http.StatusConflict,
+	http.StatusRequestEntityTooLarge,
+	http.StatusUnprocessableEntity,
+	http.StatusTooManyRequests,
+	http.StatusInternalServerError,
+	http.StatusServiceUnavailable,
+}
+
+// faultTitle is what a refusal page calls the verdict: `net/http`'s own name for the
+// status — the language Go was written in — asked of this shell's catalogue first, so
+// the heading of a page whose sentence, navigation and way back are Portuguese is not
+// left in English. A shell with no catalogue, and a status this list does not carry,
+// are named as they always were.
+func faultTitle(loc *Locale, status int) string {
+	name := http.StatusText(status)
+	if loc == nil {
+		return name
+	}
+	return loc.Text("fault.title."+strconv.Itoa(status), name)
+}
+
 // refusalParts is every catalogue key the refusal page looks up besides the
 // verdict's own sentence: the four parts of a grant denial, the row denial's one,
 // and the confirmation the ask lands on. The test that reads this list is the
@@ -263,7 +298,7 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 		// an apology and nothing to quote.
 		line = line + " (request " + reference + ")"
 	}
-	v := Fault(status, line, back, backLabel)
+	v := Fault(loc, status, line, back, backLabel)
 	if language != "" {
 		v.Language = language
 	}
@@ -320,7 +355,7 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 	} else if reference != "" {
 		line = detail + " (request " + reference + ")"
 	}
-	p := document.RefusalProps{Status: status, Title: http.StatusText(status),
+	p := document.RefusalProps{Status: status, Title: faultTitle(loc, status),
 		Sentence: line, Home: s.Back, HomeLabel: s.BackLabel}
 	if ref.Code == httpx.CodePolicyDenied {
 		p.Missing, _ = word(loc, "fault.holds_the_row",

@@ -18,8 +18,6 @@
 package page
 
 import (
-	"net/http"
-
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -106,8 +104,16 @@ func Bare(body []g.Node) g.Node { return document.Bare(body) }
 
 // Fault is the page for a refusal a person can act on: the status text, the
 // detail, and one way back. A 5xx never reaches it — see Serve.
-func Fault(status int, detail, back, backLabel string) View {
-	return document.Fault(status, http.StatusText(status), detail, back, backLabel)
+//
+// What a status is *called* is copy, and it used to be net/http's English copy:
+// a page whose sentence, navigation and heading were Portuguese carried "Unprocessable
+// Entity" at the head of it because that name is a string in the standard library and
+// nobody's catalogue. It is asked of the shell's catalogue now, under the `fault.title.`
+// prefix this source owns, with net/http's name as the readable fallback — so a shell
+// with no catalogue is headed exactly as it always was, and one that ships Portuguese
+// says what the status is called in the language the page is written in.
+func Fault(loc *Locale, status int, detail, back, backLabel string) View {
+	return document.Fault(status, faultTitle(loc, status), detail, back, backLabel)
 }
 
 // Empty is the input of a page that takes none. huma needs a type per shape.
