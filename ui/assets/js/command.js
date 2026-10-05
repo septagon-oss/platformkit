@@ -11,8 +11,9 @@
 // command and its retry is safe. A reload is the same case in a different document:
 // the submission that left is still outstanding, and a person pressing that button
 // again is asking for that write, not for a second one. So a pending record goes to
-// sessionStorage — one tab's storage for one tab's intent — and is adopted only when
-// it names an attempt somebody still owes.
+// sessionStorage — one tab's storage for one tab's intent — and is adopted by the
+// next document until something answers it, since every answer retires it: a record
+// left standing when a page went away is a write somebody still owes an answer for.
 //
 // Bytes say which command a press is, here as at the server, which compares the body it
 // hashed with the body it is handed: the same bytes keep the key and inherit the answer
@@ -30,7 +31,7 @@
   // The form's own outcome region, which the page renders inside the form and which
   // no other form's result may use: see modules/admin's commandOutcome.
   const OUTCOME = '[role="status"],[role="alert"]';
-  const records = new Map(), timers = new Map(), running = new Set(), expected = new Set();
+  const records = new Map(), timers = new Map(), running = new Set(), expected = new Set(), retrying = new Set();
   let started = false;
 
   function token() {
@@ -71,18 +72,19 @@
     records.set(id, rec);
     try { sessionStorage.setItem(slot(id), JSON.stringify(rec)); } catch (_) { /* no cross-reload memory */ }
   }
-  // A stored record names an attempt somebody owes, or it is nothing: a key with no
-  // attempt behind it was answered, and asking it again is a new command.
+  // A stored record names an attempt somebody owes, or it is nothing: a submission
+  // whose answer arrived retired itself on the way out of the page that answered it.
   function adopt(id) {
     let rec = null;
     try { rec = JSON.parse(sessionStorage.getItem(slot(id))); } catch (_) { return null; }
-    if (!rec || typeof rec.key !== "string" || !(rec.tries > 0)) return null;
+    if (!rec || typeof rec.key !== "string" || typeof rec.verb !== "string" || typeof rec.path !== "string") return null;
     return rec;
   }
   // Retire: this key means nothing now, and nothing waits on this document.
   function retire(id) {
     records.delete(id);
     expected.delete(id);
+    retrying.delete(id);
     if (timers.has(id)) { clearTimeout(timers.get(id)); timers.delete(id); }
     try { sessionStorage.removeItem(slot(id)); } catch (_) { /* gone either way */ }
   }
@@ -105,12 +107,19 @@
     // the form that armed it, and of no other.
     if (running.has(id) && !expected.has(id)) { event.preventDefault(); return; }
     expected.delete(id);
+    // Which dispatch this is: a timer of ours firing the retry of the bytes that left,
+    // or a person pressing the button now.
+    const ours = retrying.has(id);
+    retrying.delete(id);
     unschedule(id);
     let rec = records.get(id) || adopt(id);
-    // A record belongs to the bytes that left with it. A form saying something else
-    // now is a new command, not the outstanding one, and the spent key would only
-    // replay the old answer: retire the record, as a spent key retires it at the server.
-    if (rec && bytes(rec.body) !== bytes(detail.parameters)) { retire(id); rec = null; }
+    // A press that says other bytes is a new command, not the outstanding one, and the
+    // spent key would only replay the old answer: retire the record, as a spent key
+    // retires it at the server. A retry is not that case: it is the outstanding
+    // submission asking again, and the form having been edited since is nothing to it.
+    // It sends the bytes that left under the key that left with them, and leaves what
+    // is in the fields for the next press.
+    if (rec && !ours && bytes(rec.body) !== bytes(detail.parameters)) { retire(id); rec = null; }
     if (!rec) rec = { key: token(), verb: verb, path: path, body: detail.parameters };
     // The identical write, not a re-serialisation of whatever has been typed
     // since: the server compares what it got with what it hashed.
@@ -140,6 +149,7 @@
     expected.add(id);
     timers.set(id, setTimeout(function () {
       timers.delete(id);
+      retrying.add(id);
       htmx.ajax(rec.verb, rec.path, { source: form });
     }, BACKOFF[tries - 1]));
   }
@@ -158,6 +168,7 @@
     if (!form) return;
     const id = identity(form, (detail.requestConfig || {}).path || form.getAttribute("hx-post") || location.pathname);
     running.delete(id);
+    retrying.delete(id);
     const xhr = detail.xhr;
     if (!xhr || !xhr.status || xhr.status >= 500) return;
     if (xhr.getResponseHeader("Idempotency-Refusal") === "IDEMPOTENCY_IN_PROGRESS") return;

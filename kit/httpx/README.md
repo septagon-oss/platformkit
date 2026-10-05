@@ -263,25 +263,35 @@ kernel's first htmx extension.
 **Limits.** The browser half holds one submission record per form while this tab has a
 submission outstanding, in `sessionStorage` as well as in memory, and retires it the
 moment an answer arrives. A reload is the same case in a different document: the person
-pressing that button again is asking for the write that went unanswered, so the record
-is adopted — but only a record that names an attempt somebody still owes, never one that
-was answered. Bytes decide which command a press is, here exactly as at the server: the
-same bytes keep the same key, and a key the server has already run answers from its
-record, redirect included, and runs nothing a second time — a press after a reload never
-mints a second key for a submission that already ran. Other bytes are the next command:
-the record is retired before the request goes, the way a spent key retires it at the
-server, and the press travels under a key of its own. A form whose command depends on
-what the world holds therefore says what it counted, which is what gives a click under a
-changed world other bytes to be sent under: `/app/auth/sessions` posts the list its "End
-the other N" button counted, and the command refuses 409 when that is no longer the list
-there. A keyed refusal swaps nothing: `htmx:beforeSwap` is refused for it, and its
-sentence goes into the outcome region inside the form it reports for.
+pressing that button again is asking for the write that went unanswered, so the record is
+adopted by the next document and stays adopted until something answers it — every answer
+retires it, so a record still standing when a page went away is a write somebody still
+owes an answer for, whether or not the transport had reported anything by then. Bytes
+decide which command a press is, here exactly as at the server: the same bytes keep the
+same key, and a key the server has already run answers from its record, redirect
+included, and runs nothing a second time — a press after a reload never mints a second
+key for a submission that already ran. Other bytes are the next command: the record is
+retired before the request goes, the way a spent key retires it at the server, and the
+press travels under a key of its own — which is true of a person's press and of nothing
+else. The scheduled retry is the outstanding submission asking again: it sends the bytes
+that left, under the key that left with them, and what has been typed into the fields
+since waits for the next press rather than being sent under a key nobody pressed for. A
+form whose command depends on what the world holds therefore says what it counted, which
+is what gives a click under a changed world other bytes to be sent under: `/app/auth/sessions`
+posts the list its "End the other N" button counted, and the command refuses 409 when
+that is no longer the list there — checked once before any row is touched and again
+immediately before it ends them, and the sessions it ends are the ones that second
+reading named, so a machine signed in after the page was drawn cannot be among them. A
+keyed refusal swaps nothing: `htmx:beforeSwap` is refused for it, and its sentence goes
+into the outcome region inside the form it reports for.
 
 Two things are still not delivered: the outcome sentence is the server's English, not the
 page's language (the page-wide `[data-request-notice]` nodes `ui/document` renders are
 still where a translated refusal appears, and a per-form translated outcome is a
 catalogue question this change does not answer); and a command whose process died leaves
-its key refused until the purge takes the row, which is a wait bounded by the in-flight
-deadline plus the purge's own schedule. No other browser script is replaced here:
+its key refused until the purge takes the row, which is a wait with a real bound and no
+promise of speed: the lease lapses within two minutes of the process stopping, the row is
+a candidate once its five-minute in-flight deadline passes, and the job runs hourly — so
+the last press a dead command costs is one more, some minutes to an hour later. No other browser script is replaced here:
 nothing composes `command.js` but the routes that declare the key, and moving another
 repository's hand-written retry code onto it is that repository's own change.

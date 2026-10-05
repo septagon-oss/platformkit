@@ -106,8 +106,13 @@ var Controllers = []string{
 // which of them is the same command. Each of these is a thing a thousand client scripts
 // used to write; the claim that the controller must stay small is unchanged, and so is
 // the gate — this number is the file's measured size, not a rounding-up, so the next
-// promise has to be argued for in its own commit too.
-const CommandControllerBudget = 10400 // bytes, utf8, measured at this revision
+// promise has to be argued for in its own commit too. It moved again for the two ways
+// a submission outlives the page that sent it: a record is now adopted by the document
+// that reloads while its first answer is still travelling, not only by the one that saw
+// the transport fail, and the scheduled retry sends the bytes that left rather than
+// whatever the person has typed since. Six hundred and eighty-nine bytes between them,
+// and every one of them names which dispatch is the outstanding submission.
+const CommandControllerBudget = 11089 // bytes, utf8, measured at this revision
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
 // eight bytes of their SHA-256 as hex. A page puts the fingerprint in the
