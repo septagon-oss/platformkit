@@ -274,6 +274,28 @@ ${{ steps.gocache.outputs.prefix-os }}'
 done
 
 before=$failures
+# 5g. The other direction, which only makes sense across both jobs: every output the recipe writes is
+#     one some cache step reads. An output nobody reads is a second source of truth about the key — it
+#     looks like part of the scheme, it survives the change that made it dead, and it gets copied into
+#     the next job that wants a cache. Case 5e refuses a reference to a name that is never written;
+#     this refuses a name written and never referenced.
+emitted="$(grep -oE '^[[:space:]]+echo "[a-z-]+=' "$keyscript" | sed -E 's/.*"([a-z-]+)=/\1/' | sort -u)"
+read_names="$(
+	for j in check design; do
+		grep -oE 'steps\.gocache\.outputs\.[A-Za-z0-9_-]+' \
+			<<<"$(step_block "$j" 'Restore the Go module and build cache')$(step_block "$j" 'Save the Go module and build cache')"
+	done | sed 's#.*outputs\.##' | sort -u
+)"
+unreferenced="$(comm -23 <(printf '%s\n' $emitted) <(printf '%s\n' $read_names))"
+unreferenced_flat="$(tr '\n' ' ' <<<"$unreferenced")"
+emitted_flat="$(tr '\n' ' ' <<<"$emitted")"
+if [ -n "$unreferenced" ]; then
+	fail "$keyscript writes ${unreferenced_flat% } to \$GITHUB_OUTPUT and no cache step of either Go job reads it"
+else
+	echo "ok   every output $(basename "$keyscript") writes is read: ${emitted_flat% }"
+fi
+
+before=$failures
 # 6. The recipe itself: platform, toolchain, the caller's job name and a digest over both dependency
 #    files, three prefix restore keys in that order, and a refusal that cannot redden a job. One file,
 #    read once — that is the point of its being a file rather than a `run:` block copied into two jobs.
@@ -320,7 +342,7 @@ else
 	else
 		fail "$keyscript answered [${key_line:-<no key line>}] against its own shape for the caller named check, with $(wc -l <"$run_dir/out") outputs"
 	fi
-	for part in modcache gocache job key prefix-job prefix-version prefix-os; do
+	for part in modcache gocache key prefix-job prefix-version prefix-os; do
 		grep -q "^$part=.\+" "$run_dir/out" ||
 			fail "$keyscript emitted no non-empty $part output: the cache steps would restore nothing or everything"
 	done

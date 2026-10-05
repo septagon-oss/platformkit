@@ -57,7 +57,9 @@
 # nothing, or an unparseable version — and this writes no `key` output and exits 0. The two cache steps
 # that read its outputs then skip and the job runs cold and green. A cache step is never allowed to
 # redden a job — that is the brief's rule, and `make check` refuses a version of this file that can
-# exit 1.
+# exit 1. Six outputs, every one read by the two cache steps: the key and the three prefix restore keys,
+# and the two paths their `path:` blocks list. The caller's name is inside the key and inside
+# `prefix-job`; it is not emitted as an output of its own, because nothing downstream would read one.
 set -eu
 
 # A job name reaches a key nothing will match later if it carries a space, a colon or nothing at all,
@@ -84,7 +86,6 @@ digest="$(sha256sum go.mod go.sum | sha256sum | cut -c1-16)"
 {
 	echo "modcache=$modcache"
 	echo "gocache=$gocache"
-	echo "job=$job"
 	echo "key=pkit-go-${goos}-${goarch}-${goversion}-${job}-${digest}"
 	echo "prefix-job=pkit-go-${goos}-${goarch}-${goversion}-${job}-"
 	echo "prefix-version=pkit-go-${goos}-${goarch}-${goversion}-"
