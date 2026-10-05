@@ -214,10 +214,11 @@ for job in check design; do
 		echo "ok   $job's cache paths are the two the script read from go env, and name no home directory"
 
 	before=$failures
-	# 5c. The save's path list is the restore's, in the same order. The archive's `version` hashes the
-	#     path list in the order it is written — `sha256(paths.join('|') + compressionMethod + salt)`,
-	#     @actions/cache 6.2.0 lib/internal/cacheUtils.js:157-172, and the runner matches on
-	#     (Repo, Key, Version) — so two blocks holding the same two entries in the other order are two
+	# 5c. The save's path list is the restore's, entry for entry, in the same order. The archive's
+	#     `version` is `sha256(paths.join('|') + compressionMethod + salt)` over the resolved list as
+	#     written — `getCacheVersion` in the bundle this workflow pins by sha, dist/save/index.js:43414
+	#     and :43427, called on the restore side at dist/restore/index.js:43422 — and the store matches
+	#     on (Repo, Key, Version). Two blocks holding the same two entries in the other order are two
 	#     different archives: the job restores one, saves the other, is never an exact hit, and is cold
 	#     and green forever, re-uploading on every run.
 	restore_paths="$(step_paths "$job" 'Restore the Go module and build cache')"
@@ -241,6 +242,35 @@ ${{ steps.gocache.outputs.prefix-os }}'
 	else
 		echo "ok   $job's restore asks its prefix keys job, version, os: its own archive before the other job's"
 	fi
+
+	before=$failures
+	# 5e. Every output these two steps read is one the naming script really writes, by a name the
+	#     runner's expression parser can lex. A reference to an output nobody emits is not an error in
+	#     that language: getPropertyValue returns nothing at all for a missing map key
+	#     (gitea.dev/actionslib pkg/exprparser/interpreter.go:264-315, the parser act_runner 3.3.2 uses),
+	#     so the key arrives empty, `if: steps.gocache.outputs.key != ''` skips both cache steps, and the
+	#     job runs cold with nothing in the log saying why. A name with a character outside
+	#     [A-Za-z0-9_-] would be worse than empty: `lexIdent` breaks an identifier there
+	#     (github.com/rhysd/actionlint v1.7.12 expr_lexer.go:263-271 — hyphens are in, which is why these
+	#     outputs are named `prefix-job` and not `prefix:job`), and the expression then fails the step.
+	refs="$(grep -oE 'steps\.gocache\.[A-Za-z0-9_.-]*' <<<"$restore$save" | sed 's#^steps\.gocache\.##' | sort -u)"
+	[ -n "$refs" ] || fail "$job's cache steps read no output of the naming step at all"
+	for ref in $refs; do
+		case "$ref" in
+		outputs.*)
+			name="${ref#outputs.}"
+			case "$name" in
+			*[!A-Za-z0-9_-]*) fail "$job reads steps.gocache.outputs.$name, a name the runner's parser breaks at a character outside [A-Za-z0-9_-]" ;;
+			 esac
+			grep -qE "^[[:space:]]+echo \"${name}=" <<<"$script" ||
+				fail "$job reads steps.gocache.outputs.$name, which $keyscript never writes: the reference is empty, both cache steps skip on it, and the job is cold with no word about why"
+			;;
+		*) fail "$job's cache steps use $ref; the naming step's id is gocache and the only thing on it is outputs" ;;
+		esac
+	done
+	refs_on_one_line="$(tr '\n' ' ' <<<"${refs//outputs./}")"
+	[ "$failures" -eq "$before" ] &&
+		echo "ok   every output $job's cache steps read (${refs_on_one_line% }) is one $(basename "$keyscript") writes, by a name the runner's parser lexes"
 done
 
 before=$failures
