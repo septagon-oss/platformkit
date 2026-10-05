@@ -412,7 +412,7 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		resolved[entry.Resource+"/"+entry.Record.Key] = current.ID
 		plan.Items = append(plan.Items, item)
 	}
-	if err := s.prune(ctx, tx, documents, apply, &plan); err != nil {
+	if err := s.prune(ctx, tx, documents, resolved, apply, &plan); err != nil {
 		return Plan{}, err
 	}
 	return plan, nil
@@ -449,22 +449,33 @@ func (s *Service) existing(ctx context.Context, tx db.Tx[db.Tenant], alias, key 
 // inferred from a missing YAML record. A key any loaded document declares is
 // never a candidate either — a record that moved between two kinds' files is
 // still declared, and the run that finds it in the other file must not delete it
-// through the file that let it go.
-func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Document, apply bool, plan *Plan) error {
+// through the file that let it go. And neither is the row a declaration resolved
+// to: keep compares keys, and a mapping written under a second spelling of one
+// record is the case keys cannot see, so the row this run matched is held back by
+// identity rather than by name.
+func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Document, resolved map[string]uuid.UUID, apply bool, plan *Plan) error {
 	byAlias := make(map[string][]Document)
 	declared := make(map[string]map[string]bool)
+	declaredRows := make(map[string]map[uuid.UUID]bool)
 	for _, doc := range docs {
 		keys := declared[doc.Resource]
 		if keys == nil {
 			keys = make(map[string]bool)
 			declared[doc.Resource] = keys
+			declaredRows[doc.Resource] = make(map[uuid.UUID]bool)
 		}
 		// The keep-set is written in the identity the owner stores, because that is
 		// how the mappings prune reads are written: compare the file's spelling to
 		// the owner's and a respelled key keeps no record, it deletes it.
 		owner := s.writers[doc.Resource].Resource()
 		for _, record := range doc.Records {
-			keys[canonicalKey(owner, record.Key)] = true
+			identity := canonicalKey(owner, record.Key)
+			keys[identity] = true
+			for _, name := range []string{identity, record.Key} {
+				if id, known := resolved[doc.Resource+"/"+name]; known && id != uuid.Nil {
+					declaredRows[doc.Resource][id] = true
+				}
+			}
 		}
 		if doc.Prune {
 			byAlias[doc.Resource] = append(byAlias[doc.Resource], doc)
@@ -523,6 +534,13 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 				row, err := writer.Read(dctx, tx, key, apply)
 				if err != nil {
 					return fmt.Errorf("seed: %s: %w", doc.Source, err)
+				}
+				if row.Present && declaredRows[alias][row.ID] {
+					// A mapping this run's own record resolved to is not a record the
+					// file stopped declaring, however the mapping is spelled: it is the
+					// same row seen under a name the owner folds away. Deleting it would
+					// be a run reporting a page and then removing it.
+					continue
 				}
 				if !row.Present {
 					// House rule 8: the write that finds none is not refused.

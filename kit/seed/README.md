@@ -77,7 +77,12 @@ address the target row actually wears. Two declarations whose keys fold to one
 identity refuse at the second line, because one row cannot meet two sets of fields.
 `CanonicalKey` nil means the owner stores the key exactly as the file wrote it —
 which is the answer for a resource with no natural key, where the mapping's own
-UUID is the only identity.
+UUID is the only identity. A tenant whose provenance was written before a writer
+declared that spelling holds the file's text in `seed_keys`, which is a second name
+for one row: prune therefore also refuses any candidate whose row this run matched
+for a record some loaded file declares, so the older mapping is neither honoured nor
+destructive. The reference application's shipped keys are already in their owners'
+spellings, so no row in this checkout's data is in that shape.
 
 What that leaves open is spelling *between* two records: a reference must name its
 target the way the file that declares the target spells it, because the graph is

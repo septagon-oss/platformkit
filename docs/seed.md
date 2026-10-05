@@ -753,6 +753,9 @@ What Postgres conformance covers, and where:
   respells a key keeps the page; `TestSeededPersonIsProvenancedUnderTheAddressTheModuleStores`
   (`apps/platformkit/seed_user_mapping_spelling_test.go`) reads `seed_keys` and asks
   that one person holds one mapping, written in the module's spelling;
+  `TestPruneKeepsARowItsOlderMappingSpellsDifferently`
+  (`apps/platformkit/seed_legacy_mapping_spelling_prune_test.go`) leaves a row whose
+  provenance predates its writer's declaration standing;
   `TestTwoSpellingsOfOneIdentityRefuseAtTheSecondDeclaration`
   (`kit/seed/duplicate_identity_test.go`) refuses two declarations that fold to one
   record and writes nothing. `TestEverySnapshotFieldAWriterFillsIsReadByTheService`
