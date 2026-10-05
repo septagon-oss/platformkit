@@ -432,6 +432,17 @@ func Validate(mods []Module) error {
 				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
 		}
+		// The other half of one emitter per name: one emitter, one shape. The
+		// namespace rule above makes it impossible for two modules to declare one
+		// name, so the manifest that can still write one name twice is its own, and
+		// a manifest that does has promised two documents for one event. The check
+		// is kit/events', because what counts as one shape is the projection of the
+		// payload type rather than the Go type; the refusal is the manifest gate's,
+		// because a composition that contradicts itself is refused where every
+		// other composition problem is answered, with the list read once.
+		for _, problem := range events.OneShapePerName(m.Emits()) {
+			add("module %q: %s", m.Name, problem)
+		}
 	}
 
 	// Nav and subscriptions are checked after every module has been read,

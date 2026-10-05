@@ -106,6 +106,13 @@ func (a *API) InvalidateHost(hosts ...string) error {
 // question — and now the answer any one of them writes is the answer every other
 // replica reads, which is the half a map in this process could not do.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
+	if a.opts.Conn == nil {
+		// An unwired API nobody connected. Every answer about a host has to come
+		// from the deployment's own database, so the honest answer is the error
+		// every caller of resolve already turns into a refusal to serve this host
+		// — not a nil-pointer dereference inside db.
+		return tenancy.Tenant{}, errors.New("httpx: this API was built unwired and was never connected to a database")
+	}
 	key := hostScope.Entry(host)
 	if t, ok := a.cached(ctx, key); ok {
 		return t, nil

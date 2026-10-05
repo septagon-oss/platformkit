@@ -33,16 +33,19 @@ import (
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
 	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
+	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
+	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -70,6 +73,10 @@ type composition struct {
 	access httpx.AskForAccess
 	// granter is who a refusal says may hand out what it refused.
 	granter page.Granter
+	// wires states, in the resolver's words, which of the hand-offs above are
+	// contract dependencies: keyed by manifest name, one entry per module in
+	// modules. wiring.go says why an edge is or is not here.
+	wires map[string]wire
 	// messages is this application's one catalogue — the same value the shells
 	// below are given — carried here so the failure page the kernel renders is
 	// worded from it rather than from a second read of the same files.
@@ -339,10 +346,64 @@ func compose(cfg config.Config) composition {
 			Address: pinnedRegisterAPI,
 		}}))
 
+	// The edges, in the resolver's words. Every hand-off above that gives one
+	// module another module's contract is declared here, so removing that module
+	// from the app is a refusal naming both, and Explain prints the edge; what is
+	// absent is either this product's own value (the mailer, the theme, the pinned
+	// addresses, the policy) or late-bound rather than built — the user module's
+	// grant check, answered by the auth service a few lines below, which is why
+	// user declares no need of auth and auth declares one of user. See wiring.go.
+	wires := map[string]wire{
+		"user": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[usercontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[usercontracts.Service](w, users) },
+		},
+		"tenant": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](), pkit.Provides[tenantcontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[tenantcontracts.Service](w, tenants) },
+		},
+		"notification": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](), pkit.Needs[tenantcontracts.Service](),
+				pkit.Provides[notificationcontracts.Service]()},
+			puts: func(w *pkit.Wiring) { pkit.Put[notificationcontracts.Service](w, notify) },
+		},
+		"auth": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](),
+				pkit.Needs[notificationcontracts.Service](), pkit.Needs[tenantcontracts.Service](),
+				pkit.Provides[authcontracts.Auth]()},
+			puts: func(w *pkit.Wiring) { pkit.Put[authcontracts.Auth](w, auths) },
+		},
+		"task":    {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		"billing": {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		"content": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[contentcontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[contentcontracts.Service](w, contents) },
+		},
+		"site": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[sitecontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[sitecontracts.Service](w, sites) },
+		},
+		// file hands out no contract; content and web are handed its opener as a value.
+		"file": {known: true},
+		"web": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[sitecontracts.Service](), pkit.Needs[contentcontracts.Service]()},
+		},
+		"audit": {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		// The shell asks the auth service three questions (who may do what, which
+		// roles exist, which sessions are live) and reads the tenant list.
+		"admin": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[authcontracts.Auth](), pkit.Needs[tenantcontracts.Service]()},
+		},
+	}
+
 	roles.auth = auths
 	personas = declaredRoles(mods)
-	checkPersonas(mods)
-	return composition{modules: mods, tenants: tenants, users: users, auth: auths,
+	return composition{modules: mods, wires: wires, tenants: tenants, users: users, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,
 		access: accessReach{users: users, notify: notify, may: roles.May},
 		// The words a refusal is allowed to use: the label of the grant that gates
@@ -523,28 +584,6 @@ func declaredRoles(mods []module.Module) []authcontracts.Role {
 		}
 	}
 	return out
-}
-
-// checkPersonas refuses to compose an application whose personas grant a permission no
-// composed module declares, or an operator one: a role naming it would grant nothing, or
-// would hand the control plane to every tenant. It runs in compose, so bootstrap and
-// every start fail before a database is opened rather than seeding a role that lies.
-//
-// module.Validate refuses the same shape for a manifest's declared roles before this
-// is reached (kit/app calls it on every manifest); this is the check for the list the
-// composition adds of its own, and it reads the merged slice so both are covered.
-func checkPersonas(mods []module.Module) {
-	var declared []tenancy.Grant
-	for _, m := range mods {
-		for _, p := range m.Permissions {
-			declared = append(declared, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
-		}
-	}
-	for _, r := range personas {
-		if _, err := authcontracts.CheckedPermissions(r.Grants, declared, tenancy.Tenant{}); err != nil {
-			panic(fmt.Sprintf("platformkit: persona %q: %v", r.Name, err))
-		}
-	}
 }
 
 // seedRoles provisions auth's defaults and this application's personas in the
