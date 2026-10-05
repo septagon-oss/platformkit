@@ -103,6 +103,21 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # The socket probe, bought here rather than inside scripts/ci_setup.sh, because the
+      # case that refuses its absence reads this file. The pinned runner image ships
+      # neither `ss` nor `lsof`, and `make check` runs scripts/free_port_test.sh, whose
+      # case 3a asks the machine "whose listener is this?" and stops at exit 2 when the
+      # machine cannot answer; `make check-e2e-guards` and `make e2e` both call
+      # scripts/e2e.sh, which asks the same question of itself and refuses the run when
+      # it has no answer. Measured 2026-10-04 by running this repository inside that
+      # digest: four `ok` lines, then exit 2 at the first question about ownership; with
+      # iproute2 installed, all sixteen cases and exit 0. The database client is the
+      # other half of the fixture and `scripts/ci_setup.sh` installs it beside the role.
+      - name: Install the socket probe
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends iproute2
+
       - name: Start the message bus and the application role
         id: setup
         env:
@@ -160,6 +175,17 @@ jobs:
           docker logs "$container"
           exit 1
 
+      # The whole gate. As of main's `3ce4c8f`, `check` depends on two more goals —
+      # `check-rehearse` (this release's migrations against a copy of the previous
+      # release's seeded database: 19 s measured) and `check-apidiff` (the exported
+      # surface against v1.1.0: about a minute). They run *inside* this step and not as
+      # two steps of their own, which is what main does: main's job therefore pays for
+      # both twice, once as the step named for them and once again as a prerequisite of
+      # the `make check` line beneath it, and a job whose every step carries a measured
+      # price does not buy that. Which of the two broke still reads on its own line,
+      # because each prints its own banner before it. The cost to this job's ceiling is
+      # the ~80 s, unmeasured by job 46910 (565 s) because that run predates the two
+      # prerequisites; 565 + 80 is still under half of the 1140 s above.
       - name: make check
         run: make check
 
@@ -327,9 +353,19 @@ jobs:
       # database and no NATS: nothing under tools/designexport opens either.
       GOFLAGS: -p=4
     steps:
+      # One commit. The split gave this job the deep fetch the single `check` job owed to
+      # `scripts/check_budget_ratchet.sh`, and this job has no such step: main measured what
+      # `fetch-depth: 0` buys here at head b6f1e93, where it was still running when that
+      # job's 45 minutes expired (`##[error]context deadline exceeded` written inside
+      # `Fetching the repository`, and the forge reported the head refused at
+      # `Run actions/checkout@…` while every real step was reported skipped).
+      # `grep -rnwi --exclude-dir=node_modules git tools/designexport/openpencil` answers
+      # 0 lines, and `scripts/ci_checkout_history_test.sh` refuses either half of the
+      # mistake: a job still fetching history nothing reads, and a job narrowed while a
+      # step of it still walks `base..HEAD`.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -491,7 +527,15 @@ jobs:
     # (min 102, p50 104) plus the browser install's 57s plus about 55s of setup —
     # 450s. That run spent 61% of 480s, which is not a margin; the pin named at the
     # head of this file refuses it now.
-    timeout-minutes: 10
+    #
+    # It is 12 now, and the reason is a step with no span of its own: `make
+    # check-e2e-guards` joined this job when main wrote its two refusal cases (17s for
+    # both on a development box, and the mid-build one waits on gate 10's own log, so on
+    # the cure it costs gate 10's build — 103s at job 44137). Twice the job's slowest
+    # run is 584s; the widest honest account of the new step is its 20s on main's runner
+    # plus that 103s build, so 707s, which rounds up to 12 minutes (720s). The first
+    # completed run of this job reprices both numbers.
+    timeout-minutes: 12
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -517,9 +561,12 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # One commit: `grep -w git scripts/e2e.sh` answers no line, and nothing else in
+      # this job touches the object database — the steps are setup-go, apt, docker, node,
+      # a browser and two make goals. `scripts/ci_checkout_history_test.sh` checks this.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -527,12 +574,47 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      # gate 10 asks its own question — "is this listener mine?" — before it builds, and
+      # a machine with no `ss` and no `lsof` answers it with silence, which scripts/e2e.sh
+      # reads as "I cannot tell" and refuses the run over. Same package, same measured
+      # reason as `go-checks`'s step of the same name; the two jobs share no filesystem.
+      - name: Install the socket probe
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends iproute2
+
       - name: Start the message bus and the application role
         id: setup
         env:
           JOB_NETWORK: ${{ job.container.network }}
           NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-e2e-nats
         run: bash scripts/ci_setup.sh nats app-role
+
+      # The development mail catcher, the same image and ports compose.yaml's mailpit
+      # service runs, on this job's network under the name the two steps below name.
+      # scripts/e2e.sh refuses to boot the application with nothing answering the catcher
+      # — the journeys that open a mailed link read the link out of its API — and a
+      # localhost default is not reachable from a job that reaches its services by name.
+      # Started by hand, and named beside its id, for the reason every other container in
+      # this file is: an id a step the deadline cut off never finished writing is no
+      # handle, and a catcher still running is what makes the job's network unremovable.
+      - name: Start the mail catcher
+        id: mailpit
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-e2e-mailpit
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias mailpit \
+            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://mailpit:8025/api/v1/info >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -549,12 +631,36 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
 
+      # Gate 10's two refusals to drive an application it did not start, beside the gate
+      # they guard and after the browser they need: each one starts scripts/e2e.sh, which
+      # stops at its own node check before it prints anything either case greps for, so
+      # the step needs node, the browser, python3 (the decoy listener) and Postgres, and
+      # this is the job that has all four. They were not folded into `make check` for the
+      # same measured reason — `make check` runs two steps before node exists.
+      - name: Gate 10's port refusals (make check-e2e-guards)
+        # The same catcher, under the same names, as the step below: both start
+        # scripts/e2e.sh, and it refuses a run with nothing answering the catcher before
+        # it creates anything. A guards run with no catcher would report its own premise
+        # missing rather than the port refusal it is looking for.
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
+        run: make check-e2e-guards
+
       - name: make e2e
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
         run: make e2e
 
       - name: Remove this job's manually created resources
         if: always()
         env:
           NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
+          MAILPIT_CONTAINER: ${{ steps.mailpit.outputs.container }}
           RUN: platformkit-${{ github.run_id }}
-        run: bash scripts/ci_cleanup.sh "$NATS_CONTAINER" "$RUN-e2e-nats"
+        run: bash scripts/ci_cleanup.sh \
+          "$NATS_CONTAINER" "$RUN-e2e-nats" \
+          "$MAILPIT_CONTAINER" "$RUN-e2e-mailpit"

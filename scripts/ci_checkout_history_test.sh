@@ -22,8 +22,15 @@
 #
 # Each case below names the file that decides it. `make mobile-e2e` is one line calling one script, so
 # the journey's scan is that script; the rest of its steps are apt, docker and adb, which read no
-# repository object. `check` reads history through two paths and is content with the one case that
+# repository object. `go-checks` reads history through two paths and is content with the one case that
 # names the wider of them.
+#
+# The four rows for ci.yml are the four jobs T-0219 split the old `check` job into, and each names a
+# file its own steps run: `go-checks` walks `base..HEAD` in the budget ratchet, so it fetches every
+# commit; `race-and-vuln` runs `./modules/admin/...`, whose stamp case asks `git rev-parse HEAD`, so
+# it is classed with the readers rather than claimed blind; `design-editor` and `e2e` read no git
+# object at all and go shallow, which is the fix head b6f1e93 bought — that head's design job was
+# still fetching history nothing reads when its minutes ran out.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -80,8 +87,10 @@ while IFS='|' read -r workflow job how source regex; do
 		fi
 	fi
 done <<'CASES'
-ci|check|reads|scripts/check_budget_ratchet.sh|git rev-list --no-merges
-ci|design|none|tools/designexport/openpencil|git
+ci|go-checks|reads|scripts/check_budget_ratchet.sh|git rev-list --no-merges
+ci|race-and-vuln|reads|modules/admin/internal/review_round1_build_stamp_test.go|rev-parse
+ci|design-editor|none|tools/designexport/openpencil|git
+ci|e2e|none|scripts/e2e.sh|git
 mobile|journey|none|scripts/mobile_e2e.sh|git
 public-consumption|report|reads|.gitea/workflows/public-consumption.yml|git rev-parse
 CASES
