@@ -416,15 +416,15 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if _, err := opts.Caches.constructor(cfg.Cache.Adapter); err != nil {
 		return nil, err
 	}
-	// Expanded before it is checked: a module that subscribes to everything is
-	// given the names here, once every manifest is in hand, so where it sits in
-	// the list cannot change what it hears.
-	// The kernel emits one event of its own — event_replayed, the record of an
-	// operator's replay (kit/events.Replay) — and it is declared in the module
-	// list because that is where every event is declared. Declaring it is what
-	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
-	// lands in the tenant's trail beside the actions it re-ran, with the
-	// operator as its actor.
+	// Expanded before it is checked, and with the kernel's own manifest last: a
+	// module that subscribes to everything is given the names here, once every
+	// manifest is in hand, so where it sits in the list cannot change what it hears.
+	// The kernel's three events — event_replayed (kit/events.Replay's record of an
+	// operator's replay), security.denied and security.access_requested — are what it
+	// emits whichever modules were composed; a fourth joins them for a deployment
+	// that names an app, the record of moving the delivery ledger onto that app's
+	// durable, and kernelModule says why. Declaring a name is what hands it to the
+	// audit module's SubscribeAll and gives the outbox a payload shape to check.
 	mods = append(mods, kernelModule(opts.App))
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
