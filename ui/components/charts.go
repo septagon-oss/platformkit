@@ -250,6 +250,9 @@ func (p AreaChartProps) Validate() error {
 		return err
 	}
 	if !p.State.ready() {
+		if retainedNavigation(p.State.Status, p.Ranges) {
+			return fmt.Errorf("AreaChart: absent content must clear navigation into the previous result")
+		}
 		return nil
 	}
 	if !required(p.Description, p.XLabel, p.YLabel, p.TableLabel, p.ShowDataLabel) {
@@ -413,7 +416,7 @@ func StatTileWithSlots(p StatTileProps, slots StateSlots) g.Node {
 	}
 	var value g.Node = Heading(HeadingProps{Text: p.ValueText, Level: 3, Size: 2})
 	if p.Href != "" {
-		value = h.A(h.Href(p.Href), value)
+		value = navigationLink(p.Disabled, p.Href, value)
 	}
 	arrow := map[string]string{"up": "↑", "down": "↓", "flat": "→", "unknown": "·"}[p.DeltaDirection]
 	return sharedSection(p.ComponentProps, "stat-tile", p.Label, stateBody(p.State, slots), Heading(HeadingProps{Text: p.Label, Level: 2, Size: 5}), value, Text(TextProps{Content: p.Description, Size: "sm"}),
