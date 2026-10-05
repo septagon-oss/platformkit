@@ -187,7 +187,14 @@ func MapViewWithSlots(p MapViewProps, slots MapViewSlots) g.Node {
 	}
 	var mapNode, detail g.Node
 	if p.View == "map" {
-		config, _ := json.Marshal(map[string]any{"points": p.Points, "legend": p.Legend, "viewport": p.Viewport, "tiles": p.Tiles, "selected": p.SelectedID, "zoomIn": p.ZoomInLabel, "zoomOut": p.ZoomOutLabel})
+		// A disabled view hands its engine nothing to navigate to; the copy keeps the caller's slice whole.
+		points := slices.Clone(p.Points)
+		if p.Disabled {
+			for i := range points {
+				points[i].Href = ""
+			}
+		}
+		config, _ := json.Marshal(map[string]any{"points": points, "legend": p.Legend, "viewport": p.Viewport, "tiles": p.Tiles, "selected": p.SelectedID, "zoomIn": p.ZoomInLabel, "zoomOut": p.ZoomOutLabel})
 		mapNode = h.Div(h.Div(g.Attr("data-map-config", string(config)), g.Attr("data-map-engine", ""), h.Role("region"), g.Attr("aria-label", p.MapLabel), g.Attr("tabindex", "0")), h.P(g.Attr("data-map-fallback", ""), g.Text(p.MapUnavailableText)))
 	}
 	if p.Detail != nil {

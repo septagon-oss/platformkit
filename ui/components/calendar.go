@@ -228,12 +228,15 @@ func CalendarWithSlots(p CalendarProps, slots CalendarSlots) g.Node {
 	if view != "agenda" {
 		var events []map[string]any
 		for _, event := range p.Events {
-			start, end := event.StartDate, event.EndDate
+			start, end, href := event.StartDate, event.EndDate, event.Href
+			if p.Disabled {
+				href = "" // the grid enhances what a disabled view shows, never where it goes
+			}
 			if !event.AllDay {
 				start = event.StartUTC.Format(time.RFC3339Nano)
 				end = event.EndUTC.Format(time.RFC3339Nano)
 			}
-			events = append(events, map[string]any{"id": event.ID, "title": event.Title, "start": start, "end": end, "allDay": event.AllDay, "url": event.Href, "extendedProps": map[string]string{"timeText": event.TimeText, "statusLabel": event.StatusLabel}})
+			events = append(events, map[string]any{"id": event.ID, "title": event.Title, "start": start, "end": end, "allDay": event.AllDay, "url": href, "extendedProps": map[string]string{"timeText": event.TimeText, "statusLabel": event.StatusLabel}})
 		}
 		config, _ := json.Marshal(map[string]any{"view": view, "date": p.DateStrip.SelectedDate, "start": p.RangeStartDate, "end": p.RangeEndDate, "zone": p.TimeZone, "locale": p.Language, "firstDay": p.FirstWeekday, "now": p.NowUTC.Format(time.RFC3339Nano), "allDay": p.AllDayLabel, "events": events})
 		enhancement = h.Details(h.Open(), h.Summary(h.Class(clDataDisclosure.Compile()), g.Text(p.GridLabel)), h.Div(g.Attr("data-calendar-config", string(config)), g.Attr("data-calendar-engine", ""), h.Role("region"), g.Attr("aria-label", p.GridLabel), g.Attr("tabindex", "0")), h.P(g.Attr("data-calendar-fallback", ""), g.Text(p.FallbackText)))
