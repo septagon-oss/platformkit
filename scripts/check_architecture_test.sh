@@ -741,7 +741,14 @@ test_commands() {
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
 }
-fresh="go tool gotestsum --packages='./...' -- -count=1"
+# The fresh stage's watchdog is part of its boundary, so it is spelled out here and
+# not left to `go test`'s ten-minute default: measured cold on a 32-core box over one
+# Postgres the heaviest package needs 570s (apps/platformkit), so the default killed
+# eight working packages at 600.0s. Naming `-timeout=25m` in the expected line is what
+# keeps the two halves honest: a caller's TEST_FLAGS still may not replace the stage's
+# own flags, and a Makefile that drops or re-prices the watchdog fails here instead of
+# silently handing the stage back its default stopwatch.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=25m"
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
 if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
