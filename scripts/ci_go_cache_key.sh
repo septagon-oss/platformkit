@@ -33,9 +33,10 @@
 # shorter, and `design` on v1 whenever `check` is red or cancelled — would restore a tree built for
 # the other job, take an exact hit, never save its own, and compile cold until go.sum or the toolchain
 # moved while the log reported a restore. The two trees are far from the same bytes: `go list -deps
-# -test ./...` names 92 modules and `go build ./...` leaves 781 MB, against the 7 modules and 125 MB
-# of `go build ./tools/designexport`. One key per job, and the job that finishes first or last owns
-# its own archive. What stays shared is the prefix, which is where the warmth actually comes from.
+# -test ./...` answers 859 third-party packages over 131 modules for what `check` builds, against 41
+# over 8 for `./tools/designexport`, and the build-cache sizes `check`'s own comment records are 781 MB
+# and 848 MB against a fraction of that here. One key per job, and the job that finishes first or last
+# owns its own archive. What stays shared is the prefix, which is where the warmth actually comes from.
 #
 # The only sharing that was ever safe is two runs of the *same* job under one key — two refs whose
 # go.sum and toolchain match, saving the same bytes: whoever loses the reservation then skips an
