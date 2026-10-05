@@ -130,6 +130,26 @@ shortcut a reader might reach for — the file raising the runner's own system-a
 T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
 reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
 
+**The sequel to a kernel write has an operator's door.** Two commands lived behind a `psql`
+connection: the ledger move (`POST /ops/v1/ledger/move`) and, at that row's own replay address
+on the same plane, the delivery of one outbox row again by its id. The kernel mounts both
+(`kit/app/ledger_ops.go`) at the installation host, where they answer as JSON, and every tenant
+host answers them as an unmounted address, before routing. Each is guarded by its own
+operator grant (`platformkit:ledger_move`, `platformkit:event_replay`), and only a
+composition that names itself mounts them — an app-less deployment has no scoped durable to
+move onto, so the routes would be doors onto a zero report. Each body names the app it acts
+in and a process answers only for itself; and because a replay names a row rather than a set,
+the locked row is asked the same question of its own tenant (`tenants.app`), so one
+installation cannot clear the claims of an event another app's consumer will carry. Both
+answer with what they did — the move its four counts, so a caller can tell "already moved"
+from "found nothing to move", and the replay the event's id, name and the reason it was
+given — and every refusal (the wrong app, a delivery mid-claim, an id whose outbox row is
+gone) writes nothing, emits nothing and says which of them it was.
+`platformkit.ledger_moved` is a kernel event beside
+`platformkit.event_replayed`, declared under the same condition, so the audit trail of each
+tenant whose ledger moved holds the act and the actor: nobody for a boot, the job's name for
+the retry, a person for the verb.
+
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
 `POST …/delete` — until them a suspended customer had no way back, a wrong name could not be corrected,
