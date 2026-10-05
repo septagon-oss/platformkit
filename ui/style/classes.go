@@ -438,6 +438,21 @@ func (cl ClassList) BreakWords() ClassList { return cl.append(classBreakWords) }
 // "break-all"). Use for user-supplied long tokens like hashes / URLs.
 func (cl ClassList) BreakAll() ClassList { return cl.append(classBreakAll) }
 
+// BreakAnywhere sets `overflow-wrap: anywhere`: a line may break inside a word
+// that has no break opportunity at all. It differs from BreakWords in the way a
+// line is *measured*: `anywhere` takes part in intrinsic min-content sizing, so
+// the one unbreakable token in a heading stops setting the min-width a flex
+// column resolves to, and `break-word` does not — which is why a heading that
+// overflows its column keeps overflowing it under BreakWords.
+func (cl ClassList) BreakAnywhere() ClassList { return cl.append(classBreakAnywhere) }
+
+// BreakNormal sets `overflow-wrap: normal`: this text breaks only at the break
+// opportunities Unicode gives it, whatever an ancestor asked for. It is the opt-out
+// a region takes when breaking mid-token would destroy a layout the frame settles
+// another way — a table, whose columns are what the row is read by, and which is
+// reached sideways through its own scroll region instead.
+func (cl ClassList) BreakNormal() ClassList { return cl.append(classBreakNormal) }
+
 // GridCols applies a CSS grid template with N equally-sized columns
 // ("grid-cols-N"). Use together with Display(DisplayGrid).
 func (cl ClassList) GridCols(n int) ClassList { return cl.append(classGridCols(n)) }

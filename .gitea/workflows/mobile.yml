@@ -68,9 +68,15 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # One commit, for the reason ci.yml's `design` job now gives at length: this job's steps are apt,
+      # docker, an emulator and one goal, `make mobile-e2e`, which is one line calling
+      # scripts/mobile_e2e.sh, and that script names no git object (grep -rnwi git answers 0 lines).
+      # The fetch `fetch-depth: 0` asks for is unbounded and this job's ceiling is 40 minutes, so a
+      # slow forge took the journey with it; scripts/ci_checkout_history_test.sh keeps the two claims
+      # pinned. Not run here: the journey needs this host's emulator, and no device ran in this round.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0

@@ -41,11 +41,30 @@ var (
 	clShellHeader = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexWrap().
 			Justify(style.JustifyBetween).Gap(style.S4).PaddingX(style.S6).PaddingY(style.S3).
 			Bg(style.SurfacePrimary).BorderBottom(style.Border1).BorderColor(style.BorderPrimary)
-	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6)
+	// clShellMain carries the break rule for everything the frame shows. A row's name can be one token
+	// nobody can hyphenate — a UUID pasted into a title, a commit hash, a URL — and a token with no break
+	// opportunity sets the min-content width of the flex column it sits in, so the page scrolls sideways.
+	// overflow-wrap: anywhere is the value that takes part in that sizing (break-words is not, which is why
+	// it reads like the fix and is not), and `overflow-wrap` inherits, so one rule on the content region
+	// reaches the heading, the breadcrumb, the table cell and the label. It sits here rather than on the
+	// heading because the design tool projects a component from what that component itself computes: its
+	// text rows and blocks are refused unless `overflow-wrap` and `word-break` are `normal` ("ordinary
+	// Unicode line breaking"), and a break rule on the Heading or Breadcrumb component made every card,
+	// toolbar and document that contains one unprojectable: 74 such refusals in its own suite at the
+	// head this cure replaces.
+	// Captured on its own, a component still computes `normal`, so the document it projects stays faithful
+	// to what was observed; the sideways-scrolling page is the frame's problem and the frame owns it here.
+	clShellMain   = style.New().Flex1().PaddingX(style.S6).PaddingY(style.S6).SpaceY(style.S6).BreakAnywhere()
 	clShellFooter = style.New().PaddingX(style.S6).PaddingY(style.S4).FontSize(style.TextXS).
 			TextColor(style.FgMuted).BorderTop(style.Border1).BorderColor(style.BorderPrimary)
-	clSkipLink = style.New().SrOnly().
-			On(style.StateFocus, func(c style.ClassList) style.ClassList {
+	// clShellFooterMeasure bounds what a composition puts *inside* the footer. The footer itself keeps
+	// no max-width of its own: its top border is the frame's rule and must span the column. The bound is
+	// the one Bare (ui/document) and the reference app's fault page already chose — 24rem — because the
+	// design floor refuses a body measure above 75 characters and an unbounded footer sentence measured
+	// 189ch at 1440px (384px is 64ch at 12px, 48ch at 16px).
+	clShellFooterMeasure = style.New().MaxWScaled(style.MaxWSM)
+	clSkipLink           = style.New().SrOnly().
+				On(style.StateFocus, func(c style.ClassList) style.ClassList {
 			return c.NotSrOnly().Position(style.PositionAbsolute).Left(style.S4).Top(style.S4).
 				ZLayer(style.ZOverlay).Rounded(style.RadiusMD).PaddingX(style.S3).PaddingY(style.S2).
 				Bg(style.SurfacePrimary).TextColor(style.FgPrimary).Shadow(style.ShadowLG)
@@ -241,12 +260,29 @@ var (
 			Transition(style.TransitionColors).Merge(clFocusRing)
 
 	// Inputs.
+	// A field is a column of copy with a control in it — label, control, help sentence, error. The two
+	// lists below are alternatives rather than a merge because the sheet emits classes in sorted order, so
+	// a `max-w-none` could never override a `max-w-sm` on one element.
+	//
+	// Neither list bounds the field's own width. A measure on this element — the same 24rem the footer's
+	// sentence takes — is what refused to reach a client's design document: the design tool projects a
+	// composition only when its sizing is unconstrained (`composition constrained sizing requires further
+	// conversion`), so a max-width on a flex column put every Input, Select, Textarea, Checkbox, Form and
+	// document selection out of the projection — 44 refusals at the head this cure replaces. The measure
+	// the design floor reads is the measure of the *sentences*: those are paragraphs, bounded where they
+	// are written, on clHelp and clFieldErr below, which the projection carries as a wrapping paragraph.
 	clFieldWrap     = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5)
-	clFieldWrapFull = style.New().Width(style.SFull)
+	clFieldWrapFull = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1_5).Width(style.SFull)
 	clLabel         = style.New().FontSize(style.TextSM).FontWeight(style.FontMedium).TextColor(style.FgPrimary)
-	clHelp          = style.New().FontSize(style.TextXS).TextColor(style.FgMuted)
-	clFieldErr      = style.New().FontSize(style.TextXS).TextColor(style.FgDanger)
-	clRequired      = style.New().TextColor(style.FgDanger)
+	// clHelp bounds the sentence the way clShellFooterMeasure bounds the frame's own: the floor divides a
+	// paragraph's box by half its font size and refuses anything above 75 characters, and a help line
+	// under a full-width control on a generated record page measured 189ch at 1440px — a short sentence
+	// in a block that spans the column is still a 189-character measure to the probe, and every client's
+	// gate reads that sentence on every record page that documents a field.
+	clHelp = style.New().FontSize(style.TextXS).TextColor(style.FgMuted).MaxWScaled(style.MaxWSM)
+	// The error line is the same sentence in the same place, one state later, and is bounded with it.
+	clFieldErr = style.New().FontSize(style.TextXS).TextColor(style.FgDanger).MaxWScaled(style.MaxWSM)
+	clRequired = style.New().TextColor(style.FgDanger)
 
 	clInputDisabled = style.New().Bg(style.SurfaceDisabled).Cursor(style.CursorNotAllowed)
 	clInput         = style.New().
@@ -277,7 +313,6 @@ var (
 	}
 	clTextareaManual = style.New().ResizeY()
 	clTextareaAuto   = style.New().ResizeNone().Overflow(style.OverflowHidden)
-	clTextareaFull   = style.New().Width(style.SFull)
 	clTextareaMeta   = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).
 				Justify(style.JustifyBetween).Gap(style.S2)
 	clTextareaSupporting = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S1)
@@ -401,7 +436,12 @@ var (
 	clTextNoWrap    = style.New().WhitespaceNowrap()
 	clTruncate      = style.New().Truncate()
 
-	clHeadingBase  = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).FontWeight(style.FontSemibold)
+	// clHeadingBase carries no break rule of its own. A heading does have to break a token nothing can
+	// hyphenate, and it does so because the frame's content region sets overflow-wrap: anywhere and the
+	// property inherits — see clShellMain. On the component it would be refused by the design tool, which
+	// builds text only under ordinary Unicode line breaking.
+	clHeadingBase = style.New().FontFamily(style.FontSerif).TextColor(style.FgPrimary).
+			FontWeight(style.FontSemibold)
 	clHeadingLevel = map[int]style.ClassList{
 		1: style.New().FontSize(style.Text3XL),
 		2: style.New().FontSize(style.Text2XL),
@@ -521,7 +561,17 @@ var (
 	// Table.
 	clTableWrap = style.New().Width(style.SFull).Overflow(style.OverflowAuto).
 			Rounded(style.RadiusLG).Border(style.Border1).BorderColor(style.BorderPrimary)
-	clTable       = style.New().Width(style.SFull).FontSize(style.TextSM).TextColor(style.FgPrimary)
+	// clTable opts the table out of the frame's break rule (clShellMain sets
+	// overflow-wrap: anywhere, and the property inherits). A name that cannot be hyphenated has to
+	// break somewhere, and the frame's answer for the regions a person reads is to break it; the
+	// table's answer is already built and pinned elsewhere. `anywhere` takes part in intrinsic
+	// min-content sizing, so letting it reach a cell lets the longest token in any column decide how
+	// far every other column is squeezed: on a generated list at 320px the row link's own target fell
+	// from two wrapped lines to an 18px band, under the 24px the accessibility audit enforces. A wide
+	// table is reached by scrolling its bordered region, which is what clTableWrap's overflow is for
+	// and what e2e/scroll-regions.spec.ts and design-audit.spec.ts pin.
+	clTable = style.New().Width(style.SFull).FontSize(style.TextSM).TextColor(style.FgPrimary).
+		BreakNormal()
 	clTableHead   = style.New().Bg(style.SurfaceSecondary).TextAlign(style.TextLeft)
 	clTableThBase = style.New().FontWeight(style.FontSemibold).
 			FontSize(style.TextXS).Uppercase().Tracking(style.TrackingWider).TextColor(style.FgMuted)
@@ -631,6 +681,10 @@ var (
 	clCardVertical   = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1()
 
 	// Breadcrumb.
+	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
+	// hyphenate: without a break rule the entry measured 1352px wide inside a 390px viewport and the page
+	// scrolled sideways. The rule that stops it is the frame's — clShellMain, inherited by every crumb and
+	// its separator — and not one on this list, which the design tool projects as text.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
 			ListStyle("none").Margin(style.S0).Padding(style.S0)
 	clBreadcrumbSep = style.New().TextColor(style.FgTertiary)
@@ -649,25 +703,42 @@ var (
 	clSidebarWidthExpanded = style.New().Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
 		return c.Width(style.S64)
 	})
-	clSidebarDisabled    = style.New().Opacity(style.Opacity50)
-	clSidebarInner       = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	clSidebarDisabled = style.New().Opacity(style.Opacity50)
+	clSidebarInner    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	// The column paints an inverse surface, so it names the text colour that reads on it. Without this,
+	// every descendant that chooses no colour of its own — the nav `<li>` around each link, a plain
+	// <span> — inherits the page's foreground token, and both this package's floor probe and the
+	// clients' gate measure text elements, not only links: 1.02:1 measured on an <li> at 1440px.
+	// The content flavour needs nothing, because its column is SurfacePrimary and the inherited
+	// foreground is legible on it (16.12:1).
 	clSidebarColumnAdmin = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
-				Bg(style.SurfaceInverse).PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
+				Bg(style.SurfaceInverse).TextColor(style.FgOnInverse).
+				PaddingTop(style.S5).PaddingBottom(style.S4).OverflowY(style.OverflowAuto)
 	clSidebarColumnContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Flex1().
 				Bg(style.SurfacePrimary).OverflowY(style.OverflowVisible)
 	clSidebarBrandAdmin = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).FlexShrink0().
 				PaddingX(style.S4).MarginBottom(style.S8)
 	clSidebarBrandContent = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S3).
 				FlexShrink0().MarginBottom(style.S4)
-	clSidebarBrandLink      = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Merge(clFocusRing)
-	clSidebarBrandText      = style.New().FontSize(style.TextXL).FontWeight(style.FontBold).TextColor(style.FgOnInverse)
-	clSidebarNavWrapAdmin   = style.New().MarginTop(style.S5).Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
-	clSidebarNavWrapContent = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
-	clSidebarNavAdmin       = style.New().Flex1().PaddingX(style.S2).SpaceY(style.S1)
-	clSidebarNavContent     = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
-	clSidebarLinkAdmin      = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).
-				FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
-				Transition(style.TransitionColors).Merge(clFocusRing)
+	// The brand link is tabbable, so it is in the contrast set the design floor reads, and it is the one
+	// link in the frame that inherits no colour of its own: `a { color: inherit }` (ui/ui.go) hands it the
+	// column's text colour, which on the admin's inverse column is a foreground token on a foreground
+	// column — 1.02:1 measured. So the link and its label take their colour from the flavour, as the nav
+	// links below already do: the inverse column reads FgOnInverse, the content column reads FgPrimary
+	// (FgOnInverse there measures 1.10:1, which is why one list cannot serve both).
+	clSidebarBrandLink        = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Merge(clFocusRing)
+	clSidebarBrandLinkAdmin   = clSidebarBrandLink.TextColor(style.FgOnInverse)
+	clSidebarBrandLinkContent = clSidebarBrandLink.TextColor(style.FgPrimary)
+	clSidebarBrandText        = style.New().FontSize(style.TextXL).FontWeight(style.FontBold)
+	clSidebarBrandTextAdmin   = clSidebarBrandText.TextColor(style.FgOnInverse)
+	clSidebarBrandTextContent = clSidebarBrandText.TextColor(style.FgPrimary)
+	clSidebarNavWrapAdmin     = style.New().MarginTop(style.S5).Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
+	clSidebarNavWrapContent   = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol)
+	clSidebarNavAdmin         = style.New().Flex1().PaddingX(style.S2).SpaceY(style.S1)
+	clSidebarNavContent       = style.New().Flex1().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
+	clSidebarLinkAdmin        = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S3).
+					FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
+					Transition(style.TransitionColors).Merge(clFocusRing)
 	clSidebarLinkContent = style.New().Display(style.DisplayFlex).Items(style.ItemsStart).Gap(style.S2).
 				FontSize(style.TextSM).FontWeight(style.FontMedium).Rounded(style.RadiusMD).
 				Transition(style.TransitionColors).Merge(clFocusRing)
@@ -814,7 +885,8 @@ func GalleryClassLists() []style.ClassList {
 // application's own pages render. ui.Stylesheet is composed from these.
 func ShellClassLists() []style.ClassList {
 	out := []style.ClassList{
-		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clSkipLink,
+		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clShellFooterMeasure,
+		clSkipLink,
 		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
@@ -829,7 +901,7 @@ func ShellClassLists() []style.ClassList {
 		clInput, clInputNormal, clInputError, clInputReadOnly, clInputDisabled,
 		clInputIconWrap, clInputIconStart, clInputIconEnd, clInputPadStart, clInputPadEnd,
 		clSelectGrid, clSelectSize, clSelectIndicator,
-		clTextareaManual, clTextareaAuto, clTextareaFull, clTextareaMeta,
+		clTextareaManual, clTextareaAuto, clTextareaMeta,
 		clTextareaSupporting, clTextareaCounter,
 		clCheckbox, clCheckboxRoot, clCheckboxRootDisabled,
 		clCheckboxInput, clCheckboxIndicator, clCheckboxIndicatorIdle,
@@ -852,7 +924,9 @@ func ShellClassLists() []style.ClassList {
 		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
 		clSidebarColumnAdmin, clSidebarColumnContent,
-		clSidebarBrandAdmin, clSidebarBrandContent, clSidebarBrandLink, clSidebarBrandText,
+		clSidebarBrandAdmin, clSidebarBrandContent,
+		clSidebarBrandLinkAdmin, clSidebarBrandLinkContent,
+		clSidebarBrandTextAdmin, clSidebarBrandTextContent,
 		clSidebarNavWrapAdmin, clSidebarNavWrapContent, clSidebarNavAdmin, clSidebarNavContent,
 		clSidebarLinkAdmin, clSidebarLinkContent,
 		clSidebarLinkPadExpanded, clSidebarLinkPadCollapsed,

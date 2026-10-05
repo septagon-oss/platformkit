@@ -724,6 +724,9 @@ func (s Spec[T]) check() {
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = displayFieldFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
 	}

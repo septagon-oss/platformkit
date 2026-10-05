@@ -60,6 +60,13 @@ func (k RegistrationKind) form() string {
 // brand is what the shell calls itself when the tenant has no name.
 const brand = "PlatformKit"
 
+// chromeTextSize is the one body step the frame's own text takes: the tenant name, the caller and the
+// build stamp are the chrome, and the design floor allows a page two body sizes in total — so three
+// sizes in the chrome alone leaves the page's own copy nothing. `sm` is what two of the three already
+// took, and it is the sidebar's own nav step, which leaves `base` free for the page inside <main>.
+// See modules/admin/internal/frame_chrome_text_test.go.
+const chromeTextSize = "sm"
+
 // Shell is what the manifest hands the implementation.
 type Shell struct {
 	Nav       []module.NavEntry
@@ -303,7 +310,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				Header:  header(r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
+					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
 		})
@@ -348,7 +355,7 @@ func header(r page.Request, navigation components.SidebarProps) []g.Node {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
 				Content: short(r.Principal.UserID.String()) + " · " + fallback(strings.Join(r.Principal.Roles, ", "), "no roles"),
-				Size:    "sm", Color: "muted"}),
+				Size:    chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
@@ -358,7 +365,8 @@ func header(r page.Request, navigation components.SidebarProps) []g.Node {
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
-			components.Text(components.TextProps{Content: fallback(r.Tenant.Name, brand), Weight: "semibold"})),
+			components.Text(components.TextProps{
+				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }

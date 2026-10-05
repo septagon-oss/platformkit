@@ -1,5 +1,16 @@
 # Verification only. The runner supplies a dedicated Docker daemon and a fresh
 # job network; no workstation services or deployment credentials are required.
+#
+# How to read a red tick from this job. A job whose runner lost *this* job reports every step,
+# `actions/checkout` included, as failure, and uploads no log at all, so whatever reads the verdict
+# for a merge finds no failing line to quote. A job that fails a check written here reports the steps
+# before the failure as success and leaves a log to read. 2026-10-02 measured the first shape three
+# times in one day, each on runner `stitch-core`, each over fourteen to eighteen minutes: job 46966
+# (run 46512) on one pull request, job 47128 (run 46674) on a push to main, job 47205 (run 46750) on
+# another. That runner stayed online through all three — the journey job it took the same minute as
+# the last of them (47206) has a log and per-step conclusions — so what was lost is that job's own
+# execution and log upload, not the host. A head refused that way holds no line to fix: what answers
+# it is a fresh run of the same head, and no edit to this repository does.
 name: ci
 
 on:
@@ -58,6 +69,17 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # Full history, and this is the only job that owes it: the budget verdict at the foot of the job
+      # walks `git rev-list $base..HEAD` over the commits that touched a ceiling
+      # (scripts/check_budget_ratchet.sh:59), so a shallow fetch here would read that verdict green
+      # across commits nobody fetched. `scripts/ci_checkout_history_test.sh` pins both halves — this
+      # line stays deep while that walk exists, and no other job goes deep without one.
+      #
+      # This job therefore keeps the exposure the two above lose: its checkout was still fetching 49
+      # minutes into run 49357, and its ceiling is 75. Bounding it from here would mean either a
+      # shallow fetch (which takes the budget verdict's commits away) or a stall timeout (which turns
+      # the wait into a faster red and nothing else). What answers it is outside this file: the forge's
+      # git-http throughput under a contended queue, or T-0219's split of these steps across runners.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
@@ -68,10 +90,30 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Install the database client
+      # Two tools the operating system is asked for, one step, because a step that
+      # installs one of them and not the other half of the question is what this line
+      # is: `psql` answers the migration rehearsal, and `ss` answers gate 10's question
+      # "whose socket is this?", which scripts/free_port.sh refuses to answer from
+      # itself, because a 200 on /health says something is listening and not that the
+      # listener is mine.
+      #
+      # The package is not optional here, and the image does not provide it. This job's
+      # image is pinned — gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is
+      # the digest job 49823 of run 49357 names when it creates the container — and that
+      # digest ships neither `ss` nor `lsof`. Measured 2026-10-04 by running this
+      # repository inside it (`docker run -v $PWD:/w:ro -w /w … bash
+      # scripts/free_port_test.sh`): the case stopped after four `ok` lines with exit 2,
+      # at the first question about who holds a port. `make check` runs that file, and
+      # `make check-e2e-guards` and `make e2e` both call scripts/e2e.sh, which asks the
+      # same question of itself and refuses the run when the machine cannot answer — so
+      # without this line three of this job's own steps are red for a reason no change
+      # in the tree caused. The same run with iproute2 installed answered all sixteen
+      # cases and exited 0. Case 6 of scripts/free_port_test.sh refuses a future edit
+      # that takes the package back out, and says which steps would refuse to run.
+      - name: Install the database client and the socket probe
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends postgresql-client
+          apt-get install --yes --no-install-recommends postgresql-client iproute2
 
       - name: Start NATS with JetStream on this job's network
         id: nats
@@ -234,6 +276,26 @@ jobs:
       # used to stand last behind every other gate, which is why the failure that
       # named it said nothing about it. It now follows the Go gates and its own
       # browser, and the budget verdict still runs after it.
+      # Gate 10's two refusals to drive an application it did not start, before the gate they guard.
+      # They stand here rather than in the `make check` step above for one measured reason: each one
+      # starts scripts/e2e.sh, which stops at its own node check before it prints anything either case
+      # greps for, and node appears two steps after `make check`. Here node, the browser, python3 (the
+      # decoy listener; `make check`'s own check-apidiff step proves it on this runner) and Postgres all
+      # exist. 17s for both on a development box, 2026-10-04; the mid-build case waits on gate 10's own
+      # log and so costs its build when the cure is intact and its whole run when it is not.
+      - name: Gate 10's port refusals (make check-e2e-guards)
+        # The same catcher, under the same names, as the step below. The mid-build
+        # case starts scripts/e2e.sh and waits for it to reach its database, and
+        # scripts/e2e.sh refuses a run with nothing answering the catcher before it
+        # creates anything — so a guards run that names no catcher would be refused
+        # for the mail, never reach the port, and the case would report its own
+        # premise missing rather than the refusal it is looking for.
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
+        run: make check-e2e-guards
+
       - name: make e2e
         # The catcher this job started earlier, under the alias its network gives it
         # (`Start the mail catcher`, beside the object store). scripts/e2e.sh refuses
@@ -442,9 +504,21 @@ jobs:
     runs-on: pkit-ci-linux-amd64
     timeout-minutes: 45
     steps:
+      # One commit, because nothing in this job reads another. `fetch-depth: 0` asks for every branch
+      # and every tag — at the time of writing 128 heads and 199 tags, the `v1.1.2-proof.*` tag every
+      # delivery pushes among them — in a single fetch that carries no deadline of its own. At
+      # b6f1e93 that fetch was still running when this job's 45 minutes expired: the job log writes
+      # `##[error]context deadline exceeded` at 22:15:51 inside `Fetching the repository`, and the
+      # forge reported the job's only failed step as `Run actions/checkout@…`, which is the line that
+      # refused the head while every real step of the job was reported skipped. The same action
+      # fetched the single ref its post step needed in 26 seconds in that same log. What the fetch was
+      # bought for is nothing: `grep -rnwi --exclude-dir=node_modules git tools/designexport/openpencil`
+      # answers 0 lines, so its four steps (npm ci, npm audit, `npm test`, which builds a Go program
+      # per test, and the browser observations) read no git object. Verified locally in a `--depth=1
+      # --single-branch` clone of the same head: 586 native design tests, 0 failures.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       # Every design test embeds a real Go program and builds it before observing
