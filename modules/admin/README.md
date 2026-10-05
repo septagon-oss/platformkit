@@ -87,6 +87,18 @@ nav entry names one of these two pages this shell wrote, the entry's own module 
 asked first and this shell's title for the page answers when nobody did — see
 `navLabel`.
 
+Two things the shell draws but does not write are asked of that catalogue too. The
+count on a dashboard card goes through `admin.dashboard.count_number` rather than
+`strconv.FormatInt`, so the reader's own formatter groups the number — twelve thousand
+three hundred and forty-five is `12,345` in English and `12\u00a0345` in Portuguese, and
+a card that concatenated `12345` onto a translated noun said the noun in one language
+and the number in none. And every word of a generated command control — the button,
+the form's accessible name, each argument's label — is asked of the page's catalogue by
+`ui/resource` under `command.<module>.<entity>.<verb>`; the module's own `Summary` and
+`Description` are the fallbacks, which is what keeps an untranslated composition saying
+something rather than nothing. See `ui/page/README.md` for both prefixes and the
+refusal heading, `fault.title.<status>`, that goes with them.
+
 ### Interface
 
 - `admin.Deps.Language` (`internal.AccountLanguage`) is the account command:
@@ -105,6 +117,15 @@ asked first and this shell's title for the page answers when nobody did — see
   wires no version here keeps the intent door it always had — the form is drawn
   without a revision — and the route refuses any form that names one, rather than
   guessing the revision a door that counts nothing was meant to compare.
+- A body that is not a form at all — `locale=%ZZ` is the case the browser sends when
+  it sends anything — is the shell's own refusal, drawn by the shell rather than
+  handed to `page.Serve` as a problem. The reason is a language, not a status code: a
+  problem carries its sentence as a Go string, and the shell that renders it on this
+  route gave up the negotiation with it — the case review 8 caught was a `422` whose
+  `lang`, heading, sidebar and way back were all English in front of a browser that had
+  asked for Portuguese. The refusal now declares the language it actually speaks and
+  says, in that language, that the form could not be read; `admin.account.language.unreadable`
+  is the key, `INVALID_INPUT` the code, 422 the status.
 - The tenant's own languages are `/app/tenant/languages` (GET and POST), offered in
   the sidebar to whoever `Authorizer` says holds `tenant:locale_manage` — the same
   question `Service.SetOwnLocale` asks inside its transaction, so the link and the
@@ -148,6 +169,17 @@ languages, `page_direction_test.go` that `<html>` declares the direction with th
 language, `account_language_test.go` that a chosen language renders the admin and
 survives signing out and back in, and `tenant_languages_page_test.go` that the
 tenant's administrator reaches their own languages from the dashboard.
+
+The three cases that came out of a reviewer's own probe sit beside the code they hold:
+`modules/admin/generated_command_language_test.go`
+(`TestGeneratedCommandsUseThePagesCatalogue`) walks a saved row's page under `en-XA` and
+refuses any control word that is not the marker a catalogue carries turns it into;
+`modules/admin/account_form_error_language_test.go`
+(`TestAccountFormErrorsKeepPortugueseThroughoutThePage`) posts an unsupported language
+and an unreadable body and reads the whole page back; and
+`modules/admin/internal/dashboard_count_language_test.go`
+(`TestDashboardNumbersUseTheReadersLocale`) counts 12345 in both languages, which the
+0/1/2/5 counts this module had been checking could not tell apart.
 
 `e2e/account-language.spec.ts` is the browser journey: an English browser, the account
 control, `pt-PT`, and the dashboard that answers in Portuguese; the same browser signs

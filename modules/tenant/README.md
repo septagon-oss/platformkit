@@ -47,7 +47,13 @@ statement, replaces the `tenant_locales` rows, and publishes `tenant.locale_set`
 the same transaction. A refusal returns no row, writes nothing and emits nothing; a
 declaration that changes nothing publishes nothing, however stale the revision it
 came with. `SetLocale`, the operator's door, moves the same counter so the two
-writers cannot each believe they are first.
+writers cannot each believe they are first, and it reads the same number when the
+declaration brings one: `contracts.SetLocale`'s `ExpectedRevision` is compared
+against the row under the lock, so a changed pair read at a revision the row has
+left behind is `crud.ErrConflict` — no row back, nothing written, nothing published —
+and a declaration that names no revision is an intent, which is what
+`tenant.Bootstrap` brings for the row it created a moment earlier. Serialising two
+writers is not refusing the older one, and only the comparison does that.
 
 ### Interface
 
@@ -69,9 +75,12 @@ writers cannot each believe they are first.
   records the command beside it, so a shell generated from
   `/api/v1/app/resources` offers the door rather than inventing one, and reads its
   `endpoint` instead of guessing an address it cannot derive.
-- `tenants.locale_revision` is read: `SetOwnLocale` refuses a declaration read at a
+- `tenants.locale_revision` is read: both doors refuse a declaration read at a
   revision the row has left behind with `crud.ErrConflict`, so the person sees which
-  declaration they overwrote rather than losing it.
+  declaration they overwrote rather than losing it. Only the operator's door lets the
+  number go unnamed, because `tenant.Bootstrap` declares the languages of a row that
+  has no history to have read, and the tenant's own door has taken the revision as a
+  required argument since the page began to carry it.
 - `migrations/000031_tenant_locale_self_service.up.sql` splits `tenants_scope` into
   read-your-own-row and change-your-own-languages, grants `tenant_locales` self
   insert/update/delete scoped to this tenant, and adds a `BEFORE UPDATE` trigger for

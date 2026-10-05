@@ -81,7 +81,15 @@ that can refuse a request a person may be looking at answers through that render
 page is ever shown for is a key no copy can be written under. A refusal with no code is
 keyed by its status (`fault.404`, `fault.405`, `fault.500`, `fault.503`) — the four
 verdicts whose sentence `kit/httpx` writes and no module does, including the outage a
-guard answers when its own decision could not be made. What a translation replaces is the
+guard answers when its own decision could not be made. What the verdict is *called* was
+net/http's English copy until it was asked of this catalogue too: `page.Fault` takes the
+request's `*Locale` and heads the page with `fault.title.<status>`, falling back to
+`http.StatusText` — so a shell with no catalogue is headed exactly as it always was, and
+one that ships Portuguese says what the status is called in the language the page is
+written in. `faultTitles` is the list of verdicts this installation answers with, and
+`TestTheCatalogueAnswersEveryRefusalThisPackageCanShow` holds the table and the copy to
+one another in both directions, so a name no route can return is not copy nobody reads
+and a name a route does return cannot ship without its Portuguese. What a translation replaces is the
 sentence and not the guard's whole line: a refusal that carries a code keeps it
 (`AUTH_DENIED: Não pode fazer isto.`), because the code is what a person reads back to
 support and an operator greps a log for. What a catalogue answers with is one thing and
@@ -120,7 +128,12 @@ language, not a region: a browser that asks for `pt-BR` is asking for Portuguese
 the tenant's own Portuguese answers it, in the region it declared. Behind that list
 the tenant adds its own set, its default at its head, which answers an unmatched request.
 The generated screens read their fixed labels (New, Edit, Delete, the count, the pager
-and the empty state) under `screens.*` keys with English fallbacks. An instant is one
+and the empty state) under `screens.*` keys with English fallbacks, and the command
+controls a register puts beside a row ask the page's catalogue the same way —
+`command.<module>.<entity>.<verb>`, its `.description` for the form's accessible name,
+and each argument's label — through `ui/resource`'s `Options.Label` and `Options.Control`
+(the exported `Control` is the no-catalogue case). A button over a Portuguese row that
+speaks the module's Go string is the same defect one layer down as an untranslated heading. An instant is one
 of them: `screens.datetime` is the *layout* a language writes instants in — English
 `2006-01-02 15:04`, Portuguese `02/01/2006 15:04` — because the day-before-month order
 is a fact about the reader's language and not a format a renderer may hold constant;
