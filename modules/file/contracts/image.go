@@ -46,6 +46,12 @@ const jpegQuality = 82
 // start-of-frame marker, which sits after it — and it must stay small enough to
 // be held per in-flight upload rather than proportional to the file. One
 // megabyte is both.
+//
+// It bounds the header, and nothing else: it is how much of the object is held
+// in memory at once, not how much of it is read. The decode in ProcessImage
+// streams the rest of the object out of the same reader — a phone photograph is
+// several megabytes, and a pass that stopped at the probe would refuse one or
+// store it with its metadata intact.
 const headerProbe = 1 << 20
 
 // ImagePass is what one raster became on the way in.
@@ -118,8 +124,10 @@ func refusePixels(width, height, maxPixels int) error {
 //
 // The ceiling is checked against the header before the frame exists, so the
 // peak allocation this function makes is one decoded frame at or below the
-// ceiling plus the encoded output — which is why the ceiling is a pixel count
-// and a deployment's setting rather than a fixed constant.
+// ceiling, a second frame while an oriented turn copies it, and the encoded
+// output — which is why the ceiling is a pixel count and a deployment's setting
+// rather than a fixed constant. What is decoded is the whole object: the probe
+// only ever held a megabyte, and the rest of the stream is read here.
 func ProcessImage(r io.Reader, maxPixels int) (ImagePass, error) {
 	head, width, height, _, err := probeImage(r)
 	if err != nil {
@@ -132,9 +140,12 @@ func ProcessImage(r io.Reader, maxPixels int) (ImagePass, error) {
 	// not pixels is dropped here, because this is the only read of the object
 	// whose output is stored, and it reads pixels and nothing else.
 	//
-	// The header is re-fed to the decoder behind what it buffered, so the
-	// decoder sees the object from its first byte without a second fetch.
-	src, format, err := image.Decode(io.TeeReader(bytes.NewReader(head), io.Discard))
+	// What the probe buffered is re-fed ahead of the rest of the stream, so the
+	// decoder reads the object from its first byte without a second fetch and to
+	// its last: an object longer than the probe is a normal photograph, not a
+	// truncated one, and a decode that stopped at the probe would answer "short
+	// Huffman data" for every picture a camera took.
+	src, format, err := image.Decode(io.MultiReader(bytes.NewReader(head), r))
 	if err != nil {
 		return ImagePass{}, fmt.Errorf("%w: a %s header with bytes no decoder reads: %v", ErrNotImage, format, err)
 	}
