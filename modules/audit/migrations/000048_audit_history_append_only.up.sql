@@ -18,13 +18,24 @@
 --     "whatever the deployment handed out, take it back", not "take it back from the
 --     one login I guessed". kit/db/migrate.go's own ledger sweep is the shape, for the
 --     same reason: an installation pins its own privileges and this file cannot know them.
---     TRUNCATE is in this half alone — no row trigger can see a TRUNCATE.
 --
---   * The two triggers are what refuses the application after an operator runs
+--   * The triggers are what refuses the application after an operator runs
 --     GRANT ALL ON ALL TABLES IN SCHEMA public TO <the app role>, which is the single
 --     most likely thing a tired operator does at 3 a.m. They also refuse the roles the
 --     REVOKE says nothing about: the table's owner, and a superuser, both of which hold
 --     every privilege by definition and cannot be refused by a grant.
+--
+-- Three triggers, one per way a row stops being what it was: UPDATE rewrites one, the
+-- UPDATE trigger refuses it; DELETE removes one, the DELETE trigger admits only the
+-- expiry shape; TRUNCATE removes every row of every tenant at once, and the TRUNCATE
+-- trigger refuses it outright. The last is the one no REVOKE can be trusted for, twice
+-- over: it is refused by a grant the operator can hand back with one statement, and it
+-- ignores row-level security, so the one write that reaches across tenants is exactly
+-- the one a privilege list alone would have to catch. PostgreSQL lets a BEFORE TRUNCATE
+-- trigger fire FOR EACH STATEMENT and nothing else — no row trigger can see a TRUNCATE,
+-- which is why the row triggers below are not enough and why this one is a statement
+-- trigger beside them rather than a fourth case inside them. It fires before the rows
+-- are touched, so a refused TRUNCATE leaves the trail exactly where it was.
 --
 -- UPDATE is refused outright. DELETE is refused except through one door, and the door
 -- is a shape rather than an identity: a role that may append to the trail may never
@@ -94,6 +105,14 @@ $$;
 CREATE TRIGGER audit_events_never_rewritten
 	BEFORE UPDATE ON audit_events
 	FOR EACH ROW EXECUTE FUNCTION audit_events_never_rewritten();
+
+-- BEFORE TRUNCATE, FOR EACH STATEMENT: the only shape PostgreSQL gives a TRUNCATE
+-- trigger, and enough, because the refusal is about the statement and not about a row.
+-- It is fired after the privilege check and before any row is removed, so GRANT ALL
+-- buys an error instead of an empty table.
+CREATE TRIGGER audit_events_never_emptied
+	BEFORE TRUNCATE ON audit_events
+	FOR EACH STATEMENT EXECUTE FUNCTION audit_events_never_rewritten();
 
 -- BEFORE DELETE: the append door and the expiry door are different doors, and an
 -- expiry inside the floor is the same forgery in a slower costume.
