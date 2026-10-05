@@ -3,7 +3,9 @@ package db_test
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -269,6 +271,68 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 	}
 }
 
+// migrationQueueBudget is how long a migration run may wait for the composition key
+// before this file calls the key stuck. Advisory locks are per-database
+// (kit/db/lock.go) and the key is one for the whole composition
+// (kit/db/migrate.go:571), while dbtest gives a test its own *schema* — so another
+// package's migration, or a second suite sharing the cluster, can be holding the key
+// when a case here starts. Five seconds read as a defect when this file's cases
+// shared their Postgres with a concurrent `make check` on 2026-10-01 (`retry after
+// cancellation: db: migrate: lock: timeout: context deadline exceeded`, while 20 runs
+// of the same case with the cluster to itself passed in 3.8s). It is a bound on a lock
+// that must come back, not on how long a file takes: a session that never gives the
+// key up still fails the case, in five minutes rather than in five seconds. It is the
+// bound TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget queues behind for
+// the same key.
+const migrationQueueBudget = 5 * time.Minute
+
+// holdsCompositionKey says whether a session of *this* test's own schema holds the
+// composition key right now. dbtest makes application_name the schema
+// (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing
+// else: waiting behind another package's queue is then something the case can see,
+// which is what stops that queue from being read as a broken cancellation.
+func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
+	t.Helper()
+	var held int
+	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
+		WHERE l.locktype = 'advisory' AND l.granted
+			AND ((l.classid::bigint << 32) | l.objid::bigint) = `+strconv.FormatInt(compositionLockKey, 10)+`
+			AND a.application_name = current_setting('search_path')`, &held)
+	return held > 0
+}
+
+// runIsInsideItsFile says the run reached the SQL of its file, on the server's own
+// account: this schema's session parked in pg_sleep.
+func runIsInsideItsFile(t *testing.T, admin sqlDB) bool {
+	t.Helper()
+	var sleeping bool
+	scan(t, admin, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
+		WHERE application_name = current_setting('search_path') AND wait_event = 'PgSleep')`, &sleeping)
+	return sleeping
+}
+
+// waitUntil polls what the server says until it is true, until the run answers, or
+// until the budget runs out — and says which. The run's own result belongs in the
+// wait because a migration that has returned cannot become true later; without that
+// read a case sits out its whole budget and then blames the wrong thing. "" means the
+// read came true; anything else names the window that closed, so a failure reports
+// what expired rather than the nearest suspicion.
+func waitUntil(t *testing.T, budget time.Duration, done <-chan error, what string, read func() bool) string {
+	t.Helper()
+	deadline := time.Now().Add(budget)
+	for !read() {
+		select {
+		case err := <-done:
+			return fmt.Sprintf("the run returned first: %v", err)
+		case <-time.After(10 * time.Millisecond):
+		}
+		if time.Now().After(deadline) {
+			return fmt.Sprintf("%s did not become true within %v", what, budget)
+		}
+	}
+	return ""
+}
+
 func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	files := fstest.MapFS{
@@ -280,39 +344,41 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- db.Migrate(ctx, migrateURL, source) }()
 	admin := dbtest.Open(t, migrateURL)
-	deadline := time.Now().Add(10 * time.Second)
-	for {
-		var sleeping bool
-		scan(t, admin, `SELECT EXISTS (SELECT 1 FROM pg_stat_activity
-			WHERE application_name = current_setting('search_path') AND wait_event = 'PgSleep')`, &sleeping)
-		if sleeping {
-			break
-		}
-		if time.Now().After(deadline) {
-			cancel()
-			t.Fatalf("migration never reached its SQL: %v", <-done)
-		}
-		time.Sleep(10 * time.Millisecond)
+	// Two windows, two bounds, because they can fail in opposite ways and one bound
+	// over both reads the first as the second. This first window is the wait for the
+	// composition key: somebody else's work, so the patient bound, and the case waits
+	// by reading pg_locks rather than by hoping. The second window is from holding the
+	// key to being inside the file: nothing queues inside it, so it is short, and its
+	// expiry says a run holds the lock and runs no SQL. The one 10-second wait this
+	// case had before covered both, so a queued migration was cancelled and reported
+	// as a migration that never reached its SQL — `migration never reached its SQL:
+	// db: migrate: lock: context canceled`, six attempts of
+	// kit/db/migration_cancellation_returns_error_test.py on 2026-10-04, and reproduced
+	// without any load at all by
+	// kit/db/cancellation_case_waits_for_its_lock_test.py, which holds the key against
+	// this case for fifteen seconds.
+	if why := waitUntil(t, migrationQueueBudget, done, "the run held the composition key", func() bool {
+		return holdsCompositionKey(t, admin)
+	}); why != "" {
+		cancel()
+		t.Fatalf("migration never held the composition lock: %s", why)
+	}
+	if why := waitUntil(t, 10*time.Second, done, "the run reached the SQL of its file", func() bool {
+		return runIsInsideItsFile(t, admin)
+	}); why != "" {
+		cancel()
+		t.Fatalf("migration held the composition lock but never reached its SQL: %s (this schema's session still holds the key: %v)", why, holdsCompositionKey(t, admin))
 	}
 	cancel()
 	if err := <-done; err == nil {
 		t.Fatal("migration ignored cancellation")
 	}
 	files["1_slow.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE slow (value int); INSERT INTO slow VALUES (1)")}
-	// The retry queues for the composition lock the way every other migration run in
-	// this database does, so its bound is the patient one, not a taste. Advisory locks
-	// are per-database (kit/db/lock.go) and the key is one for the whole composition
-	// (kit/db/migrate.go:571), while dbtest gives a test its own *schema* — so another
-	// package's migration, or a second suite sharing the cluster, can be holding the key
-	// at this line. Five seconds read as a defect when this case shared its Postgres with
-	// a concurrent `make check` on 2026-10-01 (`retry after cancellation: db: migrate:
-	// lock: timeout: context deadline exceeded`, while 20 runs of the same case with the
-	// cluster to itself passed in 3.8s). The bound is the same one
-	// TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget queues behind for the
-	// same key, and it is a bound on a lock that must come back, not on how long the file
-	// takes: a session that never gives the lock up still fails the case, in five minutes
-	// rather than in five seconds.
-	retry, stop := context.WithTimeout(t.Context(), 5*time.Minute)
+	// The retry queues for the same key the way every other migration run in this
+	// database does, so it gets the queue's bound rather than a taste of its own — and
+	// it arrives after a cancellation, which is the moment a lingering session of this
+	// database may still be handing the key back.
+	retry, stop := context.WithTimeout(t.Context(), migrationQueueBudget)
 	defer stop()
 	if err := db.Migrate(retry, migrateURL, source); err != nil {
 		t.Fatalf("retry after cancellation: %v", err)
