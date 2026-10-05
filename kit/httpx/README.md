@@ -262,13 +262,16 @@ submission outstanding, in `sessionStorage` as well as in memory, and retires it
 moment an answer arrives. A reload is the same case in a different document: the person
 pressing that button again is asking for the write that went unanswered, so the record
 is adopted — but only a record that names an attempt somebody still owes, never one that
-was answered. A new intent stays available the same way the server decides it: an edited
-form is other bytes, the kernel answers that with `IDEMPOTENCY_KEY_REUSE`, and a spent
-key retires the record, so the next press is a fresh command. When a resumed submission
-comes back as a *replay* the first answer belonged to the document that is gone, so the
-controller stops that answer navigating the person off the page they are on and runs the
-press once under a key of its own — once, because the record is retired before the
-request goes. A keyed refusal swaps nothing: `htmx:beforeSwap` is refused for it, and its
+was answered. Bytes decide which command a press is, here exactly as at the server: the
+same bytes keep the same key, and a key the server has already run answers from its
+record, redirect included, and runs nothing a second time — a press after a reload never
+mints a second key for a submission that already ran. Other bytes are the next command:
+the record is retired before the request goes, the way a spent key retires it at the
+server, and the press travels under a key of its own. A form whose command depends on
+what the world holds therefore says what it counted, which is what gives a click under a
+changed world other bytes to be sent under: `/app/auth/sessions` posts the list its "End
+the other N" button counted, and the command refuses 409 when that is no longer the list
+there. A keyed refusal swaps nothing: `htmx:beforeSwap` is refused for it, and its
 sentence goes into the outcome region inside the form it reports for.
 
 Two things are still not delivered: the outcome sentence is the server's English, not the

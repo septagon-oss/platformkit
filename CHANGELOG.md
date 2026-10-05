@@ -90,11 +90,15 @@ bound of four, cancels a scheduled retry the moment a press makes it obsolete, a
 a keyed refusal's markup rather than letting it replace the form it is about — the
 sentence goes to the outcome region inside that form, which is what `/app/auth/sessions`
 renders for each of its revoke forms and what the gallery's
-`pk-ui.component.form/command` example shows. A resumed submission that comes back as a
-replay is the answer to a page nobody is looking at, so the press is honoured once under a
-key of its own. Its budget is `ui.CommandControllerBudget`, the measured bytes of the file
-that carries those promises, checked by `make check`. Nothing changed for a form that did
-not opt in.
+`pk-ui.component.form/command` example shows. Bytes decide which command a press is, here
+as at the server: the same bytes keep the pending key and inherit the answer that key
+holds, replay included, so a submission that already ran never sends a second key across
+a reload; other bytes are the next command and mint a key of their own. A form whose
+command depends on what the world holds therefore says what it counted — the "End the
+other N" form posts the list its button counted, and the command refuses 409 when that is
+no longer the list there. Its budget is `ui.CommandControllerBudget`, the measured bytes
+of the file that carries those promises, checked by `make check`. Nothing changed for a
+form that did not opt in.
 
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
