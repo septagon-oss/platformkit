@@ -18,6 +18,7 @@ package legible
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -124,9 +125,16 @@ func Scan(body []byte, reached Reached) ([]String, error) {
 //
 // A value matches the whole string, whitespace folded, never a word inside it:
 // exempting every line that mentions a task's title would exempt the sentence written
-// around it, which is copy. Marking copy that a catalogue already reached changes no
-// verdict — reached strings are neither violation nor exempt.
-func MarkDatum(collected []String, values []string) []String {
+// around it, which is copy. The one place a value is allowed to match *part* of a
+// string is a node the frame composed out of values and the page's own words joined by
+// a separator — a tab title is "<page> · <installation>" and HTML lets a `<title>` hold
+// no element to keep them apart, so the scan sees the pair as one string. Such a node
+// is decided part by part, and that is why MarkDatum is handed the same [Reached]
+// decision [Scan] was: every part either marked copy, a value stored here or a shape
+// [Exempt] recognises leaves nothing a translator was asked for, and the node counts
+// as reached where its copy reached or as a datum where it is all data. One part that
+// is none of the three leaves the node a violation: that part is the copy this reports.
+func MarkDatum(collected []String, reached Reached, values []string) []String {
 	if len(values) == 0 {
 		return collected
 	}
@@ -138,8 +146,54 @@ func MarkDatum(collected []String, values []string) []String {
 	}
 	out := make([]String, len(collected))
 	for i, s := range collected {
-		s.Datum = typed[canon(s.Text)]
+		text := canon(s.Text)
+		s.Datum = typed[text]
+		if !s.Datum {
+			if datum, isReached := composed(joinedParts(text), typed, reached); datum || isReached {
+				s.Datum, s.Reached = datum, isReached
+			}
+		}
 		out[i] = s
+	}
+	return out
+}
+
+// composed is the verdict on a node the frame joined: a datum when every part is a
+// value stored here or a shape no translator is asked for, reached when one part is
+// mark-carrying copy and the rest are accounted for, and neither the moment a part is
+// unexplained — an unmarked word is copy this application never sent to a catalogue.
+func composed(parts []string, typed map[string]bool, reached Reached) (datum, isReached bool) {
+	if len(parts) < 2 {
+		return false, false
+	}
+	for _, part := range parts {
+		switch {
+		case reaches(reached, part):
+			isReached = true
+		case typed[part], Exempt(part):
+		default:
+			return false, false
+		}
+	}
+	return !isReached, isReached
+}
+
+// joinSplit is the frame's separator with a space each side — the glyph a page puts
+// *between* two things it has joined into one node. A separator with no space is inside
+// a word (`and/or`), and stays part of it.
+var joinSplit = regexp.MustCompile(`\s[` + separators + `]\s+`)
+
+// joinedParts cuts a canonical string at the separators that stand between its parts.
+func joinedParts(text string) []string {
+	parts := joinSplit.Split(text, -1)
+	if len(parts) < 2 {
+		return nil
+	}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
 	}
 	return out
 }

@@ -9,7 +9,10 @@ import (
 // the one that makes the number mean something: every string there is copy somebody
 // wrote in Go, and the rule must refuse to look away from it — including from the
 // Portuguese sentence, because exempting text that is not English would be the
-// flattering version of this rule.
+// flattering version of this rule. The two dates in that half are the shape this rule
+// argues with itself: a kernel that renders an instant as "2026-10-04 11:50" exempts
+// it, and one that renders it as "Mon 04 Oct …" is a page whose weekday and month
+// names nobody translated, which is what the first half must not quietly agree to.
 func TestTheExemptionRule(t *testing.T) {
 	for _, table := range []struct {
 		what  string
@@ -18,7 +21,8 @@ func TestTheExemptionRule(t *testing.T) {
 	}{
 		{"data the number does not count", []string{
 			"42", "1.234.567,89", "R$ 1.234,50", "12 %", "4 MB", "2026-10-04",
-			"2026-10-04T11:50:56Z", "Mon 04 Oct 2026 12:00:00 UTC",
+			"2026-10-04T11:50:56Z",
+			"2026-10-04 11:50", "2026-10-04T11:50:56+02:00",
 			"2f1e9a70-9e0b-7c31-8a2d-4c5d6e7f8a90", "a1b2c3d4e5f6a7b8c9d0",
 			"task:read", "screens.new", "AUTH_DENIED", "text/plain", "pt_BR", "pt-PT",
 			"en-XA", "root@acme.localhost", "acme.localhost", "/app/task/tasks",
@@ -29,6 +33,8 @@ func TestTheExemptionRule(t *testing.T) {
 			"Ask for access", "Back to the workspace", "Learn more", "Save",
 			"onboarding-checklist", "Delete task 4b2a9c1d-9e0b-7c31-8a2d-4c5d6e7f8a90",
 			"Scheduled for next Monday", "Iniciar sessão", "Monday, 4 October 2026",
+			"Mon 04 Oct 2026 12:00:00 UTC", "Sat 1 Jan 09:00 UTC",
+			"Name:", "e.g.",
 			"3 out of 10", "of-PT-or-not",
 		}, false},
 	} {
