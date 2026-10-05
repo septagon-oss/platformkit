@@ -26,8 +26,9 @@ import (
 // A use recorded afterwards, in a subscriber, is a use that exists a commit later
 // than the body that created it — long enough for a sweep to have already decided
 // nobody was reading the file, and the file would be gone from under a published
-// page. An id is read off the entity because crud.Reset stamps it before either
-// door writes, so a create knows its own record here.
+// page. An id is read off the entity because both doors stamp it before they
+// write: createRow chooses the id a create will answer with, and an update reads
+// the row under its lock, so a body is always filed under the record it became.
 func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
 	for _, field := range crud.Fields[T]() {
@@ -54,11 +55,40 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 		for _, ref := range refs {
 			ids = append(ids, ref.ID)
 		}
-		if err := s.fileUses().SetUses(ctx, tx, UsesInput{
-			Module: s.Module, Entity: s.Entity, Field: field.Column,
-			Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids,
-		}); err != nil {
-			return fmt.Errorf("richtext field %s: %w", field.Name, err)
+		if err := s.recordUses(ctx, tx, e, field, ids); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// recordUses files what one richtext field of this record shows. One field, one
+// record, one call: the port's input names the field, so the two doors and the
+// delete cannot invent three shapes of the same sentence.
+func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID) error {
+	if err := s.fileUses().SetUses(ctx, tx, UsesInput{
+		Module: s.Module, Entity: s.Entity, Field: field.Column,
+		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids,
+	}); err != nil {
+		return fmt.Errorf("richtext field %s: %w", field.Name, err)
+	}
+	return nil
+}
+
+// clearRichTextUses ends every use this record's richtext fields filed. The
+// rewrite is the empty set, per field, because a use is keyed by field and locale
+// and a record that is gone shows nothing in any of them. The locale is the one
+// the write filed under — recordLocale answers the same question at both doors,
+// and the day a request's own language becomes that argument (T-0190) the delete
+// asks it in the request's language too, which is what kit/rest's own calls will
+// then have used.
+func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T) error {
+	for _, field := range crud.Fields[T]() {
+		if field.Widget != "richtext" {
+			continue
+		}
+		if err := s.recordUses(ctx, tx, e, field, nil); err != nil {
+			return err
 		}
 	}
 	return nil
