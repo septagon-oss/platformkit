@@ -113,18 +113,18 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 // at a debugger, parked behind a garbage collection — leaves the broker firing its
 // redelivery timers anyway and the client stamping the queued deliveries a few
 // milliseconds apart the moment it resumes. Held at the poison handler's return for two
-// seconds, this case recorded its five attempts and its one terminal row, with the last
-// three redeliveries stamped 3ms, 4ms and 1ms apart and the row written 217ms after its
-// own wait began; released at once the rungs read 44ms, 200ms, 500ms and 1.001s, and the
-// row lands 1.83s to 2.00s after the relay. Same policy, same binary, same broker. So
-// this case asks the server what it was told to do, and keeps the one timing bound a
-// stalled client can only lengthen.
+// seconds, this case recorded its five attempts and its one terminal row, its last three
+// redeliveries stamped 3ms, 4ms and 1ms apart and the row written 217ms after its own wait
+// began; released at once the row lands 1.83s to 2.00s after the relay and the stamps sit
+// on their rungs — 44ms, 200ms, 500ms, 1.001s — or below them, when a cold first delivery
+// outlasts the 50ms AckWait that is rung one. Same policy, same binary, same broker: this
+// case asks the server what it was told to do, and keeps the one bound a stall lengthens.
 func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	if os.Getenv("PLATFORMKIT_TEST_NATS_URL") == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
 	fast(t)
-	// Unequal rungs catch a second retry delay layered onto the broker timer.
+	// Unequal rungs: the stored ladder and the printed gaps name which rung they carry.
 	delivery.Backoff = []time.Duration{50 * time.Millisecond, 200 * time.Millisecond, 500 * time.Millisecond, time.Second}
 	admin, conn := dbtest.Schema(t)
 	ctx, stop := context.WithCancel(t.Context())
