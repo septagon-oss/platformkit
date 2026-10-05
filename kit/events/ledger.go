@@ -64,6 +64,7 @@ package events
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -265,13 +266,20 @@ func durableLock(durable string) string { return "events ledger " + durable }
 // queueing. The sentence names what is in the way and that nothing moved, because
 // the retry is correctable and the operator has to be able to tell this from a
 // failure that lost rows.
+// ErrLedgerMoveContended is the move's answer to a delivery in flight: one claim is
+// open under a durable this move is about to rename, so the whole move refuses and
+// writes nothing. It is a sentinel because the operator's door has to be able to tell
+// "ask again" from "something is broken" without matching a sentence — the refusal
+// reads as a conflict there, and as the same refusal in a log here.
+var ErrLedgerMoveContended = errors.New("no ledger row moved, run it again")
+
 func holdDurable(tx db.Tx[db.System], durable string) error {
 	var got bool
 	if err := tx.DB().Raw(`SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))`, durableLock(durable)).Scan(&got).Error; err != nil {
 		return fmt.Errorf("events: move the delivery ledger: the lock on %s: %w", durable, err)
 	}
 	if !got {
-		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim on %s; no ledger row moved, run it again", durable)
+		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim on %s; %w", durable, ErrLedgerMoveContended)
 	}
 	return nil
 }

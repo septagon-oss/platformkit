@@ -21,8 +21,12 @@
 -- guess about a tenant with no host and no mapping — that tenant stops the drain of
 -- a boot that named itself, and stays where it is for every other.
 -- And it is not one statement per tenant: the choice of app is computed once, in
--- `placeable`, so the write and the refusal cannot drift apart about who is
--- placeable, which is the only way this file could tell two stories about one row.
+-- `platformkit_place_tenants` (000045), so the write and the refusal cannot drift
+-- apart about who is placeable, which is the only way this file could tell two
+-- stories about one row. That function is what makes this file the *first* run of
+-- a placement rather than the only one: the file is spent when it drains, and the
+-- boot that names an app after an upgrade that named none asks the same function
+-- about the same rows — see kit/app/placement.go.
 --
 -- It refuses only the boot that named itself. That guard is the line `make check`'s
 -- rehearsal drew (v1.1.0 -> this tree, measured 2026-10-05): the copy that step
@@ -44,58 +48,26 @@
 -- (kit/app/migrations.go, db.BackfillDeclaring) — and the run that reaches the
 -- refusal keeps its cursor, so the retry after the operator fixes the setting is the
 -- same walk and takes the rows it never reached.
-WITH declared AS (
-	-- The operator's explicit placement, `slug=app` pairs, from the session the boot
-	-- declared. Same grammar and same precedence as 000043: an explicit pair beats a
-	-- host inference. A pair with either half missing names nothing and is dropped by
-	-- the two `<> ''` tests below rather than placing a tenant under an empty app.
-	SELECT btrim(split_part(pair, '=', 1)) AS slug, btrim(split_part(pair, '=', 2)) AS app
-	FROM unnest(string_to_array(current_setting('platformkit.app_tenants', true), ',')) AS pair
-),
-placeable AS (
-	SELECT t.id, coalesce(
-		(SELECT d.app FROM declared d WHERE d.slug = t.slug AND d.slug <> '' AND d.app <> ''),
-		current_setting('platformkit.app', true)) AS app
-	FROM tenants AS t
-	WHERE t.app = ''
-		AND (
-			EXISTS (SELECT 1 FROM declared d WHERE d.slug = t.slug AND d.slug <> '' AND d.app <> '')
-			OR (
-				-- The proof, and it is the whole of it: this boot named itself and
-				-- named the hosts it serves, and every host this tenant holds is one
-				-- of them. A tenant with no host is not placed by hosts at all, and a
-				-- boot that names no hosts places nothing.
-				coalesce(nullif(btrim(current_setting('platformkit.app', true)), ''), '') <> ''
-				AND coalesce(nullif(btrim(current_setting('platformkit.app_hosts', true)), ''), '') <> ''
-				AND EXISTS (SELECT 1 FROM tenant_hosts h WHERE h.tenant_id = t.id)
-				AND NOT EXISTS (
-					SELECT 1 FROM tenant_hosts h
-					WHERE h.tenant_id = t.id
-						AND NOT (h.host = ANY (
-							SELECT btrim(x) FROM unnest(string_to_array(
-								current_setting('platformkit.app_hosts', true), ',')) AS x
-							WHERE btrim(x) <> '')))
-			)
-		)
-),
-moved AS (
-	UPDATE tenants AS t
-	SET app = p.app
-	FROM placeable p
-	WHERE t.id = p.id
-		AND t.id IN (SELECT id FROM batch)
-	RETURNING 1
-)
 SELECT CASE
 	-- '' when the boot named no app: the guard the comment above argues for, kept in
 	-- the caller rather than in the function, because "who may be refused for a row
 	-- nobody placed" is this statement's decision and the function's only job is to
 	-- print the sentence for whoever has to make it.
 	WHEN coalesce(nullif(btrim(current_setting('platformkit.app', true)), ''), '') <> '' THEN
-		platformkit_refuse_unplaced_tenants((
-			SELECT string_agg(slug, ', ' ORDER BY slug)
-			FROM tenants AS t
-			WHERE t.app = ''
-				AND t.id NOT IN (SELECT id FROM placeable)))
-	ELSE ''
+		platformkit_refuse_unplaced_tenants(platformkit_place_tenants(
+			current_setting('platformkit.app', true),
+			current_setting('platformkit.app_hosts', true),
+			current_setting('platformkit.app_tenants', true),
+			(SELECT array_agg(id) FROM batch)))
+	ELSE
+		-- The same walk, with its answer discarded: a boot that named no app places
+		-- what its mapping names and prints nothing about the rest. The empty array on
+		-- the NULL side is the window itself — `(SELECT array_agg(id) FROM batch)` over
+		-- no rows is NULL, and NULL is this function's "the whole table", which a drain
+		-- part-way through a window must never mean.
+		platformkit_place_tenants(
+			current_setting('platformkit.app', true),
+			current_setting('platformkit.app_hosts', true),
+			current_setting('platformkit.app_tenants', true),
+			coalesce((SELECT array_agg(id) FROM batch), ARRAY[]::uuid[]))
 END;

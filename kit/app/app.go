@@ -688,6 +688,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn, store cache.Cache) (h
 	if err := a.composeGates(api); err != nil {
 		return nil, err
 	}
+	// The two delivery verbs the installation owns, and only for a composition that
+	// names itself: an app-less deployment has no scoped durable to move onto and no
+	// app to name in the record either verb writes, so both doors would open onto a
+	// zero report. mountLedgerOps and kernelModule below carry the same condition.
+	if a.opts.App.Named() {
+		mountLedgerOps(api, a.opts.App)
+	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
 	// be able to contribute their own and none ever did in three repositories,
@@ -1121,10 +1128,20 @@ func kernelModule(app appname.Name) module.Module {
 		events.Declare[Denied](EventDenied),
 		events.Declare[AccessRequested](EventAccessRequested),
 	}
+	self := module.Module{Name: module.KernelName}
 	if app.Named() {
 		declared = append(declared, events.Declare[events.LedgerMovedRecord](events.EventLedgerMoved))
+		// The two grants the control plane's delivery verbs are guarded by, declared
+		// by the same condition as the routes: kit/app refuses a route guarded by a
+		// permission no manifest defines, and a manifest that defined one no route
+		// uses would be a grant somebody could hand out for a door that is not there.
+		self.Permissions = []module.Permission{
+			{Key: PermissionLedgerMove, Operator: true, Label: "move this app's delivery ledger onto its own durable"},
+			{Key: PermissionEventReplay, Operator: true, Label: "replay one of this app's events"},
+		}
 	}
-	return module.Module{Name: module.KernelName, Declared: declared}
+	self.Declared = declared
+	return self
 }
 
 // declaredEvents is every event every manifest declares, de-duplicated by name.

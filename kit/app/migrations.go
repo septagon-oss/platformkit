@@ -26,7 +26,14 @@ func Migrate(ctx context.Context, cfg config.Config, mods []module.Module) error
 	if err != nil {
 		return err
 	}
-	return db.MigrateDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...)
+	if err := db.MigrateDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...); err != nil {
+		return err
+	}
+	// After the walk, because the walk may hold this release's own placement file:
+	// that file is the first run of the same function (migrations/000045) and it
+	// refuses what it cannot place, and a step that placed first would answer that
+	// file's operator a different question than the file asks. See placement.go.
+	return placeTenants(ctx, cfg)
 }
 
 // migrationDeclaration is what this boot tells the migration about itself, checked
@@ -78,7 +85,13 @@ func Drain(ctx context.Context, cfg config.Config, mods []module.Module) error {
 	if err != nil {
 		return err
 	}
-	return db.BackfillDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...)
+	if err := db.BackfillDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...); err != nil {
+		return err
+	}
+	// The same step Migrate takes, because the drain is the door a placement usually
+	// runs at (db.BackfillDeclaring) and a rehearsal that drains without it would
+	// measure a placement this release does not actually run.
+	return placeTenants(ctx, cfg)
 }
 
 // MigrationSources keeps the foundation first and modules in composition order.
