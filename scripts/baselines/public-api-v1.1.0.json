@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "12f77c6f49629a8d1ac29fcc6adfb2a6f6bd43e2"
+    "candidate": "4ce1411e9ae77a2beec251eea427a1bb0db6821f"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -46,7 +46,6 @@
     "./modules/file/contracts/filetest.(*Memory).Put: changed from func(context.Context, string, io.Reader, int64) error to func(context.Context, github.com/septagon-oss/platformkit/modules/file/contracts.Scope, github.com/septagon-oss/platformkit/modules/file/contracts.Key, io.Reader, int64, github.com/septagon-oss/platformkit/modules/file/contracts.Meta) error",
     "./modules/file/contracts/filetest.StorageFixture.RequiresSize: removed",
     "./modules/notification/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
-    "./modules/site/contracts.DefaultPrimaryColor: value changed from \"#2563eb\" to \"\"",
     "./modules/site/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/task/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/tenant/contracts.Service.ClearOIDC: added",
