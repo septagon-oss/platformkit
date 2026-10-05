@@ -63,10 +63,14 @@ for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_
 done
 export PATH
 
-# Fail fast, naming the missing piece. The host the pkit-ci label runs on was measured
-# to have /dev/kvm world-readable, an x86_64 system image and two AVDs; a runner that
-# turns out not to have them is a runner-label decision (or the hosted-device fallback
-# the specify note names), not a reason to skip a flow.
+# Fail fast, naming the missing piece. The journey runs on the pkit-ci-android label:
+# its image keeps adb and the emulator under $ANDROID_HOME (/opt/android-sdk) and
+# Maestro under $MAESTRO_HOME/bin (/opt/maestro) — all three already on its PATH — and
+# carries one x86_64 Google APIs system image and the one AVD beside it, which the
+# repository names through PK_MOBILE_AVD; the job container is started with the host's
+# /dev/kvm passed through. A runner that turns out not to have them is a runner-label
+# decision (or the hosted-device fallback the specify note names), not a reason to skip
+# a flow.
 missing=()
 for tool in adb emulator maestro; do
 	command -v "$tool" >/dev/null || missing+=("$tool")

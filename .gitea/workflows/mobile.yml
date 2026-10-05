@@ -55,10 +55,14 @@ jobs:
       # cannot name. The digest is checked before anything is installed. The URL is
       # deliberately not a job-level entry: "Fetch the pinned shell build" reads it
       # from the repository itself, authorises the download with the job's token, and
-      # exports PK_MOBILE_APK as a file:// URL on the job environment. A job-level env
-      # entry of the same name would outrank that export — env: is applied over the
-      # $GITHUB_ENV file the runner assembles — and would hand the harness the
-      # sign-in-gated URL back, which is the failure this step exists to remove.
+      # exports PK_MOBILE_APK as a file:// URL on the job environment. No job-level
+      # entry of that name stands here, and that is the point of the arrangement and
+      # not its mechanism: whether a job's env: outranks a $GITHUB_ENV export is
+      # act_runner's ordering, which nothing in this repository establishes, so a
+      # second PK_MOBILE_APK could outrank the export and hand the harness the
+      # sign-in-gated URL back — the failure this step exists to remove.
+      # scripts/mobile_journey_fetch_test.sh refuses a job-level entry by that name on
+      # that reading alone, without waiting for the ordering to be measured.
       PK_MOBILE_APK_SHA256: ${{ vars.PK_MOBILE_APK_SHA256 }}
       PK_MOBILE_AVD: ${{ vars.PK_MOBILE_AVD }}
       # Where the harness leaves the report so this job can print it: the journey's own
