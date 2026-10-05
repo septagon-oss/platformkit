@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up trace down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -254,17 +254,65 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
+# Gate 10 never drives an application it did not start. The two cases below answer
+# that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
+# browser or node: a stranger answers /health on the port, the run's own application
+# does not, and each script's own wait_healthy — extracted from the committed file
+# rather than retyped — has to refuse. They are here, and not in
+# check-e2e-guards, because nothing they ask needs a service: a run that would drive
+# somebody else's listener is red before a merge rather than in the job that
+# guards it.
 check-run-owner: ## Refuse a browser run that would drive an application it did not start
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
 
+# Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
+# promises it makes — the port it refuses, the listener it is willing to serve through, and the port
+# it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
+# here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
+# /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+#
+# scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
+# about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
+# one window of the job where node and a browser exist. It starts nothing — it reads `make -n
+# check-e2e-guards` and .gitea/workflows/ci.yml — so unlike its two subjects it needs no node and
+# belongs here, where dropping them from the goal is red before a merge rather than in the job that
+# dropped them.
+#
+# scripts/ci_checkout_history_test.sh asks which history each CI job fetches and which of its steps
+# reads it. It is here because the answer was wrong in the direction that costs a delivery: at
+# b6f1e93 the design job spent all 45 of its minutes inside actions/checkout's full-history fetch —
+# every branch and every tag, for a job whose steps read no git object — and the forge refused the
+# head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
+# workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
+# history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/ci_checkout_history_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
+	bash scripts/free_port_test.sh
+	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
+
+# Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
+# prose, because each one can only be shown by starting scripts/e2e.sh against a port somebody else
+# is holding: a foreign listener that takes the port mid-build (scripts/e2e_port_taken_during_build_
+# test.sh) and a socket table that answers every question about ownership with silence
+# (scripts/e2e_unattributed_listener_test.sh). Both answer the question `free_port_test.sh` cannot:
+# whether gate 10, when it is really run, refuses.
+#
+# They are NOT in `check`, and that is a measured reason and not an omission. Each one needs node —
+# e2e.sh stops at its node check before it prints anything either case greps for, and an absent node
+# would read as a broken refusal. CI installs node two steps after `make check` (`.gitea/workflows/
+# ci.yml`: setup-node, then the browser, then `make e2e`), so a wiring into `check` would red that
+# job for a reason that has nothing to do with the change under review. They run in the e2e job, next
+# to the gate they guard, where node, the browser and Postgres all exist; 17s for both there.
+check-e2e-guards: ## Run gate 10's two port-refusal pins (needs node, a browser and the test database)
+	bash scripts/e2e_unattributed_listener_test.sh
+	bash scripts/e2e_port_taken_during_build_test.sh
 
 fmt: ## Format every package
 	go fmt ./...

@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"log/slog"
 	"net/http"
 	"os"
@@ -84,6 +85,22 @@ type Options struct {
 
 	// Role defaults to All.
 	Role Role
+
+	// App is this composition's own app slug: the name every shared name it
+	// forms carries, so two compositions over one database and one broker cannot
+	// read one another's work (kit/appname, decision 0074). Empty is the deployment
+	// of one app, which keeps the names this kernel formed before the app segment.
+	// It is a slug and not a display name: it reaches a broker subject, a consumer
+	// name, a job lock and a cookie name.
+	//
+	// It is the same fact as the configuration key `nats.app`, and New reconciles the
+	// two before anything reads either: an empty App takes the configured slug, and an
+	// App named while the key stays empty is written into the key as this App carries
+	// it, so one value places this app's tenants (migrations/000043), addresses its
+	// subjects (kit/events/providers/nats) and keys its payload contract
+	// (kit/events/catalog.go). Two spellings naming two apps are refused; a caller
+	// that stamps tenants from its own config.Config still reads its own empty key.
+	App appname.Name
 
 	// Installation names the host the installation itself is reached at — the
 	// one address that serves the control plane (the Ops surface) and the only
@@ -229,12 +246,17 @@ type App struct {
 	declaredRoutes []string
 
 	// declared is every event these manifests promise, with the payload type each
-	// one named. New works it out and installs nothing: the catalog behind it is
-	// process state that events.Publish reads on every outbox write, and a build
-	// this kernel refuses after New would otherwise leave an application that is
-	// still serving answering under the refused composition's shapes. Start puts
-	// it up once, at the end of a boot with nothing left to refuse.
-	declared []events.Declared
+	// one named, and declaredRelease is this composition's receipt for putting them
+	// in its own app's catalog. The catalog behind them is what events.Publish reads
+	// on every outbox write, and it is keyed by app, so a composition's tenants are
+	// measured against that composition's own contract from the moment the
+	// composition exists, and a boot can neither replace nor erase what another app
+	// is answering under (kit/events/catalog.go). The receipt gives back what this
+	// composition added — every refusal after New, and the Close of the Runtime Start
+	// hands out — which is what keeps a build this kernel refused from holding shapes
+	// no live composition declares.
+	declared        []events.Declared
+	declaredRelease func()
 
 	// held is this composition's connection, held open-handed from New until Start
 	// opens it. The API, its readiness probe, its anonymous write counter and the
@@ -328,6 +350,71 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == "" {
 		opts.Role = All
 	}
+	// Which app this is has one answer, and it reaches the composition by two
+	// routes: nats.app, the setting every shared name is formed from (migration
+	// 000043 places tenants by it, the transport addresses events with it, the
+	// reference application stamps new tenants with it), and Options.App, the same
+	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
+	// nothing below re-reads either input: the payload catalog, the relay's claim,
+	// every subscription's durable and the job lock are named from the value this
+	// block leaves in opts.App, and everything that reads the setting rather than the
+	// option — the transport constructor, which transport() hands a.cfg.NATS, and the
+	// migration's placement of this boot's tenants — reads the value it leaves in
+	// cfg.NATS.App. Left to agree by themselves they do not: a
+	// deployment that named itself in configuration alone stamped its tenants
+	// "collect", addressed its events as collect and installed its catalog under
+	// nobody's slug, so checkPayload — which asks which app holds the tenant the row
+	// belongs to — found no schema for its own tenants and a malformed event that
+	// used to be refused at the INSERT began to commit and to reach the relay.
+	// Rule 9 on an authoritative write, lost by a setting.
+	configured, err := cfg.NATS.AppName()
+	if err != nil {
+		// A slug that is present and broken is refused here as everywhere else; this
+		// is the door the composition boots through, including for the memory
+		// transport, which never asks NATS.Validate.
+		return nil, fmt.Errorf("app: %w", err)
+	}
+	if opts.App.Named() {
+		// The type is not the check: a Name built by conversion bypasses Parse, and
+		// from here the slug is a label and nothing else. Every name kit/appname
+		// forms for it survives an ungrammatical spelling — the durable, the job
+		// lock, the cookie — so such an app boots, serves and emits while no tenant's
+		// tenants.app can ever equal it: it reads as nobody's app, and the payload
+		// contract it declared checks nobody, which is the coverage the catalog
+		// exists to make visible rather than lose. Consume refuses the same spelling
+		// per subscription; this refuses it once, where the composition is.
+		if _, err := appname.Parse(string(opts.App)); err != nil {
+			return nil, fmt.Errorf("app: Options.App %q: %w", string(opts.App), err)
+		}
+		if configured.Named() && configured != opts.App {
+			// Not a tie to break: the setting is what the tenants in the database are
+			// stamped with, so the option would name an app no tenant belongs to, and
+			// the composition's own declared contract would check nobody while its
+			// events carried the other name. Which one to keep is the deployment's
+			// decision, and a boot cannot make it; the error names both spellings.
+			return nil, fmt.Errorf("app: Options.App %q and nats.app %q are two answers to which app this composition is", string(opts.App), cfg.NATS.App)
+		}
+		if !configured.Named() {
+			// The opposite direction, and the one the case above cannot see: the code
+			// spoke and the setting said nothing. nats.app is not only how a deployment
+			// names itself, it is the key two consumers read — the transport constructor
+			// (kit/events/providers/nats forms its subjects, its subscription filter and
+			// its connection name from settings.AppName) and migrationDeclaration, whose
+			// app is what migrations/000043 places tenants against. Left empty, this boot
+			// would scope its relay, its durables and its job lock by the option and form
+			// every other shared name as the deployment of one app: the same question
+			// answered twice, which is what the two-spellings refusal above exists to
+			// forbid. Written to the copy of the configuration this App carries — a
+			// caller's own config.Config is passed by value and keeps its empty key.
+			cfg.NATS.App = string(opts.App)
+		}
+	} else {
+		// The composition said nothing about itself, so the deployment speaks: nats.app
+		// is the slug's one configuration key (kit/appname/README.md) and a
+		// composition that does not name itself is not a different app from the one
+		// its configuration names.
+		opts.App = configured
+	}
 	switch opts.Role {
 	case Web, Worker, All:
 	default:
@@ -376,36 +463,31 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 		return nil, err
 	}
 	// Every event this composition can emit, with the payload type its module
-	// promised, is carried to the Runtime: a payload that is not one is refused at
-	// the INSERT rather than published and discovered by a subscriber. One list,
-	// built from the manifests nobody else re-declares. See kit/events/catalog.go
+	// promised, goes to the outbox: a payload that is not one is refused at the
+	// INSERT rather than published and discovered by a subscriber. One list per
+	// app, built from the manifests nobody else re-declares — a second composition
+	// in this process adds its own list and leaves this one standing, because the
+	// check acme's event is measured against is acme's. See kit/events/catalog.go
 	// and kit/app/asyncapi.go, which emits the same list as a document.
 	//
-	// It is worked out here and claimed by Start, above the connection. The catalog is
-	// the one piece of process state a boot changes, and New is not the end of what a
-	// boot answers: the route gates, the store the deployment names and the transport
-	// all still refuse, and a refusal that had already overwritten the catalog would
-	// take the payload guard away from an application this composition was never
-	// allowed to become — so the claim installs beside the standing shapes, and every
-	// refusal after it gives back what it added, including the ones that come back
-	// with no Runtime.
-	//
-	// What is answered here, rather than claimed, is the one thing about the catalog a
-	// boot can answer free of effects: whether this composition spells an event name
-	// another live composition already chose another way, or spells one name two ways
-	// inside itself. Refusing that at Start would
-	// spend the three dry registrations and the API built to serve on the way to a
-	// sentence about two manifests (0074 rule 1); refusing it after the connection
-	// would spend the deployment too. Two boots that both read the catalog before
-	// either wrote it are answered by the claim, which is taken before the first
-	// effect and refuses whichever one reaches it second.
+	// What is answered here is the disagreement a boot can see before it claims
+	// anything: this composition spells one of its own app's event names another way
+	// than the shapes standing, or spells one name two ways inside itself. Refusing
+	// that after the connection would spend the deployment for a sentence about two
+	// manifests (0074 rule 1), and refusing it at the end of Start would spend the
+	// three dry registrations and the API built to serve on the way there. The claim
+	// itself is taken at the last line of this function, under the same lock, so two
+	// boots that both read the catalog before either wrote it are answered by the one
+	// that reaches the claim second.
 	//
 	// The gate reads every declaration the manifests wrote, not one per name: a list
 	// joined by name has already chosen which of two promises to keep before anything
-	// reads it to be told it may not choose. declaredEvents is the same list once this
-	// refusal has passed, and is what the boot installs and the document renders.
-	if err := events.CheckDeclared(allDeclaredEvents(mods)); err != nil {
-		return nil, err
+	// reads it to be told it may not choose. allDeclaredEvents is that list, and
+	// declaredEvents is the same list once this refusal has passed, joined by name for
+	// the catalog and the document, which is what a list nobody can disagree with
+	// looks like from the other side.
+	if err := events.CheckAppDeclared(opts.App, allDeclaredEvents(mods)); err != nil {
+		return nil, beforeEffects(err)
 	}
 	declared := declaredEvents(mods)
 	log := opts.Log
@@ -441,8 +523,18 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if report != nil {
 		reports = append(reports, report)
 	}
+	// The composition's event shapes are claimed here, the last line of a constructor
+	// that has nothing left to refuse, and under the catalog's own lock: a
+	// composition that spells one of its app's standing names another way is refused
+	// by the claim rather than by whoever reads the catalog next, and the answer costs
+	// the deployment nothing because nothing above this line opened anything.
+	declaredRelease, err := events.ClaimApp(opts.App, declared)
+	if err != nil {
+		return nil, beforeEffects(err)
+	}
 	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
-		held: &heldConn{}, measurement: measurement, reports: reports}, nil
+		declaredRelease: declaredRelease,
+		held:            &heldConn{}, measurement: measurement, reports: reports}, nil
 }
 
 // heldConn is the application connection of a composition that builds its routes
@@ -1004,7 +1096,7 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 // outbox relay and the two tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
-func kernelJobs(transport events.Transport) []jobs.Job {
+func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	return []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
@@ -1014,7 +1106,7 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
-			return events.Relay(ctx, conn, transport)
+			return events.RelayApp(ctx, conn, transport, app)
 		}},
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
@@ -1048,18 +1140,31 @@ func (a *App) drainMigrations() jobs.Job {
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := append(kernelJobs(transport), a.drainMigrations())
+	scheduled := append(kernelJobs(transport, a.opts.App), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)
-		subs = append(subs, m.Subscriptions...)
+		for _, s := range m.Subscriptions {
+			// The composition owns this fact. A subscription belongs to the app
+			// that composes the module that declared it, and a module never names
+			// an app — that is the deployment's, from configuration (Options.App),
+			// and the same line above hands it to the job scheduler and the one
+			// inside kernelJobs hands it to the relay's claim. What it names is the
+			// durable: the JetStream consumer on the one stream, the deliver group
+			// its replicas join, and half the key of the handled ledger (see
+			// kit/appname.Durable). Left unset here, two compositions of one module
+			// name one consumer, and the second app load-balances the first's
+			// tenants' work into its own handlers.
+			s.App = a.opts.App
+			subs = append(subs, s)
+		}
 	}
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
 	}
 	a.log.InfoContext(ctx, "app: working", "jobs", len(scheduled), "subscriptions", len(subs))
 
-	scheduler := jobs.NewScheduler(conn, a.log, scheduled...)
+	scheduler := jobs.NewScheduler(conn, a.log, a.opts.App, scheduled...)
 	if probes == nil {
 		return scheduler.Run(ctx)
 	}

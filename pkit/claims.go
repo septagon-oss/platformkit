@@ -20,11 +20,11 @@ package pkit
 // composition: a second boot with the held name and a different list of modules is
 // a different application wearing it, and the events the first one declared are the
 // first one's contract rather than the name's. The event catalog answers the other
-// half, beside the database rather than over it: it is the union of what the live
-// compositions declared (kit/events DeclareMore), a boot neither replaces a shape
-// another application is answering under nor takes one away on its way out, and the
-// Close of the Runtime that took a declaration gives it back. Refusing the one
-// composition per database is what keeps that union from being asked to paper over
+// half, beside the database rather than over it: it is keyed by app
+// (kit/events ClaimApp), a boot neither replaces the shapes another app is
+// answering under nor takes one away on its way out, and the Close of the Runtime
+// that claimed a name gives it back. Refusing the one
+// composition per database is what keeps that catalog from being asked to paper over
 // two compositions writing one outbox.
 //
 // The claim is taken before the first effect, beside the other answers about the

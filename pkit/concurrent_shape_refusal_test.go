@@ -52,7 +52,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 		}
 		secondResult := make(chan buildResult, 1)
 		go func() {
-			runtime, err := pkit.NewApp("wishlist").Use(doors, desk, postedModule[postedText]("ledger")).
+			runtime, err := pkit.NewApp("collect").Use(doors, desk, postedModule[postedText]("ledger")).
 				Build(t.Context(), buildDeployment(secondDB, app.All))
 			secondResult <- buildResult{runtime, err}
 		}()

@@ -11,6 +11,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache/providers/valkey"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -95,6 +96,22 @@ var taskRego string
 
 var taskPolicy = opa.MustNew("policy/task.rego", "platformkit.task", taskRego)
 
+// appSlug is the composition's own name, resolved once here and handed to every
+// part of it that forms a name two apps could share. config.Validate refuses a
+// broken slug before a boot gets this far (kit/config's NATS.Validate), so the
+// panic below answers only a caller that skipped that door — and it panics rather
+// than answering with the empty Name because a composition that meant to be
+// "collect" and typed something unparseable must not quietly become the
+// deployment of one app, which is the app every unlabelled tenant belongs to.
+// The shape is this file's own opa.MustNew: a defect in the build fails at start.
+func appSlug(cfg config.Config) appname.Name {
+	slug, err := cfg.NATS.AppName()
+	if err != nil {
+		panic("apps/platformkit: " + err.Error())
+	}
+	return slug
+}
+
 func compose(cfg config.Config) composition {
 	// auth.AdministeringRoles is what makes "the last person who can still
 	// administer this tenant" answerable at all: the user module owns who holds
@@ -118,6 +135,11 @@ func compose(cfg config.Config) composition {
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles},
 		Invite:   firstAdmin{users: users},
+		// The app these tenants belong to. One setting names it for the whole
+		// composition — the same value the event addresses, the durable, the job
+		// lock and the cookie name are formed from — and empty is this application
+		// as it has always been: the deployment of one app.
+		App: appSlug(cfg),
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in

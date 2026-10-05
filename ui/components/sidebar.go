@@ -152,13 +152,19 @@ func sidebarBrand(
 	if href == "" {
 		href = "/admin"
 	}
+	// The colour is chosen here rather than carried in from the caller: the two columns differ in
+	// lightness, and no token is legible on both. See clSidebarBrandLinkAdmin's comment.
+	link, text := clSidebarBrandLinkAdmin, clSidebarBrandTextAdmin
+	if flavor == "content" {
+		link, text = clSidebarBrandLinkContent, clSidebarBrandTextContent
+	}
 	return h.Header(
 		h.Class(class.Compile()),
 		g.Attr("data-sidebar-brand", ""),
 		h.A(
 			h.Href(href),
-			h.Class(clSidebarBrandLink.Compile()),
-			h.Span(h.Class(clSidebarBrandText.Compile()), g.Text(label)),
+			h.Class(link.Compile()),
+			h.Span(h.Class(text.Compile()), g.Text(label)),
 		),
 	)
 }

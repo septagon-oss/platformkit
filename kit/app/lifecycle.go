@@ -48,10 +48,10 @@ type Runtime struct {
 	closeOnce sync.Once
 	closeErr  error
 
-	// declaredRelease is this boot's receipt for the event shapes it put in the
-	// process's catalog (kit/events DeclareMore). Close gives them back, which is
-	// what keeps a composition that has stopped from holding shapes no live
-	// composition declared — and from holding the shapes the next one means.
+	// declaredRelease is this boot's receipt for the event shapes its composition
+	// claimed in its own app's catalog (kit/events ClaimApp). Close gives them back,
+	// which is what keeps a composition that has stopped from holding its app's names
+	// against the next one — and from holding the shapes the next one means.
 	declaredRelease func()
 
 	// closed records that Close has run. Work reads it before it claims anything, so
@@ -94,6 +94,43 @@ func RefusedBeforeEffects(err error) bool {
 
 // beforeEffects marks an error as answered on the free side of the line above.
 func beforeEffects(err error) error { return refusedBeforeEffects{err} }
+
+// claimDeclared takes this composition's grip on its own app's event shapes, and
+// changes nothing when the grip is already held: New takes it, and a caller that
+// starts an App whose last Start was refused takes it again rather than serving a
+// composition whose payloads nothing measures.
+func (a *App) claimDeclared() error {
+	if a.declaredRelease != nil {
+		return nil
+	}
+	release, err := events.ClaimApp(a.opts.App, a.declared)
+	if err != nil {
+		return err
+	}
+	a.declaredRelease = release
+	return nil
+}
+
+// giveBackDeclared hands the grip back. A refusal after New leaves no shape of a
+// composition that never started standing in its app's catalog: the names it
+// declared are free again, which is what lets the corrected composition that fixes
+// them claim them its own way.
+func (a *App) giveBackDeclared() {
+	if a.declaredRelease == nil {
+		return
+	}
+	a.declaredRelease()
+	a.declaredRelease = nil
+}
+
+// takeDeclaredRelease moves the grip from the composition to the Runtime this Start
+// returns, whose Close is then the release of it. A Runtime nobody Closes keeps its
+// app's names claimed, which is the same answer it gives its connection.
+func (a *App) takeDeclaredRelease() func() {
+	release := a.declaredRelease
+	a.declaredRelease = nil
+	return release
+}
 
 // Declarations answers the composition's route gates — every operation declared
 // an authorization, no operation is guarded by a permission no composed module
@@ -167,12 +204,13 @@ func (a *App) Declarations() error {
 // Runtime, nothing listening, and everything it opened already released. Which of
 // those failures cost a caller its own lifecycle is what RefusedBeforeEffects
 // answers: a refusal above the connection was answered with nothing spent, and one
-// below it reached the deployment. The two pieces of process state a Start touches
-// are the composition's declared event shapes, claimed above the connection and
-// given back by Close — see below, because where the claim sits is the whole answer
-// about what a refused composition costs — and the process's telemetry providers,
-// installed by the last statement of a Start that had nothing left to refuse, so a
-// boot that comes back with no Runtime changed no process but its own.
+// below it reached the deployment. The two pieces of process state a boot touches
+// are the composition's declared event shapes, claimed by New on its last line and
+// given back by the refusal that follows or the Close of the Runtime it made (see
+// below, because where the claim sits is the whole answer about what a refused
+// composition costs), and the process's telemetry providers, installed by the last
+// statement of a Start that had nothing left to refuse, so a boot that comes back
+// with no Runtime changed no process but its own.
 //
 // The caller then owns the port: mount Handler, decide which started
 // compositions also Work, and Close when both have stopped.
@@ -224,29 +262,24 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 		_ = build.Close() // a composition that failed a gate is never mounted
 		return nil, beforeEffects(err)
 	}
-	// The composition's event shapes are claimed here, above the connection, and not
-	// put up as the boot's last act. The catalog behind events.Publish is what refuses
-	// a payload that is not the one a module declared, and it belongs to the process
-	// rather than to a composition, so two claims have to hold at once: a build this
-	// process refused leaves the shapes a serving application answers under exactly
-	// where they were, and a refusal about those shapes costs the database it named
-	// nothing. Only a claim taken before the first effect holds both. New answers the
-	// disagreement already visible when a boot starts — a name another live
-	// composition chose another way — but two boots can both read the catalog before
-	// either writes it and still disagree, and the one that reaches this claim second
-	// is then refused with its pool undialed, its schema unmigrated and its own App
-	// free to build a corrected composition, which is what beforeEffects marks.
+	// The composition's event shapes were claimed by New, above the connection, and
+	// they are what this boot either keeps or gives back. The catalog behind
+	// events.Publish is what refuses a payload that is not the one a module declared,
+	// and it is keyed by app, so two claims hold at once: a build this process refused
+	// leaves the shapes another app answers under exactly where they were, and a
+	// refusal about those shapes costs the database it named nothing. New answers the
+	// disagreement already visible when a boot starts — a name this app already chose
+	// another way — and takes the claim on its last line, so the boot that reaches the
+	// claim second is refused with its pool undialed, its schema unmigrated and its
+	// own composition free to be corrected and built again.
 	//
 	// Beside, not over: another composition can be live in this process — one
 	// application under two roles, or two applications on two databases — and what a
-	// publish is checked against is then what the live compositions declared
-	// together, counted by grip and given back by the Close of the Runtime that took
-	// it. Claiming early checks no payload that would otherwise have passed: nothing
-	// between here and the end of this function publishes — the first outbox row this
-	// composition can write is a request or a job tick, both of which need the
-	// Runtime this call returns — and every refusal below releases the claim.
-	declaredRelease, err := events.DeclareMore(a.declared)
-	if err != nil {
+	// publish is checked against is then that app's own declarations, counted by grip
+	// and given back by the Close of the Runtime that took it. A caller that starts
+	// this App again after a refusal takes the grip again here rather than serving a
+	// composition whose payloads nothing measures.
+	if err := a.claimDeclared(); err != nil {
 		_ = build.Close()
 		return nil, beforeEffects(err)
 	}
@@ -254,13 +287,13 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// answer about this composition has been given — this claim among them.
 	conn, err := a.openConn(ctx)
 	if err != nil {
-		declaredRelease()
+		a.giveBackDeclared()
 		_ = build.Close()
 		return nil, err
 	}
 	store, err := a.cache(ctx)
 	if err != nil {
-		declaredRelease()
+		a.giveBackDeclared()
 		_ = conn.Close()
 		_ = build.Close()
 		return nil, err
@@ -274,7 +307,7 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// — /ready, the anonymous write limit and the record of a refusal — were built
 	// against the same value being there (see heldConn).
 	if err := api.Connect(conn, store); err != nil {
-		declaredRelease()
+		a.giveBackDeclared()
 		_ = conn.Close()
 		_ = store.Close()
 		_ = build.Close()
@@ -283,13 +316,13 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	a.held.fill(conn)
 	_ = build.Close()
 	if err := a.migrate(ctx); err != nil {
-		declaredRelease()
+		a.giveBackDeclared()
 		_ = conn.Close()
 		_ = store.Close()
 		return nil, err
 	}
 	rt := &Runtime{app: a, conn: conn, handler: handler, cache: store,
-		declaredRelease: declaredRelease}
+		declaredRelease: a.takeDeclaredRelease()}
 	if a.opts.Role == Worker {
 		// The routes were built and gated above and are then set aside: the two
 		// probes are the whole surface Run gives a worker today.

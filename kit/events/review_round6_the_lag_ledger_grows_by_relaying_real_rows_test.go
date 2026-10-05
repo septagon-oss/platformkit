@@ -51,6 +51,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
@@ -107,7 +108,7 @@ func TestTheLagLedgerGrowsByRelayingRealRowsAndSettlesWhenTheQueueEmpties(t *tes
 	t.Cleanup(restore)
 
 	for pass := 1; pass <= review6Passes; pass++ {
-		if _, err := relayBatch(t.Context(), conn, memory.New()); err != nil {
+		if _, err := relayBatch(t.Context(), conn, memory.New(), appname.Name("")); err != nil {
 			t.Fatalf("relay pass %d over a backlog of %d series: %v: the drained-series read runs "+
 				"before the publish, so the ledger this process grew by relaying can stop every "+
 				"tenant's queue from draining", pass, review6Series, err)

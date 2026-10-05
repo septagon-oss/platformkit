@@ -222,6 +222,26 @@ files:
   # fails the load rather than quietly deleting nothing.
   retention: {}
 
+# What this composition declares about itself, read at the migrating boot and put
+# on that session for migrations/000042_tenant_app to place tenants with. The slug
+# itself is nats.app, where kit/appname's grammar guards it and every shared name
+# is already formed from it; what is here is the two facts a migration needs and
+# the database cannot supply. Nothing at run time consults them.
+#
+# A fresh installation has nothing to place and needs neither key. An installation
+# that already holds tenants and declares nothing gets a refusal listing every
+# tenant by slug, which is the point: the alternative is one process's
+# configuration deciding that every tenant in the database was its own.
+app:
+  # Every host this app serves its tenants at. An existing tenant joins this app
+  # only when all of the hosts it holds are listed here; one host outside the list
+  # is evidence the tenant belongs to another composition sharing the database.
+  hosts: []
+  # The operator's explicit placement, tenant slug to app slug, for the tenants no
+  # host can place. Every value goes through the slug's grammar, and the mapping
+  # has to cover every tenant left over or the migration refuses the run.
+  tenant_apps: {}
+
 # Feature flags, under `values:` because the block is a pointer to the map and an
 # installation with no flags writes no `flags:` section at all. One boolean per
 # key, read the way every other value here is read: through kit/config, with an

@@ -14,9 +14,7 @@ set -euo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-# An explicit port is a request; the default is a preference. See pick_port.
-explicit_port="${PLATFORMKIT_E2E_PORT:-}"
-port="${explicit_port:-8099}"
+requested_port="${PLATFORMKIT_E2E_PORT:-}"
 admin_url="${PLATFORMKIT_TEST_ADMIN_URL:?the owner connection; make e2e exports it}"
 app_url="${PLATFORMKIT_TEST_DATABASE_URL:?the application connection; make e2e exports it}"
 database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
@@ -24,6 +22,44 @@ database="platformkit_e2e_$(date +%s)_${RANDOM}_$$"
 if ! command -v node >/dev/null; then
 	echo "e2e: node is not installed; gate 10 needs it. See e2e/package.json." >&2
 	exit 1
+fi
+
+# shellcheck source=scripts/free_port.sh
+. "$root/scripts/free_port.sh"
+
+# The machine has to be able to say whose socket is whose before this run is
+# allowed to trust a listener — see scripts/free_port.sh for why an answer on
+# /health is not the application's signature. The question is answered here, at the
+# same end as the node check, because a run that cannot prove what it serves is
+# refused before it builds a binary, creates a database or bootstraps a tenant.
+if ! port_attribution_works; then
+	echo "e2e: this machine cannot say which process is listening on a port — a listener this run started itself went unattributed, so neither ss -p nor lsof is answering. Gate 10 will not hand a browser an address it cannot prove it serves." >&2
+	exit 1
+fi
+
+# The port this run serves on, asked for rather than assumed — scripts/free_port.sh
+# says why. A caller that names one gets exactly that port or nothing: the browser
+# run at the end reads PLATFORMKIT_E2E_PORT as the address the harness is allowed to
+# write through (e2e/session-recovery.spec.ts refuses every other), so serving
+# elsewhere would have this run drive somebody else's application. A caller that
+# names none takes what the kernel allocates, which is what lets two runs on one
+# host go at the same time.
+#
+# This is settled before the database exists and before the binary is built: a run
+# that cannot be given the port it was promised has refused before it touched
+# anything. What it does not settle is who holds the port at the moment of the bind,
+# which is the question serve() below asks once the application is up.
+if [ -n "$requested_port" ]; then
+	if ! bind_free_port "$requested_port" >/dev/null; then
+		echo "e2e: something is already listening on $requested_port; set PLATFORMKIT_E2E_PORT to a port that is free, or unset it and let this run choose one." >&2
+		exit 1
+	fi
+	port="$requested_port"
+else
+	if ! port="$(bind_free_port)"; then
+		echo "e2e: no free loopback port to serve on." >&2
+		exit 1
+	fi
 fi
 
 # A URL with the database swapped for this run's own. Everything else — host,
@@ -37,110 +73,6 @@ swap() {
 	} catch { console.error("e2e: invalid PostgreSQL URL"); process.exit(1); }' "$1" "${2:-$database}"
 }
 psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; }
-
-# open_port is whether one process could listen on a port right now. node answers
-# it, because node is already required by this gate (the URL swap above and
-# Playwright itself) and a bind test says the thing that matters — that the port
-# can be listened on — rather than what one listing tool happens to show, which is
-# what the previous check depended on and why a run on a machine without `ss` got
-# no answer at all.
-open_port() {
-	node -e 'const s = require("node:net").createServer();
-		s.once("error", () => process.exit(1));
-		s.listen(Number(process.argv[1]), "127.0.0.1", () => s.close(() => process.exit(0)));' "$1"
-}
-
-# pick_port is which address this run serves at, answered before anything is
-# built or migrated rather than after, so a run that cannot have a port fails in
-# two seconds instead of after a database.
-#
-# An explicit PLATFORMKIT_E2E_PORT is honoured exactly and refused when it is
-# taken: whoever named one named it for a reason this script cannot see — a
-# forwarded port, a proxy, a URL already in a browser — and a run that quietly
-# moved would send the browser somewhere the operator did not aim it.
-#
-# The default is one number on a host that runs many worktrees at once, and the
-# gate is one command in a machine-wide queue; a run that could not have 8099
-# takes a port nothing is listening on and says so in the same breath. `start`
-# does exactly this for the database only it talks to
-# (apps/platformkit/start.go's freePort), and the browser is told which port it
-# got through PLATFORMKIT_E2E_PORT below — which e2e/session-recovery.spec.ts
-# reads as part of proving it drives this run's disposable fixture rather than
-# somebody else's server. What the guard has always refused, and still refuses in
-# both branches, is driving a build this run did not start.
-pick_port() {
-	if [ -n "$explicit_port" ]; then
-		open_port "$port" && return 0
-		echo "e2e: something is already listening on $port; set PLATFORMKIT_E2E_PORT." >&2
-		exit 1
-	fi
-	open_port "$port" && return 0
-	if ! port="$(node -e 'const s = require("node:net").createServer();
-		s.once("error", () => process.exit(1));
-		s.listen(0, "127.0.0.1", () => {
-			const taken = s.address().port;
-			s.close(() => process.stdout.write(String(taken)));
-		});')" || [ -z "$port" ]; then
-		echo "e2e: 8099 is taken and no free port could be opened; set PLATFORMKIT_E2E_PORT." >&2
-		exit 1
-	fi
-	echo "e2e: 8099 is taken by something else; serving on $port instead."
-}
-
-# wait_healthy answers whether the application the run started served its probe
-# within its bound. Two ways out, and both print the log: a process that died is
-# refused by the loop the moment `kill -0` fails — before the probe is asked,
-# because the probe can be answered by a process that is not this run's — and a process that stays alive
-# without ever answering is refused when the bound runs out. The second branch is
-# the one this script used to fall through — a run on a contended database can sit
-# in `pg_advisory_lock`'s queue (kit/db/migrate.go's holdCompositionLock, bounded
-# only by the caller's context) with a live process and no listener, and what that
-# used to produce was 112 Playwright failures against a URL that answers nothing,
-# with the reason in a file nobody printed. Here it costs seconds and says why.
-wait_healthy() {
-	local bound="$1" attempt owner listener pids hop
-	for attempt in $(seq 1 "$bound"); do
-		# The process first, and the probe second: the port is not this run's, and
-		# a /health answered there by another worktree's server, or by anything
-		# else, is not evidence that the application this run started is serving.
-		if ! kill -0 "$app_pid" 2>/dev/null; then
-			echo "e2e: the application stopped before it served:" >&2
-			cat "$work/app.log" >&2
-			return 1
-		fi
-		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
-			# A live process and a healthy answer are still two facts about two
-			# different things: an application blocked before its listen — in a
-			# contended lock's queue, or behind a slow migration — answers nothing
-			# while another listener on the same port answers for it. So the answer
-			# counts when the process that owns the listening socket is this one,
-			# found by walking each listener on the port up its parents (an
-			# application started through a wrapper is a child of the pid recorded).
-			pids="$(ss -ltnpH "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u)"
-			if [ -z "$pids" ]; then
-				pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)"
-			fi
-			for listener in $pids; do
-				owner="$listener"
-				for hop in 1 2 3 4 5 6 7 8 9 10 11 12; do
-					[ "$owner" = "$app_pid" ] && break
-					owner="$(cut -s -d')' -f2- "/proc/$owner/stat" 2>/dev/null | awk '{ print $2 }')"
-					[ -n "$owner" ] || break
-					[ "$owner" != 1 ] || break
-				done
-				if [ "$owner" = "$app_pid" ]; then return 0; fi
-			done
-			echo "e2e: something other than this run's application listens on port $port, and /health there is not ours:" >&2
-			ss -ltnp "sport = :$port" >&2 2>/dev/null
-			cat "$work/app.log" >&2
-			return 1
-		fi
-		sleep 1
-	done
-	echo "e2e: the application stayed alive for $bound seconds and never answered /health on port $port:" >&2
-	cat "$work/app.log" >&2
-	return 1
-}
 
 work="$(mktemp -d)"
 results=""
@@ -167,9 +99,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "e2e: one port of its own"
-pick_port
-
 # The binary is built rather than `go run`: go run execs the compiled program as
 # a child, so killing it at the end of this script would leave the application
 # holding the port and the next run would drive the previous run's build.
@@ -193,7 +122,11 @@ psql "$(swap "$admin_url")" -v ON_ERROR_STOP=1 -q \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO platformkit_app;" \
 	-c "ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO platformkit_app;"
 
-cat >"$work/config.yaml" <<YAML
+# A function rather than the heredoc in place, because the port appears twice in it
+# and a run that lost the port it was offered between the choice and the bind
+# rewrites the whole file for its next attempt rather than patching two lines.
+write_config() {
+	cat >"$work/config.yaml" <<YAML
 server:
   addr: "127.0.0.1:$port"
   public_host: "localhost:$port"
@@ -211,6 +144,8 @@ audit:
 files:
   dir: "$work/files"
 YAML
+}
+write_config
 
 password="e2e-$(date +%s)-password"
 # Runtime overrides belong to the caller's application, not this fixture, so
@@ -233,10 +168,97 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-echo "e2e: serving on $port"
-run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
-app_pid=$!
-wait_healthy 60 || exit 1
+# wait_healthy answers whether the application this run started served its probe
+# within its bound, and is scripts/mobile_e2e.sh's function of the same name read
+# against this script's log: 0 once this run's own process is serving it, 1 when that
+# process died, 2 when nothing ever answered, 3 when a process this run did not start
+# holds the port. The two pins that ask it a question
+# (scripts/e2e_health_owner_test.sh, scripts/e2e_health_requires_own_listener_test.sh)
+# extract this function from the committed file rather than retyping it, so the
+# ownership helper it needs is reached here when the caller has not reached it first.
+wait_healthy() { # bound in seconds
+	local bound="$1" waited=0 owners=""
+	if ! command -v port_listeners >/dev/null 2>&1; then
+		# shellcheck source=scripts/free_port.sh
+		. "${root:?}/scripts/free_port.sh"
+	fi
+	while [ "$waited" -lt "$bound" ]; do
+		# The process is asked before /health is, and the answer is not trusted until
+		# the operating system says the socket behind it belongs to this run. A listener
+		# that took the port while the binary was being built answers the probe, and an
+		# application that lost the bind answers nothing at all — the two are
+		# indistinguishable from the client's side, which is why a 200 cannot be the
+		# whole of what serving means here.
+		if ! kill -0 "$app_pid" 2>/dev/null; then return 1; fi
+		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
+			owners="$(port_listeners "$port")"
+			if printf '%s\n' "$owners" | grep -qx "$app_pid"; then return 0; fi
+			# Somebody else is answering, so this run's application can never bind the
+			# number it was configured with. The caller names the holder beside the
+			# application's own log, which by then says what the bind answered.
+			if [ -n "$owners" ]; then
+				return 3
+			fi
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	return 2
+}
+
+serve() { # start the application on $port and wait for /health: the codes wait_healthy gives
+	echo "e2e: serving on $port"
+	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
+	app_pid=$!
+	wait_healthy 60
+}
+
+# Nothing closes the window between the port being offered above and the application
+# binding it here — no portable mechanism hands a bound socket to a process about to
+# be exec'd, which is the note in scripts/free_port.sh. So a port this run chose for
+# itself is asked for again when the bind refuses it, and a run that would have been
+# refused a gate it did not cause moves; the same holds when the socket is found to
+# belong to somebody else before the bind is even attempted. A port the caller named
+# is never moved, and an application that died of anything but the port is reported
+# as what it is rather than retried into the noise.
+attempts=0
+until serve; do
+	status=$?
+	moved=""
+	if [ -z "$requested_port" ] && [ "$attempts" -lt 3 ] &&
+		{ [ "$status" -eq 3 ] ||
+			{ [ "$status" -eq 1 ] && grep -qi 'address already in use' "$work/app.log" 2>/dev/null; }; }; then
+		moved="$port"
+	fi
+	if [ -n "$moved" ]; then
+		attempts=$((attempts + 1))
+		echo "e2e: $moved was taken while the application was starting; choosing another." >&2
+		if [ "$status" -eq 3 ]; then
+			# The application is still starting and will die on the bind; stop it here,
+			# because a run that moves the port must not leave its own process behind
+			# holding nothing and answering to nothing.
+			kill "$app_pid" 2>/dev/null || true
+			wait "$app_pid" 2>/dev/null || true
+			app_pid=""
+		fi
+		if ! port="$(bind_free_port)"; then
+			echo "e2e: no free loopback port to serve on." >&2
+			exit 1
+		fi
+		write_config
+		continue
+	fi
+	case "$status" in
+	2) echo "e2e: the application never answered /health on $port:" >&2 ;;
+	3) echo "e2e: /health answered on $port, but the socket behind the answer is not this run's application, which could not bind a port somebody else was holding:" >&2 ;;
+	*) echo "e2e: the application stopped before it served:" >&2 ;;
+	esac
+	cat "$work/app.log" >&2
+	if holders="$(port_listeners "$port" 2>/dev/null)" && [ -n "$holders" ]; then
+		echo "e2e: $port is held by pid(s) ${holders//$'\n'/ }, which this run did not start; scripts/free_port.sh names who is meant to hold it" >&2
+	fi
+	exit 1
+done
 
 cd e2e
 # npm ci and not npm install: ci installs exactly what package-lock.json pins

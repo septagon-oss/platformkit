@@ -1,11 +1,14 @@
 package app
 
-// The event shapes a composition declares are process state, and one process holds
-// one shape per name. New reads the catalog and answers the clash already standing,
-// but two boots can both read it before either writes it, so the claim itself is a
-// claim — refused, installing nothing — and it sits above the connection rather than
-// after the transport, which is the only place a refusal about it can cost the
-// deployment nothing. These are the two claims that placement is what makes true.
+// The event shapes a composition declares are catalog state, and one app holds one
+// shape per name. New reads the catalog, answers the clash already standing, and
+// takes the claim on its last line under the catalog's own lock: the composition
+// that spells one of its app's event names another way is refused with its
+// deployment undialled, and two boots that would both read the catalog before either
+// wrote it are answered by the one that reaches the claim second. What that
+// placement is what makes true is here: a refusal about a shape has spent no pool,
+// no migration and no store, and it has changed nothing the composition standing is
+// answering under.
 
 import (
 	"strings"
@@ -45,26 +48,20 @@ func TestARefusedEventShapeIsAnsweredWithTheDeploymentUndialed(t *testing.T) {
 	undialableDatabase(&cfg)
 	built := 0
 	opts.Caches = sharedStore(&cfg, &built, nil)
-	// New asks the catalog what is standing, and nothing names this event yet.
-	a, err := New(t.Context(), cfg, []module.Module{hello(), declaringLedger()}, opts)
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	// The other boot of the race: the same name under another payload, installed
-	// after this boot read the catalog and before it claims.
+	// The other composition of this app, first to the claim: the same name under
+	// another payload, standing before this boot is even composed.
 	live, err := events.DeclareMore([]events.Declared{events.Declare[claimedNumber]("ledger.posted")})
 	if err != nil {
 		t.Fatalf("install the other composition's shape: %v", err)
 	}
 	t.Cleanup(live)
 
-	rt, err := a.Start(t.Context())
-	if rt != nil {
-		_ = rt.Close()
-		t.Fatal("Start returned a Runtime whose event name another composition holds")
+	a, err := New(t.Context(), cfg, []module.Module{hello(), declaringLedger()}, opts)
+	if a != nil {
+		t.Fatal("New handed back an application whose event name another composition holds")
 	}
 	if err == nil || !strings.Contains(err.Error(), "ledger.posted") {
-		t.Fatalf("Start did not refuse the event name this process already answers: %v", err)
+		t.Fatalf("New did not refuse the event name this app already answers: %v", err)
 	}
 	if built != 0 {
 		t.Errorf("the refused boot built the store the deployment named %d times on the way to the shape refusal", built)
@@ -84,4 +81,46 @@ func TestARefusedEventShapeIsAnsweredWithTheDeploymentUndialed(t *testing.T) {
 	if err := events.CheckDeclared([]events.Declared{events.Declare[claimedText]("ledger.posted")}); err != nil {
 		t.Errorf("the refused spelling stayed claimed after its boot came back: %v", err)
 	}
+}
+
+// The claim is taken by the composition, not by the boot that serves: a New that
+// succeeded holds its app's names from that moment, so a second composition of the
+// same app that means something else by one of them is refused beside it, and the
+// release of what that composition added is what frees the name again.
+func TestAComposedApplicationHoldsItsEventNamesUntilItsRelease(t *testing.T) {
+	cfg, opts := compose(t)
+	undialableDatabase(&cfg)
+	built := 0
+	opts.Caches = sharedStore(&cfg, &built, nil)
+
+	first, err := New(t.Context(), cfg, []module.Module{hello(), declaringLedger()}, opts)
+	if err != nil {
+		t.Fatalf("compose the first spelling: %v", err)
+	}
+	second, err := New(t.Context(), cfg, []module.Module{hello(), declaringLedger()}, opts)
+	if err != nil {
+		t.Fatalf("a second composition of one shape was refused: %v", err)
+	}
+	if second == nil {
+		t.Fatal("New returned no application and no refusal")
+	}
+	if _, err := New(t.Context(), cfg, []module.Module{hello(), declaringLedgerNumber()}, opts); err == nil {
+		t.Fatal("a composition claimed an event name this app already answers another way")
+	} else if !strings.Contains(err.Error(), "ledger.posted") || !RefusedBeforeEffects(err) {
+		t.Errorf("the disagreeing composition was refused for the wrong reason or after an effect: %v", err)
+	}
+	// Both compositions gave back what they added, and the name is free.
+	first.giveBackDeclared()
+	second.giveBackDeclared()
+	if err := events.CheckDeclared([]events.Declared{events.Declare[claimedNumber]("ledger.posted")}); err != nil {
+		t.Errorf("the claim of two compositions that were never started stayed on the name after both were given back: %v", err)
+	}
+}
+
+// declaringLedgerNumber is the same manifest with the payload that is not the same
+// document: the disagreement the claim refuses.
+func declaringLedgerNumber() module.Module {
+	return module.Module{Name: "ledger", Declared: []events.Declared{
+		events.Declare[claimedNumber]("ledger.posted"),
+	}}
 }

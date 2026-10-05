@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events/internal/delivery"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
@@ -236,8 +237,27 @@ func stillWaiting(ctx context.Context, tx db.Tx[db.System], reported map[lagKey]
 // thing with a deadline; a pass that runs out of time leaves its rows unstamped
 // and the next tick takes them.
 func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
+	return RelayApp(ctx, conn, t, "")
+}
+
+// RelayApp is Relay for a composition that names its app: it claims only the rows
+// whose tenant belongs to that app.
+//
+// The claim is the boundary, and the reason it has to be here rather than at the
+// subject is what a relay without it does: it publishes another app's row at that
+// app's own address, the row gets stamped, and the work is gone from this process's
+// view while the app that owns it never learns there was any. The address carries
+// the app, so the delivery side refuses such a message — which is the right refusal
+// and the wrong place: it is made after the row was published and stamped by someone
+// who had no business with it.
+//
+// The tenant is joined, not required. A row whose tenant row is gone names an app
+// nothing declared, so it belongs to the deployment of one app (which is what every
+// such row was written under until this argument existed) and to no app that names
+// itself — see coalesce below.
+func RelayApp(ctx context.Context, conn *db.Conn, t Transport, app appname.Name) error {
 	for {
-		n, err := relayBatch(ctx, conn, t)
+		n, err := relayBatch(ctx, conn, t, app)
 		if err != nil || n < batch {
 			return err
 		}
@@ -248,7 +268,7 @@ func Relay(ctx context.Context, conn *db.Conn, t Transport) error {
 //
 // The publish happens before the stamp, so a crash in between redelivers rather
 // than loses — see the package comment on idempotency.
-func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
+func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Name) (int, error) {
 	// One span for the pass, and one per row below it. What a reader wants from a
 	// pass span is whether the queue is draining and how long a pass took — one
 	// fact about a hundred rows, and one the worker's own trace should hold. Whose
@@ -267,12 +287,20 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport) (int, error) {
 		// GORM's snake_case mapping never gets a chance to miss them; the COALESCE is
 		// what turns a column that is NULL — the ordinary case, see nilIfEmpty — into
 		// the empty string the envelope's optional members are written for.
-		const q = `SELECT id, tenant_id, name, payload, created_at, actor,
-			COALESCE(traceparent, '') AS traceparent, COALESCE(tracestate, '') AS tracestate,
-			COALESCE(baggage, '') AS baggage, COALESCE(request_id, '') AS request_id,
-			COALESCE(host(client_ip), '') AS client_ip FROM ` + table + `
-			WHERE published_at IS NULL ORDER BY created_at, id LIMIT ? FOR UPDATE SKIP LOCKED`
-		if err := tx.DB().Raw(q, batch).Scan(&rows).Error; err != nil {
+		//
+		// The table alias and the OF o below it belong to the app claim, not to the
+		// aliases: without them FOR UPDATE locks the rows of the one table named, which
+		// is the outbox today and would be the tenant table tomorrow — and locking the
+		// tenant table from a relay would put every host resolution in the country
+		// behind a batch of events.
+		const q = `SELECT o.id, o.tenant_id, o.name, o.payload, o.created_at, o.actor,
+			COALESCE(o.traceparent, '') AS traceparent, COALESCE(o.tracestate, '') AS tracestate,
+			COALESCE(o.baggage, '') AS baggage, COALESCE(o.request_id, '') AS request_id,
+			COALESCE(host(o.client_ip), '') AS client_ip FROM ` + table + ` o
+			LEFT JOIN tenants tn ON tn.id = o.tenant_id
+			WHERE o.published_at IS NULL AND coalesce(tn.app, '') = ?
+			ORDER BY o.created_at, o.id LIMIT ? FOR UPDATE OF o SKIP LOCKED`
+		if err := tx.DB().Raw(q, app.String(), batch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("events: relay: read the outbox: %w", err)
 		}
 		held := make(map[lagKey]struct{}, len(rows))

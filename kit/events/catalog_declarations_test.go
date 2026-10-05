@@ -1,12 +1,13 @@
 package events_test
 
-// One process holds one shape per event name, and it holds it for as long as a
-// composition that declared the name is live. Two compositions can be live at once
-// — one application under two roles, or two applications on two databases — and
-// whichever of them booted second may neither replace a shape the first is answering
-// publishes under nor take it away on the way out. DeclareMore is the door both
-// halves answer at: it installs beside what stands, refuses a name the process
-// already means something else by, and returns the release of what it added.
+// One app holds one shape per event name, and it holds it for as long as a
+// composition that declared the name is live. Two compositions of one deployment
+// can be live at once — one application under two roles, or the same app on two
+// databases — and whichever of them booted second may neither replace a shape the
+// first is answering publishes under nor take it away on the way out. DeclareMore,
+// the claim of the deployment that names no app, is the door both halves answer at:
+// it installs beside what stands, refuses a name that deployment already means
+// something else by, and returns the release of what it added.
 //
 // The comparison is the projection rather than the Go type: two modules with their
 // own struct for one document declare one event, and refusing them would refuse the

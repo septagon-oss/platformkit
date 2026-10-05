@@ -459,7 +459,13 @@ func Expand(mods []Module) []Module {
 		template := m.Subscriptions[0]
 		subs := make([]events.Subscription, 0, len(all))
 		for _, e := range all {
-			subs = append(subs, events.Subscription{Module: template.Module, Name: e, Handler: template.Handler})
+			// App travels with the template rather than being invented here: the
+			// expansion is one subscription per emitted event and nothing else,
+			// and the durable each of them gets is the template's app joined to
+			// that event (kit/appname.Durable). Dropping the field would hand a
+			// SubscribeAll module the unscoped consumer name for every event in
+			// the system.
+			subs = append(subs, events.Subscription{App: template.App, Module: template.Module, Name: e, Handler: template.Handler})
 		}
 		out[i].Subscriptions, out[i].SubscribeAll = subs, false
 	}
