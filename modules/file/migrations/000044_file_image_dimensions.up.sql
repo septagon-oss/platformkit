@@ -5,7 +5,7 @@
 -- million files is not rewritten by an upgrade that measures them.
 --
 -- Both numbers are the server's account of what arrived, which is why no
--- command takes them and no form field carries them: internal/image.go writes a
+-- command takes them and no form field carries them: contracts/image.go writes a
 -- re-encoded frame whose dimensions it read out of the decoded pixels, and this
 -- is the row that says what it measured. A file the pass did not run over —
 -- a PDF, a ZIP, a raster no decoder reads — keeps 0 x 0, and 0 means nobody

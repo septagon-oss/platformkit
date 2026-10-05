@@ -40,9 +40,10 @@ CREATE TABLE file_uses (
 );
 
 -- The two reads there are: a file's own uses, which the details panel asks for,
--- and one record's rows, which SetUses rewrites and Delete-of-a-record will one
--- day end. Both are narrow, both lead with tenant_id because that is what the
--- policy filters on, and neither is worth a write cost without a reader.
+-- and one record's rows, which SetUses rewrites and which a record's delete ends
+-- through kit/rest, in the transaction that removes the row. Both are narrow,
+-- both lead with tenant_id because that is what the policy filters on, and
+-- neither is worth a write cost without a reader.
 CREATE INDEX file_uses_file ON file_uses (tenant_id, file_id);
 CREATE INDEX file_uses_record ON file_uses (tenant_id, module, entity, record);
 

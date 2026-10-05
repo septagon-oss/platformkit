@@ -112,11 +112,12 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	if pass != nil {
 		// The re-encoded frame goes under a key of its own, because Storage is
 		// write-once — Put refuses a key that exists — and a second write to the
-		// same name is not a thing this module asks for anywhere else. The
-		// object that was streamed in is therefore referenced by no row from the
-		// moment this returns: the daily orphan sweep removes it, which is the
-		// job that exists for exactly the gap between a blob write and a
-		// transaction, and the row below names the one key a reader is served.
+		// same name is not a thing this module asks for anywhere else. The object
+		// that was streamed in is therefore referenced by no row the moment this
+		// returns, and the Delete a few lines below removes it straight away; the
+		// daily orphan sweep is what catches the object this process could not
+		// remove itself, which is the gap between a blob write and a transaction.
+		// The row below names the one key a reader is served.
 		reencoded := contracts.Key(uuid.NewString())
 		meta := contracts.MetaFor(&contracts.File{ContentType: pass.ContentType, Visibility: up.Visibility})
 		if err := s.storage.Put(ctx, scope, reencoded, bytes.NewReader(pass.Bytes), int64(len(pass.Bytes)), meta); err != nil {
@@ -376,9 +377,11 @@ func (s *Service) reencode(ctx context.Context, scope contracts.Scope, up contra
 	if err != nil {
 		return nil, s.refuseOrKeep(ctx, up, key, fmt.Errorf("file: read back %s to measure it: %w", key, err))
 	}
-	// The decode reads straight out of the store: the only bytes buffered are the
-	// header processImage keeps for the orientation tag, and the frame is
-	// allocated by the decoder once the ceiling has been agreed to.
+	// The decode reads straight out of the store: the only bytes held in memory
+	// before the frame is allocated are the header processImage keeps for the
+	// orientation tag, and the frame itself is allocated once the ceiling has
+	// been agreed to. The object past that header is streamed, not buffered — a
+	// photograph is several megabytes and the probe is one.
 	pass, err := contracts.ProcessImage(body, s.maxPixels)
 	_ = body.Close()
 	if err != nil {

@@ -168,3 +168,18 @@ a richtext field can mount and `file.RecordUses` as the shape of wiring it;
 `Upload.Image` as the door a picker or an editor knocks on; and `width`/`height` on the
 row as the server's own account of a frame, which the media library and the editor will
 lay out against instead of decoding a header to learn what an image is.
+
+## Limits
+
+The image pass decodes JPEG, PNG and the first frame of a GIF; a WebP is not an
+image this deployment decodes and is refused at an image door. It stores one
+frame: no variants and no srcset widths exist yet, so a richtext image's srcset
+names the stored frame's own width. The pixel ceiling bounds one frame, not how
+many frames are decoded at once — concurrent decodes are unbounded until the
+upload route carries a `kit/limit`. No release sweep runs, so a file whose last
+use ends keeps its bytes; when one lands, a resource left on `rest.RecordNoUses`
+becomes the mount-time refusal it is promised to be, and `Service.Delete` has to
+consult the ledger before removing a file that is being shown. A record's delete
+through `kit/rest` ends its uses; nothing else does. The pass's refusals are
+English `error` text, not catalogue keys, so they are untranslated beside the
+`messages/` catalogue the rest of the module answers in.
