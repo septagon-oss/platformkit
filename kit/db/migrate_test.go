@@ -405,11 +405,11 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	}
 	// The release is what this case is about, so it is read directly rather than
 	// inferred from what the next run manages: no session of this schema holds the key
-	// any more. The bound is this test's own and no other package's queue reaches it —
-	// a run that went away holding the key is refused in fifteen seconds, which is the
-	// patience the session teardown takes when the cancel request itself is slow, and
-	// nothing to do with who else is waiting for the lock.
-	released := time.Now().Add(15 * time.Second)
+	// any more. The bound is this case's own and no other package's queue reaches it; it
+	// is forty-five seconds because the statement the cancelled run sits in sleeps thirty,
+	// and a session whose cancel request never lands is reaped only once that statement
+	// ends. What the bound refuses is a run that came back from Migrate holding the key.
+	released := time.Now().Add(45 * time.Second)
 	for {
 		var held int
 		scan(t, admin, cancellationKeyHolder, &held)
@@ -417,7 +417,7 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 			break
 		}
 		if time.Now().After(released) {
-			t.Fatal("the cancelled run's session still holds the composition key after fifteen seconds")
+			t.Fatal("the cancelled run's session still holds the composition key after forty-five seconds")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
