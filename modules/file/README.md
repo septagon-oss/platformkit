@@ -179,7 +179,10 @@ many frames are decoded at once — concurrent decodes are unbounded until the
 upload route carries a `kit/limit`. No release sweep runs, so a file whose last
 use ends keeps its bytes; when one lands, a resource left on `rest.RecordNoUses`
 becomes the mount-time refusal it is promised to be, and `Service.Delete` has to
-consult the ledger before removing a file that is being shown. A record's delete
-through `kit/rest` ends its uses; nothing else does. The pass's refusals are
+consult the ledger before removing a file that is being shown. Until that guard
+exists a file can be deleted under a body still showing it, and the ledger row
+left behind ends with the next rewrite of that field: an edit, or the record's
+own delete through `kit/rest`, which ends its uses and is not refused by a file
+that went first. Nothing else ends a use. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
 `messages/` catalogue the rest of the module answers in.

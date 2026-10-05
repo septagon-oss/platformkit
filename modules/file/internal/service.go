@@ -209,9 +209,27 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		from = append(from, row.FileID)
 	}
 	add, remove := contracts.DiffUses(from, wanted)
+	// One ascending pass over everything either side names, so the lock order
+	// never depends on which side an id landed on. What a row that is not there
+	// costs depends on that side, and only on that side.
+	//
+	// A file the body newly names has to exist: the refusal below is what keeps
+	// a body pointing at a removed image from recording the uses of the files
+	// that happen to still be there.
+	//
+	// A file this rewrite only ends may already be gone — its ledger row was
+	// filed while the file existed, and Delete's missing ledger check (README
+	// Limits) is the door a file leaves under a body still showing it. That
+	// dangling row is what the caller came here to remove: refusing at it would
+	// strand the record trying to stop existing, refused by a file it is giving
+	// up, and leave the ledger saying a file nobody has is still being read.
 	for _, id := range union(wanted, remove) {
-		if err := lockFileKeyShare(ctx, tx, id); err != nil {
+		found, err := lockFileKeyShare(ctx, tx, id)
+		if err != nil {
 			return nil, err
+		}
+		if !found && slices.Contains(wanted, id) {
+			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
 		}
 	}
 	for _, id := range remove {
@@ -249,23 +267,24 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	return unused, nil
 }
 
-// lockFileKeyShare takes FOR KEY SHARE on one file's row, and refuses with
-// ErrNotFound naming it when the row is not there for this tenant to find.
+// lockFileKeyShare takes FOR KEY SHARE on one file's row and says whether the
+// row was there for this tenant to find. It refuses for real errors only: what
+// a missing row costs is the caller's decision, and SetUses decides it two ways.
 //
 // There is no second check of whose the row is, because there is nothing to
 // check it against: the policy decides what this transaction can see, and a row
 // it cannot see answers no rows. That is what makes a use of another tenant's
 // file impossible rather than merely not allowed.
-func lockFileKeyShare(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+func lockFileKeyShare(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (bool, error) {
 	var found uuid.UUID
 	err := tx.DB().WithContext(ctx).Raw(`SELECT id FROM files WHERE id = ? FOR KEY SHARE`, id).Row().Scan(&found)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
+		return false, nil
 	}
 	if err != nil {
-		return fmt.Errorf("file: lock %s to record a use of it: %w", id, err)
+		return false, fmt.Errorf("file: lock %s to record a use of it: %w", id, err)
 	}
-	return nil
+	return true, nil
 }
 
 // union is the ascending, deduplicated id list every lock is taken in.
