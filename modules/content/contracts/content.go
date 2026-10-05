@@ -145,12 +145,13 @@ type Content struct {
 	AuthorID uuid.UUID `json:"author,omitempty" gorm:"column:author_id;type:uuid" format:"uuid" ui:"hide:list" doc:"The user who created this" readOnly:"true"`
 	// Changes is what the save that published this payload moved. It is the trail's
 	// field and not the entity's: see events.Change and events.Recorder. The kernel's
-	// own write door fills it from the row it locked just before it publishes content.content.updated,
-	// and clears it before the response is written. It is no column, no form field, no
-	// filter and no OpenAPI property — a slice of structs is no entity field type,
-	// gorm:"-" keeps it out of the table and hidden:"true" out of the document — so the
-	// one place it appears is the event, which is where "what changed" has to be to
-	// still be readable in a year, in the one table that never forgets.
+	// own write door fills it from the row it locked just before it publishes
+	// content.content.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
 	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
 }
 
