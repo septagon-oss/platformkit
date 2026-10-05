@@ -103,6 +103,14 @@ of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
 
+[apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
+as one sentence — the modules it uses, the ports the kernel asks the application
+for, and the roles it says a tenant begins as — and what it resolves to is
+committed beside it as
+[COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md), which
+`TestCompositionFile` compares on every `make check` and refuses when the
+composition moves and the file does not.
+
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
 tenants, host lookup and active-tenant enumeration exist before notification

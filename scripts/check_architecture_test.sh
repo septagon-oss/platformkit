@@ -138,7 +138,7 @@ for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault 
     kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts pkit; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -212,6 +212,13 @@ boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts
 boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
 boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"
 boundary_rejects kit/locale/providers/xtext "$foundation/kit/flags"
+# The composition vocabulary builds an application out of the modules a
+# composition handed it, so it has no reason to reach either side of that
+# boundary: not the page layer, whose mounts a composition hands in, and not a
+# module package, not even a contracts/ one, because the resolver asks for a
+# contract by type at the composition that names it.
+boundary_rejects pkit "$foundation/ui/css"
+boundary_rejects pkit "$foundation/modules/auth/contracts"
 # The whole-tree form of the measurement rule. `modules/auth/contracts` is a
 # package `parts` never asks about, so no closure bound above could see what it
 # links; the SDK line of this script is what refuses a second provider installed

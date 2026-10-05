@@ -207,12 +207,21 @@ echo "e2e: one tenant and one administrator"
 	--tenant e2e --host localhost --name "End to end" --admin-email admin@e2e.test \
 	--language pt-PT) >/dev/null
 
-serve() { # start the application on $port and wait for /health: 0 once this run's own process is serving it, 1 when that process died, 2 when nothing ever answered, 3 when a process this run did not start holds the port
-	echo "e2e: serving on $port"
-	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
-	app_pid=$!
-	local waited=0 owners=""
-	while [ "$waited" -lt 60 ]; do
+# wait_healthy answers whether the application this run started served its probe
+# within its bound, and is scripts/mobile_e2e.sh's function of the same name read
+# against this script's log: 0 once this run's own process is serving it, 1 when that
+# process died, 2 when nothing ever answered, 3 when a process this run did not start
+# holds the port. The two pins that ask it a question
+# (scripts/e2e_health_owner_test.sh, scripts/e2e_health_requires_own_listener_test.sh)
+# extract this function from the committed file rather than retyping it, so the
+# ownership helper it needs is reached here when the caller has not reached it first.
+wait_healthy() { # bound in seconds
+	local bound="$1" waited=0 owners=""
+	if ! command -v port_listeners >/dev/null 2>&1; then
+		# shellcheck source=scripts/free_port.sh
+		. "${root:?}/scripts/free_port.sh"
+	fi
+	while [ "$waited" -lt "$bound" ]; do
 		# The process is asked before /health is, and the answer is not trusted until
 		# the operating system says the socket behind it belongs to this run. A listener
 		# that took the port while the binary was being built answers the probe, and an
@@ -234,6 +243,13 @@ serve() { # start the application on $port and wait for /health: 0 once this run
 		waited=$((waited + 1))
 	done
 	return 2
+}
+
+serve() { # start the application on $port and wait for /health: the codes wait_healthy gives
+	echo "e2e: serving on $port"
+	run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
+	app_pid=$!
+	wait_healthy 60
 }
 
 # Nothing closes the window between the port being offered above and the application

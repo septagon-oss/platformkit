@@ -264,6 +264,18 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
+# Gate 10 never drives an application it did not start. The two cases below answer
+# that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
+# browser or node: a stranger answers /health on the port, the run's own application
+# does not, and each script's own wait_healthy — extracted from the committed file
+# rather than retyped — has to refuse. They are here, and not in
+# check-e2e-guards, because nothing they ask needs a service: a run that would drive
+# somebody else's listener is red before a merge rather than in the job that
+# guards it.
+check-run-owner: ## Refuse a browser run that would drive an application it did not start
+	bash scripts/e2e_health_owner_test.sh
+	bash scripts/e2e_health_requires_own_listener_test.sh
+
 # Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
@@ -284,7 +296,7 @@ check-race: ## Run the concurrency kernel under -race
 # head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
