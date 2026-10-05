@@ -51,20 +51,30 @@ only deletion is the retention job (`Retention` in
 `modules/audit/internal/retention.go`), which runs per tenant.
 
 That is now true of the database and not only of this module's code.
-`migrations/00041_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
+`migrations/000041_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
 `REFERENCES` and `TRIGGER` from every grantee the catalog discovers (the shape
 `kit/db/migrate.go` uses for the runner's own ledger, because a module may name no
-role), and installs two row triggers: `audit_events_never_rewritten` refuses every
-`UPDATE`, from every role including the table's owner and a superuser, and
+role), and installs three triggers: `audit_events_never_rewritten` refuses every
+`UPDATE`, from every role including the table's owner and a superuser;
 `audit_events_expire_only_after` admits a `DELETE` only when the role holding it may
-delete and may **not** insert, and the row is past 365 days. The two halves refuse
-different things: the revoke is what refuses the application today, with
-PostgreSQL's own `42501`, and the triggers are what refuses it after an operator runs
+delete and may **not** insert, and the row is past 365 days; and
+`audit_events_never_emptied` refuses `TRUNCATE` outright. The last is the reason the
+revoke alone is not the fence. `TRUNCATE` ignores row-level security, so it is the one
+write that reaches every tenant's history out of one tenant's transaction, and an
+operator's `GRANT ALL … TO <app role>` hands it back in one statement. A `BEFORE
+TRUNCATE` trigger fires `FOR EACH STATEMENT` and nothing else — no row trigger can see a
+TRUNCATE — and it fires before any row is touched, so the refusal leaves the trail where
+it was.
+
+The two halves refuse different things: the revoke is what refuses the application today,
+with PostgreSQL's own `42501`, and the triggers are what refuses it after an operator runs
 `GRANT ALL … TO <app role>`, and what refuses the owner, which no revoke reaches.
 
 `TestTrailPrivilegesRefuseARewrite` asks `has_table_privilege` what the application
-role holds and `TestTrailRefusesEveryWriteTheApplicationCanAttempt` runs the review's
-own three statements as that role inside an ordinary tenant transaction.
+role holds, `TestTrailRefusesEveryWriteTheApplicationCanAttempt` runs the review's own
+three statements as that role inside an ordinary tenant transaction, and
+`TestTrailRefusesTruncateWhenThePrivilegeComesBack` hands the privilege back with
+`GRANT ALL` and asks whether both tenants' rows are still there.
 
 The residual, in one sentence: the application role still *holds* `DELETE` on
 `audit_events` — `has_table_privilege` answers true — and cannot use it, because
@@ -72,16 +82,31 @@ revoking it would leave the retention job, which is the application role, with n
 door, and the door that admits an expiry must not be a setting the fenced role can
 write. `TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer.
 
-Retention runs as a third role, `database.retain_url`: the job opens it for the
-length of one run (`kit/jobs/backfill.go` ignores the scheduler's connection the same
-way), deletes a batch per transaction, and writes one row per batch into
+Retention runs as a third role, `database.retain_url`: the job opens it for the length
+of one run, deletes a batch per transaction, and writes one row per batch into
 `audit_retention_marks` — tenant, cutoff, count, instant — in the same transaction as
-the delete it describes, so the record and the removal commit together. It is a
-record and not an event: the manifest declares none, and an expiry event would be
-relayed into the table being trimmed. `kit/db`'s `Open` is what stops that DSN being a
-superuser's, because a `BYPASSRLS` sweep would see every tenant's rows inside the
-first tenant's transaction; `TestRetentionLeavesAnotherTrailsOwnerAlone` is the case
-that says so.
+the delete it describes, so the record and the removal commit together. The job lists
+the tenants on the connection the scheduler handed it, the application's, because
+listing is an ordinary application read and the expiry role is provisioned with grants
+on two audit tables and nothing else. `audit_retention_marks` carries its own triggers —
+no `UPDATE`, no `DELETE`, no `TRUNCATE`, from any role — because a mark is the evidence a
+reader checks the trail's arithmetic against, and evidence that can be edited is not
+evidence. It is a record and not an event: the manifest declares none, and an expiry
+event would be relayed into the table being trimmed. `kit/db`'s `Open` is what stops that
+DSN being a superuser's, because a `BYPASSRLS` sweep would see every tenant's rows inside
+the first tenant's transaction; `TestRetentionLeavesAnotherTenantTrailAlone` is the case
+that says so, and TestTheTrailExpiresWithTheGrantsTheAuditREADMENames, written in apps/platformkit
+where the reference composition lives, runs its hourly job as a role holding exactly
+the two grants below.
+
+A row says what moved because the module that emitted it said so. The trail stores
+payloads verbatim and invents no before/after it was not given, so `events.Change` is the
+shape a payload carries the answer in, `kit/rest`'s CRUD door fills it for every entity it
+writes from the row it locked (events.Recorder), and a module that writes its own command
+computes its own diff — `modules/site`'s `Save` does, over the stored row read `FOR
+UPDATE`. An update event with no `changes` member is a save the trail cannot explain a
+year later; TestEveryUpdateEventCarriesWhatChanged, written in apps/platformkit where the
+reference composition lives, holds every `*.updated` event it composes to the member.
 
 What every row does answer now is who (`actor`), what (`name`, `payload`,
 `records`), when (`occurred_at`), from where (`client_ip`), and which call
@@ -109,7 +134,11 @@ GRANT SELECT, DELETE ON TABLE audit_events TO <retain role>;
 GRANT SELECT, INSERT ON TABLE audit_retention_marks TO <retain role>;
 ```
 
-and names its DSN as `database.retain_url`. Without it the trail never expires and
+and names its DSN as `database.retain_url`. Those two grants are the whole provision:
+the job reads the tenant list on the application's own connection, so the expiry role
+needs nothing on `tenants`, `tenant_hosts` or `tenant_locales`, and holding nothing else
+is what makes it a different role from the application rather than the application
+wearing a hat. Without the DSN the trail never expires and
 the job says so at its first tick rather than deleting nothing and reporting success;
 `audit.retention_days` below 365 is refused at boot, because the trigger cannot read
 config and the tempting ways to tell it one are ways for the application to choose its
@@ -124,8 +153,8 @@ The expected holders are tenant administrators and any role an administrator nam
 table/RLS/policy shape, `kit/jobs/backfill.go`'s ignore-the-scheduler's-connection
 shape, `jobs.PerTenantConcurrent` and `jobs.TenantLister`, `kit/db`'s `Open`
 role check, and the `Service` interface and hand-written `httpx.Register` shape
-`internal/handler.go` already carries. **Added** — `00041_audit_history_append_only.up.sql`
-(the revoke and the two triggers) and `00042_audit_retention_marks.up.sql`, because
+`internal/handler.go` already carries. **Added** — `000041_audit_history_append_only.up.sql`
+(the revoke and the two triggers) and `000042_audit_retention_marks.up.sql`, because
 nothing in the repository had ever revoked a privilege from a module table or written
 a trigger, and a trigger is the only thing that refuses the table's own owner;
 `Deps.RetainURL` and `database.retain_url`, because the expiry door must be a role the
@@ -133,7 +162,7 @@ application is not; and `dbtest.Role`, because the two handles a test had — th
 superuser owner and the appending application role — cannot stand where a
 delete-only role stands. **Made reusable** — `dbtest.Role`, a generic "create the role
 this boundary needs and hand me its DSN" door for the next module that fences a table
-by capability, and the trigger pair plus the mark table as the pattern for any other
+by capability, and the trigger triple plus the mark table as the pattern for any other
 append-only table this kernel takes over.
 
 ## Limits

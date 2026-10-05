@@ -146,10 +146,6 @@ func (s *Service) stored(tx db.Tx[db.Tenant], lock bool) (*contracts.SiteSetting
 	}
 }
 
-// same reports whether saving in would change anything a reader could see. It
-// is field by field rather than a reflective comparison, so a field added to
-// the entity and forgotten here is a save that publishes when it should have
-// been silent — which is the harmless direction.
 // changed are the payload's own names for the seven values a save writes — the same
 // seven columns above, in the spelling the event speaks. It is an allow-list, and it
 // is the rule that replaced same(): a column that moves without being named here is a
