@@ -104,7 +104,13 @@ test('gallery construction coverage is explicit under the supplied-font comparis
   // Remeasured across the complete shared-component catalog. The dismissible
   // Alert now contains a dormant, uncaptured close-control boundary; its exact
   // refusal is pinned below rather than flattening that source-owned content.
-  assert.equal(snapshot.examples.length, 811)
+  //
+  // 812 and 767 are this tree's run of this file, not arithmetic: the merge onto
+  // main adds Prose, whose own example the design tool refuses to construct for
+  // the named reason below, so the catalog gains one example and one refusal. The
+  // accepted list and the two capture refusals are unchanged, verified against the
+  // same run's diagnostic rather than carried over.
+  assert.equal(snapshot.examples.length, 812)
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
     'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
@@ -124,7 +130,7 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 766)
+  assert.equal(refused.length, 767)
   const namedRefusals = {
     'pk-ui.component.alert/dismissible': 'Native component: composition cannot flatten an uncaptured component boundary',
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
