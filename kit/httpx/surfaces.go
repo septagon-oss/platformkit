@@ -570,10 +570,19 @@ func (r *Router) relFault(rel string) string {
 // Register mounts an operation on this router, together with the authorization
 // it declares, at the address the table gives it. It is the only way a module
 // registers a handler.
+//
+// The handler is wrapped to record the refusal it answered with, because the answer this
+// package writes for a caller that came to look at a page is decided from the verdict, and
+// two facts about a verdict do not reach the JSON body a page would otherwise be read off.
+// See buffer.carried and noteCarried.
 func Register[I, O any](r *Router, op huma.Operation, auth Auth, handler func(context.Context, *I) (*O, error)) {
 	op.Path = r.compose(op.Path, false)
 	prepare(r, &op, auth, false)
-	huma.Register(r.api.api, op, handler)
+	huma.Register(r.api.api, op, func(ctx context.Context, in *I) (*O, error) {
+		out, err := handler(ctx, in)
+		noteCarried(ctx, err)
+		return out, err
+	})
 }
 
 // prepare is the shared half of the two doors: the panic for the zero Auth, the

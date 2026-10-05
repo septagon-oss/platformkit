@@ -120,6 +120,7 @@ func HTML[I any](r *Router, op huma.Operation, auth Auth, handler func(context.C
 		if to, ok := errors.AsType[SeeOther](err); ok {
 			return Redirect(ctx, string(to)), nil
 		}
+		noteCarried(ctx, err)
 		return out, err
 	})
 }

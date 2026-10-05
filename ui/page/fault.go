@@ -135,12 +135,13 @@ func FormUnreadable() error {
 // written — an unlisted code is a sentence this package has not read, and a shell's
 // generic copy standing in for it would hide whatever that sentence says.
 //
-// A refusal with no code at all is keyed by its verdict, and only for the four
-// verdicts whose sentence this layer writes because nobody else wrote it: the 404
-// of an address nobody mounted, the 405 of an address that does not take the verb
-// it was asked with, the 500 of a handler that broke, and the 503 of a guard whose
-// own decision could not be made. Every one of those four sentences is kit/httpx's
-// own, written for the page this package renders it on.
+// A refusal with no code at all is keyed by its verdict, and only for the five
+// verdicts whose sentence this layer writes because nobody who could translate it
+// wrote one: the 404 of an address nobody mounted, the 405 of an address that does
+// not take the verb it was asked with, the 413 of a body over the bound the
+// operation itself declared, the 500 of a handler that broke, and the 503 of a
+// guard whose own decision could not be made. Every one of those sentences is the
+// framework's about its own machinery, written for the page this package renders it on.
 //
 // A 400, a 409 or a 422 is not one of them: it carries a sentence about the
 // caller's own request, written by a module or by the decoder, and translating
@@ -152,7 +153,16 @@ func FormUnreadable() error {
 // all — the catalog's write_path exists because the kernel keeps refusing clients
 // at the wrong verb.
 //
-// The 503 joins the 500 on the same ground as the other three: the sentences are
+// The 413 belongs here for the same reason `fault.form_unreadable` exists at all, and it
+// is keyed by its verdict rather than carried on the refusal because nobody owns it: the
+// bound is the operation's, the guard that reads it is the framework's, and the door a
+// person is standing at when they meet it is a page's. "request body is too large" is the
+// framework's sentence about bytes it threw away, which is nobody's language and
+// certainly not the reader's; what the person can act on is that what they sent was too
+// big for this address. Like the unreadable form, it is one verdict at every door that
+// reads a body, so one entry words it for all of them.
+//
+// The 503 joins the 500 on the same ground as the other four: the sentences are
 // the kernel's about its own outage ("authorization is temporarily unavailable",
 // "the plan could not be read right now", "this host cannot be resolved right
 // now"), and a person cannot act on which subsystem is down — the guard logs each
@@ -167,7 +177,8 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 		return key, shipped
 	}
 	switch status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError, http.StatusServiceUnavailable:
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusRequestEntityTooLarge,
+		http.StatusInternalServerError, http.StatusServiceUnavailable:
 		return "fault." + strconv.Itoa(status), true
 	}
 	return "", false

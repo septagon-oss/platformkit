@@ -56,13 +56,13 @@ import (
 // address the composition moved is a broken journey nobody notices until a new
 // account cannot be created.
 const (
-	verifyEmailRel    = "/verify-email"
-	confirmEmailLabel = "Confirm email address"
+	verifyEmailRel = "/verify-email"
 	// brand is what the page calls the installation when the tenant has no name,
 	// the same word the shell and the public site use.
 	brand = "PlatformKit"
 	// sourceLanguage is the language this module's own page is written in, said
-	// the way document.View.Language says it. See the note on the View below.
+	// the way document.View.Language says it. It is what the page declares while
+	// no catalogue speaks its lines: see the copy type below.
 	sourceLanguage = "en"
 	// maxTokenLength bounds the credential this page will read, and is the same
 	// limit the JSON door puts on its body field.
@@ -78,6 +78,15 @@ const (
 	linkNeeded     = "this address needs the link from the email; ask for another one"
 	keyLinkInvalid = "auth.verify.link_invalid"
 	keyLinkNeeded  = "auth.verify.link_needed"
+	// The five lines of the page itself, in the language they are authored in. They are
+	// code because they are the source language, not because this module wrote them once
+	// and for all: each is looked up under auth.verify.* in the catalogues the merged
+	// composition carries, so the person emailed a link in Portuguese gets a Portuguese form.
+	confirmationTitle  = "Confirm your email address"
+	confirmationBody   = "Confirm that %s is yours to finish creating the account. The password and the roles stay as they were."
+	confirmationForm   = "Email confirmation"
+	confirmationButton = "Confirm email address"
+	confirmationSignIn = "Sign in"
 )
 
 // refuse is one of this page's refusals, in both of the shapes one verdict has: the
@@ -130,6 +139,55 @@ type Confirmation interface {
 	MayRedeem(ctx context.Context, r *http.Request) bool
 }
 
+// copy is this page's own lines in the language the request asked for, read through the
+// catalogues the composition merged — the same mechanism that words the refusal above, and
+// for the same reason: a module that ships a page ships the copy for the page, not only
+// for the refusals it makes, and the shell owns the negotiation.
+//
+// spoke says whether the catalogue answered *every* line, which is what the document
+// declares as its language. A deployment that composes this page without a catalogue, or
+// with one that has no auth.verify.* entries, is shown the source language and is told it
+// is being shown the source language — a document that declared Portuguese over English
+// copy would tell a screen reader to read English with a Portuguese voice, which is the
+// rule ui/page/fault.go states for a refusal page and this page keeps to as well.
+type copy struct {
+	loc   *page.Locale
+	spoke bool
+}
+
+// pageWords starts the reading. A locale is what makes "the catalogue spoke" askable at
+// all, so a shell that shipped none has declared source language from the first line.
+func pageWords(loc *page.Locale) copy {
+	return copy{loc: loc, spoke: loc != nil}
+}
+
+func (c *copy) text(key, fallback string, args ...any) string {
+	if c.loc == nil {
+		return sprintf(fallback, args...)
+	}
+	out := c.loc.Text("auth.verify."+key, fallback, args...)
+	c.spoke = c.spoke && out != sprintf(fallback, args...)
+	return out
+}
+
+// language is the one actually on the page once every line has been read.
+func (c *copy) language() string {
+	if c.spoke {
+		return c.loc.Language
+	}
+	return sourceLanguage
+}
+
+// sprintf is what the formatter itself applies to a key no catalogue answers, applied
+// here so "did the catalogue speak?" is a fair test of the copy rather than of its
+// arguments. See ui/page/fault.go, which asks the same question the same way.
+func sprintf(format string, args ...any) string {
+	if len(args) == 0 {
+		return format
+	}
+	return fmt.Sprintf(format, args...)
+}
+
 // verifyForm is the submitted form: the credential, written into a hidden field
 // by the page that carries it. Nothing else is submittable, because nothing else
 // confirming an address may decide — not the roles, not the password, both of
@@ -174,7 +232,7 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 		ID: "auth-verify-email-page", Method: http.MethodGet, Path: verifyEmailRel,
 		Summary: "The page the emailed verification link opens",
 		Errors:  []int{http.StatusUnauthorized, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
-	}, httpx.Public(), func(ctx context.Context, _ page.Request, in *verifyEmailQuery) (page.View, error) {
+	}, httpx.Public(), func(ctx context.Context, r page.Request, in *verifyEmailQuery) (page.View, error) {
 		if in.Token == "" {
 			return page.View{}, refuse(http.StatusUnauthorized, keyLinkNeeded, linkNeeded)
 		}
@@ -192,28 +250,28 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 		if err != nil {
 			return page.View{}, err
 		}
-		// Language is the source language and not the negotiated one, for the
-		// reason modules/web/internal declares its own: every line below is a Go
-		// string here, and a document that declared Portuguese over English text
-		// would be telling a screen reader to read English with a Portuguese
-		// voice. What the shell translates for this page is the refusal — an
-		// expired or spent link is answered in the reader's language, because that
-		// sentence arrives from a catalogue.
-		v := page.View{
-			Title: "Confirm your email address", Status: http.StatusOK, Sensitive: true,
-			Language: sourceLanguage,
+		// Every line below goes through the catalogues the composition merged, and the
+		// document declares whichever language they actually spoke rather than the one
+		// the request happened to ask for: see the copy type above.
+		words := pageWords(r.Locale)
+		title := words.text("title", confirmationTitle)
+		body := words.text("body", confirmationBody, email)
+		form := words.text("form", confirmationForm)
+		button := words.text("button", confirmationButton)
+		signIn := words.text("sign_in", confirmationSignIn)
+		return page.View{
+			Title: title, Status: http.StatusOK, Sensitive: true, Language: words.language(),
 			Body: []g.Node{
-				components.Toolbar(components.ToolbarProps{Title: "Confirm your email address"}),
-				components.Text(components.TextProps{Content: "Confirm that " + email + " is yours to finish creating the account. The password and the roles stay as they were."}),
-				components.Form(components.FormProps{Action: public.PagePath(verifyEmailRel), Label: "Email confirmation"},
+				components.Toolbar(components.ToolbarProps{Title: title}),
+				components.Text(components.TextProps{Content: body}),
+				components.Form(components.FormProps{Action: public.PagePath(verifyEmailRel), Label: form},
 					h.Input(h.Type("hidden"), h.Name("token"), h.Value(in.Token)),
 					components.FormActions(components.FormActionsProps{},
-						components.Button(components.ButtonProps{Label: confirmEmailLabel, Type: "submit", Variant: "primary"})),
+						components.Button(components.ButtonProps{Label: button, Type: "submit", Variant: "primary"})),
 				),
-				components.Link(components.LinkProps{Label: "Sign in", Href: p.SignIn}),
+				components.Link(components.LinkProps{Label: signIn, Href: p.SignIn}),
 			},
-		}
-		return v, nil
+		}, nil
 	})
 
 	page.Serve(public, shell, page.Route{

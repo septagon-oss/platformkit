@@ -1,4 +1,49 @@
 {
+  "auth.verify.body": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Confirme que %s é seu para terminar de criar a conta. A palavra-passe e as funções mantêm-se como estavam.",
+    "plural": {
+      "": "Confirme que %s é seu para terminar de criar a conta. A palavra-passe e as funções mantêm-se como estavam."
+    }
+  },
+  "auth.verify.button": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Confirmar endereço de e-mail",
+    "plural": {
+      "": "Confirmar endereço de e-mail"
+    }
+  },
+  "auth.verify.form": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Confirmação de endereço de e-mail",
+    "plural": {
+      "": "Confirmação de endereço de e-mail"
+    }
+  },
+  "auth.verify.sign_in": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Iniciar sessão",
+    "plural": {
+      "": "Iniciar sessão"
+    }
+  },
+  "auth.verify.title": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Confirmar o seu endereço de e-mail",
+    "plural": {
+      "": "Confirmar o seu endereço de e-mail"
+    }
+  },
   "auth.verify.link_invalid": {
     "references": [
       "modules/auth/internal/ui/page.go"
