@@ -37,7 +37,9 @@ const secondBegin = `${secondURL}/api/v1/auth/login/passkey/begin`;
 const secondVerify = `${secondURL}/api/v1/auth/login/passkey/verify`;
 
 // Chromium maps *.localhost to the loopback address itself; the rule states the
-// mapping rather than leaving the journey at the mercy of a host's resolver.
+// mapping rather than leaving the journey at the mercy of a host's resolver. It is a
+// Chromium argument, so it reaches the browser and nothing else — see askSecond for
+// what that costs this file.
 test.use({ launchOptions: { args: ['--host-resolver-rules=MAP *.localhost 127.0.0.1'] } });
 
 async function virtualAuthenticator(page: Page) {
@@ -60,6 +62,45 @@ async function passwordSignIn(page: Page, email: string, password: string) {
   await page.getByRole('textbox', { name: 'Email', exact: true }).fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+}
+
+// askSecond drives one of the second tenant's own routes, and asks it of the page
+// that stands at that tenant rather than of Playwright's APIRequestContext.
+//
+// The reason is a difference between two network stacks on this machine, not a
+// preference. `page.request` is a Node client: it asks this machine's resolver what
+// `tenantb.localhost` is, and this fixture registers that name nowhere — the host
+// mapping above is a Chromium argument, so Chromium is the only thing that knows it.
+// The CI container's resolver does not answer for `*.localhost`, and there the claim
+// died at the resolver, before the second tenant's application was asked anything
+// (`apiRequestContext.get: getaddrinfo ENOTFOUND tenantb.localhost`, job 50620 of run
+// 50143). A development box whose name service does answer is why the same line was
+// green here: `getent ahosts tenantb.localhost` says ::1 on this machine — by NSS, not
+// by /etc/hosts, since any name under `.localhost` answers the same way — while Node
+// asked the same question on the runner and got ENOTFOUND. Asked from the page, the
+// request leaves over the browser's resolver, the page's own origin and the cookie jar
+// this journey actually signs into, which is the path every claim in this file is
+// about.
+//
+// A page that does not stand at the tenant the address names is refused here rather
+// than asked: several assertions below read `not.toBe(200)`, and the first tenant's
+// refusal of a signed-out caller would satisfy one of them for the wrong reason.
+async function askSecond(page: Page, url: string, options: {method?: 'GET' | 'POST'; body?: unknown} = {}) {
+  return page.evaluate(async ({url, options}) => {
+    if (new URL(url).origin !== location.origin) {
+      throw new Error(`${url} is not a route of the tenant this page stands at (${location.origin})`);
+    }
+    const response = await fetch(url, {
+      method: options.method ?? 'GET',
+      credentials: 'include',
+      headers: options.body === undefined ? undefined : {'Content-Type': 'application/json'},
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    return {
+      status: response.status,
+      body: (await response.json().catch(() => ({}))) as Record<string, unknown>,
+    };
+  }, {url, options});
 }
 
 // ceremony runs one leg pair against the host `begin` names, from a page on that
@@ -171,7 +212,7 @@ test('a passkey written for one tenant\'s host does not answer at another tenant
   // other tenant's rows, and this tenant's door says so.
   await passwordSignIn(device, personEmail, personPassword);
   await expect(device).toHaveURL(new RegExp(`/app/admin/login$`));
-  expect((await device.request.get(`${secondURL}/api/v1/auth/me`)).status()).not.toBe(200);
+  expect((await askSecond(device, `${secondURL}/api/v1/auth/me`)).status).not.toBe(200);
   // And the second tenant's administrator is nobody at the first: an address that
   // exists in one tenant's rows does not answer at another's host, passkey or no
   // passkey. Asked of the first tenant's own route, in a refused answer that
@@ -185,10 +226,11 @@ test('a passkey written for one tenant\'s host does not answer at another tenant
   // doing the work. Then she stands down, and the ceremony runs for nobody.
   await passwordSignIn(device, secondEmail, secondPassword);
   await expect(device).toHaveURL(new RegExp(`/app$`));
-  expect((await device.request.get(`${secondURL}/api/v1/auth/me`)).status()).toBe(200);
-  const opened = await device.request.post(`${secondURL}/api/v1/auth/settings/passkey-sign-in`, { data: { enabled: true } });
-  expect(opened.status(), await opened.text()).toBe(200);
-  expect((await opened.json()).enabled).toBe(true);
+  expect((await askSecond(device, `${secondURL}/api/v1/auth/me`)).status).toBe(200);
+  const opened = await askSecond(device, `${secondURL}/api/v1/auth/settings/passkey-sign-in`,
+    {method: 'POST', body: {enabled: true}});
+  expect(opened.status, JSON.stringify(opened.body)).toBe(200);
+  expect(opened.body.enabled).toBe(true);
   await device.locator('[data-sign-out]').click();
   await expect(device).toHaveURL(new RegExp(`/app/admin/login$`));
 
@@ -202,7 +244,7 @@ test('a passkey written for one tenant\'s host does not answer at another tenant
   expect(['NotAllowedError', 'SecurityError', 'nothing'], `the platform answered: ${refused.refused}`)
     .toContain(refused.refused);
   expect(refused.answered, 'the ceremony was answered after all').toBe(0);
-  expect((await device.request.get(`${secondURL}/api/v1/auth/me`)).status(),
+  expect((await askSecond(device, `${secondURL}/api/v1/auth/me`)).status,
     'a session opened at the second tenant').not.toBe(200);
   const untouched = await cdp.send('WebAuthn.getCredentials', { authenticatorId });
   expect(untouched.credentials.map(credential => credential.rpId)).toEqual(['localhost']);
@@ -228,9 +270,9 @@ test('a passkey written for one tenant\'s host does not answer at another tenant
   await device.goto(secondSignIn);
   await passwordSignIn(device, secondEmail, secondPassword);
   await expect(device).toHaveURL(new RegExp(`/app$`));
-  expect((await device.request.post(`${secondURL}/api/v1/auth/settings/passkey-sign-in`,
-    { data: { enabled: false } })).status()).toBe(200);
-  expect((await device.request.post(`${secondURL}/api/v1/auth/login/passkey/begin`)).status()).toBe(403);
+  expect((await askSecond(device, `${secondURL}/api/v1/auth/settings/passkey-sign-in`,
+    {method: 'POST', body: {enabled: false}})).status).toBe(200);
+  expect((await askSecond(device, `${secondURL}/api/v1/auth/login/passkey/begin`, {method: 'POST'})).status).toBe(403);
   await device.locator('[data-sign-out]').click();
 
   await context.close();
