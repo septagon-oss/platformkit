@@ -286,7 +286,7 @@ no SQL runs twice. `db.Adoption` is that declaration; a fresh database has
 nothing to adopt and reads the same ledger either way. An adopted file is an
 applied file, so changing one still refuses.
 
-The runner validates the selected source files, obtains a database advisory
+The runner validates the selected source files, obtains its namespace's advisory
 lock, checks applied histories, and executes each pending file with its history
 row in one transaction — which is the mode a file declares in its header, and two
 modes say otherwise: an `autocommit` file's one statement runs outside the

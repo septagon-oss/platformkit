@@ -22,7 +22,7 @@ All selected histories are validated before pending SQL runs. Changed or missing
 applied files, duplicate identities and insertions before applied versions fail.
 Omitted owners retain their data and history for later re-enablement.
 
-A database advisory lock serializes the whole composition. Each file executes
+A database advisory lock, keyed to the namespace the run writes, serializes that composition. Each file executes
 inside a transaction with its history insert. Failure or cancellation rolls both
 back; retry reads committed history and resumes. Earlier successful files remain
 committed. The application role receives no privileges on the history table.
