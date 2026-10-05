@@ -88,7 +88,8 @@ return app.Run(ctx, deployment, app.All)
     the connection: a boot beside a live application installs its declarations next to
     the standing ones, is refused if it spells one of them another way before it dials
     or migrates anything, and gives back what its own boot declared when its `Runtime`
-    closes. A refused build changes nothing in the process, nor the database it named.
+    closes — or when a refusal of its routes leaves no `Runtime` to close. A refused
+    build changes nothing in the process, nor the database it named.
   - **Made reusable** — the reference application is composed this way in
     [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
     committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)

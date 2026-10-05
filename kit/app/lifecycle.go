@@ -114,7 +114,9 @@ func (a *App) claimDeclared() error {
 // giveBackDeclared hands the grip back. A refusal after New leaves no shape of a
 // composition that never started standing in its app's catalog: the names it
 // declared are free again, which is what lets the corrected composition that fixes
-// them claim them its own way.
+// them claim them its own way. Both boot doors answer every refusal with it, the
+// free side of the line included, because a refusal is the one outcome that never
+// hands over a Runtime to give the grip back later.
 func (a *App) giveBackDeclared() {
 	if a.declaredRelease == nil {
 		return
@@ -162,6 +164,7 @@ func (a *App) Declarations() error {
 	// which moves this pass's own store. Nothing on it queries the pool.
 	segment, err := a.cacheSegment()
 	if err != nil {
+		a.giveBackDeclared() // no Runtime is coming to give back New's grip
 		return beforeEffects(err)
 	}
 	// Three times, and the second and third are the reason there are three. Every
@@ -183,6 +186,9 @@ func (a *App) Declarations() error {
 		// first pass into the second would be a third thing no module mounted.
 		_ = dry.Close()
 		if err != nil {
+			// The changed registration is a refusal of the composition, and the
+			// caller that corrects it has to find its own event names free beside it.
+			a.giveBackDeclared()
 			return beforeEffects(err)
 		}
 	}
@@ -254,12 +260,17 @@ func (a *App) Start(ctx context.Context) (*Runtime, error) {
 	// installation should hold.
 	segment, err := a.cacheSegment()
 	if err != nil {
+		a.giveBackDeclared() // no Runtime on this side either
 		return nil, beforeEffects(err)
 	}
 	build := cache.Memory(segment)
 	api, handler, err := a.buildAPI(ctx, build)
 	if err != nil {
 		_ = build.Close() // a composition that failed a gate is never mounted
+		// The fourth registration — the surface that would serve — is answered over
+		// that in-process store, so its refusal has spent nothing but the grip New
+		// took, and the grip goes back with the store it was refused over.
+		a.giveBackDeclared()
 		return nil, beforeEffects(err)
 	}
 	// The composition's event shapes were claimed by New, above the connection, and
