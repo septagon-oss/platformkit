@@ -228,7 +228,9 @@ that arrives while the lease is current is refused 409 whatever its row's deadli
 say — a command slower than the five-minute in-flight marker is a command still being
 answered, not a dead one. The purge is fence and exit together, because it deletes an
 unsettled row only once that lease lapsed: a lapsed lease is the one statement it can
-make about a dead owner, and a row being renewed is no candidate at any age. A settled
+make about an owner that is gone — gone as in no longer able to commit, which covers the
+caller that hung up mid-command, whose transaction `database/sql` has already rolled back
+by then — and a row being renewed is no candidate at any age. A settled
 answer past its day is a fresh command on the request that asks, not on the schedule's
 convenience. The cost of the refusal is one more press after a crash, and it is the
 price of never applying a slow command twice.

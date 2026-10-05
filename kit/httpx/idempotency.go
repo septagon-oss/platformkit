@@ -631,6 +631,15 @@ func inProgress() idempotencyAnswer {
 // abandoned: giving up on the first failure is what would put a slow command back
 // in the world of the clock, and a request that has stopped is stopped by its own
 // context and by stop, not by a failed statement.
+//
+// The two ways it stops fence differently, and the weaker of them is still the
+// invariant the purge needs. `stop` runs in the record step's defer, so a claim
+// never outlives the request that answered it. The other is the caller hanging up,
+// and a request whose context ended cannot commit any more: database/sql has
+// already rolled its transaction back by the time this notices, which is the fact
+// `hungUp` is written about. So the fence is not standing over work that can still
+// land, and what the purge is ever really told is that no claim which can still
+// write a row is deleted as though nobody owned it.
 func (a *API) attachLease(ctx context.Context, holder *idempotencyHolder, c idempotencyClaim) {
 	gone := make(chan struct{})
 	once := sync.OnceFunc(func() { close(gone) })
