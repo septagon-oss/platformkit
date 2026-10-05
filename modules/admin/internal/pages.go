@@ -105,7 +105,6 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 //     for why the landing stays there, and what answers the walkthrough's zero
 //     scores once they arrive.
 //
-//
 // The button beside the form is a second way through the same door, drawn as a
 // secondary action because the page asks for one thing at a time: "Sign in" stays
 // the only filled button above the fold, and a person who would rather not type a
