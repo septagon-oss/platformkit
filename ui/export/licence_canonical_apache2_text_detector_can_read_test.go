@@ -1,7 +1,7 @@
 package export_test
 
-// The pin for the one thing this task exists to fix, and the one done-criterion
-// that names no test: LICENSE is the canonical Apache-2.0 text, byte for byte.
+// LICENSE is the canonical Apache-2.0 text, byte for byte, and no other case in the
+// tree reads that file, so a drift in the licence body fails nothing but this.
 //
 // It had been edited twice — the project's copyright block inserted at line 5,
 // inside the licence body where the preamble sits, and "APPENDIX: How to apply

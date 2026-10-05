@@ -16,7 +16,7 @@ import (
 // it, so a consumer's own app.css cannot replace the layered sheet. Were that lookup
 // to flip, an unlayered file named app.css would be served — and an unlayered rule
 // outranks every rule inside every layer the order statement names, which is the
-// precedence this task exists to refuse, arriving through the asset tree rather than
+// precedence the layer rule refuses, arriving through the asset tree rather than
 // through ui.Extra and refuseClientSheet. Nothing else in the tree serves a consumer
 // filesystem alongside the sheet it composed: ui_test.go's
 // TestAssetsServeSheetsControllersAndOverlays adds a script and never a file named
