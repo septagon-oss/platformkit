@@ -122,11 +122,11 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 		// Re-asserted per batch: db.Backfill drains on a tick with no file around it,
 		// and a batch with no budget waits forever for a row a request is holding.
 		if err := r.budgets(ctx); err != nil {
-			return report, err
+			return report, drainCutOff(ctx, err)
 		}
 		done, rows, err := drainWindow(ctx, conn, m, key, &cursor)
 		if err != nil {
-			return report, err
+			return report, drainCutOff(ctx, err)
 		}
 		if rows > 0 {
 			report.batches++
@@ -135,6 +135,37 @@ func (r *runner) drain(ctx context.Context, m migration, bound int) (drainReport
 			return report, nil
 		}
 	}
+}
+
+// drainCutOff puts the reason a run ended in front of what its session was left holding.
+//
+// The caller's context is the only bound one tick of the drain has, so a batch interrupted by
+// its end is cut off rather than broken — and the run does not get to say so in its own words,
+// because neither half of the driver answers a cut-off session with the cut. database/sql
+// watches the context a transaction was begun with (sql.Tx.awaitDone, which reaches the
+// transaction's closemu only while the client is between statements) and rolls that transaction
+// back, so the next call finds its own transaction gone; pgx puts the run's deadline on the
+// socket, so a write in flight answers with a network timeout of its own. Measured over 120
+// calls of one drain cut off at a random moment, 6 reported only what they were left holding:
+// `sql: transaction has already been committed or rolled back` twice, `driver: bad connection`
+// twice, `write failed: write tcp …: i/o timeout` twice.
+//
+// None of the three names the cut, all three read as a migration that failed, and the caller
+// that bounds a drain by context cannot tell them apart from the report it is given — which is
+// not hypothetical: the gate of 2026-10-05 reported one machine's commit rate as a drain with
+// no bound at all, because the case that prices a tick's deadline by timing a slice of this same
+// call (kit/db/window_shape_readings_test.go's drainWatchdog) reads the answer for the cut and
+// found a rolled-back transaction instead. So the reason leads and the symptom follows, both in
+// the chain: what a body genuinely failed on is never lost, and `errors.Is` answers either half.
+//
+// Only the drain's per-batch work is translated. Its own decisions — ErrBackfillBudget, and the
+// refusals of a file's shape, of a missing table, of a key the cursor cannot run over — are
+// reached before a batch is begun, which is why the two call sites above are the whole of it.
+func drainCutOff(ctx context.Context, err error) error {
+	if err == nil || ctx.Err() == nil {
+		return err
+	}
+	return fmt.Errorf("%w: the drain was still running when this run's context ended: %w", ctx.Err(), err)
 }
 
 // drainReport is what a drain says about itself when it is over: the batches that
