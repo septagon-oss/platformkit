@@ -183,7 +183,7 @@ type Server struct {
 // another, and expiring the audit trail happens as a third. The third is optional
 // and empty means the trail never expires — modules/audit's retention job refuses to
 // run rather than reaching for a role it was not handed, because the application role
-// cannot delete a trail row (migrations/00041_audit_history_append_only.up.sql fences it)
+// cannot delete a trail row (migrations/000041_audit_history_append_only.up.sql fences it)
 // and the door that admits an expiry is a role that may delete and may not append.
 //
 // Which one does what: migrate_url migrates (and drains), url appends and reads,
@@ -599,7 +599,7 @@ func Load(path string, overrides ...Override) (Config, error) {
 				path, h.key, h.value)
 		}
 	}
-	// Both URLs are parsed here rather than by the driver, so a typo is a
+	// All three DSNs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
 	for _, u := range []struct {
 		key   string
@@ -617,7 +617,7 @@ func Load(path string, overrides ...Override) (Config, error) {
 		}
 		parsed, err := url.Parse(u.value)
 		if err != nil {
-			return Config{}, fmt.Errorf("config %s: %s is not a URL: %w", path, u.key, err)
+			return Config{}, fmt.Errorf("config %s: %s is not a URL: %s", path, u.key, safeReason(u.key, u.value, err))
 		}
 		if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
@@ -654,7 +654,7 @@ func Load(path string, overrides ...Override) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
 	}
 	if c.Audit.RetentionDays < DefaultRetentionDays {
-		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; the kernel's floor for forgetting audit history is %d days — modules/audit/migrations/00041_audit_history_append_only.up.sql refuses an earlier expiry and no configuration moves it",
+		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; the kernel's floor for forgetting audit history is %d days — modules/audit/migrations/000041_audit_history_append_only.up.sql refuses an earlier expiry and no configuration moves it",
 			path, c.Audit.RetentionDays, DefaultRetentionDays)
 	}
 	if c.Server.ReadTimeout == 0 {
@@ -687,6 +687,25 @@ func Load(path string, overrides ...Override) (Config, error) {
 		}
 	}
 	return c, nil
+}
+
+// safeReason is url.Parse's own diagnosis with the DSN taken out of it. The parse error
+// quotes the whole value it failed on, and all three of these values are DSNs whose
+// userinfo is a password (decision 0010: an error names the key and the mistake, never
+// the credential). The typo is worth reporting — "invalid URL escape" is what tells a
+// reader to look at the escaping — so the value is replaced rather than the reason
+// dropped. A reason that still carries the userinfo after the replacement says the one
+// true thing instead of leaking: which key, and that it could not be read.
+func safeReason(key, value string, err error) string {
+	reason := strings.ReplaceAll(err.Error(), value, "<"+key+">")
+	rest := value
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+len("://"):]
+	}
+	if creds, _, hasAt := strings.Cut(rest, "@"); hasAt && strings.Contains(reason, creds) {
+		return "it cannot be read as a URL, and this refusal does not repeat what is in it"
+	}
+	return reason
 }
 
 // validHost reports whether h is a host — a name or an address, optionally with
