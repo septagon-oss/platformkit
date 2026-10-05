@@ -45,7 +45,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
-	"github.com/septagon-oss/platformkit/kit/rest"
 )
 
 // The two grants. Both are operator grants, so the roles that hold them belong to
@@ -139,7 +138,13 @@ func ledgerFault(err error) error {
 		return problem.New(http.StatusConflict,
 			"events: a delivery is mid-claim on a ledger this move would rename; nothing was moved and nothing was recorded, and asking again is the remedy")
 	}
-	return rest.Fault(err)
+	// Anything else travels as it came. kit/rest's own fault mapper is out of
+	// reach here — kit/app sits below it (scripts/check_packages.sh says so by
+	// name) — and a kernel command's error sentence is already the honest one: it
+	// names the ledger and says whether rows moved, and kit/httpx answers an error
+	// it cannot classify as the 500 that says the request that made it may be
+	// repeated once the fault behind it is gone.
+	return err
 }
 
 // replayFault says the one refusal a replay can meet that the caller could not have
@@ -149,7 +154,10 @@ func replayFault(err error) error {
 		return problem.New(http.StatusNotFound,
 			"events: no outbox row to replay; the row holds the payload's last copy, so it cannot be rebuilt from here")
 	}
-	return rest.Fault(err)
+	// As above: events.Replay's own refusals — the missing reason, the unnamed
+	// actor — are sentences a caller can act on, and they arrive as the problem
+	// kit/httpx makes of an error carrying no status.
+	return err
 }
 
 // mountLedgerOps mounts the two verbs. It is called from buildAPI for a
