@@ -11,6 +11,25 @@
 # the last of them (47206) has a log and per-step conclusions — so what was lost is that job's own
 # execution and log upload, not the host. A head refused that way holds no line to fix: what answers
 # it is a fresh run of the same head, and no edit to this repository does.
+#
+# The loss can also land in the middle, and then the two rules above have to be read together, because
+# the shape is the misleading one: the finished steps keep their `success`, the log stops mid-step with
+# no `Job failed` and no `Cleaning up container` trailer, and every step the job had not reached reads
+# `failure` — including the steps with no `if:` at all and the one with `if: success()`, which a check
+# that really failed reports as `skipped`. That difference is the whole test. 2026-10-05 measured it:
+# job 51417 (run 50923) ends its log inside the editor suite's own sampler at 23:17:11 — load 2.08,
+# 18 076 MB free, seven tests `✔` and none failed — with `completed_at` 23:31:36, and its five
+# unfinished steps, three of them unable to be anything but skipped once the editor step is red, are
+# reported failure without being evaluated. Job 51237 (run 50748), which really did refuse the editor
+# suite the same day, prints `✖ failing tests:` and reports the steps behind it `skipped`. A head
+# refused in the first shape is answered the same way as a head refused at its start: a fresh run, and
+# nothing written here. What a change can do is keep its own steps out of the window a tail leaves,
+# which is why the Go cache save stands with the Go steps rather than behind ~24 minutes of Chromium.
+# Two things stay in that tail on purpose and both are limits of this file, not oversights: the budget
+# verdict, because a ceiling that rose must not stop the job before it has said whether the code works,
+# and the `if: always()` cleanup, which an unfinished job never reaches — so the containers and image
+# such a run names for itself are left on that runner for whoever sweeps it (read from the forge, not
+# from the runner: what a step that never ran leaves behind is inferred here, not measured).
 name: ci
 
 on:
