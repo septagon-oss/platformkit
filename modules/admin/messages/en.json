@@ -594,6 +594,9 @@
   "admin.languages.refused": {
     "translation": "That declaration was refused (%s). Nothing was changed."
   },
+  "admin.languages.refused_form": {
+    "translation": "This form could not be read — its values are missing or malformed. Nothing was changed."
+  },
   "admin.languages.refused_unknown": {
     "translation": "That declaration was refused. Nothing was changed."
   },

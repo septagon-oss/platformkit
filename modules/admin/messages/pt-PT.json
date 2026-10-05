@@ -594,6 +594,9 @@
   "admin.languages.refused": {
     "translation": "Essa declaração foi recusada (%s). Nada foi alterado."
   },
+  "admin.languages.refused_form": {
+    "translation": "Não foi possível ler este formulário — faltam valores ou estão mal formados. Nada foi alterado."
+  },
   "admin.languages.refused_unknown": {
     "translation": "Essa declaração foi recusada. Nada foi alterado."
   },
