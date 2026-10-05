@@ -86,12 +86,42 @@ var faultKeys = map[string]string{
 var refusalParts = []string{
 	"fault.missing", "fault.granter", "fault.ask", "fault.holds_the_row",
 	"fault.sent", "fault.sent_body",
+	// The one refusal a page makes about the bytes it was handed, which no module
+	// owns because the door that reads a form is the shell's shape rather than any
+	// one screen's. It is in this list rather than in faultKey's status table on
+	// purpose: a 422 is keyed by what the decoder could not do, not by its number
+	// (faultKey says why the number is the wrong key here), and the sentence below
+	// is the same at every door that reads a url-encoded body.
+	"fault.form_unreadable",
 	// The five words the generic verdict page adds above its sentence. They are
 	// in this list rather than in the page because the gate that reads the list is
 	// what refuses a Portuguese tenant an English label — and a person who is
 	// offered "Try again" in English on a page otherwise in Portuguese is exactly
 	// the defect this page exists to close, wearing a smaller hat.
 	"fault.retry", "fault.retry_after", "fault.back", "fault.sign_in", "fault.request_reference",
+}
+
+// formUnreadableSentence is what the body decoder says about a body that is not a
+// form, in the language it is authored in, and formUnreadableKey is the entry this
+// shell ships that sentence under. FormUnreadable puts both on the one verdict.
+const (
+	formUnreadableSentence = "this form could not be read"
+	formUnreadableKey      = "fault.form_unreadable"
+)
+
+// FormUnreadable is the refusal of a body that was not a form. It is exported because
+// the verdict is not one door's: the ask form, a module's own page and a generated
+// screen each read a url-encoded body and each refused it with the same English
+// literal. A page's refusal is a person's refusal, so it names the copy the shell
+// ships for it (problem.Problem's Key) and is read in the language the person asked
+// in; the source language keeps the decoder's own line, which is what the key's
+// English entry is (sentence). The one form reader that cannot reach this — a body
+// decoded below the presentation layer, in kit/rest — states the same sentence and
+// no key, and is answered in the source language.
+func FormUnreadable() error {
+	refused := problem.New(http.StatusUnprocessableEntity, formUnreadableSentence)
+	refused.Key = formUnreadableKey
+	return refused
 }
 
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether

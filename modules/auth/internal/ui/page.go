@@ -230,7 +230,7 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 		}
 		form, err := url.ParseQuery(string(in.RawBody))
 		if err != nil {
-			return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+			return page.View{}, page.FormUnreadable()
 		}
 		token := form.Get("token")
 		if token == "" || len(token) > maxTokenLength {

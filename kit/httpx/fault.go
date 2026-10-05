@@ -210,6 +210,12 @@ func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 // does not: that is what curl, health checks, SDKs and monitoring send, and answering
 // them with a page would break exactly the clients that need the machine-readable body.
 //
+// A media type may carry parameters before its weight — `text/html;charset=utf-8;q=0.4`
+// is one offer of markup at 0.4, and `;q=0` after a charset is as much a refusal of it
+// as `;q=0` on its own. Reading the suffix as one string instead of as parameters is the
+// bug this file exists to fix, got back by omission: the weight was only ever seen when
+// it came first, so an offer weighted to zero counted at 1.
+//
 // A weight decides between the two sides when a caller names both: markup counts when
 // it is offered at least as generously as any JSON media type is, and a caller that
 // weighted `application/json` above `text/html` is asking to be handed a value. Reading
@@ -282,8 +288,14 @@ func offered(r *http.Request) (markup, value float64) {
 	for _, entry := range strings.Split(r.Header.Get("Accept"), ",") {
 		media, params, _ := strings.Cut(strings.TrimSpace(entry), ";")
 		weight := 1.0
-		if q, ok := strings.CutPrefix(strings.TrimSpace(params), "q="); ok {
-			if parsed, err := strconv.ParseFloat(q, 64); err == nil {
+		for _, parameter := range strings.Split(params, ";") {
+			// Only `q` carries a weight; a charset or an extension says nothing about
+			// how much the caller wants the media type. A bad weight is a missing one.
+			name, value, named := strings.Cut(parameter, "=")
+			if !named || !strings.EqualFold(strings.TrimSpace(name), "q") {
+				continue
+			}
+			if parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
 				weight = parsed
 			}
 		}
