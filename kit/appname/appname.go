@@ -234,10 +234,22 @@ func SubjectSpace() string { return Prefix + ".>" }
 // TestADurableCarriesNoDot is the case that holds the prefix property whatever
 // eventually performs the move has to be able to rely on.
 func Durable(app Name, module, event string) string {
+	return DurablePrefix(app) + module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
+}
+
+// DurablePrefix is the whole of what an app adds to a durable: its token and the
+// join, and the empty string for a deployment that names no app. It is the same
+// string Durable puts in front of the unscoped name, which is why it is a function
+// in this package and not a concatenation in a caller: the one rename of the two
+// delivery ledgers that can be written against platformkit_handled — whose rows
+// hold a durable and nothing else — is a prefix rename, and it has to be formed from
+// the same two characters Durable uses or the move renames rows onto names no
+// consumer has. kit/events/ledger.go is that caller.
+func DurablePrefix(app Name) string {
 	if !app.Named() {
-		return module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
+		return ""
 	}
-	return app.token() + appJoin + module + eventJoin + strings.ReplaceAll(event, ".", eventJoin)
+	return app.token() + appJoin
 }
 
 // appJoin separates the app from the rest of a durable, and eventJoin
