@@ -56,6 +56,11 @@ func canon(text string) string {
 // not exempt, because the word that is not a shape is the sentence somebody wrote in
 // Go, which is exactly what this reports.
 //
+// A shape exempts only when the whole string has that shape and nothing else. Words
+// a sentence puts around a shape — the `Name:` before a field, the `Sat 1 Jan` a
+// page spelled out — are copy, and §separators and §wholeGrammars are written so that
+// punctuation and words at the edge of a token are read as English, not as a key.
+//
 // A hyphen never exempts on its own: `Hard-coded`, `Sign-in` and `Follow-up` all
 // count as copy. The residual risk is stated where it can be read — `of-PT` passes as
 // a language tag, `onboarding-2026-checklist` as an opaque token and `and/or` as a
@@ -150,6 +155,10 @@ const (
 	hostPattern = `^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$`
 	// filePattern is an uploaded file's name.
 	filePattern = `^[a-z0-9][a-z0-9._-]{0,79}\.[A-Za-z]{2,5}$`
+	// urlPattern is an address with its scheme written out: a link shown as text is a
+	// location a person can paste, and the scheme is what says so. `Name:` holds no
+	// scheme and no `://`, so this shape never reads a label as an address.
+	urlPattern = `^[A-Za-z][A-Za-z0-9.+-]*://[A-Za-z0-9][A-Za-z0-9._~%!$&'()*+,;=:@/-]*$`
 )
 
 // wholeGrammars match an amount, an instant or a rate that spans spaces — a money
@@ -157,8 +166,10 @@ const (
 // splitting "R$ 1.234,50" on its space would ask whether "R$" is a word.
 //
 // Dates are exempt in the numeric forms this kernel renders, and only those: a page
-// that spells "Monday, 4 October 2026" is a page whose month names nobody translated,
-// which is a decision about that page and not something this rule hides.
+// that spells "Monday, 4 October 2026" — or "Sat 1 Jan 09:00", or any of the eleven
+// other English words a weekday and a month can be — is a page whose month names
+// nobody translated, which is a decision about that page and not something this rule
+// hides. No grammar below matches a word, so no spelling of a month exempts.
 var wholeGrammars = []*regexp.Regexp{
 	regexp.MustCompile(`^` + numeral + `$`),
 	regexp.MustCompile(`^[-+−]?\d+(?:[.,]\d+)? ?%$`),
@@ -168,14 +179,14 @@ var wholeGrammars = []*regexp.Regexp{
 	regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`),
 	regexp.MustCompile(`^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$`),
 	regexp.MustCompile(`^\d{10,13}$`),
-	regexp.MustCompile(`^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} (?:\d{4} )?\d{2}:\d{2}(?::\d{2})? (?:UTC|GMT|Z|[+-]\d{4})$`),
 	regexp.MustCompile(`^` + uuidPattern + `$`),
 	regexp.MustCompile(`^` + ulidPattern + `$`),
 	regexp.MustCompile(emailPattern),
 }
 
 // tokenGrammars match the machine shapes that appear inside a line of data: an id, a
-// key, a tag, a host, a file name. Two shapes the same list would over-reach on are
+// key, a tag, a host, a file name, an address with its scheme. Two shapes the same
+// list would over-reach on are
 // not here — a bare slug and a long lowercase token — because the condition that
 // makes them machine shapes is a count of characters and the presence of a digit,
 // which these two functions hold: isMachineKey and isOpaqueToken.
@@ -189,6 +200,7 @@ var tokenGrammars = []*regexp.Regexp{
 	regexp.MustCompile(emailPattern),
 	regexp.MustCompile(hostPattern),
 	regexp.MustCompile(filePattern),
+	regexp.MustCompile(urlPattern),
 }
 
 var (
@@ -196,15 +208,38 @@ var (
 	opaque     = regexp.MustCompile(`^` + opaquePattern + `$`)
 )
 
-// isMachineKey is a key when it holds a separator no sentence uses: `task:read`,
-// `AUTH_DENIED`, `text/plain`, `a.b.c`. A slug with no colon, no underscore and one
-// dot at most is a word, and `onboarding-checklist` stays counted.
+// isMachineKey is a key when it holds a separator *between* the parts of it:
+// `task:read`, `AUTH_DENIED`, `text/plain`, `a.b.c`. A separator no sentence uses has
+// to be used by one — a colon that ends the token is the colon of a label, "Name:",
+// "Status:", "TODO:", and a period that ends it is the period of an abbreviation,
+// "e.g.", "a.m."; both are words a person reads and a translator is asked for. So the
+// count is of the separators with a word character on *both* sides, and a slug with no
+// colon, no underscore and one dot at most is a word, which keeps
+// `onboarding-checklist` counted.
 func isMachineKey(token string) bool {
 	if !machineKey.MatchString(token) {
 		return false
 	}
-	return strings.ContainsAny(token, ":_") || strings.Count(token, ".") >= 2
+	return internal(token, ":_") >= 1 || internal(token, ".") >= 2
 }
+
+// internal counts the separators in token that stand between two word characters —
+// the ones that join the parts of a key and no other writing.
+func internal(token, seps string) int {
+	n := 0
+	for i := 1; i < len(token)-1; i++ {
+		if !strings.ContainsRune(seps, rune(token[i])) {
+			continue
+		}
+		before, after := rune(token[i-1]), rune(token[i+1])
+		if isWordRune(before) && isWordRune(after) {
+			n++
+		}
+	}
+	return n
+}
+
+func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
 
 // isOpaqueToken is a session id, a digest, an ETag or a cursor: long, mixed, and
 // holding both a letter and a digit, which is what separates a hash from a very long
