@@ -75,6 +75,10 @@ const (
 	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
+	// acmeName is the tenant's own name, which the bootstrap's operator typed. It is
+	// a value and not copy: no catalogue can hold it, and the frame puts it in the
+	// tab title and the chrome, so the pseudo-locale gate reads it back as data.
+	acmeName = "Acme Corporation"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
@@ -123,7 +127,7 @@ func install(t *testing.T, path string) {
 	// e2e/localization.spec.ts then check the other language against.
 	err := bootstrap([]string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--name", acmeName, "--admin-email", adminEmail,
 		"--language", "pt-PT",
 	})
 	if err != nil {

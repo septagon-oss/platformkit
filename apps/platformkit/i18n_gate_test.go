@@ -28,11 +28,19 @@ package main
 // for one the number declined to count, with the rule that declined it. Nothing the
 // measurement chose not to count is left out of the report.
 //
-// It issues no write: every request is a GET. The rows it reads were seeded through
-// the workspace API before the walk, which is the only thing here that touches data.
+// The write that is here is the seed. Every other request is a GET, or a submission
+// this application refuses — and a refused mutation writes nothing, which is why a
+// generated form's answer to an empty submission is in the set: it is a screen a person
+// reads, and the only screen that says "this could not be saved". The rows it reads were
+// seeded through the workspace API before the walk.
 
 import (
+	"bytes"
 	"encoding/json"
+	"net/url"
+
+	"golang.org/x/net/html"
+
 	"fmt"
 	"io"
 	"maps"
@@ -115,6 +123,10 @@ func TestThePseudoLocaleGate(t *testing.T) {
 
 	measured := map[string]coverage{}
 	var skips, unreachable, declined []string
+	// blanks is what a person pressing Save on each new-form leaves behind: every field
+	// the form declares, with nothing in it. The composition refuses it, and the answer
+	// is the screen that explains the refusal.
+	blanks := map[string]string{}
 	say := func(page string, collected []legible.String) {
 		measured[page] = count(collected)
 		copy, data := legible.Report(page, collected)
@@ -135,6 +147,9 @@ func TestThePseudoLocaleGate(t *testing.T) {
 		}
 		rec.Begin(page)
 		code, contentType, body := get(t, cfg, client, at)
+		if route.Method == http.MethodGet && strings.HasSuffix(route.Path, "/new") {
+			blanks[strings.TrimSuffix(route.Path, "/new")] = blankSubmission(body)
+		}
 		// What the composition declared is not what it answered. A route whose answer
 		// is a value, or a refusal, takes no part in the number — and says why, so a
 		// page disappearing from the set is a line in the report and not a silent win.
@@ -155,7 +170,7 @@ func TestThePseudoLocaleGate(t *testing.T) {
 			rec.End()
 			continue
 		}
-		say(page, legible.MarkDatum(collected, seeds.typed))
+		say(page, legible.MarkDatum(collected, pseudo.Wrapped, seeds.typed))
 		rec.End()
 	}
 	for _, fault := range refusalDocs(t, admin) {
@@ -172,10 +187,37 @@ func TestThePseudoLocaleGate(t *testing.T) {
 			rec.End()
 			continue
 		}
-		say(fault.Page, legible.MarkDatum(collected, seeds.typed))
+		say(fault.Page, legible.MarkDatum(collected, pseudo.Wrapped, seeds.typed))
 		if code < http.StatusBadRequest {
 			t.Errorf("%s: %s answered %d, which is not a refusal", fault.Page, fault.Path, code)
 		}
+		rec.End()
+	}
+	for _, form := range refusedForms(mounted, blanks) {
+		rec.Begin(form.Page)
+		code, contentType, body := postForm(t, cfg, admin, form.Path, form.Body)
+		// A create form that *accepted* an empty submission would have written a row,
+		// which this gate never does. Measuring stops there and says so: the gate's
+		// promise is a check, not an assumption.
+		if code == http.StatusSeeOther || code == http.StatusCreated {
+			rec.End()
+			t.Errorf("%s — the composition took the empty submission this gate sent to read"+
+				" its refusal, so the gate measured nothing rather than risk a write", form.Page)
+			continue
+		}
+		if !strings.HasPrefix(contentType, "text/html") {
+			rec.End()
+			skips = append(skips, fmt.Sprintf("%s — the blank submission answered %d %s, "+
+				"which is not a document a person reads", form.Page, code, contentType))
+			continue
+		}
+		collected, err := legible.Scan(body, pseudo.Wrapped)
+		if err != nil {
+			t.Errorf("%s: %v", form.Page, err)
+			rec.End()
+			continue
+		}
+		say(form.Page, legible.MarkDatum(collected, pseudo.Wrapped, seeds.typed))
 		rec.End()
 	}
 
@@ -355,10 +397,107 @@ func instantiate(pattern string, seeds seeds) (string, bool) {
 	return "", false
 }
 
+// refusedForms are the generated forms and the submission this application refuses:
+// a POST addressed at a *collection* is a create form, so it has no row to act on and
+// no fields to fill — the empty body a person gets by pressing Save on a blank form.
+// A POST addressed at a row is an update or a verb, and this gate sends none of those:
+// nothing about the route says the body will be refused, and a gate that might write
+// is worse than a page it never reads. The refusal is a screen a person reads — it is
+// where "That could not be saved" and the field's own complaint appear — so it is
+// measured under the door that answered it, `POST <collection path>`.
+func refusedForms(mounted []httpx.MountedRoute, blanks map[string]string) []refusalDoc {
+	var out []refusalDoc
+	for _, route := range mounted {
+		if !route.Page || route.Method != http.MethodPost || strings.ContainsAny(route.Path, "{*") {
+			continue
+		}
+		body, ok := blanks[route.Path]
+		if !ok {
+			continue
+		}
+		out = append(out, refusalDoc{Page: pageName(route), Path: route.Path, Body: body})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// blankSubmission reads the fields a form declares and sends them back empty, the way
+// a browser does when somebody presses Save without filling anything in. The form's own
+// hidden fields go as they are, because that is what a browser sends.
+func blankSubmission(form []byte) string {
+	document, err := html.Parse(bytes.NewReader(form))
+	if err != nil {
+		return ""
+	}
+	fields := url.Values{}
+	var walk func(*html.Node)
+	walk = func(node *html.Node) {
+		if node.Type == html.ElementNode {
+			switch node.Data {
+			case "input":
+				name, value := "", ""
+				hidden := false
+				for _, attr := range node.Attr {
+					switch attr.Key {
+					case "name":
+						name = attr.Val
+					case "value":
+						value = attr.Val
+					case "type":
+						hidden = attr.Val == "hidden"
+					}
+				}
+				if name != "" && hidden {
+					fields.Set(name, value)
+				} else if name != "" {
+					fields.Set(name, "")
+				}
+			case "textarea", "select":
+				for _, attr := range node.Attr {
+					if attr.Key == "name" {
+						fields.Set(attr.Val, "")
+					}
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			walk(child)
+		}
+	}
+	walk(document)
+	if len(fields) == 0 {
+		return ""
+	}
+	return fields.Encode()
+}
+
+// postForm submits an empty form the way a browser does, with the session the walk
+// uses, and returns what came back.
+func postForm(t *testing.T, cfg config.Config, client *http.Client, at, form string) (int, string, []byte) {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+cfg.Server.Addr+at,
+		strings.NewReader(form))
+	if err != nil {
+		t.Fatalf("POST %s: %v", at, err)
+	}
+	req.Host = acmeHost
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("Accept-Language", "pt-PT")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("POST %s: %v", at, err)
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(res.Body)
+	return res.StatusCode, res.Header.Get("Content-Type"), body
+}
+
 // refusalDoc is one refusal document and the request that gets that verdict.
 type refusalDoc struct {
 	Page   string
 	Path   string
+	Body   string
 	Client *http.Client
 }
 
@@ -381,6 +520,11 @@ func refusalDocs(t *testing.T, admin *http.Client) []refusalDoc {
 		// The ask door answers POST and the confirmation answers GET, so a GET of the
 		// door itself is the one method this composition refuses as 405.
 		{Page: "FAULT 405", Path: "/app/access-request", Client: admin},
+		// Asked with no session, because this is what a stranger to the tenant reads:
+		// the public site's own answer to an address nobody mounted. Its words — the
+		// way back to the front page among them — belong to the public shell in
+		// modules/web, and whether a catalogue reached them is what this gate is for.
+		{Page: "PUBLIC 404", Path: "/no-such-page-at-all", Client: nil},
 	}
 }
 
@@ -459,7 +603,12 @@ func seed(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 			out.ids["/app/user/users/"] = list.Items[0].ID
 		}
 	}
-	out.typed = []string{seededTaskTitle, seededPlanName, seededPageSlug, seededPageTitle, seededPageBody}
+	// The tenant's own name is a typed value too: the bootstrap asked a person for it,
+	// no catalogue can hold it, and the frame puts it in every tab title and every
+	// piece of chrome — so reading it back as copy would count the installation's own
+	// name as untranslated English on every page it serves.
+	out.typed = []string{seededTaskTitle, seededPlanName, seededPageSlug, seededPageTitle,
+		seededPageBody, acmeName}
 	return out
 }
 
@@ -507,5 +656,3 @@ func plural(n int, word string) string {
 	}
 	return strconv.Itoa(n) + " " + word + "s"
 }
-
-func quote(text string) string { return "\"" + strings.Join(strings.Fields(text), " ") + "\"" }
