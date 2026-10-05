@@ -36,3 +36,14 @@ Refusals: a nil delegate panics at composition (`Wrap`), as does a delegate retu
 an incomplete locale. A catalogue file named `en-XA.json` is refused by `xtext.Load`
 itself — the tag belongs to this provider and no source may ship a language a
 deployment would answer people in.
+
+`Wrapped` reads one mark around the whole string, which is what a caller gets when the
+marking happens at the answer and the answer is a whole sentence: an argument interpolated
+into it stands inside the pair, English or not, and the pair says only that *this sentence*
+came from an entry. So a translated sentence around an English argument — a module's
+validation message beside a form's own words, a name a shell hard-codes — reads here as
+copy that reached a catalogue, and this provider cannot say otherwise: by the time the
+sentence is formatted nothing on the page marks where the entry stopped and the argument
+began. A gate that wants that difference has to be told the arguments, which is what
+`ui/legible`'s `MarkDatum` does for the values a gate stored itself; an interpolated
+*constant* is the residue, and naming it is the caller's, not the provider's.
