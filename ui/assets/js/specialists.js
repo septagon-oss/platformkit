@@ -57,8 +57,9 @@
     layer.addTo(engine);
     for (const point of config.points) {
       const legend = config.legend.find(entry => entry.key === point.statusKey);
-      const marker = document.createElement('a');
-      marker.href = point.href;
+      // A point with no address is a place to read, not a place to go.
+      const marker = document.createElement(point.href ? 'a' : 'span');
+      if (point.href) { marker.href = point.href; } else { marker.setAttribute('role', 'img'); }
       marker.className = 'pk-map-marker';
       marker.dataset.tone = legend.tone || 'neutral';
       marker.setAttribute('aria-label', point.title + ' · ' + point.statusText);
