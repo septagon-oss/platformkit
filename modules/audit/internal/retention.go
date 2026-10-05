@@ -19,11 +19,11 @@ const (
 	retentionBatch = 1000
 )
 
-// retainPool is the expiry connection's pool: four at most, one per tenant
-// callback plus the lister, held for the length of one hourly run and closed.
-// It is a small pool because the work is a sequence of short deletes, and a
-// retention sweep that needs sixteen connections is a sweep that should be
-// asking why.
+// retainPool is the expiry connection's pool: four at most, one per tenant callback with
+// one left spare, held for the length of one hourly run and closed. It is a small pool
+// because the work is a sequence of short deletes, and a retention sweep that needs
+// sixteen connections is a sweep that should be asking why. The tenant list is not one
+// of the four: it is read on the scheduler's connection.
 func retainPool() db.Pool {
 	return db.Pool{MaxOpenConns: 4, MaxIdleConns: 4, ConnMaxLifetime: 30 * time.Minute}
 }
@@ -37,15 +37,23 @@ func retainPool() db.Pool {
 // table the relay is trimming. A period below the floor spelled in that migration
 // is refused at boot by config.Validate, which is where the number is readable.
 //
-// The connection the scheduler hands a job is the application's, and this job
-// does not use it, the way kit/jobs' backfill worker does not use it for the
-// runner's two tables. The reason here is the trigger: 00041 fences the
-// application role's DELETE away — a role that may append to the trail may never
-// expire it — so the expiry runs as the one role the fence admits, the one named
-// by database.retain_url. That job opens its own connection, for one run, and
-// closes it, which is the exception kit/jobs/jobs.go's comment about doubling
-// the pool answers: an hourly job holding four more connections for the length
-// of a sweep is not a second pool a request path waits behind.
+// The connection the scheduler hands a job is the application's. This job uses it for
+// one thing and not for the other: it lists tenants on it, and it expires rows on the
+// DSN below. The reason the expiry cannot use the scheduler's connection is the
+// trigger: 000041 fences the application role's DELETE away — a role that may append to
+// the trail may never expire it — so the expiry runs as the one role the fence admits,
+// the one named by database.retain_url. That job opens its own connection, for one run,
+// and closes it, which is the exception kit/jobs/jobs.go's comment about doubling the
+// pool answers: an hourly job holding four more connections for the length of a sweep is
+// not a second pool a request path waits behind.
+//
+// The list, though, stays on the scheduler's connection, because the tenant tables are
+// the application's own ordinary reads and the expiry role is a role provisioned with
+// two grants on two audit tables. Handing the lister the retain connection would ask
+// that role for SELECT on tenants, tenant_hosts and tenant_locales as well — a wider
+// door than the fence exists to close, for a question that is not about an expiry at
+// all. README.md's Provisioning section and that lister are the two halves of the same
+// sentence, and this is the half that keeps the README's three grants enough.
 //
 // kit/db's Open is what stops that DSN being a superuser's: it refuses a role
 // that row-level security would not bind, which is the whole point here — a
@@ -56,7 +64,7 @@ func Retention(tenants jobs.TenantLister, days int, retainURL string) jobs.Job {
 	return jobs.Job{
 		Name: "audit-retention",
 		Cron: retentionCron,
-		Run: func(ctx context.Context, _ *db.Conn) error {
+		Run: func(ctx context.Context, app *db.Conn) error {
 			if retainURL == "" {
 				return errors.New("audit: the trail cannot expire: database.retain_url names no role to " +
 					"expire it with; name one, or accept that nothing in audit_events is ever removed")
@@ -66,9 +74,9 @@ func Retention(tenants jobs.TenantLister, days int, retainURL string) jobs.Job {
 				return fmt.Errorf("audit: open the retention connection: %w", err)
 			}
 			defer func() { _ = conn.Close() }()
-			// Each trim holds one connection at a time; the lister holds another.
+			// Each trim holds one connection at a time; the lister holds the app's.
 			workers := max(1, min(4, conn.Stats().MaxOpenConnections-1))
-			return jobs.PerTenantConcurrent(ctx, conn, tenants, workers, func(ctx context.Context, conn *db.Conn, t tenancy.Tenant) error {
+			return jobs.PerTenantConcurrent(ctx, app, tenants, workers, func(ctx context.Context, _ *db.Conn, t tenancy.Tenant) error {
 				if err := trim(ctx, conn, days); err != nil {
 					return fmt.Errorf("audit: trim the trail of %s: %w", t.Slug, err)
 				}
