@@ -15,6 +15,7 @@ package designconfig
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"path"
@@ -47,6 +48,17 @@ func LoadClientDesign(fsys fs.FS, slug string) (LoadedClient, error) {
 	var client design.Client
 	if err := decoder.Decode(&client); err != nil {
 		return LoadedClient{}, fmt.Errorf("config: decode %s/%s: %w", slug, ClientDesignFile, err)
+	}
+	// One document per file, which the decoder does not enforce: it stops at the
+	// end of the first, so everything after a `---` is read by nobody. A second
+	// document would be an identity, an override or a key the author wrote and
+	// the process threw away, which is the same silence KnownFields refuses.
+	switch err := decoder.Decode(&design.Client{}); {
+	case errors.Is(err, io.EOF):
+	case err != nil:
+		return LoadedClient{}, fmt.Errorf("config: decode %s/%s: %w", slug, ClientDesignFile, err)
+	default:
+		return LoadedClient{}, fmt.Errorf("config: %s/%s carries more than one YAML document: one file declares one client, and a second document would be configuration nothing reads", slug, ClientDesignFile)
 	}
 	if client.Slug != slug {
 		return LoadedClient{}, fmt.Errorf("config: %s/%s names slug %q", slug, ClientDesignFile, client.Slug)
