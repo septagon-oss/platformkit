@@ -27,6 +27,12 @@
 #
 # The cases read the workflow, the Makefile and that one script, and start no server; case 7 runs the
 # script for real in a temporary directory, which costs one `go env` and three `sha256sum`s.
+#
+# Case 11 is here because CI refused the head `5bf518b2` for a tool the tree cannot see: `make check`
+# died at Makefile line 322 with exit 1 and no assertion, which is what `import yaml` answers in a job
+# image that ships python3 and no PyYAML. A guard that cannot parse the workflow it is reading is not a
+# red check, it is no check at all, so the requirement is pinned below — asked of the Makefile, so the
+# case names whichever check lines parse YAML tomorrow rather than the two that do today.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -459,5 +465,81 @@ for workflow in mobile public-consumption; do
 		fail "$workflow.yml changed its cache input on this task's authority; it carries no measurement of its own"
 	fi
 done
+
+# 11. The job that runs the YAML-parsing checks installs a YAML parser. `make check` is a list of
+#     commands, and three of them — this file, scripts/ci_go_cache_one_saver_per_key_test.sh and
+#     scripts/ci_go_cache_job_archives_test.sh — answer their question by reading the workflow as data.
+#     The check job's image is pinned to a digest that carries python3 3.12.3 and no PyYAML (measured
+#     2026-10-05 by running this repository inside it read-only: `dpkg -l python3-yaml` answers `un`,
+#     `import yaml` raises ModuleNotFoundError with exit 1, and the guard above dies on that traceback
+#     exactly as the CI step did). Nothing in the tree says the package has to be there, so the question
+#     is asked of the tree: walk the goals `make check` runs, its prerequisites included, and every
+#     script one of those recipes invokes that goes on to `import yaml` is a script of a job that must
+#     install a reader before the step that runs it. A YAML guard added tomorrow is named here by this
+#     case; the package taken back out is refused here, the way case 6 of scripts/free_port_test.sh
+#     refuses iproute2's removal, and both refusals cost seconds rather than a cold forty minutes.
+{
+	declare -a queue=(check)
+	seen_goals=' '
+	yaml_scripts=''
+	while [ ${#queue[@]} -gt 0 ]; do
+		goal="${queue[0]}"
+		queue=("${queue[@]:1}")
+		case "$seen_goals" in *" $goal "*) continue ;; esac
+		seen_goals="$seen_goals$goal "
+		# The goal's own recipe, and the goals it names beside its colon. A target line is
+		# `name: deps` or a bare `name:`; a variable is `name = value` or `name := value`, and the
+		# test on what follows the colon is what tells the two apart.
+		recipe="$(awk -v goal="$goal" '
+			substr($0, 1, length(goal) + 1) == goal ":" && substr($0, length(goal) + 2) !~ /^[[:space:]]*=/ { found = 1; next }
+			found && $0 !~ /^[[:space:]]/ { found = 0 }
+			found { print }
+		' "$makefile")"
+		for invoked in $(grep -oE '[A-Za-z0-9_./-]+\.(sh|py)' <<<"$recipe" | sort -u); do
+			[ -f "$root/$invoked" ] || continue
+			grep -qE '^[[:space:]]*import yaml([[:space:]]|$)' "$root/$invoked" || continue
+			case "$yaml_scripts" in *" $invoked "*) ;; *) yaml_scripts="$yaml_scripts$invoked " ;; esac
+		done
+		prereqs="$(awk -v goal="$goal" '
+			substr($0, 1, length(goal) + 1) == goal ":" && substr($0, length(goal) + 2) !~ /^[[:space:]]*=/ {
+				sub("^" goal ":[[:space:]]*", "")
+				sub(/[[:space:]]*##.*$/, "")
+				print
+				exit
+			}
+		' "$makefile")"
+		# shellcheck disable=SC2086 # a goal list is words by construction
+		queue+=($prereqs)
+	done
+
+	# The install line, captured rather than piped into `grep -q`: that combination kills the writer
+	# with SIGPIPE once grep has its match, and `set -o pipefail` turns the killed awk into a failed
+	# pipeline that says the package is absent when it is present.
+	install_line="$(job_text check | grep -E 'apt-get install' || true)"
+	if [ -z "$yaml_scripts" ]; then
+		echo "ok   no goal make check runs parses YAML, so no job here owes it a parser"
+	elif ! grep -qE '(^|[[:space:]])python3-yaml([[:space:]]|$)' <<<"$install_line"; then
+		fail "make check parses YAML in [$yaml_scripts] but the check job installs no python3-yaml: the guard dies on ModuleNotFoundError, exit 1, and reports no assertion — the refusal CI gave 5bf518b2 at Makefile:322"
+	else
+		# The install line inside the `check` job, not merely the first one in the file: another job's
+		# reader would not be this one's, and the ordering claim is about the job that runs the goal.
+		job_start="$(grep -nE '^[[:space:]]+check:[[:space:]]*$' "$ci" | head -1 | cut -d: -f1 || true)"
+		parser_line=''
+		for line in $(grep -nE 'apt-get install' "$ci" | cut -d: -f1 || true); do
+			if [ -n "$job_start" ] && [ "$line" -gt "$job_start" ]; then parser_line="$line"; break; fi
+		done
+		check_step_line="$(line_of 'run: make check$')"
+		if [ -z "$parser_line" ] || [ -z "$check_step_line" ]; then
+			fail "the check job's install step (${parser_line:-none}) or its make check step (${check_step_line:-none}) is not a line of $ci to order"
+		elif [ "$parser_line" -ge "$check_step_line" ]; then
+			fail "the check job installs its YAML reader at line $parser_line, at or after the make check step at $check_step_line"
+		else
+			yaml_count=0
+			for y in $yaml_scripts; do yaml_count=$((yaml_count + 1)); done
+			yaml_list="${yaml_scripts% }"
+			echo "ok   the check job installs python3-yaml (line $parser_line) before make check ($check_step_line), whose guards parse YAML in $yaml_count check line(s): ${yaml_list// /, }"
+		fi
+	fi
+}
 
 [ "$failures" -eq 0 ]
