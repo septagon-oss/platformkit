@@ -203,7 +203,8 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 				HTMXProps: components.HTMXProps{Ext: "command", Post: revokeRest}},
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
-						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"}))))
+						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"})),
+				commandOutcome("sessions-rest-outcome")))
 	}
 	return page.View{Title: "Sessions", Language: writtenHere, Body: body}
 }
@@ -294,10 +295,25 @@ func sessionsTable(revokeOne string, items []*authcontracts.SessionListing) g.No
 						Type: "hidden", Name: "ref", Value: rest.Text(row.ID)}),
 					components.Button(components.ButtonProps{
 						Label: "End this session", Type: "submit", Variant: "ghost",
-						AriaLabel: "End the session on " + device}))
+						AriaLabel: "End the session on " + device}),
+					commandOutcome("session-revoke-outcome-"+rest.Text(row.ID)))
 			}
 			return nil
 		},
+	})
+}
+
+// commandOutcome is one command form's own result region: empty, hidden, and
+// inside the form it speaks for, which is the only place a person reading a
+// revoked row can find out what happened to the button they pressed on it. The
+// shared page notice cannot be that region — it moves after whichever form
+// submitted last, and a second request hides it (ui/components.Alert is the
+// component, and its `data-alert-message` part is what ui/assets/js/command.js
+// writes a keyed refusal's sentence into). A form whose outcome has nowhere to go
+// is a form whose refusal the person has to infer from a page that did not change.
+func commandOutcome(id string) g.Node {
+	return components.Alert(components.AlertProps{
+		ComponentProps: components.ComponentProps{ID: id, Hidden: true},
 	})
 }
 
