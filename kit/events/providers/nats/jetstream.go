@@ -98,6 +98,17 @@ type jetstream struct {
 }
 
 func (j *jetstream) Publish(ctx context.Context, ev transport.Event) error {
+	// The envelope's app is the publisher's own fact, stamped here rather than read
+	// from the outbox: the outbox holds no app column and needs none, because the
+	// one process that could fill it in already knows what it is (house rule 7).
+	// An event that arrives naming another app is a relay wired to the wrong
+	// composition, and the publish is where that has to say itself: writing the
+	// document anyway would produce a message whose address and whose claim disagree,
+	// which is the pair this envelope exists to be able to check.
+	if ev.App.Named() && ev.App != j.app {
+		return fmt.Errorf("events: refusing to publish %s as app %s from an app %s process", ev.Name, ev.App, j.app)
+	}
+	ev.App = j.app
 	body, err := json.Marshal(ev)
 	if err != nil {
 		return fmt.Errorf("events: marshal %s: %w", ev.Name, err)

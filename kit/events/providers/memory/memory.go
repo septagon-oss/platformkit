@@ -22,6 +22,14 @@ const queue = 256
 // the SQL outbox, success follows a committed claim and an unfinished publication
 // leaves its outbox row pending for replay after restart. Standalone sinks must
 // provide their own persistence and replay source.
+//
+// The app the envelope carries passes through untouched. It is the transport that
+// routes by an address that both stamps its own app into the document and has its
+// delivery checked against it (transport.AddressMismatch, asked by the delivery);
+// this transport routes by event name inside one process, so it has no address to
+// disagree with, and it neither claims an app nor refuses one. What the two
+// transports share is the decision the field exists for: a delivery runs where its
+// claims can be checked, and the claim ledger is the same table either way.
 func New() transport.Transport { return &memory{subs: map[string][]localSubscription{}} }
 
 type memory struct {

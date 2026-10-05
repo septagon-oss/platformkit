@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 const (
@@ -52,7 +54,14 @@ type envelope struct {
 	// tenant has no transaction to deliver it in. Read: transport_test's
 	// "a document that cannot name a tenant is refused".
 	TenantID string `json:"tenantid"`
-	Actor    string `json:"actor,omitempty"`
+	// App is PlatformKit's own extension: which app's process published this, or
+	// absent for the deployment of one app. The specification leaves every extension
+	// optional and this program does not require it — a document a previous build
+	// published has no app, and reading one is the rollout, not a forgery. What is
+	// required is that when it is present it agrees with the address the message
+	// travelled on, which is AddressMismatch's comparison.
+	App   string `json:"app,omitempty"`
+	Actor string `json:"actor,omitempty"`
 	// The two distributed tracing extension attributes the CloudEvents
 	// specification names: traceparent and tracestate, spelled exactly as W3C
 	// spells them, so a collector or a bridge that understands one understands
@@ -78,11 +87,18 @@ func (e Event) MarshalJSON() ([]byte, error) {
 		ID:              e.ID.String(),
 		Source:          source(e.Name),
 		Type:            e.Name,
-		Subject:         Subject(e.TenantID, e.Name),
+		Subject:         appname.Subject(e.App, e.TenantID, e.Name),
 		Time:            e.At.UTC().Format(time.RFC3339Nano),
 		DataContentType: dataContentType,
 		Data:            e.Payload,
 		TenantID:        e.TenantID.String(),
+	}
+	// The app is written when the publisher named one and absent when it did not,
+	// which is the same asymmetry as the actor: "no app" and "the app named ''" are
+	// one answer, and an app-less deployment's documents stay the bytes they were
+	// before decision 0074.
+	if e.App.Named() {
+		doc.App = e.App.String()
 	}
 	// The nil UUID means "nobody caused this" — a periodic job, the relay, a
 	// handler reacting to another event. An optional attribute that does not
@@ -178,8 +194,20 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 	if err != nil {
 		return err
 	}
-	if want := Subject(tenantID, doc.Type); doc.Subject != want {
-		return fmt.Errorf("events: CloudEvents subject %q is not the address of type %q in tenant %s, which is %q", doc.Subject, doc.Type, tenantID, want)
+	// The app extension is optional, and an invalid one is not: a document that
+	// names something a subject token cannot hold could never be shown to belong to
+	// the app it claims, which is the refusal AddressMismatch makes of a reader
+	// spelled the same way. The grammar lives in appname.Parse and nowhere else.
+	var app appname.Name
+	if doc.App != "" {
+		app, err = appname.Parse(doc.App)
+		if err != nil {
+			return fmt.Errorf("events: CloudEvents app %q: %w", doc.App, err)
+		}
+	}
+	if want := appname.Subject(app, tenantID, doc.Type); doc.Subject != want {
+		return fmt.Errorf("events: CloudEvents subject %q is not the address of type %q in tenant %s%s, which is %q",
+			doc.Subject, doc.Type, tenantID, appClause(app), want)
 	}
 	at, err := time.Parse(time.RFC3339Nano, doc.Time)
 	if err != nil {
@@ -192,9 +220,14 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 		}
 	}
 	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
-		TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage}
+		App: app, TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage}
 	return nil
 }
+
+// appClause is the disagreement sentence's half-sentence, present only when a
+// document named an app: the address a reader has to compare with belongs to that
+// app, and a message that says nothing about its app should not be reported as if
+// it had named one.
 
 // legacyEvent is the shape published before the envelope: Event's own fields and
 // tags. It is a copy of them rather than `type legacyEvent Event` because a
@@ -207,6 +240,16 @@ type legacyEvent struct {
 	Payload  json.RawMessage `json:"payload"`
 	At       time.Time       `json:"at"`
 	Actor    uuid.UUID       `json:"actor"`
+}
+
+// appClause names the app whose address a document was measured against, and says
+// nothing when the document named none: the sentence is a diagnostic, and one that
+// invents an app for an app-less document points at the wrong thing to fix.
+func appClause(app appname.Name) string {
+	if !app.Named() {
+		return ""
+	}
+	return " of app " + app.String()
 }
 
 // source is the event's owner as a CloudEvents source path: the module half of

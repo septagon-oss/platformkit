@@ -115,9 +115,17 @@ func AppFilters(app appname.Name, name string) []string {
 func legacyAddress(name string) string { return appname.OldestSubject(name) }
 
 // AddressMismatch compares the address a message arrived on with the app that
-// reads it and the event the document inside it claims to be, and names the
-// disagreement when the three are not one delivery. It returns nil when a
-// delivery may run.
+// reads it, the app the document inside it names, and the event the document
+// claims to be, and names the disagreement when they are not one delivery. It
+// returns nil when a delivery may run.
+//
+// Three copies of one fact now: the address the broker routed by, the `app` the
+// publisher stamped, and the slug of the process reading. Two were never enough — a
+// message written at this app's scoped address by a publisher that believed it was
+// publishing for another app is a message this app would otherwise run a handler
+// over, because an address says only where a message was written down. The
+// document's own app is therefore checked rather than trusted, and it is checked
+// first, because an operator reading the log has to learn which boundary disagreed.
 //
 // Why a delivery needs this at all: a consumer's filter fixes the module and
 // event halves of the subject, because it spells them out and a NATS `*` matches
@@ -157,6 +165,30 @@ func AddressMismatch(app appname.Name, subject string, ev Event) error {
 	// something a subject token cannot hold receives nothing.
 	if app.Named() && !app.Valid() {
 		return fmt.Errorf("events: app %q is not an app name, so no address can be shown to be its %s in tenant %s", string(app), ev.Name, ev.TenantID)
+	}
+	// The document's claim, before the address's. An app that names itself refuses a
+	// document that names another, and an app that names nothing refuses any document
+	// that names one: it has no app to agree with, exactly as it has none for an
+	// address carrying an app token. A document that names nothing is the shape a
+	// previous build published — accepted, and decided by the address alone, as it is
+	// today, which is the rollout rather than a hole in it.
+	if doc := ev.App; doc.Named() {
+		if !doc.Valid() {
+			return fmt.Errorf("events: message names app %q, which is not an app name, so its %s in tenant %s cannot be shown to be anyone's", string(doc), ev.Name, ev.TenantID)
+		}
+		if doc != app {
+			return fmt.Errorf("events: message names app %s, which is not the app reading it (%s), whatever its address %q is", doc, app, subject)
+		}
+	} else if app.Named() {
+		// An app that names itself reads only messages that name it — both copies.
+		// There is no rollout window hiding here: the app segment of the address and
+		// the app member of the envelope arrived in the same build, so no process
+		// ever wrote at the scoped address without stamping it. A no-app document
+		// that has come to rest on this app's address is therefore something other
+		// than this kernel's own delivery, and the claim ledger that answers to that
+		// address is the one thing standing between a redelivery and a handler run
+		// twice.
+		return fmt.Errorf("events: message stored at %q names no app, and app %s reads only messages that name it as their %s in tenant %s", subject, app, ev.Name, ev.TenantID)
 	}
 	if subject == appname.Subject(app, ev.TenantID, ev.Name) {
 		return nil

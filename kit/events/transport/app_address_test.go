@@ -27,7 +27,12 @@ func TestAnAppScopedDeliveryArrivesOnlyAtItsOwnAppAddress(t *testing.T) {
 	tenant := uuid.New()
 	const name = "billing.plan.created"
 	acme := appname.MustParse("acme")
-	ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenant}
+	// The document carries the app its publisher stamped into it — what
+	// providers/nats does on the way out (its Publish sets Event.App to the app the
+	// transport was made with), so a message at a scoped address with no app inside
+	// it is not this kernel's delivery and transport.AddressMismatch says so. The
+	// comparison below is of a delivery this build could actually produce.
+	ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenant, App: acme}
 
 	// The address this build publishes at, for the app that published it. The
 	// transport publishes here (providers/nats publishes at AppSubject) and
@@ -63,7 +68,9 @@ func TestTheWideFilterOfAnAppScopedSubscriptionIsAnsweredByTheCheckAndNotByTheFi
 	tenant := uuid.New()
 	const name = "task.task.created"
 	acme := appname.MustParse("acme")
-	ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenant}
+	// Stamped the way the publisher stamps it: the walk is over addresses, and the
+	// document has to be the one that travels at the address under test.
+	ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenant, App: acme}
 
 	accepted := 0
 	for _, filter := range transport.AppFilters(acme, name) {

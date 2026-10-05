@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // Event is one thing that happened in one tenant.
@@ -26,6 +28,15 @@ type Event struct {
 	// envelope's `type`; the address it travels on is Subject of this name and
 	// TenantID, so the tenant is in the address and not only in the body.
 	Name string
+	// App is the slug of the app whose process published this, and the empty Name
+	// the deployment of one app. It is the envelope's `app` extension, and the
+	// address the message travels on is built from the same value — the reason both
+	// exist is that an address can only say what a publisher claimed, so a delivery
+	// that reads the address alone is holding a document that agrees with itself,
+	// which is exactly what a self-consistent forgery satisfies. AddressMismatch is
+	// where the two copies are compared; the publisher stamps this half, and refuses
+	// to publish an event that names another app from a process that is not it.
+	App appname.Name
 	// TenantID is the tenant the event happened in. The outbox's Consume opens
 	// a transaction in it; transports do not establish tenant isolation. The
 	// envelope requires it, where CloudEvents leaves an extension optional:
