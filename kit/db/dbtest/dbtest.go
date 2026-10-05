@@ -163,7 +163,7 @@ func OpenFor(t testing.TB, rawURL string) *sql.DB {
 // It exists because the tree has two roles and some rights belong to neither: the
 // owner is a superuser that row-level security does not bind, and the application
 // role must hold INSERT or it cannot write at all. A boundary that fences an
-// expiry away from the role that appends (modules/audit/migrations/00041) therefore
+// expiry away from the role that appends (modules/audit/migrations/000041) therefore
 // cannot be tested from either handle — the second tenant's rows would be visible
 // from the first's session as the owner, and invisible as the app role, and both
 // answers would be about the wrong role. Each grants argument is the privilege list

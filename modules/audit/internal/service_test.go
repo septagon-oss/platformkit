@@ -105,7 +105,7 @@ func TestTheTrailIsTenantOwned(t *testing.T) {
 // thousand and the fixture is smaller, so what this proves is the boundary and
 // the loop's exit, not the batching itself.
 //
-// The ages are past and inside the floor the trigger in migrations/00041 refuses to
+// The ages are past and inside the floor the trigger in migrations/000041 refuses to
 // cross, and the job runs on the expiry connection rather than the application's,
 // because the role that appends may not remove. What it removed is read back from
 // audit_retention_marks: a sweep that forgot silently would pass a count of what is

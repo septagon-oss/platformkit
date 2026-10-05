@@ -15,7 +15,7 @@
 //
 // Say plainly what that does not include. The trail carries the request that caused
 // each row — actor, request id, client address, trace context (migrations/000035) —
-// and the database refuses a rewrite of it: migrations/00041 revokes UPDATE and
+// and the database refuses a rewrite of it: migrations/000041 revokes UPDATE and
 // TRUNCATE from every grantee the catalog discovers, and installs a BEFORE UPDATE
 // trigger that refuses every role, the table's owner included, beside a BEFORE DELETE
 // trigger that admits only a role that may delete and may not insert, and only past

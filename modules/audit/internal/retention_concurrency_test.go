@@ -67,7 +67,7 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			// The sweep no longer runs on the application's connection: 00041 fences the
+			// The sweep no longer runs on the application's connection: 000041 fences the
 			// app role's DELETE away, so Deps names the expiry role the fence admits, and
 			// the job opens it for the length of one run. What this case now measures is
 			// that the deletes reach the lock from that pool and never from the
