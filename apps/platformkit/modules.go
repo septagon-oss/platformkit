@@ -305,7 +305,14 @@ func composeCopy(cfg config.Config, installed xtext.Catalog, served locale.Messa
 			// address, and the module that claims the public root answers
 			// documents at /{slug}, so a two-segment /files/<id> is served by
 			// nothing at all.
-			SignInPath:    pinnedSignIn,
+			// The sign-in the site links is the workspace root, not the login screen
+			// behind it: an anonymous visitor who asks to sign in is sent to the address
+			// that answers the form (TestLocalizedCompositionKeepsSurfaceBoundaries asks
+			// the running server), and the public frame links to /app and to nothing
+			// deeper, which is decision 0020's rule for what a public page may point at.
+			// Naming the deeper address would put a workspace route inside a stranger's
+			// page and let one screen move without the site knowing.
+			SignInPath:    pinnedWorkspace,
 			PublicFileURL: func(id string) string { return pinnedPublicFile + "/" + id },
 			// The refusal sentences the site's two addresses can answer with are the
 			// kernel layer's, so the site shows them to a visitor in the language the
