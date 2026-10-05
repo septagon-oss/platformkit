@@ -170,6 +170,13 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 	prefix := appname.DurablePrefix(app)
 	var report MoveReport
 	err := db.RunSystem(ctx, conn, ledgerToken, func(ctx context.Context, tx db.Tx[db.System]) error {
+		// The tenants first, before any name is read: a claim declares its tenant
+		// busy for its whole transaction, whether or not any row under that durable
+		// has ever committed (migrations/000044). See holdTenants for why the
+		// durable list below cannot be the whole question.
+		if err := holdTenants(tx, app); err != nil {
+			return err
+		}
 		// The names this app's tenants still hold claims under, read before any lock
 		// is taken: of the un-scoped rows, only the ones in a tenant this app holds.
 		var from []string
@@ -261,6 +268,49 @@ const notASlug = "it is not an app name: no durable can be formed from it, so no
 // claim that takes the matching share lock and the move that asks for this one are
 // two halves of one key, and only this function states it in Go.
 func durableLock(durable string) string { return "events ledger " + durable }
+
+// tenantLockKey is the other half of migrations/000044's trigger: the expression its
+// text the claim trigger hashes, so that a claim declares its tenant busy beside
+// its durable. The pair is spelled in two languages because the lock is asked per
+// row over a column, in one statement, and it must not drift for the same reason
+// 000044's and durableLock's must not — a move that asks the wrong key excludes
+// nothing and reports a safe refusal it never made.
+const tenantLockKey = `'events ledger tenant ' || id::text`
+
+// holdTenants takes the move's lock over every tenant of app, refusing rather than
+// queueing, before a single ledger row is read.
+//
+// The durable locks below are taken over the names this app's tenants hold
+// *committed* rows under, and a committed row is exactly what the first delivery of
+// a subscription does not have yet. An empty ledger therefore names nothing to lock,
+// and a move that discovers nothing returns its zero report as a success — while a
+// claim that is open right now, under a durable no row has ever named, commits a
+// mark under the unscoped name a moment later. Nothing then finds it: the scoped
+// consumer looks for (event_id, "collect+mod-ev"), the row says "mod-ev", and the
+// re-publish that a consumer remake or a replay makes runs the handler a second
+// time. That is the first invisible claim, and the durable locks cannot see it
+// because the durable is the thing being discovered.
+//
+// The tenant is the boundary that can. A claim always names the tenant it was
+// taken in, the placement makes a tenant belong to exactly one app (tenants.app,
+// migrations/000043), and the hazard is a claim in one of *this* app's tenants
+// outliving the rename of its ledger — so a claim takes the shared advisory lock of
+// its own tenant beside the lock of its durable, and the move asks for those tenants
+// exclusively. A delivery of another app holds its own tenant's lock and refuses
+// nothing here, which is what the per-durable lock already buys and this keeps.
+func holdTenants(tx db.Tx[db.System], app appname.Name) error {
+	var contended int64
+	if err := tx.DB().Raw(`SELECT count(*) FROM (
+		   SELECT pg_try_advisory_xact_lock(hashtextextended(`+tenantLockKey+`, 0)) AS held
+		     FROM tenants WHERE app = ?) AS claims WHERE NOT held`, string(app)).Scan(&contended).Error; err != nil {
+		return fmt.Errorf("events: move the delivery ledger: the locks on app %s's tenants: %w", app, err)
+	}
+	if contended > 0 {
+		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim in %d of app %s's tenants; %w",
+			contended, app, ErrLedgerMoveContended)
+	}
+	return nil
+}
 
 // holdDurable takes the move's lock over one durable's rows, refusing rather than
 // queueing. The sentence names what is in the way and that nothing moved, because

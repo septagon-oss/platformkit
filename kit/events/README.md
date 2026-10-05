@@ -135,7 +135,14 @@ own. `events.Replay` is the operator's verb for a dead letter: it clears the
 claim and the terminal record, returns the row to pending, and records
 `platformkit.event_replayed` with the operator's actor and their stated reason.
 Both are required of the caller: a replay that cannot name who ordered it is
-refused before the transaction opens, and it writes nothing and emits nothing.
+refused before the transaction opens, and it writes nothing and emits nothing. A
+deployment that names itself asks `ReplayForApp`, which puts one more question to
+the locked row's tenant — which app holds you (`tenants.app`) — and refuses one
+that answers anything else: an id is not a boundary, and an installation that
+cleared the claims of an event it will never deliver would be one app removing the
+record that another app's handler finished. The refusal is made inside the same
+transaction, before the first delete, so it leaves the claims, the dead letters and
+the publication stamp where they were and emits nothing.
 `Purge` leaves an outbox row that a dead letter still describes, because that row
 is the payload's only copy and a replay of it has to be reachable; clearing the
 dead letter is what lets the history window take the row.
@@ -149,7 +156,13 @@ already, answered again as a first delivery. The drain is one transaction under 
 system capability: a lock on each durable whose rows it is about to rename — a claim
 written at an unscoped durable takes the matching shared advisory lock in the schema
 itself (migrations/000044), and the move asks for the exclusive one and refuses rather
-than waiting. A table lock is what this replaced, and it was wrong: two apps share
+than waiting — and a lock over each of the app's tenants, taken before a row is read.
+The tenant's key is not reach beyond the harm: the durables to lock are discovered from
+committed ledger rows, so the first claim of a subscription, which has none, names nothing
+for the durable list to catch, and a move that found nothing to rename would answer zero
+rows moved as a success while that handler still held its claim, boot would open the app's
+scoped consumers over it, and the re-publish that follows would run a handler that had
+already finished. Two shared locks per unscoped claim, and a moved deployment pays neither. A table lock is what this replaced, and it was wrong: two apps share
 these tables, so one app's ordinary traffic refused the other app's move on every boot
 and every job tick, and the window the move exists to close stayed open while both
 apps' consumers ran. The move then takes the claims of the tenants this app holds — a

@@ -6,15 +6,18 @@
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
 side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
-is the drain for those two tables. It locks the durables it is about to rename — an INSERT of a claim at an
-unscoped durable takes that durable's shared advisory lock in the schema itself
-(`migrations/000044_ledger_claim_durable_lock`), and the move asks for the exclusive one and refuses rather than
-queueing — and it moves the claims of the tenants this app holds: a claim belongs to the tenant it was made in,
+is the drain for those two tables. It locks the durables it is about to rename and the tenants of the app —
+an INSERT of a claim at an unscoped durable takes that durable's shared advisory lock and its own tenant's
+in the schema itself (`migrations/000044_ledger_claim_durable_lock`), and the move asks for the exclusive
+ones and refuses rather than queueing; the tenant's key is what catches the first claim of a subscription,
+which is the one no committed ledger row names a durable from — and it moves the claims of the tenants this
+app holds: a claim belongs to the tenant it was made in,
 and a tenant belongs to one app (`tenants.app`), so the claims of a tenant whose `tenants.app` is empty stay
 where the deployment that runs app-less beside this one looks for them. One transaction: a copy of each unscoped
 ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and `failed_at` verbatim because the
 purge ages on them, then a delete of exactly the rows the copy read, and one `platformkit.ledger_moved` record
-per tenant whose claims moved. A delivery mid-claim holds that durable and the move refuses, naming itself,
+per tenant whose claims moved. A delivery mid-claim holds its durable and its tenant, and the move refuses,
+aming itself,
 having written and emitted nothing. The table lock this step first took, and a predicate that named the durable
 and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
 the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while

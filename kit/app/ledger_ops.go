@@ -19,7 +19,10 @@ package app
 //     asks `collect`'s process to move `academy`'s ledger would be one process
 //     writing a ledger it does not consume. That refusal is immutable for the
 //     process — the fix is the other deployment, not a different retry — and it
-//     writes and emits nothing.
+//     writes and emits nothing. And because a replay names a row rather than a
+//     set, the row is read back to the same rule before anything is cleared: an
+//     event whose tenant belongs to another app is that app's event, wherever its
+//     id happened to be pasted into the address (`events.ReplayForApp`).
 //   - The actor behind it. events.Replay already refuses a call with nobody behind
 //     it; here the principal comes from the credential the surface chain resolved,
 //     so the record each verb writes names a person. A move takes the same actor:
@@ -97,6 +100,21 @@ type eventReplayReport struct {
 	Reason  string    `json:"reason" doc:"The sentence the operator gave"`
 }
 
+// The two receipts are the reports inside a Body. huma reads a response struct's
+// fields that are not the Body as headers, so a report whose numbers sit directly
+// on the output reaches the caller as an empty 200: the command ran, the counts
+// and the replay's name vanished, and the operator reading the answer cannot tell
+// a move that renamed a thousand claims from one that renamed none. kit/app's own
+// catalog route states the rule (workspaceDocument); these two verbs are under it
+// exactly as that route is, and a command that documents a receipt has to send one.
+type ledgerMoveReceipt struct {
+	Body ledgerMoveReport
+}
+
+type eventReplayReceipt struct {
+	Body eventReplayReport
+}
+
 // namedApp is the body's app checked against this process. The slug is parsed
 // before it is compared — a body that spells it badly has given an answer that is
 // not a slug at all, which is a correctable refusal — and a well-formed slug that
@@ -154,6 +172,15 @@ func replayFault(err error) error {
 		return problem.New(http.StatusNotFound,
 			"events: no outbox row to replay; the row holds the payload's last copy, so it cannot be rebuilt from here")
 	}
+	// The row exists, but its tenant belongs to another deployment, so this one
+	// has no claim on it. Correctable, and the remedy is elsewhere: the ask is not
+	// wrong in itself, it came to the wrong process, and the app that holds the
+	// tenant answers it. Like the body's app, it is refused before anything is
+	// cleared, so the event's claims, its dead letters and its stamp are untouched.
+	if errors.Is(err, events.ErrEventOwnedByAnotherApp) {
+		return problem.New(http.StatusUnprocessableEntity,
+			"events: that event is not this app's to replay; its tenant belongs to another deployment, which refused nothing and wrote nothing here, and its own installation is the one that replays it")
+	}
 	// As above: events.Replay's own refusals — the missing reason, the unnamed
 	// actor — are sentences a caller can act on, and they arrive as the problem
 	// kit/httpx makes of an error carrying no status.
@@ -174,7 +201,7 @@ func mountLedgerOps(api *httpx.API, own appname.Name) {
 		Tags:          []string{"kernel"},
 		Errors:        []int{http.StatusUnprocessableEntity, http.StatusConflict, http.StatusServiceUnavailable},
 		Extensions:    map[string]any{httpx.EventsExtension: []string{events.EventLedgerMoved}},
-	}, httpx.OperatorPermission(PermissionLedgerMove), func(ctx context.Context, in *ledgerMoveInput) (*ledgerMoveReport, error) {
+	}, httpx.OperatorPermission(PermissionLedgerMove), func(ctx context.Context, in *ledgerMoveInput) (*ledgerMoveReceipt, error) {
 		if _, err := namedApp(own, in.Body.App); err != nil {
 			return nil, err
 		}
@@ -186,10 +213,10 @@ func mountLedgerOps(api *httpx.API, own appname.Name) {
 		if err != nil {
 			return nil, ledgerFault(err)
 		}
-		return &ledgerMoveReport{
+		return &ledgerMoveReceipt{Body: ledgerMoveReport{
 			Subscriptions: report.Subscriptions, Claims: report.Claims,
 			Dead: report.Dead, Tenants: report.Tenants,
-		}, nil
+		}}, nil
 	})
 
 	httpx.Register(kernel.Ops, huma.Operation{
@@ -197,12 +224,12 @@ func mountLedgerOps(api *httpx.API, own appname.Name) {
 		Method:        http.MethodPost,
 		Path:          "/events/{id}/replay",
 		Summary:       "Deliver one event again",
-		Description:   "Clears the handling claims and terminal failures of one outbox row and returns the row to pending, so the relay carries it again; the claims clear for one durable when the body names one, and for every subscription that claimed the event when it names none. It is the verb behind a dead letter that has been fixed rather than forgiven: the event's payload stays in its outbox row, which is the last copy of it, so an id with no row there is refused and cannot be replayed from elsewhere. Records platformkit.event_replayed in the tenant whose event it was.",
+		Description:   "Clears the handling claims and terminal failures of one outbox row and returns the row to pending, so the relay carries it again; the claims clear for one durable when the body names one, and for every subscription that claimed the event when it names none. It is the verb behind a dead letter that has been fixed rather than forgiven: the event's payload stays in its outbox row, which is the last copy of it, so an id with no row there is refused and cannot be replayed from elsewhere, and an id whose tenant belongs to another app is refused there rather than cleared here. Records platformkit.event_replayed in the tenant whose event it was.",
 		DefaultStatus: http.StatusOK,
 		Tags:          []string{"kernel"},
 		Errors:        []int{http.StatusUnprocessableEntity, http.StatusNotFound, http.StatusServiceUnavailable},
 		Extensions:    map[string]any{httpx.EventsExtension: []string{events.EventReplayed}},
-	}, httpx.OperatorPermission(PermissionEventReplay), func(ctx context.Context, in *eventReplayInput) (*eventReplayReport, error) {
+	}, httpx.OperatorPermission(PermissionEventReplay), func(ctx context.Context, in *eventReplayInput) (*eventReplayReceipt, error) {
 		if _, err := namedApp(own, in.Body.App); err != nil {
 			return nil, err
 		}
@@ -210,10 +237,12 @@ func mountLedgerOps(api *httpx.API, own appname.Name) {
 		if err != nil {
 			return nil, err
 		}
-		rec, err := events.Replay(db.Detached(ctx), conn, in.ID, in.Body.Durable, in.Body.Reason)
+		rec, err := events.ReplayForApp(db.Detached(ctx), conn, own, in.ID, in.Body.Durable, in.Body.Reason)
 		if err != nil {
 			return nil, replayFault(err)
 		}
-		return &eventReplayReport{EventID: rec.EventID, Name: rec.Name, Durable: rec.Durable, Reason: rec.Reason}, nil
+		return &eventReplayReceipt{Body: eventReplayReport{
+			EventID: rec.EventID, Name: rec.Name, Durable: rec.Durable, Reason: rec.Reason,
+		}}, nil
 	})
 }
