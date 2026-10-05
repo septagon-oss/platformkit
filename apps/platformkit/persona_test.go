@@ -178,10 +178,17 @@ func provisionAs(t *testing.T, cfg config.Config, c composition, tenantID uuid.U
 // and Plan reads the grants off the built manifests. Refused rather than crashed
 // is the stronger of the two, so the assertion is the same and the message is a
 // sentence a person can act on.
+//
+// The composition is built before the role list is touched, because compose fills
+// personas from what the composed manifests declare (declaredRoles) rather than
+// from a literal this file writes: a list injected before the compose would be a
+// list compose overwrites. What is refused, and every word the refusal has to
+// say, is the same as it was.
 func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	_, cfg := configure(t)
+	composed := compose(cfg)
 	plan := func() error {
-		_, err := sentences(cfg, compose(cfg)).Plan(pkit.Deployment{
+		_, err := sentences(cfg, composed).Plan(pkit.Deployment{
 			Environment: pkit.Development,
 			Config:      cfg,
 			Transports:  transports(),
@@ -202,7 +209,11 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 			t.Errorf("a persona granting %q was refused without naming the role: %v", grant, err)
 		}
 	}
-	personas = saved
+	// The shipped list: the one compose computes from the manifests, which is the
+	// one seedRoles writes into a new tenant. Read off the composition rather than
+	// from whatever the previous case left in the global, so this asks about the
+	// list a person is actually seeded with.
+	personas = declaredRoles(composed.modules)
 	if err := plan(); err != nil {
 		t.Errorf("the shipped personas are refused: %v", err)
 	}
