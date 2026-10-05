@@ -100,7 +100,7 @@
       "suffixes": [
         "_test.go"
       ],
-      "max": 121217
+      "max": 121218
     },
     {
       "name": "js",
@@ -113,7 +113,7 @@
       "exclude_suffixes": [
         ".min.js"
       ],
-      "max": 976
+      "max": 989
     },
     {
       "name": "design_tooling",
