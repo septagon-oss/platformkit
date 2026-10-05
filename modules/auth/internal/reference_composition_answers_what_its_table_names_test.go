@@ -138,14 +138,18 @@ func authDepsFields(t *testing.T) map[string]bool {
 		if !ok || fn.Sel.Name != "Use" {
 			return true
 		}
-		for _, arg := range call.Args {
-			sel, ok := arg.(*ast.SelectorExpr)
+		// Everything named inside the sentence, however the list is spelled: the
+		// app hands Use a slice it can be asked to leave one module out of, so a
+		// module is an element of a literal on the way to the call rather than an
+		// argument of it.
+		ast.Inspect(call, func(m ast.Node) bool {
+			sel, ok := m.(*ast.SelectorExpr)
 			if !ok {
-				continue
+				return true
 			}
 			pkg, ok := sel.X.(*ast.Ident)
 			if !ok {
-				continue
+				return true
 			}
 			if pkg.Name == "auth" {
 				names[sel.Sel.Name] = true
@@ -153,7 +157,8 @@ func authDepsFields(t *testing.T) map[string]bool {
 			if pkg.Name == "tenant" {
 				names["tenant"] = true
 			}
-		}
+			return true
+		})
 		return true
 	})
 	if len(names) == 0 {
