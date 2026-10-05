@@ -2,9 +2,14 @@ package internal
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,7 +44,7 @@ type Sessions interface {
 // sessionsWriteFaults is what the two revocations can answer with besides the
 // shell's own set: a ref that is not one of this person's live sessions is a
 // 404 whoever wrote it, and it is the same 404 as a session that was never here.
-var sessionsWriteFaults = []int{http.StatusNotFound, http.StatusServiceUnavailable}
+var sessionsWriteFaults = []int{http.StatusNotFound, http.StatusConflict, http.StatusServiceUnavailable}
 
 // sessionForm is one revocation: the ref of the session to end, carried as a
 // value the person never reads. Like roleForm it is read through
@@ -105,6 +110,30 @@ func (p pages) mountSessions(app *httpx.Router) {
 			if !live {
 				return page.View{}, unreachable
 			}
+			// What the screen counted travels with the click and is rechecked here,
+			// before anything is ended, against what there is now. The button said N; a
+			// list that has since grown or shrunk means the click stands for a different
+			// number of machines than the one the person read, and that is the write to
+			// refuse. The field is a form input, so it arrives with and without the
+			// script: what does not arrive is a client that knows this address and not
+			// this screen, and a submission that named no premise has none to fail.
+			raw, err := presented(ctx)
+			if err != nil {
+				return page.View{}, err
+			}
+			expect, err := formValue(raw, "expected")
+			if err != nil {
+				return page.View{}, err
+			}
+			if expect != "" {
+				listed, err := p.Sessions.Sessions(ctx, tx, r.Principal.UserID, currentSession(ctx))
+				if err != nil {
+					return page.View{}, rest.Fault(err)
+				}
+				if expect != sessionsRevision(listed) {
+					return page.View{}, problem.Conflict(staleList)
+				}
+			}
 			// The session making the request is kept, because ending it from the
 			// page would sign the person out mid-click and leave them reading a
 			// 401 instead of the list they asked for. "Everywhere but here" is
@@ -159,6 +188,36 @@ func currentSession(ctx context.Context) uuid.UUID {
 	return id
 }
 
+// staleList is what "End the other N" answers when N is no longer the number of
+// other sessions there are. The rows it would end are still the caller's own and
+// no more than the caller's own; what has gone stale is the count the person read
+// the button say, and the module's rule is that the button says what the click
+// ends. A refusal that names no number keeps that rule rather than trading it for
+// a click that would end whatever it happens to find.
+const staleList = "the sessions this screen counted are not the sessions there are now. Read the list again, then press once."
+
+// sessionsRevision names the list the screen counted: the sessions it offered to
+// end, by ref, digested. The form carries it so the command above can check the
+// count its button spoke for against the count there is.
+//
+// Refs, sorted, because the screen's order is last_seen_at — which the auth module
+// slides at most once per five minutes, so the same machines can arrive in another
+// order between the render and the click. Sixteen hex characters is sixty-four bits:
+// this is a check that two reads of one person's own list saw one list, and nothing
+// aims at it. The value grants nothing: it can only refuse a click whose premise
+// moved, never aim one at a session the caller's own list did not contain.
+func sessionsRevision(items []*authcontracts.SessionListing) string {
+	refs := make([]string, 0, len(items))
+	for _, s := range items {
+		if !s.Current {
+			refs = append(refs, s.Ref)
+		}
+	}
+	slices.Sort(refs)
+	sum := sha256.Sum256([]byte(strings.Join(refs, "\n")))
+	return hex.EncodeToString(sum[:])[:16]
+}
+
 // sessionsPage is the screen as a function of values: what is there, and the
 // three addresses the forms post to.
 func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.SessionListing) page.View {
@@ -201,6 +260,12 @@ func sessionsPage(where, revokeOne, revokeRest string, items []*authcontracts.Se
 			// did before. Without JavaScript the native action remains and the form works.
 			components.Form(components.FormProps{Action: revokeRest, Label: "End every session but this one",
 				HTMXProps: components.HTMXProps{Ext: "command", Post: revokeRest}},
+				// The count the button speaks, as the value the command rechecks. It is
+				// a value and not a fragment of the page because the submission has to
+				// carry it: with hx-post the form is what htmx sends, and with the form
+				// gone (no script) the same field arrives in the native post.
+				components.Input(components.InputProps{
+					Type: "hidden", Name: "expected", Value: sessionsRevision(items)}),
 				components.FormActions(components.FormActionsProps{},
 					components.Button(components.ButtonProps{
 						Label: "End the other " + strconv.Itoa(rest), Type: "submit", Tone: "danger"})),
@@ -324,6 +389,25 @@ func deviceNamed(s *authcontracts.SessionListing) string {
 		return "A device that would not say what it is"
 	}
 	return s.UserAgent
+}
+
+// presented is a form body read off the request rather than through the route's
+// declared schema, for the one thing a schema cannot say: that the body may be
+// absent. A route that declares one is refused a request that brings nothing, and
+// "End every session but this one" has always accepted an empty body — the command
+// names nothing to aim at, so there was never a field to require. kit/httpx reads
+// these bytes once to hash them for the command key and hands the same bytes on,
+// already capped at the size a body may be.
+func presented(ctx context.Context) ([]byte, error) {
+	r, ok := httpx.RequestFrom(ctx)
+	if !ok || r.Body == nil {
+		return nil, nil
+	}
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+	}
+	return raw, nil
 }
 
 // formValue is one field of a hand-written form, and the refusal when the body

@@ -286,3 +286,108 @@ func TestASessionlessCompositionMountsNoSessionsScreen(t *testing.T) {
 		t.Fatalf("a shell with no Sessions capability answers %d at the sessions path: %s", code, body)
 	}
 }
+
+// hiddenField is one hidden value read off a rendered form. The case below asks
+// what the person's own click carried, so the value comes from the page rather
+// than being recomputed here — recomputing it would test this file, not the
+// screen and the command that have to agree.
+func hiddenField(t *testing.T, html, name string) string {
+	t.Helper()
+	_, rest, found := strings.Cut(html, `name="`+name+`"`)
+	if !found {
+		t.Fatalf("the rendered screen carries no hidden %q value", name)
+	}
+	_, value, found := strings.Cut(rest, `value="`)
+	if !found {
+		t.Fatalf("the hidden %q value has no value attribute", name)
+	}
+	value, _, _ = strings.Cut(value, `"`)
+	if value == "" {
+		t.Fatalf("the hidden %q value arrived empty", name)
+	}
+	return value
+}
+
+// TestTheSessionsScreenRefusesARevocationWhoseCountIsGone is the other half of
+// the button's sentence: "End the other N" not only says N, it ends N or nothing.
+// The form carries the list its button counted as one hidden value, and the
+// command recomputes that value inside its own transaction before it ends any
+// session. A machine that signed in after the page was drawn, or one whose
+// session ended elsewhere, makes the click mean something else than the number
+// the person read — so the click is refused, writes nothing, and the person is
+// left looking at the same list they can re-read.
+func TestTheSessionsScreenRefusesARevocationWhoseCountIsGone(t *testing.T) {
+	store := threeSessions()
+	router := mountAs(t, caller{}, withSessions(store))
+
+	res := signedInAs(t, router, http.MethodGet, "/app/auth/sessions", "")
+	if res.Code != http.StatusOK {
+		t.Fatalf("the sessions screen = %d %s", res.Code, res.Body.String())
+	}
+	counted := hiddenField(t, res.Body.String(), "expected")
+
+	// Nothing moved between the screen and the click: the command runs, and ends
+	// the two rows the button named.
+	if res = signedInAs(t, router, http.MethodPost, "/app/auth/sessions/revoke-rest", "expected="+counted); res.Code != http.StatusSeeOther {
+		t.Fatalf("ending the other sessions with the count the screen made = %d %s, want 303",
+			res.Code, res.Body.String())
+	}
+	if len(store.revoked) != 2 {
+		t.Fatalf("the click ended %d sessions, want the two the button named", len(store.revoked))
+	}
+
+	// A second machine signs in while the page is open. The button on that page
+	// still says two; there are three others to end now.
+	store = threeSessions()
+	store.ids["ref-later"] = uuid.MustParse("44444444-4444-4444-4444-444444444444")
+	router = mountAs(t, caller{}, withSessions(store))
+	res = signedInAs(t, router, http.MethodGet, "/app/auth/sessions", "")
+	counted = hiddenField(t, res.Body.String(), "expected")
+	store.items = append(store.items, &authcontracts.SessionListing{
+		Ref: "ref-later", UserAgent: "Edge on a desktop", IP: "203.0.113.31",
+		CreatedAt: time.Now().UTC().Add(-time.Minute), LastSeenAt: time.Now().UTC(),
+		ExpiresAt: time.Now().UTC().Add(time.Hour)})
+	store.revoked = nil
+	if res = signedInAs(t, router, http.MethodPost, "/app/auth/sessions/revoke-rest", "expected="+counted); res.Code != http.StatusConflict {
+		t.Fatalf("ending the other sessions after one appeared = %d %s, want 409",
+			res.Code, res.Body.String())
+	}
+	if len(store.revoked) != 0 {
+		t.Errorf("the refused revocation ended %d sessions: a refusal writes nothing", len(store.revoked))
+	}
+	if len(store.items) != 4 {
+		t.Errorf("%d sessions are left after the refusal, want the four there were", len(store.items))
+	}
+
+	// The screen drawn now counts the machine that arrived, and that click runs.
+	if res = signedInAs(t, router, http.MethodGet, "/app/auth/sessions", ""); !strings.Contains(res.Body.String(), "End the other 3") {
+		t.Fatalf("the redrawn screen does not count the session that arrived: %s", res.Body.String())
+	}
+	store.revoked = nil
+	if res = signedInAs(t, router, http.MethodPost, "/app/auth/sessions/revoke-rest",
+		"expected="+hiddenField(t, res.Body.String(), "expected")); res.Code != http.StatusSeeOther {
+		t.Fatalf("ending the other sessions with the count the redrawn screen made = %d %s, want 303",
+			res.Code, res.Body.String())
+	}
+	if len(store.revoked) != 3 {
+		t.Errorf("the click ended %d sessions, want the three the button named", len(store.revoked))
+	}
+}
+
+// TestTheSessionsScreenEndsWithoutAPremiseToCheck keeps the door that was here
+// before the count travelled with the click. The command ends the caller's own
+// sessions and nothing else, so a submission that named no expectation names no
+// premise that could fail: a client that knows the address and not the screen
+// still ends every session but its own, as it always did.
+func TestTheSessionsScreenEndsWithoutAPremiseToCheck(t *testing.T) {
+	store := threeSessions()
+	router := mountAs(t, caller{}, withSessions(store))
+
+	if res := signedInAs(t, router, http.MethodPost, "/app/auth/sessions/revoke-rest", ""); res.Code != http.StatusSeeOther {
+		t.Fatalf("ending the other sessions with no count = %d %s, want 303", res.Code, res.Body.String())
+	}
+	if len(store.revoked) != 2 || store.except != here {
+		t.Errorf("the click ended %v and kept %s, want the two others kept apart from this session",
+			store.revoked, store.except)
+	}
+}
