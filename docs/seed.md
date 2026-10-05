@@ -205,9 +205,13 @@ path, a declared `contentType` must be the type that name already has, and
 `visibility` is the module's own `public` or `private` — public is what a record
 that names none asks for, and a third answer refuses the record. The file writer
 uploads those bytes through `file.Service.Upload` once. It writes no bytes over an
-existing upload: a rerun reads back the name, media type and visibility the row
-carries, finds the three equal, and uploads nothing, because re-uploading would
-leave a new row and new bytes on every deploy with the old ones behind. It updates
+existing upload: a rerun reads back the name, media type, visibility and SHA-256
+the row carries, finds the four equal, and uploads nothing, because re-uploading
+would leave a new row and new bytes on every deploy with the old ones behind. The
+digest is on both sides of that comparison because the record's `asset` is a
+value the run read: a file whose bytes changed beside the record after its upload
+reaches the writer's update and refuses there, naming the record whose bytes
+moved, rather than reporting a record it silently declined to rewrite. It updates
 `seed_keys` to the returned ID in the same tenant transaction. No upload is ever
 replaced under one key, so `prune` — which files never declare — would concern
 removed keys and nothing else. An upload

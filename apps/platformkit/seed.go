@@ -12,7 +12,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -866,13 +868,19 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 		return seed.Target{}, fmt.Errorf("visibility %q is not %s or %s", visibility,
 			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
 	}
-	// The bytes are create-only, the way a deadline is: an upload writes them once
-	// and no rerun patches them (see Update), so they are an instruction for the
-	// record's creation and not a state to reconcile against a stored digest.
+	// The bytes themselves are create-only, the way a deadline is: an upload writes
+	// them once and no rerun patches them (see Update), so they are an instruction
+	// for the record's creation rather than a state to reconcile. What the run does
+	// reconcile is their digest, under the name the record spells them in. The owner
+	// already stores the SHA-256 of what arrived, so both sides of the comparison
+	// hold a value the owner keeps, and a file whose asset changed on disk since the
+	// upload reaches Update and refuses there, rather than a run reporting a record
+	// it silently declined to write. A declared value nobody compares is the defect
+	// this path refuses elsewhere: see unappliedField in kit/seed/decide.go.
 	return seed.Target{
 		Fields: map[string]any{
 			"name": name, "contentType": contentType,
-			"visibility": visibility,
+			"visibility": visibility, "asset": assetFingerprint(body),
 		},
 		CreateOnly: map[string]any{"asset": body},
 	}, nil
@@ -930,14 +938,30 @@ func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 func fileState(row *filecontracts.File) seed.Snapshot {
 	return seed.Snapshot{Present: true, ID: row.ID,
 		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType,
-			"visibility": row.Visibility}}
+			"visibility": row.Visibility, "asset": row.SHA256}}
+}
+
+// assetFingerprint is a record's declared bytes in the one spelling the file module
+// stores them: the lower-case hex SHA-256 of the pass that wrote them. The bytes
+// are never the compared value, because a snapshot of a megabyte would travel
+// through a plan whose document promises it carries none of them.
+func assetFingerprint(body []byte) string {
+	digest := sha256.Sum256(body)
+	return hex.EncodeToString(digest[:])
 }
 
 // Update refuses, and the refusal is the design: a rerun reads back the name, the
-// media type and the visibility it stored, finds them unchanged, and never reaches
-// here. The alternative — re-uploading the asset every run — would leave a new row
-// and new bytes on every deploy, and the old ones behind.
-func (fileSeeder) Update(context.Context, db.Tx[db.Tenant], seed.Snapshot, seed.Target) (seed.Snapshot, error) {
+// media type, the visibility and the digest of the bytes it stored, finds them
+// unchanged, and never reaches here. The alternative — re-uploading the asset every
+// run — would leave a new row and new bytes on every deploy, and the old ones
+// behind. Reaching here means the file and the row have come apart, and the two
+// ways they can are answered in their own words: the digest differs because the
+// asset beside the record changed after the upload, and there is no command that
+// puts new bytes behind a row that already has some.
+func (fileSeeder) Update(_ context.Context, _ db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
+	if seedText(t.Fields["asset"]) != seedText(cur.Fields["asset"]) {
+		return seed.Snapshot{}, errors.New("file: the asset beside this record changed since its upload, and the seed writes no bytes over an existing upload")
+	}
 	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
 }
 

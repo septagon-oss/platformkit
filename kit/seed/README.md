@@ -53,7 +53,10 @@ and `Update` must not. The alternative is a value that moves with every clock an
 so reports an update on every run forever, rewriting a field a person can change
 through its own screen. Two of the reference application's writers use it: the
 task writer for a declared `dueAt`, and the file writer for the bytes of the
-record's own `asset`, which an upload writes once and no later run patches.
+record's own `asset`, which an upload writes once and no later run patches. What a
+rerun compares for those bytes is the digest their owner stores, named in
+`Fields`: bytes nobody compared would be a declared value a changed file could not
+report, and the writer refuses where the digest disagrees.
 
 The demo refusal reads `tenants.demo` under the run's own transaction, not the
 `tenancy.Tenant` value on the context, so a caller that builds its own tenant value
