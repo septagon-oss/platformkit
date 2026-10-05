@@ -93,7 +93,17 @@ var Controllers = []string{
 // replaces has saved nobody anything. ui keeps the number beside the list it
 // governs, and TestTheCommandControllerIsWithinItsByteBudget reads these same
 // embedded bytes to check it.
-const CommandControllerBudget = 6144 // bytes, utf8
+//
+// It was raised from 6144 to the measured bytes of the file that carries three
+// more promises than the one that fit inside 6144: the pending record now survives
+// the reload that used to forget it (sessionStorage, its adoption rule and its
+// retirement), a scheduled retry is cancelled by the press that superseded it, and
+// a keyed refusal keeps the form it is about instead of replacing it and reporting
+// into the form's own outcome region. Each is a thing a thousand client scripts used
+// to write; the claim that the controller must stay small is unchanged, and so is
+// the gate — this number is the file's measured size, not a rounding-up, so the next
+// promise has to be argued for in its own commit too.
+const CommandControllerBudget = 10245 // bytes, utf8, measured at this revision
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
 // eight bytes of their SHA-256 as hex. A page puts the fingerprint in the
