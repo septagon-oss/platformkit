@@ -60,6 +60,14 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
 	err = p.Close(keep)
+	if err != nil {
+		// Whatever the handler wrote is not in the database. Three of the branches
+		// below log that fact for the log's sake; this one is for the caller's, and it
+		// is stated to the idempotency record step because the response cannot carry
+		// it: the hang-up branch keeps the handler's own 200, and a key settled on an
+		// answer to a rolled-back transaction promises a command that never ran.
+		noteUncommitted(ctx.Context())
+	}
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
 	case err == nil:

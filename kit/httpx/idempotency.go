@@ -156,13 +156,38 @@ type idempotencyClaim struct {
 // idempotencyHolder is where a request that owns its claim says so, on the
 // context, for the middleware on the way back out. A pointer, because the two
 // halves of the mechanism are on opposite sides of the transaction.
-type idempotencyHolder struct{ claim *idempotencyClaim }
+type idempotencyHolder struct {
+	claim *idempotencyClaim
+	// uncommitted is the transaction middleware's verdict, which the response
+	// cannot carry. See noteUncommitted for why the record step needs it and
+	// cannot get it from the buffered status.
+	uncommitted bool
+}
 
 type claimKey struct{}
 
 func holderFrom(ctx context.Context) *idempotencyHolder {
 	h, _ := ctx.Value(claimKey{}).(*idempotencyHolder)
 	return h
+}
+
+// noteUncommitted tells the record step that this request's transaction did not
+// commit, so the answer the handler wrote must not settle the key.
+//
+// The response cannot carry this fact, because one of the three ways a commit fails
+// has no honest response to write: a caller that went away mid-commit leaves the
+// buffered 200 in place — `hungUp` keeps it precisely because nobody is left to be
+// told anything — and those are the bytes `idempotencyRecord` reads. The caller that
+// hung up is the caller this mechanism exists for, and it comes back with the same
+// key; settling the key on that 200 tells it its command ran when the database
+// rolled it back, and its retry never runs. So the middleware that decides commit or
+// rollback says so here, on the holder the record step already reads, rather than
+// rewriting a response nobody is waiting for.
+// TestACommandWhoseCallerHungUpBeforeTheCommitRunsOnItsRetry is the case.
+func noteUncommitted(ctx context.Context) {
+	if h := holderFrom(ctx); h != nil {
+		h.uncommitted = true
+	}
 }
 
 // idempotency is the claim: it runs the command, hands back a stored answer, or
@@ -261,7 +286,9 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // idempotencyRecord writes what the caller was finally given, or releases the
 // claim. It sits immediately inside respond for the reason respond states: that is
 // the one place that knows what the client was actually handed, after the commit,
-// after any recovery, after any reset that turned a held 200 into a 500.
+// after any recovery, after any reset that turned a held 200 into a 500. The
+// commit's own verdict is not in what was handed over, so the transaction
+// middleware puts it on the holder this reads — see noteUncommitted.
 func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(context.WithValue(r.Context(), claimKey{}, &idempotencyHolder{}))
@@ -278,7 +305,7 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 		if status == 0 {
 			status = http.StatusOK
 		}
-		if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held); err != nil {
+		if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.uncommitted); err != nil {
 			// The command ran and its answer was not kept. The caller has its
 			// response; the next one gets a fresh claim in five minutes rather than
 			// a stored response it was never given, which is the safe direction: a
@@ -290,12 +317,18 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 	})
 }
 
-// recordOrRelease is the decision, as one table read two ways by recordIdempotency.
+// recordIdempotency is the decision, made as one statement against one table: either
+// release the claim, or settle it with the answer.
 //
 //   - A 5xx, in any form — the handler's own, the 500 the transaction substitutes
 //     when the commit failed, the 500 a panic recovery wrote — deletes the claim.
 //     A refusal nobody received is not an answer to remember, and a retry of work
 //     that rolled back must run: house rule 9 said backwards.
+//   - A transaction that did not commit deletes it too, whatever the buffered
+//     response says. This is the same fact as the bullet above, read from the side
+//     that cannot answer: a commit that failed on a request whose caller had already
+//     gone away leaves a 200 nobody read behind, and `uncommitted` is how the record
+//     step learns the work is not in the database. See noteUncommitted.
 //   - A response under 500 that never reached the wire early and fits is stored
 //     whole, with its status, its Content-Type and the three headers a client acts on.
 //     An answer with no body — the redirect a page's own command answers with — is
@@ -304,9 +337,9 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 //   - A response under 500 that is too big, or that already began (a Flush, a
 //     body past the buffer's bound), settles with a NULL response. It ran, and its
 //     answer is gone; releasing the claim instead is what makes a retry double-apply.
-func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held bool) error {
+func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held, uncommitted bool) error {
 	return a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		if status >= http.StatusInternalServerError {
+		if uncommitted || status >= http.StatusInternalServerError {
 			return tx.DB().Exec("DELETE FROM "+idempotencyTable+
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				c.tenant, c.actor, c.operation, c.key).Error
