@@ -153,14 +153,19 @@ jobs:
             ${{ steps.gocache.outputs.modcache }}
             ${{ steps.gocache.outputs.gocache }}
 
-      # Two tools the operating system is asked for, one step, because a step that
+      # Three tools the operating system is asked for, one step, because a step that
       # installs one of them and not the other half of the question is what this line
-      # is: `psql` answers the migration rehearsal, and `ss` answers gate 10's question
+      # is: `psql` answers the migration rehearsal, `ss` answers gate 10's question
       # "whose socket is this?", which scripts/free_port.sh refuses to answer from
       # itself, because a 200 on /health says something is listening and not that the
-      # listener is mine.
+      # listener is mine, and PyYAML answers the two guards T-0277 put in `make check`,
+      # which read this file as data instead of as text — scripts/ci_go_cache_one_saver_per_key_test.sh
+      # asks whether one exact cache key has more than one saving job, and
+      # scripts/ci_go_cache_job_archives_test.sh runs each job's naming command and asks
+      # whether the archives it names are its own. A guard that cannot parse its own
+      # subject is a red pull request no change in the tree caused.
       #
-      # The package is not optional here, and the image does not provide it. This job's
+      # The packages are not optional here, and the image does not provide them. This job's
       # image is pinned — gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is
       # the digest job 49823 of run 49357 names when it creates the container — and that
       # digest ships neither `ss` nor `lsof`. Measured 2026-10-04 by running this
@@ -173,10 +178,26 @@ jobs:
       # in the tree caused. The same run with iproute2 installed answered all sixteen
       # cases and exited 0. Case 6 of scripts/free_port_test.sh refuses a future edit
       # that takes the package back out, and says which steps would refuse to run.
-      - name: Install the database client and the socket probe
+      #
+      # PyYAML is missing from that digest the same way, and this is the line that proves
+      # it rather than the reason it is written down. Measured 2026-10-05 by the same kind
+      # of run, into the same image and the same repository mount: python3 answers 3.12.3,
+      # `dpkg -l python3-yaml` answers `un` (not installed), `import yaml` raises
+      # ModuleNotFoundError with exit 1, and `bash scripts/ci_go_cache_one_saver_per_key_test.sh`
+      # — line 322 of the `check` goal at the head CI refused, and the first line of it that
+      # asks for the module — died on that traceback with that code. CI refused the head
+      # `5bf518b2` as
+      # `make: *** [Makefile:322: check] Error 1` with every earlier step green and no
+      # assertion in the log, which is what a missing parser looks like from the job page.
+      # In the same container with python3-yaml installed beside the other two, the same
+      # file printed `ok   each exact cache key in ci.yml has one saving job (2 key(s))`
+      # and exited 0. Case 11 of scripts/ci_go_cache_test.sh is the matching refusal: it
+      # asks the Makefile which goals it runs parse YAML and this job whether it installs
+      # a reader before the step that runs them.
+      - name: Install the database client, the socket probe, and the YAML reader
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends postgresql-client iproute2
+          apt-get install --yes --no-install-recommends postgresql-client iproute2 python3-yaml
 
       - name: Start NATS with JetStream on this job's network
         id: nats
