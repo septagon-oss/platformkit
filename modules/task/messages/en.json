@@ -33,7 +33,7 @@
       "": "Tasks"
     }
   },
-  "field.title": {
+  "field.task.task.title": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -42,7 +42,7 @@
       "": "Title"
     }
   },
-  "field.title.help": {
+  "field.task.task.title.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -51,7 +51,7 @@
       "": "Short summary of the task"
     }
   },
-  "field.description": {
+  "field.task.task.description": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -60,7 +60,7 @@
       "": "Description"
     }
   },
-  "field.description.help": {
+  "field.task.task.description.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -69,7 +69,7 @@
       "": "Detailed description of the task"
     }
   },
-  "field.status": {
+  "field.task.task.status": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -78,7 +78,7 @@
       "": "Status"
     }
   },
-  "field.status.help": {
+  "field.task.task.status.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -87,7 +87,7 @@
       "": "Lifecycle state"
     }
   },
-  "field.priority": {
+  "field.task.task.priority": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -96,7 +96,7 @@
       "": "Priority"
     }
   },
-  "field.priority.help": {
+  "field.task.task.priority.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -105,7 +105,7 @@
       "": "Task priority"
     }
   },
-  "field.source": {
+  "field.task.task.source": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -114,7 +114,7 @@
       "": "Source"
     }
   },
-  "field.source.help": {
+  "field.task.task.source.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -123,7 +123,7 @@
       "": "Origin of the task"
     }
   },
-  "field.sourceRef": {
+  "field.task.task.sourceRef": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -132,7 +132,7 @@
       "": "Source ref"
     }
   },
-  "field.sourceRef.help": {
+  "field.task.task.sourceRef.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -141,7 +141,7 @@
       "": "Reference into the source system"
     }
   },
-  "field.assigneeId": {
+  "field.task.task.assigneeId": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -150,7 +150,7 @@
       "": "Assignee id"
     }
   },
-  "field.assigneeId.help": {
+  "field.task.task.assigneeId.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -159,7 +159,7 @@
       "": "User responsible for the task"
     }
   },
-  "field.dueAt": {
+  "field.task.task.dueAt": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -168,7 +168,7 @@
       "": "Due at"
     }
   },
-  "field.dueAt.help": {
+  "field.task.task.dueAt.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -177,7 +177,7 @@
       "": "Soft target completion time"
     }
   },
-  "field.slaDeadline": {
+  "field.task.task.slaDeadline": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -186,7 +186,7 @@
       "": "Sla deadline"
     }
   },
-  "field.slaDeadline.help": {
+  "field.task.task.slaDeadline.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -195,7 +195,7 @@
       "": "Hard SLA deadline; a breach is measured against this"
     }
   },
-  "field.slaBreached": {
+  "field.task.task.slaBreached": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -204,7 +204,7 @@
       "": "Sla breached"
     }
   },
-  "field.slaBreached.help": {
+  "field.task.task.slaBreached.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -213,7 +213,7 @@
       "": "True once the deadline elapsed with the task unresolved"
     }
   },
-  "field.resolvedAt": {
+  "field.task.task.resolvedAt": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -222,7 +222,7 @@
       "": "Resolved at"
     }
   },
-  "field.resolvedAt.help": {
+  "field.task.task.resolvedAt.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -231,7 +231,7 @@
       "": "When the task was resolved"
     }
   },
-  "field.resolution": {
+  "field.task.task.resolution": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -240,7 +240,7 @@
       "": "Resolution"
     }
   },
-  "field.resolution.help": {
+  "field.task.task.resolution.help": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -249,7 +249,7 @@
       "": "How the task was resolved"
     }
   },
-  "enum.open": {
+  "enum.task.task.open": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -258,7 +258,7 @@
       "": "Open"
     }
   },
-  "enum.acknowledged": {
+  "enum.task.task.acknowledged": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -267,7 +267,7 @@
       "": "Acknowledged"
     }
   },
-  "enum.in_progress": {
+  "enum.task.task.in_progress": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -276,7 +276,7 @@
       "": "In progress"
     }
   },
-  "enum.resolved": {
+  "enum.task.task.resolved": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -285,7 +285,7 @@
       "": "Resolved"
     }
   },
-  "enum.closed": {
+  "enum.task.task.closed": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -294,7 +294,7 @@
       "": "Closed"
     }
   },
-  "enum.low": {
+  "enum.task.task.low": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -303,7 +303,7 @@
       "": "Low"
     }
   },
-  "enum.normal": {
+  "enum.task.task.normal": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -312,7 +312,7 @@
       "": "Normal"
     }
   },
-  "enum.high": {
+  "enum.task.task.high": {
     "references": [
       "modules/task/contracts/task.go"
     ],
@@ -321,7 +321,7 @@
       "": "High"
     }
   },
-  "enum.critical": {
+  "enum.task.task.critical": {
     "references": [
       "modules/task/contracts/task.go"
     ],
