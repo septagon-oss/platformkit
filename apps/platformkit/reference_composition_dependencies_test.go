@@ -57,7 +57,7 @@ func TestReferenceCompositionRefusesWebWithoutSiteModule(t *testing.T) {
 		t.Fatalf("the composition must contain site and web before this dependency is tested")
 	}
 	c.modules = kept
-	_, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
+	_, err := sentencesOf(cfg).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 	if err == nil || !strings.Contains(err.Error(), "sitecontracts.Service") || !strings.Contains(err.Error(), "web") {
 		t.Errorf("web needs sitecontracts.Service from the removed site module; Plan returned %v", err)
 	}

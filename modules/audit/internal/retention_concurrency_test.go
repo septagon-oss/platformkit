@@ -60,7 +60,7 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			job := audit.Module(audit.Deps{Tenants: tenants, RetentionDays: 30}).Jobs[0]
+			job := audit.New(audit.Deps{Tenants: tenants, RetentionDays: 30}).Jobs[0]
 			if job.Name != "audit-retention" || job.Parallel {
 				t.Fatal("retention lost its scheduled-job lock")
 			}
