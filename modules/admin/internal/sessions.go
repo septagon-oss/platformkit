@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"net/http"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -125,25 +127,93 @@ func (p pages) mountSessions(app *httpx.Router) {
 			if err != nil {
 				return page.View{}, err
 			}
-			if expect != "" {
-				listed, err := p.Sessions.Sessions(ctx, tx, r.Principal.UserID, currentSession(ctx))
-				if err != nil {
+			// The premise is read twice, and the two readings answer different questions.
+			// This first one refuses a click whose premise was already stale before the
+			// command began, and refuses it without touching a row to find out; only its
+			// verdict is read here, because the set it names is not the set the write is
+			// confined to.
+			if _, err := p.sessionsPremise(ctx, tx, r.Principal.UserID, expect); err != nil {
+				return page.View{}, err
+			}
+			// The second reading is what the write is confined to. A reading is a snapshot
+			// and not a fence: between the check that answered the click and the statement
+			// that ends a session somebody else can open one, and the machine they opened is
+			// a machine the person was never shown and never agreed to sign out. So the
+			// command ends the refs this late reading named — one locked row at a time, the
+			// command the row buttons use — which means a session that arrived after the
+			// reading cannot be among them, and a row that left in the meantime is the same
+			// moved list refusing from inside the transaction rather than a half-ended one
+			// committing.
+			//
+			// One window stays open and is named rather than papered over: a session signed
+			// in after this reading is neither ended here nor refused here, and stays
+			// signed in. That is the safe half of the trade — the list this redirect redraws
+			// asks again, and no machine the person never saw stops working on the strength
+			// of this click.
+			counted, err := p.sessionsPremise(ctx, tx, r.Principal.UserID, expect)
+			if err != nil {
+				return page.View{}, err
+			}
+			if counted == nil {
+				// No premise: the bulk command, which is what the JSON route answers with
+				// and what this page did before it had a count to keep.
+				if err := p.Sessions.RevokeSessions(ctx, tx, r.Principal.UserID, currentSession(ctx)); err != nil {
 					return page.View{}, rest.Fault(err)
 				}
-				if expect != sessionsRevision(listed) {
-					return page.View{}, problem.Conflict(staleList)
-				}
+				return page.View{}, httpx.SeeOther(p.at.sessions.at)
 			}
 			// The session making the request is kept, because ending it from the
 			// page would sign the person out mid-click and leave them reading a
 			// 401 instead of the list they asked for. "Everywhere but here" is
 			// what the button says and what the command does; the row this person
-			// is reading on is revoked by its own button, deliberately.
-			if err := p.Sessions.RevokeSessions(ctx, tx, r.Principal.UserID, currentSession(ctx)); err != nil {
-				return page.View{}, rest.Fault(err)
+			// is reading on is revoked by its own button, deliberately — and it is
+			// kept by never being in the counted set, which is what that set is.
+			for _, ref := range counted {
+				if err := p.Sessions.RevokeSession(ctx, tx, r.Principal.UserID, ref); err != nil {
+					if errors.Is(err, crud.ErrNotFound) {
+						return page.View{}, problem.Conflict(staleList)
+					}
+					return page.View{}, rest.Fault(err)
+				}
 			}
 			return page.View{}, httpx.SeeOther(p.at.sessions.at)
 		})
+}
+
+// sessionsPremise reads the list the screen's button spoke for and answers with
+// the sessions that click would end, or with the refusal saying it is not that
+// list any more. Nil means no premise arrived, which is the bulk command's
+// answer: the rows this command ends are then whatever the caller's own list
+// holds at the moment of the delete.
+//
+// The revision is the screen's own value, so this compares what the person read
+// with what there is now and decides nothing else: it cannot grant a revocation,
+// only refuse one whose premise moved. See sessionsRevision.
+func (p pages) sessionsPremise(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, expect string) ([]string, error) {
+	if expect == "" {
+		return nil, nil
+	}
+	listed, err := p.Sessions.Sessions(ctx, tx, userID, currentSession(ctx))
+	if err != nil {
+		return nil, rest.Fault(err)
+	}
+	if expect != sessionsRevision(listed) {
+		return nil, problem.Conflict(staleList)
+	}
+	return revocableSessions(listed), nil
+}
+
+// revocableSessions is the set one "everywhere else" click stands for: every
+// session on the list but the one answering. sessionsRevision digests it for the
+// form; the command above needs the members, because they are what it ends.
+func revocableSessions(items []*authcontracts.SessionListing) []string {
+	refs := make([]string, 0, len(items))
+	for _, s := range items {
+		if !s.Current {
+			refs = append(refs, s.Ref)
+		}
+	}
+	return refs
 }
 
 // sessionsReadFaults is what the list answers with when it cannot be drawn: the
@@ -207,12 +277,7 @@ const staleList = "the sessions this screen counted are not the sessions there a
 // aims at it. The value grants nothing: it can only refuse a click whose premise
 // moved, never aim one at a session the caller's own list did not contain.
 func sessionsRevision(items []*authcontracts.SessionListing) string {
-	refs := make([]string, 0, len(items))
-	for _, s := range items {
-		if !s.Current {
-			refs = append(refs, s.Ref)
-		}
-	}
+	refs := revocableSessions(items)
 	slices.Sort(refs)
 	sum := sha256.Sum256([]byte(strings.Join(refs, "\n")))
 	return hex.EncodeToString(sum[:])[:16]
