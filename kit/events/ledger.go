@@ -220,6 +220,21 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 			return err
 		}
 		report.Claims, report.Dead = total(claims), total(dead)
+		// The membership re-check, last, in the transaction that did the renaming. The
+		// locks above describe the membership as of their own reading; this statement asks
+		// the same question of the state the rename ends in, and a difference is an answer
+		// the move cannot keep. A placement can commit while this transaction runs (its own
+		// walk takes no ledger key), and a tenant that took this app between the read of the
+		// durables and its own naming holds claims this move never saw, under a name its
+		// consumer is about to subscribe under: the second handling, arriving by the one door
+		// the lock set above no longer shuts. Refusing is the whole remedy — nothing moved,
+		// nothing emitted, and the retry after this transaction ends reads a membership that
+		// cannot move again while it holds the keys.
+		if remains, err := unscopedRemains(tx, app); err != nil {
+			return err
+		} else if remains {
+			return fmt.Errorf("events: move the delivery ledger: app %s's ledger still names an unscoped row after the rename, so a tenant took the app while the move read it; %w", app, ErrLedgerMoveContended)
+		}
 		// The write that finds none is not written: no record, no trail row
 		// saying something happened. Every later run of this step — the job's, and
 		// every boot after the first — takes this branch.
@@ -320,8 +335,14 @@ func declareTenant(gdb *gorm.DB, tenantID uuid.UUID) error {
 // three grammars an app, a module or an event name is written in.
 func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+") }
 
-// holdTenants takes the move's lock over every tenant of app, refusing rather than
-// queueing, before a single ledger row is read.
+// placeable is the predicate that says a tenant could still become this app's by the
+// end of the move: it is the app's already, or it names no app and a placement is the
+// act that names one. See holdTenants for why the move locks both halves.
+const placeable = "app = ? OR app = ''"
+
+// holdTenants takes the move's lock over every tenant that could still be this app's
+// by the end of the move, refusing rather than queueing, before a single ledger row is
+// read.
 //
 // The durable locks below are taken over the names this app's tenants hold
 // *committed* rows under, and a committed row is exactly what the first delivery of
@@ -345,18 +366,62 @@ func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+
 // app's move from before the statement that decides whether to write one, whatever the
 // INSERT itself then waits behind. A delivery of another app holds its own tenant's lock
 // and refuses nothing here, which is what the per-durable lock already buys and this keeps.
+//
+// The set is `placeable`, app's own tenants *and* the ones still naming nobody, because a
+// tenant is placed by a walk this transaction has no part in. Reading only this app's rows
+// describes the membership at the instant of the read and nothing after it: an unplaced
+// tenant's open claim declares a key this move never asks for, so the move takes no key for
+// it, reads no row for it (`ownTenant` below answers false while the row is still empty),
+// answers its zero report as a success, and the placement that commits while it is open puts
+// the tenant — and the claim that lands a statement later — inside this app, under a durable
+// its consumer will never subscribe under. The hazard is a claim in a tenant that *becomes*
+// this app's during the move, so the lock set has to be the set that can become this app's,
+// and the placement's own rule says that set: an app, once written onto a row, never moves
+// and never changes (migrations/000043, and 000045's write checks `app = ”` at the write
+// itself), so the only tenants that can join this app are the empty ones. A claim in one of
+// them is refused over with the app's own, which is the same refusal, written down where the
+// membership is what is in the way.
+//
+// The widening costs an app's move a refusal whenever an app-less delivery is open
+// anywhere, and that is the direction that keeps rows: the traffic that refuses it is the
+// traffic whose claims this move would otherwise strand, and it is the traffic that stops by
+// the end of a rollout that names its app. It is not a wider lock over the other app, which
+// is the harm a table lock would dress up as safety: academy's tenant has an app and is not
+// in the set, and an app-less delivery holds a key only for the move that is running.
 func holdTenants(tx db.Tx[db.System], app appname.Name) error {
 	var contended int64
 	if err := tx.DB().Raw(`SELECT count(*) FROM (
 		   SELECT pg_try_advisory_xact_lock(hashtextextended(`+tenantLockKey+`, 0)) AS held
-		     FROM tenants WHERE app = ?) AS claims WHERE NOT held`, string(app)).Scan(&contended).Error; err != nil {
+		     FROM tenants WHERE `+placeable+`) AS claims WHERE NOT held`, string(app)).Scan(&contended).Error; err != nil {
 		return fmt.Errorf("events: move the delivery ledger: the locks on app %s's tenants: %w", app, err)
 	}
 	if contended > 0 {
-		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim in %d of app %s's tenants; %w",
+		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim in %d of app %s's tenants or of tenants no app is placed under yet, any of which this move could rename; %w",
 			contended, app, ErrLedgerMoveContended)
 	}
 	return nil
+}
+
+// unscopedRemains asks whether any unscoped row sits in one of app's tenants once the
+// rename has run. It is the move's own `unscoped` and `ownTenant` predicates, asked of the
+// state it is about to commit rather than of the state it read, and it has one honest
+// answer: nothing remains, because the durables it renames are the durables the read above
+// found under exactly this predicate, and no claim can be open in a tenant whose key the
+// move holds. Anything else says the *tenants* changed underneath the move — the placement
+// named a row the entry lock set could only call placeable — and the move that cannot
+// prove its set proves the opposite, so it refuses and writes nothing. A refusal here is
+// rarer than the one the entry makes and it is the same refusal: a placement is a walk that
+// drains, and the retry reads a membership that holds still.
+func unscopedRemains(tx db.Tx[db.System], app appname.Name) (bool, error) {
+	var remains bool
+	// The slug binds twice: the reading names one ledger's tenants and then the other's.
+	if err := tx.DB().Raw(`SELECT EXISTS (
+		   SELECT 1 FROM `+handled+` WHERE `+unscoped+` AND `+ownTenant+`)
+		OR EXISTS (
+		   SELECT 1 FROM `+deadLetters+` WHERE `+unscoped+` AND `+ownTenant+`)`, string(app), string(app)).Scan(&remains).Error; err != nil {
+		return false, fmt.Errorf("events: move the delivery ledger: check what is left unscoped for app %s: %w", app, err)
+	}
+	return remains, nil
 }
 
 // holdDurable takes the move's lock over one durable's rows, refusing rather than
@@ -384,18 +449,25 @@ func holdDurable(tx db.Tx[db.System], durable string) error {
 // renameLedger moves one ledger's unscoped rows under prefix and answers how many
 // of them each tenant had.
 //
-// Two statements, in this order, because the second has to be provably safe rather
-// than probably: the copy runs first, and the delete then removes exactly the rows
-// the copy read. Both are pinned to the same predicate — the same unscoped name set
-// the locks above were taken for, in the tenants this app holds — so "read" and
-// "now" are the same set: no claim can be open on a durable this statement renames,
-// and no row outside the named set is touched at all.
+// Two halves in one statement, because the second has to be provably safe rather than
+// probably: the delete removes the rows the copy read, keyed by the keys the copy read,
+// and not by a predicate asked a second time. Both halves used to spell the same
+// predicate — the unscoped name set the locks above were taken for, in the tenants this
+// app holds — and that was one assumption deep: a row's own durable never changes, but
+// `ownTenant` answers a question about another table, and a placement can commit between
+// the copy and the delete. A tenant that took this app in that gap has its unscoped rows
+// inside the delete's reading and outside the copy's, and the pair then removes a claim it
+// never copied — the mark that stops a handler running twice, taken away by the move whose
+// whole reason is to stop handlers running twice. So the delete asks for `src`'s
+// (event_id, durable) pairs, which are the primary key: one reading, one set, and no
+// statement in between that could change what the other means.
 //
 // The copy is INSERT ... SELECT over a MATERIALIZED CTE rather than a bare
 // INSERT ... SELECT against the same table: the CTE is evaluated once from the
 // statement's own snapshot, so the rows this statement inserts cannot re-enter the
-// set it is copying. ON CONFLICT DO NOTHING keeps the scoped row when a twin is
-// already there — the state a move leaves behind if it ever stopped between the two
+// set it is copying, and the delete, which reads the same CTE, cannot see a set wider
+// than the one the insert carried. ON CONFLICT DO NOTHING keeps the scoped row when a twin
+// is already there — the state a move leaves behind if it ever stopped between the two
 // statements — and the unscoped twin is still deleted, so the durable ends up named
 // one way. The timestamp is copied, not re-stamped: handled_at is what the purge
 // ages on (relay.go's purge), and a row that got a new handled_at would outlive its
@@ -419,23 +491,26 @@ func renameLedger(tx db.Tx[db.System], table, prefix string, columns, from []str
 	where := unscoped + ` AND ` + ownTenant + ` AND durable IN (` +
 		strings.TrimSuffix(strings.Repeat("?,", len(from)), ",") + `)`
 	args := append([]any{string(app)}, anyStrings(from)...)
-	copyStmt := `WITH src AS MATERIALIZED (
+	// One statement, three CTEs: read the set once, copy it under the prefix, delete
+	// exactly what was read. The delete's IN-list is the key the copy was built from,
+	// so the two cannot disagree about a row however the tables around them move.
+	moveStmt := `WITH src AS MATERIALIZED (
 	   SELECT event_id, durable, tenant_id, ` + carry + ` FROM ` + table + ` WHERE ` + where + `
-  ) INSERT INTO ` + table + ` (event_id, durable, tenant_id, ` + carry + `)
-      SELECT event_id, ?||durable, tenant_id, ` + carry + ` FROM src
-      ON CONFLICT (event_id, durable) DO NOTHING`
-	if err := tx.DB().Exec(copyStmt, append(args, prefix)...).Error; err != nil {
-		return nil, fmt.Errorf("events: move the delivery ledger: copy %s: %w", table, err)
-	}
-	movedStmt := `WITH moved AS (
-	   DELETE FROM ` + table + ` WHERE ` + where + ` RETURNING tenant_id
+  ), copied AS (
+	   INSERT INTO ` + table + ` (event_id, durable, tenant_id, ` + carry + `)
+	     SELECT event_id, ?||durable, tenant_id, ` + carry + ` FROM src
+	     ON CONFLICT (event_id, durable) DO NOTHING
+  ), moved AS (
+	   DELETE FROM ` + table + ` AS t
+	    WHERE (t.event_id, t.durable) IN (SELECT event_id, durable FROM src)
+	    RETURNING t.tenant_id
   ) SELECT tenant_id, count(*)::bigint AS moved FROM moved GROUP BY tenant_id`
 	type row struct {
 		TenantID uuid.UUID
 		Moved    int64
 	}
 	var rows []row
-	if err := tx.DB().Raw(movedStmt, args...).Scan(&rows).Error; err != nil {
+	if err := tx.DB().Raw(moveStmt, append(args, prefix)...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("events: move the delivery ledger: move %s: %w", table, err)
 	}
 	out := make(map[uuid.UUID]int64, len(rows))

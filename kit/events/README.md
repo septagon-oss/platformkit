@@ -156,7 +156,11 @@ already, answered again as a first delivery. The drain is one transaction under 
 system capability: a lock on each durable whose rows it is about to rename — a claim
 written at an unscoped durable takes the matching shared advisory lock in the schema
 itself (migrations/000044), and the move asks for the exclusive one and refuses rather
-than waiting — and a lock over each of the app's tenants, taken before a row is read.
+than waiting — and a lock over every tenant that could still be the app's by
+the end of the move — its own, and the ones no app is placed under, because a
+placement is what turns an empty app into a slug and a slug never moves again —
+taken before a row is read. The set that can join the app, and not the set that
+already did, is the one a claim can be open in and still land inside it.
 The tenant's key is not reach beyond the harm: the durables to lock are discovered from
 committed ledger rows, so the first claim of a subscription, which has none, names nothing
 for the durable list to catch, and a move that found nothing to rename would answer zero
@@ -180,7 +184,11 @@ apps' consumers ran. The move then takes the claims of the tenants this app hold
 claim belongs to the tenant it was made in and a tenant belongs to one app
 (`tenants.app`) — so a copy of each unscoped ledger onto the app's prefix carries
 `handled_at`, `name`, `error` and `failed_at` verbatim, the purge ages on them, and the
-delete that follows removes exactly the rows that copy read; one `platformkit.ledger_moved`
+delete that follows removes exactly the rows that copy read, by the keys that
+copy read rather than by a predicate asked a second time (the tenant half of that
+predicate answers about `tenants`, and a placement can commit between the two
+askings); the move then asks whether anything it had to rename is still unscoped
+and refuses if it is; one `platformkit.ledger_moved`
 record per tenant whose claims moved goes into the same commit. The claims of a tenant
 whose `tenants.app` is empty belong to whichever deployment runs app-less beside this
 one and are left where its consumer looks for them. A delivery mid-claim therefore
