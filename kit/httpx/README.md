@@ -205,15 +205,30 @@ claim, because a refusal nobody received is not an answer to remember, and so do
 transaction that did not commit, whatever the handler had written — which is the case
 of the caller that hung up mid-commit, whose buffered 200 `a.transaction` keeps in
 place because nobody is left to read it, and whose retry with the same key must run.
-`ValidateDeclarations` refuses, at boot, the three declarations that cannot mean what
-they say: a safe method, the Public surface (no principal to scope a key to), and a
-streamed body.
+`ValidateDeclarations` refuses, at boot, the declarations that cannot mean what they
+say: a safe method, the Public surface or the App door that admits an anonymous caller
+(no principal to scope a key to), and a streamed body. A key that arrives with no
+principal is refused 403 `AUTH_ANONYMOUS` rather than run unclaimed: the boot gate has
+already refused the only declaration that could reach that state on purpose, so a route
+that lost its principal on the way is a route that cannot keep the promise the header
+advertises, and running the command would be a 200 promising an answer nothing recorded.
 
 The rows live in `platformkit_idempotency` (migration `000042`), keyed by tenant,
 caller, operation and key, written only by this package under its own system token,
-empty for a day after the answer and emptied by the `idempotency-purge` job
-(`httpx.PurgeIdempotency`, scheduled by `kit/app`). An in-flight marker is bounded
-at five minutes, which is the crash window's only exit.
+held for a day after the answer and emptied by the `idempotency-purge` job
+(`httpx.PurgeIdempotency`, scheduled by `kit/app`).
+
+Nothing here infers that a command finished from how long ago it started. A claim that
+is not settled says either "somebody is running this now" or "the process that claimed
+it died", and the kernel cannot tell them apart: its claim is committed and detached
+precisely so that a repeat on another connection can see it. Taking over a marker that
+merely looked old applies the command twice, and no bound anybody can write down is
+longer than the request that can outlive it, so the repeat is refused 409 and the exit
+is the purge, which deletes only a row whose own `expires_at` has passed and so cannot
+delete one that is being answered. A settled answer past its day is a fresh command on
+the request that asks, not on the schedule's convenience. The cost of the refusal is
+one more press after a crash, and it is the price of never applying a slow command
+twice.
 
 **Reused.** The claim joins the huma chain beside `a.publicWrites` and reuses
 `routeOf` as its operation identity; holding and replaying the response is the
@@ -242,19 +257,25 @@ plus a long retention one) with a purge beside `limit-purge`; the five refusal c
 with their sentences in the catalogue; and `ui/assets/js/command.js` itself, the
 kernel's first htmx extension.
 
-**Limits.** The browser half holds one submission record per form, for as long as the
-document that wrote it is the page in front of the person, and no longer. A record that
-outlived its document could not tell the person retrying a submission whose answer was
-lost from the person asking for a new command — the same form, the same bytes, one key
-either way — and the wrong guess either replaced the new command with the old one's
-stored answer or ran the lost one twice. So a reload ends the record, `command.js`
-mints a fresh key, the kernel applies the next command, and the person judges the next
-press by the page they were given. That is a narrower promise than one intent
-recognized across a reload, and it is the one a controller can keep. Two items the
-brief decided are not delivered here: the controller renders no outcome region of its
-own and defers to the page-wide `[data-request-notice]` nodes `ui/document` renders,
-which is one notice per request rather than one per form; and there is no gallery
-example page, because `/app/auth/sessions` is the page this opt-in lives on and
-`e2e/command-idempotency.spec.ts` drives it. No other browser script is replaced here:
+**Limits.** The browser half holds one submission record per form while this tab has a
+submission outstanding, in `sessionStorage` as well as in memory, and retires it the
+moment an answer arrives. A reload is the same case in a different document: the person
+pressing that button again is asking for the write that went unanswered, so the record
+is adopted — but only a record that names an attempt somebody still owes, never one that
+was answered. A new intent stays available the same way the server decides it: an edited
+form is other bytes, the kernel answers that with `IDEMPOTENCY_KEY_REUSE`, and a spent
+key retires the record, so the next press is a fresh command. When a resumed submission
+comes back as a *replay* the first answer belonged to the document that is gone, so the
+controller stops that answer navigating the person off the page they are on and runs the
+press once under a key of its own — once, because the record is retired before the
+request goes. A keyed refusal swaps nothing: `htmx:beforeSwap` is refused for it, and its
+sentence goes into the outcome region inside the form it reports for.
+
+Two things are still not delivered: the outcome sentence is the server's English, not the
+page's language (the page-wide `[data-request-notice]` nodes `ui/document` renders are
+still where a translated refusal appears, and a per-form translated outcome is a
+catalogue question this change does not answer); and a command whose process died leaves
+its key refused until the purge takes the row, which is a wait bounded by the in-flight
+deadline plus the purge's own schedule. No other browser script is replaced here:
 nothing composes `command.js` but the routes that declare the key, and moving another
 repository's hand-written retry code onto it is that repository's own change.

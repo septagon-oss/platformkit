@@ -72,20 +72,29 @@ commit. The same key and the same bytes then replay that answer and run nothing 
 byte, `Location` and `HX-Redirect` included — the same key with other bytes is refused 422
 `IDEMPOTENCY_KEY_REUSE`, a repeat while the first is still running is refused 409
 `IDEMPOTENCY_IN_PROGRESS` with a `Retry-After`, a key that is not a lowercase UUID is
-refused 422, an answer too big to hold settles as "it ran; read the result", and a 5xx —
-or a request transaction that never committed, the hung-up caller whose buffered 200
-nobody read included — deletes the claim so a retry runs the command. The rows are
-`platformkit_idempotency` (`migrations/000042`), keyed by tenant, caller, operation and
-key under forced row-level security that no tenant transaction can read through, empty for
-a day, emptied by the `idempotency-purge` job. `ui/assets/js/command.js` is the kernel's
-first htmx extension: a form with `hx-ext="command"` mints one key per submission, holds it
-for the document that minted it — a reload redraws the page from the server, which is what
-tells the person whether to press again, and the next press is a new command — retries the
-identical bytes on a transport failure with a bound of four, and stays quiet until the
-attempts run out — then
-the existing notice appears, because a conflict is still somebody else's and is never
-erased. Its budget is `ui.CommandControllerBudget`, 6144 bytes, checked by `make check`.
-Nothing changed for a form that did not opt in.
+refused 422, an answer too big to hold settles as "it ran; read the result", a key that
+arrives with no principal is refused 403 rather than run unclaimed, and a 5xx — or a
+request transaction that never committed, the hung-up caller whose buffered 200 nobody
+read included, or a panic that unwound past the response — deletes the claim so a retry
+runs the command. Nothing infers that a command finished from how long ago it started: an
+unsettled claim is always refused, because taking over a marker that merely looked old
+applies the command twice, and the exit from a dead process's window is the purge rather
+than the next request. The rows are `platformkit_idempotency` (`migrations/000042`), keyed
+by tenant, caller, operation and key under forced row-level security that no tenant
+transaction can read through, held for a day — a settled answer past that day is a fresh
+command on the request that asks — and emptied by the `idempotency-purge` job.
+`ui/assets/js/command.js` is the kernel's first htmx extension: a form with
+`hx-ext="command"` mints one key per submission, keeps the pending one across a reload
+until an answer retires it, retries the identical bytes on a transport failure with a
+bound of four, cancels a scheduled retry the moment a press makes it obsolete, and refuses
+a keyed refusal's markup rather than letting it replace the form it is about — the
+sentence goes to the outcome region inside that form, which is what `/app/auth/sessions`
+renders for each of its revoke forms and what the gallery's
+`pk-ui.component.form/command` example shows. A resumed submission that comes back as a
+replay is the answer to a page nobody is looking at, so the press is honoured once under a
+key of its own. Its budget is `ui.CommandControllerBudget`, the measured bytes of the file
+that carries those promises, checked by `make check`. Nothing changed for a form that did
+not opt in.
 
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
