@@ -1648,7 +1648,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the ten above the ceiling, because the
+	// 33 stays 33 for those files and for the eleven above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1657,15 +1657,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 43 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43) and twenty-seven under modules/*/migrations/ (4, 7,
+	// this head prints 44 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 44) and twenty-seven under modules/*/migrations/ (4, 7,
 	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
 	// 37, 38, 39, 40, 42), all at distinct versions. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The ten above it — the kernel's own 34, 41 and 43, modules/audit's
+	// any owner names. The eleven above it — the kernel's own 34, 41, 43 and 44, modules/audit's
 	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
 	// modules/content's 42 — postdate that release, are not in the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
@@ -1679,6 +1679,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// to 41 was taken on main while the rich-text branch was still open — 000035 is
 	// modules/audit's audit_context and 000041 is the kernel's own outbox baggage.
 	// One version, one row.
+	//
+	// The kernel's 000044_idempotency is the fifth such move, and the first whose harm is
+	// not this fixture. It was written as 000042, and main took 42 for modules/content and
+	// then 43 for the kernel's own tenant placement. Here the flattening is only the small
+	// half: the two 42s sit under different owners, so the real ledger would have held both.
+	// The half that refuses a release is the runner's — an installation that applied 43 has
+	// that history, and a file numbered below it is not appendable to it, so `Migrate`
+	// answers "000042_idempotency.up.sql precedes applied version 43; append a new version"
+	// and the application never boots. That state is invisible from a fresh database, which
+	// applies every file in order, and it is why migrations/idempotency_upgrade_test.go
+	// installs the kernel as far as it shipped at 43 before it upgrades to this file.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}

@@ -30,6 +30,16 @@
 -- the second reason the day is a day and not indefinite. The table is in no export
 -- for the first reason: it is the transport's own memo, and walking it would hand
 -- one person a body somebody else submitted.
+--
+-- The version is the one an append-only history leaves. This file was written as 000042,
+-- the number free when the branch opened; main took 42 for modules/content's body
+-- characters and 43 for the kernel's own tenant placement while it was in review. A file
+-- below what an installation already applied cannot be applied — the bytes at 43 are the
+-- history of that database — so the runner refuses it before it connects rather than
+-- running a table into an installation that has moved past it ("precedes applied version
+-- 43; append a new version"). migrations/idempotency_upgrade_test.go is the case that
+-- says so: it installs the kernel as far as it shipped at 43, then upgrades it to this
+-- file, which is the state a fresh database cannot reach and an operator's server is in.
 
 CREATE TABLE platformkit_idempotency (
 	tenant_id    uuid        NOT NULL,

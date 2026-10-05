@@ -83,7 +83,7 @@ const IdempotencyReplayHeader = "Idempotency-Replay"
 // other means never send it again.
 const IdempotencyRefusalHeader = "Idempotency-Refusal"
 
-// idempotencyTable is the one this package owns. See migrations/000042_idempotency.
+// idempotencyTable is the one this package owns. See migrations/000044_idempotency.
 const idempotencyTable = "platformkit_idempotency"
 
 const (

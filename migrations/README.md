@@ -11,7 +11,7 @@ runner refuses.
 `migrations/` is the kernel's own schema, owned as `platformkit`: the tenancy
 helpers and the tenants and hosts they resolve, the outbox with its claims and
 dead letters, the limits ledger, and the idempotency claims a command leaves behind
-(`000042`: one row per submission that declared an `Idempotency-Key`, with the answer
+(`000044`: one row per submission that declared an `Idempotency-Key`, with the answer
 it got, keyed outside any tenant transaction and readable only by `kit/httpx`). What a module stores lives beside that
 module under `modules/<name>/migrations`, and `kit/app` hands the kernel's
 source to the runner first with the selected modules after it. Files keep the

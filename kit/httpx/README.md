@@ -213,7 +213,7 @@ already refused the only declaration that could reach that state on purpose, so 
 that lost its principal on the way is a route that cannot keep the promise the header
 advertises, and running the command would be a 200 promising an answer nothing recorded.
 
-The rows live in `platformkit_idempotency` (migration `000042`), keyed by tenant,
+The rows live in `platformkit_idempotency` (migration `000044`), keyed by tenant,
 caller, operation and key, written only by this package under its own system token,
 held for a day after the answer and emptied by the `idempotency-purge` job
 (`httpx.PurgeIdempotency`, scheduled by `kit/app`).
@@ -245,7 +245,7 @@ detached write, its budget and its purge are the shape `kit/limit` wrote for
 the `[data-request-notice]` nodes `ui/document` already renders and the `Ext` prop
 `ui/components` already emits; `kit/app` schedules the purge in `kernelJobs`.
 
-**Added.** `kit/httpx/idempotency.go`, migration `000042`, `ui/assets/js/command.js`
+**Added.** `kit/httpx/idempotency.go`, migration `000044`, `ui/assets/js/command.js`
 and three declaration fields. Nothing existing could carry this: `kit/limit` counts a
 window under a key and has no response to replay; `modules/audit`'s
 `(tenant_id, event_id)` deduplication happens downstream of the decision, so it cannot
