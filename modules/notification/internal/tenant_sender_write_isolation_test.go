@@ -36,7 +36,7 @@ func TestAnotherTenantWritesNothingOfThisTenants(t *testing.T) {
 	store, admin := internal.Prefs{}, senders()
 	var notice, senderID, prefID uuid.UUID
 
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(asAdmin(tenancy.WithTenant(t.Context(), acme)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row, err := internal.NewService(directory{}, internal.WithPreferences(internal.Prefs{}),
 			internal.WithSenders(admin)).Notify(ctx, tx, contracts.Notice{
 			Recipient: notificationtest.Ada, Title: "acme's own", Wants: contracts.WantsInApp,
@@ -104,7 +104,7 @@ func TestAnotherTenantWritesNothingOfThisTenants(t *testing.T) {
 	}
 
 	// The commands refuse an id they did not mint, the same answer as no id at all.
-	if err := db.Run(tenancy.WithTenant(t.Context(), globex), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	if err := db.Run(asAdmin(tenancy.WithTenant(t.Context(), globex)), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		if _, err := admin.Verify(ctx, tx, senderID); err == nil {
 			t.Error("globex verified acme's sender")
 		}
