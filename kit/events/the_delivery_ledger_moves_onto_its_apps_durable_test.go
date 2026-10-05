@@ -378,42 +378,56 @@ func TestANameThatIsNotASlugMovesNothing(t *testing.T) {
 	}
 }
 
-// TestTheFirstAppToMoveOwnsTheLedger is two apps on one database: the unscoped
-// history names no app, so the app that moves first takes it and the second finds
-// nothing to take. A copy would report the same rows for academy, and academy
-// would then skip events it never handled — the case the spec's §1.7 names.
-func TestTheFirstAppToMoveOwnsTheLedger(t *testing.T) {
+// TestEachAppMovesItsOwnTenantsClaimsAndNoOthers is two apps on one database, read
+// the way the tenant is: a claim belongs to the tenant it was made in, and a tenant
+// belongs to one app (migrations/000043), so each app's move renames its own
+// tenants' rows onto its own durable and leaves the other's for that app. The first
+// mover taking the whole unscoped history — which is what a predicate on the durable
+// alone does — would put academy's claim under collect's durable, where academy's own
+// consumer cannot see it, and a re-publish would then run academy's handler for work
+// academy already committed. That is the brief's acceptance, and a copy fails it the
+// other way round: academy would report rows for events it never handled.
+func TestEachAppMovesItsOwnTenantsClaimsAndNoOthers(t *testing.T) {
 	_, conn := dbtest.Schema(t)
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "collect-shop"}
 	placeTenant(t, conn, tenant.ID, tenant.Slug, "collect")
 	other := tenantID(t, conn, "academy-school", "academy")
 	id := uuid.New()
 	claimRow(t, conn, appname.Durable(appname.Name(""), ledgerModule, ledgerEvent), id, tenant.ID)
-	claimRow(t, conn, appname.Durable(appname.Name(""), ledgerModule, ledgerEvent), uuid.New(), other)
+	theirs := uuid.New()
+	claimRow(t, conn, appname.Durable(appname.Name(""), ledgerModule, ledgerEvent), theirs, other)
 
-	if _, err := events.MoveLedger(t.Context(), conn, "collect", "boot"); err != nil {
+	first, err := events.MoveLedger(t.Context(), conn, "collect", "boot")
+	if err != nil {
 		t.Fatalf("MoveLedger as collect: %v", err)
 	}
-	// The tenant's own record from the first move is in that tenant's trail: the
-	// unscoped rows named no app, and the app that moved first owns that history.
-	// What academy may not do is add a record of its own for a move that moved
-	// nothing.
-	before := len(movedRecords(t, conn, other))
+	if first != (events.MoveReport{Subscriptions: 1, Claims: 1, Tenants: 1}) {
+		t.Errorf("collect's move reported %+v, want its tenant's one claim under one durable", first)
+	}
+	if recs := movedRecords(t, conn, other); len(recs) != 0 {
+		t.Errorf("collect recorded %d moves in a tenant it does not hold; the record goes where the rows went", len(recs))
+	}
+
 	moved, err := events.MoveLedger(t.Context(), conn, "academy", "boot")
 	if err != nil {
 		t.Fatalf("MoveLedger as academy: %v", err)
 	}
-	if moved != (events.MoveReport{}) {
-		t.Errorf("app academy reported %+v; every unscoped row is gone, so it moves nothing and says so", moved)
+	if moved != (events.MoveReport{Subscriptions: 1, Claims: 1, Tenants: 1}) {
+		t.Errorf("academy's move reported %+v, want its tenant's one claim, which collect left where it was", moved)
 	}
-	if after := len(movedRecords(t, conn, other)); after != before {
-		t.Errorf("app academy emitted %d more records for a ledger it did not move", after-before)
+	if got := durables(t, conn, "platformkit_handled", id); len(got) != 1 ||
+		got[0] != appname.Durable("collect", ledgerModule, ledgerEvent) {
+		t.Errorf("collect's tenant's claim sits at %v after both moves", got)
 	}
-	if n := claimsUnder(t, conn, appname.Durable("collect", ledgerModule, ledgerEvent)); n != 2 {
-		t.Errorf("%d claims sit under collect's durable, want the two unscoped rows it moved", n)
+	if got := durables(t, conn, "platformkit_handled", theirs); len(got) != 1 ||
+		got[0] != appname.Durable("academy", ledgerModule, ledgerEvent) {
+		t.Errorf("academy's tenant's claim sits at %v after both moves", got)
 	}
-	if n := claimsUnder(t, conn, appname.Durable("academy", ledgerModule, ledgerEvent)); n != 0 {
-		t.Errorf("%d claims sit under academy's durable, want none: a copy would have given academy work it never did", n)
+	if n := claimsUnder(t, conn, appname.Durable("collect", ledgerModule, ledgerEvent)); n != 1 {
+		t.Errorf("%d claims sit under collect's durable, want its own tenant's one: a copy would report the other's too", n)
+	}
+	if n := claimsUnder(t, conn, appname.Durable("academy", ledgerModule, ledgerEvent)); n != 1 {
+		t.Errorf("%d claims sit under academy's durable, want the one its own tenant made", n)
 	}
 }
 

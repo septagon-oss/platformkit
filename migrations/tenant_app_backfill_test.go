@@ -36,8 +36,12 @@ import (
 // appFile is the file under test, by the name the ledger carries.
 const appFile = "000043_tenant_app.up.sql"
 
-// beforeApp is the kernel's own history with that one file taken out: the state of
-// an installation on the day the release that carries it boots.
+// beforeApp is the kernel's own history with that file and everything numbered above
+// it taken out: the state of an installation on the day the release that carries it
+// boots. The versions above are part of the cut because they did not exist that day —
+// 000044's claim lock arrives with the same release and after this file — and leaving
+// one in would migrate the fixture past the version the file under test is being
+// appended at, which the executor refuses for reasons of its own.
 type beforeApp struct{ inner fs.FS }
 
 func (b beforeApp) Open(name string) (fs.File, error) { return b.inner.Open(name) }
@@ -49,7 +53,7 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	out := rows[:0:0]
 	for _, row := range rows {
-		if row.Name() != appFile {
+		if version, _, found := strings.Cut(row.Name(), "_"); !found || version < "000043" {
 			out = append(out, row)
 		}
 	}

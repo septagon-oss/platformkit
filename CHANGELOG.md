@@ -6,24 +6,54 @@
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
 side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
-is the drain for those two tables — one transaction, `SHARE ROW EXCLUSIVE … NOWAIT` on each, always in that
-order, a copy of each unscoped ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and
-`failed_at` verbatim because the purge ages on them, then a delete of exactly the rows the copy read, and one
-`platformkit.ledger_moved` record per tenant whose claims moved. A delivery mid-claim holds the table lock and
-the move refuses, naming itself, having written and emitted nothing; `kit/app` runs the step once at boot,
+is the drain for those two tables. It locks the durables it is about to rename — an INSERT of a claim at an
+unscoped durable takes that durable's shared advisory lock in the schema itself
+(`migrations/000044_ledger_claim_durable_lock`), and the move asks for the exclusive one and refuses rather than
+queueing — and it moves the claims of the tenants this app holds: a claim belongs to the tenant it was made in,
+and a tenant belongs to one app (`tenants.app`), so the claims of a tenant whose `tenants.app` is empty stay
+where the deployment that runs app-less beside this one looks for them. One transaction: a copy of each unscoped
+ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and `failed_at` verbatim because the
+purge ages on them, then a delete of exactly the rows the copy read, and one `platformkit.ledger_moved` record
+per tenant whose claims moved. A delivery mid-claim holds that durable and the move refuses, naming itself,
+having written and emitted nothing. The table lock this step first took, and a predicate that named the durable
+and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
+the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while
+both apps' consumers ran, and walking every unscoped row on the way renamed another app's tenants' claims into a
+durable its consumer never listens to — the harm the move exists to close. `kit/app` runs the step once at boot,
 before any subscription exists — the gap between "the durable is scoped" and "the ledger is scoped" is the
 window — logs a refusal rather than crashing on it, and schedules `ledger-move` to finish it. That job, the
 record's declaration and the channel that describes it belong only to a deployment that names an app: with no
 slug there is no prefix to move onto, so the step answers with the zero report and the manifest declares no
 event no run could publish. `kit/db`'s `phase=data` window refuses the same act on a table keyed by something
 other than the tenant, which is why this is a drain its owner owns in a job and not a migration. The envelope
-carries the same fact: `transport.Event` gains `App`, published as the CloudEvents extension attribute `app`
-and absent for an app-less publisher, and its `subject` is the one `appname.Subject` forms, so `UnmarshalJSON`
-can refuse a document whose subject disagrees with the `(app, tenantid, type)` it carries and
-`jetstream.Publish` refuses to write an event that names another app at its own address. A document that names
-no app is refused at an app-scoped address and at no other: nothing was ever written at a scoped address
-unstamped, and the alternative would let a forged app-less message run a handler whose claim ledger is the only
-thing that makes it exactly-once.
+carries the same fact: `transport.Event` gains `App`, published as the CloudEvents extension attribute `app` and
+reflected onto the NATS subject, and a consumer's filtered subject is its own app's plus the app-less wildcard —
+a process receives the traffic it declares and nothing else, so two apps on one subject root cannot each burn the
+other's deliveries to maxDeliveries and dead-letter each other's events. With the name set, a received event
+whose `app` matches no subscription of the process handling it is dead-lettered under the durable it arrived on,
+naming who owns the mess, which needs no ledger write and so cannot take a claim out of the hands of the consumer
+that will earn it: `AddressMismatch` is the shared check the transport and the delivery share rather than a
+second copy of the rule. A scoped subject is not a scoped claim, so `pkit.App.Slug()` names both halves and an
+installation that sets `NATS_APP` without it publishes scoped traffic onto an unscoped ledger — a boot refusal
+with the fix in its sentence, conditioned on the durable a subscriber would actually use so an app whose every
+module runs over transports that ignore the name still boots. Mismatched traffic is a routing fault, not a sender
+fault: it costs the addresser no response and no retry, because that retry budget is the backpressure a real
+oversized producer is being told about, and it is not charged to the `event-address-mismatch` policy either — the
+policy decides what a *rejected* event does and this one is never submitted. It is stamped on the dead letter as
+`address_mismatch`, and a `replay` of such a letter still refuses while the address stands, because a replay is
+the operator's answer to a sender that fixed itself and this fault is the address, not the payload;
+`AddressMismatch` is exported and `POST /ops/v1/events/{id}/replay` calls it before anything is written. The
+refusal to route is loud where a person will see it and quiet where a fleet would shout: one warning per durable
+at the consumer, a `delivery.address_mismatch` counter so the operator sees a producer that never set the name
+against a producer that has not caught up, and a debug line carrying the subscription's own subject, because the
+fault is a process publishing under a name the subject it listens to does not contain — a forged or mistyped
+`app` is the same shape and the same lines. An address mismatch is not a gap: it names no lagging app, so
+`lagobserved` ignores an address gap when it answers where an event is, and one that no subscription covers
+cannot be reported as caught up. The condition is a boot-time check, not a silent rename: an installation that
+sets `NATS_APP` after running without one has history under the app-less durable, and the boot-time move is what
+brings that history forward rather than replaying it. A document that names no app is accepted on the wildcard
+only by a deployment that runs app-less traffic at all, and an app's consumer that never receives one has no row
+to consult: the stamp is the whole rule for that traffic, and the ledger cannot vouch for a message it never saw.
 
 **A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
 the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit

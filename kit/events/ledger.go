@@ -32,10 +32,27 @@ package events
 // and no app — only the durable — so the only rename expressible against the table
 // is a prefix (kit/appname's own comment on why the scoped durable is the unscoped
 // one with "<app>+" in front of it), and a copy would give every app the claims of
-// the others, which is an app skipping work it never did. The first app to move
-// therefore owns the unscoped history; that is the honest reading of a ledger that
-// never recorded which app made a claim, and §Limits of kit/appname already says
-// the unscoped deployment is a real deployment rather than a bug.
+// the others, which is an app skipping work it never did.
+//
+// Whose rows, then. A claim names no app, but it names its tenant, and a tenant
+// belongs to exactly one app (tenants.app, migrations/000043): the claim is work an
+// app's own consumer did in its own tenant. So the move renames the unscoped claims
+// of the tenants this app holds, and no others — which is T-0228's plan for this
+// move, read from kit/appname's §Limits: "renaming durable for the tenants whose
+// tenants.app is this app's slug". A predicate on the durable alone would let the
+// first app to move rename the whole database's unscoped history, including the
+// claims the other app made in its own tenants; that other app's consumer would then
+// look for (event_id, "academy+mod-ev"), find nothing — its claim is sitting under
+// collect's durable — and run a handler for work its own tenant already committed.
+// An app that moves would thus cause in the other app exactly the double-handling it
+// moved to close in itself.
+//
+// A tenant whose tenants.app is empty belongs to no named app, and this move leaves
+// its claims where the app-less consumer looks for them: an app-less deployment on
+// this database is a real deployment (kit/appname §Limits), and taking its ledger
+// would be the write that takes the last claim away. The placement onto phase=data
+// (SPECIFY item 3, unbuilt) is what turns an empty app into a slug; until it has
+// run, those tenants are nobody's to move.
 //
 // Why this is not a migration: platformkit_tenant_match answers the empty set to a
 // schema file (migrations/README.md, "A file that writes rows"), and the phase=data
@@ -115,13 +132,24 @@ type MoveReport struct {
 // selects nothing.
 const unscoped = "strpos(durable, '+') = 0"
 
+// ownTenant is the predicate that says the row's tenant belongs to the app whose
+// durable is being formed. One bound parameter: the slug. A claim records work an
+// app's own consumer did in a tenant it holds, so this is the boundary that keeps
+// one app's move out of another app's ledger — see the header.
+const ownTenant = "tenant_id IN (SELECT id FROM tenants WHERE app = ?)"
+
+func durableSet(n int) string {
+	return "durable IN (" + strings.TrimSuffix(strings.Repeat("?,", n), ",") + ")"
+}
+
 // MoveLedger renames this deployment's handled and dead-letter rows onto the
 // durables of app, and records the act in every tenant whose ledger moved.
 //
-// One transaction, in this order, each step a statement a reviewer can read:
-// take the table locks; name the durables that will move; copy each ledger's
-// scoped twin; delete the unscoped rows, whose twin the copy just provably made;
-// and publish one record per tenant. A refusal writes nothing and emits nothing.
+// One transaction, in this order, each step a statement a reviewer can read: name
+// the durables of this app's tenants that will move; take one lock per named
+// durable, refusing rather than waiting; copy each ledger's scoped twin; delete the
+// unscoped rows, whose twin the copy just provably made; and publish one record per
+// tenant. A refusal writes nothing and emits nothing.
 func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedBy string) (MoveReport, error) {
 	// An app-less deployment has no scoped name to move to, so this is an answer
 	// rather than a refusal: nothing moves, nothing is emitted, and the ledgers
@@ -141,32 +169,34 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 	prefix := appname.DurablePrefix(app)
 	var report MoveReport
 	err := db.RunSystem(ctx, conn, ledgerToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		// The locks first, and NOWAIT. SHARE ROW EXCLUSIVE conflicts with the
-		// ROW SHARE an INSERT takes and holds to the end of its transaction, so no
-		// claim can be written or cleared while the move runs; plain reads — the
-		// purge's, an operator's — are untouched. Without it, the delete below
-		// could remove a claim a delivery in another open transaction is about to
-		// commit, which is the one way this move could cause a double-handling
-		// instead of curing one. NOWAIT is what makes the contention a refusal
-		// rather than a queue: a delivery is in flight, nothing moved, run it
-		// again. Both tables, always in this order, so two moves cannot deadlock
-		// each other.
-		if err := lockLedger(ctx, tx, handled); err != nil {
-			return err
-		}
-		if err := lockLedger(ctx, tx, deadLetters); err != nil {
-			return err
-		}
-		// The names that will move, read once and used twice: for the record, and
-		// for the report. Under the lock nothing else can add one.
-		var durables []string
-		if err := tx.DB().Raw(`SELECT DISTINCT durable FROM ` + handled + ` WHERE ` + unscoped + `
-				UNION SELECT DISTINCT durable FROM ` + deadLetters + ` WHERE ` + unscoped + `
-				ORDER BY durable`).Scan(&durables).Error; err != nil {
+		// The names this app's tenants still hold claims under, read before any lock
+		// is taken: of the un-scoped rows, only the ones in a tenant this app holds.
+		var from []string
+		if err := tx.DB().Raw(`SELECT DISTINCT durable FROM `+handled+` WHERE `+unscoped+`
+				AND `+ownTenant+`
+				UNION
+				SELECT DISTINCT durable FROM `+deadLetters+` WHERE `+unscoped+`
+				AND `+ownTenant+` ORDER BY durable`, string(app), string(app)).Scan(&from).Error; err != nil {
 			return fmt.Errorf("events: move the delivery ledger for app %s: name the durables: %w", app, err)
 		}
-		report.Subscriptions = len(durables)
-		for i, d := range durables {
+		// One lock per named durable, refusing rather than waiting. A delivery takes
+		// the matching shared lock in claim before it writes its mark, so an
+		// exclusive try-lock that answers false says a claim under this durable is
+		// open right now. Nothing else needs excluding: a delivery under some *other*
+		// durable writes no row this move reads, and a delivery under the *scoped*
+		// twin takes no lock at all, because the move never renames a scoped row. A
+		// table lock here is simpler to write and wrong to run — with two apps on one
+		// database it lets the other app's ordinary traffic hold this app's boot in a
+		// refusal that never drains, which is the window this move exists to close.
+		// Both ledgers share the one key, because one durable's rows move together.
+		for _, d := range from {
+			if err := holdDurable(tx, d); err != nil {
+				return err
+			}
+		}
+		report.Subscriptions = len(from)
+		durables := make([]string, len(from))
+		for i, d := range from {
 			durables[i] = prefix + d
 		}
 		var (
@@ -174,10 +204,10 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 			dead   map[uuid.UUID]int64
 			err    error
 		)
-		if claims, err = renameLedger(tx, handled, prefix, []string{"handled_at"}); err != nil {
+		if claims, err = renameLedger(tx, handled, prefix, []string{"handled_at"}, from, app); err != nil {
 			return err
 		}
-		if dead, err = renameLedger(tx, deadLetters, prefix, []string{"name", "error", "failed_at"}); err != nil {
+		if dead, err = renameLedger(tx, deadLetters, prefix, []string{"name", "error", "failed_at"}, from, app); err != nil {
 			return err
 		}
 		report.Claims, report.Dead = total(claims), total(dead)
@@ -222,13 +252,26 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 // what the operator has to fix.
 const notASlug = "it is not an app name: no durable can be formed from it, so no subscription of its own could show a delivery belongs to it"
 
-// lockLedger takes the move's lock over one ledger, refusing rather than waiting.
-// The sentence names what is in the way and that nothing moved, because the retry
-// is correctable and the operator has to be able to tell that from a failure that
-// lost rows.
-func lockLedger(ctx context.Context, tx db.Tx[db.System], table string) error {
-	if err := tx.DB().Exec("LOCK TABLE " + table + " IN SHARE ROW EXCLUSIVE MODE NOWAIT").Error; err != nil {
-		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim on %s; no ledger row moved, run it again: %w", table, err)
+// durableLock is the key one durable's rows are written and renamed under. The
+// text itself is the key, hashed into the 64-bit advisory space with the same
+// call modules/auth uses for its own keys: two durables that collide answer with
+// a refusal that writes nothing and is retried, which is the cheap direction for a
+// hash to be wrong in. The text is hashed by migrations/000044's trigger too: the
+// claim that takes the matching share lock and the move that asks for this one are
+// two halves of one key, and only this function states it in Go.
+func durableLock(durable string) string { return "events ledger " + durable }
+
+// holdDurable takes the move's lock over one durable's rows, refusing rather than
+// queueing. The sentence names what is in the way and that nothing moved, because
+// the retry is correctable and the operator has to be able to tell this from a
+// failure that lost rows.
+func holdDurable(tx db.Tx[db.System], durable string) error {
+	var got bool
+	if err := tx.DB().Raw(`SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))`, durableLock(durable)).Scan(&got).Error; err != nil {
+		return fmt.Errorf("events: move the delivery ledger: the lock on %s: %w", durable, err)
+	}
+	if !got {
+		return fmt.Errorf("events: move the delivery ledger: a delivery is mid-claim on %s; no ledger row moved, run it again", durable)
 	}
 	return nil
 }
@@ -238,9 +281,10 @@ func lockLedger(ctx context.Context, tx db.Tx[db.System], table string) error {
 //
 // Two statements, in this order, because the second has to be provably safe rather
 // than probably: the copy runs first, and the delete then removes exactly the rows
-// the copy read. Both are pinned to the same predicate, and the table lock above is
-// what makes "read" and "now" the same set — no INSERT or DELETE of a claim can be
-// open between the two statements.
+// the copy read. Both are pinned to the same predicate — the same unscoped name set
+// the locks above were taken for, in the tenants this app holds — so "read" and
+// "now" are the same set: no claim can be open on a durable this statement renames,
+// and no row outside the named set is touched at all.
 //
 // The copy is INSERT ... SELECT over a MATERIALIZED CTE rather than a bare
 // INSERT ... SELECT against the same table: the CTE is evaluated once from the
@@ -255,25 +299,38 @@ func lockLedger(ctx context.Context, tx db.Tx[db.System], table string) error {
 // The delete returns what it removed, grouped by tenant, so the record names the
 // tenants whose ledger moved rather than the tenant that ran the job — which is the
 // difference between an audit trail and a log line.
-func renameLedger(tx db.Tx[db.System], table, prefix string, columns []string) (map[uuid.UUID]int64, error) {
+func renameLedger(tx db.Tx[db.System], table, prefix string, columns, from []string, app appname.Name) (map[uuid.UUID]int64, error) {
+	// Nothing named, nothing to do: the caller read the names this app's tenants
+	// hold, and an empty reading is the second run of an idempotent move.
+	if len(from) == 0 {
+		return map[uuid.UUID]int64{}, nil
+	}
 	carry := strings.Join(columns, ", ")
+	// The durables are spelled as an IN-list of one placeholder each rather than an
+	// array, because they are the names the locks were taken for and the statement
+	// must be able to say that as plainly as the lock does: rename these, and no
+	// other row. A claim that arrives under a name outside the set is left exactly
+	// where it is, for the run that will name it.
+	where := unscoped + ` AND ` + ownTenant + ` AND durable IN (` +
+		strings.TrimSuffix(strings.Repeat("?,", len(from)), ",") + `)`
+	args := append([]any{string(app)}, anyStrings(from)...)
 	copyStmt := `WITH src AS MATERIALIZED (
-	   SELECT event_id, durable, tenant_id, ` + carry + ` FROM ` + table + ` WHERE ` + unscoped + `
+	   SELECT event_id, durable, tenant_id, ` + carry + ` FROM ` + table + ` WHERE ` + where + `
   ) INSERT INTO ` + table + ` (event_id, durable, tenant_id, ` + carry + `)
       SELECT event_id, ?||durable, tenant_id, ` + carry + ` FROM src
       ON CONFLICT (event_id, durable) DO NOTHING`
-	if err := tx.DB().Exec(copyStmt, prefix).Error; err != nil {
+	if err := tx.DB().Exec(copyStmt, append(args, prefix)...).Error; err != nil {
 		return nil, fmt.Errorf("events: move the delivery ledger: copy %s: %w", table, err)
 	}
 	movedStmt := `WITH moved AS (
-	   DELETE FROM ` + table + ` WHERE ` + unscoped + ` RETURNING tenant_id
+	   DELETE FROM ` + table + ` WHERE ` + where + ` RETURNING tenant_id
   ) SELECT tenant_id, count(*)::bigint AS moved FROM moved GROUP BY tenant_id`
 	type row struct {
 		TenantID uuid.UUID
 		Moved    int64
 	}
 	var rows []row
-	if err := tx.DB().Raw(movedStmt).Scan(&rows).Error; err != nil {
+	if err := tx.DB().Raw(movedStmt, args...).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("events: move the delivery ledger: move %s: %w", table, err)
 	}
 	out := make(map[uuid.UUID]int64, len(rows))
@@ -281,6 +338,16 @@ func renameLedger(tx db.Tx[db.System], table, prefix string, columns []string) (
 		out[r.TenantID] = r.Moved
 	}
 	return out, nil
+}
+
+// anyStrings copies a []string into the argument slice Exec wants, so one ledger's
+// predicate can be asked of the durables the locks were taken for.
+func anyStrings(in []string) []any {
+	out := make([]any, len(in))
+	for i, s := range in {
+		out[i] = s
+	}
+	return out
 }
 
 func total(counts map[uuid.UUID]int64) int64 {
