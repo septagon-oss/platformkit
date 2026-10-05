@@ -112,6 +112,15 @@
       "": "Este endereço não aceita este pedido."
     }
   },
+  "fault.413": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "O que enviou é demasiado grande para ser aceite por esta morada.",
+    "plural": {
+      "": "O que enviou é demasiado grande para ser aceite por esta morada."
+    }
+  },
   "fault.500": {
     "references": [
       "ui/page/fault.go"

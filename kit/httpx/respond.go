@@ -6,9 +6,12 @@ package httpx
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"runtime/debug"
 	"strings"
+
+	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -40,20 +43,67 @@ import (
 // the number from its headers tells a client to stop and not when — which is what
 // buffer's reset would have done, reset being the tool for a held 200 whose transaction
 // failed, where the headers beside it are the thing that must not survive.
+//
+// The verdict it re-answers with is the handler's own refusal when there is one to have
+// (buffer.carried), and the body only the shape that refusal was serialised into. Reading
+// the sentence back out of the JSON is reading it without the two facts the JSON does not
+// carry — the catalogue entry a person is shown for the verdict, and that the detail is an
+// operator's and not the reader's — and those two are the whole of what a page has to get
+// right about a sentence it is about to print. A handler that answered with something this
+// package has no business naming, a wrapped error the framework turned into a 500 about
+// its cause so that the status the line carries and the status the body name disagree,
+// keeps the body's answer, which is what this function did before a verdict was carried.
 func (a *API) renegotiate(b *buffer, r *http.Request) {
 	if a.opts.Fault == nil || b.direct || b.status < http.StatusBadRequest ||
 		!strings.HasPrefix(b.Header().Get("Content-Type"), problem.ContentType) ||
 		!WantsDocument(r) {
 		return
 	}
-	var refused problem.Problem
-	if err := json.Unmarshal(b.body.Bytes(), &refused); err != nil || refused.Status != b.status {
-		return
+	refused := b.refusal()
+	if refused == nil || refused.Status != b.status {
+		var written problem.Problem
+		if err := json.Unmarshal(b.body.Bytes(), &written); err != nil || written.Status != b.status {
+			return
+		}
+		refused = &written
 	}
 	b.body.Reset()
 	b.Header().Del("Content-Type")
 	b.Header().Del("Link") // huma points its own $schema at a document this body does not carry
-	a.fail(b, r, refused.Status, refused.Detail)
+	id := requestIDFrom(r.Context())
+	if a.show(b, r, id, refused, false) {
+		return
+	}
+	// The renderer declined: it has no chrome for this request, and it wrote nothing. The
+	// held response is empty now, so the refusal goes back through the kernel's one
+	// encoder, which is the answer fail ends in and the shape every refusal of this
+	// address has always had — no $schema member, no Link, no second writer.
+	writeProblem(b, refused.Status, id, refused.Detail)
+}
+
+// noteCarried tells the held response which refusal its handler answered with, which is
+// the only way the page this response may become learns what the problem document it is
+// built from does not say. See buffer.carried.
+//
+// The test below is huma's own: the framework writes the StatusError errors.As finds and
+// turns anything else into a 500 about its cause, so this records the verdict only where
+// the framework is about to answer with this very object. A problem reachable only through
+// %w is a cause, and the response's verdict is the framework's, not the buried one.
+func noteCarried(ctx context.Context, err error) {
+	if err == nil {
+		return
+	}
+	var refused *problem.Problem
+	if !errors.As(err, &refused) {
+		return
+	}
+	var stated huma.StatusError
+	if !errors.As(err, &stated) || stated != huma.StatusError(refused) {
+		return
+	}
+	if b, ok := bufferFrom(ctx); ok {
+		b.carry(refused)
+	}
 }
 
 func (a *API) respond(next http.Handler) http.Handler {

@@ -17,6 +17,15 @@
       "": "This address does not take this kind of request."
     }
   },
+  "fault.413": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "What you sent is too large for this address to accept.",
+    "plural": {
+      "": "What you sent is too large for this address to accept."
+    }
+  },
   "fault.500": {
     "references": [
       "ui/page/fault.go"

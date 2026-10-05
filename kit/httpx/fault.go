@@ -195,45 +195,6 @@ type declared struct {
 
 func (d declared) WriteHeader(status int) { d.ctx.SetStatus(status) }
 
-// WantsDocument reports whether the client asked to be *shown* the answer rather than
-// handed a value.
-//
-// It is exported because the question is the kernel's and there is one answer to it.
-// ui/page asks it of a refusal a *page handler* made (Serve): a page route answers a
-// browser with a page, and a client that named application/json with the problem
-// document — the same division this function decides for every guard's refusal. A
-// second copy of the rule in ui would be a second answer to which client gets which
-// shape, and the two would drift exactly where they matter, which is the htmx line and
-// the `q=0` line below.
-//
-// Only an explicit text/html (or its XHTML sibling) counts. `Accept: */*` deliberately
-// does not: that is what curl, health checks, SDKs and monitoring send, and answering
-// them with a page would break exactly the clients that need the machine-readable body.
-//
-// A media type may carry parameters before its weight — `text/html;charset=utf-8;q=0.4`
-// is one offer of markup at 0.4, and `;q=0` after a charset is as much a refusal of it
-// as `;q=0` on its own. Reading the suffix as one string instead of as parameters is the
-// bug this file exists to fix, got back by omission: the weight was only ever seen when
-// it came first, so an offer weighted to zero counted at 1.
-//
-// A weight decides between the two sides when a caller names both: markup counts when
-// it is offered at least as generously as any JSON media type is, and a caller that
-// weighted `application/json` above `text/html` is asking to be handed a value. Reading
-// the header as a set instead of weighing it is what made the answer depend on the order
-// two entries happened to be written in — see offered, which is the one place that
-// number is read, and WantsValue, which is the same reading from the other side.
-//
-// An htmx request does not count either, which is the half of this rule that reads
-// backwards — htmx asks with `Accept: text/html,*/*`. It does not ask to be *shown*
-// anything: it is a controller in a page, and this composition's controller
-// (ui/assets/js/htmx-config.js) configures htmx to swap nothing for a 4xx
-// (`{code: "[45]..", swap: false, error: true}`) and then reads the refusal's code out
-// of the problem document to choose the recovery notice and to keep the form's unsaved
-// input. Answering it with a page throws the body away in the library and leaves the
-// person with a form that silently did nothing; the journeys in
-// e2e/session-recovery.spec.ts are what that was built for. A swapped fragment is still
-// what htmx gets on a success (see Redirect and Page), so this says only that a
-// refusal goes to the caller that parses it.
 // WantsValue reports the mirror half of the same negotiation: a client that named a
 // JSON media type more generously than any markup is asking to be *handed* the answer. It
 // is exported for ui/page, which mounts a page as an ordinary operation and therefore has
@@ -314,6 +275,45 @@ func offered(r *http.Request) (markup, value float64) {
 	return markup, value
 }
 
+// WantsDocument reports whether the client asked to be *shown* the answer rather than
+// handed a value.
+//
+// It is exported because the question is the kernel's and there is one answer to it.
+// ui/page asks it of a refusal a *page handler* made (Serve): a page route answers a
+// browser with a page, and a client that named application/json with the problem
+// document — the same division this function decides for every guard's refusal. A
+// second copy of the rule in ui would be a second answer to which client gets which
+// shape, and the two would drift exactly where they matter, which is the htmx line and
+// the `q=0` line below.
+//
+// Only an explicit text/html (or its XHTML sibling) counts. `Accept: */*` deliberately
+// does not: that is what curl, health checks, SDKs and monitoring send, and answering
+// them with a page would break exactly the clients that need the machine-readable body.
+//
+// A media type may carry parameters before its weight — `text/html;charset=utf-8;q=0.4`
+// is one offer of markup at 0.4, and `;q=0` after a charset is as much a refusal of it
+// as `;q=0` on its own. Reading the suffix as one string instead of as parameters is the
+// bug this file exists to fix, got back by omission: the weight was only ever seen when
+// it came first, so an offer weighted to zero counted at 1.
+//
+// A weight decides between the two sides when a caller names both: markup counts when
+// it is offered at least as generously as any JSON media type is, and a caller that
+// weighted `application/json` above `text/html` is asking to be handed a value. Reading
+// the header as a set instead of weighing it is what made the answer depend on the order
+// two entries happened to be written in — see offered, which is the one place that
+// number is read, and WantsValue, which is the same reading from the other side.
+//
+// An htmx request does not count either, which is the half of this rule that reads
+// backwards — htmx asks with `Accept: text/html,*/*`. It does not ask to be *shown*
+// anything: it is a controller in a page, and this composition's controller
+// (ui/assets/js/htmx-config.js) configures htmx to swap nothing for a 4xx
+// (`{code: "[45]..", swap: false, error: true}`) and then reads the refusal's code out
+// of the problem document to choose the recovery notice and to keep the form's unsaved
+// input. Answering it with a page throws the body away in the library and leaves the
+// person with a form that silently did nothing; the journeys in
+// e2e/session-recovery.spec.ts are what that was built for. A swapped fragment is still
+// what htmx gets on a success (see Redirect and Page), so this says only that a
+// refusal goes to the caller that parses it.
 func WantsDocument(r *http.Request) bool {
 	if r == nil {
 		// No request means no client asked to be shown anything — which is the answer a

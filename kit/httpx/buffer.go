@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+
+	"github.com/septagon-oss/platformkit/kit/problem"
 )
 
 // buffer is a response that has not been sent yet.
@@ -44,7 +46,32 @@ type buffer struct {
 	status  int
 	body    bytes.Buffer
 	direct  bool
+	// carried is the refusal a handler answered with, kept beside the held response it is
+	// about to become.
+	//
+	// The reason it is kept here rather than read back out of the body is that two facts
+	// about a refusal are deliberately absent from the JSON: problem.Problem's Key names
+	// the copy this shell ships for the verdict, and its Diagnostic says the detail is an
+	// operator's rather than the reader's. A program reading a code needs neither, which is
+	// why they are `json:"-"`. The one reader that needs both is the page this held response
+	// may still become, and by the time negotiation reaches the body they are gone — so the
+	// verdict arrives at that decision with its own metadata on it rather than a sentence
+	// reconstructed from a body that never carried it. See (*API).renegotiate.
+	carried *problem.Problem
 }
+
+// carry records which refusal a handler answered with. The first one wins: it is the
+// handler's own verdict, and anything the chain writes over a held response — a failed
+// commit, a public route that minted a cookie — replaces the whole answer rather than
+// adding a second verdict to it.
+func (b *buffer) carry(refused *problem.Problem) {
+	if b.carried == nil {
+		b.carried = refused
+	}
+}
+
+// refusal is the carried verdict, or nil where no handler answered with one.
+func (b *buffer) refusal() *problem.Problem { return b.carried }
 
 // maxBuffer is the most a held response may hold. Two megabytes is far past any
 // JSON document this API produces and far below anything worth copying.
