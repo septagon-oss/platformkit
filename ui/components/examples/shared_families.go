@@ -152,6 +152,9 @@ func workflowExamples() []Example {
 			p.Slots = []c.Slot{{ID: "early", StartUTC: time.Date(2026, 10, 25, 0, 30, 0, 0, time.UTC), EndUTC: time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC), TimeText: "01:30 UTC+01:00", Availability: "available", Capacity: new(int64(3)), Remaining: new(int64(1)), CapacityText: "1 / 3"}, {ID: "late", StartUTC: time.Date(2026, 10, 25, 1, 30, 0, 0, time.UTC), EndUTC: time.Date(2026, 10, 25, 2, 0, 0, 0, time.UTC), TimeText: "01:30 UTC+00:00", Availability: "available"}}
 			if absent(p.State) {
 				p.Slots = nil
+				if p.State.Status == c.MediaFailed || p.State.Status == c.MediaRefused {
+					p.DateStrip = c.DateStripProps{}
+				}
 			} else {
 				switch story {
 				case "selected":

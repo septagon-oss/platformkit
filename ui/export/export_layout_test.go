@@ -173,7 +173,17 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// disappear (99,997 leaves become 99,937) alongside this digest. Measured as a
 	// leaf-by-leaf diff of the v1 export of this tree against the same tree before
 	// the change: no other example, no CSS, token, theme, notice or icon moves.
-	if legacy.SHA256 != "9af85ea2440e0c9a415b3b88e98ca2c629097c020603c4d03daa81673fe9bda6" {
+
+	// The same clearing now covers a component's strip of days and its range and
+	// period controls: SlotPicker and AreaChart returned early for an absent read,
+	// so a failed or refused capture exported the days and the range chip that
+	// pointed into the result it no longer has. The six English/Portuguese
+	// slot-picker failed, refused and offline-failed captures lose 11 leaves of
+	// captured dateStrip each and gain the cleared one (99,937 leaves become
+	// 99,877); no example used a retained range or period control, so only these
+	// captures and this digest move. The disabled slot-picker capture changes one
+	// leaf, its HTML: its days now render as labelled non-links.
+	if legacy.SHA256 != "bde4cea3da4b49a206e5643a7d8c7d1f2df27adb45c0944950f7f15e237feec6" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

@@ -58,18 +58,12 @@ type CalendarDay struct {
 	Events []CalendarEvent
 }
 
-// calendarRetainsRange reports whether a read with no result still supplies the
-// strip of days each of whose href points into the range it no longer displays.
-func calendarRetainsRange(p CalendarProps) bool {
-	return (p.State.Status == MediaFailed || p.State.Status == MediaRefused) && len(p.DateStrip.Days) != 0
-}
-
 func (p CalendarProps) Validate() error {
 	if err := aggregateState(p.Label, p.State, len(p.Events) > 0 || p.SelectedID != ""); err != nil {
 		return err
 	}
 	if !p.State.ready() {
-		if retainedNavigation(p.State.Status, p.Views, p.Previous, p.Next, p.Today, p.DateStrip.Previous, p.DateStrip.Next) || calendarRetainsRange(p) {
+		if retainedNavigation(p.State.Status, p.Views, p.Previous, p.Next, p.Today) || retainedDayStrip(p.State.Status, p.DateStrip) {
 			return fmt.Errorf("Calendar: absent content must clear navigation into the previous result")
 		}
 		return nil
@@ -244,5 +238,5 @@ func CalendarWithSlots(p CalendarProps, slots CalendarSlots) g.Node {
 		config, _ := json.Marshal(map[string]any{"view": view, "date": p.DateStrip.SelectedDate, "start": p.RangeStartDate, "end": p.RangeEndDate, "zone": p.TimeZone, "locale": p.Language, "firstDay": p.FirstWeekday, "now": p.NowUTC.Format(time.RFC3339Nano), "allDay": p.AllDayLabel, "events": events})
 		enhancement = h.Details(h.Open(), h.Summary(h.Class(clDataDisclosure.Compile()), g.Text(p.GridLabel)), h.Div(g.Attr("data-calendar-config", string(config)), g.Attr("data-calendar-engine", ""), h.Role("region"), g.Attr("aria-label", p.GridLabel), g.Attr("tabindex", "0")), h.P(g.Attr("data-calendar-fallback", ""), g.Text(p.FallbackText)))
 	}
-	return sharedSection(p.ComponentProps, "calendar", p.Label, stateBody(p.State, slots.StateSlots), DateStrip(p.DateStrip), Flex(FlexProps{Wrap: true, Gap: "2"}, controls...), choiceLinks(views, p.Disabled), Text(TextProps{Content: p.TimeZoneLabel, Size: "sm"}), enhancement, h.Section(g.Attr("aria-label", p.AgendaLabel), h.Ol(h.Class(clDataList.Compile()), g.Group(agenda))))
+	return sharedSection(p.ComponentProps, "calendar", p.Label, stateBody(p.State, slots.StateSlots), dateStripUnder(p.DateStrip, p.Disabled), Flex(FlexProps{Wrap: true, Gap: "2"}, controls...), choiceLinks(views, p.Disabled), Text(TextProps{Content: p.TimeZoneLabel, Size: "sm"}), enhancement, h.Section(g.Attr("aria-label", p.AgendaLabel), h.Ol(h.Class(clDataList.Compile()), g.Group(agenda))))
 }
