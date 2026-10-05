@@ -321,8 +321,9 @@ func TestTheGateRefusesAKernelWordBesideAConsumersOwnClass(t *testing.T) {
 // sides of the selector read. Refused: text that occupies the position a selector
 // occupies is tokenised as an at-rule prelude, and the block after it is the
 // at-rule's body, so a rule whose head is `@layer tokens` states a layer of its
-// own inside the client layer — refused at the head of the list and at the head
-// of any comma-separated part. Accepted: an `@` the browser already reads inside a
+// own inside the client layer — refused at the head of the list, at the head of any
+// comma-separated part, and whether or not the rule's indentation puts space in front
+// of the `@`, which is how the emitter writes a nested rule. Accepted: an `@` the browser already reads inside a
 // token — an attribute value, or an escape, where `\` is what makes an ident token
 // and never an at-keyword. Over-refusal is the expensive side of a gate: a sheet
 // refused at mount panics at composition and the consumer ships no stylesheet at
@@ -339,7 +340,7 @@ func TestTheGateRefusesASelectorThatIsAnAtRulePreludeAndReadsAnAtSignAsData(t *t
 		return css.NewSheet().Select(selector,
 			css.Decl("color", css.VarRef("pk-color-text-primary", "")))
 	}
-	for _, selector := range []string{"@layer tokens", "@media all", "  @layer client", ".store-hero, @layer base", `@import "http://x/y.css"`} {
+	for _, selector := range []string{"@layer tokens", "@layer client", "@media all", "  @layer client", ".store-hero, @layer base", `@import "http://x/y.css"`} {
 		func() {
 			defer func() {
 				if recover() == nil {

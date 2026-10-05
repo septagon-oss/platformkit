@@ -1,9 +1,11 @@
 package ui_test
 
-// The at-rule-prelude refusal that used to share this file is not repeated here:
-// ui_test.go's TestTheGateRefusesASelectorThatIsAnAtRulePreludeAndReadsAnAtSignAsData
-// already refuses `@layer tokens`, `@layer client` and `@media all` where a selector
-// belongs, and reads `@` as data in the three positions a browser cannot act on it.
+// What the composed sheet promises about its own shape: one order statement, and
+// every block it opens opened inside one of the four layers. The refusal that keeps
+// at-rule text out of a selector's position is a read of the selector, and ui_test.go's
+// TestTheGateRefusesASelectorThatIsAnAtRulePreludeAndReadsAnAtSignAsData owns it; this
+// file measures the emitted sheet with a brace scanner of its own, because a structural
+// fact is not pinned by the reading that writes it.
 
 import (
 	"fmt"
@@ -15,53 +17,9 @@ import (
 	"github.com/septagon-oss/platformkit/ui/css"
 )
 
-// TestTheGateRefusesASelectorThatIsAnAtRulePrelude is the finding. A
-// selector is a selector: text that opens a block of its own is not one, and the
-// gate already refuses the other way a rule's text can move a block.
-func TestTheGateRefusesASelectorThatIsAnAtRulePrelude(t *testing.T) {
-	t.Parallel()
-	for _, c := range []struct {
-		name     string
-		selector string
-	}{
-		{"a nested layer named tokens", "@layer tokens"},
-		{"a nested layer named client", "@layer client"},
-		{"a media block with no selector", "@media all"},
-	} {
-		c := c
-		t.Run(c.name, func(t *testing.T) {
-			t.Parallel()
-			sheet := css.NewSheet().Select(c.selector,
-				css.Decl("color", css.VarRef("pk-color-text-primary", "")))
-			refused := func() (out string) {
-				defer func() {
-					if r := recover(); r != nil {
-						out = ""
-					}
-				}()
-				composed := ui.Compose(design.Default(), ui.Extra{Sheets: []*css.Sheet{sheet}})
-				// The passing branch is the panic above. Reaching the text below
-				// means Compose accepted the rule and emitted it, which is the
-				// defect; nothing here reads what the defect prints to decide
-				// whether to fail.
-				body := string(composed.Body)
-				start := strings.Index(body, "@layer client {")
-				if start < 0 {
-					return "the composed sheet has no @layer client block at all"
-				}
-				return body[start:]
-			}()
-			if refused == "" {
-				return
-			}
-			t.Errorf("Compose accepted %.24s as a selector and emitted it inside the client layer, so a consumer sheet states an at-rule of its own in the one layer the gate says Compose places it in; the refusal the brace case gets is what this asks for. Emitted: %.240s", c.selector, refused)
-		})
-	}
-}
-
-// TestTheComposedSheetStatesOneOrderAndOpensEveryBlockInsideALayer is this
-// round's pin, run over the kernel's sheet and over a sheet with consumer rules
-// in it. A block opened outside every layer outranks the order statement, and a
+// TestTheComposedSheetStatesOneOrderAndOpensEveryBlockInsideALayer runs over the
+// kernel's own sheet and over a sheet with consumer rules in it. A block opened
+// outside every layer outranks the order statement, and a
 // second order statement would make the sheet's rank whichever document happened
 // to load first — either one undoes the delivery in silence, with the sheet still
 // looking like four layers to a reader who counts the @layer words.
