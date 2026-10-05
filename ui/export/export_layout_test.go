@@ -143,7 +143,14 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// Both deltas above are one side's own before-and-after. The digest is neither side's number: it is
 	// this merged tree's export, printed by the refusal below and copied once the merge was in place.
-	if legacy.SHA256 != "7354088a4a87fafc8a324c2541d0f578337a040c07908204e488effe6a6b0356" {
+	//
+	// This change moves it too, and names what it moves: the alert's message paragraph gains its
+	// data-alert-message hook, which is markup in every rendered alert example, and the gallery gains one
+	// keyed command example (pk-ui.component.form/command). Measured on this merged tree by exporting with
+	// exactly those three files — components/alert.go, components/hooks.go, components/examples/gallery.go —
+	// held at origin/main: the digest returns to 7354088a…, so nothing else in this change reaches the v1
+	// bytes, and the number below is what the three of them add.
+	if legacy.SHA256 != "d37b15dd0d96d4f5d579a6a53be1adc9f2a9ffb0c3e05f2a7ed4e71f071a9c1e" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

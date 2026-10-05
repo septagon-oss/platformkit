@@ -46,7 +46,13 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 	if p.Title != "" {
 		body = append(body, h.P(h.Class(clAlertTitle.Compile()), g.Raw("<!--pk-text:title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:title-->")))
 	}
-	body = append(body, h.P(h.Class(clAlertMessage.Compile()), g.Raw("<!--pk-text:message-->"), g.Text(p.Message), g.Raw("<!--/pk-text:message-->")))
+	// The message paragraph is the part a script writes a result into: the command
+	// controller (ui/assets/js/command.js) puts a keyed refusal's sentence here, in
+	// the outcome region the page rendered for that one form. The hook is in the
+	// list this package keeps of the parts it emits, and the text markers stay for
+	// the catalogue's replacement reader, which reads markup rather than a DOM.
+	body = append(body, h.P(h.Class(clAlertMessage.Compile()), g.Attr("data-alert-message", ""),
+		g.Raw("<!--pk-text:message-->"), g.Text(p.Message), g.Raw("<!--/pk-text:message-->")))
 
 	var children []g.Node
 	children = append(children, baseAttrs(p.ComponentProps)...)

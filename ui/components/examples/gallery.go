@@ -378,6 +378,26 @@ func Gallery() []Example {
 		// example. Its classes are covered by modules/admin's own closure test,
 		// which renders every real screen and checks each class against the
 		// stylesheet.
+		// The keyed command form: the opt-in and the region it reports into, shown
+		// together. `hx-ext="command"` is what ui/assets/js/command.js reads to mint
+		// one key per submission and retry the identical write when the transport
+		// failed, and the hidden alert is the outcome region that controller writes a
+		// refusal into. Neither half means anything without the other — a key with
+		// nowhere to say it was refused is a form that stops working silently — and
+		// the pair belongs where a person composing a page can see it, not only in
+		// whichever module happened to ship a command.
+		ExampleWithChildren(info("pk-ui.component.form/command", "Frame", "Form / keyed command"),
+			components.FormProps{Action: "/admin/auth/sessions/revoke-rest", Label: "End every session but this one",
+				HTMXProps: components.HTMXProps{Ext: "command", Post: "/admin/auth/sessions/revoke-rest"}},
+			[]g.Node{
+				ExampleWithSlots(ExampleInfo{ID: "end", ComponentID: "pk-ui.component.button"},
+					components.ButtonProps{Label: "End the other 2", Type: "submit", Tone: "danger", Variant: "primary"},
+					components.ButtonSlots{}, components.ButtonWithSlots).Node,
+				// Rendered, not captured as another occurrence of the component: the
+				// alert's editable contract is its own example's, and this one is here
+				// to show where a command's result appears.
+				components.Alert(components.AlertProps{ComponentProps: components.ComponentProps{Hidden: true}}),
+			}, components.Form),
 	}
 }
 

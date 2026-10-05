@@ -1,19 +1,20 @@
 // command.js makes one submission of a form happen once, whichever end of the
 // network forgot about it. A form opts in with hx-ext="command": the controller
-// mints one key per submission, keeps the bytes it sent, and retries the
-// identical write under that key when the transport failed — never after a
-// refusal, which the server has already answered. The server side is
-// kit/httpx/idempotency.go; a repeat while the first is running is its refusal, not
-// this file's, and a conflict is another tab's and never erased. The outcome region
-// is htmx-config.js's notice, which the page renders: this file writes no markup.
+// mints one key per submission, keeps the bytes it sent, and retries the identical
+// write under that key when the transport failed — never after a refusal, which the
+// server has already answered. The server side is kit/httpx/idempotency.go; a
+// repeat while the first is running is its refusal, not this file's, and a conflict
+// is another tab's and never erased.
 //
-// One record per form, for as long as this document is the page in front of the
-// person. Inside one page the controller knows the answer to its own request never
-// arrived, so the key names one command and its retry is safe. After a reload it
-// knows nothing: the person may be retrying that lost submission or asking for
-// something new, the two are identical bytes, and guessing wrong either replays the
-// old answer over the new command or runs the lost one twice. So the record dies
-// with the document, and the redrawn page says whether to press again.
+// One record per form, kept while this tab has a submission outstanding. Inside one
+// page the controller knows its own request went unanswered, so the key names one
+// command and its retry is safe. A reload is the same case in a different document:
+// the submission that left is still outstanding, and a person pressing that button
+// again is asking for that write, not for a second one. So a pending record goes to
+// sessionStorage — one tab's storage for one tab's intent — and is adopted only when
+// it names an attempt somebody still owes. A new intent stays available: an edited
+// form is a different body, the server answers that with a spent key, and a spent
+// key retires the record, so the next press is a fresh command.
 //
 // Listeners are capture-phase, so that notice waits until no attempt is left to make.
 (function () {
@@ -22,8 +23,10 @@
   // Four retries, backing off, and then the person is told: an unbounded loop is
   // a client that never stops asking.
   const BACKOFF = [500, 1000, 2000, 5000];
-  const records = new Map();
-  const running = new Set();
+  // The form's own outcome region, which the page renders inside the form and which
+  // no other form's result may use: see modules/admin's commandOutcome.
+  const OUTCOME = '[role="status"],[role="alert"]';
+  const records = new Map(), timers = new Map(), running = new Set();
   let started = false, expected = null;
 
   function token() {
@@ -48,6 +51,32 @@
       (document.documentElement.getAttribute("data-principal") || "");
   }
 
+  const slot = function (id) { return "platformkit-command:" + id; };
+  function store(id, rec) {
+    records.set(id, rec);
+    try { sessionStorage.setItem(slot(id), JSON.stringify(rec)); } catch (_) { /* no cross-reload memory */ }
+  }
+  // A stored record names an attempt somebody owes, or it is nothing: a key with no
+  // attempt behind it was answered, and asking it again is a new command.
+  function adopt(id) {
+    let rec = null;
+    try { rec = JSON.parse(sessionStorage.getItem(slot(id))); } catch (_) { return null; }
+    if (!rec || typeof rec.key !== "string" || !(rec.tries > 0)) return null;
+    rec.resumed = true;
+    return rec;
+  }
+  // Retire: this key means nothing now, and nothing waits on this document.
+  function retire(id) {
+    records.delete(id);
+    if (timers.has(id)) { clearTimeout(timers.get(id)); timers.delete(id); }
+    try { sessionStorage.removeItem(slot(id)); } catch (_) { /* gone either way */ }
+  }
+  // A press is a person, and the person supersedes the timer: what was scheduled for
+  // this form has just become the next thing they did.
+  function unschedule(id) {
+    if (timers.has(id)) { clearTimeout(timers.get(id)); timers.delete(id); }
+  }
+
   function configure(event) {
     const detail = event.detail;
     const verb = String(detail.verb || "get").toLowerCase();
@@ -60,12 +89,13 @@
     // click is the second request nobody asked for. A retry of ours is expected.
     if (running.has(id) && expected !== id) { event.preventDefault(); return; }
     expected = null;
-    let rec = records.get(id);
+    unschedule(id);
+    let rec = records.get(id) || adopt(id);
     if (!rec) rec = { key: token(), verb: verb, path: path, body: detail.parameters };
     // The identical write, not a re-serialisation of whatever has been typed
     // since: the server compares what it got with what it hashed.
     if (rec.tries > 0) detail.parameters = rec.body || {};
-    records.set(id, rec);
+    store(id, rec); // in flight from this line: a reload must not forget it
     detail.headers["Idempotency-Key"] = rec.key;
     running.add(id);
   }
@@ -80,15 +110,18 @@
       form.getAttribute("hx-post") || form.getAttribute("action") || location.pathname;
     const id = identity(form, path);
     running.delete(id);
-    const rec = records.get(id);
+    const rec = records.get(id) || adopt(id);
     if (!rec) return;
     const tries = (rec.tries || 0) + 1;
     if (tries > BACKOFF.length) return; // out of attempts: let the notice through
     rec.tries = tries;
-    records.set(id, rec);
+    store(id, rec);
     event.stopPropagation();
     expected = id;
-    setTimeout(function () { htmx.ajax(rec.verb, rec.path, { source: form }); }, BACKOFF[tries - 1]);
+    timers.set(id, setTimeout(function () {
+      timers.delete(id);
+      htmx.ajax(rec.verb, rec.path, { source: form });
+    }, BACKOFF[tries - 1]));
   }
 
   // The record is cleared once the key means nothing. A 5xx settled nothing, and so
@@ -99,14 +132,54 @@
     const detail = event.detail;
     const form = commanded(detail.requestConfig?.elt || detail.elt);
     if (!form) return;
-    const cfg = detail.requestConfig || {};
-    const id = identity(form, cfg.path || form.getAttribute("hx-post") || location.pathname);
+    const id = identity(form, (detail.requestConfig || {}).path || form.getAttribute("hx-post") || location.pathname);
     running.delete(id);
     const xhr = detail.xhr;
-    if (!xhr || !xhr.status) return;
-    if (xhr.status >= 500) return;
+    if (!xhr || !xhr.status || xhr.status >= 500) return;
     if (xhr.getResponseHeader("Idempotency-Refusal") === "IDEMPOTENCY_IN_PROGRESS") return;
-    records.delete(id);
+    retire(id);
+  }
+
+  // The answer owed to a submission this document inherited from the one it reloaded
+  // is the answer to a page nobody is looking at: the person reloaded, read what the
+  // list says now, and pressed. The kernel replays the first answer — one key is one
+  // command, and it is right to — and that answer is a redirect off the screen the
+  // person is standing on. So it is stopped here, before the navigation, and the
+  // intent is honoured once under a key of its own. Once: the record is retired
+  // before the request goes, so a second replay is nothing but a replay.
+  function runTheIntent(event) {
+    const detail = event.detail;
+    if (!detail.xhr || detail.xhr.getResponseHeader("Idempotency-Replay") !== "true") return;
+    const form = commanded(detail.requestConfig?.elt || detail.target);
+    if (!form) return;
+    const id = identity(form, (detail.requestConfig || {}).path || form.getAttribute("hx-post") || location.pathname);
+    const rec = records.get(id);
+    if (!rec || !rec.resumed) return;
+    event.preventDefault();
+    retire(id);
+    expected = id;
+    setTimeout(function () { htmx.ajax(rec.verb, rec.path, { source: form }); }, 0);
+  }
+
+  // A keyed command's refusal is a statement about the key, not markup about this
+  // form. Swapping it in would replace the form the person is looking at, and what
+  // they typed in it, to show a sentence about a token they never saw — so the form
+  // stays and the sentence goes to the region the page set aside for this form's
+  // result. With no region rendered there is nothing to say it in, and the form is
+  // still the thing to leave alone.
+  function reportRefusal(event) {
+    const detail = event.detail;
+    if (!detail.xhr || typeof detail.xhr.getResponseHeader !== "function") return;
+    const code = detail.xhr.getResponseHeader("Idempotency-Refusal");
+    if (!code) return;
+    const form = commanded(detail.requestConfig?.elt || detail.target);
+    if (!form) return;
+    detail.shouldSwap = false;
+    const outcome = form.querySelector(OUTCOME), message = outcome?.querySelector("[data-alert-message]");
+    if (!message) return;
+    const text = String(detail.xhr.responseText || "").trim();
+    message.replaceChildren(document.createTextNode(text.startsWith(code + ":") ? text.slice(code.length + 1).trim() : text));
+    outcome.hidden = false;
   }
 
   htmx.defineExtension("command", {
@@ -116,10 +189,14 @@
       document.addEventListener("htmx:configRequest", configure, true);
       for (const name of ["htmx:sendError", "htmx:timeout"]) document.addEventListener(name, transportFailed, true);
       document.addEventListener("htmx:afterRequest", settled);
+      document.addEventListener("htmx:beforeOnLoad", runTheIntent, true);
+      document.addEventListener("htmx:beforeSwap", reportRefusal, true);
       // A document restored from the back/forward cache kept this script and its
       // records while its page was redrawn elsewhere: a reload's case by another door.
       window.addEventListener("pageshow", function (event) {
-        if (event.persisted) { records.clear(); running.clear(); }
+        if (!event.persisted) return;
+        for (const id of Array.from(records.keys())) retire(id);
+        running.clear();
       });
     },
   });

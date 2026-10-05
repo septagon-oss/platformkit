@@ -17,6 +17,7 @@ var Hooks = []string{
 	"data-alert-close",
 	"data-alert-dismissible-value",
 	"data-alert-icon",
+	"data-alert-message",
 	"data-alert-tone",
 	"data-align",
 	"data-autoresize-max-rows-value",
