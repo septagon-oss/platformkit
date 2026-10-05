@@ -14,9 +14,10 @@
 # stale, because act_runner runs hashFiles as a node process inside the job container and returns
 # `""` with no error when it gets nothing back (act/runner/expression.go, act_runner v3.3.2), which
 # freezes the key across commits and makes every later run take an exact hit and never save. The
-# digest therefore lives in scripts/ci_go_cache_key.sh, which both Go jobs run — one recipe, one key —
-# and cases 5 to 7 below are about that file: read, checked for the refusal, then executed and asked
-# what it actually answers. Case 1 refuses a cache step that reaches for hashFiles anyway.
+# digest therefore lives in scripts/ci_go_cache_key.sh, which both Go jobs run — one recipe, one key
+# per job, since a key both of them saved under would belong to whichever archive the store kept — and
+# cases 5 to 7 below are about that file: read, checked for the refusal, then executed and asked what
+# it actually answers. Case 1 refuses a cache step that reaches for hashFiles anyway.
 #
 # The second promise is the brief's: a cache miss is never a failure, and no test result survives a
 # commit. The first is four properties of the steps (cases 2, 4 and 5) and the second is not in this
@@ -74,6 +75,43 @@ uses_block() {
 	job_text "$1" | awk -v re="$2" '
 		$0 ~ /^[[:space:]]*- / { keep = ($0 ~ re) }
 		keep && $0 !~ /^[[:space:]]*#/ { print }
+	'
+}
+
+# step_paths JOB NAME — the `path:` block of that step, one entry per line, leading and trailing
+# whitespace off. @actions/cache hashes the path list into the archive's `version` alongside the key,
+# so a save whose list differs from its restore's in ORDER alone writes an archive no restore of the
+# same job can ever match — permanently cold, permanently green. Compared as an ordered list, and read
+# only as far as the block is indented, because the next step's comment lines sit at the same column.
+step_paths() {
+	step_block "$1" "$2" | awk '
+		{ line = $0; sub(/[[:space:]]+$/, "", line) }
+		line ~ /^[[:space:]]*path:[[:space:]]*[|]?[[:space:]]*$/ && !seen {
+			seen = 1; base = match(line, /[^[:space:]]/); next
+		}
+		seen {
+			if (line == "") next
+			if (match(line, /[^[:space:]]/) <= base) exit
+			sub(/^[[:space:]]+/, "", line)
+			print line
+		}
+	'
+}
+
+# step_restore_keys JOB NAME — the `restore-keys:` block of that step, in the order written, which is
+# the order the store is asked in.
+step_restore_keys() {
+	step_block "$1" "$2" | awk '
+		{ line = $0; sub(/[[:space:]]+$/, "", line) }
+		line ~ /^[[:space:]]*restore-keys:[[:space:]]*[|]?[[:space:]]*$/ && !seen {
+			seen = 1; base = match(line, /[^[:space:]]/); next
+		}
+		seen {
+			if (line == "") next
+			if (match(line, /[^[:space:]]/) <= base) exit
+			sub(/^[[:space:]]+/, "", line)
+			print line
+		}
 	'
 }
 
@@ -140,19 +178,26 @@ for job in check design; do
 
 	before=$failures
 	# 5. Both jobs name their cache with the one script, and neither forms a key of its own. Two
-	#    recipes that differ by one part are two archives of one build and one cold job per run.
+	#    recipes that differ by one part are two archives of one build and one cold job per run. Each
+	#    caller passes its own job name: a save step runs only when its restore was not an exact hit,
+	#    so a key two side-by-side jobs both save under belongs to whichever archive the store kept —
+	#    v2 refuses the second reservation of an existing (key, version), v1 keeps the newest
+	#    (act/artifactcache/handler_v2.go, handler.go `findExactCache`) — and the loser would restore
+	#    a tree built for the other job, hit it exactly, never save and compile cold forever. One file,
+	#    one name per caller, and scripts/ci_go_cache_one_saver_per_key_test.sh asks the same question
+	#    of the whole workflow rather than of these two steps.
 	for pair in "restore:$restore" "save:$save"; do
 		grep -qF '${{ steps.gocache.outputs.key }}' <<<"${pair#*:}" ||
 			fail "$job's ${pair%%:*} step names no key from steps.gocache.outputs.key"
 	done
-	if ! grep -qE '^[[:space:]]+run: bash scripts/ci_go_cache_key\.sh[[:space:]]*$' <<<"$naming"; then
-		fail "$job's naming step does not call scripts/ci_go_cache_key.sh; the key would have a second owner"
+	if ! grep -qE "^[[:space:]]+run: bash scripts/ci_go_cache_key\.sh ${job}[[:space:]]*\$" <<<"$naming"; then
+		fail "$job's naming step does not pass its own job name to scripts/ci_go_cache_key.sh; the key would either have a second owner or be one key two jobs fight over"
 	fi
 	if grep -qE 'sha256sum|hashFiles\(|go env' <<<"$naming"; then
 		fail "$job's naming step digests or hashes something itself instead of calling the script"
 	fi
 	[ "$failures" -eq "$before" ] &&
-		echo "ok   $job forms its key only by running scripts/ci_go_cache_key.sh, and its two cache steps use that output"
+		echo "ok   $job forms its key only by running scripts/ci_go_cache_key.sh with its own name, and its two cache steps use that output"
 
 	before=$failures
 	# 5b. The path list asks the toolchain where the caches live. A literal /root/.cache/go-build is
@@ -167,65 +212,136 @@ for job in check design; do
 	fi
 	[ "$failures" -eq "$before" ] &&
 		echo "ok   $job's cache paths are the two the script read from go env, and name no home directory"
+
+	before=$failures
+	# 5c. The save's path list is the restore's, in the same order. The archive's `version` hashes the
+	#     path list in the order it is written — `sha256(paths.join('|') + compressionMethod + salt)`,
+	#     @actions/cache 6.2.0 lib/internal/cacheUtils.js:157-172, and the runner matches on
+	#     (Repo, Key, Version) — so two blocks holding the same two entries in the other order are two
+	#     different archives: the job restores one, saves the other, is never an exact hit, and is cold
+	#     and green forever, re-uploading on every run.
+	restore_paths="$(step_paths "$job" 'Restore the Go module and build cache')"
+	save_paths="$(step_paths "$job" 'Save the Go module and build cache')"
+	if [ -z "$restore_paths" ] || [ "$restore_paths" != "$save_paths" ]; then
+		fail "$job's save step caches a different path list from its restore step (restore:[$restore_paths] save:[$save_paths]): the archive it writes is one no restore of this job matches, so it is cold on every run and saves forever"
+	else
+		echo "ok   $job's save step writes the path list its restore step reads, entry for entry and in that order"
+	fi
+
+	before=$failures
+	# 5d. The restore asks the store in the right order: this job's own archive first, then any job's
+	#     on this toolchain, then any of them on this platform. Most specific last would hand the
+	#     first run of a new key the largest archive in the repository instead of its own lineage.
+	keys="$(step_restore_keys "$job" 'Restore the Go module and build cache')"
+	wanted='${{ steps.gocache.outputs.prefix-job }}
+${{ steps.gocache.outputs.prefix-version }}
+${{ steps.gocache.outputs.prefix-os }}'
+	if [ "$keys" != "$wanted" ]; then
+		fail "$job's restore step does not ask its three prefix keys in the order this job's own archive, this toolchain's, this platform's (got [$(tr '\n' ' ' <<<"$keys")])"
+	else
+		echo "ok   $job's restore asks its prefix keys job, version, os: its own archive before the other job's"
+	fi
 done
 
 before=$failures
-# 6. The recipe itself: platform, toolchain and a digest over both dependency files, two prefix
-#    restore keys, and a refusal that cannot redden a job. One file, read once — that is the point of
-#    its being a file rather than a `run:` block copied into two jobs.
+# 6. The recipe itself: platform, toolchain, the caller's job name and a digest over both dependency
+#    files, three prefix restore keys in that order, and a refusal that cannot redden a job. One file,
+#    read once — that is the point of its being a file rather than a `run:` block copied into two jobs.
 grep -qF 'go env GOOS GOARCH GOVERSION GOMODCACHE GOCACHE' <<<"$script" ||
 	fail "$keyscript does not ask go env for the platform, toolchain and cache paths"
 grep -qF 'sha256sum go.mod go.sum' <<<"$script" ||
 	fail "$keyscript digests neither go.mod nor go.sum; the key would not change when the dependencies do"
+grep -qE '^[[:space:]]+echo "key=pkit-go-\$\{goos\}-\$\{goarch\}-\$\{goversion\}-\$\{job\}-\$\{digest\}"$' <<<"$script" ||
+	fail "$keyscript's key is not platform, toolchain, the caller's job name and the digest: two jobs would name one key"
+grep -qE '^[[:space:]]+echo "prefix-job=pkit-go-\$\{goos\}-\$\{goarch\}-\$\{goversion\}-\$\{job\}-"$' <<<"$script" ||
+	fail "$keyscript's first restore key is not this job's own prefix ending in a dash"
 grep -qE '^[[:space:]]+echo "prefix-version=pkit-go-\$\{goos\}-\$\{goarch\}-\$\{goversion\}-"$' <<<"$script" ||
-	fail "$keyscript's first restore key is not the version prefix ending in a dash"
+	fail "$keyscript's second restore key is not the version prefix ending in a dash"
 grep -qE '^[[:space:]]+echo "prefix-os=pkit-go-\$\{goos\}-\$\{goarch\}-"$' <<<"$script" ||
-	fail "$keyscript's second restore key is not the os/arch prefix ending in a dash"
+	fail "$keyscript's third restore key is not the os/arch prefix ending in a dash"
+key_parts_order="$(grep -nE '^[[:space:]]+echo "(key|prefix-job|prefix-version|prefix-os)=' <<<"$script" | cut -d: -f1 | tr '\n' ' ')"
+if [ "$key_parts_order" != "$(printf '%s\n' $key_parts_order | sort -n | tr '\n' ' ')" ]; then
+	fail "$keyscript writes its key parts out of order ($key_parts_order): the ordered prefix list is the order the store is asked in"
+fi
 grep -qE '^[[:space:]]+exit 0$' <<<"$script_code" ||
 	fail "$keyscript has no refusal that exits 0: a cache step must not be able to redden a job"
 if grep -qE '\bexit 1\b' <<<"$script_code"; then
 	fail "$keyscript can exit 1, which would redden a job over its own cache"
 fi
 [ "$failures" -eq "$before" ] &&
-	echo "ok   $keyscript forms the key from go env and a digest over go.mod and go.sum, and refuses by exiting 0"
+	echo "ok   $keyscript forms its key from go env, its caller's name and a digest over go.mod and go.sum, and refuses by exiting 0"
 
 # 7. Run it. Everything above reads the recipe; this asks what it answers, in a scratch directory
 #    holding copies of the two dependency files, under the argument vector act_runner gives a run step
-#    (act/runner/step_run_test.go:65). Three questions: the key's shape, whether the digest follows
-#    go.sum while the restore keys stand, and whether the refusal really emits nothing.
+#    (act/runner/step_run_test.go:65). Four questions: the key's shape, whether two callers get two
+#    keys, whether the digest follows go.sum while the restore keys stand, and whether the refusal
+#    really emits nothing.
 if ! command -v go >/dev/null 2>&1; then
 	echo "skip running the key recipe: no go on PATH to ask for GOVERSION, GOMODCACHE and GOCACHE"
 else
 	run_dir="$(mktemp -d "${TMPDIR:-/tmp}/ci-go-cache-key.XXXXXX")"
 	trap 'rm -rf "$run_dir"' EXIT
 	cp "$root/go.mod" "$root/go.sum" "$run_dir/"
-	(cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out" bash --noprofile --norc -e -o pipefail "$keyscript" >/dev/null) ||
+	(cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out" bash --noprofile --norc -e -o pipefail "$keyscript" check >/dev/null) ||
 		fail "$keyscript exited non-zero on a tree it can name"
 	key_line="$(grep -m1 '^key=' "$run_dir/out" 2>/dev/null)"
-	if grep -qE '^key=pkit-go-[a-z0-9]+-[a-z0-9]+-go[0-9]+(\.[0-9]+){0,2}-[0-9a-f]{16}$' <<<"$key_line"; then
-		echo "ok   the recipe answers a key of the promised form: ${key_line#key=}"
+	if grep -qE '^key=pkit-go-[a-z0-9]+-[a-z0-9]+-go[0-9]+(\.[0-9]+){0,2}-check-[0-9a-f]{16}$' <<<"$key_line"; then
+		echo "ok   the recipe answers a key of the promised form for the name it was given: ${key_line#key=}"
 	else
-		fail "$keyscript answered [${key_line:-<no key line>}] against its own shape, with $(wc -l <"$run_dir/out") outputs"
+		fail "$keyscript answered [${key_line:-<no key line>}] against its own shape for the caller named check, with $(wc -l <"$run_dir/out") outputs"
 	fi
-	for part in modcache gocache key prefix-version prefix-os; do
+	for part in modcache gocache job key prefix-job prefix-version prefix-os; do
 		grep -q "^$part=.\+" "$run_dir/out" ||
 			fail "$keyscript emitted no non-empty $part output: the cache steps would restore nothing or everything"
 	done
-	echo "// a dependency would land here" >>"$run_dir/go.sum"
-	(cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out2" bash --noprofile --norc -e -o pipefail "$keyscript" >/dev/null)
-	after_key="$(grep -m1 '^key=' "$run_dir/out2" 2>/dev/null)"
-	after_prefix="$(grep -m1 '^prefix-version=' "$run_dir/out2" 2>/dev/null)"
+	# The cure for the one key the two jobs used to fight over, measured rather than read: the same
+	# tree, the same toolchain, the same dependency digest, and two keys — and both keys still start
+	# with the version prefix, so the sharing that was always safe (warming across a change) remains.
+	(cd "$run_dir" && GITHUB_OUTPUT="$run_dir/design" bash --noprofile --norc -e -o pipefail "$keyscript" design >/dev/null) ||
+		fail "$keyscript exited non-zero naming the design job"
+	design_key="$(grep -m1 '^key=' "$run_dir/design" 2>/dev/null)"
+	check_prefix="$(grep -m1 '^prefix-version=' "$run_dir/out" 2>/dev/null)"
 	key_value="${key_line#*=}"
-	expected_prefix="${key_value%-*}-" # the key without its trailing -<16 hex digest>
+	design_value="${design_key#*=}"
+	version_prefix="${check_prefix#*=}"
+	warms_across=0
+	case "$design_value" in "${version_prefix}design-"*) warms_across=1 ;; esac
+	if [ -z "$design_value" ] || [ "$design_value" = "$key_value" ]; then
+		fail "$keyscript gave both Go jobs [$key_line]: whichever archive the store kept would be the one the other restores, cold, forever"
+	elif [ "$warms_across" -ne 1 ] ||
+		[ "$(grep -m1 '^prefix-job=' "$run_dir/out")" != "prefix-job=${key_value%-*}-" ]; then
+		fail "$keyscript's design key [$design_value] does not start with the shared version prefix [$version_prefix], or its first restore key is not its own key without the digest: a dependency change would be a cold build, or would restore the other job's archive before its own lineage"
+	else
+		echo "ok   the same tree answers two keys, one per caller ($key_value and $design_value), both warming under $version_prefix"
+	fi
+	echo "// a dependency would land here" >>"$run_dir/go.sum"
+	(cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out2" bash --noprofile --norc -e -o pipefail "$keyscript" check >/dev/null)
+	after_key="$(grep -m1 '^key=' "$run_dir/out2" 2>/dev/null)"
+	after_prefix="$(grep -m1 '^prefix-job=' "$run_dir/out2" 2>/dev/null)"
+	expected_prefix="${key_value%-*}-" # the key without its trailing -<16 hex digest>: the job prefix
 	if [ -z "$after_key" ] || [ "$after_key" = "$key_line" ]; then
 		fail "$keyscript's key survived a go.sum change ([$after_key]): every later commit would take this archive and never save"
 	elif [ "${after_prefix#*=}" != "$expected_prefix" ]; then
-		fail "$keyscript's restore key did not stay the version prefix ([$after_prefix] expected [$expected_prefix]): a go.sum bump would be a cold build"
+		fail "$keyscript's restore key did not stay the job prefix ([$after_prefix] expected [$expected_prefix]): a go.sum bump would be a cold build"
 	else
-		echo "ok   a go.sum change moves the key (${after_key#key=}) and leaves the restore prefix (${after_prefix#prefix-version=})"
+		echo "ok   a go.sum change moves the key (${after_key#key=}) and leaves the restore prefix (${after_prefix#prefix-job=})"
+	fi
+	# No caller name is the same refusal as no go.sum: the job runs cold and green, and no half-named
+	# key reaches the store — a key with an empty job part would be one key every job saved under.
+	if (cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out4" bash --noprofile --norc -e -o pipefail "$keyscript" >"$run_dir/noslug" 2>&1) &&
+		[ ! -s "$run_dir/out4" ] && grep -q '::warning::cannot name this job' "$run_dir/noslug"; then
+		echo "ok   with no job name the recipe warns, exits 0 and emits no key, so both cache steps skip"
+	else
+		fail "$keyscript named a cache for a caller that did not name itself, instead of warning, exiting 0 and emitting nothing: $(cat "$run_dir/noslug" 2>/dev/null)"
+	fi
+	if (cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out5" bash --noprofile --norc -e -o pipefail "$keyscript" 'De sign: two' >"$run_dir/badslug" 2>&1) &&
+		[ ! -s "$run_dir/out5" ] && grep -q '::warning::cannot name this job' "$run_dir/badslug"; then
+		echo "ok   a job name that is not a key-safe slug is the same refusal: no key, exit 0"
+	else
+		fail "$keyscript accepted a job name that is not a slug: $(cat "$run_dir/badslug" 2>/dev/null)"
 	fi
 	rm -f "$run_dir/go.sum"
-	if (cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out3" bash --noprofile --norc -e -o pipefail "$keyscript" >"$run_dir/warn" 2>&1) &&
+	if (cd "$run_dir" && GITHUB_OUTPUT="$run_dir/out3" bash --noprofile --norc -e -o pipefail "$keyscript" check >"$run_dir/warn" 2>&1) &&
 		[ ! -s "$run_dir/out3" ] && grep -q '::warning::cannot name this job' "$run_dir/warn"; then
 		echo "ok   with go.sum gone the recipe warns, exits 0 and emits no key, so both cache steps skip"
 	else
