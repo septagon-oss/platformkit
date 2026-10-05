@@ -217,11 +217,13 @@ SlotEligibility applies stale, booked, past, unavailable and full precedence;
 unknown capacity stays unknown. Selecting a native radio does not reserve a seat.
 An unavailable selection requires ErrorText and renders unchecked.
 
-[Calendar](calendar.go) always renders a chronological agenda with native links.
-Timed intervals intersect local civil days with exclusive ends; all-day events
-use exclusive civil dates. Day/week grids load the vendored FullCalendar Standard
-7.1.0 only when needed. SSR navigation supplies the range; the engine does not
-fetch, drag, resize, book or run a browser-clock decision. A range is limited to
+[Calendar](calendar.go) always renders a chronological agenda of native links;
+the day/week grid draws the same ones, from the addresses the renderer hands the
+engine beside each event. A disabled view hands it none, so nothing in the view is
+followable. Timed intervals intersect local civil days with exclusive ends; all-day
+events use exclusive civil dates. Day/week grids load the vendored FullCalendar
+Standard 7.1.0 only when needed. SSR navigation supplies the range; the engine does
+not fetch, drag, resize, book or run a browser-clock decision. A range is limited to
 366 civil days, and the strip's selected day — the one it marks `aria-current`
 and the grid opens on — must fall inside that half-open range, so a composition
 whose selection belongs to another range renders nothing. The optional engine is
@@ -256,9 +258,11 @@ No tax, discount, exchange-rate, rounding or jurisdiction policy lives here.
 ## Maps, media and charts
 
 [MapView](map_view.go) retains its DataList in both modes. The optional Leaflet
-1.9.4 adapter projects only supplied points, uses native marker links and leaves
-coincident points reachable in the list. Tiles require a caller-owned same-origin
-URL template and attribution; this package provides no tile service or credential.
+1.9.4 adapter projects only supplied points and makes each address it is handed a
+native marker link; handed none — as a disabled view hands it none — its pins are
+named places that follow nothing, and coincident points stay reachable in the list.
+Tiles require a caller-owned same-origin URL template and attribution; this package
+provides no tile service or credential.
 Failed tiles keep an explicit fallback. Polar coordinates remain exact in the list
 without a relocated Web Mercator marker. DetailSheet composition is optional and
 must match the selected authorized point. `SelectedID` itself must name one of the
