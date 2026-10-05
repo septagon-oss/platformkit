@@ -3,44 +3,28 @@
 // mints one key per submission, keeps the bytes it sent, and retries the
 // identical write under that key when the transport failed — never after a
 // refusal, which the server has already answered. The server side is
-// kit/httpx/idempotency.go; a repeat that arrives while the first is running is
-// its refusal, not this file's, and a conflict is another tab's and never erased.
+// kit/httpx/idempotency.go; a repeat while the first is running is its refusal, not
+// this file's, and a conflict is another tab's and never erased. The outcome region
+// is htmx-config.js's notice, which the page renders: this file writes no markup.
 //
-// The retry listeners are capture-phase on document, so htmx-config.js's "outcome
-// is unknown" notice appears only when no attempt is left to make: no new copy,
-// no second notice, no second outcome region.
+// One record per form, for as long as this document is the page in front of the
+// person. Inside one page the controller knows the answer to its own request never
+// arrived, so the key names one command and its retry is safe. After a reload it
+// knows nothing: the person may be retrying that lost submission or asking for
+// something new, the two are identical bytes, and guessing wrong either replays the
+// old answer over the new command or runs the lost one twice. So the record dies
+// with the document, and the redrawn page says whether to press again.
+//
+// Listeners are capture-phase, so that notice waits until no attempt is left to make.
 (function () {
   if (!window.htmx) return;
-  const PREFIX = "pk:command:1:";
   const SAFE = ["get", "head", "options", "trace"];
   // Four retries, backing off, and then the person is told: an unbounded loop is
   // a client that never stops asking.
   const BACKOFF = [500, 1000, 2000, 5000];
-  const memory = new Map();
+  const records = new Map();
   const running = new Set();
   let started = false, expected = null;
-
-  // The record lives in sessionStorage, because the promise that survives a
-  // reload is the promise this file exists for. When storage is unavailable —
-  // private mode, quota — the Map still holds it for this submission: the
-  // double-click promise needs no storage, only the reload one does.
-  function read(id) {
-    if (!memory.has(id)) {
-      try {
-        const raw = sessionStorage.getItem(PREFIX + id);
-        if (raw) memory.set(id, JSON.parse(raw));
-      } catch (_) { /* Storage is optional; the key is not. */ }
-    }
-    return memory.get(id);
-  }
-  function write(id, rec) {
-    memory.set(id, rec);
-    try { sessionStorage.setItem(PREFIX + id, JSON.stringify(rec)); } catch (_) {}
-  }
-  function drop(id) {
-    memory.delete(id);
-    try { sessionStorage.removeItem(PREFIX + id); } catch (_) {}
-  }
 
   function token() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -57,9 +41,8 @@
     return null;
   }
 
-  // One form, one submission. The principal is in the identity so a draft left by
-  // an anonymous visitor is not adopted by the account they sign in to; the
-  // tenant is already implied by the session this is scoped to.
+  // One form, one submission. The principal is in the identity so a draft left by an
+  // anonymous visitor is not adopted by the account they sign in to.
   function identity(form, path) {
     return path + "|" + (form.id || form.getAttribute("name") || "") + "|" +
       (document.documentElement.getAttribute("data-principal") || "");
@@ -77,13 +60,12 @@
     // click is the second request nobody asked for. A retry of ours is expected.
     if (running.has(id) && expected !== id) { event.preventDefault(); return; }
     expected = null;
-    let rec = read(id);
-    if (!rec) rec = { v: 1, key: token(), verb: verb, path: path, body: detail.parameters };
+    let rec = records.get(id);
+    if (!rec) rec = { key: token(), verb: verb, path: path, body: detail.parameters };
     // The identical write, not a re-serialisation of whatever has been typed
     // since: the server compares what it got with what it hashed.
     if (rec.tries > 0) detail.parameters = rec.body || {};
-    rec.at = Date.now();
-    write(id, rec);
+    records.set(id, rec);
     detail.headers["Idempotency-Key"] = rec.key;
     running.add(id);
   }
@@ -98,21 +80,21 @@
       form.getAttribute("hx-post") || form.getAttribute("action") || location.pathname;
     const id = identity(form, path);
     running.delete(id);
-    const rec = read(id);
+    const rec = records.get(id);
     if (!rec) return;
     const tries = (rec.tries || 0) + 1;
     if (tries > BACKOFF.length) return; // out of attempts: let the notice through
     rec.tries = tries;
-    write(id, rec);
+    records.set(id, rec);
     event.stopPropagation();
     expected = id;
     setTimeout(function () { htmx.ajax(rec.verb, rec.path, { source: form }); }, BACKOFF[tries - 1]);
   }
 
-  // The record is cleared on a settled outcome and by nothing else. An outcome
-  // with no status settled nothing; neither did a refusal the kernel's own gate
-  // answered (Idempotency-Refusal), which is the one 4xx that says "this key is
-  // spent" rather than "the server has drawn your form again".
+  // The record is cleared once the key means nothing. A 5xx settled nothing, and so
+  // did the refusal saying an answer is still owed: another request with this key is
+  // running it, and the same key asks for its result later. Every other answer retires
+  // it — a spent key especially — so the next press is a new command.
   function settled(event) {
     const detail = event.detail;
     const form = commanded(detail.requestConfig?.elt || detail.elt);
@@ -122,8 +104,9 @@
     running.delete(id);
     const xhr = detail.xhr;
     if (!xhr || !xhr.status) return;
-    if (xhr.getResponseHeader("Idempotency-Refusal") || xhr.status >= 500) return;
-    drop(id);
+    if (xhr.status >= 500) return;
+    if (xhr.getResponseHeader("Idempotency-Refusal") === "IDEMPOTENCY_IN_PROGRESS") return;
+    records.delete(id);
   }
 
   htmx.defineExtension("command", {
@@ -133,6 +116,11 @@
       document.addEventListener("htmx:configRequest", configure, true);
       for (const name of ["htmx:sendError", "htmx:timeout"]) document.addEventListener(name, transportFailed, true);
       document.addEventListener("htmx:afterRequest", settled);
+      // A document restored from the back/forward cache kept this script and its
+      // records while its page was redrawn elsewhere: a reload's case by another door.
+      window.addEventListener("pageshow", function (event) {
+        if (event.persisted) { records.clear(); running.clear(); }
+      });
     },
   });
 })();

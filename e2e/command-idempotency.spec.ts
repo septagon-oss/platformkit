@@ -24,6 +24,11 @@ import { expect, test, type Browser, type Page } from '@playwright/test';
 // sessions.go), and one revocation is the command: it is the write in this
 // application that a person cannot repeat safely by guessing, because the row they
 // clicked disappears while they are deciding.
+//
+// A submission record lives in one document (ui/assets/js/command.js), so the second
+// case below signs in a third device after the reload rather than reading the
+// browser's memory: what a reload leaves behind is a fact a test can only read at the
+// wire, and command-record-after-reload.spec.ts reads it there.
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? '';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
@@ -41,16 +46,8 @@ async function signIn(browser: Browser): Promise<Page> {
 }
 
 const rows = (page: Page) => page.locator('tr[data-pk-row]');
+const thisDevice = (page: Page) => rows(page).filter({ hasText: 'This device' });
 const elsewhere = (page: Page) => rows(page).filter({ hasNotText: 'This device' });
-
-// commandKeys is what the browser still holds: one record per form that is waiting
-// for an answer, each naming the key it will use again. Read out of sessionStorage,
-// because that is where the promise lives across a reload.
-async function commandKeys(page: Page): Promise<string[]> {
-  return page.evaluate(() => Object.keys(sessionStorage)
-    .filter(k => k.startsWith('pk:command:1:'))
-    .map(k => JSON.parse(sessionStorage.getItem(k) ?? '{}').key ?? ''));
-}
 
 // loseTheAnswer makes the first POST reach the application and lose its response.
 // `sent` grows when a request arrives, `ran` when the application has answered the
@@ -166,7 +163,31 @@ test('a reload after a lost answer finds the command done, and mints no second k
   await expect(here.locator(`tr[data-pk-row="${ref}"]`)).toHaveCount(0);
   await expect(rows(here)).toHaveCount(baseline - 1);
   expect(arrived()).toBe(1);
-  expect(await commandKeys(here)).toEqual([sent[0]]);
+  expect(sent).toEqual([sent[0]]);
+
+  // Nothing is remembered across the reload, which is the controller's promise and
+  // not a shortfall: a page redrawn from the server cannot tell the person retrying
+  // the submission whose answer was lost from the person asking for something new,
+  // because the two are the same bytes. So the record died with the document that
+  // wrote it, and the next deliberate command is a new one. A third device signs in
+  // here for exactly that test: the key the application sees now is not the key it
+  // saw before the reload, and the revocation runs rather than being remembered.
+  const phone = await signIn(browser);
+  await phone.goto('/app/auth/sessions');
+  const phoneRef = await thisDevice(phone).first().getAttribute('data-pk-row');
+  expect(phoneRef).toBeTruthy();
+  await here.reload();
+  await expect(here.locator(`tr[data-pk-row="${phoneRef}"]`)).toHaveCount(1);
+  await here.locator(`tr[data-pk-row="${phoneRef}"]`)
+    .getByRole('button', { name: /^End the session on / }).click();
+
+  await expect.poll(() => sent.length, { timeout: 15_000 }).toBe(2);
+  expect(sent[1]).toMatch(keyPattern);
+  expect(sent[1]).not.toBe(sent[0]);
+  await expect(here.locator(`tr[data-pk-row="${phoneRef}"]`)).toHaveCount(0);
+  expect(arrived()).toBe(2);
+  await phone.goto('/app/auth/sessions');
+  await expect(phone).toHaveURL(/\/app\/admin\/login/);
 
   await laptop.goto('/app/auth/sessions');
   await expect(laptop).toHaveURL(/\/app\/admin\/login/);
