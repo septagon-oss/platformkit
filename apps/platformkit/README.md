@@ -64,10 +64,62 @@ with no row, no event and no stale read.
 | [change.go](change.go) | the one subject under change control, its flag, and the gate |
 | [fault.go](fault.go) | the refusal page, the two ask pages, and the addresses they are pinned to |
 | [catalog.go](catalog.go) | the one copy table every shell and page is worded from |
-| [oidc.go](oidc.go) | nothing any more: both its adapters moved to the modules whose service they read |
 
 Run it with `make run`, and verify it with `make check` and `make e2e`. The
 composition is refused at boot — `Build` answers every problem at once, each
 naming the method that caused it — so a client that removes `user.Module` from
 `Use` is told `auth needs authcontracts.Users: add user.Module to platformkit`
 rather than finding out at the first login.
+
+## Authorization
+
+Decision 0011 asks every composed module's README the same six questions. This one
+answers for the two modules this application declares in `product.go`, because no
+`modules/<name>/README.md` exists to answer them. [authorization_readme_test.go](authorization_readme_test.go)
+reads this section against the two manifests, the same way it reads the kernel
+modules'.
+
+### Permissions
+
+Neither `product` nor `access` declares a permission: a manifest with no grant to
+hand out. Every permission the running application offers belongs to the module
+that owns the subject it governs — `user` for people and roles, `content` for
+pages, `billing` for plans — and this application adds none.
+
+### Object scope
+
+Both work inside one tenant and never across two. `product` hands out values that
+are read once at composition — the session cookie, the rate buckets, the storage
+bucket, the scheduler cadence — and joins that are constructed from a `db.Tx`
+carrying the tenant the request resolved, which is where tenancy is enforced here.
+`access` joins a person, a notice and a site to decide who may be let in, and every
+row it reads is behind that same transaction.
+
+### Duties the module enforces itself
+
+Neither enforces anything. They provide no route, no duty and no check: `product`
+answers contracts, `access` fills the reach an ask has here and the authorizer the
+sign-in page asks. The enforcement is the modules' whose services they join, and
+`kit/rest` and `kit/httpx` for the grant a route names.
+
+### Public faces
+
+No face of its own. The two pages an unauthenticated visitor sees — the ask page
+and the signed-out page — are mounted by `app.go` with `AskForAccess` and
+`page.MountAccess`, drawn in the fault shell this application writes in `fault.go`;
+the sign-in screen belongs to `admin`.
+
+### The operator boundary
+
+Nothing here is the operator's, because nothing here is a grant. What a deployment
+rather than an operator decides is the two choices in `deployment.*` — how mail is
+sent and how money moves — and both are refused at boot when the deployment leaves
+them ambiguous.
+
+### Provisioning
+
+`product` provisions no subject either: a new tenant's people, roles and seeded
+content are provisioned by `user`, `auth` and `site` when the tenant is created,
+and `roles.go` is the list of who the first person is. What `product` decides at
+composition is which storage backend, mailer and payment gateway a tenant's first
+administrator will find.

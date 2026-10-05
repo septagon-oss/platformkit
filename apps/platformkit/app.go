@@ -143,10 +143,10 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 // repository boots the same composition with when it wants the handler rather
 // than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
-func sentences(cfg config.Config) (*pkit.App, *accessReach, *page.Shell) {
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell) {
 	ask, shell := &accessReach{}, &page.Shell{}
-	a := pkit.NewApp("platformkit").
-		Use(
+	a := pkit.NewApp("platformkit").Use(
+		omitted([]*pkit.Module{
 			product(cfg),
 			user.Module,
 			tenant.Module,
@@ -163,7 +163,7 @@ func sentences(cfg config.Config) (*pkit.App, *accessReach, *page.Shell) {
 			access(ask),
 			change.Module,
 			admin.Module,
-		).
+		}, without)...).
 		Theme(design.Default()).
 		Languages(catalogues()).
 		Home(pinnedHome).
@@ -172,6 +172,41 @@ func sentences(cfg config.Config) (*pkit.App, *accessReach, *page.Shell) {
 		Roles(startingRoles()...).
 		WorkspaceCatalog(workspaceCatalog())
 	return a, ask, shell
+}
+
+// omitted takes the names a case asked to leave out of the list. It exists for
+// one reason: a case that asks what the composition resolves to with one of its
+// providers gone has to take a module out of the only sentence that names them,
+// and a second, quieter composition inside the test would answer a question
+// nobody asked. Every name that is not one of the list's is a mistake, so it
+// refuses rather than planning the whole thing back.
+func omitted(uses []*pkit.Module, without []string) []*pkit.Module {
+	if len(without) == 0 {
+		return uses
+	}
+	dropped := map[string]bool{}
+	kept := make([]*pkit.Module, 0, len(uses))
+	for _, m := range uses {
+		name := m.Name()
+		want := false
+		for _, w := range without {
+			if w == name {
+				want = true
+				break
+			}
+		}
+		if !want {
+			kept = append(kept, m)
+			continue
+		}
+		dropped[name] = true
+	}
+	for _, w := range without {
+		if !dropped[w] {
+			panic("platformkit: asked to leave out " + w + ", which this composition never named")
+		}
+	}
+	return kept
 }
 
 // value is the plan's answer, and a composition this file wrote that does not
