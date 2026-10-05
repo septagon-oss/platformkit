@@ -16,9 +16,17 @@ const slug = `welcome-${stamp}`;
 test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
+  // The site's way into the workspace is the workspace root, and nothing deeper:
+  // a public page may name /app and no screen behind it (TestLocalizedCompositionKeepsSurfaceBoundaries
+  // reads the published frame's own hrefs). An anonymous browser that asks /app is taken
+  // to the door with the root remembered as `next` — surfaces.spec.ts holds that redirect
+  // — so the person who follows this link arrives at the same form as ever, one hop
+  // through the address the public page is allowed to print.
+  const signInLink = page.getByRole('link', { name: 'Sign in to the admin' });
+  await expect(signInLink).toHaveAttribute('href', '/app');
 
-  await page.goto('/app/admin/login');
+  await signInLink.click();
+  await expect(page.locator('[data-login-form]')).toBeVisible();
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
