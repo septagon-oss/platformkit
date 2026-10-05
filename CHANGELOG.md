@@ -461,6 +461,18 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**The migration lock belongs to one application's namespace, not to one database.**
+`db.Migrate` holds its advisory lock for the namespace it is about to write: the key
+carries the OID of `current_schema()` beside its own constant, because the ledger it
+protects — `schema_migrations`, and every table an applied file creates — lands wherever
+that run's `search_path` resolves. Two applications that share one Postgres database in
+separate namespaces therefore apply their own files while one another migrates; two
+replicas of one application still reach one namespace through one URL and still queue,
+so ADR 0005's boot where one process migrates and the rest wait and find nothing to do
+is the same guarantee it was. A run whose path resolves to no namespace at all is refused
+rather than locked around, because `pg_advisory_lock(key, NULL)` answers NULL without
+taking the lock, and that would be a run that set out believing it was alone.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
