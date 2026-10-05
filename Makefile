@@ -329,6 +329,15 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # (key, version), the v1 one keeps the newest — and the other job restores a tree built for someone
 # else, hits it exactly, never saves, and compiles cold until go.sum moves while the log reports a
 # warm restore. It reads the parsed workflow and starts nothing.
+#
+# scripts/ci_go_cache_job_archives_test.sh asks the third question about those four steps, and the one
+# no static read can answer: it runs the two `run:` commands the workflow's naming steps actually carry,
+# in a temporary copy of go.mod, go.sum and the key recipe, resolves every ${{ steps.gocache.outputs… }}
+# the cache inputs read against what those commands emitted, and refuses a key both jobs emit, a key
+# that survives a dependency change, a first restore prefix that matches the peer job instead of this
+# job's own previous archive, and a save path list that differs from its restore in content or order.
+# One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
+# tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
@@ -338,6 +347,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
+	bash scripts/ci_go_cache_job_archives_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say

@@ -155,12 +155,19 @@ jobs:
 
       # Three things the operating system is asked for, one step, because a step that
       # installs one of them and not the other half of the question is what this line
-      # is: `psql` answers the migration rehearsal, and `ss` answers gate 10's question
+      # is: `psql` answers the migration rehearsal, `ss` answers gate 10's question
       # "whose socket is this?", which scripts/free_port.sh refuses to answer from
       # itself, because a 200 on /health says something is listening and not that the
-      # listener is mine.
+      # listener is mine, and PyYAML answers the three guards `make check` runs that read
+      # a workflow as data instead of as text — scripts/mobile_journey_fetch_test.sh asks
+      # which label the device journey runs on,
+      # scripts/ci_go_cache_one_saver_per_key_test.sh asks whether one exact cache key has
+      # more than one saving job, and scripts/ci_go_cache_job_archives_test.sh runs each
+      # job's naming command and asks whether the archives it names are its own. A guard
+      # that cannot parse its own subject is a red pull request no change in the tree
+      # caused.
       #
-      # The package is not optional here, and the image does not provide it. This job's
+      # The packages are not optional here, and the image does not provide them. This job's
       # image is pinned — gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is
       # the digest job 49823 of run 49357 names when it creates the container — and that
       # digest ships neither `ss` nor `lsof`. Measured 2026-10-04 by running this
@@ -181,10 +188,25 @@ jobs:
       # there. Running that file inside this same digest on 2026-10-05 (`docker run -v $PWD:/w:ro
       # -w /w … bash scripts/mobile_journey_fetch_test.sh`) died on its first question with
       # `ModuleNotFoundError: No module named 'yaml'` and exit 1; the same run with python3-yaml
-      # installed answered `ok` and exited 0. No other Python in this repository reads a document as
-      # YAML, so this case is the whole of the dependency — and, with nothing pinning the package by
-      # name, its refusal is a traceback rather than a sentence, which is why the line above is
-      # named in the Makefile's comment over the goal that runs the case.
+      # installed answered `ok` and exited 0. With nothing pinning the package by name, its
+      # refusal is a traceback rather than a sentence, which is why the line above is named in
+      # the Makefile's comment over the goal that runs the case.
+      #
+      # The two guards T-0277 put in `make check` are missing from that digest the same way, and
+      # this is the line that proves it rather than the reason it is written down. Measured
+      # 2026-10-05 by the same kind of run, into the same image and the same repository mount:
+      # python3 answers 3.12.3, `dpkg -l python3-yaml` answers `un` (not installed), `import yaml`
+      # raises ModuleNotFoundError with exit 1, and
+      # `bash scripts/ci_go_cache_one_saver_per_key_test.sh` — line 322 of the `check` goal at the
+      # head CI refused, and the first line of it that asks for the module — died on that
+      # traceback with that code. CI refused the head `5bf518b2` as
+      # `make: *** [Makefile:322: check] Error 1` with every earlier step green and no
+      # assertion in the log, which is what a missing parser looks like from the job page.
+      # In the same container with python3-yaml installed beside the other two, the same
+      # file printed `ok   each exact cache key in ci.yml has one saving job (2 key(s))`
+      # and exited 0. Case 11 of scripts/ci_go_cache_test.sh is the matching refusal: it
+      # asks the Makefile which goals it runs parse YAML and this job whether it installs
+      # a reader before the step that runs them.
       - name: Install the database client, the socket probe and the YAML reader
         run: |
           apt-get update
