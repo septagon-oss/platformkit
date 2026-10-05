@@ -692,6 +692,22 @@
               "active": {
                 "type": "boolean"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "code": {
                 "type": "string"
               },
@@ -758,6 +774,22 @@
               "active": {
                 "type": "boolean"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "code": {
                 "type": "string"
               },
@@ -823,6 +855,22 @@
             "properties": {
               "active": {
                 "type": "boolean"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "code": {
                 "type": "string"
@@ -1253,6 +1301,22 @@
               "body": {
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1316,6 +1380,22 @@
               "body": {
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1378,6 +1458,22 @@
               },
               "body": {
                 "type": "string"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "createdAt": {
                 "format": "date-time",
@@ -2186,6 +2282,22 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -2266,6 +2378,22 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -2345,6 +2473,22 @@
               "assigneeId": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "createdAt": {
                 "format": "date-time",
@@ -3295,6 +3439,22 @@
           "name": "user.user.created",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -3352,6 +3512,22 @@
           "name": "user.user.deleted",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -3409,6 +3585,22 @@
           "name": "user.user.updated",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": true,
+                    "before": true,
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
