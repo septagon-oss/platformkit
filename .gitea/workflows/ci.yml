@@ -111,17 +111,31 @@ jobs:
       # binaries and the module download are on top of that and unmeasured here, but the two steps
       # above are a gap of 25.2s + 53.5s ≈ 80s of this job's wall clock on their own.
       #
-      # The key names what actually decides the bytes — the platform, the resolved toolchain and a
-      # digest over both dependency files — with two prefix restore keys, longest first, so a go.sum
-      # bump still warms the build from the archive the previous key wrote. The recipe is one file,
-      # scripts/ci_go_cache_key.sh, called by both Go jobs so they form one key and share one archive;
-      # it asks `go env` where the caches live rather than writing a path down, and it refuses by
-      # emitting no key and exiting 0, so a tree it cannot name runs cold and green. A miss is a cold
-      # job either way: both steps below carry continue-on-error, and neither asks for
-      # fail-on-cache-miss.
+      # The key names what actually decides the bytes — the platform, the resolved toolchain, this
+      # job's own name and a digest over both dependency files — with three prefix restore keys,
+      # longest first, so a go.sum bump still warms the build from the archive the previous key wrote.
+      # The recipe is one file, scripts/ci_go_cache_key.sh, called by both Go jobs with their own name:
+      # one recipe, one key per job, because a key two jobs save under belongs to whichever of them
+      # the store kept (see the file's own header). It asks `go env` where the caches live rather than
+      # writing a path down, and it refuses by emitting no key and exiting 0, so a tree it cannot name
+      # runs cold and green. A miss is a cold job either way: both steps below carry
+      # continue-on-error, and neither asks for fail-on-cache-miss.
+      #
+      # Two limits of this shape, both accepted:
+      #   - An exact hit never re-saves (the save below asks for `cache-hit != 'true'`), so a key's
+      #     GOCACHE holds the first-party archives as they were when the key was first written and
+      #     ages with the commits until go.sum, go.mod or the toolchain moves the digest; third-party
+      #     modules and the packages that did not change stay warm the whole time. A time component in
+      #     the key (an ISO week, say) would trade that archive's exact hit for a weekly re-save; the
+      #     measurement the steps beside it are for is the first run of a new key against the second.
+      #   - The two jobs share the *prefix*, not the archive, so the first run of a job's key after a
+      #     dependency or toolchain change restores the other job's archive of the same toolchain —
+      #     `check`'s is ~1.3 GB raw against the 125 MB `design` reads — and pays that once per change
+      #     before saving its own; every later run takes this job's own exact key. Whether that one
+      #     restore costs more than it warms is readable in the step's `Cache Size:` and wall time.
       - name: Name this job's Go cache
         id: gocache
-        run: bash scripts/ci_go_cache_key.sh
+        run: bash scripts/ci_go_cache_key.sh check
 
       - name: Restore the Go module and build cache
         id: restore
@@ -131,6 +145,7 @@ jobs:
         with:
           key: ${{ steps.gocache.outputs.key }}
           restore-keys: |
+            ${{ steps.gocache.outputs.prefix-job }}
             ${{ steps.gocache.outputs.prefix-version }}
             ${{ steps.gocache.outputs.prefix-os }}
           path: |
@@ -610,13 +625,18 @@ jobs:
           cache: false
 
       # This job compiles too — every design test builds a real Go program before observing it
-      # (fixtures-compile.test.mjs, and browser/fixtures.test.mjs line 28 runs `go build`) — and it
-      # calls the same script `check` calls, so the two jobs form one key and `design` restores what
-      # `check` saved instead of paying twice for the same bytes. scripts/ci_go_cache_test.sh refuses
-      # either job forming a key of its own.
+      # (fixtures-compile.test.mjs, and browser/fixtures.test.mjs line 28 runs `go build`) — so it calls
+      # the same recipe `check` calls, with its own name: the two jobs form two keys, each saving the
+      # archive its own build wrote, because a key both of them saved under would belong to whichever
+      # one the cache store kept and leave the other restoring bytes that are mostly not its own, cold
+      # and green, until go.sum moved. What they share is the key's prefix, so `design`'s first run of a
+      # new digest still warms from `check`'s archive before it has one of its own. The two trees are
+      # not the same bytes: 92 modules and 781 MB for `check`, 7 modules and 125 MB for this job's
+      # `go build`. scripts/ci_go_cache_test.sh refuses either job forming a key of its own, and
+      # scripts/ci_go_cache_one_saver_per_key_test.sh refuses the one key this used to have.
       - name: Name this job's Go cache
         id: gocache
-        run: bash scripts/ci_go_cache_key.sh
+        run: bash scripts/ci_go_cache_key.sh design
 
       - name: Restore the Go module and build cache
         id: restore
@@ -626,6 +646,7 @@ jobs:
         with:
           key: ${{ steps.gocache.outputs.key }}
           restore-keys: |
+            ${{ steps.gocache.outputs.prefix-job }}
             ${{ steps.gocache.outputs.prefix-version }}
             ${{ steps.gocache.outputs.prefix-os }}
           path: |
