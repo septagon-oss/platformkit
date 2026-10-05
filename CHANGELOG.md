@@ -79,7 +79,9 @@ read included, or a panic that unwound past the response — deletes the claim s
 runs the command. Nothing infers that a command finished from how long ago it started: an
 unsettled claim is always refused, because taking over a marker that merely looked old
 applies the command twice, and the exit from a dead process's window is the purge rather
-than the next request. The rows are `platformkit_idempotency` (`migrations/000042`), keyed
+than the next request — and the purge decides from what the row says, not from how long
+ago it was written: the owning request renews an `owner_lease` while it works, so the job
+frees a claim whose owner stopped renewing and passes over one it is still answering. The rows are `platformkit_idempotency` (`migrations/000042`), keyed
 by tenant, caller, operation and key under forced row-level security that no tenant
 transaction can read through, held for a day — a settled answer past that day is a fresh
 command on the request that asks — and emptied by the `idempotency-purge` job.

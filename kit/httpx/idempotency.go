@@ -33,6 +33,14 @@ package httpx
 // expires_at in claimIdempotency). Refusing a retry of a command that is really
 // gone costs a person one more press, some minutes later; taking over a claim that
 // is not really gone costs them the command twice.
+//
+// "Still running" is a fact the row can hold rather than one the clock has to
+// guess at, and it does: the request that owns a claim renews its lease while it
+// works, so the purge deletes an unsettled row only once that lease lapsed — the
+// one claim it can prove nobody is answering. The lease is why the five-minute
+// marker and the hourly job can coexist with a command that takes longer than
+// either: TestThePurgeKeepsTheClaimOfACommandStillRunning is the case where the
+// alternative is the same submission committing twice.
 
 import (
 	"bytes"
@@ -44,6 +52,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -90,6 +99,20 @@ const (
 	// kit/limit gives for its own: neither is allowed to turn a database that has
 	// stopped answering into a request that never ends.
 	claimBudget = 2 * time.Second
+	// claimLease is how long a claim is believed to have an owner after the last
+	// word from it, and claimRenewal is how often an owning request says "still
+	// here". Three renewals fit inside a lease, so one statement that found the
+	// database slow is not what strips a running command of its fence; and a process
+	// that stops answering altogether gives its key back inside two minutes, which
+	// is shorter than the five-minute marker it used to wait for. Both numbers are
+	// in the migration's note on owner_lease, and the honest recovery bound a caller
+	// is given for a claim whose owner died is the lease plus the purge's own hour.
+	claimLease   = 2 * time.Minute
+	claimRenewal = claimLease / 3
+	// claimLeaseSQL is the same length in the one spelling Postgres adds to now().
+	// Two spellings of one number is the price of the database owning the clock;
+	// TestTheClaimsLeaseIsTheOneThisPackageRenews keeps them from drifting.
+	claimLeaseSQL = "2 minutes"
 )
 
 // replayHeaders are the response headers a stored answer carries back, beside the
@@ -170,6 +193,18 @@ type idempotencyHolder struct {
 	// cannot carry. See noteUncommitted for why the record step needs it and
 	// cannot get it from the buffered status.
 	uncommitted bool
+	// stopLease ends the renewal this request started when it took the claim. A
+	// goroutine that outlived the request would keep renewing a lease nobody holds,
+	// which is the fence standing after the thing it fences is gone.
+	stopLease func()
+}
+
+// stop ends this request's renewal, once, and is safe on a holder that never took
+// a claim at all.
+func (h *idempotencyHolder) stop() {
+	if h != nil && h.stopLease != nil {
+		h.stopLease()
+	}
 }
 
 type claimKey struct{}
@@ -294,6 +329,7 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	default:
 		// This request owns the key. Its record step is what makes that a promise.
 		holder.claim = &c
+		a.attachLease(ctx.Context(), holder, c)
 		next(ctx)
 	}
 }
@@ -316,8 +352,14 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // it means "this response is being dropped", not "this work failed".
 func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = r.WithContext(context.WithValue(r.Context(), claimKey{}, &idempotencyHolder{}))
+		holder := &idempotencyHolder{}
+		r = r.WithContext(context.WithValue(r.Context(), claimKey{}, holder))
 		defer func() {
+			// Whatever way this request leaves, its claim stops having an owner here:
+			// the renewal below is stopped, and the record step writes a NULL lease so
+			// the row reads as "nobody is answering this" rather than as a command that
+			// stopped being answered at the moment its deadline happened to fall.
+			defer holder.stop()
 			if v := recover(); v != nil {
 				if v != http.ErrAbortHandler {
 					a.forgetClaim(r.Context(), holderFrom(r.Context()))
@@ -396,7 +438,8 @@ func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status 
 		}
 		if !held || len(body) > maxStorableResponse {
 			return tx.DB().Exec("UPDATE "+idempotencyTable+
-				" SET settled = true, status = ?, response = NULL, expires_at = claimed_at + interval '24 hours'"+
+				" SET settled = true, status = ?, response = NULL, owner_lease = NULL,"+
+				" expires_at = claimed_at + interval '24 hours'"+
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				status, c.tenant, c.actor, c.operation, c.key).Error
 		}
@@ -409,7 +452,7 @@ func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status 
 		}
 		return tx.DB().Exec("UPDATE "+idempotencyTable+
 			" SET settled = true, status = ?, content_type = ?, headers = ?::jsonb, response = ?::bytea,"+
-			" request_id = ?, expires_at = claimed_at + interval '24 hours'"+
+			" request_id = ?, expires_at = claimed_at + interval '24 hours', owner_lease = NULL"+
 			" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 			status, header.Get("Content-Type"), replayHeaderJSON(header), stored, c.request,
 			c.tenant, c.actor, c.operation, c.key).Error
@@ -485,10 +528,10 @@ func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempot
 			// Neither is a fault of this request's, and neither may be answered with a
 			// refusal of an in-flight command that is not in flight.
 			res := tx.DB().Exec("INSERT INTO "+idempotencyTable+
-				" (tenant_id, actor_id, operation, key, request_hash, claimed_at, expires_at)"+
-				" VALUES (?, ?, ?, ?, ?, now(), now() + interval '5 minutes')"+
+				" (tenant_id, actor_id, operation, key, request_hash, claimed_at, expires_at, owner_lease)"+
+				" VALUES (?, ?, ?, ?, ?, now(), now() + interval '5 minutes', now() + ?::interval)"+
 				" ON CONFLICT (tenant_id, actor_id, operation, key) DO NOTHING",
-				c.tenant, c.actor, c.operation, c.key, c.hash[:])
+				c.tenant, c.actor, c.operation, c.key, c.hash[:], claimLeaseSQL)
 			if res.Error != nil {
 				return res.Error
 			}
@@ -566,8 +609,64 @@ func inProgress() idempotencyAnswer {
 
 // reclaimSQL is gone, and its absence is the point: no statement in this package
 // takes over another request's claim. The recovery of a claim whose owner died is
-// the purge's job, which deletes a row only once its expires_at has passed and so
-// cannot delete one that is still being answered.
+// the purge's job, and the purge deletes an unsettled row only once the row's own
+// lease lapsed, which is what lets it be both the recovery and the fence.
+
+// attachLease is the owning request saying "still here", for as long as it is
+// here.
+//
+// The claim it wrote is what refuses a repeat, and the lease is what makes that
+// refusal true of a command rather than of a clock: the five-minute marker in the
+// row is a bound on how long a key can be held by a process that stopped
+// answering, not a statement that a command which has run for five minutes has
+// finished. Renewal every third of the lease means a claim survives one statement
+// that found the database slow and dies within two minutes of the process that
+// held it — so the purge can delete an unsettled row on evidence instead of on
+// elapsed age, which is the difference between freeing a dead key and stealing a
+// live one. TestThePurgeKeepsTheClaimOfACommandStillRunning is the case the fence
+// is for; TestThePurgeTakesTheClaimOfACommandWhoseLeaseLapsed is the case the
+// evidence is for.
+//
+// A renewal that fails is logged and retried on the next tick rather than
+// abandoned: giving up on the first failure is what would put a slow command back
+// in the world of the clock, and a request that has stopped is stopped by its own
+// context and by stop, not by a failed statement.
+func (a *API) attachLease(ctx context.Context, holder *idempotencyHolder, c idempotencyClaim) {
+	gone := make(chan struct{})
+	once := sync.OnceFunc(func() { close(gone) })
+	holder.stopLease = once
+	go func() {
+		ticker := time.NewTicker(claimRenewal)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-gone:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := a.renewLease(ctx, c); err != nil {
+					a.rlog(ctx).ErrorContext(ctx, "httpx: the idempotency claim's lease could not be renewed",
+						"method", c.operation, "key", c.key, "error", err)
+				}
+			}
+		}
+	}()
+}
+
+// renewLease pushes the row's belief about its owner out another lease. It is
+// keyed on all four primary-key columns for the reason the record step is: a
+// statement that could reach another caller's row with the same key would renew
+// somebody else's fence. A row that is already settled was answered by this very
+// request and is not being answered any longer, so `NOT settled` keeps a renewal
+// from putting a lease back on a row the record step just cleared one off.
+func (a *API) renewLease(ctx context.Context, c idempotencyClaim) error {
+	return a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Exec("UPDATE "+idempotencyTable+" SET owner_lease = now() + ?::interval"+
+			" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND NOT settled",
+			claimLeaseSQL, c.tenant, c.actor, c.operation, c.key).Error
+	})
+}
 
 // idempotencyAnswer is one of three things: run, replay, or refuse.
 type idempotencyAnswer struct {
@@ -586,9 +685,10 @@ type idempotencyAnswer struct {
 // everything else here. What it means depends on the row's state, and the two
 // readings must not be confused: on a settled row it is the end of the window the
 // answer is kept for, which this request enforces for itself; on an unsettled one
-// it is the point at which the *purge* may take the marker of a command nobody is
-// answering any longer, which is not a fact a request may act on as if it were
-// knowledge of whether a process is alive.
+// it is the age at which the *purge* may start asking whether anybody still owns
+// the marker, which is not a fact a request may act on as if it were knowledge of
+// whether a process is alive. The lease is what answers that question, and the
+// purge is the only step allowed to ask it.
 func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
 		" now() > expires_at FROM "+idempotencyTable+
@@ -619,14 +719,23 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 	return &h, nil
 }
 
-// PurgeIdempotency deletes the answers a day old. As with limit.Purge it is a
-// scheduled job and never a side effect of a claim: a request that also deleted
-// somebody else's row is a request paying for traffic it is not refusing, and a
-// table nobody empties grows at somebody else's rate. The expires_at index above
-// is this statement's query.
+// PurgeIdempotency deletes the answers a day old and the markers nobody is
+// holding. As with limit.Purge it is a scheduled job and never a side effect of a
+// claim: a request that also deleted somebody else's row is a request paying for
+// traffic it is not refusing, and a table nobody empties grows at somebody else's
+// rate. The expires_at index above is this statement's query.
+//
+// The second clause is what makes it safe to run while work is happening. An
+// unsettled row past its five-minute marker is one of two commands — one that is
+// still being answered and one whose process is gone — and the row knows which,
+// because the request that owns it renews its lease: a lapsed lease is the fact of
+// a dead owner, and a live one is not a candidate at any age. Deleting on
+// expires_at alone deleted the claim of a command that was simply slow, and the
+// submission that repeated it committed a second row and a second event.
 func PurgeIdempotency(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, idempotencyToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		if err := tx.DB().Exec("DELETE FROM " + idempotencyTable + " WHERE expires_at < now()").Error; err != nil {
+		if err := tx.DB().Exec("DELETE FROM " + idempotencyTable +
+			" WHERE expires_at < now() AND (owner_lease IS NULL OR owner_lease < now())").Error; err != nil {
 			return errors.New("httpx: purge idempotency: " + err.Error())
 		}
 		return nil
@@ -654,9 +763,19 @@ func replayHeaderJSON(h http.Header) []byte {
 }
 
 // readBody takes the command's bytes once, and hands the same bytes on to huma.
-// The request the handler will read is the one this middleware was handed, so the
-// replacement is written back onto it rather than onto a copy: every copy huma
-// makes from here down carries the reader that still has the body in it.
+//
+// The replacement goes on two requests, not one. The struct this middleware was
+// handed is the one huma decodes from, and `bodies` says why it is not the one a
+// handler reads: huma copies the request on every WithContext, and carry put the
+// pre-routing struct on the context, which is what RequestFrom answers with and
+// what a route that reads its own form reads. Both structs name the same reader —
+// a copied Request copies the Body field, not the stream behind it — so reading
+// here drains the reader the handler is about to read, and a replacement written
+// only on this copy leaves that one returning nothing at all. A premise field the
+// kernel silently swallows is worse than a body that fails to arrive: the module
+// below it reads an empty form, finds no premise to check and writes anyway.
+// TestAKeyedRevocationStillChecksTheSessionsRevision is the case, and it is a
+// page-route case because a page route is the kind that reads its own body.
 //
 // The ceiling is the one bodies.go would have applied and cannot apply here —
 // bodies.go wraps a different copy of the request, and this middleware consumes
@@ -674,11 +793,18 @@ func readBody(ctx huma.Context) ([]byte, error) {
 	if err != nil {
 		// Whatever was read stays read, and the caller that reads the rest gets the
 		// same error: this is the answer a body over the ceiling was always going
-		// to get, from the same reader.
-		r.Body = io.NopCloser(io.MultiReader(bytes.NewReader(body), limited))
+		// to get, from the same reader. Both structs again — see the note above.
+		rest := io.NopCloser(io.MultiReader(bytes.NewReader(body), limited))
+		r.Body = rest
+		if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
+			carried.Body = rest
+		}
 		return nil, err
 	}
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
+		carried.Body = io.NopCloser(bytes.NewReader(body))
+	}
 	return body, nil
 }
 

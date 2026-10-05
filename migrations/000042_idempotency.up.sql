@@ -20,10 +20,16 @@
 -- Two clocks, both Postgres's: claimed_at bounds the in-flight marker at five
 -- minutes so a process that died between the claim and the answer cannot hold a
 -- key hostage for a day, and expires_at bounds the stored response at twenty-four
--- hours after it was claimed. The stored body can carry personal data, which is
--- the second reason that window is a day and not indefinite. The table is in no
--- export for the first reason: it is the transport's own memo, and walking it
--- would hand one person a body somebody else submitted.
+-- hours after it was claimed. A third, owner_lease, says which of those two
+-- readings the row is allowed to have: while a request owns the claim it renews
+-- the lease, so a command slower than the marker it wrote is a command the purge
+-- must pass over, and a lease nobody renewed any longer is a command whose process
+-- is gone. NULL is the same statement as an expired one — no owner is attached —
+-- and it is what the record step writes on its way out, because an answered row is
+-- not being answered any longer. The stored body can carry personal data, which is
+-- the second reason the day is a day and not indefinite. The table is in no export
+-- for the first reason: it is the transport's own memo, and walking it would hand
+-- one person a body somebody else submitted.
 
 CREATE TABLE platformkit_idempotency (
 	tenant_id    uuid        NOT NULL,
@@ -50,6 +56,10 @@ CREATE TABLE platformkit_idempotency (
 	-- produced it and an operator can be quoted something findable.
 	request_id   text        NOT NULL DEFAULT '',
 	expires_at   timestamptz NOT NULL,
+	-- The owner's own renewal. Fresh means a request is answering this claim right
+	-- now, whatever its deadlines say; expired or NULL means nobody is, which is the
+	-- only state the purge may delete an unsettled row in. See kit/httpx/idempotency.go.
+	owner_lease  timestamptz,
 	PRIMARY KEY (tenant_id, actor_id, operation, key)
 );
 

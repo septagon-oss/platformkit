@@ -220,15 +220,18 @@ held for a day after the answer and emptied by the `idempotency-purge` job
 
 Nothing here infers that a command finished from how long ago it started. A claim that
 is not settled says either "somebody is running this now" or "the process that claimed
-it died", and the kernel cannot tell them apart: its claim is committed and detached
-precisely so that a repeat on another connection can see it. Taking over a marker that
-merely looked old applies the command twice, and no bound anybody can write down is
-longer than the request that can outlive it, so the repeat is refused 409 and the exit
-is the purge, which deletes only a row whose own `expires_at` has passed and so cannot
-delete one that is being answered. A settled answer past its day is a fresh command on
-the request that asks, not on the schedule's convenience. The cost of the refusal is
-one more press after a crash, and it is the price of never applying a slow command
-twice.
+it died", and no elapsed age tells them apart: taking over a marker that merely looked
+old applies the command twice, and no bound anybody can write down is longer than the
+request that can outlive it. So the row is asked instead of the clock. The owning
+request renews an `owner_lease` for as long as it is answering the claim, and a repeat
+that arrives while the lease is current is refused 409 whatever its row's deadlines
+say — a command slower than the five-minute in-flight marker is a command still being
+answered, not a dead one. The purge is fence and exit together, because it deletes an
+unsettled row only once that lease lapsed: a lapsed lease is the one statement it can
+make about a dead owner, and a row being renewed is no candidate at any age. A settled
+answer past its day is a fresh command on the request that asks, not on the schedule's
+convenience. The cost of the refusal is one more press after a crash, and it is the
+price of never applying a slow command twice.
 
 **Reused.** The claim joins the huma chain beside `a.publicWrites` and reuses
 `routeOf` as its operation identity; holding and replaying the response is the
