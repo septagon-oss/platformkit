@@ -449,27 +449,90 @@ const handlerTimeout = 25 * time.Second
 // work cannot create a false dead letter. An explicit operator replay must
 // remove the terminal claim as well as review the failure; relaying alone
 // deliberately cannot repeat a consequential action.
+//
+// Under which durable, then, is the row written? Under the one the app that
+// holds this tenant reads, and that is not always the durable the delivery
+// arrived on. A dead letter has one job: to make the next delivery of this event
+// to this subscription skip the handler (claim) and to be the row events.Replay
+// clears when an operator decides to ask again. The delivery that ends here is
+// the last one that will ever run under the name it arrived on — the transport
+// terminates the message as soon as this write commits — so a terminal record
+// written where no subscription looks is a dead letter that stops nothing and
+// that no replay of the subscription that did the work will ever find.
+//
+// The two spellings differ exactly once: after a placement, before this write. A
+// handled claim cannot land in that gap, because holdsUnscoped re-reads
+// tenants.app inside the delivery's own transaction and refuses the mark when the
+// tenant has taken an app. A terminal write cannot refuse: the message is
+// exhausted, and a refusal leaves it pending for a redelivery that will be
+// refused again, forever, with the failure recorded nowhere — the event would be
+// neither terminated nor replayable. It is the write that has to land somewhere,
+// so it lands in the ledger of the app that now holds the tenant, which is the
+// same ownership transition MoveLedger performs for rows that got there first:
+// the unscoped name, prefixed with the app tenants.app names.
+//
+// The read is as authoritative as holdsUnscoped's, for the same reason and in the
+// same order: declare the tenant, then ask. While this transaction holds that
+// shared key its tenant's move refuses rather than queues, so the answer is either
+// "nobody's, and no placement can commit under this record" or "somebody's, and
+// this record is theirs to carry" — and of a placement that landed first, this read
+// is the one that sees it.
 func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, cause error) error {
 	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 	defer cancel()
 	return db.RunSystem(ctx, conn, deadLetterToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		// The same declaration a delivery makes before it reads, for the same reason and
-		// with the same limit: this is a claim too, written at an unscoped durable, and a
-		// terminal record that lands after a move renamed its tenant's ledger is one no
-		// scoped durable will ever carry — so `claim` would let a handler run again for
-		// work the kernel had already given up on. A durable that names an app is renamed
-		// by nobody, so it declares nothing: the same WHEN clause as the trigger, and the
-		// same key it would take once the INSERT reached its row.
+		// The same declaration a delivery makes before it reads, and for the same reason:
+		// this is a claim too, written at an unscoped durable, so the question below is
+		// asked under the key that makes its answer one a move has to respect. A durable
+		// that names an app is renamed by nobody, so it declares nothing and asks nothing:
+		// the same WHEN clause as the trigger, and the same key it would take once the
+		// INSERT reached its row.
+		recorded := durable
 		if unscopedDurable(durable) {
 			if err := declareTenant(tx.DB(), ev.TenantID); err != nil {
 				return err
 			}
+			named, err := terminalDurable(ctx, ev, durable, tx.DB())
+			if err != nil {
+				return err
+			}
+			recorded = named
 		}
 		return tx.DB().Exec(`WITH claimed AS (
    INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
    ON CONFLICT DO NOTHING RETURNING event_id
   ) INSERT INTO `+deadLetters+` (event_id, durable, tenant_id, name, error)
    SELECT event_id, ?, ?, ?, ? FROM claimed ON CONFLICT DO NOTHING`,
-			ev.ID, durable, ev.TenantID, durable, ev.TenantID, ev.Name, cause.Error()).Error
+			ev.ID, recorded, ev.TenantID, recorded, ev.TenantID, ev.Name, cause.Error()).Error
 	})
+}
+
+// terminalDurable answers which durable this terminal outcome belongs to, of the
+// tenant it was recorded for and the durable the delivery arrived on.
+//
+// A tenant nobody placed keeps the delivered name: the app-less deployment is the
+// one that reads it (ledger.go's predicate for what a move may not touch), and
+// prefixing a row for an app nobody declared would be the write that takes its
+// claim away from the consumer that has it.
+//
+// A tenant whose app is set but is not a slug names a durable no consumer could
+// ever be created under — the refusal Consume and MoveLedger both make at boot —
+// so it keeps the delivered name too, and says so in the log: a mark under an
+// unnameable durable would be a dead letter no subscription and no replay could
+// ever find, which is the row this function exists to place.
+func terminalDurable(ctx context.Context, ev Event, delivered string, gdb *gorm.DB) (string, error) {
+	whose, err := appOfTenant(gdb, ev.TenantID)
+	if err != nil {
+		return "", err
+	}
+	if !appname.Name(whose).Named() {
+		return delivered, nil
+	}
+	app, err := appname.Parse(whose)
+	if err != nil {
+		slog.ErrorContext(ctx, "events: a terminal failure's tenant names an app no durable can be formed from",
+			"tenant", ev.TenantID, "event", ev.Name, "id", ev.ID, "durable", delivered, "error", err)
+		return delivered, nil
+	}
+	return appname.DurablePrefix(app) + delivered, nil
 }

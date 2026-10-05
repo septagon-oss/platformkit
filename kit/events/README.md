@@ -191,7 +191,13 @@ app while the delivery was being read is the one fact about it the placement cha
 underneath it, and a second nonlocking read answers that just as fast as the first. Such a delivery writes
 no claim and refuses its copy as the check before the transaction does: a mark under the
 unscoped durable would be a mark in the one ledger that tenant's own app will never look
-in, which is the window the move exists to close, marked instead of closed. `kit/app` runs
+in, which is the window the move exists to close, marked instead of closed. A terminal
+failure has no refusal available: its message is exhausted, and refusing the record would
+leave that delivery pending for a redelivery refused again, with the failure kept nowhere,
+so the dead letter moves rather than stopping — `deadLetter` declares its tenant, reads
+`tenants.app`, and records the outcome under the durable that tenant's own app subscribes
+and replays under, which is the transition above performs for rows that got there first.
+A tenant nobody placed keeps the unscoped name, where the app-less consumer looks. `kit/app` runs
 the step at boot and opens no consumer until it answers, so a refusal waits — the
 worker that consumed over an unscoped ledger would replay events whose claims are
 committed under the old name, which is the harm the move exists to close — and the
