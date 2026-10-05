@@ -698,9 +698,11 @@ refusal and the command), `reference_seed_test.go`, `seeded_home_test.go`,
 than for a row of this table. `kit/seed/kind_references_test.go` and
 `kit/seed/kind_move_prune_test.go` cover one resource declared in two kinds —
 its references and its provenance — and `seed_revoked_actor_grants_test.go`,
-`seed_task_title_update_test.go` and `seed_slug_normalization_test.go` cover the
+`seed_task_title_update_test.go`, `seed_slug_normalization_test.go` and
+`seed_task_natural_key_refusal_test.go` cover the
 grant re-read against a revocation that committed mid-run, an edited title on the
-row the file already wrote, and the owner's canonical slug.
+row the file already wrote, the owner's canonical slug, and the person's own task
+that a task key names but a run will neither adopt nor edit.
 
 | Case name | Fake setup and action | Required result |
 | --- | --- | --- |

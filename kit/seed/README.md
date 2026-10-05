@@ -93,6 +93,18 @@ use, refuses for a missing target in both `Plan` and `Apply`. That is a refusal
 that writes nothing, which is the safe side; it is not a resolution, and the
 sentence above is the honest shape of the rule.
 
+A natural key is the field a writer looks a row up by, so what it can *meet* is
+whatever carries that value, and a key whose text is not that field meets only
+somebody else's row. The reference application's task writer names `title` while
+its files' keys are seed names — `take-the-tour` declares the title
+`Take the tour of the site` — so the one row a task key can meet is a person who
+titled their own work like a seed key, and that row's title differs from the
+file's, so the run refuses it as unowned rather than adopting, editing or
+removing work it did not write
+(`TestATaskTitledLikeASeedKeyRefusesTheRunAndWritesNothing`). Renaming a shipped
+key to the title its record declares is that application's own tidying, not a
+kernel rule; what the run does meanwhile is refuse, and a refusal writes nothing.
+
 A command's seed run carries a person. `seedGrants` refuses one that carries
 nobody, and the command resolves `--as` to a user of the target tenant inside that
 tenant's own transaction before any grant is asked; the roles it checks are the
