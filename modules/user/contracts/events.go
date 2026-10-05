@@ -37,8 +37,12 @@ type Invited struct {
 	// that mails the set-password link builds it from this: a link built from the
 	// tenant's name alone opens port 80 on a development installation that serves
 	// its tenants behind a port, and only the call knew the port it arrived on.
-	// See auth's contracts.ResetRequested.Served and httpx.ServedAuthority, which
-	// is where the value is read. Not a credential and not an address to trust:
+	// The call is the one that started the invitation, however far downstream this
+	// event is published: an email-only sign-up creates the account in a worker, and
+	// httpx.ServedFrom answers with the address the event that worker is handling
+	// carried, so the port survives the handover. See auth's
+	// contracts.ResetRequested.Served and httpx.ServedAuthority, which is where the
+	// value is read off a request. Not a credential and not an address to trust:
 	// the name in it is a name tenancy already resolved to this tenant, and the
 	// only thing taken from it is the port.
 	Served string `json:"served,omitempty"`

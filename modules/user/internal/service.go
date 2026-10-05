@@ -52,15 +52,23 @@ var _ contracts.Service = (*Service)(nil)
 // address this call was answered at, because that subscriber runs in the worker,
 // after the call that asked is gone, and a set-password link that drops the port
 // it was asked at opens a server that is not this one.
+//
+// "The call that asked" includes the call that asked *this* one. A stranger's
+// email-only sign-up reaches no account, and it is a subscription — no request left
+// on its context, the request that made it long gone — that calls Invite to create
+// the account and raise this event. The address survives that far because
+// httpx.ServedFrom answers from the event being handled whenever no request is
+// being served, which is what a handler that read a `served` address out of an
+// outbox row restores onto its own context. An invitation asked by nothing at all —
+// the bootstrap, a replay — carries nothing, as it always did.
 func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := crud.Create(ctx, tx, u); err != nil {
 		return nil, err
 	}
-	askedAt, _ := httpx.RequestFrom(ctx)
 	return u, events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
-		Served: httpx.ServedAuthority(askedAt),
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 
@@ -313,10 +321,9 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	if err := tx.DB().Create(u).Error; err != nil {
 		return nil, fmt.Errorf("user: provision %s: %w", u.Email, err)
 	}
-	askedAt, _ := httpx.RequestFrom(ctx)
 	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
-		Served: httpx.ServedAuthority(askedAt),
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 

@@ -29,7 +29,9 @@ type RegistrationRequested struct {
 	DisplayName string    `json:"displayName"`
 	At          time.Time `json:"at"`
 	// Served is the address the request that asked was answered at, port and all,
-	// and empty when it named no port: the address is what a set-password link for
-	// an existing invited account has to be built on. See ResetRequested.Served.
+	// and empty when it named no port: the address every set-password link this
+	// request causes has to be built on, whether the account already existed and is
+	// mailed from here, or is created here and mailed from user.invited's own
+	// subscriber. See ResetRequested.Served.
 	Served string `json:"served,omitempty"`
 }

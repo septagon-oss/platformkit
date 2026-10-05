@@ -24,12 +24,14 @@ import (
 // The context carries it and not the argument list, because the two functions that
 // build a link — Offer and offerVerification — are each reached from more than one
 // event, and the port a link carries is nothing a caller should have to know.
-type servedKey struct{}
-
-// maxServed bounds what a handler will read back off an event payload. A DNS name
-// caps at 253 characters; an outbox row is a week old by the time it is read and
-// the audit trail copies it, so anything longer is not an address somebody typed.
-const maxServed = 253
+//
+// The slot it goes in is the kernel's, not a second one beside it. The value a
+// request answers with (httpx.ServedAuthority) and the value a worker restores
+// (httpx.WithServed) are one fact in one place, so a command that runs in the
+// worker and publishes an event of its own — user's Invite, which raises the
+// invitation this module mails — reads the address from where the request that
+// started it left it, instead of reporting that nothing was served anywhere.
+// See kit/httpx/authority.go.
 
 // WithServed returns ctx carrying the authority askedFor was served at, for the
 // handler that has to build a link from it. Each subscription that reads an
@@ -38,10 +40,7 @@ const maxServed = 253
 // common case — a request that saw no port, or no request at all — and leaves ctx
 // as it was.
 func WithServed(ctx context.Context, askedFor string) context.Context {
-	if !isAuthority(askedFor) {
-		return ctx
-	}
-	return context.WithValue(ctx, servedKey{}, askedFor)
+	return httpx.WithServed(ctx, askedFor)
 }
 
 // servedPort is the port to append to a link's host, and "" when the link takes
@@ -58,15 +57,15 @@ func WithServed(ctx context.Context, askedFor string) context.Context {
 // not the port behind the mapping, and no request is consulted for it. What this
 // function can contribute is the other case: an installation that declares no
 // public port and is served at a port of its own. That port is the one this
-// process accepted the connection on, which httpx.ServedAuthority read off the
-// socket where the event was published: a caller who writes a port we do not
-// serve is answered at the port we do, and that is the port the link carries.
+// process accepted the connection on, which httpx read off the socket where the
+// event was published and carried to this line: a caller who writes a port we do
+// not serve is answered at the port we do, and that is the port the link carries.
+//
+// Everything the address could be other than an address — a scheme, a path, a
+// space, a newline, a colon with no name in front of it, a port that is not a
+// number — is refused here by the same parse, and contributes nothing.
 func servedPort(ctx context.Context, host string) string {
-	askedFor, _ := ctx.Value(servedKey{}).(string)
-	if !isAuthority(askedFor) {
-		return ""
-	}
-	name, port, err := net.SplitHostPort(askedFor)
+	name, port, err := net.SplitHostPort(httpx.ServedFrom(ctx))
 	if err != nil || httpx.HostOnly(name) != httpx.HostOnly(host) {
 		return ""
 	}
@@ -77,15 +76,4 @@ func servedPort(ctx context.Context, host string) string {
 		return ""
 	}
 	return port
-}
-
-// isAuthority is what this context may carry: a name and a port, and nothing else.
-// net.SplitHostPort is the parser, so a scheme, a path, a space or a newline never
-// reaches a link.
-func isAuthority(s string) bool {
-	if s == "" || len(s) > maxServed {
-		return false
-	}
-	name, port, err := net.SplitHostPort(s)
-	return err == nil && name != "" && port != ""
 }

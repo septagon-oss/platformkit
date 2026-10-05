@@ -71,6 +71,14 @@ func RegistrationSubscription(svc *Service, users contracts.RegistrationUsers) e
 			if err := candidate.Validate(ctx); err != nil {
 				return fmt.Errorf("auth: invalid registration request: %w", err)
 			}
+			// The address this request was answered at comes back onto the handler's
+			// context before either branch, not only the one that mails from here. A
+			// new address is created by user's Invite, which raises user.invited in the
+			// same transaction, and it is that event's subscriber which mails the new
+			// person their link — so the address has to be where Invite can read it, or
+			// the invitation goes out naming the port the installation listens on rather
+			// than the one it is reached at. See internal/served.go.
+			ctx = WithServed(ctx, asked.Served)
 			key := fmt.Sprintf("auth/registration/%s/%x", db.TenantOf(tx).ID, contracts.Hash(contracts.EmailKey(candidate.Email)))
 			if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
 				return fmt.Errorf("auth: lock registration: %w", err)
@@ -78,7 +86,7 @@ func RegistrationSubscription(svc *Service, users contracts.RegistrationUsers) e
 			existing, err := users.ByEmail(ctx, tx, candidate.Email)
 			if err == nil {
 				if existing.Status == user.StatusInvited {
-					return svc.Offer(WithServed(ctx, asked.Served), tx, existing.ID)
+					return svc.Offer(ctx, tx, existing.ID)
 				}
 				return nil
 			}

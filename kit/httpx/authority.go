@@ -1,6 +1,7 @@
 package httpx
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strconv"
@@ -58,23 +59,78 @@ const maxAuthority = 253
 // at all — a job, a replay, a handler driven in-process — is served nowhere, and
 // carries nothing, the same absence TraceParent means.
 func ServedAuthority(r *http.Request) string {
-	if r == nil || len(r.Host) > maxAuthority {
+	if r == nil {
 		return ""
 	}
-	name, port, err := net.SplitHostPort(r.Host)
-	if err != nil || name == "" || port == "" {
-		return ""
-	}
-	// net.SplitHostPort splits; it does not check that what follows the colon is a
-	// port number, and a Host header is text somebody typed.
-	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+	name, _, ok := splitAuthority(r.Host)
+	if !ok {
 		return ""
 	}
 	served, ok := acceptedPort(r)
 	if !ok {
 		return ""
 	}
-	return strings.ToLower(name) + ":" + served
+	return name + ":" + served
+}
+
+type servedKey struct{}
+
+// WithServed returns ctx carrying an address an earlier call was answered at, for
+// the code that has to build a link out of it, and ctx unchanged for anything that
+// is not an address.
+//
+// It exists for the worker. A subscription runs after the request that caused it is
+// gone, so ServedFrom on its context would report nothing, and the link built there
+// would name a port nobody serves — which is why every event that ends in a mailed
+// link carries the address its own request was answered at, and the handler that
+// reads such an event restores it here. The value is not a fresh claim: it is one
+// this process wrote into its own outbox off a socket, and splitAuthority is the
+// same parse ServedAuthority applies to a request, so a payload that spells anything
+// other than a name and a port number carries nothing forward.
+func WithServed(ctx context.Context, served string) context.Context {
+	if _, _, ok := splitAuthority(served); !ok {
+		return ctx
+	}
+	return context.WithValue(ctx, servedKey{}, served)
+}
+
+// ServedFrom is the address this work was answered at — the same value
+// ServedAuthority reads off a request, and for the same reasons — extended to the
+// work a request set in motion but outlived.
+//
+// A request wins when the context carries one: a request is the address, and a
+// value restored from an event is a memory of one. A context with no request — a
+// job, a replay, a subscription's handler — answers with what its event carried,
+// or with nothing at all, which is the absence ServedAuthority already speaks: an
+// installation served at the scheme's port mails no port.
+//
+// See WithServed for who may put a value there, and modules/auth/internal/served.go
+// for what a link does with it: only the port is ever taken, and only onto a host
+// tenancy already vouched for.
+func ServedFrom(ctx context.Context) string {
+	if r, ok := RequestFrom(ctx); ok {
+		return ServedAuthority(r)
+	}
+	served, _ := ctx.Value(servedKey{}).(string)
+	return served
+}
+
+// splitAuthority is the parse both halves of this file share: a name and a port
+// number, and nothing else. net.SplitHostPort splits; it does not check that what
+// follows the colon is a port number, and both a Host header and an outbox payload
+// are text somebody wrote.
+func splitAuthority(authority string) (name, port string, ok bool) {
+	if authority == "" || len(authority) > maxAuthority {
+		return "", "", false
+	}
+	name, port, err := net.SplitHostPort(authority)
+	if err != nil || name == "" || port == "" {
+		return "", "", false
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return "", "", false
+	}
+	return strings.ToLower(name), port, true
 }
 
 // acceptedPort is the port this process accepted r's connection on, and false when
