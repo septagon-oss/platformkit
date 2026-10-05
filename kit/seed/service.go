@@ -61,7 +61,10 @@ type Key struct {
 
 // Writer is implemented by each owning resource at composition. Create,
 // Update and Delete must use the owner's normal validated, event-producing
-// write path. Read locks the owner row when forUpdate is true.
+// write path. Read locks the owner row when forUpdate is true. Target accounts
+// for every field the record declares, by naming it in Fields or in CreateOnly:
+// a field in neither is a declaration the run would read and then drop, so it
+// refuses the record at its own line before anything is written.
 type Writer interface {
 	Resource() Resource
 	Target(context.Context, Record, map[string]uuid.UUID, time.Time) (Target, error)
@@ -353,6 +356,12 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		target, err := writer.Target(ctx, entry.Record, maps.Clone(resolved), plan.At)
 		if err != nil {
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
+		}
+		// Nothing is written for a declaration this run cannot honour: the field is
+		// refused at its own line before the row, the mapping and the event.
+		if name, where := unappliedField(entry.Record, target); name != "" {
+			return Plan{}, fmt.Errorf("seed: %s: %s/%s declares %s, which its writer applies nowhere",
+				where, entry.Resource, entry.Record.Key, name)
 		}
 		decision := Decide(current, target)
 		if provisioning && decision.Action != Create {

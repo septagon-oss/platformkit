@@ -78,7 +78,11 @@ owner-normalized key, so two email spellings or two slugs that normalize alike
 refuse before writing. For a keyless resource `key` is an
 opaque stable seed name used only in `seed_keys`. Keys are unique within the
 resource across starter and demo files; duplicate keys across kinds refuse.
-`fields` contains only fields that the owning create/update path accepts.
+`fields` contains only fields that the owning create/update path accepts. A
+declared field its writer's `Target` carries nowhere — an unknown name, or a
+read-only field such as a task's `status` or `resolvedAt` — refuses at that
+field's own line before the record's row, mapping and event, which is the same
+rule `commands` already answers to: a run writes what it read.
 `commands` is an ordered list of named owner commands with their arguments;
 the writer declares the command names and their desired-state comparator. A
 command such as publish is called only while its target state differs. The
@@ -194,12 +198,19 @@ records:
 ```
 
 `asset` resolves relative to its YAML file within the embedded root, without
-`..` or absolute paths.
-The file writer compares the asset digest and declared metadata, and calls
-`file.Service.Upload` when they change. It updates `seed_keys` to the returned
-ID in the same tenant transaction. A replaced blob's old row is left alone;
-`prune: true` concerns removed keys, not historical IDs replaced under the
-same key. An upload
+`..` or absolute paths, and its bytes are read out of the same `fs.FS` the
+records were loaded from: a run that read its records from one tree uploads the
+assets in that tree and nothing else. The upload's name is the last part of that
+path, a declared `contentType` must be the type that name already has, and
+`visibility` is the module's own `public` or `private` — public is what a record
+that names none asks for, and a third answer refuses the record. The file writer
+uploads those bytes through `file.Service.Upload` once. It writes no bytes over an
+existing upload: a rerun reads back the name, media type and visibility the row
+carries, finds the three equal, and uploads nothing, because re-uploading would
+leave a new row and new bytes on every deploy with the old ones behind. It updates
+`seed_keys` to the returned ID in the same tenant transaction. No upload is ever
+replaced under one key, so `prune` — which files never declare — would concern
+removed keys and nothing else. An upload
 writes bytes before its row; rollback can leave unreachable bytes for the
 existing file sweep, never a committed row pointing at missing bytes.
 
@@ -257,7 +268,11 @@ writer patches it, so editing the line in the file edits the same task. The writ
 declares **no commands**: assignment is the `assignee` reference field above, not
 a `commands:` entry, and `kit/seed` refuses a command a writer does not offer
 before it reads a row. A seeded task is created through the Spec write core and,
-where a person is named, assigned by `task.Service.Assign`.
+where a person is named, assigned by `task.Service.Assign`. A record that stops
+naming an assignee neither converges nor half-writes: the module has no command
+that takes work back, so the run refuses and commits nothing, because patching the
+row's other fields while the assignee stayed in place would report a change the run
+did not make, on every run after it.
 
 `dueAt` is resolved against the run's injected clock and applied when the record
 is **created** — see *Time, audit and external effects*. A plain reference has

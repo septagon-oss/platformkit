@@ -101,7 +101,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	want := normalise(roles)
+	want := contracts.CanonicalRoles(roles)
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
 		return u, nil
@@ -298,7 +298,7 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	at := db.Now()
 	u := &contracts.User{
 		Email: email, DisplayName: displayName, Status: status,
-		Roles: normalise(roles), PasswordHash: hash,
+		Roles: contracts.CanonicalRoles(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at
 	if err := u.Validate(ctx); err != nil {
@@ -312,16 +312,7 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	})
 }
 
-// normalise is the stored form of a role set: trimmed, lower-cased, deduplicated
-// and sorted. Sorted, so that "the same roles in another order" is the same
-// value and SetRoles can tell that nothing changed.
-func normalise(roles []string) contracts.Roles {
-	out := make(contracts.Roles, 0, len(roles))
-	for _, r := range roles {
-		if r = strings.ToLower(strings.TrimSpace(r)); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
+// The stored form of a role set — trimmed, lower-cased, deduplicated and sorted,
+// so "the same roles in another order" is the same value and SetRoles can tell
+// that nothing changed — is contracts.CanonicalRoles: the entity's own rule, read
+// by the callers that have to meet the row a list names rather than repeated here.

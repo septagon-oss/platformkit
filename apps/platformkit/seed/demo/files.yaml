@@ -5,8 +5,9 @@
 #
 # They go through the file module's own Upload — the door the upload form uses —
 # so the row is counted, hashed, quota-checked and announced by file.uploaded like
-# any other upload. What the seed manages about it is the name and the media type;
-# the bytes have one owner, and it is not a YAML record.
+# any other upload. What the seed manages about it is the name, the media type and
+# the visibility the record declares: the bytes have one owner, and it is not a
+# YAML record.
 #
 # No page embeds it yet: no owner field in this checkout links a content row to a
 # file row, and a seed that invented one would be writing a second schema. That

@@ -144,6 +144,26 @@ func (u *User) CanSignIn() bool { return u.Status == StatusActive && u.PasswordH
 // and drifting from it.
 func CanonicalEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
 
+// CanonicalRoles is a role list as this module stores it: each name trimmed and
+// folded to lower case, blanks and repeats dropped, then sorted, because the
+// set a person holds is one answer whatever order and padding named it. SetRoles,
+// the registration input and any caller that has to meet the row a list names (a
+// seed record, an import) ask this one function rather than spelling the fold
+// again and drifting from it — a comparison against a list the module would never
+// store is a comparison that never ends, on every run, with a write nobody asked
+// for. Names outside roleName still refuse: this folds a spelling, it does not
+// invent a role.
+func CanonicalRoles(roles []string) Roles {
+	out := make(Roles, 0, len(roles))
+	for _, role := range roles {
+		if role = strings.ToLower(strings.TrimSpace(role)); role != "" && !slices.Contains(out, role) {
+			out = append(out, role)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: an address that
 // differs only in case or in whitespace is the same mailbox, and two callers

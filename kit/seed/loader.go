@@ -36,6 +36,32 @@ type Record struct {
 	Asset    string
 	Source   Source
 	Values   map[string]Source // source of each top-level field and command argument
+
+	// files is the filesystem these records were loaded from. Asset is resolved
+	// against the record's own document, so the only honest way to read it is
+	// through the tree it was resolved in — see AssetBytes.
+	files fs.FS
+}
+
+// AssetBytes reads the bytes the record's `asset` names, from the same tree
+// these records were loaded from. `asset` is relative to the document, so a
+// writer that stores the record's file reads it here and resolves no second
+// path of its own: the record and the bytes it names have one source, and a run
+// that loaded its records from one filesystem uploads the assets in that same
+// filesystem. Load already refused an `asset` that is not a regular file in
+// this tree, so what fails here is a tree that changed under the run.
+func (r Record) AssetBytes() ([]byte, error) {
+	if r.Asset == "" {
+		return nil, fmt.Errorf("seed: %s: this record declares no asset", r.Source)
+	}
+	if r.files == nil {
+		return nil, fmt.Errorf("seed: %s: asset %q has no readable source", r.Source, r.Asset)
+	}
+	data, err := fs.ReadFile(r.files, r.Asset)
+	if err != nil {
+		return nil, fmt.Errorf("seed: %s: asset %q: %w", r.Source, r.Asset, err)
+	}
+	return data, nil
 }
 
 // Command names an owning module's write command and its arguments.
@@ -202,7 +228,7 @@ func parseRecord(node *yaml.Node, filename string, files fs.FS) (Record, error) 
 	if key == "" || len(key) > 1024 || !utf8.ValidString(key) || strings.IndexFunc(key, unicode.IsControl) >= 0 {
 		return Record{}, fmt.Errorf("seed: %s: invalid record key", source(filename, node))
 	}
-	record := Record{Key: key, Source: source(filename, node), Values: make(map[string]Source)}
+	record := Record{Key: key, Source: source(filename, node), Values: make(map[string]Source), files: files}
 	if fields := values["fields"]; fields != nil {
 		members, err := mapping(fields, filename)
 		if err != nil {

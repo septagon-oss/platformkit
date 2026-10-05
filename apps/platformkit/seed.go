@@ -10,6 +10,7 @@ package main
 // the event its owner publishes, which is how it reaches the audit trail.
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
@@ -762,7 +763,22 @@ func (w taskSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Sn
 
 func (w taskSeeder) assign(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
 	want, _ := t.Fields["assignee"].(uuid.UUID)
-	if want == uuid.Nil || want == cur.Fields["assignee"] {
+	have, _ := cur.Fields["assignee"].(uuid.UUID)
+	if want == uuid.Nil {
+		// The file names nobody. On a create that is an unassigned row, which is what
+		// a run with no person to assign as may write at all (see Target). On an
+		// update it is a record that took the name away — and the module has no
+		// command that takes one back: Assign gives work to a person, and putting it
+		// back on the pile is whoever holds it saying they no longer have it. So the
+		// run refuses in words and writes nothing: patching the row's other fields,
+		// publishing an update and leaving the assignee in place would be a seed that
+		// reported a change it did not make, on every run, forever.
+		if have != uuid.Nil {
+			return seed.Snapshot{}, errors.New("task: this file names no assignee, and the module has no command to take one back: the row is assigned, so this file cannot unassign it")
+		}
+		return cur, nil
+	}
+	if want == have {
 		return cur, nil
 	}
 	row, err := w.svc.Assign(ctx, tx, cur.ID, want)
@@ -791,17 +807,10 @@ func assigned(row *taskcontracts.Task) seed.Snapshot {
 // fileSeeder seeds the one image a demonstration carries. The bytes live beside
 // the record that names them, in the same embedded tree the records came from, and
 // they go through the file module's own Upload — the door the upload form uses —
-// so a seeded file is counted, hashed, quota-checked and announced by
-// file.uploaded exactly as an upload is. No row is written by hand here.
+// so a seeded file is counted, hashed, quota-checked, given the visibility its
+// record declares, and announced by file.uploaded exactly as an upload is. No row
+// is written by hand here.
 type fileSeeder struct{ svc filecontracts.Service }
-
-// seedAssets is that tree, spelled from the record's own key: `asset` names a
-// file beside the YAML, the loader checked it is a regular file, and the name the
-// record gives the upload is the last part of it. A Target carries a value and not
-// a source path, so this is where the two meet — and a record whose asset is not
-// where its name says it is fails here, rather than quietly uploading something
-// else with the same name.
-const seedAssets = "seed/demo/assets/"
 
 func (fileSeeder) Resource() seed.Resource {
 	return seed.Resource{
@@ -816,17 +825,57 @@ func (fileSeeder) Resource() seed.Resource {
 	}
 }
 
+// A file record's bytes live beside the document that names them. The loader
+// resolves `asset` against its own document, refuses a path that leaves the tree,
+// and Record.AssetBytes reads what that path names out of the filesystem the
+// records were loaded from — so the bytes a record uploads are the bytes that
+// record points at, and a run that read its records from one tree can never upload
+// out of another. The name the upload carries is the last part of the path the
+// record named, the only part a reader of the file can see.
 func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
 	if r.Asset == "" {
 		return seed.Target{}, errors.New("a file record names the asset beside it")
 	}
-	name := path.Base(r.Asset)
-	if name != seedText(r.Fields["name"]) && seedText(r.Fields["name"]) != "" {
-		return seed.Target{}, fmt.Errorf("a file record's key names its asset %q, not %q", name, seedText(r.Fields["name"]))
+	// Read them here, at the record's own line: bytes that have gone between
+	// loading and applying refuse this record, not the upload.
+	body, err := r.AssetBytes()
+	if err != nil {
+		return seed.Target{}, err
 	}
-	return seed.Target{Fields: map[string]any{
-		"name": name, "contentType": mime.TypeByExtension(strings.ToLower(path.Ext(name))),
-	}}, nil
+	name := path.Base(r.Asset)
+	if declared := seedText(r.Fields["name"]); declared != "" && declared != name {
+		return seed.Target{}, fmt.Errorf("a file record's key names its asset %q, not %q", name, declared)
+	}
+	// The media type is the name's, because the name is the record's own answer
+	// about the upload. A record that also states one must state the same type:
+	// reading a declared contentType and then storing the extension's answer would
+	// be reading the field and throwing it away.
+	contentType := mime.TypeByExtension(strings.ToLower(path.Ext(name)))
+	if declared := seedText(r.Fields["contentType"]); declared != "" && declared != contentType {
+		return seed.Target{}, fmt.Errorf("a file record's asset %q has media type %q, not %q", name, contentType, declared)
+	}
+	// Visibility travels to the owner's Upload. Which reader a stored file answers
+	// is the record's own declaration, and the module's two visibilities are the
+	// only answers: a seed that named one of them for every record would hand an
+	// anonymous reader the bytes a file declared private.
+	visibility := seedText(r.Fields["visibility"])
+	if visibility == "" {
+		visibility = filecontracts.VisibilityPublic
+	}
+	if visibility != filecontracts.VisibilityPublic && visibility != filecontracts.VisibilityPrivate {
+		return seed.Target{}, fmt.Errorf("visibility %q is not %s or %s", visibility,
+			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
+	}
+	// The bytes are create-only, the way a deadline is: an upload writes them once
+	// and no rerun patches them (see Update), so they are an instruction for the
+	// record's creation and not a state to reconcile against a stored digest.
+	return seed.Target{
+		Fields: map[string]any{
+			"name": name, "contentType": contentType,
+			"visibility": visibility,
+		},
+		CreateOnly: map[string]any{"asset": body},
+	}, nil
 }
 
 func (fileSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _ bool) (seed.Snapshot, error) {
@@ -847,18 +896,15 @@ func (fileSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.Key, _
 	if err != nil {
 		return seed.Snapshot{}, err
 	}
-	return seed.Snapshot{Present: true, ID: row.ID,
-		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType}}, nil
+	return fileState(row), nil
 }
 
 func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
-	name, _ := t.Fields["name"].(string)
-	body := seedAssets + name
-	file, err := seedFiles.Open(body)
-	if err != nil {
-		return seed.Snapshot{}, fmt.Errorf("the seed's own asset %q is not in the binary: %w", body, err)
+	name := seedText(t.Fields["name"])
+	body, uploaded := t.CreateOnly["asset"].([]byte)
+	if !uploaded {
+		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no asset bytes to upload", name)
 	}
-	defer file.Close()
 	// The accessor answers with the run's own transaction, because there is
 	// nothing to stream: the bytes are already in the binary, so no connection
 	// stands open while they arrive, which is the only reason Upload takes an
@@ -866,19 +912,31 @@ func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 	row, err := w.svc.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
 		filecontracts.Upload{
 			Name: name, ContentType: seedText(t.Fields["contentType"]),
-			Visibility: filecontracts.VisibilityPublic, Declared: -1, Body: file,
+			Visibility: seedText(t.Fields["visibility"]), Declared: -1, Body: bytes.NewReader(body),
 		})
 	if err != nil {
 		return seed.Snapshot{}, err
 	}
-	return seed.Snapshot{Present: true, ID: row.ID,
-		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType}}, nil
+	return fileState(row), nil
 }
 
-// Update refuses, and the refusal is the design: a rerun reads back the name and
-// the media type it stored, finds them unchanged, and never reaches here. The
-// alternative — re-uploading the asset every run — would leave a new row and new
-// bytes on every deploy, and the old ones behind.
+// fileState is the record as its owner stores it: the name a list shows, the
+// media type a response header carries, and the visibility that decides which
+// reader an Open answers. Read, Create and the rerun that finds them all equal
+// come through here, because the two sides of the comparison must be the same
+// three facts in the same three spellings — and a snapshot that left the
+// visibility out would call a record the file declared private unchanged while it
+// sat in a public row.
+func fileState(row *filecontracts.File) seed.Snapshot {
+	return seed.Snapshot{Present: true, ID: row.ID,
+		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType,
+			"visibility": row.Visibility}}
+}
+
+// Update refuses, and the refusal is the design: a rerun reads back the name, the
+// media type and the visibility it stored, finds them unchanged, and never reaches
+// here. The alternative — re-uploading the asset every run — would leave a new row
+// and new bytes on every deploy, and the old ones behind.
 func (fileSeeder) Update(context.Context, db.Tx[db.Tenant], seed.Snapshot, seed.Target) (seed.Snapshot, error) {
 	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
 }
@@ -887,8 +945,8 @@ func (fileSeeder) Delete(context.Context, db.Tx[db.Tenant], seed.Snapshot) error
 	return errors.New("file: a seeded upload is a person's file from the moment it exists")
 }
 
-// seedRoles_ reads the record's roles field as the sorted list both sides of the
-// comparison use. YAML hands a list as []any of strings; the module hands
+// seedRoles_ reads the record's roles field as the canonical list both sides of
+// the comparison use. YAML hands a list as []any of strings; the module hands
 // contracts.Roles. Both arrive here and leave as one thing, because Decide
 // compares Go types and not intentions.
 func seedRoles_(v any) ([]string, error) {
@@ -911,17 +969,15 @@ func seedRoles_(v any) ([]string, error) {
 	return nil, fmt.Errorf("roles holds %v, which is not a list of role names", v)
 }
 
-// seedRolesSorted is the same list in the same order, with the empty answers
-// collapsed to one value: an invited person holds no roles, and a file that
-// names none asks for no roles, and those two sentences agree only if both sides
-// print the same empty slice.
+// seedRolesSorted is a role set in the one spelling both sides of the comparison
+// use — the module's own, contracts.CanonicalRoles, which is what SetRoles stores.
+// Trimmed, lower-cased, deduplicated and sorted, and the empty answer collapsed to
+// one value: an invited person holds no roles, a file that names none asks for
+// none, and those two sentences agree only if both sides print the same empty
+// slice. Comparing against a spelling the owner would never store is a comparison
+// that ends in a write on every run forever, for a file that never changed.
 func seedRolesSorted(roles []string) []string {
-	out := slices.Clone([]string(roles))
-	if out == nil {
-		out = []string{}
-	}
-	slices.Sort(out)
-	return out
+	return []string(usercontracts.CanonicalRoles(roles))
 }
 
 // seedText is a seed field read as text. A file that puts a number or a list where a

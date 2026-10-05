@@ -35,6 +35,15 @@ reconciliation logic. The reference application composes them in
 
 ## Limits
 
+A record may declare no field its writer leaves behind. `Target` is the writer's
+answer about the record's fields — the state it reconciles in `Fields`, the
+instruction its creation applies in `CreateOnly` — and a declared name in neither
+is a declaration the run read and threw away. The service refuses it at the
+field's own line, before the row, the mapping and the owner's event, the way it
+refuses a command the writer does not offer. Writing the record's other fields and
+reporting the run a success would be a seed that claimed a file it had partly
+ignored.
+
 A writer may carry a declared value as `Target.CreateOnly`: the fields its record's
 creation applies and no later run reconciles, because the declared value is read
 against the run's clock (`+3d` means three days from the run that wrote the row)
@@ -42,8 +51,9 @@ and the field itself belongs to whoever holds the record afterwards. `Decide` ne
 reads them, so a rerun of the same file reads as unchanged; `Create` applies them
 and `Update` must not. The alternative is a value that moves with every clock and
 so reports an update on every run forever, rewriting a field a person can change
-through its own screen. `apps/platformkit`'s task writer is the one writer that uses
-it, for a declared `dueAt`.
+through its own screen. Two of the reference application's writers use it: the
+task writer for a declared `dueAt`, and the file writer for the bytes of the
+record's own `asset`, which an upload writes once and no later run patches.
 
 The demo refusal reads `tenants.demo` under the run's own transaction, not the
 `tenancy.Tenant` value on the context, so a caller that builds its own tenant value

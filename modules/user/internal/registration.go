@@ -30,7 +30,7 @@ func (s *Service) RegisterUnverified(ctx context.Context, tx db.Tx[db.Tenant], i
 }
 
 func (s *Service) registerPassword(ctx context.Context, tx db.Tx[db.Tenant], in contracts.PasswordRegistration, status string) (*contracts.User, error) {
-	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: status, Roles: normalise(in.Roles)}
+	u := &contracts.User{Email: in.Email, DisplayName: in.DisplayName, Status: status, Roles: contracts.CanonicalRoles(in.Roles)}
 	if err := u.Validate(ctx); err != nil {
 		return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
 	}
