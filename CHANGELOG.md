@@ -72,14 +72,17 @@ commit. The same key and the same bytes then replay that answer and run nothing 
 byte, `Location` and `HX-Redirect` included — the same key with other bytes is refused 422
 `IDEMPOTENCY_KEY_REUSE`, a repeat while the first is still running is refused 409
 `IDEMPOTENCY_IN_PROGRESS` with a `Retry-After`, a key that is not a lowercase UUID is
-refused 422, an answer too big to hold settles as "it ran; read the result", and a 5xx
-deletes the claim so a retry runs the command. The rows are
+refused 422, an answer too big to hold settles as "it ran; read the result", and a 5xx —
+or a request transaction that never committed, the hung-up caller whose buffered 200
+nobody read included — deletes the claim so a retry runs the command. The rows are
 `platformkit_idempotency` (`migrations/000042`), keyed by tenant, caller, operation and
 key under forced row-level security that no tenant transaction can read through, empty for
 a day, emptied by the `idempotency-purge` job. `ui/assets/js/command.js` is the kernel's
-first htmx extension: a form with `hx-ext="command"` mints one key per submission, keeps it
-in `sessionStorage` so a reload does not mint a second, retries the identical bytes on a
-transport failure with a bound of four, and stays quiet until the attempts run out — then
+first htmx extension: a form with `hx-ext="command"` mints one key per submission, holds it
+for the document that minted it — a reload redraws the page from the server, which is what
+tells the person whether to press again, and the next press is a new command — retries the
+identical bytes on a transport failure with a bound of four, and stays quiet until the
+attempts run out — then
 the existing notice appears, because a conflict is still somebody else's and is never
 erased. Its budget is `ui.CommandControllerBudget`, 6144 bytes, checked by `make check`.
 Nothing changed for a form that did not opt in.

@@ -200,10 +200,14 @@ recorded outside the transaction, immediately inside `respond`, which is the one
 place that knows what reached the wire. So the same key with the same bytes answers
 the stored response and runs nothing; the same key with other bytes is a different
 command and is refused 422; a repeat while the first is running is refused 409 with
-a `Retry-After`; a 5xx deletes the claim, because a refusal nobody received is not
-an answer to remember. `ValidateDeclarations` refuses, at boot, the three
-declarations that cannot mean what they say: a safe method, the Public surface
-(no principal to scope a key to), and a streamed body.
+a `Retry-After`. A claim settles only on work the database kept: a 5xx deletes the
+claim, because a refusal nobody received is not an answer to remember, and so does a
+transaction that did not commit, whatever the handler had written — which is the case
+of the caller that hung up mid-commit, whose buffered 200 `a.transaction` keeps in
+place because nobody is left to read it, and whose retry with the same key must run.
+`ValidateDeclarations` refuses, at boot, the three declarations that cannot mean what
+they say: a safe method, the Public surface (no principal to scope a key to), and a
+streamed body.
 
 The rows live in `platformkit_idempotency` (migration `000042`), keyed by tenant,
 caller, operation and key, written only by this package under its own system token,
@@ -236,5 +240,21 @@ field rather than a parallel extension — one declaration, read by the document
 boot gate and the request gate; the two-clock kernel table (a short in-flight bound
 plus a long retention one) with a purge beside `limit-purge`; the five refusal codes
 with their sentences in the catalogue; and `ui/assets/js/command.js` itself, the
-kernel's first htmx extension, which is the piece `modules/tasks`'s hand-written
-`recovery.js` is now replaced by rather than copied by.
+kernel's first htmx extension.
+
+**Limits.** The browser half holds one submission record per form, for as long as the
+document that wrote it is the page in front of the person, and no longer. A record that
+outlived its document could not tell the person retrying a submission whose answer was
+lost from the person asking for a new command — the same form, the same bytes, one key
+either way — and the wrong guess either replaced the new command with the old one's
+stored answer or ran the lost one twice. So a reload ends the record, `command.js`
+mints a fresh key, the kernel applies the next command, and the person judges the next
+press by the page they were given. That is a narrower promise than one intent
+recognized across a reload, and it is the one a controller can keep. Two items the
+brief decided are not delivered here: the controller renders no outcome region of its
+own and defers to the page-wide `[data-request-notice]` nodes `ui/document` renders,
+which is one notice per request rather than one per form; and there is no gallery
+example page, because `/app/auth/sessions` is the page this opt-in lives on and
+`e2e/command-idempotency.spec.ts` drives it. No other browser script is replaced here:
+nothing composes `command.js` but the routes that declare the key, and moving another
+repository's hand-written retry code onto it is that repository's own change.
