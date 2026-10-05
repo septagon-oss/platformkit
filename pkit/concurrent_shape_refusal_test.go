@@ -14,6 +14,20 @@ import (
 
 // A concurrent boot can declare an event while another boot is opening its
 // transport. Whichever composition is refused must leave its database empty.
+
+// reachesTransportBound is how long this case waits for a build to arrive at the
+// transport hook it holds there. It is a watchdog over a rendezvous, not the
+// assertion: what the case checks is that a refused build leaves nothing written.
+// Alone, the build arrives in under a second (`go test ./pkit
+// -run '^TestConcurrentShapeRefusalHasNoEffects$' -count=1` -> ok in 0.297s).
+// Inside `make check`, with the whole of ./... sharing one Postgres, the build had
+// to migrate first and had not arrived at 15 seconds —
+// `concurrent_shape_refusal_test.go:45: the first build did not reach its
+// transport` — which is a stopwatch refusing a loaded box, the same mistake this
+// round removed from kit/app's boot harness and from the check stage. Two minutes
+// still refuses a build that never gets there; nothing the case asserts moved.
+const reachesTransportBound = 2 * time.Minute
+
 func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	firstDB := onOneDatabase(t)
 	t.Cleanup(func() { events.DeclareAll(nil) })
@@ -41,7 +55,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	}()
 	select {
 	case <-firstAtTransport:
-	case <-time.After(15 * time.Second):
+	case <-time.After(reachesTransportBound):
 		t.Fatal("the first build did not reach its transport")
 	}
 
