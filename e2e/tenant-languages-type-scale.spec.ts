@@ -1,17 +1,11 @@
 import { expect, test } from '@playwright/test';
-
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
+import { signIn } from './steps/admin';
 
 // The design floor's other three rules on the page this delivery created: body
 // text in at most two sizes, every text at 4.5:1 against what is behind it, and
 // paragraphs no wider than 75 characters. Measured the way the floor measures.
 test('the tenant languages page keeps one body size, readable contrast and a readable measure', async ({ page }) => {
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signIn(page);
   await page.goto('/app/tenant/languages');
   await expect(page.locator('select[name="default"]')).toBeVisible();
 
