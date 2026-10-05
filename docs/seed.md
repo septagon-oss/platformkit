@@ -750,7 +750,10 @@ What Postgres conformance covers, and where:
   as the one person the user module stores and emits no second event;
   `TestRespellingAPagesKeyToItsSlugDoesNotPruneIt`
   (`apps/platformkit/seed_slug_respelled_prune_test.go`) proves a pruning file that
-  respells a key keeps the page; `TestTwoSpellingsOfOneIdentityRefuseAtTheSecondDeclaration`
+  respells a key keeps the page; `TestSeededPersonIsProvenancedUnderTheAddressTheModuleStores`
+  (`apps/platformkit/seed_user_mapping_spelling_test.go`) reads `seed_keys` and asks
+  that one person holds one mapping, written in the module's spelling;
+  `TestTwoSpellingsOfOneIdentityRefuseAtTheSecondDeclaration`
   (`kit/seed/duplicate_identity_test.go`) refuses two declarations that fold to one
   record and writes nothing. `TestEverySnapshotFieldAWriterFillsIsReadByTheService`
   (`kit/seed/snapshot_fields_read_test.go`) reads the port's own source and refuses
