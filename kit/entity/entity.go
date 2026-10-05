@@ -19,12 +19,54 @@ import (
 // The three fields a caller may read are marked read-only for OpenAPI and not
 // required in a request body: the server sets all of them, so a create that had
 // to send an id would be a create that could choose one.
+// Fallback is what one translatable field of one response really is: which
+// language the value shown is written in, and how far behind the source it is.
+//
+// It exists because "the response is in Portuguese" is false of a response
+// with a fallback in it, and a reader deserves to know which half is English.
+// The closed set of Status is kit/rest's five: missing, outdated, machine,
+// withheld and removed.
+type Fallback struct {
+	// Locale is the language the value in the field is actually written in —
+	// the tenant's default for a fallback, the requested tag for an outdated or
+	// machine translation the caller is being shown.
+	Locale string `json:"locale"`
+	Status string `json:"status"`
+}
+
 type Base struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id" required:"false" readOnly:"true"`
 	TenantID  uuid.UUID  `gorm:"type:uuid;not null" json:"-"`
 	CreatedAt time.Time  `json:"createdAt" required:"false" readOnly:"true"`
 	UpdatedAt time.Time  `json:"updatedAt" required:"false" readOnly:"true"`
 	DeletedAt *time.Time `gorm:"index" json:"-"`
+	// I18N names the fields whose value is not in the language this response is
+	// answered in. Only the read path fills it and no caller ever does: a PATCH
+	// that names "_i18n" is the same refusal as one that names a field the
+	// entity does not have, because derive admits no map type, so this member
+	// reaches no screen, no filter, no sort and no merge.
+	//
+	// It lives on Base rather than beside an entity because an embedded struct's
+	// fields are promoted, which puts the member inline in the object — the one
+	// place it can live without forking Item and Page into translated twins or
+	// changing any resource's response type. Three tags make that safe, and each
+	// is a boundary rather than a style:
+	//
+	//   gorm:"-"    it is not a column, so no read or write of a row touches it;
+	//   omitempty  every entity with nothing translatable keeps the member
+	//              absent, which is what makes this delivery invisible to a
+	//              resource that declares no translatable field;
+	//   hidden     it is not in the OpenAPI document, because a member the
+	//              caller may read and may never send is a member the request
+	//              schema must not offer — and Base is embedded by every entity
+	//              in the installation, so one leaked field here is a leaked
+	//              field in every operation's body.
+	//
+	// It is a pointer so that Base stays comparable: a map field would make
+	// every entity struct in the kernel incomparable, which kit/crud's own test
+	// and any caller that compares two loaded rows would find out about at
+	// compile time. nil is "nothing fell back", which is what omitempty says.
+	I18N *map[string]Fallback `gorm:"-" json:"_i18n,omitempty" readOnly:"true" hidden:"true"`
 }
 
 // base is how the storage adapter reaches the embedded fields of any entity. It is

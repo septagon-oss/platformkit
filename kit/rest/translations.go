@@ -1,0 +1,309 @@
+// The translation door of kit/rest: what a resource does with a field tagged
+// `i18n:"translatable"`.
+//
+// Two interfaces live here, and the direction each points in is the reason
+// neither lives in a module.
+//
+// Translations is the door a rest.Spec knocks on to read and write one
+// record's translations. It is declared in the kernel because the direction of
+// the dependency is module→kernel: a module may not be reached from the
+// kernel's HTTP layer, so the shape the kernel asks for has to be the kernel's
+// own, and modules/translation implements it. The Spec holds it as one field
+// wired by hand at composition, the same way RichTextFiles is wired; nothing
+// discovers it.
+//
+// TranslationSource points the other way, and exists because one question is
+// unanswerable from the translations table alone. "Missing" means *no row*,
+// and no row of which records exist is a fact about the entity's table, which
+// belongs to another module. So the row set of the entity arrives at the
+// translation module through a port the translation module does not own and
+// cannot fill — house rule 5, a higher-tier collaborator reached through a
+// port declared here and implemented at composition — and the only reflection
+// anywhere is the kernel's own, one line per mounting module:
+//
+//	Sources: []rest.TranslationSource{rest.TranslationSourceOf(contentSpec)}
+//
+// There is no registry and no discovery: the composition writes the list and
+// the compiler checks it.
+package rest
+
+import (
+	"context"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
+)
+
+// The five states one translatable field of one response can be in. Four of
+// them belong to a row; missing belongs to the pair with no row, which is why
+// the storage column holds three values and a response names five.
+const (
+	// FallbackMissing: this locale has no row for the field, so the value shown
+	// is the source.
+	FallbackMissing = "missing"
+	// FallbackOutdated: the row exists, but its source has moved since. The
+	// value shown is the translation, and it is behind.
+	FallbackOutdated = "outdated"
+	// FallbackMachine: the workspace sees a machine draft no person has
+	// reviewed yet. The value shown is that draft, labelled.
+	FallbackMachine = "machine"
+	// FallbackWithheld: the only row is an unreviewed machine draft and the
+	// door is public, so the value shown is the source. The row is not served
+	// and its existence is not announced.
+	FallbackWithheld = "withheld"
+	// FallbackRemoved: the caller named a language the tenant no longer
+	// declares. Rows exist; nothing serves them.
+	FallbackRemoved = "removed"
+)
+
+// The two origins a translation can arrive from. Provenance is never erased:
+// a person who types over a machine draft keeps origin machine and gains a
+// reviewed_at, because what a person typed is reviewed by being typed.
+const (
+	OriginHuman   = "human"
+	OriginMachine = "machine"
+)
+
+// TranslatedField is one field of one record as one locale has it.
+type TranslatedField struct {
+	Value string `json:"value"`
+	// Status is FallbackOutdated, FallbackMachine or "" — the two states a
+	// caller cannot derive from the value alone. A field returned with an
+	// empty Status is that locale's own reviewed text: nothing to say, and the
+	// field is absent from _i18n.
+	Status string `json:"status,omitempty"`
+	// Origin and ReviewedAt are what a reviewer sees and a public reader does
+	// not: "Machine — needs review" is drawn from these two.
+	Origin     string     `json:"origin,omitempty"`
+	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
+	// Revision is the row's own, which is what a caller sends back as its
+	// expected revision. A field with no row expects 0.
+	Revision int64 `json:"revision"`
+	// SourceText and SourceHash are the source as this translation saw it. The
+	// side-by-side view needs the first to highlight against, and the second
+	// to say whether it still matches.
+	SourceText string `json:"sourceText,omitempty"`
+	SourceHash string `json:"sourceHash,omitempty"`
+}
+
+// TranslatedQuery names one locale's rows for a page of records of one entity,
+// and — this is the part that is not a filter — the current source text of
+// every translatable field of every record named. Outdating is a comparison
+// against the source as it stands, and the caller is the one holding the source
+// under the row lock; the translation module never reaches into another
+// module's table to re-read it.
+type TranslatedQuery struct {
+	Module, Entity string
+	// Locale is the negotiated tag, which is never the tenant's default: a
+	// read in the default language asks no question of this table.
+	Locale    string
+	RecordIDs []uuid.UUID
+	// Sources is the current text of each translatable field, per record.
+	Sources map[uuid.UUID]map[string]string
+	// RichText names which fields are richtext, so the digest this read
+	// compares against is the digest the write stored.
+	RichText map[string]bool
+	// Public is the door. Only the public door withholds an unreviewed machine
+	// draft; it is one line inside the one function that answers this, so no
+	// door can forget it.
+	Public bool
+}
+
+// TranslatedRecord is one record's rows in the requested locale. A field with
+// no row is simply absent from Fields: the caller falls back to the source and
+// says so.
+type TranslatedRecord struct {
+	ID     uuid.UUID
+	Fields map[string]TranslatedField
+}
+
+// SaveQuery writes one record's translation of every field named, in one
+// locale. Values are raw field values, already validated by the field's own
+// rules — kit/rest runs them, because the rules are the field's and the
+// translation module has no business knowing what a page is.
+type SaveQuery struct {
+	Module, Entity, Locale string
+	RecordID               uuid.UUID
+	Values                 map[string]string
+	// Expected maps a field to the revision the caller read, 0 for a field
+	// with no row yet. A field whose stored revision differs is crud.ErrConflict
+	// and writes nothing.
+	Expected map[string]int64
+	// Source is the current source text of each field being saved, from the
+	// row the caller holds locked. It is what source_text and source_hash are
+	// written from, so they describe a source that existed at commit.
+	Source   map[string]string
+	Origin   string
+	RichText map[string]bool
+}
+
+// ReviewQuery marks one record's fields reviewed in one locale. Fields is the
+// empty set for "every field of this record in this locale".
+//
+// Source carries the current text of each field because a review is a claim
+// about the source: "this translation still says what the source says". The
+// caller is the one holding the source row locked, so the source arrives here
+// rather than being re-read by a module that has no business reading another
+// module's table.
+type ReviewQuery struct {
+	Module, Entity, Locale string
+	RecordID               uuid.UUID
+	Fields                 []string
+	Expected               map[string]int64
+	Source                 map[string]string
+	RichText               map[string]bool
+}
+
+// SuggestQuery asks the configured machine translator for a draft of one
+// record's fields in one locale and saves it as a draft: origin machine, no
+// reviewed_at. With no translator configured the installation serves no
+// machine translation at all, and the answer is a refusal that writes nothing.
+type SuggestQuery struct {
+	Module, Entity, Locale string
+	RecordID               uuid.UUID
+	Fields                 []string
+	Expected               map[string]int64
+	Source                 map[string]string
+	RichText               map[string]bool
+	// From is the tenant's default language, which is what the draft is
+	// translated out of.
+	From string
+}
+
+// OverviewState is the closed set the overview counts by.
+const (
+	StateMissing  = "missing"
+	StateOutdated = "outdated"
+	StateMachine  = "machine"
+	StateComplete = "complete"
+)
+
+// OverviewQuery asks what one entity and one locale look like across a page of
+// the entity's own rows — which is why it needs the Source port: the page of
+// records is the entity's, not the translation table's, and a record with no
+// row in this locale is one of the three answers it is being asked for.
+type OverviewQuery struct {
+	Module, Entity, Locale string
+	Limit, Offset          int
+	// State, when not "", keeps only the records with at least one field in
+	// this state. It is a filter over the derived state, not a column, and the
+	// total returned is the total after the filter.
+	State string
+	// IncludeRemoved asks for rows of locales the tenant no longer declares,
+	// which no list shows until somebody asks for them.
+	IncludeRemoved bool
+	// Languages is the tenant's declaration, so this module can tell a locale
+	// the tenant speaks from one it stopped speaking without importing the
+	// tenant module.
+	Languages []string
+}
+
+// OverviewRow is one record: its state per translatable field, and the counts
+// the table's column shows. A record the caller cannot see is not in the page
+// at all — the page comes from the entity's own live rows — so "gone" is
+// answered by absence from the list, not by a flag on it.
+type OverviewRow struct {
+	ID        uuid.UUID
+	UpdatedAt time.Time
+	States    map[string]string
+	Missing   int
+	Outdated  int
+	Machine   int
+	Complete  int
+}
+
+// OverviewCounts is the whole set, which a page of rows cannot answer.
+type OverviewCounts struct {
+	Missing, Outdated, Machine, Complete int
+}
+
+// Translations is the door: four reads and four writes, every one inside the
+// caller's transaction, every refusal writing nothing and publishing nothing.
+//
+// The tenant is never named in a query: it is the transaction's, and
+// row-level security is what makes a wrong-tenant read answer "not found"
+// rather than answer somebody else's row.
+type Translations interface {
+	// Translated returns, for each record named, only the fields that have a
+	// row in the query's locale, each with the status this door must report.
+	Translated(ctx context.Context, tx db.Tx[db.Tenant], q TranslatedQuery) ([]TranslatedRecord, error)
+
+	// Save writes one record's translation of every field named, in locale,
+	// after the caller has locked the source row. A value equal to what is
+	// stored writes nothing, bumps nothing and publishes nothing. It publishes
+	// translation.updated for whatever it changed.
+	Save(ctx context.Context, tx db.Tx[db.Tenant], q SaveQuery) error
+
+	// Review marks the named fields — all of them when Fields is empty —
+	// reviewed by the caller. A field whose source has moved since it was
+	// translated is refused: marking a stale translation reviewed would make
+	// the completeness badge a lie. Reviewing what is already reviewed writes
+	// nothing and publishes nothing.
+	Review(ctx context.Context, tx db.Tx[db.Tenant], q ReviewQuery) error
+
+	// Suggest asks the machine translator for a draft and saves it. It writes
+	// nothing when there is no translator, when the provider refuses, or when
+	// the provider hands back the text it was given.
+	Suggest(ctx context.Context, tx db.Tx[db.Tenant], q SuggestQuery) error
+
+	// Untranslate deletes one record's rows in one locale — a write, so it is
+	// audited and publishes translation.updated with the removed status.
+	Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q ReviewQuery) error
+
+	// Overview answers one entity and locale over a page of the entity's own
+	// rows: each record's per-field state, the totals behind the page, and the
+	// total after q.State.
+	Overview(ctx context.Context, tx db.Tx[db.Tenant], q OverviewQuery) ([]OverviewRow, OverviewCounts, int64, error)
+
+	// ForgetRecord deletes every translation of one record, in any locale. It
+	// is what the record's own delete runs in the same transaction as the row
+	// delete, and it is the only thing holding record_id's meaning, since no
+	// foreign key can span two modules.
+	ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module, entity string, recordID uuid.UUID) error
+}
+
+// SourceRow is one live row of the entity, with the current text of each of its
+// translatable fields. UpdatedAt is the source row's own, which is the date the
+// banner shows — "Source changed on 1 Oct" names when the source moved, and the
+// translation row's own updated_at says when the translation was written, which
+// is a different fact and the wrong one to show a reviewer.
+type SourceRow struct {
+	ID        uuid.UUID
+	UpdatedAt time.Time
+	Values    map[string]string
+}
+
+// TranslationSource is the entity's row set, as the translation module has to
+// be given it rather than reach for it.
+type TranslationSource interface {
+	// Module and Entity are the mounted Spec's two own names, so a row set can
+	// only ever be matched with the resource that declares it.
+	Module() string
+	Entity() string
+	// Fields names the translatable JSON field names, in the order the Spec
+	// declares them — which is the order the side-by-side view walks.
+	Fields() []string
+	// RichText names which of those fields are richtext, because the rules for
+	// hashing and splitting a paragraph belong to that format and to nothing
+	// else.
+	RichText() map[string]bool
+	// Rows answers the named records through crud under the caller's
+	// transaction, under row-level security. A record with no row is absent,
+	// which is how a deleted source says so.
+	Rows(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) ([]SourceRow, error)
+	// Page is the entity's live rows in its own default order, with the total
+	// the overview's pager needs.
+	Page(ctx context.Context, tx db.Tx[db.Tenant], limit, offset int) ([]SourceRow, int64, error)
+}
+
+// TranslationSourceOf is the generic implementation of TranslationSource over a
+// mounted Spec: the entity's own rows, read through crud.List under the caller's
+// transaction, with the translatable fields lifted out by the field index the
+// schema already carries. It is a function and not a registry: the composition
+// names each entity it wants translated, and a module it does not name is not.
+func TranslationSourceOf[T crud.Entity](s Spec[T]) TranslationSource {
+	return &specSource[T]{spec: s}
+}

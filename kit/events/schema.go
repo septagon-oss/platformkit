@@ -153,6 +153,17 @@ func project(t reflect.Type) *Schema {
 			if name == "-" || !f.IsExported() {
 				continue
 			}
+			if f.Tag.Get("hidden") == "true" {
+				// hidden is huma's own tag, the one that keeps a member out of
+				// the OpenAPI document, and this projection honours it for the
+				// same reason: a machine-readable contract describes what
+				// crosses the boundary, and a member the kernel fills in on one
+				// read path is not part of the promise a publisher makes. It
+				// stays marshalled — encoding/json never reads this tag, so a
+				// payload that carries it is still accepted, because
+				// additionalProperties is open — it is simply not promised.
+				continue
+			}
 			if f.Anonymous && name == "" {
 				// embedding: encoding/json flattens it, so this must too.
 				if inner := project(deref(f.Type)); inner != nil {

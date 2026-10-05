@@ -66,7 +66,7 @@ package to pass, and an empty allowance as a recorded boundary.
 
 ### Limits
 
-No dependency count moves here, and this guide does not claim one. Eleven
+No dependency count moves here, and this guide does not claim one. Twelve
 `contracts/` packages of this repository wrap one of these refusals under the
 adapter's name, and a guide that traced one has to name the rest. Three are a
 module's own contract source: `modules/content/contracts`, whose `Render` wraps
@@ -81,12 +81,19 @@ the service it stands in for refuses, under the same name:
 `modules/notification/contracts/notificationtest`,
 `modules/site/contracts/sitetest`, `modules/task/contracts/tasktest`,
 `modules/tenant/contracts/tenanttest` and `modules/user/contracts/usertest`.
+`modules/translation/contracts/translationtest` is the twelfth: the conformance
+fake beside the translation port refuses a stale revision, an empty translation
+and an absent review the way `internal.Service` refuses them, under the same
+three names, because a fake that answered differently would let a caller's test
+pass for no reason.
 `modules/auth/contracts` is on neither list: this change moved it to
 `fault.ErrInvalid`, and no file of its own imports `kit/crud` now. None of the
 eleven moves a closure: each names `db.Tx` in its own files and imports
 `kit/crud` or `kit/db` for `crud.Base` and a transaction-aware service, so
 `go list -deps` still lists gorm and `database/sql` for every one of them
-whichever name the sentinel is reached by. The reachability runs from the module
+whichever name the sentinel is reached by — the twelfth included, since
+`translationtest` imports `kit/crud` for `crud.ErrConflict` and `crud.ErrInvalid`
+and nothing else. The reachability runs from the module
 to the kit package:
 `modules/auth/contracts` reaches `kit/crud` through `modules/user/contracts`,
 which imports it for `crud.Base` and not for a sentinel, and reaches `kit/db`

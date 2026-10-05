@@ -105,6 +105,18 @@ type Field struct {
 	// control. It is a description and not a label: the entities here write
 	// "Short summary of the task", which reads under an input and not on it.
 	Doc string `json:"doc,omitempty"`
+	// Translatable comes from `i18n:"translatable"` and means one thing: a
+	// tenant may hold this field's value in each language it is served in, and
+	// a reader may ask for one of them. It is a fact about the field and not
+	// about a table — the rows live in modules/translation, keyed by this
+	// entity's own two names — and it is what kit/rest refuses a mount over when
+	// the module that mounted the Spec wired no Translations port, because a
+	// tag nobody can honour is a tag that silently does nothing.
+	//
+	// It reaches the native catalogue for free: ui/screens' Entry embeds this
+	// Schema, so a phone can draw a completeness chip without a second
+	// declaration of which fields are translatable.
+	Translatable bool `json:"translatable,omitempty"`
 
 	// Presentation is how a read names, groups, colours and shows this field,
 	// from the `ui:` directives of §2.3 and the `enumLabels`/`enumTones` tags.
@@ -280,6 +292,12 @@ func derive(t reflect.Type) []Field {
 			Index:    sf.Index,
 		}
 		f.MaxLength, _ = strconv.Atoi(sf.Tag.Get("maxLength"))
+		// The translation tag is one word and takes no value: the field either
+		// may be said in another language or may not. It is a tag of its own and
+		// not another `ui:` directive, because `ui:` names what a control does
+		// and this names what the data is; a field can be `ui:"widget:richtext"`
+		// and translatable, and a title is translatable with no widget at all.
+		f.Translatable = has(sf.Tag.Get("i18n"), "translatable")
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")
 		}
