@@ -348,6 +348,11 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
+	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
+	# warns, writes no key and exits 0, so both cache steps skip and the job stays green. The three
+	# cases above ask that of the recipe's text and of a tree with `go`; this one runs the recipe with
+	# no `go` on PATH at all, which is the shape a failed setup-go step leaves.
+	bash scripts/ci_go_cache_key_without_go_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
