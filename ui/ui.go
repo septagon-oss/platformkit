@@ -99,11 +99,15 @@ var Controllers = []string{
 // the reload that used to forget it (sessionStorage, its adoption rule and its
 // retirement), a scheduled retry is cancelled by the press that superseded it, and
 // a keyed refusal keeps the form it is about instead of replacing it and reporting
-// into the form's own outcome region. Each is a thing a thousand client scripts used
-// to write; the claim that the controller must stay small is unchanged, and so is
+// into the form's own outcome region. It moved once more for the rule that makes the
+// reload safe rather than merely remembered: the controller compares the bytes a press
+// carries with the bytes the record left with, and a command that already ran is no
+// longer handed a second key. That comparison is four lines and the sentences saying
+// which of them is the same command. Each of these is a thing a thousand client scripts
+// used to write; the claim that the controller must stay small is unchanged, and so is
 // the gate — this number is the file's measured size, not a rounding-up, so the next
 // promise has to be argued for in its own commit too.
-const CommandControllerBudget = 10245 // bytes, utf8, measured at this revision
+const CommandControllerBudget = 10400 // bytes, utf8, measured at this revision
 
 // Sheet is a composed stylesheet: the bytes a browser downloads and the first
 // eight bytes of their SHA-256 as hex. A page puts the fingerprint in the

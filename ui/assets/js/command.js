@@ -12,9 +12,13 @@
 // the submission that left is still outstanding, and a person pressing that button
 // again is asking for that write, not for a second one. So a pending record goes to
 // sessionStorage — one tab's storage for one tab's intent — and is adopted only when
-// it names an attempt somebody still owes. A new intent stays available: an edited
-// form is a different body, the server answers that with a spent key, and a spent
-// key retires the record, so the next press is a fresh command.
+// it names an attempt somebody still owes.
+//
+// Bytes say which command a press is, here as at the server, which compares the body it
+// hashed with the body it is handed: the same bytes keep the key and inherit the answer
+// that key already holds, and other bytes are the next command, with a key of its own.
+// A form whose command depends on what the world holds therefore says what it counted,
+// so a world that moved since the page was drawn gives the next press other bytes.
 //
 // Listeners are capture-phase, so that notice waits until no attempt is left to make.
 (function () {
@@ -26,8 +30,8 @@
   // The form's own outcome region, which the page renders inside the form and which
   // no other form's result may use: see modules/admin's commandOutcome.
   const OUTCOME = '[role="status"],[role="alert"]';
-  const records = new Map(), timers = new Map(), running = new Set();
-  let started = false, expected = null;
+  const records = new Map(), timers = new Map(), running = new Set(), expected = new Set();
+  let started = false;
 
   function token() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -35,6 +39,17 @@
       const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
       return (c === "x" ? r : (r & 3) | 8).toString(16);
     });
+  }
+
+  // The bytes one press puts on the wire, as one string, over the same fields the
+  // server hashes.
+  function bytes(parameters) {
+    const parts = [];
+    for (const key of Object.keys(parameters || {}).sort()) {
+      const value = parameters[key];
+      parts.push(key + "=" + (value === null || typeof value !== "object" ? value : JSON.stringify(value)));
+    }
+    return parts.join("&");
   }
 
   function commanded(elt) {
@@ -62,12 +77,12 @@
     let rec = null;
     try { rec = JSON.parse(sessionStorage.getItem(slot(id))); } catch (_) { return null; }
     if (!rec || typeof rec.key !== "string" || !(rec.tries > 0)) return null;
-    rec.resumed = true;
     return rec;
   }
   // Retire: this key means nothing now, and nothing waits on this document.
   function retire(id) {
     records.delete(id);
+    expected.delete(id);
     if (timers.has(id)) { clearTimeout(timers.get(id)); timers.delete(id); }
     try { sessionStorage.removeItem(slot(id)); } catch (_) { /* gone either way */ }
   }
@@ -86,11 +101,16 @@
     const path = detail.path || form.getAttribute("hx-post") || form.getAttribute("action") || location.pathname;
     const id = identity(form, path);
     // One request per submission, from this page: the submit button's own double
-    // click is the second request nobody asked for. A retry of ours is expected.
-    if (running.has(id) && expected !== id) { event.preventDefault(); return; }
-    expected = null;
+    // click is the second request nobody asked for. A retry of ours is expected — of
+    // the form that armed it, and of no other.
+    if (running.has(id) && !expected.has(id)) { event.preventDefault(); return; }
+    expected.delete(id);
     unschedule(id);
     let rec = records.get(id) || adopt(id);
+    // A record belongs to the bytes that left with it. A form saying something else
+    // now is a new command, not the outstanding one, and the spent key would only
+    // replay the old answer: retire the record, as a spent key retires it at the server.
+    if (rec && bytes(rec.body) !== bytes(detail.parameters)) { retire(id); rec = null; }
     if (!rec) rec = { key: token(), verb: verb, path: path, body: detail.parameters };
     // The identical write, not a re-serialisation of whatever has been typed
     // since: the server compares what it got with what it hashed.
@@ -117,7 +137,7 @@
     rec.tries = tries;
     store(id, rec);
     event.stopPropagation();
-    expected = id;
+    expected.add(id);
     timers.set(id, setTimeout(function () {
       timers.delete(id);
       htmx.ajax(rec.verb, rec.path, { source: form });
@@ -127,7 +147,11 @@
   // The record is cleared once the key means nothing. A 5xx settled nothing, and so
   // did the refusal saying an answer is still owed: another request with this key is
   // running it, and the same key asks for its result later. Every other answer retires
-  // it — a spent key especially — so the next press is a new command.
+  // it — a spent key especially — so the next press is a new command. A key the server
+  // has already run answers from its record (Idempotency-Replay), redirect included,
+  // which lands the person on the list the command redrew: the same place a delivered
+  // answer would have, one GET later. Nothing is asked a second time under a second key
+  // — the person pressed once, and once is the promise.
   function settled(event) {
     const detail = event.detail;
     const form = commanded(detail.requestConfig?.elt || detail.elt);
@@ -138,27 +162,6 @@
     if (!xhr || !xhr.status || xhr.status >= 500) return;
     if (xhr.getResponseHeader("Idempotency-Refusal") === "IDEMPOTENCY_IN_PROGRESS") return;
     retire(id);
-  }
-
-  // The answer owed to a submission this document inherited from the one it reloaded
-  // is the answer to a page nobody is looking at: the person reloaded, read what the
-  // list says now, and pressed. The kernel replays the first answer — one key is one
-  // command, and it is right to — and that answer is a redirect off the screen the
-  // person is standing on. So it is stopped here, before the navigation, and the
-  // intent is honoured once under a key of its own. Once: the record is retired
-  // before the request goes, so a second replay is nothing but a replay.
-  function runTheIntent(event) {
-    const detail = event.detail;
-    if (!detail.xhr || detail.xhr.getResponseHeader("Idempotency-Replay") !== "true") return;
-    const form = commanded(detail.requestConfig?.elt || detail.target);
-    if (!form) return;
-    const id = identity(form, (detail.requestConfig || {}).path || form.getAttribute("hx-post") || location.pathname);
-    const rec = records.get(id);
-    if (!rec || !rec.resumed) return;
-    event.preventDefault();
-    retire(id);
-    expected = id;
-    setTimeout(function () { htmx.ajax(rec.verb, rec.path, { source: form }); }, 0);
   }
 
   // A keyed command's refusal is a statement about the key, not markup about this
@@ -189,7 +192,6 @@
       document.addEventListener("htmx:configRequest", configure, true);
       for (const name of ["htmx:sendError", "htmx:timeout"]) document.addEventListener(name, transportFailed, true);
       document.addEventListener("htmx:afterRequest", settled);
-      document.addEventListener("htmx:beforeOnLoad", runTheIntent, true);
       document.addEventListener("htmx:beforeSwap", reportRefusal, true);
       // A document restored from the back/forward cache kept this script and its
       // records while its page was redrawn elsewhere: a reload's case by another door.
