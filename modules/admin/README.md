@@ -125,7 +125,10 @@ refusal heading, `fault.title.<status>`, that goes with them.
   `lang`, heading, sidebar and way back were all English in front of a browser that had
   asked for Portuguese. The refusal now declares the language it actually speaks and
   says, in that language, that the form could not be read; `admin.account.language.unreadable`
-  is the key, `INVALID_INPUT` the code, 422 the status.
+  is the key, `INVALID_INPUT` the code, 422 the status. The tenant's language form makes
+  the same refusal of its own body — an unreadable pair, or one carrying no revision —
+  and answers 422 with its own page and `admin.languages.refused_form`, for the same
+  reason and with the same effect.
 - The tenant's own languages are `/app/tenant/languages` (GET and POST), offered in
   the sidebar to whoever `Authorizer` says holds `tenant:locale_manage` — the same
   question `Service.SetOwnLocale` asks inside its transaction, so the link and the

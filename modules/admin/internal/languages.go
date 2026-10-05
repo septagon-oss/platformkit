@@ -60,11 +60,11 @@ func (p pages) mountLanguages(app *httpx.Router) {
 			}
 			form, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return page.View{}, unreadableForm
+				return p.unreadable(ctx, r)
 			}
 			expected, err := strconv.ParseInt(form.Get("localeRevision"), 10, 64)
 			if err != nil {
-				return page.View{}, unreadableForm
+				return p.unreadable(ctx, r)
 			}
 			_, err = p.Tenants.SetOwnLocale(ctx, tx, expected, tenantcontracts.SetLocale{
 				Default: form.Get("default"), Supported: form["supported"],
@@ -102,9 +102,32 @@ type languagesForm struct {
 	RawBody []byte `contentType:"application/x-www-form-urlencoded"`
 }
 
-// unreadableForm is what a body that is not a form answers with — the same answer
-// ui/resource's generated forms give, so one 422 means one thing in this shell.
-var unreadableForm = problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+// codeUnreadableForm names the one refusal this page makes for itself, rather than
+// reading it off a command: the body it was handed is not a form, or carries no
+// revision to write at. Like every other name in `refusal.code` it is the part of a
+// refusal a catalogue can be looked up under, and so the part that is not English.
+const codeUnreadableForm = "FORM_UNREADABLE"
+
+// unreadable is the page's own answer to a body it could not read: the same verdict
+// ui/page's form decoder gives — 422 — and the page it was submitted from, with the
+// sentence in the language of the person holding it.
+//
+// It is not the kernel's refusal page. ui/page's fault table translates a guard's
+// own verdicts and leaves a 422 in the writer's words on purpose, because a 422
+// normally says something about the caller's request that only its writer can say
+// (see ui/page's faultKey). Here the writer is this page, so the page says it: a
+// person who filled the form in Portuguese and had it refused is refused in
+// Portuguese, and the document declares the language it is actually printed in.
+func (p pages) unreadable(ctx context.Context, r page.Request) (page.View, error) {
+	v, err := p.languagesView(ctx, r, &refusal{
+		status: http.StatusUnprocessableEntity, code: codeUnreadableForm,
+	})
+	if err != nil {
+		return page.View{}, err
+	}
+	v.Status = http.StatusUnprocessableEntity
+	return v, nil
+}
 
 // refusal is a declaration this page would not write, told in the facts the page
 // holds rather than in the words the command refused with.
@@ -129,6 +152,9 @@ func (n refusal) line(text func(key, fallback string, args ...any) string, heldA
 	case n.status == http.StatusConflict:
 		return text("stale", "This declaration was read at revision %d, and the tenant is on revision %d.",
 			n.readAt, heldAt)
+	case n.code == codeUnreadableForm:
+		return text("refused_form",
+			"This form could not be read — its values are missing or malformed. Nothing was changed.")
 	case n.code == tenantcontracts.CodeLanguageUnusable:
 		return text("refused_unusable",
 			"No copy is shipped for that language, so this tenant cannot be served in it. Nothing was changed.")
