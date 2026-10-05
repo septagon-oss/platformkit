@@ -55,16 +55,18 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
   names the released hosts, which is where the pairing is kept once the routing
   table stops recording it; everything else the tenant owns stays.
 - Every lifecycle verb publishes its event in the subject tenant's scope and
-  `tenant.lifecycle_recorded` in the operator tenant's, in the transaction that wrote
+  `tenant.lifecycle_recorded` in the operator tenant of the app that is writing, in
+  the transaction that wrote
   the column, and asks that audit question before it writes: a verb that can audit
   neither side writes neither. A promotion is one of those writes — `add-host` is the
   only way to choose a tenant's primary host, and moving it publishes
   `tenant.host_added` the way the arrival does, because which name a tenant's links
   are built on is a fact two trails have to be able to date. Asking for the host that
   is already primary, or for a host already here without the promotion, changes no
-  column and says nothing. An installation with no operator tenant gets
+  column and says nothing. An app with no operator tenant of its own gets
   `contracts.ErrNoOperatorTenant`, the route answers 503, and nothing is written: a
-  lifecycle change auditable from one side is a change nobody can account for.
+  lifecycle change auditable from one side is a change nobody can account for, and
+  another app's installation is not this app's to audit into.
 - Every command reads its row `FOR UPDATE` before it compares it, because `kit/db`
   sets no isolation level and two writes that both read `active` would both publish.
 
@@ -76,7 +78,7 @@ None. No route uses `httpx.Public()`. `Service.ByHost` is host resolution for th
 
 ### The operator boundary
 
-`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All thirteen routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`, the four lifecycle verbs this delivery adds among them: the grant is one because the surface is one, and a route that needs a second key would be a different surface. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
+`tenant:manage` is declared with `Operator: true` in `modules/tenant/module.go`. All thirteen routes declare `httpx.OperatorPermission(contracts.PermissionTenantManage)`, the four lifecycle verbs this delivery adds among them: the grant is one because the surface is one, and a route that needs a second key would be a different surface. The comment on `path` in `handler.go` explains the effect. The control plane is served on every tenant's host. The kernel refuses the request at any tenant other than the operator's own, before it reads the roles table, and the wildcard does not satisfy the grant even there. One app's control plane holds one app's tenants: every read and write below is scoped to `tenants.app`, the operator it audits into included (see `kit/appname/README.md`). The module has no `OperatorRead` or `OperatorWrite` route, because it uses `httpx.OperatorPermission` directly.
 
 ### Provisioning
 
