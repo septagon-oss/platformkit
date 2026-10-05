@@ -269,12 +269,15 @@ const notASlug = "it is not an app name: no durable can be formed from it, so no
 // two halves of one key, and only this function states it in Go.
 func durableLock(durable string) string { return "events ledger " + durable }
 
-// tenantLockKey is the other half of migrations/000044's trigger: the expression its
-// text the claim trigger hashes, so that a claim declares its tenant busy beside
-// its durable. The pair is spelled in two languages because the lock is asked per
-// row over a column, in one statement, and it must not drift for the same reason
-// 000044's and durableLock's must not — a move that asks the wrong key excludes
-// nothing and reports a safe refusal it never made.
+// tenantLockKey is the expression the claim trigger hashes: migrations/000044's text,
+// spelled here so the move that asks this key for an app and the claim that takes its
+// share are two halves of one key and cannot drift — a move that asks the wrong key
+// excludes nothing and reports a safe refusal it never made. It is the first key the
+// claim takes and the first the move asks for: the move holds a tenant's key before it
+// asks any durable's, and the trigger takes the tenant's before it can queue behind a
+// durable's, because a lock taken second excludes nothing the first is waiting behind,
+// and a claim queued on a durable with its own tenant still unnamed is a claim this
+// statement cannot see.
 const tenantLockKey = `'events ledger tenant ' || id::text`
 
 // holdTenants takes the move's lock over every tenant of app, refusing rather than
@@ -295,8 +298,9 @@ const tenantLockKey = `'events ledger tenant ' || id::text`
 // taken in, the placement makes a tenant belong to exactly one app (tenants.app,
 // migrations/000043), and the hazard is a claim in one of *this* app's tenants
 // outliving the rename of its ledger — so a claim takes the shared advisory lock of
-// its own tenant beside the lock of its durable, and the move asks for those tenants
-// exclusively. A delivery of another app holds its own tenant's lock and refuses
+// its own tenant *first*, before the lock of its durable and so before it can queue
+// behind another move's, and the move asks for those tenants exclusively in the same
+// order. A delivery of another app holds its own tenant's lock and refuses
 // nothing here, which is what the per-durable lock already buys and this keeps.
 func holdTenants(tx db.Tx[db.System], app appname.Name) error {
 	var contended int64

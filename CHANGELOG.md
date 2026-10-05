@@ -7,18 +7,24 @@ consumer name, and `platformkit_handled` and `platformkit_dead_letters` key thei
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
 side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
 is the drain for those two tables. It locks the durables it is about to rename and the tenants of the app —
-an INSERT of a claim at an unscoped durable takes that durable's shared advisory lock and its own tenant's
-in the schema itself (`migrations/000044_ledger_claim_durable_lock`), and the move asks for the exclusive
-ones and refuses rather than queueing; the tenant's key is what catches the first claim of a subscription,
-which is the one no committed ledger row names a durable from — and it moves the claims of the tenants this
+an INSERT of a claim at an unscoped durable takes its own tenant's shared advisory lock and only then that
+durable's in the schema itself (`migrations/000044_ledger_claim_durable_lock`), and the move asks for the
+exclusive ones in the same order and refuses rather than queueing; the tenant's key is what catches the first
+claim of a subscription, which is the one no committed ledger row names a durable from, and taking the two in
+that order is what lets it catch anything at all, because a claim that reached for its durable first can be
+queued behind another move's durable lock having named no tenant, and under that claim a placement commits and
+this app's own move answers zero over a handler that is still running — and it moves the claims of the tenants this
 app holds: a claim belongs to the tenant it was made in,
 and a tenant belongs to one app (`tenants.app`), so the claims of a tenant whose `tenants.app` is empty stay
 where the deployment that runs app-less beside this one looks for them. One transaction: a copy of each unscoped
 ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and `failed_at` verbatim because the
 purge ages on them, then a delete of exactly the rows the copy read, and one `platformkit.ledger_moved` record
 per tenant whose claims moved. A delivery mid-claim holds its durable and its tenant, and the move refuses,
-aming itself,
-having written and emitted nothing. The table lock this step first took, and a predicate that named the durable
+naming itself, having written and emitted nothing. A delivery of a subscription that names no app re-reads
+`tenants.app` inside the transaction that writes its claim, because the app of its tenant is the one fact about
+that delivery the placement changes underneath it: a tenant that took an app while the delivery was being read
+is not this consumer's to run, and the delivery writes no claim, acks, and leaves the event to the app the row
+now names. The table lock this step first took, and a predicate that named the durable
 and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
 the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while
 both apps' consumers ran, and walking every unscoped row on the way renamed another app's tenants' claims into a
@@ -46,7 +52,14 @@ operator's mapping names and leaves the rest exactly as it found them — still 
 served, because the move renames nothing for a tenant no app claims. The refusal is a function rather than
 the `DO` block 000043 carries because a windowed statement cannot read what it has just written — a
 data-modifying CTE sees the snapshot it started with — so the placement computes the tenants it could not place
-and hands the list over. The declaration has to be on the session that drains, not the one that migrated, so
+and hands the list over. Two of these walks run at once on a server that holds two apps over one database,
+each from its own boot and its own tick, so the write repeats the predicate its reading took from a snapshot:
+`platformkit_place_tenants` sets `app` only of a row still empty at the write itself, the competing walk's
+UPDATE waits on that row's lock, re-qualifies against the version the first placement committed, and writes
+nothing — which is where 000043's "a tenant does not move between apps" is made true, since which relay,
+consumer and control-plane scope can reach a tenant follows from that one column. A placement that loses the
+row this way is not refused and does not report the tenant as unplaced: it has an app, and the late
+declaration is the one that is wrong about the row. The declaration has to be on the session that drains, not the one that migrated, so
 `db.BackfillDeclaring` carries `db.Declaration` to the drain (`app.Drain` and the worker's `schema-backfill` job
 both go through it). `app.tenant_apps_file` is the same mapping as a file of `slug=app` lines for an operator
 whose mapping is too long to read in a YAML blob: `kit/config` reads it at load, the inline map wins a

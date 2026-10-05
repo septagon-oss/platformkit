@@ -17,7 +17,11 @@
 --
 -- Three things it deliberately is not. It is not a re-placement: `app = ''` is the
 -- only row it can touch, because a tenant does not move between apps once it has one
--- and this file has no evidence about a row somebody already answered. It is not a
+-- and this file has no evidence about a row somebody already answered — and since the
+-- walk is one any number of boots may run at once, the function 000045 puts there
+-- checks the row is still empty at the write itself, not only in the reading that
+-- decided to write it, so two concurrent placements cannot disagree by overwriting the
+-- app the first of them committed. It is not a
 -- guess about a tenant with no host and no mapping — that tenant stops the drain of
 -- a boot that named itself, and stays where it is for every other.
 -- And it is not one statement per tenant: the choice of app is computed once, in

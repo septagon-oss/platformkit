@@ -24,6 +24,19 @@ package app
 // it would be the write that takes the last one away, held over a boot that came to
 // place somebody. So the walk runs, the tenants it cannot prove stay where they are,
 // and the fact is printed rather than decided.
+//
+// Two of these run at once, and that is the shape of a server holding two apps over
+// one database: each composition places on its own boot and on its own tick, over the
+// same rows, with no knowledge of the other. The walk decides from a reading, so the
+// guarantee lives in the write it makes: `platformkit_place_tenants` sets the app of a
+// row only while that row is still empty at the write itself (migrations/000045), which
+// leaves the second of two competing placements to find the row already named and write
+// nothing. A tenant's app is decided once (migrations/000043) and which relay, consumer
+// and control-plane scope can reach the tenant follows from it, so the step from empty
+// to a slug is the one write in this kernel that may not arrive twice; a declaration
+// that finds a row already answered does not move the tenant and does not report it as
+// somebody's omission either — the late declaration is the one that is wrong about the
+// row, not the row about itself.
 
 import (
 	"context"

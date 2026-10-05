@@ -281,6 +281,33 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// event rather than of the worker that woke up. See trace.go.
 				ctx, span := startDelivery(ctx, ev)
 				err = db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+					// The same question again, of the transaction that is about to mark
+					// the work done — and only of a subscription naming no app, because
+					// that is the only subscription whose answer moves. A tenant does not
+					// leave an app (migrations/000043, and 000045 writes an app onto a row
+					// that is still empty), so a scoped delivery that passed holdsTenant
+					// cannot be told otherwise; an app-less one can, because the placement
+					// is exactly the act that turns its answer into somebody else's. See
+					// holdsUnscoped.
+					if !s.App.Named() {
+						holds, err := holdsUnscoped(ctx, tx, ev.TenantID)
+						if err != nil {
+							return err
+						}
+						if !holds {
+							// The reading outside the transaction said this tenant was
+							// nobody's, and the row now says otherwise: the placement landed
+							// between the two, and the app the row names answers for the
+							// delivery from here. Write nothing, and refuse the copy the way
+							// the check above does — a claim under the unscoped durable would
+							// be a mark in the one ledger that app will never read, which is
+							// the window the move exists to close, marked instead of closed.
+							slog.ErrorContext(ctx, "events: delivery's tenant took an app while it was being read",
+								"durable", durable, "event", ev.Name,
+								"id", ev.ID, "tenant", ev.TenantID)
+							return nil
+						}
+					}
 					first, err := claim(tx, ev.ID, durable)
 					if err != nil || !first {
 						return err
@@ -335,6 +362,38 @@ func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID 
 		return nil
 	})
 	return holds, err
+}
+
+// holdsUnscoped re-reads, inside the delivery's own transaction, the question
+// holdsTenant asked outside it, and answers for a subscription that names no app:
+// is this tenant still nobody's?
+//
+// It exists because the outer read is a decision made from a snapshot the write
+// does not hold. A delivery reads the row, the placement names it, and the claim
+// that follows marks work done under a durable the tenant's new app will never
+// subscribe under — the move that renames those rows has already looked, found
+// nothing, and reported its zero. Re-reading here costs one primary-key read of
+// one row, only for an app-less subscription, only until its tenant is placed, and
+// it narrows the window to the gap between two statements of one transaction.
+//
+// It is a read and not a lock, which is the choice in it. A locking read would
+// close that gap by holding the tenant's row against the placement for the whole
+// delivery — and a placement would then wait on a handler's transaction, which is
+// a boot stopped by the traffic of the deployment it is replacing. The pair that
+// holds the boundary instead is this read and migrations/000044's tenant lock: the
+// claim declares its tenant before it waits on anything, so a move of that tenant
+// refuses while it is open, and a placement that commits first is answered here.
+func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID) (bool, error) {
+	var whose string
+	// max() so a tenant with no row answers '' rather than no rows, as holdsTenant
+	// does: the row-level policy shows a tenant transaction its own row and nothing
+	// else, and an app that names itself is the deployment that keeps a tenant the
+	// control plane has not answered for.
+	row := tx.DB().Raw(`SELECT coalesce(max(tn.app), '') FROM tenants tn WHERE tn.id = ?`, tenantID).Row()
+	if err := row.Scan(&whose); err != nil {
+		return false, fmt.Errorf("events: say which app holds tenant %s: %w", tenantID, err)
+	}
+	return whose == "", nil
 }
 
 // claim writes this subscription's mark against the event and reports whether

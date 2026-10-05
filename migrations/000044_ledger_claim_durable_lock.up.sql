@@ -36,6 +36,18 @@
 -- exactly as often as before — the harm a table lock would dress up as a safety
 -- measure stands off by the same margin.
 --
+-- The two keys are taken in one order — tenant, then durable — and it is the order
+-- the move already asks them in, because a lock taken second excludes nothing the
+-- first is still waiting behind. Take the durable first and a claim can be queued on
+-- some other move's durable key with its own tenant still unnamed: the placement
+-- commits under it, this tenant's own move then finds no tenant lock held and no
+-- committed row to rename, and the claim that finally runs commits a mark under a
+-- name the scoped consumer will never look under — the second handling this file
+-- exists to stop, arriving by the door the file itself opened. Declare the tenant
+-- first and a claim is visible to its app's move from the instant it begins, whatever
+-- it is waiting for, and the two apps still cannot exclude each other, because no
+-- claim names another app's tenant.
+--
 -- A deployment that has moved pays this nothing: the WHEN clause below is the same
 -- predicate as the move's, so a claim under a scoped durable takes no lock at all,
 -- and the steady state after the flip is the state before the file. The file keeps
@@ -51,11 +63,20 @@ LANGUAGE plpgsql AS $$
 BEGIN
 	-- The same key the move asks for: kit/events/ledger.go's durableLock hashes the
 	-- same text, and the two must not be able to drift or the pair excludes nothing.
-	PERFORM pg_advisory_xact_lock_shared(hashtextextended('events ledger ' || NEW.durable, 0));
-	-- And the tenant's, for the claim whose durable nothing has committed under yet,
-	-- which the line above cannot name because naming it is what the move is doing.
-	-- kit/events/ledger.go's tenantLockKey carries this exact expression.
+	-- The tenant first, and the order is the whole of the point. A move asks the
+	-- tenant's key exclusively before it asks any durable's (kit/events/ledger.go's
+	-- holdTenants runs before holdDurable), and a claim that reached for its durable
+	-- first could be sitting in this statement, waiting for a durable another move
+	-- holds, having named no tenant at all — the one window in which a placement can
+	-- commit under a claim that is already open and the move that follows can answer
+	-- its zero report as a success. Take the tenant's key first and there is no such
+	-- window: from the moment a claim begins it has declared its tenant busy, whatever
+	-- it is waiting for, and every move of that tenant's app refuses while it is open.
 	PERFORM pg_advisory_xact_lock_shared(hashtextextended('events ledger tenant ' || NEW.tenant_id::text, 0));
+	-- And the durable's, the same key the move asks for: kit/events/ledger.go's
+	-- durableLock hashes the same text, and the two must not be able to drift or the
+	-- pair excludes nothing.
+	PERFORM pg_advisory_xact_lock_shared(hashtextextended('events ledger ' || NEW.durable, 0));
 	RETURN NEW;
 END
 $$;
@@ -71,7 +92,8 @@ CREATE TRIGGER platformkit_dead_letters_claim_lock
 	EXECUTE FUNCTION platformkit_ledger_claim_lock();
 
 COMMENT ON FUNCTION platformkit_ledger_claim_lock() IS
-	'platformkit: takes the shared advisory locks of the durable and of the tenant an unscoped claim is '
-	'written under, so kit/events.MoveLedger can refuse a rename under an open claim — the first claim of a '
-	'subscription included, whose durable no committed row names — instead of taking the whole table; see the '
+	'platformkit: takes the shared advisory lock of the tenant an unscoped claim is written under, then of '
+	'its durable, so kit/events.MoveLedger can refuse a rename under an open claim — the first claim of a '
+	'subscription included, whose durable no committed row names, and a claim still queued behind another '
+	'move''s durable lock, which is why the tenant comes first — instead of taking the whole table; see the '
 	'header of migrations/000044';

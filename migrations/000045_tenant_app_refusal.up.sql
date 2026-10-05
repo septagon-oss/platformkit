@@ -83,10 +83,31 @@ BEGIN
 				)
 			)
 	)
+	-- The predicate `app = ''` appears twice in this function, and the second one is
+	-- the check rather than a restatement of the first. The CTE reads the snapshot
+	-- this statement began with, and since this function has more than one caller
+	-- running at once — every boot that names an app and the worker's drain, over the
+	-- same tenants table, in two compositions that have never heard of each other —
+	-- two walks can each decide from their own stale reading that the same empty row
+	-- is theirs to name. The row lock makes the second wait for the first, and a
+	-- waiting write is exactly where a stale answer does its damage: it would stamp
+	-- the app the other walk just committed out of the row. Read against the version
+	-- the first writer committed, `t.app = ''` makes that walk find the row no longer
+	-- empty and write nothing. The step from empty to a slug is then one-way at the
+	-- statement that performs it, which is the only place 000043's "a tenant does not
+	-- move between apps" can be made true: the reading above is the argument for the
+	-- write, and this is the check on it.
+	--
+	-- A placement that loses its row this way is not refused. The tenant has an app,
+	-- which is the state a placement exists to bring about, and the statement below
+	-- reports it as placed rather than as somebody's omission; what such a run does
+	-- not do is rewrite the answer because its own declaration disagrees with it.
+	-- Which app a tenant belongs to is decided once (000043), and the second
+	-- declaration is the one that is late, not the row that is wrong.
 	UPDATE tenants AS t
 	SET app = p.app
 	FROM placeable p
-	WHERE t.id = p.id;
+	WHERE t.id = p.id AND t.app = '';
 
 	-- The second statement, and the only reason it is a second statement: this one
 	-- sees the rows the one above wrote, so what it lists is what is left rather than
@@ -99,7 +120,7 @@ END
 $$;
 
 COMMENT ON FUNCTION platformkit_place_tenants(text, text, text, uuid[]) IS
-	'platformkit: places every tenant still naming no app under the app the passed declaration proves for it (explicit slug=app pair first, then the host proof), within the key list it is handed or over the whole table when handed none, and returns the slugs left empty; called by the placement window of migrations/000046 and by every boot of kit/app that names an app or a mapping, so the two cannot disagree about a row';
+	'platformkit: places every tenant still naming no app under the app the passed declaration proves for it (explicit slug=app pair first, then the host proof), within the key list it is handed or over the whole table when handed none, writing only a row that is still empty at the write itself so two concurrent placements cannot replace the app the first one committed, and returns the slugs left empty; called by the placement window of migrations/000046 and by every boot of kit/app that names an app or a mapping, so the two cannot disagree about a row';
 
 -- Which caller may hand it a list is not its decision either, and that matters: a
 -- boot that named no app asserts nothing about whose anybody's tenant is, and the
