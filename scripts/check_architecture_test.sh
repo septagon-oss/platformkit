@@ -705,8 +705,8 @@ else
 	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
 fi
 
-# 5. The line the report is headed with, which two rounds of review wrote cases for and
-# nothing ran. `scripts/rehearsal_provenance_test.sh` runs the step's own
+# 5. The line the report is headed with, which has had cases written for it and was never
+# run by anything. `scripts/rehearsal_provenance_test.sh` runs the step's own
 # candidate line over a tree holding one uncommitted file, and
 # `scripts/provenance_bigtree_test.sh` runs it over one holding five thousand:
 # the two answers part company there, because a `git status --porcelain | grep -q .` lets

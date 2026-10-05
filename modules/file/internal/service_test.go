@@ -554,12 +554,12 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	}
 }
 
-// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race the review measured:
-// twenty uploads started together, each reading the tenant's total before any
-// of them had inserted a row, each deciding there was room, and 2.9 times the
-// quota on disk. The numbers are the review's — twenty uploads of four thousand
-// bytes against a quota of eight thousand one hundred and ninety-two, so at
-// most two may be stored and eighteen must be refused.
+// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race of uploads started
+// together: each reads the tenant's total before any of them has inserted a
+// row, each decides there is room, and the disk ends holding 2.9 times the
+// quota. The shape driven here is twenty uploads of four thousand bytes
+// against a quota of eight thousand one hundred and ninety-two, so at most two
+// may be stored and eighteen must be refused.
 //
 // It is the mutation test for the one line in internal.charge that takes
 // pg_advisory_xact_lock: without it this fails, and it fails by an over-run of

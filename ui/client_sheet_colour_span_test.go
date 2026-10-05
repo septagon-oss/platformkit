@@ -1,13 +1,12 @@
 package ui_test
 
-// The delivery's own half of the span the raw-colour read steps over. A review
-// found the read refusing `mask: url(#fade)` — a pointer to an inline SVG element
-// whose id happens to read as six hex digits — and `content: "#123"`, five
-// characters a page prints, and the cure blanks the two spans a browser computes
-// no value from (outsideValues, ui/ui.go). Three decisions inside that cure belong
-// to the delivery rather than to the review, and each is the kind a later change
-// reverses quietly, so they are pinned rather than measured with a probe and thrown
-// away.
+// The span the raw-colour read steps over, on the side the blanking closes. The read
+// refuses what it cannot see through — `mask: url(#fade)`, a pointer to an inline SVG
+// element whose id happens to read as six hex digits, and `content: "#123"`, five
+// characters a page prints — and blanks the two spans a browser computes no value
+// from (outsideValues, ui/ui.go). Three decisions inside that blanking are the kind a
+// later change reverses quietly, so they are pinned rather than measured with a probe
+// and thrown away.
 //
 // The first is what the blanking must not blind. A blanked span hides its own text
 // and nothing else: `url(#ab12) #ff0000` carries a colour the browser computes

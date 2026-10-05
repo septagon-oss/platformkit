@@ -45,10 +45,10 @@ package httpx_test
 //
 // ## The case that passes
 //
-// Retry-After on the public write limit went unverified for the
-// limb this round changed. Headers are set before the answer is written, on either end of
-// the opt-out, which the second case pins so a later change to the fallback writer that
-// drops them is caught here rather than in a browser.
+// Retry-After on the public write limit travels with the answer rather than in its
+// body, so it is set before the answer is written, on either end of the renderer's
+// opt-out. The second case pins it there, so a later change to the fallback writer that
+// drops the headers is caught here rather than in a browser.
 
 import (
 	"context"
