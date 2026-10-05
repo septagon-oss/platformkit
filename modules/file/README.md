@@ -152,3 +152,19 @@ store walks through and where a two-implementation disagreement stops being an
 argument; `Reconciler` and `Prover` as ports an implementation declines by name
 rather than by silence; and `Deps.Storage`, which is still the composition's choice —
 `file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
+
+## Composition
+
+**Reused** — `kit/crud`'s writes and row locks, `kit/db`'s tenant transaction, this
+module's own `Storage` and `MetaFor`, `http.DetectContentType` (the sniff `Agrees`
+already runs), `kit/richtext`'s `References`, `kit/rest`'s existing richtext seam, and
+the orphan sweep. **Added** — `contracts/image.go` and the use ledger: no existing
+package decides what an image becomes or what a body of somebody else's record
+references, and both had to live in `contracts/` rather than `internal/` so that
+`filetest.Fake` runs the one implementation the SQL service runs instead of imitating
+it. **Made reusable** — `ProcessImage`, `ReadsAsImage`, `RefusesPass`, `CollapseRefs`
+and `DiffUses` as shared, tested decisions; `rest.FileUses` as the seam any module with
+a richtext field can mount and `file.RecordUses` as the shape of wiring it;
+`Upload.Image` as the door a picker or an editor knocks on; and `width`/`height` on the
+row as the server's own account of a frame, which the media library and the editor will
+lay out against instead of decoding a header to learn what an image is.

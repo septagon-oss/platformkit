@@ -86,6 +86,7 @@ pkit: access.Module needs usercontracts.Granting from product.Module.
 pkit: access.Module contributes one changecontracts.SubjectBinding to change.Module.
 pkit: content.Module is built after file.Module.
 pkit: content.Module needs richtext.Files from file.Module.
+pkit: content.Module needs rest.FileUses from file.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: change.Module is built after access.Module.
