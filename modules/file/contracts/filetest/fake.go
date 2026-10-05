@@ -89,7 +89,9 @@ func (f *Fake) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) 
 }
 
 // SetUses rewrites one field's uses, in the order the SQL service uses them:
-// decide, refuse anything that names a file that is not there, then write.
+// decide, refuse a file the body newly names that is not there, then write. A
+// file this rewrite only ends is allowed to be gone already — see the case in
+// conformance.go that holds both implementations to that.
 func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
 	scope, err := contracts.ScopeOf(ctx)
 	if err != nil {
@@ -98,9 +100,11 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	wanted := contracts.CollapseRefs(refs)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// Nothing is written until every id has been found, which is the whole of
-	// the refusal's promise: a body that names one gone file records no uses at
-	// all, rather than the uses of the files that happen to still be there.
+	// Nothing is written until every newly-named id has been found, which is the
+	// whole of the refusal's promise: a body that names one gone file records no
+	// uses at all, rather than the uses of the files that happen to still be
+	// there. Ids this rewrite is dropping are not asked: they may be gone, and
+	// the rows that name them are what the write is here to remove.
 	for _, id := range wanted {
 		if _, ok := f.rows[id]; !ok {
 			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)

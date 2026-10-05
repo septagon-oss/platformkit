@@ -411,6 +411,36 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
+		// Ending the use of a file that was removed first is not the refusal
+		// above, and a record has to survive the difference: Delete consults the
+		// ledger no more than it does today, so the row that names a gone file is
+		// ordinary rather than corrupt, and the delete of the record that shows it
+		// must go through. Refusing here would strand that record and leave the
+		// ledger saying a file nobody has is still being shown.
+		"a use ended of a file that is already gone ends": func(t *testing.T, f Fixture) {
+			gone, kept := stored(t, f, "shown then removed"), stored(t, f, "still shown")
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{gone.ID, kept.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, gone.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID}); err != nil {
+				t.Fatalf("the edit that dropped a removed image = %v, want it accepted", err)
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, kept.ID); err != nil || len(rows) != 1 || rows[0].Use != use {
+				t.Errorf("the file still shown reads by %+v (%v), want the one field showing it", rows, err)
+			}
+			// The same rewrite again is the test that the dangling row went with
+			// the first one: were it still there, this call would end it a second
+			// time and name it as newly unused.
+			out, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID})
+			if err != nil || len(out) != 0 {
+				t.Errorf("rewriting the same body again ended %v (%v), want nothing", out, err)
+			}
+		},
+
 		"deleting removes the row and says where the bytes are": func(t *testing.T, f Fixture) {
 			row := stored(t, f, hello)
 			var gone *contracts.File
