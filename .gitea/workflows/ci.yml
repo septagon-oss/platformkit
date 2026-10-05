@@ -130,9 +130,10 @@ jobs:
       #     measurement the steps beside it are for is the first run of a new key against the second.
       #   - The two jobs share the *prefix*, not the archive, so the first run of a job's key after a
       #     dependency or toolchain change restores the other job's archive of the same toolchain —
-      #     `check`'s is ~1.3 GB raw against the 125 MB `design` reads — and pays that once per change
-      #     before saving its own; every later run takes this job's own exact key. Whether that one
-      #     restore costs more than it warms is readable in the step's `Cache Size:` and wall time.
+      #     `check`'s is the ~1.3 GB raw the measurement above describes, and `design` reads a fraction
+      #     of it — and pays that once per change before saving its own; every later run takes this
+      #     job's own exact key. Whether that one restore costs more than it warms is readable in the
+      #     step's `Cache Size:` and wall time.
       - name: Name this job's Go cache
         id: gocache
         run: bash scripts/ci_go_cache_key.sh check
@@ -631,8 +632,9 @@ jobs:
       # one the cache store kept and leave the other restoring bytes that are mostly not its own, cold
       # and green, until go.sum moved. What they share is the key's prefix, so `design`'s first run of a
       # new digest still warms from `check`'s archive before it has one of its own. The two trees are
-      # not the same bytes: 92 modules and 781 MB for `check`, 7 modules and 125 MB for this job's
-      # `go build`. scripts/ci_go_cache_test.sh refuses either job forming a key of its own, and
+      # not the same bytes — `go list -deps -test` over this tree answers 859 third-party packages over
+      # 131 modules for what `check` builds and 41 over 8 for this job's target — so one archive could
+      # never warm both. scripts/ci_go_cache_test.sh refuses either job forming a key of its own, and
       # scripts/ci_go_cache_one_saver_per_key_test.sh refuses the one key this used to have.
       - name: Name this job's Go cache
         id: gocache
