@@ -634,39 +634,60 @@ func TestAResponseTooLargeToHoldSaysItRan(t *testing.T) {
 	}
 }
 
-// TestAnInFlightMarkerOlderThanFiveMinutesIsReclaimable is the crash window's only
-// exit, with its boundary on both sides: four minutes fifty-nine refuses, five
-// minutes one runs. The clock is Postgres's, which is why the rows are aged in SQL
-// rather than by a test that injects a Clock the kernel does not consult.
-func TestAnInFlightMarkerOlderThanFiveMinutesIsReclaimable(t *testing.T) {
+// TestAnAbandonedClaimRefusesTheKeyUntilThePurgeTakesIt is the crash window, from
+// both ends. A claim that is not settled says either "somebody is running this now"
+// or "the process that claimed it died", and the kernel cannot tell them apart: its
+// own claim is committed and detached precisely so that a repeat on another
+// connection can see it. So the age of the marker decides nothing on the request
+// path — four minutes fifty-nine refuses and five minutes one refuses too, because
+// taking over a slow command applies it twice (Finding: a running owner whose claim
+// aged) — and the exit is the purge, which deletes only a row whose own deadline
+// has passed and so cannot delete one that is being answered. This case holds the
+// whole of that promise: refuse, refuse, then run once the purge has been.
+func TestAnAbandonedClaimRefusesTheKeyUntilThePurgeTakesIt(t *testing.T) {
 	_, router, f, runs, path := setupNote(t)
 	if got := send(t, router, path, keyA, "held").Code; got != http.StatusOK {
 		t.Fatalf("the first request answered %d", got)
 	}
 	for _, tc := range []struct {
-		name   string
-		age    string
-		want   int
-		after  int64
-		replay bool
+		name string
+		age  string
 	}{
-		{"a claim aged four minutes fifty-nine", "4 minutes 59 seconds", http.StatusConflict, 1, false},
-		{"a claim aged five minutes one second", "5 minutes 1 second", http.StatusOK, 2, false},
+		{"a claim aged four minutes fifty-nine", "4 minutes 59 seconds"},
+		{"a claim aged five minutes one second", "5 minutes 1 second"},
+		{"a claim aged a day", "24 hours"},
 	} {
-		// Back into the in-flight state at the age of the case's choosing — the
-		// settled row above is what the claim would have become.
+		// Back into the in-flight state, which is what a process that died between
+		// the claim and the answer leaves behind. The answer above is what the row
+		// would have become.
 		runSystem(t, f, "UPDATE platformkit_idempotency SET settled = false, status = 0, response = NULL,"+
 			" claimed_at = now() - interval '"+tc.age+"'")
 		res := send(t, router, path, keyA, "held")
-		if res.Code != tc.want {
-			t.Errorf("a claim aged %s answered %d, want %d: %s", tc.name, res.Code, tc.want, res.Body)
+		if res.Code != http.StatusConflict {
+			t.Errorf("%s answered %d, want %d: %s", tc.name, res.Code, http.StatusConflict, res.Body)
 		}
-		if got := res.Header().Get("Idempotency-Replay") == "true"; got != tc.replay {
-			t.Errorf("a claim aged %s reported replay %v, want %v", tc.name, got, tc.replay)
+		if got := res.Header().Get("Idempotency-Replay") == "true"; got {
+			t.Errorf("%s replayed an answer it never held", tc.name)
 		}
-		if n := runs.Load(); n != tc.after {
-			t.Errorf("a claim aged %s ran the command %d times, want %d", tc.name, n, tc.after)
+		if n := runs.Load(); n != 1 {
+			t.Fatalf("%s ran the command %d times, want the one run it already had", tc.name, n)
 		}
+	}
+	// The purge is the recovery, and it is the only one: the marker of a command
+	// nobody is answering any longer is the row whose deadline the kernel set for
+	// exactly this. It takes one press of the button afterwards, and it is the price
+	// of never applying a slow command twice.
+	runSystem(t, f, "UPDATE platformkit_idempotency SET expires_at = now() - interval '1 second'")
+	if err := httpx.PurgeIdempotency(t.Context(), f.app); err != nil {
+		t.Fatalf("purge: %v", err)
+	}
+	res := send(t, router, path, keyA, "held")
+	if res.Code != http.StatusOK || res.Header().Get("Idempotency-Replay") == "true" {
+		t.Fatalf("after the purge the abandoned key answered %d replay=%q, want a fresh command",
+			res.Code, res.Header().Get("Idempotency-Replay"))
+	}
+	if n := runs.Load(); n != 2 {
+		t.Errorf("after the purge the command ran %d times, want two", n)
 	}
 }
 

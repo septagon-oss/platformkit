@@ -25,6 +25,14 @@ package httpx
 // a double transition, not a lost update, and a key replayed after its day is a
 // fresh command nothing can tell from the first (docs/adr/0016). The command's
 // own expected revision is what refuses two different writes.
+//
+// Nothing here infers that a command finished from how long ago it started. The
+// kernel cannot see another process's request, so an in-flight claim it cannot
+// reach is a claim it must assume is still running: the repeat is refused, and the
+// scheduled purge is what frees the key of a process that died (see the note on
+// expires_at in claimIdempotency). Refusing a retry of a command that is really
+// gone costs a person one more press, some minutes later; taking over a claim that
+// is not really gone costs them the command twice.
 
 import (
 	"bytes"
@@ -210,18 +218,25 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	}
 	actor, ok := tenancy.ActorFrom(ctx.Context())
 	if !ok {
-		// No caller to scope the key to. ValidateDeclarations refuses the only
-		// declaration that could get here on purpose; a route that lost its
-		// principal on the way is a route that cannot key anything, and running the
-		// command is the honest answer rather than a claim nobody owns.
-		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: an idempotency key arrived with no principal; the command runs unclaimed",
+		// A key scopes to a caller. With no caller there is nobody to scope it to:
+		// every anonymous visitor of the tenant would share one row, which is a
+		// replay table one visitor can aim at another's. ValidateDeclarations
+		// refuses the declaration that could reach here on purpose, so arriving
+		// means a route lost its principal between the guard and this gate — and
+		// running the command anyway is the silent double-apply the header exists to
+		// prevent, answered with a 200 that promises a key nothing was written for.
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: an idempotency key arrived with no principal",
 			"method", ctx.Method(), "path", ctx.URL().Path)
-		next(ctx)
+		a.refuseGate(ctx, http.StatusForbidden, CodeAnonymous+": this command needs a caller to scope its key to")
 		return
 	}
 	tenant, ok := tenancy.FromContext(ctx.Context())
 	if !ok {
-		next(ctx)
+		// The same reasoning with the other half of the identity: a key scoped to an
+		// actor but to no tenant is one row two customers could each read.
+		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: an idempotency key arrived with no tenant",
+			"method", ctx.Method(), "path", ctx.URL().Path)
+		a.refuseGate(ctx, http.StatusForbidden, CodeNoTenant+": this command's key has no tenant to scope it to")
 		return
 	}
 	holder := holderFrom(ctx.Context())
@@ -289,32 +304,66 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // after any recovery, after any reset that turned a held 200 into a 500. The
 // commit's own verdict is not in what was handed over, so the transaction
 // middleware puts it on the holder this reads — see noteUncommitted.
+//
+// The record is a deferred step rather than a following one, because a panic that
+// unwinds through here never reaches a statement written after the call. That is
+// the one outcome that must not be left unsettled: the transaction below this
+// middleware rolled back on its way out, nothing ran, and a claim left standing
+// would refuse the retry of a command that produced no row — for five minutes, or
+// until a purge, which is a person staring at "another request is still running"
+// about a request that stopped a second ago. TestAPanickedCommandReleasesItsKeyAfterRollback
+// is the case; http.ErrAbortHandler is the one panic that settles nothing, because
+// it means "this response is being dropped", not "this work failed".
 func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		r = r.WithContext(context.WithValue(r.Context(), claimKey{}, &idempotencyHolder{}))
+		defer func() {
+			if v := recover(); v != nil {
+				if v != http.ErrAbortHandler {
+					a.forgetClaim(r.Context(), holderFrom(r.Context()))
+				}
+				panic(v)
+			}
+			holder := holderFrom(r.Context())
+			if holder == nil || holder.claim == nil {
+				return
+			}
+			b, ok := bufferFrom(r.Context())
+			if !ok {
+				return
+			}
+			status, body, held := b.status, b.body.Bytes(), !b.begun()
+			if status == 0 {
+				status = http.StatusOK
+			}
+			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.uncommitted); err != nil {
+				// The command ran and its answer was not kept. The caller has its
+				// response; the next one gets a fresh claim in five minutes rather than
+				// a stored response it was never given, which is the safe direction: a
+				// row left unsettled refuses a repeat, and a row that lies about an
+				// answer replays one.
+				a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: the idempotency record could not be written",
+					"method", r.Method, "path", r.URL.Path, "error", err)
+			}
+		}()
 		next.ServeHTTP(w, r)
-		holder := holderFrom(r.Context())
-		if holder == nil || holder.claim == nil {
-			return
-		}
-		b, ok := bufferFrom(r.Context())
-		if !ok {
-			return
-		}
-		status, body, held := b.status, b.body.Bytes(), !b.begun()
-		if status == 0 {
-			status = http.StatusOK
-		}
-		if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.uncommitted); err != nil {
-			// The command ran and its answer was not kept. The caller has its
-			// response; the next one gets a fresh claim in five minutes rather than
-			// a stored response it was never given, which is the safe direction: a
-			// row left unsettled refuses a repeat, and a row that lies about an
-			// answer replays one.
-			a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: the idempotency record could not be written",
-				"method", r.Method, "path", r.URL.Path, "error", err)
-		}
 	})
+}
+
+// forgetClaim releases the key of a request that is leaving by the panic door. The
+// statement is the one recordIdempotency already uses for a 5xx and for a
+// transaction that did not commit, and it runs for the same reason: an answer
+// nobody received is not an answer to remember, and work that rolled back must run
+// again. Failure is a log line and nothing more — the request is already failing,
+// and a claim that outlives it is the smaller of the two faults.
+func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
+	if holder == nil || holder.claim == nil {
+		return
+	}
+	if err := a.recordIdempotency(ctx, *holder.claim, http.StatusInternalServerError, nil, nil, false, true); err != nil {
+		a.rlog(ctx).ErrorContext(ctx, "httpx: the idempotency claim of a panicked command could not be released",
+			"error", err)
+	}
 }
 
 // recordIdempotency is the decision, made as one statement against one table: either
@@ -328,7 +377,8 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 //     response says. This is the same fact as the bullet above, read from the side
 //     that cannot answer: a commit that failed on a request whose caller had already
 //     gone away leaves a 200 nobody read behind, and `uncommitted` is how the record
-//     step learns the work is not in the database. See noteUncommitted.
+//     step learns the work is not in the database. See noteUncommitted. The panic
+//     that never reached a response at all takes this same branch — see idempotencyRecord.
 //   - A response under 500 that never reached the wire early and fits is stored
 //     whole, with its status, its Content-Type and the three headers a client acts on.
 //     An answer with no body — the redirect a page's own command answers with — is
@@ -417,7 +467,7 @@ type heldResponse struct {
 	holds     bool
 	requestID string
 	settled   bool
-	stale     bool
+	expired   bool
 	hash      []byte
 }
 
@@ -428,11 +478,12 @@ type heldResponse struct {
 func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempotencyAnswer, error) {
 	var out idempotencyAnswer
 	err := a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		// Twice, because the row can stop existing between the two statements: the
-		// claim of a request that failed is deleted, and an expired row is purged.
-		// Neither is a fault of this request's, and neither may be answered with a
-		// refusal of an in-flight command that is not in flight.
 		for range 2 {
+			// Twice, because the row can stop existing between the two statements: the
+			// claim of a request that failed is deleted, an expired answer is deleted
+			// below, and a purge can take either between the failed INSERT and the read.
+			// Neither is a fault of this request's, and neither may be answered with a
+			// refusal of an in-flight command that is not in flight.
 			res := tx.DB().Exec("INSERT INTO "+idempotencyTable+
 				" (tenant_id, actor_id, operation, key, request_hash, claimed_at, expires_at)"+
 				" VALUES (?, ?, ?, ?, ?, now(), now() + interval '5 minutes')"+
@@ -452,22 +503,20 @@ func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempot
 			if h == nil {
 				continue
 			}
-			if !h.settled && h.stale {
-				// The only exit from the window a dead process leaves: a claim older
-				// than the in-flight bound is taken over by whoever asks, and this one
-				// statement is what makes it one of them. The UPDATE carries the stale
-				// predicate, so two requesters of the same abandoned claim both run it
-				// and exactly one of them finds a row.
-				res := tx.DB().Exec(reclaimSQL, c.hash[:], c.tenant, c.actor, c.operation, c.key)
-				if res.Error != nil {
-					return res.Error
+			if h.settled && h.expired {
+				// The answer's own day is over: the window the response is kept for has
+				// passed, and past it a key is a fresh command (docs/adr/0016). Waiting for
+				// the scheduled purge would make the promise the clock says rather than the
+				// one the document says, so the row that has nothing left to give goes here,
+				// in the same statement that is about to be asked again. An *unsettled* row
+				// whose deadline passed is a different thing and gets a different answer:
+				// see the note on expires_at below.
+				if err := tx.DB().Exec("DELETE FROM "+idempotencyTable+
+					" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND settled",
+					c.tenant, c.actor, c.operation, c.key).Error; err != nil {
+					return err
 				}
-				if res.RowsAffected == 1 {
-					out.run = true
-					return nil
-				}
-				out = inProgress()
-				return nil
+				continue
 			}
 			out = settledAnswer(c, h)
 			return nil
@@ -483,6 +532,19 @@ func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempot
 // settledAnswer is the whole of the answer for a settled row, and for one still in
 // flight: an idempotent command's status is what the second caller is being told,
 // so it is decided here rather than in three places.
+//
+// The `!settled` branch is the cure for the one case a clock cannot see. A claim
+// that is not settled says one of two things: somebody is running this command
+// now, or the process that claimed it died mid-flight. The kernel has no way to
+// tell them apart — its own transactions are committed and detached precisely so
+// that a repeat on another connection can see the first one — and the two answers
+// it could give are not equally bad. Taking over an ageing marker and running the
+// command again applies a write twice whenever the first owner was merely slow:
+// TestARunningCommandIsNotAppliedTwiceWhenItsClaimAges is that case, and no bound
+// someone can write down is longer than the request that can outlive it. Refusing
+// costs the dead process's caller a Retry-After and one more press after the purge,
+// which is what expires_at and the scheduled job are for. So the refusal is the
+// answer, always, and age decides nothing on this path.
 func settledAnswer(c idempotencyClaim, h *heldResponse) idempotencyAnswer {
 	switch {
 	case !h.settled:
@@ -502,16 +564,12 @@ func inProgress() idempotencyAnswer {
 	return idempotencyAnswer{refuse: http.StatusConflict, code: CodeIdempotencyInProgress + ": another request with this key is still running", retryAfter: 2}
 }
 
-// reclaimSQL is the statement reclaim stands for, kept separate so the claim loop
-// can run it and read its own row count.
-const reclaimSQL = "UPDATE " + idempotencyTable +
-	" SET request_hash = ?, claimed_at = now(), expires_at = now() + interval '5 minutes'," +
-	" settled = false, status = 0, content_type = '', headers = '{}'::jsonb, response = NULL, request_id = ''" +
-	" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?" +
-	" AND NOT settled AND claimed_at <= now() - interval '5 minutes'"
+// reclaimSQL is gone, and its absence is the point: no statement in this package
+// takes over another request's claim. The recovery of a claim whose owner died is
+// the purge's job, which deletes a row only once its expires_at has passed and so
+// cannot delete one that is still being answered.
 
-// idempotencyAnswer is one of four things: run, replay, refuse, or take over a
-// stale claim and then run.
+// idempotencyAnswer is one of three things: run, replay, or refuse.
 type idempotencyAnswer struct {
 	run        bool
 	held       *heldResponse
@@ -523,9 +581,17 @@ type idempotencyAnswer struct {
 // readHeld reads the row that is already there. No row is not an error: it is a
 // claim that ended between our failed INSERT and this read, which the caller
 // answers by claiming again.
+//
+// The last column is the row's own deadline, read on the database clock like
+// everything else here. What it means depends on the row's state, and the two
+// readings must not be confused: on a settled row it is the end of the window the
+// answer is kept for, which this request enforces for itself; on an unsettled one
+// it is the point at which the *purge* may take the marker of a command nobody is
+// answering any longer, which is not a fact a request may act on as if it were
+// knowledge of whether a process is alive.
 func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
-		" now() - claimed_at >= interval '5 minutes' FROM "+idempotencyTable+
+		" now() > expires_at FROM "+idempotencyTable+
 		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 		c.tenant, c.actor, c.operation, c.key).Rows()
 	if err != nil {
@@ -539,7 +605,7 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 		h       heldResponse
 		headers []byte
 	)
-	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.stale); err != nil {
+	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.expired); err != nil {
 		return nil, err
 	}
 	if err := rows.Close(); err != nil {

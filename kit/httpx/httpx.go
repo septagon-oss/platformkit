@@ -793,8 +793,9 @@ func (a *API) Events() []string {
 //
 //   - A safe method: a key claims "run this once", and a GET is a read the kernel
 //     already answers from whatever the row says now.
-//   - The Public surface: it has no principal, so the key would be scoped to the
-//     whole tenant — a table any anonymous visitor can fill with keys and any
+//   - The Public surface, or the App door that admits a caller who is not signed
+//     in (`httpx.Public()`). Either has no principal, so the key would be scoped to
+//     the whole tenant — a table any anonymous visitor can fill with keys and any
 //     other visitor of that tenant could then replay. An anonymous double submit is
 //     the public write limit's question, and this does not answer it.
 //   - A streamed body: the gate hashes the bytes, and the one route that reads its
@@ -810,8 +811,19 @@ func idempotencyRefusal(op *huma.Operation) string {
 		return "the handler reads its own body, which leaves nothing for the request gate to hash"
 	}
 	s, _ := op.Extensions[SurfaceExtension].(string)
-	if Surface(s) == SurfacePublic {
+	auth, declared := declarationOf(op)
+	switch {
+	case Surface(s) == SurfacePublic:
 		return "the public surface has no principal to scope a key to, so any visitor of the tenant could replay another's"
+	case declared && auth.kind == kindPublic:
+		// The door, not the surface, is what decides whether a principal exists: an
+		// App route that admits an anonymous caller reaches the request gate with the
+		// same absence a public one does, and would answer a declared key by running
+		// the command unclaimed — a 200 promising an answer that was never kept, and
+		// a second press that is a second command. The sign-in door is the shape this
+		// refuses, and it is a real one; the anonymous double submit belongs to the
+		// public write limit, which is the mechanism built for a caller nobody owns.
+		return "this door admits a caller with no principal, so a key here has no owner and any visitor of the tenant could replay another's"
 	}
 	return ""
 }
