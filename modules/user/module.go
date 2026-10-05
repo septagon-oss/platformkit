@@ -106,7 +106,7 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Administration == nil {
 		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}
@@ -124,12 +124,19 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Granting == nil {
 		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
 	}
-	// An adapter with nothing behind it answers "nobody may promote anybody",
-	// which reads as a working door and locks every promotion in every tenant
-	// this composition serves.
-	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
-		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
-	}
+	// An empty GrantingFunc is the one adapter this module accepts unwired, and
+	// the reason is the shape of the answer. Who may hand out an administering
+	// role is the authentication service's, and the authentication service is
+	// built after this module — it looks people up here — so the holder arrives
+	// empty and the auth module fills its Ask in its own build. Refusing an empty
+	// holder at this line would refuse the only wiring that is not a cycle.
+	//
+	// What is not refused is what stays refused: an adapter with no Ask answers
+	// the error contracts.GrantingFunc.May carries, so a composition whose auth
+	// module never ran fails the roles write — no row, no event, no stale read —
+	// rather than answering "nobody may promote anybody" and reading as a door
+	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
+	// case, not by this line.
 	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate

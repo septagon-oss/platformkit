@@ -131,7 +131,7 @@ var permissions = []module.Permission{
 // route — which meant holding file:manage to do something the interface says it
 // may do with a transaction. contracts.Opener is the narrow half most consumers
 // should take.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Storage == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference on the first upload.
