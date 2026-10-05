@@ -293,7 +293,7 @@ func ProductCardWithSlots(p ProductCardProps, slots ProductCardSlots) g.Node {
 	for _, badge := range p.Badges {
 		badges = append(badges, Badge(badge))
 	}
-	return sharedSection(p.ComponentProps, "product-card", p.Label, stateBody(p.State, slots.StateSlots), h.A(h.Href(p.Href), Media(p.Media)),
+	return sharedSection(p.ComponentProps, "product-card", p.Label, stateBody(p.State, slots.StateSlots), navigationLink(p.Disabled, p.Href, Media(p.Media)),
 		Heading(HeadingProps{Text: p.Title, Level: 2, Size: 4}), recoveryAction(ButtonProps{Label: p.Title, Href: p.Href, Variant: "link"}, p.Disabled),
 		Text(TextProps{Content: p.Description, Size: "sm"}), price, Text(TextProps{Content: p.AvailabilityText, Size: "sm"}), g.Group(badges), g.Group(slots.Actions))
 }
