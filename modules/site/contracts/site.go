@@ -37,25 +37,25 @@ const (
 
 var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 
-// DefaultPrimaryColor is what a site that has chosen none holds: no colour of its
-// own. The column default, the settings form and the paint read this one constant,
-// so the three cannot disagree, and such a site wears the accent of the palette it
-// links — which that palette's own gate issued for both modes, which is why the
-// paint needs no measurement to make it legible.
+// DefaultPrimaryColor is the colour a site that has chosen none is rendered in.
+// It is here rather than in a theme because a theme may be replaced and this is
+// what a tenant's settings say when they say nothing.
 //
-// It cannot be a #rrggbb, and that is arithmetic rather than a colour choice. The
-// gate measures the accent as body copy on each mode's own canvas (design/contrast
-// .go: accent-default on surface-canvas at MinContrast), so one stored colour would
-// have to read at 4.5:1 on a light canvas and on a dark one, which needs those two
-// grounds 4.5 × 4.5 = 20.25:1 apart. design.Default() puts them 18.28:1 apart: light
-// surface-canvas #f2efe7 at relative luminance 0.864, where an accent must be at most
-// 0.153, against dark surface-canvas #0e1614 at 0.007, where it must be at least
-// 0.207. The bands do not meet and no constant of that type can meet them — of 32768
-// colours sampled on a step of 8 in each channel, design.Default() issued none
-// unchanged in both modes. What this constant used to be, #2563eb, reads in neither
-// (4.50:1 on the light canvas against a floor of 4.5), so the colour a tenant that
-// never opened the form was rendered in was never the colour its row held.
-const DefaultPrimaryColor = ""
+// It is a #rrggbb because the wire says so, and the wire is not this module's to
+// change: apps/platformkit/testdata/openapi.json publishes primaryColor with the
+// pattern ^#[0-9a-fA-F]{6}$, and apps/platformkit/wire_compatibility_test.go
+// refuses a change to a published shape (rule B3) whatever the reason and whatever
+// the direction — `UPDATE_GOLDEN=1` regenerates a document that is stale, never one
+// that is broken. So "a site with no colour of its own" cannot be a value this
+// field holds: an empty string is not a colour the contract describes, and a value
+// a client cannot read, save unchanged and get back is not a default. The site that
+// holds no colour is still painted the accent of the palette it links (modules/web
+// .accent), and it gets to hold none through an installation's own history rather
+// than through a value the API could send. Saying whether the default reads is the
+// paint's job, and it measures before it writes the declaration:
+// design.Pair.LegibleAccent repairs what one constant cannot be in both modes at
+// once, which is the arithmetic this constant used to be argued with.
+const DefaultPrimaryColor = "#2563eb"
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
 // and a label longer than a few words is a sentence in a menu.
@@ -130,7 +130,7 @@ type SiteSettings struct {
 	// their site looks. A theme that needed more would be a theme with a
 	// stylesheet editor in it.
 	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
-	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:''" pattern:"^#[0-9a-fA-F]{6}$" doc:"Brand colour, #rrggbb. Empty says the site has none of its own and wears the palette's accent" required:"false" example:"#2563eb"`
+	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#2563eb'" pattern:"^#[0-9a-fA-F]{6}$" doc:"Brand colour, #rrggbb" default:"#2563eb" required:"false" example:"#2563eb"`
 
 	// LogoFileID is a file id with no foreign key behind it, which is what
 	// "cross-module dependencies are Go interfaces" costs at the database: this
@@ -194,12 +194,11 @@ func (s *SiteSettings) Validate(context.Context) error {
 	s.Tagline = strings.TrimSpace(s.Tagline)
 	s.HomeSlug = strings.ToLower(strings.TrimSpace(s.HomeSlug))
 	s.PrimaryColor = strings.ToLower(strings.TrimSpace(s.PrimaryColor))
-	// An empty colour is the choice, not a missing value: it says this site has no
-	// colour of its own and wears the palette's accent. Nothing fills it in here —
-	// filling it in would store a colour nobody chose — which is why
-	// DefaultPrimaryColor names no colour at all.
 	if s.Theme == "" {
 		s.Theme = ThemeSystem
+	}
+	if s.PrimaryColor == "" {
+		s.PrimaryColor = DefaultPrimaryColor
 	}
 	switch {
 	// Characters, not bytes, here and below: len() counts bytes, so a title of
@@ -218,7 +217,7 @@ func (s *SiteSettings) Validate(context.Context) error {
 		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
 	case !slices.Contains(themes, s.Theme):
 		return fmt.Errorf("theme %q is not one of %v", s.Theme, themes)
-	case s.PrimaryColor != "" && !hexColor.MatchString(s.PrimaryColor):
+	case !hexColor.MatchString(s.PrimaryColor):
 		return fmt.Errorf("%q is not a colour; a primary colour is #rrggbb", s.PrimaryColor)
 	case len(s.Nav) > MaxNav:
 		return fmt.Errorf("a navigation is at most %d links", MaxNav)

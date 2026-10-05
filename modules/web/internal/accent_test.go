@@ -132,22 +132,20 @@ func TestTheSiteDeclaresNoAccentItsPaletteCannotCarry(t *testing.T) {
 	}
 }
 
-// TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent: what a site with no
-// colour of its own wears. site contracts' DefaultPrimaryColor names no colour —
-// no #rrggbb reads as text on a light canvas and on a dark one, so a stored default
-// could only ever be repainted before it reached the page — and a site holding it is
-// painted the accent of the palette its own sheet links, mode by mode. That is the
-// colour the palette's own gate issued, so the row, the form and the page agree, and
-// the page agrees in the colour it actually wears.
+// TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent: what a row that holds no
+// colour wears. The contract's default is a #rrggbb, because the published wire
+// grammar admits nothing else (see modules/site/contracts/site.go on the pattern),
+// and a row can still arrive holding none: a char(7) shorter than seven characters
+// reads back blank-padded, and a row written outside the door that validates holds
+// what it holds. Such a row is painted the accent of the palette its own sheet links,
+// mode by mode, which is the colour that palette's gate issued for that mode — so the
+// page never paints a colour it had to repair to paint.
 func TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent(t *testing.T) {
 	t.Parallel()
 	if design.Default().Light.AccentDefault == design.Default().Dark.AccentDefault {
 		t.Fatal("the shipped palette paints one accent in both modes, so this case compares nothing")
 	}
 	settings := &sitecontracts.SiteSettings{Title: "Acme"}
-	if err := settings.Validate(t.Context()); err != nil {
-		t.Fatalf("Validate refused the settings of a site whose tenant chose no colour: %v", err)
-	}
 	for _, theme := range []string{"light", "dark", "system"} {
 		settings.Theme = theme
 		head := render(t, Site{}.view(settings, page.Request{}, "Welcome", nil).Head)

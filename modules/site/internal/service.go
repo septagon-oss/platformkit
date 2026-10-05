@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -37,8 +36,7 @@ func (s *Service) Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts
 	}
 	// Not a row, and not an error either: every tenant has a site from the
 	// moment it exists, and this is what it says before anybody has said
-	// anything. Validate names the theme and leaves the colour none: a tenant
-	// that has not chosen one has not chosen a colour either.
+	// anything. Validate fills in the theme and the colour.
 	out := &contracts.SiteSettings{}
 	return out, out.Validate(ctx)
 }
@@ -128,12 +126,6 @@ func (s *Service) stored(tx db.Tx[db.Tenant], lock bool) (*contracts.SiteSetting
 	err := q.Where("deleted_at IS NULL").Take(&row).Error
 	switch classified := crud.Classify(err); {
 	case classified == nil:
-		// A char(7) holding fewer than seven characters arrives from the driver
-		// blank-padded, so the site that named no colour reads back as "       ".
-		// That is the same nothing and is not equal to it, and without this line
-		// every second save of a site with no colour is a change that publishes.
-		// Validate normalises the same way on the way in; this is the read of it.
-		row.PrimaryColor = strings.TrimSpace(row.PrimaryColor)
 		return &row, nil
 	case errors.Is(classified, crud.ErrNotFound):
 		return nil, nil
