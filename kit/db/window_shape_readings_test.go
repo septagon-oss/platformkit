@@ -399,7 +399,11 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // applies the version.
 //
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the
-// deadline that turns a regression to no bound at all into a failure rather than a hang.
+// deadline that turns a regression to no bound at all into a failure rather than a hang, and
+// is therefore a generous one: the drain alone on this machine costs 117 s of its own, which
+// is what the old 120 s was measuring — the speed of the disk, not the tick's bound. The
+// assertions below are the case; this bound is only the refusal to hang, as lifecycle_test.go
+// in kit/app already says of the same kind of bound at 90 s.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -416,7 +420,7 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancel()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
 	if errors.Is(err, context.DeadlineExceeded) {
