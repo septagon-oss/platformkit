@@ -302,7 +302,18 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # are checked here too.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# The stage's own watchdog, priced rather than defaulted. `go test` gives a package ten
+	# minutes; measured cold (`-count=1`, nothing cached, eight packages at once on a 32-core
+	# box over one Postgres) this repository needs 570s for apps/platformkit, 519s for kit/db,
+	# 440s kit/httpx, 412s modules/auth, 344s kit/rest, 274s kit/events, 268s modules/audit
+	# and 248s modules/tenant. The default therefore refuses a repository that is merely
+	# working: with the whole of ./... in flight, those same eight packages were killed at
+	# exactly 600s, each with a fresh test on its stack (`running tests:
+	# TestPinnedAddresses (2s)`) and nothing hung. Twenty-five minutes keeps the watchdog for
+	# what it is for — a run that never ends — without judging a busy box dead at 95% of its
+	# need. No behaviour budget moves with it: the kernel's lock_timeout and statement_timeout
+	# still refuse a wait that is too long, and they refuse it in seconds.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=25m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
