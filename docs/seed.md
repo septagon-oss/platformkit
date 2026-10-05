@@ -262,8 +262,11 @@ where a person is named, assigned by `task.Service.Assign`.
 `dueAt` is resolved against the run's injected clock and applied when the record
 is **created** — see *Time, audit and external effects*. A plain reference has
 grammar `<writer-alias>/<key>` in a writer-declared reference argument. The alias
-and key are case-sensitive except for normalization performed by the owner's
-natural-key rule. The target must be in the files for this run, or already
+and key are case-sensitive except for the normalization the target's owner
+performs: a writer names that normalization in `Resource.CanonicalKey`, and
+provenance, the prune keep-set and reference lookup all go through it, so a
+reference to `contents/About The Team` and a record keyed `about-the-team` are one
+row's two spellings. The target must be in the files for this run, or already
 resolvable by its writer in this tenant; a missing target refuses with both
 source and target names. Cross-tenant lookup is impossible through the passed
 `db.Tx[db.Tenant]` and target writer.
@@ -338,6 +341,7 @@ type Resource struct {
     OperatorWrite, Prunable bool
     References []ReferenceField
     RichTextFields, Commands []string
+    CanonicalKey func(value string) string // the identity the owner stores; nil = as written
 }
 type ReferenceField struct {
     JSONPointer, TargetAlias string
@@ -380,8 +384,10 @@ func FromSpec[T crud.Entity](rest.Spec[T], Resource) Writer
 func Decide(Snapshot, Target) Decision // one pure comparator shared by fake and SQL writer
 ```
 
-`Snapshot` holds presence, ID, canonical values for seed-managed fields and
-commands, and optional owner revision. `Target` holds the same canonical
+`Snapshot` holds presence, ID and the canonical values of the seed-managed fields
+and commands — nothing a writer may fill that no decision reads, so no revision
+field: no owner in this checkout takes an expected revision, and a field that
+carries one would be a promise the port does not keep. `Target` holds the same canonical
 projection, with resolved IDs and UTC times, but no server-owned fields. The
 `Resolved` input distinguishes an existing ID from a symbolic pending
 `resource/key`. Dry-run can therefore plan an empty tenant without inventing
@@ -525,7 +531,10 @@ its own typed refusal, which is preserved with the same source wrapper.
    read fields, `tenant_id NOT NULL`, `ENABLE` and `FORCE ROW LEVEL SECURITY`,
    and the same `platformkit_tenant_match(tenant_id)` `USING`/`WITH CHECK`
    policy as `contents`. Every row created or changed by seed gets a mapping,
-   including natural keys, because prune reads provenance. An identical
+   including natural keys, because prune reads provenance; `key` holds the
+   identity the owner stores (`Resource.CanonicalKey`), so two spellings of one
+   natural key are one mapping rather than two licences to write or delete one
+   row. An identical
    pre-existing unowned row gets no mapping or write. Lookup prefers a mapping's record ID
    when the owner has a UUID identity; natural-key owners without one (auth
    roles) keep `record_id=NULL` and resolve by the owner's key. An absent
@@ -667,8 +676,8 @@ to existing RLS-protected tables, with no down files or second audit store.
 
 The fake is `fakeWriter` in `kit/seed/service_test.go`: a small map-backed
 implementation of the port. It
-holds separate tenant maps, snapshots, event/audit intentions and optional
-revision values; its mutation methods call the same `Decide` as the SQL
+holds separate tenant maps, snapshots and event/audit intentions; its mutation
+methods call the same `Decide` as the SQL
 adapter. The package's private reconciliation engine accepts a narrow key
 store: the production adapter reads/writes `seed_keys`, and the fake harness
 uses a map and stages its changes until the case succeeds. This lets the
@@ -732,6 +741,20 @@ What Postgres conformance covers, and where:
 - The browser journey: `e2e/site.spec.ts`'s "a new tenant opens on its starter
   home, and a published page takes its place", with
   `TestSeededTenantOpensOnItsHomePage` as the same claim without a browser.
+- Key identity, which is the owner's spelling: `contents` and `users` declare
+  `CanonicalKey`, and four cases hold it. `TestSiteHomeReferenceMeetsTheOwnersSpellingOfTheSlug`
+  (`apps/platformkit/seed_site_home_canonical_slug_test.go`) opens the site on the
+  slug the page's owner stored and reruns unchanged;
+  `TestSeededPersonMeetsTheOwnersSpellingOfTheirAddress`
+  (`apps/platformkit/seed_user_email_canonical_test.go`) seeds `Person@Example.test`
+  as the one person the user module stores and emits no second event;
+  `TestRespellingAPagesKeyToItsSlugDoesNotPruneIt`
+  (`apps/platformkit/seed_slug_respelled_prune_test.go`) proves a pruning file that
+  respells a key keeps the page; `TestTwoSpellingsOfOneIdentityRefuseAtTheSecondDeclaration`
+  (`kit/seed/duplicate_identity_test.go`) refuses two declarations that fold to one
+  record and writes nothing. `TestEverySnapshotFieldAWriterFillsIsReadByTheService`
+  (`kit/seed/snapshot_fields_read_test.go`) reads the port's own source and refuses
+  any `Snapshot` field the service never consults.
 
 Two of the items this contract first asked for are **not delivered here**. A
 manual-write revision race has no owner to race against yet: no Spec in this

@@ -136,12 +136,20 @@ func (User) TableName() string { return "users" }
 // CanSignIn reports whether this user could authenticate with a password.
 func (u *User) CanSignIn() bool { return u.Status == StatusActive && u.PasswordHash != "" }
 
+// CanonicalEmail is an address as this module stores it: trimmed, and folded to
+// lower case. Two strings that differ only in case or padding name one mailbox,
+// so the fold belongs in one published function the entity itself runs before it
+// checks an address — anything else that has to meet the row a string names
+// (a read path, a seed record) asks this, rather than spelling the rule again
+// and drifting from it.
+func CanonicalEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: an address that
 // differs only in case or in whitespace is the same mailbox, and two callers
 // must not disagree about that.
 func (u *User) Validate(context.Context) error {
-	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
+	u.Email = CanonicalEmail(u.Email)
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	at := strings.IndexByte(u.Email, '@')
 	switch {

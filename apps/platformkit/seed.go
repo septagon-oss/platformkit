@@ -243,6 +243,9 @@ func (contentSeeder) Resource() seed.Resource {
 	return seed.Resource{
 		Alias: "contents", Module: "content", Entity: "content",
 		NaturalKey: "slug", WriteGrant: contentcontracts.PermissionContentManage,
+		// The slug is how the file addresses the record and how the module stores
+		// it, so provenance, prune and reference lookup spell it the module's way.
+		CanonicalKey: contentcontracts.Slugify,
 		// Content has a delete path — the same soft delete the route uses — so a
 		// file may prune records it declares gone.
 		Prunable: true,
@@ -380,17 +383,20 @@ func (siteSeeder) Resource() seed.Resource {
 	}
 }
 
-// Target reads the declared home as the reference it is: `contents/<slug>`. The
-// value the site module stores is the slug alone, so the alias is what this
-// takes off — the reference is how the record is addressed in a file, and the
-// orderer has already refused a value that names no page.
+// Target reads the declared home as the reference it is: `contents/<key>`. The
+// value the site module stores is the page's slug, which is what the key means
+// to its owner, so the alias comes off and the key goes through the same
+// function the content writer puts in seed.Resource — the two writers spell a
+// content record one way because they ask the same owner. Handing on the file's
+// own spelling would have site.Save accept a home slug no page wears, and a
+// visitor at "/" reading a settings row about an address nothing serves.
 func (siteSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
 	ref := seedText(r.Fields["homeSlug"])
-	alias, slug, found := strings.Cut(ref, "/")
-	if !found || alias != "contents" || slug == "" {
+	alias, key, found := strings.Cut(ref, "/")
+	if !found || alias != "contents" || key == "" {
 		return seed.Target{}, fmt.Errorf("homeSlug names the page a site opens on as contents/<slug>, not %q", ref)
 	}
-	return seed.Target{Fields: map[string]any{"homeSlug": slug}}, nil
+	return seed.Target{Fields: map[string]any{"homeSlug": contentcontracts.Slugify(key)}}, nil
 }
 
 func (w *siteSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], _ seed.Key, _ bool) (seed.Snapshot, error) {
@@ -471,6 +477,10 @@ func (userSeeder) Resource() seed.Resource {
 	return seed.Resource{
 		Alias: "users", Module: "user", Entity: "user",
 		NaturalKey: "email", WriteGrant: usercontracts.PermissionUserManage,
+		// An address is the record's key and the module owns its spelling, so a
+		// file that writes `Person@Example.test` declares the person the module
+		// stores as `person@example.test` — one record, one mapping, one run.
+		CanonicalKey: usercontracts.CanonicalEmail,
 		// No delete path, deliberately: deactivating a person is not undoing an
 		// invitation, and a file that stops declaring an address must not be able
 		// to switch a person off.
@@ -479,7 +489,7 @@ func (userSeeder) Resource() seed.Resource {
 }
 
 func (w userSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUID, _ time.Time) (seed.Target, error) {
-	fields := map[string]any{"email": r.Key, "displayName": seedText(r.Fields["displayName"])}
+	fields := map[string]any{"email": usercontracts.CanonicalEmail(r.Key), "displayName": seedText(r.Fields["displayName"])}
 	roles, err := seedRoles_(r.Fields["roles"])
 	if err != nil {
 		return seed.Target{}, err

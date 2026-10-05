@@ -13,7 +13,6 @@ import (
 type Snapshot struct {
 	Present  bool
 	ID       uuid.UUID
-	Revision int64
 	Fields   map[string]any
 	Commands map[string]any
 }

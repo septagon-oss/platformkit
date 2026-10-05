@@ -63,6 +63,31 @@ it now. Without that move the file which let the record go would delete a record
 the other file still declares, and would do it in the same run that reported the
 record `UNCHANGED`.
 
+A record's identity is the key its owner stores, not the spelling a file wore.
+`Resource.CanonicalKey` names that spelling — content's is `contentcontracts.Slugify`,
+a person's is `usercontracts.CanonicalEmail` — and the run looks provenance up in
+it, writes provenance in it, keeps the prune keep-set in it and resolves a
+reference through it, so `About The Team` and `about-the-team` are one record with
+one mapping: the second run reports it `UNCHANGED` instead of writing it again, and
+a pruning file that respells a key keeps the row instead of deleting the record its
+own new key had just reported unchanged. Where the field a reference stores *is*
+the target's key — a site's home slug is a content slug — the referring writer
+passes the reference's key through the same owner function, so what it saves is the
+address the target row actually wears. Two declarations whose keys fold to one
+identity refuse at the second line, because one row cannot meet two sets of fields.
+`CanonicalKey` nil means the owner stores the key exactly as the file wrote it —
+which is the answer for a resource with no natural key, where the mapping's own
+UUID is the only identity.
+
+What that leaves open is spelling *between* two records: a reference must name its
+target the way the file that declares the target spells it, because the graph is
+built from the declared text. A reference that spells an existing record its
+owner's way resolves — provenance is in that spelling — while one that names a
+record this same run is about to create, in a spelling the declaring file did not
+use, refuses for a missing target in both `Plan` and `Apply`. That is a refusal
+that writes nothing, which is the safe side; it is not a resolution, and the
+sentence above is the honest shape of the rule.
+
 A command's seed run carries a person. `seedGrants` refuses one that carries
 nobody, and the command resolves `--as` to a user of the target tenant inside that
 tenant's own transaction before any grant is asked; the roles it checks are the

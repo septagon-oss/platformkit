@@ -265,7 +265,7 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) (*contracts.User, error) {
 	var u contracts.User
 	err := tx.DB().Where("lower(email) = ? AND deleted_at IS NULL",
-		strings.ToLower(strings.TrimSpace(email))).Take(&u).Error
+		contracts.CanonicalEmail(email)).Take(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, crud.ErrNotFound
 	}

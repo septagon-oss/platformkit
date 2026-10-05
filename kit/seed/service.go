@@ -22,11 +22,30 @@ type Clock interface{ Now() time.Time }
 
 // Resource is the explicit seed surface an owner offers. Alias is the name in
 // embedded files; Module and Entity are the provenance identity in seed_keys.
+//
+// CanonicalKey is how this owner stores a record's key. A file may write
+// `About The Team`; the module that owns the page may store `about-the-team`;
+// those are one record, and the seed must address it one way. Provenance, the
+// prune keep-set and reference lookup all go through it, because a run that
+// stores provenance under the file's spelling and finds the row by the owner's
+// reports one record twice: it maps what it cannot see, and a pruning file that
+// respells a key then deletes the row it still declares. Nil means the owner
+// stores the key exactly as the file spells it.
 type Resource struct {
 	Alias, Module, Entity, NaturalKey, WriteGrant string
 	Prunable                                      bool
 	References                                    []Reference
 	Commands                                      []string
+	CanonicalKey                                  func(value string) string
+}
+
+// canonicalKey is the identity a record has where it is stored. Writers declare
+// it; nothing else in this package spells a key by hand.
+func canonicalKey(r Resource, value string) string {
+	if r.CanonicalKey == nil {
+		return value
+	}
+	return r.CanonicalKey(value)
 }
 
 // Key pairs a seed name with the owner's existing row ID, when provenance has
@@ -250,6 +269,10 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		return Plan{}, err
 	}
 	var references []Reference
+	// One record per identity across every file this run loaded, keyed by the
+	// identity its owner stores. Order catches two identical keys; this catches
+	// the pair that differs only in the spelling the owner folds away.
+	spellings := make(map[string]Source)
 	// A resource is described once, whatever number of kinds' files declare it: the
 	// references below belong to its Writer, and appending them per document would
 	// turn one honest declaration into the duplicate Order rightly refuses.
@@ -264,6 +287,15 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 			return Plan{}, fmt.Errorf("seed: %s: %s has no owner delete path", doc.Source, doc.Resource)
 		}
 		for _, record := range doc.Records {
+			// Two spellings of one identity are one record declared twice, and the
+			// run cannot write a row twice: refuse where the second declaration is
+			// written rather than letting one row meet two sets of fields and keep
+			// whichever came last.
+			identity := canonicalKey(r, record.Key)
+			if prior, again := spellings[r.Alias+"/"+identity]; again {
+				return Plan{}, fmt.Errorf("seed: %s: %s/%s is the record already declared at %s", record.Source, r.Alias, identity, prior)
+			}
+			spellings[r.Alias+"/"+identity] = record.Source
 			for _, command := range record.Commands {
 				if !slices.Contains(r.Commands, command.Name) {
 					return Plan{}, fmt.Errorf("seed: %s: %s has no command %s", command.Source, doc.Resource, command.Name)
@@ -306,7 +338,11 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 		if err := s.authorize.Check(ctx, tx, r, Update); err != nil {
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 		}
-		key, owned, err := lookupKey(tx, r, entry.Record.Key)
+		// The identity the owner stores, which is one record whatever case, space
+		// or punctuation the file wore. The plan line keeps the declared spelling:
+		// the person reading it has to find the record in their own file.
+		identity := canonicalKey(r, entry.Record.Key)
+		key, owned, err := lookupKey(tx, r, identity)
 		if err != nil {
 			return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 		}
@@ -353,7 +389,7 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 				if !current.Present {
 					return Plan{}, fmt.Errorf("seed: %s: owner returned no row after %s", entry.Record.Source, decision.Action)
 				}
-				if err := putKey(tx, r, entry.Record.Key, entry.Kind, current.ID); err != nil {
+				if err := putKey(tx, r, identity, entry.Kind, current.ID); err != nil {
 					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 				}
 				item.RecordID = current.ID
@@ -364,11 +400,15 @@ func (s *Service) run(ctx context.Context, tx db.Tx[db.Tenant], selection Select
 				// mapping still naming the file that stopped declaring it is a licence
 				// for that file's next run to delete a record the other file declares.
 				// The mapping follows the declaration; the record does not move.
-				if err := putKey(tx, r, entry.Record.Key, entry.Kind, current.ID); err != nil {
+				if err := putKey(tx, r, identity, entry.Kind, current.ID); err != nil {
 					return Plan{}, fmt.Errorf("seed: %s: %w", entry.Record.Source, err)
 				}
 			}
 		}
+		// A reference names its target as the file spells it, so it resolves under
+		// that spelling; it resolves under the owner's spelling too, which is what
+		// lets two files agree on one record without agreeing on its key.
+		resolved[entry.Resource+"/"+identity] = current.ID
 		resolved[entry.Resource+"/"+entry.Record.Key] = current.ID
 		plan.Items = append(plan.Items, item)
 	}
@@ -390,7 +430,7 @@ func (s *Service) existing(ctx context.Context, tx db.Tx[db.Tenant], alias, key 
 		return uuid.Nil, false, nil
 	}
 	r := writer.Resource()
-	name, _, err := lookupKey(tx, r, key)
+	name, _, err := lookupKey(tx, r, canonicalKey(r, key))
 	if err != nil {
 		return uuid.Nil, false, err
 	}
@@ -419,8 +459,12 @@ func (s *Service) prune(ctx context.Context, tx db.Tx[db.Tenant], docs []Documen
 			keys = make(map[string]bool)
 			declared[doc.Resource] = keys
 		}
+		// The keep-set is written in the identity the owner stores, because that is
+		// how the mappings prune reads are written: compare the file's spelling to
+		// the owner's and a respelled key keeps no record, it deletes it.
+		owner := s.writers[doc.Resource].Resource()
 		for _, record := range doc.Records {
-			keys[record.Key] = true
+			keys[canonicalKey(owner, record.Key)] = true
 		}
 		if doc.Prune {
 			byAlias[doc.Resource] = append(byAlias[doc.Resource], doc)
