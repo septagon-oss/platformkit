@@ -617,9 +617,14 @@ type Service interface {
 	//
 	// Every file it names is locked before its rows are written, in ascending id
 	// order so two records that share two files cannot lock them in opposite
-	// orders, and a file that is gone answers ErrNotFound naming the id — a use
-	// of a file that no longer exists is never written, and nothing else in the
-	// set is written either. It publishes nothing: the record's own write is the
+	// orders. A file the body newly names that is gone answers ErrNotFound
+	// naming the id — a use of a file that no longer exists is never written,
+	// and nothing else in the set is written either. A file this rewrite only
+	// ends has no such refusal: its ledger row was filed while the file existed
+	// and the file may have been removed since, which is the row to end rather
+	// than a reason to refuse. A record would otherwise be undeletable once
+	// somebody deleted its image, and the row saying a gone file is still shown
+	// would outlive every body that ever named it. It publishes nothing: the record's own write is the
 	// auditable fact, and the file module has no business emitting an event for
 	// somebody else's row. It returns the ids whose last use this ended, which
 	// is the list the release sweep will one day be handed; today the answer is
