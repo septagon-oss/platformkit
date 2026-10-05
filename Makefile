@@ -321,6 +321,14 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # "never cache test results across commits" by anyone who folds `-count=1` into `GOFLAGS` — so both
 # halves are pinned where they live: the workflow, and the two goals that run the suite. It starts
 # nothing and reads no database, which is what makes it a `check` line and not a job step.
+#
+# scripts/ci_go_cache_one_saver_per_key_test.sh asks the one question about those steps that no
+# single step can see: whether two jobs that run side by side save under the same exact key. A save
+# runs only when its restore was not an exact hit, so a key two jobs share ends up holding whichever
+# archive the cache server kept — the v2 protocol refuses the second reservation of an existing
+# (key, version), the v1 one keeps the newest — and the other job restores a tree built for someone
+# else, hits it exactly, never saves, and compiles cold until go.sum moves while the log reports a
+# warm restore. It reads the parsed workflow and starts nothing.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
@@ -329,6 +337,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
+	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
