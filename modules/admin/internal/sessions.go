@@ -12,7 +12,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -299,7 +298,7 @@ func deviceNamed(s *authcontracts.SessionListing) string {
 func formValue(raw []byte, key string) (string, error) {
 	form, err := url.ParseQuery(string(raw))
 	if err != nil {
-		return "", problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+		return "", page.FormUnreadable()
 	}
 	return form.Get(key), nil
 }

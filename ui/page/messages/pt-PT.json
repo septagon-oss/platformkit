@@ -141,6 +141,15 @@
       "": "Falta: %s."
     }
   },
+  "fault.form_unreadable": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Não foi possível ler este formulário.",
+    "plural": {
+      "": "Não foi possível ler este formulário."
+    }
+  },
   "fault.granter": {
     "references": [
       "ui/page/fault.go"

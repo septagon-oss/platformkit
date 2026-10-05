@@ -132,10 +132,23 @@ func Mux(log *slog.Logger, faults Faults, checks []Check, reports ...Report) htt
 		panic("health: Mux requires the kernel's fault door; pass (*httpx.API).Siteless")
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET "+livePath, func(w http.ResponseWriter, _ *http.Request) {
+	// Both probes answer GET, and say so themselves. Registering the address without a
+	// verb puts the method refusal in this package's hands: left to the mux, a POST to
+	// /ready was answered "Method Not Allowed" in text/plain by net/http, and this is
+	// the one place that reaches a person — the mux lives outside the middleware chain
+	// that negotiates a shape, and whoever typed /ready into a browser and let a page
+	// post to it was looking at a developer's note. Through the same door as a failed
+	// check, which makes it one verdict with every other kernel refusal.
+	mux.HandleFunc(livePath, func(w http.ResponseWriter, r *http.Request) {
+		if !onlyGet(w, r, faults) {
+			return
+		}
 		write(w, http.StatusOK, `{"status":"ok"}`, "application/json")
 	})
-	mux.HandleFunc("GET "+readyPath, func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc(readyPath, func(w http.ResponseWriter, r *http.Request) {
+		if !onlyGet(w, r, faults) {
+			return
+		}
 		failed := failures(r.Context(), log, checks)
 		if len(failed) == 0 {
 			write(w, http.StatusOK, ready(r.Context(), reports), "application/json")
@@ -204,6 +217,19 @@ func ready(ctx context.Context, reports []Report) string {
 		return `{"status":"ok"}`
 	}
 	return string(body)
+}
+
+// onlyGet is the verb gate both probes answer for themselves: GET, and HEAD because a
+// HEAD answers a GET's headers with no body. Every other verb is refused in the shape
+// the caller asked for, with the Allow header half of an RFC 9110 405 owes — the list
+// net/http's own mux wrote here before this file owned the refusal.
+func onlyGet(w http.ResponseWriter, r *http.Request, faults Faults) bool {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return true
+	}
+	w.Header().Set("Allow", "GET, HEAD")
+	faults(w, r, problem.New(http.StatusMethodNotAllowed, "this address accepts GET requests"))
+	return false
 }
 
 func write(w http.ResponseWriter, status int, body, contentType string) {

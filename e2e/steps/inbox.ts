@@ -43,8 +43,7 @@ export interface Mailbox {
   /** The whole inbox. Only in a `beforeAll` of a spec that owns its own Mailpit:
    *  the suite runs one worker against one shared inbox, so clearing between two
    *  specs would eat the other one's mail. */
-  clear(): Promise<void>;
-  /** Where this mailbox is, for a failure message. */
+  clear(): Promise<void>;  /** Where this mailbox is, for a failure message. */
   readonly url: string;
 }
 
@@ -93,6 +92,40 @@ function lower(list: { Address: string }[] | null): string[] {
   return (list ?? []).map((one) => one.Address.toLowerCase());
 }
 
+/** Mailpit answers `/api/v1/messages` one page at a time and defaults the page to 50
+ *  messages. Asking once and reading the answer as the whole inbox is what made a
+ *  51st message invisible: `countTo` reported that nothing was sent for a recipient
+ *  whose mail the sink held, and `latestTo` gave up on a verification link that was
+ *  sitting in the box. So every read here walks the pages until it has seen `total`
+ *  of them, and a page that comes back short ends the walk. `total` is what bounds
+ *  the loop: Mailpit keeps the newest messages it retains, so the number it reports
+ *  is the number there is to fetch. */
+const pageSize = 50;
+
+async function pages(base: string): Promise<ListResponse> {
+  const seen: ListResponse['messages'] = [];
+  const byId = new Set<string>();
+  let total = 0;
+  for (let start = 0; ; start += pageSize) {
+    const listed = await get<ListResponse>(
+      base,
+      `/api/v1/messages?start=${start}&limit=${pageSize}`,
+    );
+    total = listed.total;
+    for (const one of listed.messages) {
+      // New mail arrives between two pages and shifts what is left of the older
+      // one, so a message can appear on two of them. Counting it twice would be a
+      // count the fixture cannot trust, which is the failure this file is for.
+      if (!byId.has(one.ID)) {
+        byId.add(one.ID);
+        seen.push(one);
+      }
+    }
+    if (listed.messages.length < pageSize || seen.length >= total) break;
+  }
+  return { total, messages: seen };
+}
+
 async function latestTo(
   base: string,
   address: string,
@@ -103,7 +136,7 @@ async function latestTo(
   const deadline = Date.now() + (opts.timeoutMs ?? 15_000);
   let last = 'the inbox answered no list at all';
   while (Date.now() < deadline) {
-    const listed = await get<ListResponse>(base, '/api/v1/messages');
+    const listed = await pages(base);
     const mine = listed.messages.filter((one) => lower(one.To).includes(wanted));
     const fresh = mine.filter((one) => Date.parse(one.Created) >= since);
     if (fresh.length > 0) {
@@ -133,7 +166,7 @@ async function countTo(base: string, address: string): Promise<number> {
   // message the inbox happened to hold. A count a fixture cannot trust is worse than
   // no count, because it turns "no mail was sent" into a passing assertion.
   const wanted = address.toLowerCase();
-  const listed = await get<ListResponse>(base, '/api/v1/messages');
+  const listed = await pages(base);
   return listed.messages.filter((one) => lower(one.To).includes(wanted)).length;
 }
 

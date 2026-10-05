@@ -25,7 +25,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/problem"
+
 	"github.com/septagon-oss/platformkit/ui/components"
 )
 
@@ -48,7 +48,7 @@ func MountAccess(r *httpx.Router, s Shell) {
 	}, httpx.SignedIn(), func(ctx context.Context, _ Request, in *askForm) (View, error) {
 		form, err := url.ParseQuery(string(in.RawBody))
 		if err != nil {
-			return View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+			return View{}, FormUnreadable()
 		}
 		if err := httpx.Ask(ctx, httpx.AccessAsk{
 			Permission: form.Get("permission"), Path: form.Get("path"),

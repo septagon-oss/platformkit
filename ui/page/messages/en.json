@@ -154,6 +154,15 @@
       "": "Go back to the page you came from"
     }
   },
+  "fault.form_unreadable": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "this form could not be read",
+    "plural": {
+      "": "this form could not be read"
+    }
+  },
   "fault.granter": {
     "references": [
       "ui/page/fault.go"
