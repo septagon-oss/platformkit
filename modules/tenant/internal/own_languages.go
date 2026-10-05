@@ -181,7 +181,11 @@ func mountOwnLanguages(s httpx.Surfaces, svc contracts.Service) {
 		Description: "Replaces the declaration of which languages this tenant is answered in. " +
 			"Bring the revision the read answered with; a revision the tenant has left behind is refused and writes nothing.",
 		Endpoint: app.Prefix() + ownLanguages,
-		Fields:   languageFields(),
+		// The door is a replace, so it answers the verb a replace carries. Without
+		// this the catalog advertises an address that meets a POST with 405, and the
+		// shell it wrote the document for has to guess the verb from prose.
+		Method: http.MethodPut,
+		Fields: languageFields(),
 		Run: func(ctx context.Context, _ uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
