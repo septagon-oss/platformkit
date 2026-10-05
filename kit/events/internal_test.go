@@ -106,9 +106,21 @@ func TestAPoisonEventIsDeadLetteredAndStopsComingBack(t *testing.T) {
 // TestJetStreamStopsRedeliveringAPoisonEvent is the same policy on the other
 // transport, against the NATS `make up` starts. The handler cap and consumer
 // backoff bound work while terminal recording remains recoverable.
+//
+// What this can ask about the retry ladder is bounded by where its facts live. The
+// ladder is timed by the server; the only clock inside this process reads the moment a
+// callback started, and a callback that cannot run — descheduled by a busy host, stopped
+// at a debugger, parked behind a garbage collection — leaves the broker firing its
+// redelivery timers anyway and the client stamping the queued deliveries a few
+// milliseconds apart the moment it resumes. Held at the poison handler's return for two
+// seconds, this case recorded its five attempts and its one terminal row, with the last
+// three redeliveries stamped 3ms, 4ms and 1ms apart and the row written 217ms after its
+// own wait began; released at once the rungs read 44ms, 200ms, 500ms and 1.001s, and the
+// row lands 1.83s to 2.00s after the relay. Same policy, same binary, same broker. So
+// this case asks the server what it was told to do, and keeps the one timing bound a
+// stalled client can only lengthen.
 func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
-	url := os.Getenv("PLATFORMKIT_TEST_NATS_URL")
-	if url == "" {
+	if os.Getenv("PLATFORMKIT_TEST_NATS_URL") == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
 	fast(t)
@@ -121,17 +133,13 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// This run's own subject and consumer: the stream is shared with every
 	// other run.
 	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
-	transport, err := provider.JetStream(appname.Name(""), url)
-	if err != nil {
-		t.Fatalf("JetStream: %v", err)
-	}
-	t.Cleanup(func() { _ = transport.(interface{ Close() error }).Close() })
+	transport, js := jetstreamForTest(t)
 
 	tenant := tenancy.Tenant{ID: uuid.New(), Slug: "acme"}
 	var mu sync.Mutex
 	attempts := 0
 	var deliveries []time.Time
-	err = Consume(ctx, conn, transport, []Subscription{{
+	err := Consume(ctx, conn, transport, []Subscription{{
 		Module: "ledger", Name: name,
 		Handler: func(context.Context, db.Tx[db.Tenant], Event) error {
 			mu.Lock()
@@ -152,10 +160,21 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 		t.Fatalf("publish: %v", err)
 	}
 	// The first delivery cannot leave the server before the relay hands the event over,
-	// so relayed bounds the first rung from below whatever the handler's own start costs.
+	// so relayed is the instant the broker's own ladder starts from, and every rung below
+	// is measured against the server's clock rather than this process's.
 	relayed := time.Now()
 	if err := Relay(t.Context(), conn, transport); err != nil {
 		t.Fatalf("Relay: %v", err)
+	}
+
+	// The wait the policy itself imposes before a terminal row can exist: the server
+	// times delivery n+1 from delivery n by rung n, and the row follows the last
+	// delivery. No schedule inside this process can pull any of those instants earlier —
+	// a stalled client only adds to the total — so this bound stands whatever the host
+	// does, and breaking it means the ladder was not applied at the broker.
+	var floor time.Duration
+	for n := 1; n < delivery.MaxDeliveries; n++ {
+		floor += delivery.Backoff[min(n, len(delivery.Backoff))-1]
 	}
 
 	// The dead-letter row is what this waits for, and the wait asks the table, not
@@ -163,22 +182,22 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// row is there. deadLetterBound then bounds how long the broker may take to give
 	// up — it is not a budget the case spends.
 	//
-	// The floor under it is the policy's own: the four rungs above sum to 1.75s, and
-	// nothing is dead-lettered before the last one has expired. Measured over ten runs
-	// of this case at -race on a host carrying nine other worktrees' databases, the
-	// wait answered in 1.737s to 1.853s — p99 1.85s, which is the policy plus 0.1s of
-	// scheduling, so the wait is the policy and not the machine.
+	// The floor under it is the policy's own: `floor` above, 1.75s, and nothing is
+	// dead-lettered before the last rung has expired. Measured against the relay rather
+	// than against the start of the wait, six runs on a host carrying seven other
+	// worktrees' databases answered 1.829s to 1.997s — the worst of them the policy plus
+	// 0.25s of scheduling, 14%, so the wait is the ladder and not the machine.
 	//
 	// The bound is not 10 × that. The brief's formula is 10 × the p99 *on the CI
 	// runner*, and no CI log holds this wait yet — the line below prints it on every
 	// run, so the next reader prices this number from the job's own output. Two numbers
-	// are actually in hand: 10 × 1.85s ≈ 19s from this host, and the 30s this case
+	// are actually in hand: 10 × 2.0s ≈ 20s from this host, and the 30s this case
 	// already waited, which appears in no log as ever approached. A bound is a refusal,
 	// and the one thing a bound priced on a workstation cannot afford is to refuse more
 	// than the number it replaced: CI's runner is slower than the machine that measured
-	// 1.85s, and narrowing a wait no run ever came near turns a slow broker into a red
+	// 2.0s, and narrowing a wait no run ever came near turns a slow broker into a red
 	// job for no fact about the code. So the bound goes up, to double the wait it
-	// replaces — 60s, 32 × the measured p99 and 34 × the policy's own floor.
+	// replaces — 60s, 30 × the worst answer seen here and 34 × the policy's own floor.
 	const deadLetterBound = 60 * time.Second
 	var got int
 	waited := time.Now()
@@ -191,39 +210,75 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
+			mu.Lock()
+			seen := attempts
+			mu.Unlock()
 			t.Fatalf("JetStream never gave up within the %s this case allows: %d dead letters after %d attempts",
-				deadLetterBound, got, attempts)
+				deadLetterBound, got, seen)
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	t.Logf("the dead letter answered %s after the relay, inside the %s the case allows",
-		time.Since(waited).Truncate(time.Millisecond), deadLetterBound)
+	answered := time.Now()
+	t.Logf("the dead letter answered %s after the relay — the policy's own floor is %s — inside the %s the case allows",
+		answered.Sub(relayed).Truncate(time.Millisecond), floor, deadLetterBound)
 	mu.Lock()
-	defer mu.Unlock()
-	if attempts != delivery.MaxDeliveries {
-		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", attempts, delivery.MaxDeliveries)
+	seenAttempts, stamped := attempts, slices.Clone(deliveries)
+	mu.Unlock()
+	if seenAttempts != delivery.MaxDeliveries {
+		t.Errorf("the handler ran %d times, want %d; terminal recovery must not rerun the handler", seenAttempts, delivery.MaxDeliveries)
 	}
-	// JetStream schedules each redelivery from the moment it *delivered* (the message is
-	// left pending and AckWait is the ladder's first rung), and the handler stamps the
-	// moment it *started*, which trails the delivery by however long the first,
-	// cold call took: under -race on CI that was 31 ms of a 50 ms rung, and locally
-	// the gap read 1.6 ms in one run of eight. So the first rung is measured from
-	// the relay, which no delivery precedes — a lower bound no handler latency can
-	// break — and the later rungs between warm deliveries, where both ends carry the
-	// same small latency and the gaps land on their rungs to the millisecond.
-	for i := 1; i < len(deliveries); i++ {
-		want := delivery.Backoff[min(i, len(delivery.Backoff))-1]
-		gap, from := deliveries[i].Sub(deliveries[i-1]), "the delivery before"
-		low := want / 2
-		if i == 1 {
-			gap, from, low = deliveries[1].Sub(relayed), "the relay", want
-		}
-		t.Logf("delivery %d at %s after %s, configured %s", i+1, gap, from, want)
-		if gap < low || gap > want+250*time.Millisecond {
-			t.Errorf("delivery %d came %s after %s, want one %s backoff plus scheduling tolerance", i+1, gap, from, want)
-		}
+	// One row, still, after everything the broker retried. The wait above leaves as
+	// soon as it sees the first; this reads it again at the end of the case, so a
+	// second terminal row for the same event is a failure and not a race a reader
+	// happens never to hit.
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM platformkit_dead_letters`).Scan(&got); err != nil {
+		t.Fatalf("count the dead letters again: %v", err)
 	}
-
+	if got != 1 {
+		t.Errorf("%d dead letters after %d attempts, want exactly 1", got, seenAttempts)
+	}
+	// What the server was told, read back from the server. The consumer this
+	// subscription made carries the ladder the code asked for: the rungs it waits
+	// between deliveries, the first rung as its acknowledgement deadline, and no cap of
+	// its own — the handler cap in Subscribe is what ends attempts, and a broker cap
+	// would stop redelivery before terminal recovery is ever recorded. These are the
+	// ladder's three facts, they are the broker's own state rather than this process's
+	// schedule, and a consumer that came back with a shorter one is the regression the
+	// gaps this case used to assert on stood in for.
+	durable := Subscription{Module: "ledger", Name: name}.durable()
+	info, err := js.ConsumerInfo(stream, durable)
+	if err != nil {
+		t.Fatalf("read the consumer back from the broker: %v", err)
+	}
+	if info.Config.AckWait != delivery.Backoff[0] {
+		t.Errorf("the consumer's ack_wait is %s, want the ladder's first rung %s", info.Config.AckWait, delivery.Backoff[0])
+	}
+	if !slices.Equal(info.Config.BackOff, delivery.Backoff) {
+		t.Errorf("the consumer's backoff is %v, want %v", info.Config.BackOff, delivery.Backoff)
+	}
+	if info.Config.MaxDeliver != -1 {
+		t.Errorf("the consumer's max_deliver is %d, want -1: the handler cap bounds attempts, and a broker cap ends redelivery before the terminal row is ever written",
+			info.Config.MaxDeliver)
+	}
+	// And the one timing bound that runs entirely on the server's clock, for the reason
+	// given where it is computed: a terminal row inside the ladder's own floor is a ladder
+	// the broker never applied — a second delay layered on its timer is why the rungs are
+	// unequal, and a server that redelivered immediately is the same defect wearing the
+	// other sign.
+	if since := answered.Sub(relayed); since < floor {
+		t.Errorf("the terminal row arrived %s after the relay, before the %s of backoff the broker holds between %d deliveries",
+			since.Truncate(time.Millisecond), floor, delivery.MaxDeliveries)
+	}
+	// The stamps are printed and not asserted, which is the whole finding this case was
+	// rewritten around: they are the client's clock, so a gap here is a fact about the
+	// host that ran the case. They stay in the job log because the wait above, the
+	// server's own configuration and these numbers together are what the next reader
+	// prices a bound from — and because a reader who cannot see the schedule cannot tell
+	// a stalled client from a broker that fired early either.
+	for i := 1; i < len(stamped); i++ {
+		t.Logf("delivery %d stamped %s after the one before, on the client's clock",
+			i+1, stamped[i].Sub(stamped[i-1]).Truncate(time.Millisecond))
+	}
 }
 
 // TestADriftedConsumerIsReconciled, against the NATS `make up` starts.
