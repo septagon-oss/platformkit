@@ -44,8 +44,19 @@ gate's halves: a product renders its pages under the same pseudo-locale, calls `
 `pseudo.Wrapped`, marks what it typed, and floors its own ratio, without this package
 knowing what a page, a route or a client is.
 
+A sentence whose *argument* is English counts as reached. `Text` formats a catalogue
+answer around what the caller hands it, and the pseudo-locale marks the answer before the
+argument arrives, so `⟦That could not be saved: a task needs a title⟧` is one marked
+string — the *sentence* reached a catalogue and the English inside it never did. This
+package reads rendered documents, so it cannot see the seam; a gate that must not lose
+the difference reads the values it stored itself (`MarkDatum`) and leaves an interpolated
+*constant* to whoever owns the code that interpolated it.
+
 Known over-reach, printed rather than hidden: `of-PT` passes as a language tag, a
 16-character slug holding a digit passes as an opaque token, and `and/or` reads as a
 relative address because every one of its segments is spelled the way an address
-segment is. `Report` prints every exempt string with the reason, so what the number
+segment is. A label's colon and an English month name no longer read as data — `Name:`
+and `Mon 04 Oct 2026 12:00:00 UTC` are copy this reports — so what is exempt is a
+separator *inside* a token (`task:read`, `e.g.` with two dots, `a_b`) and a shape the
+grammar names: a scheme'd URL, a language tag, an id, an amount, a numeric timestamp. `Report` prints every exempt string with the reason, so what the number
 declined to count stays reviewable.
