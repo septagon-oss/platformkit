@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/septagon-oss/platformkit/kit/events"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -133,6 +134,21 @@ type User struct {
 	// identity provider. It is json:"-", so it is in no response, in no request
 	// and in no generated screen.
 	PasswordHash string `json:"-" gorm:"type:text"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes user.user.updated,
+	// and clears it before the response is written. It is no column, no form field, no
+	// filter and no OpenAPI property — a slice of structs is no entity field type,
+	// gorm:"-" keeps it out of the table and hidden:"true" out of the document — so the
+	// one place it appears is the event, which is where "what changed" has to be to
+	// still be readable in a year, in the one table that never forgets.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (u *User) SetChanges(changes []events.Change) {
+	u.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000007 agree.

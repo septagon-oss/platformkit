@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/events"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -99,6 +100,21 @@ type Task struct {
 	// ResolvedAt and Resolution close the loop. Both are set by Service.Resolve.
 	ResolvedAt *time.Time `json:"resolvedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;hide:list" doc:"When the task was resolved" readOnly:"true"`
 	Resolution string     `json:"resolution,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list" doc:"How the task was resolved"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes task.task.updated,
+	// and clears it before the response is written. It is no column, no form field, no
+	// filter and no OpenAPI property — a slice of structs is no entity field type,
+	// gorm:"-" keeps it out of the table and hidden:"true" out of the document — so the
+	// one place it appears is the event, which is where "what changed" has to be to
+	// still be readable in a year, in the one table that never forgets.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (t *Task) SetChanges(changes []events.Change) {
+	t.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000004 agree.

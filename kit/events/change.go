@@ -43,19 +43,42 @@ type Change struct {
 // before == nil is a create: every named field that carries a value is new, and says so
 // with only its After half. A field tagged `audit:"-"` may not be asked for at all.
 func Changes[T any](before, after *T, fields ...string) ([]Change, error) {
-	if after == nil {
+	return ChangesOf(before, after, fields...)
+}
+
+// ChangesOf is Changes for the one caller that cannot name the row it is diffing.
+// kit/rest's CRUD door is generic over the entity, so the two operands it holds are a
+// type parameter's pointer and a copy of it — the same values, but no *T the compiler
+// can check against another. Every rule above is this function's too; Changes is what a
+// module calls, and this is what the kernel's own door calls, because a door that wrote
+// the diff by hand would be a second explanation of a save for the same write.
+//
+// Both operands are pointers to the row, and before may be a nil pointer: a create, as
+// above. Anything else — a non-pointer, a nil after, two different types — is an error
+// rather than a partial answer.
+func ChangesOf(before, after any, fields ...string) ([]Change, error) {
+	a := reflect.ValueOf(after)
+	if !a.IsValid() || a.Kind() != reflect.Pointer || a.IsNil() {
 		return nil, fmt.Errorf("events: a change has to say what the row moved to")
 	}
 	if len(fields) == 0 {
 		return nil, fmt.Errorf("events: a diff over no fields explains nothing")
 	}
-	a := reflect.ValueOf(*after)
+	a = a.Elem()
 	if a.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("events: %T is not a row", after)
+		return nil, fmt.Errorf("events: %s is not a row", a.Type())
 	}
 	var b reflect.Value
-	if before != nil {
-		b = reflect.ValueOf(*before)
+	if bv := reflect.ValueOf(before); bv.IsValid() {
+		if bv.Kind() != reflect.Pointer {
+			return nil, fmt.Errorf("events: the row a save replaced is %s; a before half is a row or nothing", bv.Type())
+		}
+		if !bv.IsNil() {
+			if want := reflect.PointerTo(a.Type()); bv.Type() != want {
+				return nil, fmt.Errorf("events: %s and %s are two different rows, and a diff between them is not history", bv.Type(), want)
+			}
+			b = bv.Elem()
+		}
 	}
 	var out []Change
 	for _, name := range fields {
@@ -68,34 +91,45 @@ func Changes[T any](before, after *T, fields ...string) ([]Change, error) {
 		case "-":
 			return nil, fmt.Errorf("events: %s.%s is tagged audit:\"-\": a field nothing may record may not be asked for", a.Type().Name(), f.Name)
 		case "", "digest":
-			afterJSON, err := json.Marshal(a.FieldByIndex(f.Index).Interface())
+			afterRaw, err := json.Marshal(a.FieldByIndex(f.Index).Interface())
 			if err != nil {
 				return nil, fmt.Errorf("events: %s.%s: %w", a.Type().Name(), f.Name, err)
 			}
+			// Absence is decided on the value and not on its digest: the digest of an
+			// empty string is a string, so testing zeroJSON after digesting calls every
+			// blank a value. A create with no secret would then carry "sha256:" of "",
+			// which a reader of the trail reads as "it held something" — the one claim a
+			// digested field exists to avoid making. The same rule on an update: two
+			// digests are compared as values, because a digest of nothing and a digest of
+			// "" are different hexes describing the same absence.
+			afterBlank := zeroJSON(afterRaw)
+			afterJSON := afterRaw
 			if tag == "digest" {
-				afterJSON = digested(afterJSON)
+				afterJSON = digested(afterRaw)
 			}
 			c := Change{Field: name, After: afterJSON}
 			if !b.IsValid() {
-				if !zeroJSON(afterJSON) {
+				if !afterBlank {
 					out = append(out, c)
 				}
 				continue
 			}
-			beforeJSON, err := json.Marshal(b.FieldByIndex(f.Index).Interface())
+			beforeRaw, err := json.Marshal(b.FieldByIndex(f.Index).Interface())
 			if err != nil {
 				return nil, fmt.Errorf("events: %s.%s: %w", a.Type().Name(), f.Name, err)
 			}
+			beforeBlank := zeroJSON(beforeRaw)
+			beforeJSON := beforeRaw
 			if tag == "digest" {
-				beforeJSON = digested(beforeJSON)
+				beforeJSON = digested(beforeRaw)
 			}
-			if string(beforeJSON) == string(afterJSON) || (zeroJSON(beforeJSON) && zeroJSON(afterJSON)) {
+			if string(beforeRaw) == string(afterRaw) || (beforeBlank && afterBlank) {
 				continue
 			}
 			// A json null is an absence, not a value: an omitted pointer or an absent
 			// optional leaves no before half, and a trail row that said "from null"
 			// would be a claim about a value the row never held.
-			if !zeroJSON(beforeJSON) {
+			if !beforeBlank {
 				c.Before = beforeJSON
 			}
 			out = append(out, c)
@@ -104,6 +138,19 @@ func Changes[T any](before, after *T, fields ...string) ([]Change, error) {
 		}
 	}
 	return out, nil
+}
+
+// Recorder is a payload that can hold the diff a write path computed for it. The
+// kernel's CRUD door holds the locked before-image of a save it performed on a module's
+// behalf, so it is the one place that can say what the save replaced; an entity that
+// opts in with this one method gets that answer in its own payload, and every module is
+// saved the three lines it would otherwise hand-roll. The field is the entity's, tagged
+// json:",omitempty" so a payload that moved nothing carries no changes member, gorm:"-"
+// so it is not a column, and hidden:"true" so the REST document never offers a field no
+// response body ever holds: the door sets it immediately before it publishes, and clears
+// it immediately after, so the row a caller reads back is the row and not the diff.
+type Recorder interface {
+	SetChanges([]Change)
 }
 
 // fieldByJSON is the struct's own field for a json name, through embedded structs the
@@ -154,8 +201,9 @@ func digested(value []byte) json.RawMessage {
 // two halves are both absences did not move: the row that stored its navigation as []
 // and the body that sent no navigation at all differ in json — [] against null — and
 // not in fact, and a trail row saying "the navigation went from nothing to nothing" is
-// a change nobody made. Nothing else is compared loosely: two values that are both
-// present are compared byte for byte.
+// a change nobody made. It always runs on the value before any digest, and never on a
+// digest: a digest is a value even when what it digests is nothing. Nothing else is
+// compared loosely: two values that are both present are compared byte for byte.
 func zeroJSON(v []byte) bool {
 	switch s := string(v); s {
 	case `""`, `0`, `false`, `null`, `[]`, `{}`:

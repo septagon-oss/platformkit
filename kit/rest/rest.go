@@ -22,6 +22,7 @@ import (
 	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -410,6 +411,12 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return e, err
 	}
+	// The row as this transaction locked it, copied before merge touches anything. It
+	// is the before half of the diff this save reports: taken after the write there is
+	// nothing to diff, and taken unlocked it is the value some other save already
+	// replaced — history that did not happen, in the one table whose job is to have
+	// happened. See reportDiff.
+	before := rowCopy(e)
 	columns, err := merge(e, fields, s.Immutable, values)
 	if err != nil {
 		return e, err
@@ -434,10 +441,64 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain
 	// the preceding committed values used by validation and the emitted event.
+	done, err := reportDiff(before, e, values)
+	if err != nil {
+		return e, err
+	}
+	defer done()
 	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 		return e, err
 	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
+}
+
+// rowCopy is the shallow copy of a locked row: the values it held when the transaction
+// locked it, kept while the caller merges a body into the original. Shallow is enough
+// because merge assigns whole fields through the entity's own reflect.Value and never
+// writes through a pointer or extends a slice, so nothing a merge does to the original
+// reaches the copy. It answers any, because the door that asks is generic over the
+// entity and cannot name it; kit/events' ChangesOf takes the two rows as values and
+// refuses a pair that turns out to be two different types.
+func rowCopy[T any](e T) any {
+	v := reflect.ValueOf(e)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return nil
+	}
+	c := reflect.New(v.Elem().Type())
+	c.Elem().Set(v.Elem())
+	return c.Interface()
+}
+
+// reportDiff hands an entity the diff of the save that is about to publish, when the
+// entity carries one at all (events.Recorder). The names are the body's own keys — the
+// fields merge accepted, in the spelling the caller used — sorted, so two identical saves
+// publish the same list in the same order.
+//
+// It runs before the UPDATE, and a diff that cannot be computed fails the write: a body
+// that names a field the trail refuses is a request that must write nothing, not one that
+// wrote a row and then complained. A module that fences a field out of the trail with
+// audit:"-" has to refuse it at its own door, because the kernel cannot diff what the
+// trail may not hold and stay honest about the gap.
+//
+// What it returns is the way out: the set is cleared on the way here, so the row a caller
+// reads back is the row and not the diff. The changes member belongs to the event, and no
+// response body holds it.
+func reportDiff(before any, e any, values map[string]any) (func(), error) {
+	rec, ok := e.(events.Recorder)
+	if !ok {
+		return func() {}, nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	changes, err := events.ChangesOf(before, e, names...)
+	if err != nil {
+		return nil, err
+	}
+	rec.SetChanges(changes)
+	return func() { rec.SetChanges(nil) }, nil
 }
 
 func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
