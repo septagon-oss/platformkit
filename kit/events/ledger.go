@@ -69,6 +69,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -280,6 +281,45 @@ func durableLock(durable string) string { return "events ledger " + durable }
 // statement cannot see.
 const tenantLockKey = `'events ledger tenant ' || id::text`
 
+// tenantLock is that same key as Go can name it, for the half of the pair that is a
+// tenant id in hand rather than a row in a table: uuid's text is the lowercase
+// hyphenated form Postgres prints for `id::text`, so the two spellings hash alike.
+// The argument is durableLock's, and the reason both halves of both keys sit here.
+func tenantLock(tenantID uuid.UUID) string { return "events ledger tenant " + tenantID.String() }
+
+// declareTenant takes the shared half of one tenant's ledger key for the rest of tx,
+// before that transaction reads or writes anything about a claim.
+//
+// The row trigger takes this key, and for a claim already inserted that is enough: the
+// mark and its key belong to one transaction. It is not enough for a claim that has not
+// reached its INSERT yet, and the wait is what says so — a SHARE table lock, the one
+// CREATE INDEX takes, or a queue behind any writer, holds the statement *before* the row
+// trigger runs, so the transaction declares nothing while it waits. A placement commits
+// under it, this tenant's move then finds no key held and no committed row, answers its
+// zero report as a success, and the claim that finally lands is a mark under a durable
+// the tenant's own app will never subscribe under — the second handling this key exists
+// to prevent, arriving by the door the key's own placement left open. Declaring the
+// tenant above the read the
+// placement can overtake is what makes that read an answer the move has to respect: from
+// this statement to the end of the transaction, the move of this tenant refuses.
+//
+// It waits rather than refuses, which is the direction a delivery wants: the only holder
+// it can wait behind is a move's own transaction, which asks the key exclusively, renames
+// or refuses, and ends — and the wait costs an app-less deployment nothing it does not
+// already pay at the claim's trigger for the same key, since both hold it to commit.
+func declareTenant(gdb *gorm.DB, tenantID uuid.UUID) error {
+	if err := gdb.Exec(`SELECT pg_advisory_xact_lock_shared(hashtextextended(?, 0))`, tenantLock(tenantID)).Error; err != nil {
+		return fmt.Errorf("events: declare the delivery ledger of tenant %s busy: %w", tenantID, err)
+	}
+	return nil
+}
+
+// unscopedDurable is Go's reading of the move's `unscoped` predicate and of
+// migrations/000044's WHEN clause, so a writer of a claim and the trigger that locks it
+// cannot disagree about which rows the tenant key is for: '+' is appJoin, in none of the
+// three grammars an app, a module or an event name is written in.
+func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+") }
+
 // holdTenants takes the move's lock over every tenant of app, refusing rather than
 // queueing, before a single ledger row is read.
 //
@@ -300,8 +340,11 @@ const tenantLockKey = `'events ledger tenant ' || id::text`
 // outliving the rename of its ledger — so a claim takes the shared advisory lock of
 // its own tenant *first*, before the lock of its durable and so before it can queue
 // behind another move's, and the move asks for those tenants exclusively in the same
-// order. A delivery of another app holds its own tenant's lock and refuses
-// nothing here, which is what the per-durable lock already buys and this keeps.
+// order — and the claim's transaction takes that key above its first read of all
+// (declareTenant, called by holdsUnscoped and deadLetter), so a claim is visible to its
+// app's move from before the statement that decides whether to write one, whatever the
+// INSERT itself then waits behind. A delivery of another app holds its own tenant's lock
+// and refuses nothing here, which is what the per-durable lock already buys and this keeps.
 func holdTenants(tx db.Tx[db.System], app appname.Name) error {
 	var contended int64
 	if err := tx.DB().Raw(`SELECT count(*) FROM (

@@ -167,8 +167,13 @@ tenant's first, then its durable's — and the order is what makes the tenant ke
 having: a claim that reached for its durable first can be queued behind another move's
 durable lock with its own tenant still unnamed, and under that claim a placement can
 commit and this app's own move answer zero, which is the same double handling arriving by
-the door the locks were cut to close. Two shared locks per unscoped claim, and a moved
-deployment pays neither. A table lock is what this replaced, and it was wrong: two apps share
+the door the locks were cut to close. Waiting for the trigger to say the tenant's piece is
+the same hole one statement wider: an `INSERT` can wait for a relation lock, as `CREATE
+INDEX`'s `SHARE` takes one, and the transaction declares nothing while it waits. So the
+unscoped writer asks its tenant's key itself, in `declareTenant`, above the first read it
+makes about the delivery rather than beside the row it may never reach — a lock taken after
+a decision records it, and taken before, it makes the decision one the move has to answer.
+Two shared locks per unscoped claim, and a moved deployment pays neither. A table lock is what this replaced, and it was wrong: two apps share
 these tables, so one app's ordinary traffic refused the other app's move on every boot
 and every job tick, and the window the move exists to close stayed open while both
 apps' consumers ran. The move then takes the claims of the tenants this app holds — a
@@ -180,9 +185,10 @@ record per tenant whose claims moved goes into the same commit. The claims of a 
 whose `tenants.app` is empty belong to whichever deployment runs app-less beside this
 one and are left where its consumer looks for them. A delivery mid-claim therefore
 holds the durable and the move refuses, naming itself, having written and emitted
-nothing; and a delivery that names no app re-reads `tenants.app` inside the transaction
-that writes its claim, because a tenant that took an app while the delivery was being
-read is the one fact about it the placement changes underneath it. Such a delivery writes
+nothing; and a delivery that names no app declares its tenant and then re-reads
+`tenants.app` inside the transaction that writes its claim, because a tenant that took an
+app while the delivery was being read is the one fact about it the placement changes
+underneath it, and a second nonlocking read answers that just as fast as the first. Such a delivery writes
 no claim and refuses its copy as the check before the transaction does: a mark under the
 unscoped durable would be a mark in the one ledger that tenant's own app will never look
 in, which is the window the move exists to close, marked instead of closed. `kit/app` runs

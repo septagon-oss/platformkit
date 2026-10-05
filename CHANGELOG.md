@@ -20,11 +20,13 @@ where the deployment that runs app-less beside this one looks for them. One tran
 ledger onto the app's own prefix that carries `handled_at`, `name`, `error` and `failed_at` verbatim because the
 purge ages on them, then a delete of exactly the rows the copy read, and one `platformkit.ledger_moved` record
 per tenant whose claims moved. A delivery mid-claim holds its durable and its tenant, and the move refuses,
-naming itself, having written and emitted nothing. A delivery of a subscription that names no app re-reads
-`tenants.app` inside the transaction that writes its claim, because the app of its tenant is the one fact about
-that delivery the placement changes underneath it: a tenant that took an app while the delivery was being read
-is not this consumer's to run, and the delivery writes no claim, acks, and leaves the event to the app the row
-now names. The table lock this step first took, and a predicate that named the durable
+naming itself, having written and emitted nothing. A delivery of a subscription that names no app asks its
+tenant's key in Go, above the read rather than beside the row, and then re-reads `tenants.app` inside the
+transaction that writes its claim, because the app of its tenant is the one fact about that delivery the placement
+changes underneath it, and a second nonlocking snapshot is overtaken by the same placement the first one was while
+the INSERT that would have taken the key waits behind a relation lock: a tenant that took an app while the
+delivery was being read is not this consumer's to run, and the delivery writes no claim, acks, and leaves the
+event to the app the row now names. The table lock this step first took, and a predicate that named the durable
 and no tenant, were the defects it replaced: two apps share these tables, so one app's ordinary traffic refused
 the other app's move on every boot and every job tick, a refusal that wrote nothing left the window open while
 both apps' consumers ran, and walking every unscoped row on the way renamed another app's tenants' claims into a

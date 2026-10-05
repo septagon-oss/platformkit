@@ -364,26 +364,36 @@ func holdsTenant(ctx context.Context, conn *db.Conn, app appname.Name, tenantID 
 	return holds, err
 }
 
-// holdsUnscoped re-reads, inside the delivery's own transaction, the question
-// holdsTenant asked outside it, and answers for a subscription that names no app:
-// is this tenant still nobody's?
+// holdsUnscoped declares the tenant this delivery is written for, and only then
+// re-reads — inside the delivery's own transaction — the question holdsTenant asked
+// outside it: is this tenant still nobody's?
 //
-// It exists because the outer read is a decision made from a snapshot the write
-// does not hold. A delivery reads the row, the placement names it, and the claim
-// that follows marks work done under a durable the tenant's new app will never
-// subscribe under — the move that renames those rows has already looked, found
-// nothing, and reported its zero. Re-reading here costs one primary-key read of
-// one row, only for an app-less subscription, only until its tenant is placed, and
-// it narrows the window to the gap between two statements of one transaction.
+// It exists because the outer read is a decision made from a snapshot the write does
+// not hold. A delivery reads the row, the placement names it, and the claim that
+// follows marks work done under a durable the tenant's new app will never subscribe
+// under — the move that renames those rows has already looked, found nothing, and
+// reported its zero.
 //
-// It is a read and not a lock, which is the choice in it. A locking read would
-// close that gap by holding the tenant's row against the placement for the whole
-// delivery — and a placement would then wait on a handler's transaction, which is
-// a boot stopped by the traffic of the deployment it is replacing. The pair that
-// holds the boundary instead is this read and migrations/000044's tenant lock: the
-// claim declares its tenant before it waits on anything, so a move of that tenant
-// refuses while it is open, and a placement that commits first is answered here.
+// The re-read alone narrowed that window to two statements and no further, because the
+// reading it replaced was stale in the same way: a second nonlocking snapshot can be
+// overtaken by the same placement, and the trigger's key arrives too late to help, since
+// the INSERT that fires it can itself wait — behind a relation lock, or behind another
+// writer's row — with nothing said about its tenant. So the lock comes first and the read
+// second, and the order is the cure: once this statement has run, no move of this tenant
+// can commit while the delivery is open, so the answer below is either "still nobody's,
+// and nobody can become somebody before the claim commits" or "someone's, and the claim
+// is not ours to write". A lock taken after a decision records it; taken before, it makes
+// it authoritative.
+//
+// Holding it to commit costs the app-less deployment the window the claim already held
+// the same key for, and costs a deployment that has moved nothing: the key is asked for
+// by an app-less subscription alone, and a placement moves a tenant out of that branch.
 func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID) (bool, error) {
+	// The declaration, before the reading: see above, and declareTenant for why this is
+	// the half the row trigger cannot reach.
+	if err := declareTenant(tx.DB(), tenantID); err != nil {
+		return false, err
+	}
 	var whose string
 	// max() so a tenant with no row answers '' rather than no rows, as holdsTenant
 	// does: the row-level policy shows a tenant transaction its own row and nothing
@@ -443,6 +453,18 @@ func deadLetter(ctx context.Context, conn *db.Conn, ev Event, durable string, ca
 	ctx, cancel := context.WithTimeout(ctx, handlerTimeout)
 	defer cancel()
 	return db.RunSystem(ctx, conn, deadLetterToken, func(_ context.Context, tx db.Tx[db.System]) error {
+		// The same declaration a delivery makes before it reads, for the same reason and
+		// with the same limit: this is a claim too, written at an unscoped durable, and a
+		// terminal record that lands after a move renamed its tenant's ledger is one no
+		// scoped durable will ever carry — so `claim` would let a handler run again for
+		// work the kernel had already given up on. A durable that names an app is renamed
+		// by nobody, so it declares nothing: the same WHEN clause as the trigger, and the
+		// same key it would take once the INSERT reached its row.
+		if unscopedDurable(durable) {
+			if err := declareTenant(tx.DB(), ev.TenantID); err != nil {
+				return err
+			}
+		}
 		return tx.DB().Exec(`WITH claimed AS (
    INSERT INTO `+handled+` (event_id, durable, tenant_id) VALUES (?, ?, ?)
    ON CONFLICT DO NOTHING RETURNING event_id
