@@ -50,6 +50,12 @@
       "": "Abrir %s"
     }
   },
+  "admin.dashboard.count_number": {
+    "translation": "%d",
+    "plural": {
+      "": "%d"
+    }
+  },
   "admin.dashboard.healthy": {
     "translation": "Todas as verificações passaram.",
     "plural": {
@@ -614,5 +620,8 @@
     "plural": {
       "": "A porta de conta desta instalação não responde por revisões, por isso um formulário não pode alterar a língua. Nada foi alterado."
     }
+  },
+  "admin.account.language.unreadable": {
+    "translation": "Este formulário não pôde ser lido, por isso nada foi alterado."
   }
 }

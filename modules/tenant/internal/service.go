@@ -355,11 +355,22 @@ func (s *Service) SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UU
 		return t, nil
 	}
 	// The operator's declaration moves the same revision the tenant's own command
-	// compares: one counter over one fact, whichever door wrote it. The control-plane
-	// route does not *require* an expected one, because every installation's existing
-	// operator caller — bootstrap, the control-plane tests, whatever a product built
-	// against it — posts the pair alone, and the command with authority over a
-	// customer's set is the one that may not be the one refused for being stale.
+	// compares: one counter over one fact, whichever door wrote it. A declaration that
+	// names the number it was read at is compared against the row this transaction now
+	// locks, and a number the row has left behind is a conflict that writes nothing and
+	// publishes nothing — which is the half this command lacked while an operator's page
+	// open across a tenant administrator's own change overwrote it, returned the newer
+	// row as if it had been the operator's answer, and said so in the trail.
+	//
+	// A declaration that names no number states an intent rather than a change from
+	// something, and the row lock is what makes an intent safe: the set is written whole
+	// or not at all, so an intent cannot splice two declarations. It is not what a
+	// screen brings. A page always has the revision under its feet, because the read
+	// that drew the set is the read that reported the count.
+	if in.ExpectedRevision != nil && *in.ExpectedRevision != t.LocaleRevision {
+		return nil, fmt.Errorf("%w: this declaration was read at revision %d and the tenant is on revision %d",
+			crud.ErrConflict, *in.ExpectedRevision, t.LocaleRevision)
+	}
 	t.DefaultLocale, t.LocaleRevision, t.UpdatedAt = wanted[0], t.LocaleRevision+1, db.Now()
 	if err := tx.DB().Model(t).Select("default_locale", "locale_revision", "updated_at").Updates(t).Error; err != nil {
 		return nil, crud.Classify(err)

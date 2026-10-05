@@ -197,7 +197,8 @@ const (
 )
 
 // SetLocale is what saying which languages one tenant is served in takes: the
-// default, and the list the negotiation may choose from.
+// default, the list the negotiation may choose from, and — for a declaration read
+// from a page — the revision it was read at.
 //
 // The default has to be in the list, which the module refuses rather than repairs:
 // a set written without its own default is a tenant whose fallback language is one
@@ -207,6 +208,21 @@ type SetLocale struct {
 	// Supported is a set: duplicates are dropped and the order does not matter,
 	// because the only position that means anything is Default.
 	Supported []string `json:"supported" doc:"Every language this tenant is served in, besides the default"`
+	// ExpectedRevision is the revision this declaration was read at, as the command
+	// that counts the pair reports it. It is a pointer because absence is a real
+	// answer and not a zero: a caller that names a number is saying "this is what I
+	// was looking at", and a changed pair read at a superseded number is refused
+	// with a conflict that writes nothing and publishes nothing. A caller that names
+	// none states an intent — "say this tenant is served in these languages" — which
+	// is what bootstrap does from inside the transaction that created the tenant,
+	// and which no screen is: a page always has a revision under its feet, drawn
+	// with the set it offers to change.
+	//
+	// The revision is not stored, so it is not on Tenant and not in the row: it is
+	// one command's argument, and `Tenant.LocaleRevision` carries `json:"-"` for the
+	// same reason — the number a caller compares is read from the command that owns
+	// the count, not written back into a row.
+	ExpectedRevision *int64 `json:"expectedRevision,omitempty" doc:"The revision this declaration was read at; a changed pair brought from a superseded one conflicts"`
 }
 
 // Locale is the tenant's own declaration of the languages it is served in, with the
@@ -329,6 +345,15 @@ type Service interface {
 	// read its own row and write nothing there. What a tenant may write for itself
 	// is copy, in a tenant-scoped table of its own, and that is a different
 	// capability with a different policy — not this one pretending to be it.
+	//
+	// A declaration that names `SetLocale.ExpectedRevision` is compared with the row
+	// under the lock this command takes: a changed pair read at a superseded revision
+	// is crud.ErrConflict, and a refusal returns no row, writes nothing and publishes
+	// nothing. One counter answers both doors, so an operator who read the set before a
+	// tenant administrator saved their own is refused rather than allowed to overwrite
+	// it. A declaration that names no revision is an intent, and the lock is what makes
+	// an intent leave the set whole; only a caller that never saw the row has a reason
+	// to bring one.
 	SetLocale(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SetLocale) (*Tenant, error)
 
 	// Get is one tenant with its hosts.

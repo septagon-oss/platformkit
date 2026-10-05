@@ -27,7 +27,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -241,7 +240,12 @@ func (p pages) mountAccountLanguage(app *httpx.Router) {
 			}
 			form, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+				// The body is this shell's own form, so the sentence about it is this
+				// shell's own copy, asked at the key every other word of this control
+				// is asked at. Handed over as a problem instead, it becomes the
+				// router's English at the head of a page the reader was promised in
+				// Portuguese.
+				return accountRefusal(r, p.shell, errAccountFormUnreadable)
 			}
 			if err := p.chooseLanguage(ctx, tx, form); err != nil {
 				return accountRefusal(r, p.shell, err)
@@ -274,10 +278,13 @@ func (p pages) chooseLanguage(ctx context.Context, tx db.Tx[db.Tenant], form url
 	return p.LanguageVersion.ChooseAt(ctx, tx, tag, at)
 }
 
-// errAccountFormRevision and errAccountFormNoVersion are the shell's own refusals,
-// sentinels rather than problems because accountRefusal is what turns them into a
-// page, in the language of the person whose form this was.
-var errAccountFormRevision, errAccountFormNoVersion = errors.New("account form revision"), errors.New("account form no version")
+// errAccountFormRevision, errAccountFormNoVersion and errAccountFormUnreadable are the
+// shell's own refusals, sentinels rather than problems because accountRefusal is what
+// turns them into a page, in the language of the person whose form this was. A problem
+// carries its sentence in the language it was written in, and this page is not written
+// in one language.
+var errAccountFormRevision, errAccountFormNoVersion, errAccountFormUnreadable = errors.New("account form revision"),
+	errors.New("account form no version"), errors.New("account form unreadable")
 
 // accountRefusal is a refused language choice, in the language the person whose
 // choice it was is being answered in.
@@ -303,7 +310,7 @@ func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) 
 		return page.View{}, rest.Fault(err)
 	}
 	line := chrome(r, key, english)
-	v := page.Fault(status, code+": "+line, s.Back, s.BackLabel)
+	v := page.Fault(r.Locale, status, code+": "+line, s.Back, s.BackLabel)
 	if line != english && r.Locale != nil {
 		v.Language = r.Locale.Language
 	}
@@ -315,6 +322,10 @@ func accountRefusal(r page.Request, s page.Shell, err error) (page.View, error) 
 // has no sentence for — see accountRefusal.
 func accountRefusalCopy(err error) (key, english, code string, status int) {
 	switch {
+	case errors.Is(err, errAccountFormUnreadable):
+		return "account.language.unreadable",
+			"This form could not be read, so nothing was changed.",
+			"INVALID_INPUT", http.StatusUnprocessableEntity
 	case errors.Is(err, errAccountFormRevision):
 		return "account.language.revision",
 			"This form did not bring the revision your language choice was read at. Nothing was changed.",

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -154,7 +153,13 @@ func (p pages) dashboard(ctx context.Context, selected *page.Locale) page.View {
 		if selected != nil {
 			name = selected.Plural("resource."+r.Module+"."+r.Entity, total, r.Name.One, r.Name.Other)
 		}
-		count := strconv.FormatInt(total, 10)
+		// The count is a number, and the shape of a number belongs to the reader: an
+		// English page counts twelve thousand three hundred and forty-five with a
+		// comma, a Portuguese one with a space, and the row carries neither. It goes
+		// through the catalogue on the same terms as the noun beside it — the key is
+		// how a language says "write a count this way", and "%d" is what this page
+		// says when no catalogue is composed.
+		count := text("count_number", "%d", total)
 		cards = append(cards, components.Card(components.CardProps{
 			Title: count + " " + name, Description: text("open", "Open %s", name),
 			Clickable: true, Href: r.Screen,

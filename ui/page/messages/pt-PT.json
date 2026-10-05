@@ -270,5 +270,71 @@
     "plural": {
       "": "Iniciar sessão (abre num novo separador)"
     }
+  },
+  "fault.title.400": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Pedido inválido"
+  },
+  "fault.title.401": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Sem sessão iniciada"
+  },
+  "fault.title.403": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Acesso recusado"
+  },
+  "fault.title.404": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Página não encontrada"
+  },
+  "fault.title.405": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Método não permitido"
+  },
+  "fault.title.409": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Conflito"
+  },
+  "fault.title.413": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Pedido demasiado grande"
+  },
+  "fault.title.422": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Pedido não processável"
+  },
+  "fault.title.429": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Demasiados pedidos"
+  },
+  "fault.title.500": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Erro interno do servidor"
+  },
+  "fault.title.503": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Serviço indisponível"
   }
 }
