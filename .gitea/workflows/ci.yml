@@ -93,6 +93,17 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # Every commit, and with it every branch and every tag: `fetch-depth: 0` is the one shape this action
+      # cannot narrow, because getRefSpecForAllHistory (actions/checkout@v4.4.0 src/ref-helper.ts:69) hands
+      # git `+refs/heads/*` and `+refs/tags/*` unconditionally — 123 heads and 168 tags on the forge at the
+      # time of writing, the tags one `v1.1.2-proof.<date>.<sha>` per delivery beside the release line, and
+      # no line of `scripts`, `tools`, `modules`, `kit`, `apps` or the Makefile reads one. This job pays it
+      # because the last step of the job is the budget ratchet walking `base..HEAD`: a narrowed fetch there
+      # is the quiet failure scripts/ci_checkout_history_test.sh names — the ratchet reading green over
+      # commits it never fetched. It is the last job in the tree that may ask, and the fetch is still one
+      # network operation with no bound of its own: head b7ead19b was refused with this job's fetch open at
+      # 1129s, `##[error]context deadline exceeded` written at the `Fetching the repository` line, and every
+      # real step of the job reported skipped.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
@@ -269,9 +280,23 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # One commit, no tag: at `fetch-depth` above zero the action fetches the one refspec and adds
+      # `--no-tags` (actions/checkout@v4.4.0 src/git-command-manager.ts:281), which is why this job's fetch
+      # answers in seconds while the job above is still negotiating the forge's 123 heads and 168 tags. What
+      # classed this job as a history reader was `modules/admin/internal/review_round1_build_stamp_test.go`,
+      # and what that case asks of git is
+      # `git rev-parse HEAD` — the checked-out commit, one object, which a one-commit fetch delivers as well
+      # as a whole-mirror fetch does. Its sibling `review_round2_worktree_stamp_test.go` builds its own
+      # throwaway repository, and no other file under RACE_PACKAGES runs git at all: four files in the tree
+      # exec git, these two and tools/locbudget's `ls-files`, which reads no commit. Nothing here walks
+      # `base..HEAD`, so nothing here may spend its ceiling waiting for a fetch it never reads — at head
+      # b7ead19b this job died inside the fetch of every branch and every tag at 1129s with every real step
+      # reported skipped, the shape scripts/ci_checkout_history_test.sh names for head b6f1e93's design
+      # job. That script classes this job `reads` now, and takes the class away the moment a history walk
+      # reaches what its steps run.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
