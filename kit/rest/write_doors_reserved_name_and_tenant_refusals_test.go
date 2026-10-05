@@ -253,8 +253,8 @@ func TestTwoWritesToOneRowNeitherLoseTheOthersColumnNorPublishTheOthersChange(t 
 
 // TestTheGuardSeesEveryBodyTheDecoderReads. The guard is a second read of the
 // request bytes, so its answer is only worth anything where the decoder's read
-// agrees: a body the guard cannot read and the decoder can is the finding again
-// in the shape of a quote. Every shape below is answered either by the refusal
+// agrees: a body the guard cannot read and the decoder can reaches the command
+// unguard, in the shape of a quote. Every shape below is answered either by the refusal
 // naming the reserved field or by a refusal that stored no row — and the row is
 // what the case asserts, not the sentence.
 func TestTheGuardSeesEveryBodyTheDecoderReads(t *testing.T) {

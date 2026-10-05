@@ -196,10 +196,10 @@ func (bu *Budget) Baseline(counts map[string]int, round int) {
 //
 // The tool states that cost rather than letting each branch negotiate one. An
 // acceptance round is this program's review, which lands its own test file on the
-// branch after the feature's lines are already counted: T-0031 re-baselined
-// `go_test` to the next hundred of a count ending in 79, which left 21 lines, and
-// the round then brought a file of 139, so `--check` refused the review for the
-// crime of reading the delivery. The reservation is measured from what this
+// branch after the feature's lines are already counted: re-baselining a `go_test`
+// count that ends in 79 rounds up to the next hundred and leaves 21 lines of slack,
+// and one acceptance round here brought a file of 139, so `--check` refused the
+// review for the crime of reading the delivery. The reservation is measured from what this
 // repository already holds — the largest single acceptance-round test file here is
 // 499 lines, kit/httpx/control_plane_refusal_test.go — so a branch that expects to be
 // reviewed passes --allow 500 for the bucket a review file is counted in, which is

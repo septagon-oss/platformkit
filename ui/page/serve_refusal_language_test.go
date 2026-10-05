@@ -23,8 +23,8 @@ package page_test
 // the shell's generic one, in the language the request brought. That is what the same
 // key already does to a kernel 404, and it is the cost of answering a person in their
 // own language from a catalogue rather than from a string; the named slug is what a
-// writer keeps until a refusal can carry a key of its own, which is the kernel's share
-// and is named as such in this task's report.
+// writer keeps until a refusal can carry a key of its own — the kernel's share of the
+// answer, not any one module's.
 
 import (
 	"context"

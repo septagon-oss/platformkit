@@ -34,12 +34,14 @@ func acceptsClientSheet(t *testing.T, sheet *css.Sheet) (accepted bool) {
 	return true
 }
 
-// TestTheClientGateRefusesAKernelHookInEverySelectorFormABrowserReads is
-// the finding's residual: the gate compares the attribute name as written, while
-// CSS allows whitespace inside the brackets and escapes inside an identifier, and
-// HTML matches attribute names ASCII-case-insensitively. `ui.Compose` refuses
-// `[data-component=button]` and accepts `[ data-component=button ]`, so the one
-// spelling that is refused is the spelling nobody writes by accident.
+// TestTheClientGateRefusesAKernelHookInEverySelectorFormABrowserReads pins how
+// wide the attribute read has to be. The gate compares the attribute name as
+// written, while CSS allows whitespace inside the brackets and around the operator
+// and escapes inside an identifier, and HTML matches attribute names
+// ASCII-case-insensitively. A read of one spelling leaves the rest open, and a
+// browser reads every spelling below as the same hook, so the list the gate reads
+// is every form a browser resolves — whitespace inside the brackets, escapes inside
+// the name, a capitalised name, a quoted value — not the one spelling anybody types.
 //
 // The browser half is measured in a browser: with the sheet Compose
 // emits for `[ data-component=button ]`, a real components.Button computes
@@ -64,8 +66,9 @@ func TestTheClientGateRefusesAKernelHookInEverySelectorFormABrowserReads(t *test
 	}
 }
 
-// TestTheClientGateCoversTheKernelPartsRenderedOutsideComponents is the
-// other half of the same residual. components.Hooks is the vocabulary of one
+// TestTheClientGateCoversTheKernelPartsRenderedOutsideComponents asks the
+// same question of the kernel's reach rather than of one selector. components.Hooks
+// is the vocabulary of one
 // package, and its own test refuses that package a name the list omits; the
 // kernel also renders markup in the page shell (ui/document), in the screens it
 // generates (ui/resource) and in the gallery (ui/export). A client sheet reaches

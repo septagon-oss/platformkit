@@ -508,8 +508,8 @@ if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
 	exit 1
 fi
 
-# 3b. The branch the floor exists for. Six rounds of rehearsals measured a passing
-# release and never once ran the lines that report a watcher that sampled nothing, and
+# 3b. The branch the floor exists for. A rehearsal can measure a passing release and
+# never once run the lines that report a watcher that sampled nothing, and
 # a branch that has never run is a promise the documents make three times over. So the
 # branch is run, not read: the four lines are taken out of the step (a case that
 # restated them would pass whatever the step did), given the window and the sample count

@@ -160,10 +160,11 @@ func TestACallerWithoutTheGuardCannotPostTheDoorAnyway(t *testing.T) {
 
 // TestACommandNamedAfterAScreenVerbRefusesToMount. The screens mount list, new, read,
 // edit, update and delete; a command carrying one of those verbs adds a second route
-// over a path shape that already has one. Album once shipped unable to mount at all
-// because two routes shared an operation id, and the audit that found it never called
-// Routes. The refusal is in the mount so the class is closed rather than the instance,
-// and this test is here so the refusal is not a comment.
+// over a path shape that already has one, and two routes sharing an operation id is a
+// mount that fails rather than a screen that looks wrong — the whole application
+// refuses to start, which no caller's request ever reaches. The refusal is in the mount
+// so the class is closed rather than the instance, and this test is here so the refusal
+// is not a comment.
 func TestACommandNamedAfterAScreenVerbRefusesToMount(t *testing.T) {
 	panicked := ""
 	defer func() {
