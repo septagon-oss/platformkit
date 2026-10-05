@@ -28,12 +28,16 @@ func (s Shape) tokens() []Token {
 	return out
 }
 
-// radiusLength is the whole of the length grammar a shape may carry: an unsigned
-// decimal and one of the two units that mean the same thing at every viewport.
-// A percentage radius means a different shape in a different container, and the
-// DTCG document a client ships carries an absolute dimension; calc() would mean
-// this package parses CSS. No exponent: 1e3rem is a length nobody measured.
-var radiusLength = regexp.MustCompile(`^([0-9]{1,4}(?:\.[0-9]{1,3})?)(px|rem)$`)
+// radiusLength is the whole of the length grammar a shape may carry: a canonical
+// unsigned decimal and one of the two units that mean the same thing at every
+// viewport. Canonical means no leading zero — `1px`, `0.5rem`, never `01px` or
+// `00.5rem` — because the number the shape carries is the number the device
+// document carries: ui/export writes it into the DTCG dimension as a JSON number,
+// and JSON refuses a leading zero. A percentage radius means a different shape in
+// a different container, and the DTCG document a client ships carries an absolute
+// dimension; calc() would mean this package parses CSS. No exponent: 1e3rem is a
+// length nobody measured.
+var radiusLength = regexp.MustCompile(`^((?:0|[1-9][0-9]{0,3})(?:\.[0-9]{1,3})?)(px|rem)$`)
 
 // ParseRadius splits one shape length into its number and unit, in the units a
 // DTCG dimension carries. It is exported for ui/export, which projects the three
@@ -42,7 +46,7 @@ var radiusLength = regexp.MustCompile(`^([0-9]{1,4}(?:\.[0-9]{1,3})?)(px|rem)$`)
 func ParseRadius(value string) (number, unit string, err error) {
 	match := radiusLength.FindStringSubmatch(value)
 	if match == nil {
-		return "", "", fmt.Errorf("radius %q is not one: a radius is a length in px or rem", value)
+		return "", "", fmt.Errorf("radius %q is not one: a radius is a length in px or rem, written without a leading zero", value)
 	}
 	return match[1], match[2], nil
 }
