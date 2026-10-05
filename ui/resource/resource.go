@@ -86,6 +86,38 @@ type Options struct {
 	// same seam the sign-in page uses. Nil keeps the English. Entity names
 	// stay as the schema humanizes them.
 	Locale *locale.Locale
+	// Module and Entity name the entity whose fields this renderer is drawing, filled
+	// in off the resource at the head of every entry point below. They exist for one
+	// reason: `field.title` is one key in one catalogue, and four modules define a
+	// title. The module that filled that key in would then answer the other three's
+	// forms as well — the task's "Short summary of the task" printed above content's
+	// "Headline", in English, because a catalogue answers a key it holds whatever
+	// sentence the caller brought. So the entity's own key is asked first
+	// (`field.task.task.title`, `enum.task.task.critical`) and the bare one behind it,
+	// which is where every module's copy has always lived and where `modules/user`'s
+	// still lives. Left empty, the lookup is the one this package always made.
+	Module, Entity string
+}
+
+// with is these options scoped to one entity — the same value, with the two names
+// above read off the resource being drawn.
+func (o Options) with(r Resource) Options {
+	o.Module, o.Entity = r.Schema.Module, r.Schema.Entity
+	return o
+}
+
+// word is one field's label, one field's note or one enum choice, asked of the
+// catalogue at the entity's own key and then at the shared one. The shared answer is
+// the scoped lookup's own fallback, so an entity with no copy of its name reads
+// exactly as it did before the entity's key existed, and one that has a copy changes
+// only its own screens — which is what "the module that defines the field owns its
+// words in every language" has to mean before it can be true of four modules at once.
+func (o Options) word(kind, name, fallback string) string {
+	shared := o.Label(kind+"."+name, fallback)
+	if o.Module == "" || o.Entity == "" {
+		return shared
+	}
+	return o.Label(kind+"."+o.Module+"."+o.Entity+"."+name, shared)
 }
 
 // Text is one label through the seam: the catalog's translation of key, or
@@ -247,6 +279,7 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
+	o = o.with(r)
 	fields := make([]forms.Field, 0, len(r.Schema.Fields))
 	for _, field := range r.Schema.Fields {
 		fields = append(fields, formField(field, o))
@@ -287,12 +320,12 @@ func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool)
 func formField(f entity.Field, o Options) forms.Field {
 	options := make([]components.SelectOption, 0, len(f.Enum))
 	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: o.Label("enum."+value, display.Humanize(value)), Value: value})
+		options = append(options, components.SelectOption{Label: o.word("enum", value, display.Humanize(value)), Value: value})
 	}
-	return forms.Field{Definition: f, Label: o.Label("field."+f.Name, display.FieldLabel(f)),
+	return forms.Field{Definition: f, Label: o.word("field", f.Name, display.FieldLabel(f)),
 		// A field's own note is the sentence its owner wrote beside it, and a
 		// person reading the form in another language reads that note too.
-		Help: o.Label("field."+f.Name+".help", f.Doc), Options: options}
+		Help: o.word("field", f.Name+".help", f.Doc), Options: options}
 }
 
 // table is the list screen's rows: the field a row is known by first, as the
@@ -301,6 +334,7 @@ func formField(f entity.Field, o Options) forms.Field {
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
 func table(o Options, r Resource, at, title string, rows []map[string]any, sort string) g.Node {
+	o = o.with(r)
 	primary := known(r.Schema.Fields)
 	shown := []entity.Field{primary}
 	for _, f := range r.Schema.Fields {
@@ -312,7 +346,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 	columns := make([]components.TableColumn, 0, len(shown))
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: o.Label("field."+f.Name, display.FieldLabel(f)), Sortable: f.Type != entity.TypeList, Primary: i == 0,
+			Key: f.Name, Label: o.word("field", f.Name, display.FieldLabel(f)), Sortable: f.Type != entity.TypeList, Primary: i == 0,
 		})
 	}
 	out := make([]components.TableRow, 0, len(rows))
@@ -377,10 +411,11 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 // in, so a tenant served in Portuguese read its record in English while the list
 // above it, which asks, read in Portuguese.
 func details(o Options, r Resource, row map[string]any) g.Node {
+	o = o.with(r)
 	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
 	for _, f := range r.Schema.Fields {
 		items = append(items, components.DetailItem{
-			Label: o.Label("field."+f.Name, display.FieldLabel(f)),
+			Label: o.word("field", f.Name, display.FieldLabel(f)),
 			Value: fieldValue(o, f, row[f.Name])})
 	}
 	return components.DetailList(components.DetailListProps{Items: items})
@@ -422,7 +457,7 @@ func fieldValue(o Options, f entity.Field, value any) string {
 	}
 	shown := display.Display(f, value)
 	if len(f.Enum) > 0 {
-		shown = o.Label("enum."+display.Text(value), shown)
+		shown = o.word("enum", display.Text(value), shown)
 	}
 	return shown
 }
