@@ -372,6 +372,13 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
+// The 120 s this bound first carried was itself exceeded on 2026-10-06 — `nothing is listening on
+// 127.0.0.1:43281 after 2m0s` — by a migration the host did not reach in two minutes while eight of
+// this program's suites ran beside it. It is five minutes now, the same room kit/db's bounded tick
+// gives itself: still a sixth of the package's own bound, so a boot that never listens fails the run
+// rather than outliving it, and a boot that is only slow on somebody else's machine stops being the
+// finding.
+
 // bootWait is how long a fixture waits for a process it started to answer. The
 // number is the machine's, not the kernel's: Run migrates a whole installation
 // before it listens, and a migration of thirty files measured 2.8 s when this
@@ -381,7 +388,7 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 // this suite is stated as a constant for the same reason: a wait nobody named is
 // a wait nobody can size, and one that is too small reports the machine rather
 // than the code.
-const bootWait = 120 * time.Second
+const bootWait = 5 * time.Minute
 
 // slowBoot is when a wait starts saying something: a boot that takes a tenth of
 // the bound is the machine being asked for more than it can do at once, and the
