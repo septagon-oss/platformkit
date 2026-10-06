@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-05T08:15:45Z",
+  "measured_utc": "2026-10-06T10:08:02Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -24,13 +24,25 @@
     },
     "GET /app/admin/_gallery": {
       "wrapped": 0,
-      "readable": 250
+      "readable": 220
     },
     "GET /app/admin/health": {
       "wrapped": 0,
       "readable": 49
     },
     "GET /app/admin/login": {
+      "wrapped": 9,
+      "readable": 19
+    },
+    "GET /app/admin/login/forgot": {
+      "wrapped": 8,
+      "readable": 18
+    },
+    "GET /app/admin/register": {
+      "wrapped": 12,
+      "readable": 22
+    },
+    "GET /app/auth/reset": {
       "wrapped": 7,
       "readable": 17
     },
@@ -41,6 +53,10 @@
     "GET /app/auth/sessions": {
       "wrapped": 0,
       "readable": 60
+    },
+    "GET /app/auth/verify-email": {
+      "wrapped": 6,
+      "readable": 16
     },
     "GET /app/billing/plans": {
       "wrapped": 2,
@@ -63,20 +79,20 @@
       "readable": 56
     },
     "GET /app/content/contents/new": {
-      "wrapped": 5,
-      "readable": 62
+      "wrapped": 14,
+      "readable": 71
     },
     "GET /app/content/contents/{id}": {
       "wrapped": 4,
       "readable": 66
     },
     "GET /app/content/contents/{id}/edit": {
-      "wrapped": 5,
-      "readable": 72
+      "wrapped": 14,
+      "readable": 81
     },
     "GET /app/site/settings": {
       "wrapped": 2,
-      "readable": 58
+      "readable": 61
     },
     "GET /app/site/settings/edit": {
       "wrapped": 5,
@@ -104,7 +120,7 @@
     },
     "GET /app/user/users": {
       "wrapped": 2,
-      "readable": 57
+      "readable": 56
     },
     "GET /app/user/users/new": {
       "wrapped": 5,
@@ -118,17 +134,13 @@
       "wrapped": 5,
       "readable": 67
     },
-    "GET /{slug}": {
-      "wrapped": 0,
-      "readable": 2
-    },
     "POST /app/billing/plans": {
       "wrapped": 5,
       "readable": 71
     },
     "POST /app/content/contents": {
-      "wrapped": 5,
-      "readable": 65
+      "wrapped": 14,
+      "readable": 74
     },
     "POST /app/task/tasks": {
       "wrapped": 5,
