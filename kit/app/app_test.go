@@ -372,9 +372,19 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
+// waitFor stands where a boot either happens or does not. It is not a measurement of
+// how long the machine takes: 20 s refused `TestTheWorkerAnswersTheSameProbeShapeAsTheWeb`
+// inside `make check` at head `bfd1681` on 2026-10-06 after a boot whose eighteen
+// migrations had cost 98 ms to 5.620 s apiece — 20 s of `db: applied migration` lines,
+// on a box where that suite runs 129 packages and every one of them boots a schema of
+// its own. The bound is the case's refusal to hang waiting for a worker, and a worker
+// that comes after a queue is not a worker that never comes: what it asserts afterwards
+// — that `/health` and `/ready` answer the same body for the worker as for the web — is
+// untouched, and the sibling cases below that expect the port to stay closed still get
+// their answer immediately, because they never call this.
 func waitFor(t *testing.T, addr string) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	deadline := time.Now().Add(3 * time.Minute)
 	for time.Now().Before(deadline) {
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()

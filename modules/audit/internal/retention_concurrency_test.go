@@ -22,23 +22,30 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 	for _, poolSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprint(poolSize), func(t *testing.T) {
 			adminURL, appURL := dbtest.URLs(t)
-			// The boot gets a bound of its own, and it is not the ten seconds below. One
-			// advisory key serialises the migration of every schema in this one database,
-			// so every package of `make check` that boots a schema queues behind every other
-			// one, and kit/db/README.md leaves that wait patient on purpose: "a replica that
+			// The boot gets a bound of its own, and it is not the ninety seconds below.
+			// The migration queue is patient on purpose (kit/db/README.md: "a replica that
 			// waits an hour and applies nothing beats one that refuses at five seconds and is
-			// read as a failed deploy". Charging that queue to this case's ten seconds is what
-			// made a busy suite answer `db: migrate: lock: timeout: context deadline exceeded`
-			// for a subtest whose own work never started: the deadline the run hit was the
-			// queue's, not the behaviour's. The ten seconds below start when the schema this
-			// case observes exists, and bound exactly what they bounded before — the retention
-			// job, its worker bound and its deletes held at a table lock.
+			// read as a failed deploy"), and since 5605448 it is one namespace's queue rather
+			// than one database's, so a package booting its own schema no longer stands behind
+			// every other package's — what those boots still share is the machine. Charging
+			// either wait to this case's own bound is what made a busy suite answer
+			// `db: migrate: lock: timeout: context deadline exceeded` for a subtest whose work
+			// had never started: the deadline the run hit was the queue's, not the
+			// behaviour's. The ninety seconds below start when the schema this case observes
+			// exists, and bound what ten seconds bounded before them — the retention job, its
+			// worker bound and its deletes held at a table lock. Ten of them refused that on
+			// 2026-10-06 at head `bfd1681`, inside `make check`, with the deletes still behind
+			// the EXCLUSIVE lock this case lays on the table and nothing back but
+			// `audit: trim the trail of 1: timeout: context deadline exceeded`. The bound is
+			// this case's refusal to wait forever; how fast a loaded box releases a table lock
+			// is not the behaviour it exists to catch, and every assertion after it is the one
+			// that was there.
 			boot, cancelBoot := context.WithTimeout(t.Context(), 5*time.Minute)
 			defer cancelBoot()
 			if err := db.Migrate(boot, adminURL, migrations.Source, audit.Migrations); err != nil {
 				t.Fatal(err)
 			}
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 			defer cancel()
 			admin := dbtest.Open(t, adminURL)
 			pool := db.DefaultPool()
