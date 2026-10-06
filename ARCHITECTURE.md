@@ -422,8 +422,8 @@ list of what is deliberately not here names both the shape and the cost of the
 next kind — WebAuthn as `github.com/go-webauthn/webauthn` plus its CBOR/COSE
 tree, a new dependency priced in its own budget commit, and a `webauthn.Config`
 built per request from the resolved host (`modules/auth/README.md:188-192`).
-WebAuthn is planned, not on main: no `go.mod` names it and no Go file here
-implements it, so today the only second factor is TOTP. The refusals a person
+WebAuthn is planned for T-0229, not on main: no `go.mod` names it and no Go
+file here implements it, so today the only second factor is TOTP. The refusals a person
 hits are correctable — a step replayed after it was spent
 (`modules/auth/internal/totp_step_spend_refuses_a_replay_of_the_same_step_test.go`),
 and a second factor offered without its first
@@ -514,10 +514,10 @@ event with no tenant has no transaction to deliver it in
 (`kit/events/transport/cloudevents.go:50-54`); and the outbox rows are filtered by
 row-level security (`migrations/000002_outbox.up.sql:15`, `:37-38`).
 
-**How it is traced and audited.** W3C trace context travels verbatim as
-`traceparent` and `tracestate` (`:54-60`), plus a PlatformKit-owned `baggage`
-carrying the publisher's request id, because the specification fixes those two
-members and says nothing about correlation (`:64-70`; the column is
+**How it is traced and audited.** W3C trace context travels verbatim as `traceparent`
+and `tracestate` (`kit/events/transport/cloudevents.go:56-62`), plus a PlatformKit-
+owned `baggage` carrying the publisher's request id, because the specification fixes
+those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
 (`kit/events/relay.go:261`), `<event> publish` and `<event> deliver`
 (`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
@@ -572,7 +572,7 @@ row and sends no mail: the notice is the record, the mail is a copy.
 with `ScopeOf` (`:42`), `ScopeOfTx` (`:53`) and `Scope.ObjectName` (`:92`) as the
 seam between a tenant and a name; `Deps` and `S3Config`
 (`modules/file/module.go:71`, `:56`) as the wiring; and two adapters,
-`internal/s3.go` (`NewS3`, `:68`) and `internal/local.go`.
+`modules/file/internal/s3.go` (`NewS3`, `:68`) and `modules/file/internal/local.go`.
 
 **Builds on.** `github.com/minio/minio-go/v7` v7.3.0 (Apache-2.0) over the S3
 API, which the module names as several stores — AWS S3, Garage, SeaweedFS, Ceph
@@ -696,7 +696,7 @@ stream: a module is audited by having emitted an event
 **How the tenant crosses it.** `audit_events.tenant_id` under `ENABLE` and
 `FORCE` with the tenant-match policy
 (`modules/audit/migrations/000010_audit.up.sql:16`, `:40-45`), and a read takes
-`audit:read`. `migrations/rls_test.go:30` imports the module and `:44` lists every
+`audit:read`. `migrations/rls_test.go:30` imports the module and `:45` lists every
 owner's migrations, so the claim covers every table this repository creates.
 
 **How it is traced and audited.** `request_id`, `client_ip` and `traceparent` are
@@ -742,7 +742,7 @@ failed (`e2e/playwright.config.ts:4`, `scripts/e2e.sh:11-12`).
 **How it is traced and audited.** The specs assert refusals and rendered state,
 and that every table is scoped to its tenant is proved by `migrations/rls_test.go`,
 which walks every table the kernel's and every reference module's migrations
-create (`migrations/rls_test.go:44`). No span belongs to this pillar: it is the
+create (`migrations/rls_test.go:45`). No span belongs to this pillar: it is the
 pillar that checks the others.
 
 **How an app extends it.** Add a spec, and share steps through
