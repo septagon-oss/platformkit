@@ -950,8 +950,8 @@ advisories describe, and `source-map-js@1.2.2`, reached through `css-tree`'s
 `^1.2.1` and the release the
 [event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
 advisory describes. Neither is a direct dependency, so neither is a version
-anybody edits by hand; the locked-tree check requires the lock to resolve both
-names to exactly these releases, which is what makes a regenerated lock that
+anybody edits by hand; `locked-dependencies.test.mjs` requires the lock to resolve
+both names to exactly these releases, which is what makes a regenerated lock that
 drifts back into either range a failed test rather than a passed audit.
 
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
