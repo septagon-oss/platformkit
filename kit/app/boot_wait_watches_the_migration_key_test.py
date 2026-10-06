@@ -39,8 +39,9 @@ class BootWaitsForTheMigrationKey(unittest.TestCase):
         self.assertEqual(key("kit/app/app_test.go"), taken,
                          "kit/app's waitFor must watch the key kit/db migration takes")
         harness = (ROOT / "kit/app/app_test.go").read_text()
-        self.assertRegex(harness, r"classid::bigint = \$1 AND NOT granted[\s\S]*?compositionLockKey\)",
-                         "waitFor must ask Postgres for an ungranted request on that class")
+        self.assertRegex(harness, r"classid::bigint = \$1[\s\S]*?NOT l\.granted OR a\.application_name[\s\S]*?compositionLockKey\)",
+                         "waitFor must ask Postgres for a queued request on that class, or one "
+                         "this boot's own schema holds")
         # The class is the first half of pg_advisory_lock(int, int), so it has to fit an
         # int4 — that is what makes pg_locks report a composition under this class.
         self.assertLess(taken, 1 << 31)

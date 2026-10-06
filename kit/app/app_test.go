@@ -391,11 +391,12 @@ const compositionLockKey = 7240101
 // class): a boot queued behind a migration is a correct boot that has not had
 // its turn, which no clock can tell apart from a
 // dead listener. Postgres can, so the wait watches pg_locks (dbtest.Open, the
-// handle kit/db's own lock cases watch with) for a request waiting on that class in
-// this boot's own database — the class rather than this boot's own pair, because a
-// busy composition of any namespace in this database says the same thing about how
-// patient this boot has to be. It keeps
-// waiting while one exists, and refuses once none does and the grace is spent.
+// handle kit/db's own lock cases watch with) for either half of one answer: a request
+// waiting on that class in this boot's own database — the class rather than this boot's
+// own pair, because a busy composition of any namespace says the same thing about how
+// busy this Postgres is — or a session of *this* boot's own schema holding one, which is
+// the boot's own migration still running. It keeps
+// waiting while either is true, and refuses once neither is and the grace is spent.
 //
 // kit/app/boot_waits_for_migration_queue_test.py holds this boot's own key for 35
 // seconds from another session (naming the schema through PLATFORMKIT_TEST_SCHEMA so it
@@ -410,9 +411,11 @@ func waitFor(t *testing.T, migrateURL, addr string) {
 
 	queueing := func() bool {
 		var waiting int
-		err := watch.QueryRowContext(ctx, `SELECT count(*) FROM pg_locks
-			WHERE locktype = 'advisory' AND classid::bigint = $1 AND NOT granted
-			  AND database = (SELECT oid FROM pg_database
+		err := watch.QueryRowContext(ctx, `SELECT count(*) FROM pg_locks l
+			JOIN pg_stat_activity a ON a.pid = l.pid
+			WHERE l.locktype = 'advisory' AND l.classid::bigint = $1
+			  AND (NOT l.granted OR a.application_name = current_setting('search_path'))
+			  AND l.database = (SELECT oid FROM pg_database
 			                 WHERE datname = current_database())`, compositionLockKey).Scan(&waiting)
 		if err != nil {
 			t.Fatalf("read the migration queue: %v", err)
