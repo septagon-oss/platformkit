@@ -359,6 +359,12 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
+	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
+	# locked above the ranges that report names, and that the gate that named them is still a step in
+	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
+	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.
+	bash scripts/openpencil_lock_above_advisory_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say

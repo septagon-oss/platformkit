@@ -738,6 +738,18 @@ jobs:
           cache: ''
           package-manager-cache: false
 
+      # The audit half of this step is the reason this job exists as its own step list: it answers
+      # against npm's *current* advisory feed, not against anything this file or the lock pins, so it
+      # can turn red over a commit that touches nothing but a workflow. That is `0bfae63`, refused
+      # here on 2026-10-06 for `source-map-js 1.0.0 - 1.2.1` (high, GHSA-68fv-2mgg-jv7q) and
+      # `dompurify <=3.4.15` (GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2) over lockfile bytes byte-
+      # identical to `main`'s, which had passed the same step. The cure was the two locked versions,
+      # both already inside the range their parent declares, and `--audit-level` stayed at `high`.
+      # `make check` now holds those two floors itself — scripts/openpencil_lock_above_advisory_test_
+      # sh reads this lock and this step, and refuses a version that falls back into a published range
+      # or a step that stops auditing — so the number is known at the pull request rather than twelve
+      # minutes into a runner. The level is not a thing to negotiate: at `critical` the finding above
+      # this line is a paragraph instead of a refusal.
       - name: Native design conformance and dependency audit
         working-directory: tools/designexport/openpencil
         run: |
