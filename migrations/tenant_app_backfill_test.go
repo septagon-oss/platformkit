@@ -21,6 +21,7 @@ package migrations_test
 import (
 	"context"
 	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -36,8 +37,13 @@ import (
 // appFile is the file under test, by the name the ledger carries.
 const appFile = "000043_tenant_app.up.sql"
 
-// beforeApp is the kernel's own history with that one file taken out: the state of
-// an installation on the day the release that carries it boots.
+// beforeApp is the kernel's own history up to the release before the one that
+// carries the column: the state of an installation on the day that release boots.
+// It withholds that file and every file numbered above it — a machine standing on
+// version 42 has not run version 44 either, and the runner refuses a file that
+// precedes an applied version, so a fixture that took only 43 out would describe
+// an installation that never existed and would fail on the next file the kernel
+// appends rather than on the one this test is about.
 type beforeApp struct{ inner fs.FS }
 
 func (b beforeApp) Open(name string) (fs.File, error) { return b.inner.Open(name) }
@@ -47,13 +53,39 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
+	cut := appVersion // the version the file under test carries
 	out := rows[:0:0]
 	for _, row := range rows {
-		if row.Name() != appFile {
-			out = append(out, row)
+		if v, ok := fileVersion(row.Name()); ok && v >= cut {
+			continue
 		}
+		out = append(out, row)
 	}
 	return out, nil
+}
+
+// appVersion is the number appFile's name starts with, read rather than written,
+// so the fixture cannot drift from the file it is built around.
+var appVersion = func() int {
+	v, ok := fileVersion(appFile)
+	if !ok {
+		panic("migrations: " + appFile + " does not start with a version")
+	}
+	return v
+}()
+
+// fileVersion reads the leading digits of a migration file's name; anything that
+// does not start with a number is not a migration and stays in the fixture.
+func fileVersion(name string) (int, bool) {
+	digits := 0
+	for digits < len(name) && name[digits] >= '0' && name[digits] <= '9' {
+		digits++
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	n, err := strconv.Atoi(name[:digits])
+	return n, err == nil
 }
 
 func TestTheTenantAppColumnIsPlacedOnProofAndRefusedWithoutIt(t *testing.T) {
