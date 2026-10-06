@@ -74,13 +74,18 @@ Portuguese, which nothing downstream would ever notice.
 
 ## Reads, writes, refusals
 
-These are the port's commands, not routes. **No HTTP door exists yet** — the
-module is composed by nothing (Limits), so no address answers `?lang=`, and the
-`_i18n` overlay, the `Content-Language` header and the field-rule validation of a
-translated write are the slice that mounts those doors. What is wired today is
-in `kit/rest`: `Spec.Translations` (whose absence `check()` refuses for any entity
-declaring a translatable field), `Spec.deleteRow` → `ForgetRecord`, and a source
-`PATCH` that moved a translatable field → `MarkOutdated`.
+These are the port's commands. The read door exists in `kit/rest`; the write
+doors do not, and the module is composed by nothing (Limits).
+
+| Door | What it does |
+| --- | --- |
+| `GET …?lang=pt-PT` | for a Spec whose entity declares a translatable field and whose `Translations` port is wired: the locale's rows overlaid, every field that fell back named in `_i18n`, and `Content-Language` set. A resource with no translatable field does not offer `?lang=` at all, and its JSON is what it always was |
+| `PATCH …`, `POST …/review`, `POST …/suggest`, `DELETE …?lang=` | **not mounted.** The commands behind them are the four below; the doors, and the field's own validation of a translated value (the 422 a refused richtext construct), are the slice that composes this module |
+
+What `kit/rest` does today, beside the read: `Spec.Translations` (whose absence
+`check()` refuses for any entity declaring a translatable field), `Spec.deleteRow`
+→ `ForgetRecord`, and a source `PATCH` that moved a translatable field →
+`MarkOutdated`.
 
 | Command | What it does |
 | --- | --- |
@@ -146,13 +151,14 @@ feature (compare, diff, chunk for search) now has one owner for.
 
 - Nothing serves the translator's screens yet: the switcher, the side-by-side
   view and the overview are the next slice, and `Overview` exists for them.
-- Nothing answers a request in a second language yet. `Spec.Translations` is
-  wired and refused-unwired, and the record's delete and a source `PATCH` reach
-  two of the port's commands from the kernel; what is missing is the read
-  (`?lang=`, `_i18n`, `Content-Language`), the write doors (the record's PATCH in
-  a locale, the review and suggest commands, and the 422 a rejected richtext
-  construct must produce), the public `lang`/`hreflang`/`x-default` links, the
-  translator's UI, the LibreTranslate adapter behind `locale.Translator`, the
+- `?lang=` is honoured only when it is asked for. There is no negotiation: no
+  cookie, no `Accept-Language`, no `Vary`, and no preference stored — the tenant's
+  declared list decides whether a tag is answered at all, and a read in the
+  tenant's default language asks nothing of this table.
+- The write doors are missing: the record's `PATCH` in a locale, the review and
+  suggest commands, and the 422 a rejected richtext construct must produce, which
+  needs a door to refuse at. So does the public `lang`/`hreflang`/`x-default` set,
+  the translator's UI, the LibreTranslate adapter behind `locale.Translator`, the
   Playwright+axe journeys and the second demo language in `config.example.yaml`.
   The module is composed by nothing until that slice lands, and no claim about a
   door above is a claim that a door exists.

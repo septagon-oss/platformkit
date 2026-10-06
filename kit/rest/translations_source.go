@@ -105,7 +105,19 @@ func (s *specSource[T]) lift(row T) SourceRow {
 // fieldAt walks one field's index into a struct pointer, and answers the zero
 // Value for anything it cannot reach: a field the index does not lead to is a
 // field with no text, which is what a missing translation of it reads as.
+//
+// The pointer is dereferenced before the first index and between every step
+// after it: the index crud derived is relative to the struct behind the entity
+// pointer, so a walk that started at the pointer itself would stop at its first
+// step — which is exactly how `lift` came to answer an empty source text for
+// every field of every record, quietly, until a read door asked the question.
 func fieldAt(v reflect.Value, index []int) reflect.Value {
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return reflect.Value{}
+		}
+		v = v.Elem()
+	}
 	for i, x := range index {
 		if i > 0 {
 			for v.Kind() == reflect.Pointer {

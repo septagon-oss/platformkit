@@ -30,12 +30,15 @@ package rest
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
 // The five states one translatable field of one response can be in. Four of
@@ -335,4 +338,234 @@ type TranslationSource interface {
 // names each entity it wants translated, and a module it does not name is not.
 func TranslationSourceOf[T crud.Entity](s Spec[T]) TranslationSource {
 	return &specSource[T]{spec: s}
+}
+
+// translatedIDInput and translatedListInput are the two read doors of a
+// resource that declares a translatable field. They exist as two shapes rather
+// than one, with ?lang= on every GET in the installation, because a parameter
+// nothing reads is a parameter a caller will send and a client will trust: for a
+// resource with no translatable field the honest answer to ?lang= is that the
+// document does not offer it.
+type translatedIDInput struct {
+	ID uuid.UUID `path:"id" format:"uuid" doc:"The row's id"`
+	// Lang is spelled out beside the path id rather than embedded over idInput
+	// because huma binds the parameters of the struct it is handed, and an
+	// embedded struct's fields are not its own — a case that embeds them reads a
+	// zero id and a blank language, and both answers look like a 404 and an
+	// untranslated row rather than like a wiring mistake.
+	Lang string `query:"lang" doc:"Answer in this language: a translatable field with no row in it is served in the tenant's own, named in _i18n"`
+}
+
+type translatedListInput struct {
+	Limit  int      `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
+	Offset int      `query:"offset" minimum:"0" doc:"Rows to skip"`
+	Sort   string   `query:"sort" doc:"A field name, or a field name prefixed with - for descending"`
+	Filter []string `query:"filter" doc:"field:value, repeated"`
+	Lang   string   `query:"lang" doc:"Answer in this language: a translatable field with no row in it is served in the tenant's own, named in _i18n"`
+}
+
+// page is the same four parameters as listInput, which is the shape the paging
+// and the filter parsing are written against.
+func (in *translatedListInput) page() listInput {
+	return listInput{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort, Filter: in.Filter}
+}
+
+// TranslatedItem and TranslatedPage are the two read doors of a resource with a
+// translatable field. The header they carry is not on the shared Item and Page,
+// and that is the point: a response is in a language only when something could
+// answer in one, and an installation whose every entity is monolingual would
+// otherwise document a header nothing ever sets.
+type TranslatedItem[T any] struct {
+	Body T
+	// ContentLanguage is the language the rows in this response are written in,
+	// which is the tag that was asked for when the tenant speaks it.
+	ContentLanguage string `header:"Content-Language"`
+}
+
+type TranslatedPage[T any] struct {
+	ContentLanguage string `header:"Content-Language"`
+	Body            struct {
+		Items  []T   `json:"items"`
+		Total  int64 `json:"total"`
+		Limit  int   `json:"limit"`
+		Offset int   `json:"offset"`
+	}
+}
+
+// pageRows and itemRow are the two translated doors; plainRows and oneRow are
+// what the same resource looks like with no language asked. They are factored out
+// of Mount so the four registrations are three lines each and not four copies of
+// the paging, the read and the error mapping. Each translated one answers, as its
+// second result, whether anything was served in the requested language — which is
+// what decides whether the response may claim a Content-Language at all.
+func (s Spec[T]) pageRows(ctx context.Context, in listInput, schema crud.Schema, lang string) (*TranslatedPage[T], bool, error) {
+	tx, err := transaction(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	q, err := in.query(schema.Fields)
+	if err != nil {
+		return nil, false, Fault(err)
+	}
+	items, total, err := crud.List[T](tx, q)
+	if err != nil {
+		return nil, false, Fault(err)
+	}
+	out := &TranslatedPage[T]{}
+	out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
+	served, err := s.overlay(ctx, tx, lang, out.Body.Items)
+	if err != nil {
+		return nil, false, err
+	}
+	return out, served, nil
+}
+
+func (s Spec[T]) plainRows(ctx context.Context, in listInput, schema crud.Schema) (*Page[T], error) {
+	tx, err := transaction(ctx)
+	if err != nil {
+		return nil, err
+	}
+	q, err := in.query(schema.Fields)
+	if err != nil {
+		return nil, Fault(err)
+	}
+	items, total, err := crud.List[T](tx, q)
+	if err != nil {
+		return nil, Fault(err)
+	}
+	out := &Page[T]{}
+	out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
+	return out, nil
+}
+
+func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*TranslatedItem[T], bool, error) {
+	tx, err := transaction(ctx)
+	if err != nil {
+		return nil, false, err
+	}
+	e, err := crud.Get[T](tx, id)
+	if err != nil {
+		return nil, false, Fault(err)
+	}
+	// The entity is a pointer, so the overlay writes into the same value this
+	// response carries: the language replaces the field, and `_i18n` says which
+	// field it could not.
+	out := &TranslatedItem[T]{Body: e}
+	served, err := s.overlay(ctx, tx, lang, []T{e})
+	if err != nil {
+		return nil, false, err
+	}
+	return out, served, nil
+}
+
+func (s Spec[T]) oneRow(ctx context.Context, id uuid.UUID) (T, error) {
+	var e T
+	tx, err := transaction(ctx)
+	if err != nil {
+		return e, err
+	}
+	e, err = crud.Get[T](tx, id)
+	if err != nil {
+		return e, Fault(err)
+	}
+	return e, nil
+}
+
+// overlay puts one page of rows into the language the caller asked for, and
+// says which fields it could not: the value in each field is replaced by this
+// locale's row, and every field left in the tenant's own language is named in
+// `_i18n` with the reason — missing, withheld or removed.
+//
+// Two things it never does. It never reads the entity's table again: the source
+// text each translation was measured against is lifted out of the rows already
+// loaded, which is the same copy the staleness rule needs and the reason the port
+// takes the source as a parameter instead of reaching over. And it never serves an
+// unreviewed machine draft — that rule is one line inside the port's own
+// Translated, keyed on this being a guarded door rather than on who is asking, and
+// a door that decided it locally is a door that forgets it.
+//
+// Public is false here because every route in this file is guarded by the Spec's
+// Read: the door that shows a stranger the record is a module's own handler, and
+// it sets Public when it calls the port.
+//
+// It answers whether anything was served in the requested language, which is what
+// decides the response's Content-Language: a read in the tenant's own language
+// says so and asks nothing of the translations table at all.
+func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, rows []T) (bool, error) {
+	languages := db.TenantOf(tx).Languages
+	if lang == "" || !slices.Contains(languages.Preferred(), lang) || len(rows) == 0 {
+		return false, nil
+	}
+	if lang == languages.Default {
+		return true, nil // the source copy is the translation of the default language
+	}
+	src := &specSource[T]{spec: s}
+	ids := make([]uuid.UUID, 0, len(rows))
+	sources := make(map[uuid.UUID]map[string]string, len(rows))
+	lifted := make(map[uuid.UUID]SourceRow, len(rows))
+	for _, row := range rows {
+		rec := src.lift(row)
+		ids = append(ids, rec.ID)
+		sources[rec.ID] = rec.Values
+		lifted[rec.ID] = rec
+	}
+	translated, err := s.Translations.Translated(ctx, tx, TranslatedQuery{
+		Module: s.Module, Entity: s.Entity, Locale: lang,
+		RecordIDs: ids, Sources: sources, RichText: src.RichText(),
+	})
+	if err != nil {
+		return false, err
+	}
+	byRecord := make(map[uuid.UUID]map[string]TranslatedField, len(translated))
+	for _, rec := range translated {
+		byRecord[rec.ID] = rec.Fields
+	}
+	for _, row := range rows {
+		id := entity.BaseOf(row).ID
+		fields := byRecord[id]
+		fallbacks := map[string]entity.Fallback{}
+		// A field the port did not answer has no row in this locale, and the
+		// port's own documentation says the caller falls back to the source and
+		// says so. Saying so is done here, over the entity's own list of
+		// translatable fields, because a response that silently kept one field
+		// in English is the exact lie `_i18n` exists to prevent.
+		for _, translatable := range translatableFields[T]() {
+			if _, has := fields[translatable.Name]; !has {
+				fallbacks[translatable.Name] = entity.Fallback{Locale: languages.Default, Status: FallbackMissing}
+			}
+		}
+		for name, f := range fields {
+			if f.Status == FallbackMissing || f.Status == FallbackWithheld || f.Status == FallbackRemoved {
+				// The value in the field is the source, and the caller is told so.
+				fallbacks[name] = entity.Fallback{Locale: languages.Default, Status: f.Status}
+				continue
+			}
+			fld, ok := crud.FieldNamed(crud.Fields[T](), name)
+			if !ok || !setString(reflect.ValueOf(row), fld.Index, f.Value) {
+				continue
+			}
+			if f.Status != "" {
+				fallbacks[name] = entity.Fallback{Locale: lang, Status: f.Status}
+			}
+		}
+		base := entity.BaseOf(row)
+		if len(fallbacks) > 0 {
+			base.I18N = &fallbacks
+		}
+	}
+	return true, nil
+}
+
+// setString writes one translated value back into the entity by the field index
+// the schema derived — the same index the PATCH merge writes through, and the
+// only reflection on the read side. A field it cannot reach (absent, not a
+// string, nil pointer with nothing to allocate into) keeps the source text, which
+// is the honest answer rather than an empty one.
+func setString(v reflect.Value, index []int, value string) bool {
+	fv := fieldAt(v, index)
+	if !fv.IsValid() || !fv.CanSet() || fv.Kind() != reflect.String {
+		return false
+	}
+	fv.SetString(value)
+	return true
 }

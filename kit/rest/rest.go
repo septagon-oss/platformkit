@@ -299,26 +299,31 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
 
+	// The two read doors come in two shapes, and the reason is one rule: a
+	// query parameter nothing reads is not advertised. A resource with a
+	// translatable field gains ?lang= on its list and its read; a resource with
+	// none does not offer the parameter at all, and its JSON is byte-identical to
+	// what it was before this feature existed.
 	if s.offers(httpx.CRUDList) {
-		httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
-			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-			s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
-				tx, err := transaction(ctx)
+		listOp := s.op("list", http.MethodGet, s.Path, 0,
+			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", "))
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *translatedListInput) (*TranslatedPage[T], error) {
+				out, served, err := s.pageRows(ctx, in.page(), schema, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				q, err := in.query(schema.Fields)
-				if err != nil {
-					return nil, Fault(err)
+				if served {
+					out.ContentLanguage = in.Lang
 				}
-				items, total, err := crud.List[T](tx, q)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				out := &Page[T]{}
-				out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
 				return out, nil
 			})
+		} else {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
+				out, err := s.plainRows(ctx, *in, schema)
+				return out, err
+			})
+		}
 	}
 
 	if s.offers(httpx.CRUDCreate) {
@@ -346,19 +351,27 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 
 	if s.offers(httpx.CRUDRead) {
-		httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
-			"Read a "+s.Entity, ""),
-			s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
-				tx, err := transaction(ctx)
+		readOp := s.op("read", http.MethodGet, s.item(), 0, "Read a "+s.Entity, "")
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *translatedIDInput) (*TranslatedItem[T], error) {
+				out, served, err := s.itemRow(ctx, in.ID, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				e, err := crud.Get[T](tx, in.ID)
+				if served {
+					out.ContentLanguage = in.Lang
+				}
+				return out, nil
+			})
+		} else {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *idInput) (*Item[T], error) {
+				e, err := s.oneRow(ctx, in.ID)
 				if err != nil {
-					return nil, Fault(err)
+					return nil, err
 				}
 				return &Item[T]{Body: e}, nil
 			})
+		}
 	}
 
 	if s.offers(httpx.CRUDUpdate) {
