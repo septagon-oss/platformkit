@@ -162,7 +162,7 @@ func TestBootMigratesAndServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The probes as an orchestrator sends them: at the pod's address, which
 	// names no tenant, so no transaction is opened at all.
@@ -372,17 +372,50 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-func waitFor(t *testing.T, addr string) {
+// bootWait is how long a fixture waits for a process it started to answer. The
+// number is the machine's, not the kernel's: Run migrates a whole installation
+// before it listens, and a migration of thirty files measured 2.8 s when this
+// package ran alone and over 20 s with three database packages sharing one
+// Postgres — which is why a bound sized for the quiet case reads "nothing is
+// listening" for a process that was still working. Every wall-clock bound in
+// this suite is stated as a constant for the same reason: a wait nobody named is
+// a wait nobody can size, and one that is too small reports the machine rather
+// than the code.
+const bootWait = 120 * time.Second
+
+// slowBoot is when a wait starts saying something: a boot that takes a tenth of
+// the bound is the machine being asked for more than it can do at once, and the
+// next red run should say how long a green one took.
+const slowBoot = bootWait / 10
+
+// waitFor returns when addr answers. A caller that has a Run channel passes it:
+// a process that has already stopped is not a process that is still booting, and
+// without that channel this helper would sit out its whole bound and then print
+// "nothing is listening" over the error that says why nothing ever would.
+func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
 	t.Helper()
-	deadline := time.Now().Add(20 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				t.Fatalf("the process stopped before it listened on %s (%s): %v", addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
+			if took := time.Since(started); took > slowBoot {
+				t.Logf("listening after %s: this machine was busy", took.Round(time.Millisecond))
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("nothing is listening on %s", addr)
+	t.Fatalf("nothing is listening on %s after %s (%s): the process is still migrating, or never started",
+		addr, time.Since(started).Round(time.Second), last)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -453,7 +486,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -473,7 +506,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)
@@ -539,7 +572,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// A worker serves the two probes and nothing else.
 	for _, path := range []string{"/health", "/ready"} {
@@ -634,7 +667,7 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
 		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
@@ -678,7 +711,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The document is for a caller the installation recognises: the resources it
 	// may reach, not everybody's.
@@ -738,7 +771,7 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- b.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
 	}
@@ -775,7 +808,7 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -809,7 +842,7 @@ func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
 	req.Host = tenantHost

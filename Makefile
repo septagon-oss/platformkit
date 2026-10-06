@@ -340,7 +340,19 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
+	# installation into a schema of their own; the package measured 407s with three database packages
+	# sharing one Postgres, and the run of 2026-10-06 killed it at 600s while it was still working —
+	# six passing cases then reported as `(unknown)` over a goroutine dump of tests parked in
+	# t.Parallel. A whole-suite run of 2026-10-06 on a host carrying six of this program's suites at
+	# once took `modules/tenant/internal` to 18m37s and `kit/rest` — a package that opens no database
+	# at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
+	# against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
+	# room for a machine doing other things as well. It is not a looser standard: the hang a bound
+	# exists to catch still stops, and the CI job that runs `make check` keeps its own bound of 75
+	# minutes, which is what keeps a hung package from becoming a hung job.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh

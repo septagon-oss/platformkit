@@ -398,6 +398,15 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
+// tickDeadline is that case's own deadline, sized by measurement. The drain the bound stops — 10000
+// batches of 5 — measured 48.6 s for that case alone against a Postgres nobody else was migrating
+// into, and the same case ran past the 120 s it used to carry during a whole-suite run on 2026-10-06.
+// A whole-suite run is the condition the deadline has to survive rather than the quiet one: every
+// package in the repository is then writing into the same server through the advisory lock this drain
+// holds. Three times the quiet measurement is the number below, and the failure it reports is the
+// same one: a tick with no bound of its own.
+const tickDeadline = 5 * time.Minute
+
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the
 // deadline that turns a regression to no bound at all into a failure rather than a hang.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
@@ -416,11 +425,12 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), tickDeadline)
 	defer cancel()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
 	if errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("the worker's tick did not end on its own: this drain has no bound, and every tick rewrites work while holding the job's advisory lock")
+		t.Fatalf("the worker's tick did not end on its own within %s: this drain has no bound, "+
+			"and every tick rewrites work while holding the job's advisory lock", tickDeadline)
 	}
 	if !errors.Is(err, db.ErrBackfillBudget) {
 		t.Fatalf("the bound a tick gives itself reported %v, not ErrBackfillBudget; a run that may not be open forever has to say so", err)

@@ -163,7 +163,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -1098,13 +1098,22 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 // GET /health is what the wait ends on instead: both roles serve it (kit/health
 // and app.work), it runs no check of its own, so 200 says this application is up
 // and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so in a second rather than after thirty of
-// waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string) {
+// holds the port, and the case says so at once rather than after the whole bound
+// of waiting and one request that was never going to be answered here.
+func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		res, err := http.Get("http://" + addr + "/health")
 		if err != nil {
 			// Nobody is home, which is what it looks like while the application is
@@ -1114,6 +1123,9 @@ func waitFor(t *testing.T, addr string) {
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+				}
 				return
 			}
 			// /health is liveness: it runs no check, and this process answers it with
@@ -1126,8 +1138,22 @@ func waitFor(t *testing.T, addr string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
+	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
+		time.Since(started).Round(time.Second), last)
 }
+
+// bootWait is how long a fixture waits for an application it started to answer.
+// Run migrates a whole installation before it listens, and the same boot that
+// answers in a couple of seconds when one package runs costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once. A bound sized for the quiet case reports a working machine as
+// a broken application, so it is sized for the loaded one and stated here rather
+// than left as a literal inside the loop; slowBoot is when a green wait starts
+// saying how long it took, which is what the next red run reads.
+const (
+	bootWait = 120 * time.Second
+	slowBoot = bootWait / 10
+)
 
 // The band freeAddr picks from. The kernel allocates nothing below
 // ip_local_port_range — an :0 bind and the source port of an outbound
