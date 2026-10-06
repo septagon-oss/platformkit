@@ -102,8 +102,13 @@ func TestRelativeDatesUseOneUTCClock(t *testing.T) {
 	if err != nil || got.Format(time.RFC3339) != "2025-02-28T12:00:00Z" {
 		t.Errorf("leap year clamp: %s, %v", got, err)
 	}
-	if _, err := ResolveDate(now, "monday 24:00", false); err == nil {
-		t.Fatal("invalid clock accepted")
+	// One sign belongs to the expression; a second belongs to nothing. Atoi
+	// would have read it as part of the amount, so a doubled sign moved the day
+	// in the direction the second character chose.
+	for _, expression := range []string{"monday 24:00", "++3d", "-+3d"} {
+		if _, err := ResolveDate(now, expression, false); err == nil {
+			t.Fatalf("%q accepted: a doubled sign is not an amount", expression)
+		}
 	}
 }
 

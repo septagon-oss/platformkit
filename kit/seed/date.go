@@ -17,8 +17,13 @@ func ResolveDate(now time.Time, expression string, dateOnly bool) (time.Time, er
 	}
 	if len(expression) >= 3 && (expression[0] == '+' || expression[0] == '-') {
 		unit := expression[len(expression)-1]
-		amount, err := strconv.Atoi(expression[1 : len(expression)-1])
-		if err != nil || amount < 0 {
+		amountText := expression[1 : len(expression)-1]
+		// The sign the grammar carries is the one at index 0; a second one is a
+		// typo. Atoi reads a leading sign of its own, so "++3d" came out three
+		// days forward and "-+3d" three days back — the plus moved the record
+		// backwards. An amount is decimal digits and nothing else.
+		amount, err := strconv.Atoi(amountText)
+		if err != nil || !decimalDigits(amountText) {
 			return time.Time{}, fmt.Errorf("seed: invalid relative date %q", expression)
 		}
 		if expression[0] == '-' {
@@ -53,7 +58,7 @@ func ResolveDate(now time.Time, expression string, dateOnly bool) (time.Time, er
 	// a file that wrote monday -1:00 would have got Sunday 23:00 and no word
 	// about it. A clock part that is not two digits is a typo, and a typo is
 	// refused rather than normalised.
-	if !twoDigits(clock[:2]) || !twoDigits(clock[3:]) {
+	if !decimalDigits(clock[:2]) || !decimalDigits(clock[3:]) {
 		return time.Time{}, fmt.Errorf("seed: invalid clock %q in relative date %q", clock, expression)
 	}
 	hour, _ := strconv.Atoi(clock[:2])
@@ -69,8 +74,17 @@ func ResolveDate(now time.Time, expression string, dateOnly bool) (time.Time, er
 	return candidate, nil
 }
 
-// twoDigits is a clock part as the grammar writes it: exactly two decimal
-// digits, no sign.
-func twoDigits(s string) bool {
-	return len(s) == 2 && s[0] >= '0' && s[0] <= '9' && s[1] >= '0' && s[1] <= '9'
+// decimalDigits is a number as this grammar writes it: one or more decimal
+// digits and no sign of its own. The clock parts it is asked of are already
+// cut to two characters, which is where the two-digits-each rule lives.
+func decimalDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
