@@ -97,18 +97,34 @@ func TestAPlacementAfterTheMoveReadsTheLedgerCannotCostATenantItsClaim(t *testin
 	}()
 	waitFor("WITH src AS MATERIALIZED%platformkit_handled%", "the copy of platformkit_handled")
 
-	if _, err := owner.ExecContext(ctx,
-		`SELECT platformkit_place_tenants('collect', '', 'late=collect', NULL)`); err != nil {
-		t.Fatal(err)
+	// The placement runs from its own connection in its own goroutine, because a cure may
+	// serialize it behind the move it would otherwise overtake: the placement declares the
+	// tenant key the move holds (migrations/000047), so it waits, and a synchronous call
+	// here would wait behind the blocker this test still holds — a deadlock of the test's
+	// own making. The wait is one of the safe answers, so the result is read after the
+	// blocker lets both go; what the assertions below ask is unchanged.
+	placer, connErr := owner.Conn(ctx)
+	if connErr != nil {
+		t.Fatal(connErr)
 	}
+	defer placer.Close()
+	placed := make(chan error, 1)
+	go func() {
+		_, err := placer.ExecContext(ctx, `SELECT platformkit_place_tenants('collect', '', 'late=collect', NULL)`)
+		placed <- err
+	}()
 	if err := blocker.Commit(); err != nil {
 		t.Fatal(err)
 	}
+	if err := <-placed; err != nil {
+		t.Fatal(err)
+	}
 	result := <-moved
-	// Either answer is safe, and the test says so rather than pinning one: the move
-	// refuses because the membership it read is no longer the membership it holds, or it
-	// renames both claims because its own reading already saw the placed tenant. What
-	// neither answer may do is rename one of them and lose the other.
+	// Three answers are safe, and the test says so rather than pinning one: the move
+	// refuses because the membership it read is no longer the membership it holds; it
+	// renames both claims because its own reading already saw the placed tenant; or the
+	// placement serializes behind the move and the tenant it named takes the move that
+	// follows. What no answer may do is rename one of them and lose the other.
 	if result.err != nil {
 		if !errors.Is(result.err, events.ErrLedgerMoveContended) || result.report != (events.MoveReport{}) {
 			t.Fatalf("the move answered %+v, want %v with no report", result, events.ErrLedgerMoveContended)
@@ -128,7 +144,19 @@ func TestAPlacementAfterTheMoveReadsTheLedgerCannotCostATenantItsClaim(t *testin
 		}
 	}
 	if result.report.Claims != 2 || result.report.Tenants != 2 {
-		t.Errorf("the move reported %+v, want two claims in two tenants", result.report)
+		// The third safe answer, and the one migrations/000047 makes reachable: the placement
+		// declared the tenant key this move already held, so it serialized behind the move
+		// rather than committing under it, and the tenant it named owes the move that follows
+		// it — which is what a boot that places before it opens its consumers does. No answer
+		// may leave a claim behind, and the reads below still ask that of every event.
+		second, moveErr := events.MoveLedger(ctx, conn, "collect", "boot")
+		if moveErr != nil {
+			t.Fatalf("the move after the serialized placement: %v", moveErr)
+		}
+		if result.report.Claims+second.Claims != 2 || result.report.Tenants+second.Tenants != 2 {
+			t.Errorf("the moves reported %+v and %+v, want two claims in two tenants between them",
+				result.report, second)
+		}
 	}
 	for _, id := range []uuid.UUID{earlyEvent, lateEvent} {
 		if got := durables(t, conn, "platformkit_handled", id); len(got) != 1 || got[0] != scoped {
