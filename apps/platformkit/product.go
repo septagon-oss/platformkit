@@ -48,6 +48,8 @@ import (
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	auditcontracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
@@ -224,12 +226,33 @@ func access(ask *accessReach) *pkit.Module {
 		// module, which needs nobody and can build it from two named constructors, and
 		// a slice the resolver would refuse is what a loop over both here would be.
 		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, site.NewLockedReader()))
+		// The same join makes the two facts change control needs to be more than a
+		// row: who is told about a decision, and where the thing decided is read.
+		// modules/change owns the proposal, its page's content and no address, and
+		// knows nobody owns delivery records (contracts.Notifier says why reviewers
+		// are told nothing here). This is the one line that supplies both, over the
+		// notification service the module above it handed out.
+		pkit.Put[changecontracts.Notifier](w, proposalNotifier{notices: notices})
+		pkit.Put[changecontracts.ProposalPage](w, change.NewProposalPage(pinnedProposals))
+		// The queue and the decision page are this module's screens and the shell is
+		// this product's chrome — the same four facts the fault pages use. The read
+		// and the four commands are filled by change's own wire, from the service the
+		// resolver builds, so nothing here can name a queue over a different service
+		// than the one the routes are mounted on.
+		pkit.Put[*change.ReviewChrome](w, &change.ReviewChrome{
+			Shell:     reviewShell(catalogues()),
+			Authorize: pkit.Get[authcontracts.Auth](w),
+		})
 		return module.Module{Name: "access"}, nil
 	},
 		pkit.Needs[usercontracts.Service](),
 		pkit.Needs[notificationcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
 		pkit.Needs[usercontracts.Granting](),
+		pkit.Needs[authcontracts.Auth](),
+		pkit.Provides[changecontracts.Notifier](),
+		pkit.Provides[changecontracts.ProposalPage](),
+		pkit.Provides[*change.ReviewChrome](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
 	)
 }

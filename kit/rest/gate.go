@@ -27,11 +27,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 )
 
 // The three verbs a door writes with. They are the Spec's own operations, restated
@@ -49,7 +51,11 @@ const (
 // writing it in its own struct, the way site settings and tasks both did: a number
 // is the only thing a reviewer of a diff can be told, and the only thing a stale
 // proposal can be refused with.
-const RevisionField = "revision"
+//
+// The name itself lives in kit/entity, because the question it answers — is this
+// field the server's — is asked by the form, the merge and this file, and a second
+// spelling of it would be a second thing to keep honest.
+const RevisionField = entity.RevisionField
 
 // Gate is asked after the row is locked and the body merged, and before anything
 // is written: this row, these fields, now.
@@ -103,7 +109,7 @@ func changedNames(fields []crud.Field, before map[string]json.RawMessage, after 
 	}
 	var out []string
 	for _, f := range fields {
-		if f.ReadOnly {
+		if entity.ServerOwned(f) {
 			continue
 		}
 		got, had := now[f.Name], before[f.Name]
@@ -134,12 +140,90 @@ func jsonSnapshot(e any) (map[string]json.RawMessage, error) {
 // revisionColumn names the column a Spec with this entity has to write to move the
 // row's revision, and "" when the entity carries no such field. It asks the schema
 // rather than the struct because the schema is what the rest of this package reads.
+//
+// The field has to be the server's own — an int named revision, which is what
+// entity.ServerOwned asks — because a Spec that carries a caller-writable field of
+// that name is not carrying a write counter, and moving it would be moving a value
+// somebody else owns.
 func revisionColumn(fields []crud.Field) string {
 	f, ok := crud.FieldNamed(fields, RevisionField)
-	if !ok || f.ReadOnly || f.Type != crud.TypeInt {
+	if !ok || f.Type != crud.TypeInt || !entity.ServerOwned(f) {
 		return ""
 	}
 	return f.Column
+}
+
+// noEntity reports a nil entity handed to a kernel rule about one. T is a pointer
+// type, so this is reachable — a request with no body decodes to one — and == does not
+// compile against a type parameter, which is why every rule below asks it this way.
+func noEntity(e any) bool {
+	v := reflect.ValueOf(e)
+	return !v.IsValid() || (v.Kind() == reflect.Pointer && v.IsNil())
+}
+
+// revisionValue is the entity's own counter, through the schema's index.
+func revisionValue(e any, f crud.Field) int64 {
+	return reflect.ValueOf(e).Elem().FieldByIndex(f.Index).Int()
+}
+
+// clearRevision takes the counter out of an entity a create is about to insert.
+//
+// crud.Reset already discards whatever arrived for Base's four, on the reasoning
+// quoted above createRow: the server owns those outright, and a caller sending an id
+// is not reaching for a door of its own. The write counter is the same kind of field
+// — it is the number of writes this row has had, which a create cannot know before
+// it has happened — and leaving it writable made a row arrive at whatever number its
+// first caller chose, which is the number every later stale-base refusal quotes.
+//
+// Zero is the value that means "ask the column", the same one every other default
+// takes: the entity's own `default:1` answers, and the row starts where the
+// migration says it starts.
+func (s Spec[T]) clearRevision(fields []crud.Field, e T) {
+	column := revisionColumn(fields)
+	if column == "" || noEntity(e) {
+		return
+	}
+	f, _ := crud.FieldNamed(fields, RevisionField)
+	reflect.ValueOf(e).Elem().FieldByIndex(f.Index).SetInt(0)
+}
+
+// blankRow is what a row that holds nothing anybody chose would hold: an empty entity,
+// with every field that has a declared default holding that default.
+//
+// The delete door measures against this and not against nothing. Every value the row held
+// does go, which is why a delete is the largest write there is — but a value the entity
+// starts at is one nobody chose, and a refusal that named it would send a person to empty
+// a field that refills itself the moment they do. A way through that closes itself is the
+// wall this file's own invariant refuses, and the delete is the one verb with no proposal
+// to walk through: change control moves values onto a row, it does not remove one.
+//
+// The defaults come from the schema rather than from the entity's Validate, because
+// Validate is allowed to refuse a blank row before it has defaulted anything (a task has
+// no title), and the answer this comparison wants is what the column starts at, which is
+// what `default:"open"` and the migration's DEFAULT both say.
+func (s Spec[T]) blankRow() map[string]json.RawMessage {
+	out := s.zeroSnapshot()
+	if out == nil {
+		return nil
+	}
+	for _, f := range crud.Fields[T]() {
+		if f.Default == "" || f.ReadOnly {
+			continue
+		}
+		value, err := coerce(f, f.Default)
+		if err != nil {
+			// A default the schema's own decoder refuses is a schema bug, and the
+			// comparison is better off without that one field than off the whole
+			// baseline: every other field still says what the row was given.
+			continue
+		}
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			continue
+		}
+		out[f.Name] = encoded
+	}
+	return out
 }
 
 // entityValidate is kit/crud's own optional check, asked here and not only inside
@@ -252,4 +336,28 @@ func (s Spec[T]) bumpRevision(fields []crud.Field, e T, write []string) []string
 	value := reflect.ValueOf(e).Elem().FieldByIndex(f.Index)
 	value.SetInt(value.Int() + 1)
 	return append(write, column)
+}
+
+// revisionOf reads an entity's own counter, and 0 for an entity that carries no
+// kernel write count. It is what a conditional write is compared against and what its
+// ETag is made of, and there is exactly one reading of the number in this package.
+func (s Spec[T]) revisionOf(fields []crud.Field, e T) int64 {
+	column := revisionColumn(fields)
+	if column == "" || noEntity(e) {
+		return 0
+	}
+	f, _ := crud.FieldNamed(fields, RevisionField)
+	return revisionValue(e, f)
+}
+
+// revisionTag is the response's ETag for a row the kernel counts writes on, and ""
+// for every other entity. It quotes the number the row itself carries, which after a
+// write is the one the write produced: a caller that read this response can quote it
+// back and be refused if the row moved since.
+func (s Spec[T]) revisionTag(fields []crud.Field, e T) string {
+	if revisionColumn(fields) == "" || noEntity(e) {
+		return ""
+	}
+	f, _ := crud.FieldNamed(fields, RevisionField)
+	return `"` + strconv.FormatInt(revisionValue(e, f), 10) + `"`
 }
