@@ -34,7 +34,11 @@ func runInTestDatabase(m *testing.M) (code int) {
 		}
 	}
 
-	admin, err := sql.Open("pgx", os.Getenv(names[0]))
+	// The owner URL as the caller gave it, so the teardown below removes its
+	// database from outside it: no session drops the database it stands in, and
+	// the two URLs after this are rewritten to name the new one.
+	adminURL := os.Getenv(names[0])
+	admin, err := sql.Open("pgx", adminURL)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "kit/db fixture: could not open the owner connection")
 		return 1
@@ -53,7 +57,7 @@ func runInTestDatabase(m *testing.M) (code int) {
 	// Registered before any later return, so a run that refuses the URLs below
 	// still hands back the database it made.
 	defer func() {
-		if err := removeTestDatabase(admin, database); err != nil {
+		if err := removeTestDatabase(adminURL, database); err != nil {
 			fmt.Fprintf(os.Stderr, "kit/db fixture: drop database: %v\n", err)
 			code = 1
 		}
@@ -94,12 +98,37 @@ func intoDatabase(raw, database string) (string, error) {
 }
 
 const (
-	// The teardown's own budget. Six removals with a two-second look between them
-	// is a hundred seconds at the most; the CI Postgres serves four other packages'
-	// migrations while this package finishes, and a removal that gives up on one
-	// lost lock race reddens a run in which every test passed.
-	dropTries  = 6
-	dropWindow = 15 * time.Second
+	// The teardown's own budget: dropTries removals of dropWindow each, two seconds
+	// apart, so no teardown costs a person more than about two and a half minutes.
+	// The CI Postgres serves four other packages' migrations while this package
+	// finishes, and a removal that gives up on one lost lock race reddens a run in
+	// which every test passed — that was 2026-10-01.
+	//
+	// The window is sized by a second measurement, from the run CI refused on
+	// 2026-10-06: `context deadline exceeded after 6 removals; sessions still
+	// connected: none` — six timeouts on nobody. Removing a database is not only a
+	// lock race: DROP DATABASE asks the cluster for a forced immediate checkpoint
+	// and waits for it, which the server logs as `checkpoint starting: immediate
+	// force wait`. Measured against this repository's own stack, one empty database
+	// came away in 0.46 s, 2.4 s and 5.4 s with four packages' tests running beside
+	// it, and the checkpoint the server logged for one of them was `total=2.341 s`
+	// of that 2.4 s. On a runner whose Postgres serves four packages through the
+	// race detector that wait exceeds fifteen seconds, so a window that small is
+	// refused by the removal's own cost — and each abandoned attempt asks for a
+	// checkpoint of its own, so the sixth is slower than the first. Three removals
+	// with room to finish beat six that cannot finish once.
+	dropTries  = 3
+	dropWindow = 45 * time.Second
+
+	// dropClearWait is how long one removal waits for the sessions it ended to be
+	// gone; dropLockWait, set on the session that asks (see withLockWait), is how
+	// long it then waits for a lock it lost. Both are the server's to answer, which
+	// is what makes an attempt that loses the race give the lock back instead of
+	// holding its place in the queue: a DROP DATABASE the client abandons keeps
+	// waiting anyway, and every later attempt queues behind a statement nobody is
+	// waiting for any more.
+	dropClearWait = 5 * time.Second
+	dropLockWait  = 3 * time.Second
 )
 
 // terminateSessions ends every session connected to the database it is handed.
@@ -112,66 +141,154 @@ const terminateSessions = `SELECT pg_terminate_backend(pid) FROM pg_stat_activit
 
 // removeTestDatabase drops the database the fixture created.
 //
-// `DROP DATABASE … WITH (FORCE)` terminates the sessions standing in the database
-// on its own, but once, and without waiting for them to notice: the test binary is
-// still alive here, so a pool that a test walked away from redials and the removal
-// loses the lock race. That is what CI refused on 2026-10-01 — every test in this
-// package had passed, and the run was red on the teardown alone. So each removal
-// terminates the sessions, asks for the database, and on failure asks who is still
-// in there, up to dropTries times. A database that is already gone counts as
-// removed: the fixture's job is to leave nothing behind, not to have been the one
-// that removed it.
-func removeTestDatabase(admin *sql.DB, database string) error {
+// Two things stop it, and the removal answers both. A session standing in the
+// database holds it: `DROP DATABASE … WITH (FORCE)` terminates those sessions on
+// its own, but once, and without waiting for them to notice, so a pool a test
+// walked away from redials and the removal loses the lock race — what CI refused
+// on 2026-10-01 with every test in the package passed. And the removal itself is
+// slow, because DROP DATABASE waits for a forced checkpoint — what CI refused on
+// 2026-10-06 with six timeouts and nobody connected, sized by the comment on
+// dropWindow above. So each removal terminates the sessions, waits for the server
+// to report none left, asks for the database with a lock wait of its own, and on
+// failure says which of those refused and who was seen inside. A database that is
+// already gone counts as removed: the fixture's job is to leave nothing behind,
+// not to have been the one that removed it.
+func removeTestDatabase(adminURL, database string) error {
 	var (
-		held []string
+		held = "nobody was read"
 		err  error
 	)
 	for attempt := range dropTries {
 		if attempt > 0 {
 			time.Sleep(2 * time.Second)
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), dropWindow)
-		if _, err = admin.ExecContext(ctx, terminateSessions, database); err != nil {
-			held = sessionsIn(admin, database)
-			cancel()
-			return fmt.Errorf("terminate sessions: %v (%s)", err, strings.Join(held, " | "))
-		}
-		_, err = admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+database+" WITH (FORCE)")
-		cancel()
-		if err == nil {
+		if held, err = removeOnce(adminURL, database); err == nil {
 			return nil
 		}
-		held = sessionsIn(admin, database)
 	}
-	return fmt.Errorf("%v after %d removals; sessions still connected: %s", err, dropTries, strings.Join(held, " | "))
+	return fmt.Errorf("%v after %d removals; sessions still connected: %s", err, dropTries, held)
 }
 
-// sessionsIn names up to eight backends still connected to database, so a
-// teardown that cannot finish says who is holding it instead of only that it
-// stopped. It asks with a context of its own because the removal's deadline is
-// usually the thing that just passed.
-func sessionsIn(admin *sql.DB, database string) []string {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// removeOnce is one removal, on a session of its own which it closes. The session
+// is its own for three reasons: the lock wait belongs to the DROP below and to
+// nobody who would reuse a pooled connection, the pg_backend_pid() that
+// terminateSessions leaves alone is the one asking, and closing the pool takes the
+// socket with it, which is the only thing that ends a statement whose deadline has
+// passed rather than leaving it in the queue. Each statement gets the window to
+// itself, so a session list that is slow to read cannot spend the deadline the
+// removal needs.
+func removeOnce(adminURL, database string) (held string, err error) {
+	dsn, err := withLockWait(adminURL)
+	if err != nil {
+		return "the owner session could not be opened: " + err.Error(), err
+	}
+	admin, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return "the owner session could not be opened: " + err.Error(), err
+	}
+	// One session: the wait set in the URL, the termination and the removal all
+	// happen on it, and a second one would be a second session the termination has
+	// to leave alone without being the one that asks.
+	admin.SetMaxOpenConns(1)
+	defer func() { _ = admin.Close() }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), dropWindow)
 	defer cancel()
-	rows, err := admin.QueryContext(ctx, `SELECT pid || ' ' || COALESCE(state, 'unknown') || ': ' || left(query, 120)
+
+	if _, err := admin.ExecContext(ctx, terminateSessions, database); err != nil {
+		return heldNow(admin, database), fmt.Errorf("end its sessions: %v", err)
+	}
+	left, seen, clearErr := waitClear(ctx, admin, database)
+
+	_, err = admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+database+" WITH (FORCE)")
+	if err == nil {
+		return "", nil
+	}
+	if held = heldNow(admin, database); clearErr != nil {
+		return held, fmt.Errorf("drop it: %v, and before that: %v", err, clearErr)
+	}
+	if left > 0 {
+		return held, fmt.Errorf("drop it: %v, with %d session(s) still in it (%s)", err, left, strings.Join(seen, " | "))
+	}
+	return held, fmt.Errorf("drop it: %v", err)
+}
+
+// withLockWait is rawURL carrying the removal's lock wait for every connection it
+// opens. pgx forwards `options` to the startup packet — the same door dbtest sends
+// a search_path through — so a session the pool dials again after a lost
+// connection waits no longer than the one that opened it. A SET would bind the
+// session that ran it and nothing dialled later.
+func withLockWait(rawURL string) (string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	q.Set("options", strings.TrimSpace(q.Get("options")+fmt.Sprintf(" -clock_timeout=%d", dropLockWait.Milliseconds())))
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// waitClear asks, until dropClearWait, until the server reports no session
+// standing in database. Ending a session is a request, not a fact: the backend has
+// to notice, and until it does it holds the lock the removal is about to ask for.
+func waitClear(ctx context.Context, admin *sql.DB, database string) (int, []string, error) {
+	ctx, cancel := context.WithTimeout(ctx, dropClearWait)
+	defer cancel()
+	for {
+		left, seen, err := standingIn(ctx, admin, database)
+		if err != nil || left == 0 {
+			return left, seen, err
+		}
+		select {
+		case <-ctx.Done():
+			return left, seen, ctx.Err()
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
+// standingIn counts the sessions connected to database and names up to eight of
+// them, from one read: the count is the window's total and the names its first
+// eight rows, so a removal that gives up reports who it saw as well as how many.
+func standingIn(ctx context.Context, admin *sql.DB, database string) (int, []string, error) {
+	rows, err := admin.QueryContext(ctx, `SELECT count(*) OVER (), pid || ' ' || COALESCE(state, 'unknown') || ': ' || left(query, 120)
 		FROM pg_stat_activity WHERE datname = $1 LIMIT 8`, database)
 	if err != nil {
-		return []string{"the session list could not be read: " + err.Error()}
+		return -1, nil, err
 	}
 	defer rows.Close()
-	var held []string
+	var (
+		left int
+		seen []string
+	)
 	for rows.Next() {
 		var backend string
-		if err := rows.Scan(&backend); err != nil {
-			held = append(held, "the session list could not be read: "+err.Error())
-			break
+		if err := rows.Scan(&left, &backend); err != nil {
+			return left, seen, err
 		}
-		held = append(held, backend)
+		seen = append(seen, backend)
 	}
-	if len(held) == 0 {
-		return []string{"none"}
+	return left, seen, rows.Err()
+}
+
+// heldNow names the backends still connected to database for an error message,
+// with a deadline of its own: the removal's is usually the thing that just passed,
+// and the question is still worth asking after it.
+func heldNow(admin *sql.DB, database string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	left, seen, err := standingIn(ctx, admin, database)
+	switch {
+	case err != nil:
+		return "the session list could not be read: " + err.Error()
+	case left <= 0:
+		return "none"
+	case left > len(seen):
+		return strings.Join(append(seen, fmt.Sprintf("(%d more)", left-len(seen))), " | ")
+	default:
+		return strings.Join(seen, " | ")
 	}
-	return held
 }
 
 // TestTheFixtureRemovesADatabaseASessionIsStandingIn is the CI refusal of
@@ -181,6 +298,12 @@ func sessionsIn(admin *sql.DB, database string) []string {
 // being dropped at all, so a `DROP DATABASE` with no termination in front of it
 // fails this case, and so does a teardown that terminates once and never looks
 // again.
+//
+// It is also the case the 2026-10-06 refusal came out of: the run was red on this
+// teardown again, six times over, with no session connected at all — see
+// dropWindow for what the removal actually spends its time on. The assertions here
+// are the ones that refused then; what changed is that the removal has room to
+// finish, and says which part of itself could not.
 func TestTheFixtureRemovesADatabaseASessionIsStandingIn(t *testing.T) {
 	adminURL := os.Getenv("PLATFORMKIT_TEST_ADMIN_URL")
 	if adminURL == "" {
@@ -195,7 +318,7 @@ func TestTheFixtureRemovesADatabaseASessionIsStandingIn(t *testing.T) {
 	// Registered after dbtest.Open's, so it runs first: the removal happens while
 	// the owner pool is still standing, the way the fixture's own does.
 	t.Cleanup(func() {
-		if err := removeTestDatabase(admin, scratch); err != nil {
+		if err := removeTestDatabase(adminURL, scratch); err != nil {
 			t.Errorf("the scratch database was left behind: %v", err)
 		}
 	})
@@ -214,7 +337,7 @@ func TestTheFixtureRemovesADatabaseASessionIsStandingIn(t *testing.T) {
 		t.Fatalf("the session did not land in the scratch database: %v", err)
 	}
 
-	if err := removeTestDatabase(admin, scratch); err != nil {
+	if err := removeTestDatabase(adminURL, scratch); err != nil {
 		t.Fatalf("remove a database a session is standing in: %v", err)
 	}
 	var left int
