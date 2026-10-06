@@ -123,10 +123,12 @@ e2e: ## Gate 10: boot the app on a database of its own and drive it with a brows
 	./scripts/e2e.sh
 
 # The device journey is its own goal, and its own CI job, because it needs an
-# emulator the check job's container does not have: the host the pkit-ci runners use
-# has one (/dev/kvm, an x86_64 system image and an AVD are measured there), and a
-# journey that silently skipped would leave the rate in e2e/maestro/flows.json
-# looking like a number nobody earned. See .gitea/workflows/mobile.yml.
+# emulator the check job's container does not have: the journey runs on the
+# pkit-ci-android label, whose image carries an Android 35 x86_64 system image and
+# the AVD the repository's PK_MOBILE_AVD names, and whose job container is started
+# with the host's /dev/kvm passed through. A journey that silently skipped would
+# leave the rate in e2e/maestro/flows.json looking like a number nobody earned. See
+# .gitea/workflows/mobile.yml.
 mobile-e2e: ## Boot the app on a database of its own and drive it with one device flow
 	./scripts/mobile_e2e.sh
 
@@ -296,12 +298,28 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
 # workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
 # history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
+#
+# scripts/mobile_journey_fetch_test.sh runs the journey job's own download step, as the workflow
+# file states it, against a server on localhost that behaves like this forge: a 200 and a sign-in
+# page to an anonymous request, the build to one carrying the job's token. It refuses each way the
+# journey was wrong or is one edit away from being wrong — the job not on the label that has a
+# device, a second job taking that label, a fetch step not given the job's token, a job-level
+# PK_MOBILE_APK competing with the step's file:// export — and then asks the harness's own curl and
+# sha256sum to open what the step exported. It is here rather than only in the mobile job because
+# every one of those is a fact about a workflow file, which `check` already reads for its two other
+# such facts above, and because the mobile job is the worst place to learn them: the journey has no
+# device when they are wrong, and 40 minutes to find that out. It needs python3, curl and sha256sum
+# — and PyYAML, which the job image does not ship: measured 2026-10-05 by running this file inside
+# the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
+# `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
+# line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
+	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say

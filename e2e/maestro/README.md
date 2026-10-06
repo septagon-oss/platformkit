@@ -7,11 +7,11 @@ the document at [testdata/openapi.json](../../apps/platformkit/testdata/openapi.
 gated by [openapi_contract_test.go](../../apps/platformkit/openapi_contract_test.go).
 
 ```sh
-make mobile-e2e                  # needs a device, the shell's pinned APK, and the tools below
-PK_MOBILE_APK=https://…/shell.apk \
-PK_MOBILE_APK_SHA256=<64 hex> \
-PK_MOBILE_AVD=<avd name> \
-make mobile-e2e
+# The forge answers an anonymous release download with its sign-in page and a 200, so the
+# pin comes down with a token and reaches the harness as a file:// URL, as the job's
+# "Fetch the pinned shell build" step does.
+curl -fsSL -H "Authorization: token $FORGE_TOKEN" -o shell.apk https://…/shell.apk
+PK_MOBILE_APK="file://$PWD/shell.apk" PK_MOBILE_APK_SHA256=<64 hex> PK_MOBILE_AVD=<avd name> make mobile-e2e
 ```
 
 `PK_MOBILE_APK` and `PK_MOBILE_APK_SHA256` are both required: the kernel does not build

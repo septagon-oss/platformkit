@@ -90,7 +90,7 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      # Two tools the operating system is asked for, one step, because a step that
+      # Three things the operating system is asked for, one step, because a step that
       # installs one of them and not the other half of the question is what this line
       # is: `psql` answers the migration rehearsal, and `ss` answers gate 10's question
       # "whose socket is this?", which scripts/free_port.sh refuses to answer from
@@ -110,10 +110,22 @@ jobs:
       # in the tree caused. The same run with iproute2 installed answered all sixteen
       # cases and exited 0. Case 6 of scripts/free_port_test.sh refuses a future edit
       # that takes the package back out, and says which steps would refuse to run.
-      - name: Install the database client and the socket probe
+      #
+      # The third package is PyYAML, asked for on the same evidence and measured the same way.
+      # `make check` runs scripts/mobile_journey_fetch_test.sh, which reads
+      # .gitea/workflows/mobile.yml as YAML to ask which label the device journey runs on, to check
+      # that no second job asks for it, and to take the fetch step out of the job as it is written
+      # there. Running that file inside this same digest on 2026-10-05 (`docker run -v $PWD:/w:ro
+      # -w /w … bash scripts/mobile_journey_fetch_test.sh`) died on its first question with
+      # `ModuleNotFoundError: No module named 'yaml'` and exit 1; the same run with python3-yaml
+      # installed answered `ok` and exited 0. No other Python in this repository reads a document as
+      # YAML, so this case is the whole of the dependency — and, with nothing pinning the package by
+      # name, its refusal is a traceback rather than a sentence, which is why the line above is
+      # named in the Makefile's comment over the goal that runs the case.
+      - name: Install the database client, the socket probe and the YAML reader
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends postgresql-client iproute2
+          apt-get install --yes --no-install-recommends postgresql-client iproute2 python3-yaml
 
       - name: Start NATS with JetStream on this job's network
         id: nats
