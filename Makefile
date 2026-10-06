@@ -313,6 +313,31 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
 # `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
 # line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+#
+# scripts/ci_go_cache_test.sh asks the same kind of question about the Go build cache T-0277 gave the
+# two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
+# this change's promises can be undone from somewhere else — the key by anyone who moves the digest
+# into a `hashFiles` expression, which act_runner answers "" for rather than failing, and the brief's
+# "never cache test results across commits" by anyone who folds `-count=1` into `GOFLAGS` — so both
+# halves are pinned where they live: the workflow, and the two goals that run the suite. It starts
+# nothing and reads no database, which is what makes it a `check` line and not a job step.
+#
+# scripts/ci_go_cache_one_saver_per_key_test.sh asks the one question about those steps that no
+# single step can see: whether two jobs that run side by side save under the same exact key. A save
+# runs only when its restore was not an exact hit, so a key two jobs share ends up holding whichever
+# archive the cache server kept — the v2 protocol refuses the second reservation of an existing
+# (key, version), the v1 one keeps the newest — and the other job restores a tree built for someone
+# else, hits it exactly, never saves, and compiles cold until go.sum moves while the log reports a
+# warm restore. It reads the parsed workflow and starts nothing.
+#
+# scripts/ci_go_cache_job_archives_test.sh asks the third question about those four steps, and the one
+# no static read can answer: it runs the two `run:` commands the workflow's naming steps actually carry,
+# in a temporary copy of go.mod, go.sum and the key recipe, resolves every ${{ steps.gocache.outputs… }}
+# the cache inputs read against what those commands emitted, and refuses a key both jobs emit, a key
+# that survives a dependency change, a first restore prefix that matches the peer job instead of this
+# job's own previous archive, and a save path list that differs from its restore in content or order.
+# One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
+# tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
@@ -320,6 +345,26 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/ci_go_cache_test.sh
+	bash scripts/ci_go_cache_one_saver_per_key_test.sh
+	bash scripts/ci_go_cache_job_archives_test.sh
+	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
+	# warns, writes no key and exits 0, so both cache steps skip and the job stays green. The three
+	# cases above ask that of the recipe's text and of a tree with `go`; this one runs the recipe with
+	# no `go` on PATH at all, which is the shape a failed setup-go step leaves.
+	bash scripts/ci_go_cache_key_without_go_test.sh
+	# `scripts/ci_go_cache_test.sh` reads two blocks out of the workflow and stops reading when a block
+	# ends. An `exit` there closes the pipe under the writer, and under `set -euo pipefail` the SIGPIPE comes
+	# back as 141: a red `make check` with no assertion in it. This case pads both block boundaries
+	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
+	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
+	bash scripts/ci_go_cache_guard_comments_test.sh
+	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
+	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
+	# locked above the ranges that report names, and that the gate that named them is still a step in
+	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
+	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.
+	bash scripts/openpencil_lock_above_advisory_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
