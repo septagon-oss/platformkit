@@ -27,6 +27,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/seed"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/trace"
@@ -271,8 +272,20 @@ func (contentSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.
 	if kind != contentcontracts.KindPage && kind != contentcontracts.KindPost {
 		return seed.Target{}, fmt.Errorf("kind %q is not %s or %s", kind, contentcontracts.KindPage, contentcontracts.KindPost)
 	}
+	// The body is reconciled in the form the module stores it. content normalises
+	// rich text on write — kit/richtext.Prepare runs in the same write core this
+	// writer calls — and the stored form ends its last line with a newline, so a
+	// declaration read with the trailing whitespace trimmed off never equals what
+	// the row holds and the page is patched on every run forever. Asking the
+	// module's own normaliser here has a second benefit: a body it would refuse
+	// (a level-1 heading, a construct it cannot store) is refused at the file and
+	// line that declared it, before this run has written anything.
+	body, err := richtext.Normalise(text["body"])
+	if err != nil {
+		return seed.Target{}, fmt.Errorf("body: %w", err)
+	}
 	return seed.Target{
-		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": text["title"], "body": text["body"], "kind": kind},
+		Fields:   map[string]any{"slug": contentcontracts.Slugify(r.Key), "title": text["title"], "body": body, "kind": kind},
 		Commands: seedCommands(r, "publish"),
 	}, nil
 }
@@ -309,7 +322,7 @@ func (w *contentSeeder) Read(ctx context.Context, tx db.Tx[db.Tenant], key seed.
 }
 
 func (w *contentSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Target) (seed.Snapshot, error) {
-	row, err := content.Spec.CreateRow(ctx, tx, &contentcontracts.Content{
+	row, err := content.Spec.CreateRow(unactor(ctx), tx, &contentcontracts.Content{
 		Slug: t.Fields["slug"].(string), Title: t.Fields["title"].(string),
 		Body: t.Fields["body"].(string), Kind: t.Fields["kind"].(string),
 	})
@@ -322,7 +335,7 @@ func (w *contentSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.
 func (w *contentSeeder) Update(ctx context.Context, tx db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
 	// The slug is how the record was found, so it is not in the patch: a run that
 	// renamed a page would be a run that deleted one page and created another.
-	row, err := content.Spec.UpdateRow(ctx, tx, cur.ID, map[string]any{
+	row, err := content.Spec.UpdateRow(unactor(ctx), tx, cur.ID, map[string]any{
 		"title": t.Fields["title"], "body": t.Fields["body"], "kind": t.Fields["kind"],
 	})
 	if err != nil {
@@ -344,11 +357,25 @@ func (w *contentSeeder) commands(ctx context.Context, tx db.Tx[db.Tenant], cur s
 	if want, _ := t.Commands["publish"].(bool); !want {
 		return cur, nil
 	}
-	row, err := w.svc.Publish(ctx, tx, cur.ID)
+	row, err := w.svc.Publish(unactor(ctx), tx, cur.ID)
 	if err != nil {
 		return seed.Snapshot{}, err
 	}
 	return seeded(row), nil
+}
+
+// unactor is the context an owner write goes through when the run is a seed.
+// content's PublishBy duty separates the person who wrote a page from the person
+// who puts it in front of the world; the module's own rule says content nobody is
+// credited with — a seed, an import, a row a job wrote where no person is acting —
+// has no authorship to separate, so it publishes. A seed run is that case: nobody
+// signed in (the outbox row holds no actor), and the person the run served travels
+// in the attribution's initiator, beside the file and line that asked for the
+// write. Handing the owner an actor as well would credit the page to that person
+// and then refuse the publish command this file declares, which is what the run is
+// here to run.
+func unactor(ctx context.Context) context.Context {
+	return tenancy.WithActor(ctx, uuid.Nil)
 }
 
 // seeded is content's canonical seed state: the four fields a file declares, and
