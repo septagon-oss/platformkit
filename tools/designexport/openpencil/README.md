@@ -941,6 +941,19 @@ browser-appropriate memory budget; a smaller application limit remains undefined
 These checks exclude binary and streaming-event readers. This does not clear the separate
 upstream lock audit or establish complete browser dependency reachability.
 
+Two transitive dependencies are held by override, because the package that
+selects each of them still allows the vulnerable range: `dompurify@3.4.16`,
+reached through `jspdf`'s `^3.3.1` and the release the
+[node-removing](https://github.com/advisories/GHSA-p98j-92pf-mc4p) and
+[rawtext-root](https://github.com/advisories/GHSA-6688-9rhm-gjv2) DOM XSS
+advisories describe, and `source-map-js@1.2.2`, reached through `css-tree`'s
+`^1.2.1` and the release the
+[event-loop denial of service](https://github.com/advisories/GHSA-68fv-2mgg-jv7q)
+advisory describes. Neither is a direct dependency, so neither is a version
+anybody edits by hand; the locked-tree check requires the lock to resolve both
+names to exactly these releases, which is what makes a regenerated lock that
+drifts back into either range a failed test rather than a passed audit.
+
 Run `npm audit --omit=dev --audit-level=high` before considering a native-tooling
 or editor release. Active CI enforces this gate after the locked install and
 before the native tests. The adapter's npm-locked tree currently passes with zero reported
