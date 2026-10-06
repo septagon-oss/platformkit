@@ -47,6 +47,9 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	baseAdmin := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
 	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
 	name := schemaName(t.Name())
+	if named := schemaOverride(); named != "" {
+		name = named
+	}
 	schema := quote(name)
 	role := quote(roleOf(t, baseApp))
 
@@ -217,6 +220,23 @@ func mustEnv(t testing.TB, name string) string {
 // per process rather than per test so that a name stays readable in psql while
 // somebody is looking at it.
 var run = strconv.FormatUint(rand.Uint64(), 36)
+
+// schemaOverride is a namespace a caller names for the tests it starts, read from
+// PLATFORMKIT_TEST_SCHEMA and empty in every ordinary run.
+//
+// It exists because the per-test name below carries a per-process random id, and three
+// harnesses (kit/db/cancellation_case_waits_for_its_lock_test.py,
+// kit/app/boot_waits_for_migration_queue_test.py,
+// apps/platformkit/boot_waits_for_its_composition_key_test.py) have to hold the
+// composition key of the namespace the boot under test is about to migrate into — which
+// they cannot know before that boot has made the schema, and the key must be held before
+// the migration asks for it or there is no queue to observe. A key named after the
+// namespace made that name something a black-box harness must be able to state; naming the
+// namespace is the smallest way to let it. The harnesses run one case each against a
+// database they created and drop, so nothing beside their own case shares the schema, and
+// an unset variable — which is every `go test` and every `make check` — leaves the
+// per-test names in charge exactly as before.
+func schemaOverride() string { return os.Getenv("PLATFORMKIT_TEST_SCHEMA") }
 
 // schemaName turns a test name into a Postgres identifier.
 func schemaName(test string) string {

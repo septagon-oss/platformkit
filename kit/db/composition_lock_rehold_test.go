@@ -65,10 +65,15 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 )
 
-// reholdCompositionLock is kit/db's composition key (kit/db/migrate.go:
+// reholdCompositionLock is kit/db's composition key class (kit/db/migrate.go:
 // compositionLockKey), spelled out here rather than borrowed from another file's
-// declaration so this case stands on its own.
+// declaration so this case stands on its own. The lock is the pair (class,
+// hashtext(namespace)); every session below reaches the database through this test's own
+// URL, so hashtext(current_schema()) is the same namespace on both sides of the case.
 const reholdCompositionLock = 7240101
+
+const reholdHoldSQL = "SELECT pg_advisory_lock($1, hashtext(COALESCE(current_schema(), '')))"
+const reholdReleaseSQL = "SELECT pg_advisory_unlock($1, hashtext(COALESCE(current_schema(), '')))"
 
 // reholdColumns is how many indexed columns the table carries: the one REINDEX statement
 // of the autocommit file rebuilds the table and every one of them, and the count after the
@@ -152,7 +157,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 	t.Cleanup(func() {
 		if holding {
 			_, _ = holderConn.ExecContext(context.WithoutCancel(t.Context()),
-				"SELECT pg_advisory_unlock($1)", reholdCompositionLock)
+				reholdReleaseSQL, int32(reholdCompositionLock))
 		}
 	})
 
@@ -180,7 +185,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 		t.Fatal("the run was never seen inside its concurrent rebuild, so this case measured nothing")
 	}
 	if _, err := holderConn.ExecContext(t.Context(),
-		"SELECT pg_advisory_lock($1)", reholdCompositionLock); err != nil {
+		reholdHoldSQL, int32(reholdCompositionLock)); err != nil {
 		t.Fatalf("take the composition key the run put down: %v", err)
 	}
 	holding = true
@@ -190,7 +195,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 
 	heldFor, overlapped, refused := holdTheKey(t, watch, schema, func() error {
 		_, err := holderConn.ExecContext(context.WithoutCancel(t.Context()),
-			"SELECT pg_advisory_unlock($1)", reholdCompositionLock)
+			reholdReleaseSQL, int32(reholdCompositionLock))
 		return err
 	}, applied)
 	holding = false

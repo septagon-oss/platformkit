@@ -19,6 +19,14 @@ from concurrent_index_reader_schedule_test import ROOT, database_url, run
 
 CASE = "TestBootMigratesAndServes"
 HOLD_SECONDS = 35
+# The namespace the case will migrate into. A composition key names a namespace
+# (kit/db/migrate.go: compositionLockKey is its class), and the key has to be held
+# before the boot asks for it — so the name cannot be the random per-process one
+# dbtest invents when the case runs. dbtest takes it from PLATFORMKIT_TEST_SCHEMA; the
+# database below is created for this run and dropped at the end of it, so this is the
+# only schema in it and no other test shares it.
+SCHEMA = "boot_wait_case"
+COMPOSITION_CLASS = 7240101
 
 
 class BootWaitsForMigrationQueue(unittest.TestCase):
@@ -35,7 +43,8 @@ class BootWaitsForMigrationQueue(unittest.TestCase):
             scoped = database_url(admin, database)
             env = {**os.environ,
                    "PLATFORMKIT_TEST_ADMIN_URL": scoped,
-                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database)}
+                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database),
+                   "PLATFORMKIT_TEST_SCHEMA": SCHEMA}
             with tempfile.TemporaryDirectory() as directory:
                 fixture = Path(directory)
                 binary = str(fixture / "app.test")
@@ -45,7 +54,7 @@ class BootWaitsForMigrationQueue(unittest.TestCase):
                 def lock_count(granted):
                     state = run(["psql", scoped, "-XAt", "-v", "ON_ERROR_STOP=1",
                                  "-c", "SELECT count(*) FROM pg_locks WHERE "
-                                 "locktype='advisory' AND objid=7240101 "
+                                 f"locktype='advisory' AND classid={COMPOSITION_CLASS} "
                                  f"AND granted={granted} AND database=(SELECT oid "
                                  "FROM pg_database WHERE datname=current_database())"])
                     self.assertEqual(state.returncode, 0, state.stdout)
@@ -55,9 +64,11 @@ class BootWaitsForMigrationQueue(unittest.TestCase):
                         (fixture / "boot.log").open("w+") as boot:
                     holder = subprocess.Popen(
                         ["psql", scoped, "-X", "-v", "ON_ERROR_STOP=1", "-c",
-                         "SELECT pg_advisory_lock(7240101); "
+                         f"SELECT pg_advisory_lock({COMPOSITION_CLASS}, "
+                         f"hashtext('{SCHEMA}')); "
                          f"SELECT pg_sleep({HOLD_SECONDS}); "
-                         "SELECT pg_advisory_unlock(7240101)"],
+                         f"SELECT pg_advisory_unlock({COMPOSITION_CLASS}, "
+                         f"hashtext('{SCHEMA}'))"],
                         stdin=subprocess.DEVNULL, stdout=held, stderr=subprocess.STDOUT,
                     )
                     deadline = time.monotonic() + 10
@@ -85,6 +96,11 @@ class BootWaitsForMigrationQueue(unittest.TestCase):
                     boot.seek(0)
                     output = boot.read()
                 self.assertIn("=== RUN   " + CASE, output, output)
+                self.assertTrue(
+                    queued,
+                    f"The boot was never seen queued for its composition key, so this "
+                    f"run observed nothing about the queue: {output}",
+                )
                 self.assertEqual(
                     child.returncode, 0,
                     f"A finite {HOLD_SECONDS}s migration queue must not fail a correct "
