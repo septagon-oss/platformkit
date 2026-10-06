@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -41,6 +42,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -536,6 +538,18 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if strings.Contains(link, cfg.Server.PublicHost) {
 		t.Errorf("the invitation link carries the application's public host:\n%s", link)
 	}
+	// The link is in the box; the token it carries is not yet readable. The mail is
+	// handed over by modules/auth's offer, as the last thing it does inside the
+	// transaction that mints the token, and an in-process mail server records a
+	// message the instant it is called — so a mailbox holding a link is not yet a
+	// token anybody can spend, and spending it inside that window answers 401 for a
+	// credential the installation really did mint. This case has failed that way
+	// twice, both times with the Postgres shared. What makes the token readable is
+	// the delivery's own commit, and kit/events claims the delivery inside that
+	// transaction: the claim is what an invitation has to be waited for.
+	eventually(t, "the invitation's delivery to be claimed", func() bool {
+		return deliveryClaimed(t, cfg, "auth", usercontracts.EventInvited)
+	})
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody
@@ -930,6 +944,33 @@ func queueDrained(t *testing.T, conn *db.Conn) bool {
 		t.Fatalf("count the outbox rows still unpublished: %v", err)
 	}
 	return pending == 0
+}
+
+// deliveryClaimed reports whether one module's subscription has taken its claim on
+// an event in this installation. kit/events writes that claim inside the handler's
+// own transaction, so its arrival is the moment anything the handler did — the token
+// it minted, the row it raised, the mail it posted — is visible to the next
+// transaction. That is the one fact about an asynchronous step a case can wait on
+// without a stopwatch; it is the kernel's own ledger (migrations/000003), read in one
+// system transaction, for which queueDrained above is this file's precedent, and the
+// durable is formed by kit/appname from the composition's own slug, so the call site
+// names a module and an event and no string the ledger holds.
+func deliveryClaimed(t *testing.T, cfg config.Config, subscriber, event string) bool {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	durable := appname.Durable(appSlug(cfg), subscriber, event)
+	var n int64
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Table("platformkit_handled").Where("durable = ?", durable).Count(&n).Error
+	})
+	if err != nil {
+		t.Fatalf("count the deliveries claimed as %s: %v", durable, err)
+	}
+	return n > 0
 }
 
 // notify raises one notification the way another module will: through the
