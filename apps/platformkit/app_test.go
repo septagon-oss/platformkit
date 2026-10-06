@@ -1152,7 +1152,10 @@ func waitFor(t *testing.T, addr string, stopped ...chan error) {
 // than left as a literal inside the loop; slowBoot is when a green wait starts
 // saying how long it took, which is what the next red run reads.
 const (
-	bootWait = 120 * time.Second
+	// Five minutes, the same room as kit/app's bootWait and for the same measured reason: a migration
+	// of the whole installation crossed 120 s on 2026-10-06 with eight of this program's suites
+	// running beside it, and a boot that is only slow on somebody else's machine is not a fault here.
+	bootWait = 5 * time.Minute
 	slowBoot = bootWait / 10
 )
 
