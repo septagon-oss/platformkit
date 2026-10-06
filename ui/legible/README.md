@@ -7,7 +7,7 @@ element siblings numbered). `Violations` are the strings that went around a cata
 `Exempted` are the ones the number does not count. `Exempt(text)` is the exemption
 rule, and `Reached` is the decision handed in by whoever marks the copy —
 `pseudo.Wrapped` in the gate — so this package names no locale and no delimiter.
-`MarkDatum(collected, values)` marks the strings the application itself holds as what a
+`MarkDatum(collected, reached, values)` marks the strings the application itself holds as what a
 person typed, and `Report(label, collected)` prints the verdict one document at a time:
 `TEXT <label> <path> "text"` for every string that went around a catalogue and
 `DATA <label> <path> "text" <why>` for every string it declined to count, with the rule
