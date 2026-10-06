@@ -741,7 +741,30 @@ test_commands() {
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
 }
-fresh="go tool gotestsum --packages='./...' -- -count=1"
+# The two boundaries, as bytes. This pin is a byte-pin on purpose: any change to the line
+# `make check` runs is red here until somebody reads this file and re-pins it, which is the
+# only thing standing between a per-package clock, a build tag or a `-skip` added under time
+# pressure and a fresh gate that quietly stops being fresh. The cost is that the line lives in
+# two files, so re-pinning is a decision somebody makes rather than a fix: -timeout=30m joined
+# -count=1 on 2026-10-06 because a whole-suite run measured 18m37s in `modules/tenant/internal`
+# and 20m in `kit/rest` on a host carrying several suites at once, and the run of that day killed
+# `apps/platformkit` at go test's 10-minute default while it was still working. The measurements
+# are written above the line in the Makefile.
+# The loop below refuses a re-pin that drops a part the fresh gate is made of, so pasting the
+# failing line back in with `--packages` narrowed or `-count=1` gone is refused rather than
+# rewarded — and it reads this pin, not the Makefile, so it cannot be satisfied by the edit it
+# watches.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+for fresh_part in "--packages='./...'" "--" "-count=1" "-timeout="; do
+	case " $fresh " in
+	*" $fresh_part"*) ;;
+	*)
+		echo "FAIL: the pinned fresh boundary no longer carries $fresh_part; that part is the fresh gate, so re-pin what the Makefile runs around it rather than this:" >&2
+		echo "$fresh" >&2
+		exit 1
+		;;
+	esac
+done
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
 if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
