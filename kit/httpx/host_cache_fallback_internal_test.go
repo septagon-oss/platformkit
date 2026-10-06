@@ -48,9 +48,15 @@ func (f *fixed) ByHost(context.Context, db.Tx[db.System], string) (tenancy.Tenan
 	return f.tenant, f.err
 }
 
-func resolverOver(t *testing.T, store cache.Cache, loader TenantLoader) *API {
+// resolverOver is one replica: an API over the deployment's store, its own loader
+// and the schema every resolution runs its query inside. The schema is the caller's,
+// because the gap this file measures is between an entry being written and being
+// read, and creating one — a schema drop and the whole migration — is the slowest
+// thing a test here does: measured at 24 s for one run while the suite is in flight.
+// hostTTL is 30 s, so a replica built between the two resolves puts a migration
+// inside the entry's own lifetime and the case then measures the machine.
+func resolverOver(t *testing.T, app *db.Conn, store cache.Cache, loader TenantLoader) *API {
 	t.Helper()
-	_, app := dbtest.Schema(t)
 	a, _ := New(Options{
 		Cache:     store,
 		Tenants:   loader,
@@ -68,7 +74,8 @@ func resolverOver(t *testing.T, store cache.Cache, loader TenantLoader) *API {
 // resolution, so a store that answers nothing is one query and never a refusal.
 func TestAHostStillResolvesWhenTheStoreIsDown(t *testing.T) {
 	acme := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
-	a := resolverOver(t, down{}, &fixed{tenant: acme})
+	_, app := dbtest.Schema(t)
+	a := resolverOver(t, app, down{}, &fixed{tenant: acme})
 	got, err := a.resolve(context.Background(), "acme.example")
 	if err != nil {
 		t.Fatalf("resolve with the store down: %v; a cache outage refused a host the database knows", err)
@@ -86,16 +93,26 @@ func TestACachedResolutionCarriesTheWholeTenant(t *testing.T) {
 		ID: uuid.New(), Slug: "installation", Name: "Installation", Operator: true,
 		Languages: &tenancy.Languages{Default: "pt", Others: []string{"en"}},
 	}
-	writer := resolverOver(t, shared, &fixed{tenant: installation})
+	// Both replicas exist before anything is written, so the only thing between the
+	// write and the read is the read.
+	_, app := dbtest.Schema(t)
+	writer := resolverOver(t, app, shared, &fixed{tenant: installation})
+	// The reader's own loader knows nothing: what it resolves came from the store.
+	reader := resolverOver(t, app, shared, &fixed{err: tenancy.ErrNoSuchHost})
+
+	written := time.Now()
 	if _, err := writer.resolve(context.Background(), "ops.example"); err != nil {
 		t.Fatalf("resolve through the writer: %v", err)
 	}
-
-	// The reader's own loader knows nothing: what it resolves came from the store.
-	reader := resolverOver(t, shared, &fixed{err: tenancy.ErrNoSuchHost})
 	got, err := reader.resolve(context.Background(), "ops.example")
 	if err != nil {
-		t.Fatalf("resolve through the second replica: %v; the entry the first wrote was not read", err)
+		// How far apart the write and the read were, because two different failures
+		// reach this line and only one of them is this repository's: an entry that
+		// never arrived is a bug, and an entry that passed its lifetime says the
+		// machine spent hostTTL between the two resolves — which is worth saying, as
+		// the one thing that can still spend it here is the machine.
+		t.Fatalf("resolve through the second replica: %v; the entry the first wrote was not read (the write and the read were %s apart, and hostTTL is %s)",
+			err, time.Since(written).Round(time.Millisecond), hostTTL)
 	}
 	if !reflect.DeepEqual(got, installation) {
 		t.Errorf("the second replica resolved %+v, want the whole tenant %+v", got, installation)
