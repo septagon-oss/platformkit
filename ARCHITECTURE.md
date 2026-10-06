@@ -222,7 +222,10 @@ registers it to run once the tenant transaction now open commits, and never when
 that transaction rolls back. [modules/auth](modules/auth/internal/password.go)
 uses it for the one message it mails itself — a set-password link, which the
 outbox cannot carry because a payload it keeps for a week is also copied into the
-audit trail.
+audit trail. That message can still be refused after the commit, so a delivery of
+such an event is not marked handled while it owes one: the claim is released, the
+row stays unpublished, and the effect runs again until it succeeds or the failure
+ends as a dead letter an operator replays.
 
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for

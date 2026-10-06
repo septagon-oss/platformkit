@@ -131,9 +131,11 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 //
 // ON CONFLICT on (tenant_id, user_id) is the single-pending rule: asking again
 // replaces the last link rather than adding a second, so a mailbox with four of
-// these mails still has one that works. recent() is the other half of that —
+// these mails still has one that works. outstanding() is the other half of that —
 // one link per person per ResetInterval, so an address somebody types
-// repeatedly is one mail and not twenty.
+// repeatedly is one mail and not twenty — and the third half is the event id this
+// INSERT writes, which keeps that cap from swallowing the retry of a mail that
+// never went out.
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if s.mail.Mailer == nil {
 		// A composition with no mailer writes no token either: a link nobody is
@@ -141,23 +143,35 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
 		return nil
 	}
-	recent, err := s.recent(tx, user.ID)
-	if err != nil || recent {
+	// Which delivery this mint belongs to, for the two questions outstanding()
+	// asks about it. A link a request minted names no event, and NULL is what the
+	// row says about that.
+	ev, _ := events.DeliveryOf(ctx)
+	var minted any
+	if ev != uuid.Nil {
+		minted = ev
+	}
+	capped, ours, err := s.outstanding(tx, user.ID, ev)
+	if err != nil || capped {
 		return err
 	}
 	token := secret()
 	at := db.Now()
 	err = tx.DB().Exec(
-		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
+		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at, event_id) VALUES (?, ?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
-			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
-		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
+			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, event_id = EXCLUDED.event_id",
+		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime), minted).Error
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
 	}
-	if s.notify != nil {
+	if s.notify != nil && !ours {
 		// A path, and one with no query on it: the notification module refuses
-		// an absolute link, and this one is not a credential at all.
+		// an absolute link, and this one is not a credential at all. Not raised when
+		// this delivery minted the row it is retrying: the notice that went with the
+		// link is already in the person's inbox inside the application, and the mail
+		// is the only thing that failed. Two notices for one invitation is a person
+		// told twice because a mail server hiccupped.
 		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: user.ID, Title: title,
 			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
@@ -185,13 +199,16 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 // problem and neither is ours to keep, so the mail leaves on the commit and not on
 // the INSERT.
 //
-// What that costs is stated once, in the other direction: a mail server that
-// refuses the message after the commit cannot be answered by a rollback that never
-// happens, so the row is there and the mail is not, and the delivery's retry finds
-// contracts.ResetInterval and sends nothing. The token then expires unused, which
-// is a person who was not invited and can ask again after five minutes; the shape
-// this replaced was a link anybody with the mail could try to spend before the
-// transaction that authorised it existed.
+// What that costs, and what it no longer does: a mail server that refuses the
+// message after the commit cannot be answered by a rollback that never happens, so
+// the row is there and the mail is not. That delivery does not mark itself done. It
+// releases its claim (kit/events), the outbox row stays unpublished, and the retry
+// finds its own mint by the event id on it and sends again rather than reading it as
+// a second ask. What ends unrecovered is a transport that stays down past the
+// delivery's ladder: that failure then lands as a dead letter an operator reads and
+// replays, the same shape every other undeliverable event in this application takes.
+// The shape this replaced was a link anybody with the mail could try to spend before
+// the transaction that authorised it existed.
 func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {
@@ -236,23 +253,35 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 	return base, nil
 }
 
-// recent reports whether this person was sent a link inside ResetInterval.
+// outstanding is the one read both halves of the cap need, off the one row this
+// table keeps per person.
 //
-// It is the cap on outstanding notices per recipient, and it is read off the
-// token row rather than counted anywhere else because the token table is
-// already one row per person: asking again replaces the link, so the only thing
-// left to bound is how many mails and how many notices that produces. Without
-// it, a public route plus a known address is somebody else's inbox filled by a
-// stranger, one mail per request.
-func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
-	var n int64
-	err := tx.DB().Table("password_tokens").
-		Where("user_id = ? AND created_at > now() - ?::interval", userID, resetInterval).
-		Count(&n).Error
+// capped says a link was minted for this person inside ResetInterval by some *other*
+// ask. That is the cap on outstanding notices per recipient, and it is read off the
+// token row rather than counted anywhere else because the token table is already one
+// row per person: asking again replaces the link, so the only thing left to bound is
+// how many mails and notices one ask produces. Without it, a public route plus a
+// known address is somebody else's inbox filled by a stranger, one mail per request.
+//
+// ours says the row that is there is the one this delivery minted and still owes a
+// mail to. It exists because the delivery that could not send leaves its row behind
+// and comes back — its claim is released, not rolled back, because the commit that
+// wrote the row is already somebody else's. Read without it, that row is a link
+// minted seconds ago and capped, and one refused send becomes an invitation nobody is
+// ever sent: the retry runs, finds "recent", sends nothing, and acks. A delivery
+// names no event — a link minted by a request, or by any other work — and then ours
+// is false and every recent link caps it, which is how the cap read before a retry
+// could exist and how it still reads for anything that cannot be retried.
+func (s *Service) outstanding(tx db.Tx[db.Tenant], userID, ev uuid.UUID) (capped, ours bool, err error) {
+	err = tx.DB().Raw(
+		"SELECT count(*) FILTER (WHERE created_at > now() - ?::interval AND (event_id IS NULL OR event_id <> ?)) > 0,"+
+			" count(*) FILTER (WHERE event_id = ?) > 0"+
+			" FROM password_tokens WHERE user_id = ?",
+		resetInterval, ev, ev, userID).Row().Scan(&capped, &ours)
 	if err != nil {
-		return false, fmt.Errorf("auth: read the pending password token of %s: %w", userID, err)
+		return false, false, fmt.Errorf("auth: read the pending password token of %s: %w", userID, err)
 	}
-	return n > 0, nil
+	return capped, ours, nil
 }
 
 // resetInterval is contracts.ResetInterval as Postgres spells an interval, so

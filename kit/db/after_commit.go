@@ -28,6 +28,24 @@ import (
 	"sync"
 )
 
+// ErrEffectNotRun marks the error Run and Pending.Close return when the
+// transaction committed and one or more of the effects it deferred did not
+// happen. The mark is the whole point, because the two outcomes a caller can be
+// handed are not one failure. A handler error rolls everything back and comes back
+// as itself: nothing is in the database and the work to redo is the transaction.
+// This error says the opposite — the rows are committed and authoritative, and
+// what is missing is an effect outside them — so what is left to redo is the
+// effect, and a caller that retried the transaction would repeat the rows.
+//
+// Only the owner of the work knows what to do about that, so nothing here decides
+// it. A request answers its caller. A delivery of an event hands the event back:
+// its claim marks the delivery, not the commit, and a delivery that still owes an
+// effect has not finished, which is why kit/events releases the claim on this
+// error and the row comes round again. That is the promise the handler takes on by
+// deferring an effect at all — that it may be run again over rows it already wrote
+// — and it is the same promise at-least-once delivery already made it.
+var ErrEffectNotRun = errors.New("db: the transaction committed and one or more of its deferred effects did not run")
+
 // ErrNoTransactionToDefer is returned by AfterCommit when the context carries no
 // transaction that could run the action: none at all, or a system one. A system
 // transaction is refused and not supported because a cross-tenant transaction is a
@@ -121,6 +139,6 @@ func runAfter(actions []afterAction) error {
 	if len(errs) == 0 {
 		return nil
 	}
-	return fmt.Errorf("db: the transaction committed and %d of its %d deferred actions did not run: %w",
-		len(errs), len(actions), errors.Join(errs...))
+	return fmt.Errorf("%w (%d of its %d actions): %w",
+		ErrEffectNotRun, len(errs), len(actions), errors.Join(errs...))
 }
