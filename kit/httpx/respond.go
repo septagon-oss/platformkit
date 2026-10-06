@@ -28,6 +28,10 @@ func (a *API) respond(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b := &buffer{ResponseWriter: w, header: w.Header().Clone(), public: SurfaceOf(r.Context()) == SurfacePublic}
 		r = r.WithContext(context.WithValue(r.Context(), bufferKey{}, b))
+		// The tenant this request resolves goes down with the response, for the
+		// count below: see answerNote.
+		note := &answerNote{}
+		r = r.WithContext(context.WithValue(r.Context(), answerNoteKey{}, note))
 		defer func() {
 			if v := recover(); v != nil {
 				if v == http.ErrAbortHandler {
@@ -40,6 +44,15 @@ func (a *API) respond(next http.Handler) http.Handler {
 				}
 			}
 			b.send()
+			// The count is here rather than at the writer that answered, because this
+			// is the one place that knows what the client was finally given: the buffer
+			// may have replaced what any of the writers below it chose, and a refusal
+			// counted for an answer nobody received is a number an operator would be
+			// wrong to read. It is after send rather than before, because an answer that
+			// could not be written is not an answer either.
+			if b.status >= http.StatusBadRequest {
+				countRefusal(note.context(r.Context()), b.status)
+			}
 		}()
 		next.ServeHTTP(b, r)
 

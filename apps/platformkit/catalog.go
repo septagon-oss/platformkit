@@ -2,16 +2,19 @@ package main
 
 import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/admin"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/billing"
+	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
 )
@@ -37,6 +40,8 @@ import (
 func catalogues() xtext.Catalog {
 	return xtext.Load("en",
 		page.Catalogue(),
+		xtext.Source{FS: forms.Catalogues(), Name: "ui/forms"},
+		xtext.Source{FS: richtext.Catalogues(), Name: "kit/richtext"},
 		xtext.Source{FS: resource.Catalogues(), Name: "ui/resource"},
 		admin.Catalogue(),
 		// Each module's own permission labels, so a refusal names a grant in the
@@ -46,6 +51,7 @@ func catalogues() xtext.Catalog {
 		audit.Catalogue(),
 		auth.Catalogue(),
 		billing.Catalogue(),
+		change.Catalogue(),
 		content.Catalogue(),
 		file.Catalogue(),
 		site.Catalogue(),

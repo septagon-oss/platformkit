@@ -38,7 +38,6 @@ func (r EmailRegistration) Checked() (EmailRegistration, error) {
 const (
 	VerificationLifetime       = 24 * time.Hour
 	VerificationResendInterval = time.Minute
-	VerifyEmailPath            = "/auth/verify-email"
 	EventVerificationRequested = "auth.verification_requested"
 )
 
@@ -47,4 +46,9 @@ const (
 type VerificationRequested struct {
 	Email string    `json:"email"`
 	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, port and all,
+	// and empty when it named no port. The confirmation link is rendered in the
+	// worker, and the person has to come back to the address they signed up at.
+	// See ResetRequested.Served and httpx.ServedAuthority.
+	Served string `json:"served,omitempty"`
 }

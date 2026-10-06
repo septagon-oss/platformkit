@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions fmt-check check fmt image up down
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-e2e-guards check-versions fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -38,6 +38,16 @@ PLATFORMKIT_TEST_S3_ENDPOINT ?= localhost:$(PLATFORMKIT_S3_PORT)
 PLATFORMKIT_TEST_S3_BUCKET_PREFIX ?= platformkit-test
 PLATFORMKIT_TEST_S3_ACCESS_KEY ?= pkittest
 PLATFORMKIT_TEST_S3_SECRET_KEY ?= pkittestsecret
+
+# The development mail catcher compose.yaml's mailpit service publishes. The two
+# ports are all this recipe says: what the application dials and what the journeys
+# read are derived from them by scripts/e2e.sh, the only reader, so the name of the
+# catcher exists in one file (compose.yaml) and the address is worked out in the one
+# place that uses it. An operator who moves the stack moves the journeys with it.
+PLATFORMKIT_MAILPIT_SMTP_PORT ?= 1025
+PLATFORMKIT_MAILPIT_PORT ?= 8025
+export PLATFORMKIT_MAILPIT_SMTP_PORT
+export PLATFORMKIT_MAILPIT_PORT
 export PLATFORMKIT_TEST_ADMIN_URL
 export PLATFORMKIT_TEST_DATABASE_URL
 export PLATFORMKIT_TEST_NATS_URL
@@ -126,10 +136,12 @@ e2e: ## Gate 10: boot the app on a database of its own and drive it with a brows
 	./scripts/e2e.sh
 
 # The device journey is its own goal, and its own CI job, because it needs an
-# emulator the check job's container does not have: the host the pkit-ci runners use
-# has one (/dev/kvm, an x86_64 system image and an AVD are measured there), and a
-# journey that silently skipped would leave the rate in e2e/maestro/flows.json
-# looking like a number nobody earned. See .gitea/workflows/mobile.yml.
+# emulator the check job's container does not have: the journey runs on the
+# pkit-ci-android label, whose image carries an Android 35 x86_64 system image and
+# the AVD the repository's PK_MOBILE_AVD names, and whose job container is started
+# with the host's /dev/kvm passed through. A journey that silently skipped would
+# leave the rate in e2e/maestro/flows.json looking like a number nobody earned. See
+# .gitea/workflows/mobile.yml.
 mobile-e2e: ## Boot the app on a database of its own and drive it with one device flow
 	./scripts/mobile_e2e.sh
 
@@ -197,6 +209,40 @@ check-fixtures: ## Compile the Go program every design test embeds
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+# The rehearsal and the public-API comparison, both of which existed as steps
+# nobody was forced to run: `make rehearse` needed an operator who remembered it,
+# and the apidiff workflow said "deliberately not a required check" and ran on a
+# Sunday. Both answer a question no other gate here can — what this release's
+# migrations cost on a table the size the installation actually has, and which
+# exported name a pinned consumer compiled against last time — and a question
+# answered only after a version is published is a review of the damage.
+#
+# The base is v1.1.0 for both, because that is the release consumers are on and
+# it is the tag scripts/PUBLIC-API.md already names. The seed is the fixture the
+# rehearsal script documents, because a migration measured against an empty table
+# is a migration measured against nothing.
+#
+# The cost is measured, not assumed: against a copy of the v1.1.0 ledger seeded
+# with 10,000 rows per table, the rehearsal of this tree's nine pending files ran
+# in 19 s of wall clock (commit b7a0354's Verified: line names the run), and
+# check-apidiff takes about a minute. Both sit inside the 75-minute ceiling
+# 8a3297a set for the check job. When that ceiling gets tight, T-0219 splits the
+# job; nothing is removed from `check` to fit it.
+REHEARSE_BASE ?= v1.1.0
+REHEARSE_ARGS ?= --base-ref $(REHEARSE_BASE) --seed scripts/testdata/rehearse/seed.sql
+APIDIFF_BASELINE ?= scripts/baselines/public-api-$(REHEARSE_BASE).json
+
+check-rehearse: ## Apply this tree's pending migrations to a copy of the previous release's database
+	REHEARSE_RECEIPT="$${REHEARSE_RECEIPT:-$$(mktemp)}" ./scripts/rehearse_migrations.sh $(REHEARSE_ARGS)
+
+# The baseline is the reviewed set of incompatibilities the release already owed
+# at the merge base of this change; `--baseline` then refuses a *new* one and a
+# vanished one, so a documented breaking line cannot hide an accidental one.
+# Regenerating it is its own deliberate act: --write-baseline at the base commit,
+# committed alone, with the diff of the list as the review.
+check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
+	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -222,17 +268,99 @@ fmt-check: ## Fail when any file is not gofmt'd
 # two halves are composed and where the only test that can watch a write in one
 # module queue behind a write in the other lives.
 # RACE_PACKAGES overrides the list when a change reaches somewhere else.
+# modules/change is in the standing list rather than one change's override because
+# the whole point of the object is a lock: the proposal is taken FOR UPDATE before
+# the subject is, and two applies of two proposals over one subject settle by that
+# order. An author who cannot run the two commands concurrently cannot tell a lock
+# that works from a lock that is merely written down.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
-	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... ./apps/platformkit
+	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
+	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
 	go test -race -count=1 $(RACE_PACKAGES)
 
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions ## Everything a pull request must pass
+# Gate 10 never drives an application it did not start. The two cases below answer
+# that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
+# browser or node: a stranger answers /health on the port, the run's own application
+# does not, and each script's own wait_healthy — extracted from the committed file
+# rather than retyped — has to refuse. They are here, and not in
+# check-e2e-guards, because nothing they ask needs a service: a run that would drive
+# somebody else's listener is red before a merge rather than in the job that
+# guards it.
+check-run-owner: ## Refuse a browser run that would drive an application it did not start
+	bash scripts/e2e_health_owner_test.sh
+	bash scripts/e2e_health_requires_own_listener_test.sh
+
+# Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
+# promises it makes — the port it refuses, the listener it is willing to serve through, and the port
+# it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
+# here. See scripts/free_port.sh for why the answer is no longer the literal 8099 and why a 200 on
+# /health is not enough to answer it, and scripts/free_port_test.sh for the sixteen cases.
+#
+# scripts/e2e_guards_run_before_the_gate_test.sh asks a question about check-e2e-guards rather than
+# about gate 10: whether the two port refusals below are run at all, by the goal and by CI, in the
+# one window of the job where node and a browser exist. It starts nothing — it reads `make -n
+# check-e2e-guards` and .gitea/workflows/ci.yml — so unlike its two subjects it needs no node and
+# belongs here, where dropping them from the goal is red before a merge rather than in the job that
+# dropped them.
+#
+# scripts/ci_checkout_history_test.sh asks which history each CI job fetches and which of its steps
+# reads it. It is here because the answer was wrong in the direction that costs a delivery: at
+# b6f1e93 the design job spent all 45 of its minutes inside actions/checkout's full-history fetch —
+# every branch and every tag, for a job whose steps read no git object — and the forge refused the
+# head with `failed step: Run actions/checkout@…` and never ran the suite. The case reads the
+# workflows and the tree, starts nothing, and refuses either half of the mistake: a job left fetching
+# history nothing reads, and a job narrowed while a step still walks `base..HEAD`.
+#
+# scripts/mobile_journey_fetch_test.sh runs the journey job's own download step, as the workflow
+# file states it, against a server on localhost that behaves like this forge: a 200 and a sign-in
+# page to an anonymous request, the build to one carrying the job's token. It refuses each way the
+# journey was wrong or is one edit away from being wrong — the job not on the label that has a
+# device, a second job taking that label, a fetch step not given the job's token, a job-level
+# PK_MOBILE_APK competing with the step's file:// export — and then asks the harness's own curl and
+# sha256sum to open what the step exported. It is here rather than only in the mobile job because
+# every one of those is a fact about a workflow file, which `check` already reads for its two other
+# such facts above, and because the mobile job is the worst place to learn them: the journey has no
+# device when they are wrong, and 40 minutes to find that out. It needs python3, curl and sha256sum
+# — and PyYAML, which the job image does not ship: measured 2026-10-05 by running this file inside
+# the digest ci.yml names (gitea/runner-images:ubuntu-24.04@sha256:e77e2b1e…), where it died at
+# `ModuleNotFoundError: No module named 'yaml'` and answered `ok` once that package came in on the
+# line that installs the socket probe. ci.yml carries it for that reason. Both files, 0.2s.
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
+	bash scripts/ci_checkout_history_test.sh
+	bash scripts/mobile_journey_fetch_test.sh
+	bash scripts/check_pin_rehearsal_test.sh
+	# Where a run finds the mail catcher. The journeys that open a mailed link are
+	# the only proof the address the application dials is right, and they cannot say
+	# which of the two addresses in this repository they were pointed at: a caller
+	# that runs one spec directly used to dial compose.yaml's default port while the
+	# catcher it had been given answered on another one, and the journey blamed
+	# Playwright. This case asks the script itself, in under a second, with no stack.
+	bash scripts/e2e_mail_address_test.sh
+	bash scripts/free_port_test.sh
+	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
+
+# Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
+# prose, because each one can only be shown by starting scripts/e2e.sh against a port somebody else
+# is holding: a foreign listener that takes the port mid-build (scripts/e2e_port_taken_during_build_
+# test.sh) and a socket table that answers every question about ownership with silence
+# (scripts/e2e_unattributed_listener_test.sh). Both answer the question `free_port_test.sh` cannot:
+# whether gate 10, when it is really run, refuses.
+#
+# They are NOT in `check`, and that is a measured reason and not an omission. Each one needs node —
+# e2e.sh stops at its node check before it prints anything either case greps for, and an absent node
+# would read as a broken refusal. CI installs node two steps after `make check` (`.gitea/workflows/
+# ci.yml`: setup-node, then the browser, then `make e2e`), so a wiring into `check` would red that
+# job for a reason that has nothing to do with the change under review. They run in the e2e job, next
+# to the gate they guard, where node, the browser and Postgres all exist; 17s for both there.
+check-e2e-guards: ## Run gate 10's two port-refusal pins (needs node, a browser and the test database)
+	bash scripts/e2e_unattributed_listener_test.sh
+	bash scripts/e2e_port_taken_during_build_test.sh
 
 fmt: ## Format every package
 	go fmt ./...
@@ -240,8 +368,43 @@ fmt: ## Format every package
 image: ## Build the container image
 	docker build -f deploy/Dockerfile -t platformkit:dev .
 
-up: ## Start Postgres, NATS, Valkey and the object store, and wait for all four to be healthy
+up: ## Start Postgres, NATS, Valkey, the object store and the mail catcher, and wait for all five to be healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres, NATS, Valkey and the object store and drop their volumes
-	docker compose down -v
+# The collector is a profile rather than a second service in `up` because the
+# two goals that must never fail — `make test` and `make check` — sit on `up`,
+# and a third container is a third thing that can fail: an image pull that
+# cannot be served offline, a port that is taken. A developer reads spans, not
+# test results, so the wait is behind its own goal.
+#
+# The port follows PLATFORMKIT_PG_PORT and PLATFORMKIT_NATS_PORT: one variable
+# moves the container's mapping and the two messages below, and a machine with
+# 4317 taken overrides it once.
+#
+# The wait watches the container and not the port, and that too is measured: the
+# published port is answered by docker-proxy, which accepts a connection whether
+# or not the process behind it is alive, so a dial reported "up" for a collector
+# that had already died of its configuration — and `--wait` reported "Healthy" for
+# the same dying process, because the scratch image declares no healthcheck and has
+# no shell to probe with. Status running with no restart recorded, held three
+# seconds, is the readiness there is. `up` is given --force-recreate because
+# Compose compares the Compose file and not the file a bind mount points at: with
+# the flag left out it reported the old container "Running" a minute after that
+# container's configuration had been edited under it.
+PLATFORMKIT_OTLP_PORT ?= 4317
+trace: ## Start the local OTLP collector that prints every span it receives
+	docker compose --profile telemetry up -d --force-recreate collector
+	@timeout 60 bash -c 'c=$$(docker compose --profile telemetry ps -q collector); \
+	  good=0; \
+	  while [ $$good -lt 3 ]; do \
+	    if [ "$$(docker inspect -f "{{.State.Status}} {{.RestartCount}}" $$c)" != "running 0" ]; then exit 1; fi; \
+	    good=$$((good + 1)); sleep 1; \
+	  done' \
+	  || { echo "collector is not up at 127.0.0.1:$(PLATFORMKIT_OTLP_PORT); its own log:"; docker compose --profile telemetry logs --tail 20 collector; exit 1; }
+	@echo "collector up on 127.0.0.1:$(PLATFORMKIT_OTLP_PORT): point telemetry.otlp_endpoint at that host:port and read spans with 'docker compose logs -f collector'"
+
+# The profile is named here as well, because `down` is the file's teardown: a
+# goal that stopped two containers and left a third holding port 4317 would half
+# finish the one job it has. It stays destructive of volumes, as before.
+down: ## Stop Postgres, NATS, Valkey, the object store, the mail catcher and the collector, and drop their volumes
+	docker compose --profile telemetry down -v

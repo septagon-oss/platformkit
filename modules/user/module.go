@@ -182,9 +182,31 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 // so returning an error rolls the whole create back and the caller gets a 422.
 // The PATCH route is guarded by spec.Immutable instead; a create cannot be,
 // because there is no row yet to refuse a change to.
-func refuseLifecycleOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
+//
+// The second half of its job is the brief's first rule: a person created through
+// the collection is invited. The create route used to write the row, publish
+// user.user.created and stop — and nothing subscribes to that name, so an
+// administrator who used it made somebody who exists, cannot sign in and was
+// never told, which is the defect the walkthrough of record counted as an empty
+// directory. Inviting is what the collection means by "create a person": the row
+// lands in `invited`, user.invited is published in the same transaction, and the
+// auth module mails the link that lets that person choose a password nobody else
+// chose for them. A create that left somebody unable to sign in and mailed to
+// nobody is refused, which is why `pending` and `unverified` have their own door
+// and why no status other than invited is a row the collection can make.
+func refuseLifecycleOnCreate(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
 	if u.Status == contracts.StatusPending || u.Status == contracts.StatusUnverified {
 		return fmt.Errorf("%w: password registrations must be created by the registration service", crud.ErrInvalid)
+	}
+	if u.Status != contracts.StatusInvited {
+		return fmt.Errorf("%w: the collection creates the person it invites; %s is a state some other door brings somebody to",
+			crud.ErrInvalid, u.Status)
+	}
+	if err := events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
+		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedFrom(ctx),
+	}); err != nil {
+		return err
 	}
 	if len(u.Roles) == 0 {
 		return nil

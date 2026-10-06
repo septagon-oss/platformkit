@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { makePublisher, publishAs } from './steps/content';
 
 // The public site: what an operator publishes through the admin's generated
 // screens is what an anonymous visitor reads at the root of the host. The
@@ -8,6 +9,7 @@ import { expect, test } from '@playwright/test';
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
+const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
@@ -18,7 +20,7 @@ const slug = `welcome-${stamp}`;
 // slug that names nothing published shows — modules/web's own
 // TestSiteRefusesWhatItCannotServe covers those words — but it is no longer what a
 // new installation shows.
-test('a new tenant opens on its starter home, and a published page takes its place', async ({ page }) => {
+test('a new tenant opens on its starter home, and a published page takes its place', async ({ page, browser }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
@@ -31,12 +33,16 @@ test('a new tenant opens on its starter home, and a published page takes its pla
   await expect(page).toHaveURL(/\/app$/);
 
   const created = await page.request.post('/api/v1/content/contents', {
-    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `# Hello\n\nThis is **home** number ${stamp}.` },
+    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `## Hello\n\nThis is **home** number ${stamp}.` },
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = await created.json();
-  const published = await page.request.post(`/api/v1/content/contents/${id}/publish`);
-  expect(published.ok(), await published.text()).toBeTruthy();
+  // Writing the home page and putting it in front of the host are two people's
+  // decisions: the content module refuses the author as publisher, so the journey
+  // invites the one who publishes. See e2e/steps/content.ts.
+  const publisher = `publisher-${stamp}@e2e.test`;
+  await makePublisher(page, publisher, publisherPass);
+  await publishAs(browser, publisher, publisherPass, id);
   const settings = await page.request.put('/api/v1/site/settings', {
     data: { title: `Acme ${stamp}`, tagline: 'From the workshop', homeSlug: slug, theme: 'light', primaryColor: '#2563eb',
       nav: [{ label: 'Welcome', path: `/${slug}` }] },

@@ -46,8 +46,17 @@ baseline narrows what fails the step and hides nothing: with it, this comparison
 a gate. Re-recording is `--write-baseline`, and its diff is the review: run
 it deliberately and commit it alone, the way a ceiling change is committed alone.
 
-Keep the plain comparison out of `make check`: it resolves published revisions, so
-it needs the network and a supported tag, and neither belongs in a gate that must
-run offline. What this does not do is close the [release decision](../RELEASE.md#choose-the-compatible-release-line):
+The **plain** comparison — no `--baseline`, so any reported line is a failure —
+stays out of `make check` and in the scheduled workflow, where its verdict is about
+the published version rather than about the diff. The **baselined** comparison is
+`make check`'s `check-apidiff` since T-0118: a step that refuses an incompatibility
+beyond the reviewed list is a gate on this change rather than a report about last
+week, and the weekly schedule stopped being the only thing that ran it.
+
+It resolves published revisions, so it needs the network and a supported tag. That
+is the price, taken deliberately: a run that cannot reach the proxy fails the gate
+and says so rather than skipping, because a gate that quietly does nothing offline
+is the instruction that "ran when a person remembered" with a name like a check.
+What this does not do is close the [release decision](../RELEASE.md#choose-the-compatible-release-line):
 publishing a stable release ends a baseline, and the `/v2` migration is still owed.
 Do not suppress the expected report to make a step pass.

@@ -123,8 +123,28 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// the JSON. The digest below is that measurement on this merged tree, not a
 	// number inherited from either side — neither revision above exports a sheet
 	// with these bytes in it.
-	if legacy.SHA256 != "259c5976d197492346c356ef548bea145b51f7ec9d152e3beeba1b92e2f50cc1" {
-		t.Fatal("v1 baseline changed; investigate rendering and encoding before accepting a migration")
+	//
+	// Prose is a shared component: its selector now reads the component's own
+	// data-component hook. The site owns data-prose in its client sheet.
+	//
+	// The frame's floor fixes move it: four utilities and one colour pair join the sheet for the brand
+	// link, the footer's bound, the frame's break rule and the table's opt-out from it, and the inverse
+	// sidebar column gains a text colour. A leaf-by-leaf diff before and after those commits changes /css
+	// and /sha256 and nothing else — no token, icon, example or schema — which is what this assertion has
+	// always had to be re-measured for.
+	//
+	// The sentences under a control are bounded by the bound the footer's sentence already took, so /css
+	// does not move again; 17 of the 6,406 leaves under `examples` do — the rendered HTML of the input,
+	// select, textarea, form and table-empty examples, plus the child span offsets the form example
+	// carries. The field element itself bounds nothing: the design tool projects no composition whose own
+	// sizing is constrained, so a max-width on the field's flex column is a client's design document that
+	// no longer contains their forms (measured at this head: 44 refusals). The break rule that stops a
+	// page scrolling sideways sits on the frame's content region for the same reason — see clShellMain.
+	//
+	// Both deltas above are one side's own before-and-after. The digest is neither side's number: it is
+	// this merged tree's export, printed by the refusal below and copied once the merge was in place.
+	if legacy.SHA256 != "7354088a4a87fafc8a324c2541d0f578337a040c07908204e488effe6a6b0356" {
+		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
 	first := layoutExport(t, captures)

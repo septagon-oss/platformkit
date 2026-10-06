@@ -10,7 +10,7 @@ records:
       kind: page
       title: Home
       body: |
-        # Welcome
+        ## Welcome
 
         This site is served by PlatformKit. Edit or remove this page at any time.
     commands:
@@ -20,7 +20,7 @@ records:
       kind: page
       title: About us
       body: |
-        # About us
+        ## About us
 
         Tell the people who arrive here who you are.
     # Published, like home: an about page nobody can read is a draft, and a

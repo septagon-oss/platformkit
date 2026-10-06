@@ -18,6 +18,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/telemetry"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -105,6 +106,13 @@ func (a *API) InvalidateHost(hosts ...string) error {
 // question — and now the answer any one of them writes is the answer every other
 // replica reads, which is the half a map in this process could not do.
 func (a *API) resolve(ctx context.Context, host string) (tenancy.Tenant, error) {
+	if a.opts.Conn == nil {
+		// An unwired API nobody connected. Every answer about a host has to come
+		// from the deployment's own database, so the honest answer is the error
+		// every caller of resolve already turns into a refusal to serve this host
+		// — not a nil-pointer dereference inside db.
+		return tenancy.Tenant{}, errors.New("httpx: this API was built unwired and was never connected to a database")
+	}
 	key := hostScope.Entry(host)
 	if t, ok := a.cached(ctx, key); ok {
 		return t, nil
@@ -216,7 +224,39 @@ func (a *API) tenant(ctx huma.Context, next func(huma.Context)) {
 	host := HostOnly(ctx.Host())
 	t, err := a.resolve(ctx.Context(), host)
 	if err == nil {
-		next(huma.WithContext(ctx, tenancy.WithTenant(ctx.Context(), t)))
+		// Both keys, because they answer two questions a reader asks at different
+		// moments: the slug is what a person recognises in a trace, the id is what
+		// joins this span to the delivery spans of the events this request published
+		// and to the same tenant's share of a job. A host the loader does not know
+		// reaches neither line below, and gets neither key — see traced.go.
+		spanAttr(ctx.Context(), telemetry.AttrTenant, t.Slug)
+		spanAttr(ctx.Context(), telemetry.AttrTenantID, t.ID.String())
+		// And to the response's note, so the refusal count respond writes after the
+		// chain returns can name the tenant this request resolved: an operator
+		// filtering the number by tenant has to be able to ask it of a refusal too,
+		// not only of a latency bar. See answerNote.
+		noteAnswer(ctx.Context(), t)
+		// The latency number is recorded here and not in the operation middleware
+		// that names the span, because this is the only place that holds both the
+		// operation and the tenant the host resolved to. A bar that cannot be split
+		// by tenant is the number this runtime promises not to publish: one process,
+		// many tenants, and an aggregate that cannot say whose requests are slow
+		// answers the question nobody asked.
+		//
+		// Deferred, so the bar belongs to every answer this request got and not to the
+		// answers that came back up a call stack: a panicking handler unwinds past a
+		// statement placed after next, and respond — below this middleware — is what
+		// turns that panic into the 500 the client was given. The histogram is the
+		// denominator of every latency question, so the shape of an answer cannot
+		// decide whether its seconds are in it: if only the refusal counter notices a
+		// request that fell over, an operator reads "refusals up, latency flat" and
+		// triages the wrong thing at the moment it costs most.
+		start := time.Now()
+		tctx := tenancy.WithTenant(ctx.Context(), t)
+		defer func() {
+			observeOperation(tctx, ctx.Operation(), time.Since(start).Seconds())
+		}()
+		next(huma.WithContext(ctx, tctx))
 		return
 	}
 	unknown := errors.Is(err, tenancy.ErrNoSuchHost)

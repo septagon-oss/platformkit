@@ -9,7 +9,7 @@ records:
       kind: page
       title: Getting started
       body: |
-        # Getting started
+        ## Getting started
 
         Sign in, then work through the five pages of this site.
     commands:
@@ -19,7 +19,7 @@ records:
       kind: page
       title: Guide
       body: |
-        # Guide
+        ## Guide
 
         How the site is put together, and who can change what.
     commands:
@@ -29,7 +29,7 @@ records:
       kind: page
       title: Pricing
       body: |
-        # Pricing
+        ## Pricing
 
         What a plan costs, and what it includes.
     commands:
@@ -39,7 +39,7 @@ records:
       kind: post
       title: Changelog
       body: |
-        # Changelog
+        ## Changelog
 
         The most recent change first.
     commands:
@@ -49,6 +49,6 @@ records:
       kind: page
       title: Contact
       body: |
-        # Contact
+        ## Contact
 
         Where to send a question nobody has answered yet.

@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/content/internal"
 )
@@ -29,7 +30,7 @@ import (
 // and the author comes off the request's own context. It is a struct rather
 // than no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
-type Deps struct{}
+type Deps struct{ Files richtext.Files }
 
 // Spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads. It is
@@ -64,7 +65,13 @@ var permissions = []module.Permission{
 
 // Module is the manifest. The implementation is constructed here, in one line,
 // and handed to the one place that uses it.
-func Module(_ Deps) (contracts.Service, module.Module) {
+func Module(deps Deps) (contracts.Service, module.Module) {
+	files := deps.Files
+	if files == nil {
+		files = richtext.RejectImages{}
+	}
+	resource := Spec
+	resource.RichTextFiles = files
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",
@@ -81,8 +88,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(s httpx.Surfaces) {
-			Spec.Mount(s)
-			internal.RegisterRoutes(s, Spec, svc)
+			resource.Mount(s)
+			internal.RegisterRoutes(s, resource, svc)
 		},
 	}
 }

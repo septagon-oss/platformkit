@@ -254,6 +254,9 @@ func (s Singleton[T]) check() {
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
 	}
+	if bad == "" {
+		bad = displayFieldFault(crud.Fields[T]())
+	}
 	if bad != "" {
 		panic("rest: Singleton for " + s.Module + "." + s.Entity + ": " + bad)
 	}

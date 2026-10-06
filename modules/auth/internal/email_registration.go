@@ -67,7 +67,10 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if err != nil {
 			return nil, err
 		}
-		err = events.Publish(ctx, tx, contracts.EventVerificationRequested, contracts.VerificationRequested{Email: email, At: db.Now()})
+		askedAt, _ := httpx.RequestFrom(ctx)
+		err = events.Publish(ctx, tx, contracts.EventVerificationRequested, contracts.VerificationRequested{
+			Email: email, At: db.Now(), Served: httpx.ServedAuthority(askedAt),
+		})
 		if err != nil {
 			return nil, rest.Fault(err)
 		}

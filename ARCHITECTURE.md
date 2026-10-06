@@ -29,6 +29,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
+| Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
@@ -101,6 +102,14 @@ and claims no deployment, and a product reaches a tier with its own evidence.
 of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
+
+[apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
+as one sentence — the modules it uses, the ports the kernel asks the application
+for, and the roles it says a tenant begins as — and what it resolves to is
+committed beside it as
+[COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md), which
+`TestCompositionFile` compares on every `make check` and refuses when the
+composition moves and the file does not.
 
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
@@ -235,6 +244,20 @@ durability. Terminal recording remains retryable after the handler attempt cap;
 JetStream delivery is at least once. Database claims prevent repeated committed
 handling; external effects still need the provider's own idempotency contract.
 [kit/jobs](kit/jobs/) schedules work through that event path.
+
+The same walk is measured. [kit/telemetry](kit/telemetry/) names the attributes and
+the three instruments and holds no provider, which is what lets the four packages
+above make a measurement without reaching a collector; [kit/app](kit/app/) installs
+the one `TracerProvider` and `MeterProvider`, OTLP over gRPC, and installs nothing
+where no endpoint is configured. Spans cover the boundaries above — the operation,
+named after the operation id and opened before routing, the transaction under `Tx`,
+the outbox relay (one span for the pass and one per event it hands to the
+transport, on that event's own trace), the job run — and the tenant rides on each where the request
+resolved one, as a span attribute and never a resource one, because one process
+serves many tenants. The publisher's trace context is stored on the outbox row, so a
+request and the handler that reacted to it are one trace, and
+`pkit.http.operation.duration`, `pkit.outbox.lag` and `pkit.http.refusals` are the
+numbers a dashboard would read.
 
 ## Evolve the schema by owner
 

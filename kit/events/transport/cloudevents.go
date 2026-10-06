@@ -60,6 +60,16 @@ type envelope struct {
 	// periodic job and a relay always are.
 	TraceParent string `json:"traceparent,omitempty"`
 	TraceState  string `json:"tracestate,omitempty"`
+	// Baggage is the W3C correlation member the outbox row holds beside the two
+	// trace members, and it is a PlatformKit extension rather than a member of the
+	// distributed tracing extension: the CloudEvents specification fixes
+	// traceparent and tracestate and says nothing about correlation, so this is the
+	// name this program owns. It carries the publisher's request id, the identifier
+	// a response header, a log line and a customer's ticket all agree on, so that a
+	// worker's trace names the call a person can quote. Absent when the publisher
+	// had none — see migrations/000041.
+	Baggage string `json:"baggage,omitempty"`
+
 	// The attribution, in the extension's lower-case spelling: what caused this
 	// when the cause was not a session. All four are absent for a person's
 	// request, which the `actor` attribute already names.
@@ -91,6 +101,7 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	// Same rule, and the reason is the same: an event with no trace is the
 	// normal case, not a trace with an empty parent.
 	doc.TraceParent, doc.TraceState = e.TraceParent, e.TraceState
+	doc.Baggage = e.Baggage
 	doc.ActorKind, doc.SourceFile, doc.SourceLine = e.ActorKind, e.SourceFile, e.SourceLine
 	if e.Initiator != uuid.Nil {
 		doc.Initiator = e.Initiator.String()
@@ -199,7 +210,7 @@ func (e *Event) unmarshalCloud(version string, body []byte) error {
 		}
 	}
 	*e = Event{ID: id, Name: doc.Type, TenantID: tenantID, Payload: doc.Data, At: at, Actor: actor,
-		TraceParent: doc.TraceParent, TraceState: doc.TraceState,
+		TraceParent: doc.TraceParent, TraceState: doc.TraceState, Baggage: doc.Baggage,
 		ActorKind: doc.ActorKind, SourceFile: doc.SourceFile, SourceLine: doc.SourceLine,
 		Initiator: initiator}
 	return nil

@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/web/internal"
@@ -27,6 +28,7 @@ import (
 type Deps struct {
 	Site    sitecontracts.Service
 	Content contentcontracts.Service
+	Files   richtext.Files
 	Theme   design.Pair
 
 	// SignInPath is where a visitor who wants to sign in is sent. The site has
@@ -70,7 +72,7 @@ func Module(deps Deps) module.Module {
 		Subscriptions: nil,
 		Routes: func(r httpx.Surfaces) {
 			internal.Mount(r, internal.Site{
-				Settings: deps.Site, Content: deps.Content, Theme: deps.Theme,
+				Settings: deps.Site, Content: deps.Content, Files: deps.Files, Theme: deps.Theme,
 				SignIn: deps.SignInPath, File: deps.PublicFileURL, Messages: deps.Messages,
 			})
 		},

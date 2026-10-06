@@ -4,13 +4,16 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache/providers/valkey"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -28,6 +31,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/billing"
 	billingcontracts "github.com/septagon-oss/platformkit/modules/billing/contracts"
+	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
@@ -43,6 +47,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -86,6 +91,10 @@ type composition struct {
 	access httpx.AskForAccess
 	// granter is who a refusal says may hand out what it refused.
 	granter page.Granter
+	// wires states, in the resolver's words, which of the hand-offs above are
+	// contract dependencies: keyed by manifest name, one entry per module in
+	// modules. wiring.go says why an edge is or is not here.
+	wires map[string]wire
 	// messages is this application's one catalogue — the same value the shells
 	// below are given — carried here so the failure page the kernel renders is
 	// worded from it rather than from a second read of the same files.
@@ -105,6 +114,22 @@ type composition struct {
 var taskRego string
 
 var taskPolicy = opa.MustNew("policy/task.rego", "platformkit.task", taskRego)
+
+// appSlug is the composition's own name, resolved once here and handed to every
+// part of it that forms a name two apps could share. config.Validate refuses a
+// broken slug before a boot gets this far (kit/config's NATS.Validate), so the
+// panic below answers only a caller that skipped that door — and it panics rather
+// than answering with the empty Name because a composition that meant to be
+// "collect" and typed something unparseable must not quietly become the
+// deployment of one app, which is the app every unlabelled tenant belongs to.
+// The shape is this file's own opa.MustNew: a defect in the build fails at start.
+func appSlug(cfg config.Config) appname.Name {
+	slug, err := cfg.NATS.AppName()
+	if err != nil {
+		panic("apps/platformkit: " + err.Error())
+	}
+	return slug
+}
 
 func compose(cfg config.Config) composition {
 	// auth.AdministeringRoles is what makes "the last person who can still
@@ -136,6 +161,11 @@ func compose(cfg config.Config) composition {
 	tenants, tenantModule := tenant.Module(tenant.Deps{
 		OnCreate: []tenantcontracts.Hook{seedRoles, provision.OnTenantCreate},
 		Invite:   firstAdmin{users: users},
+		// The app these tenants belong to. One setting names it for the whole
+		// composition — the same value the event addresses, the durable, the job
+		// lock and the cookie name are formed from — and empty is this application
+		// as it has always been: the deployment of one app.
+		App: appSlug(cfg),
 		// A tenant created here is served in every language this installation's
 		// copy is written in, read off the catalogues rather than named: the set
 		// exists before the operator narrows it, so a page can answer a person in
@@ -143,7 +173,7 @@ func compose(cfg config.Config) composition {
 		Languages: installed.Languages(),
 	})
 	active := tenantcontracts.Active{Service: tenants}
-	hosts := tenantHosts{tenants: tenants}
+	hosts := tenantHosts{tenants: tenants, published: publishedPort(cfg.Server.PublicHost)}
 	mail := mailer(cfg)
 	notify, notificationModule := notification.Module(notification.Deps{
 		// The app adapts, so notification never names user or tenant: both
@@ -156,6 +186,13 @@ func compose(cfg config.Config) composition {
 		Secure: !config.Local(cfg.Server.PublicHost),
 	})
 
+	// This installation turns password-first signup on, and one value is the
+	// whole of that decision: auth serves the door, and the shell is handed the
+	// same choice through admin.Deps.Registration so the sign-in page can link
+	// the form that posts to it. The address is the public door as the surface
+	// composes it — see pinnedRegisterAPI — and the kind says which of the two
+	// forms that door takes.
+	emailRegistration := &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}}
 	auths, authModule := auth.Module(auth.Deps{
 		Users:  users,
 		Notify: notify,
@@ -184,7 +221,7 @@ func compose(cfg config.Config) composition {
 		// no message leaves this machine. The roles come from here and never from
 		// the form, and the one named is the tenant's ordinary member: the least
 		// of the two the seed provisions.
-		EmailRegistration: &authcontracts.EmailRegistration{Users: users, Roles: []string{authcontracts.RoleMember}},
+		EmailRegistration: emailRegistration,
 		// The installation's own provider is the fallback; the tenant's row wins
 		// where it names one, which is what lets two tenants on this one process
 		// send their people to two issuers. The secret is resolved from the
@@ -218,8 +255,17 @@ func compose(cfg config.Config) composition {
 	// the work its own files declare. Two instances would be two answers about
 	// who may be assigned what.
 	tasks := task.NewServiceWithPolicy(taskPolicy)
-	contents, contentModule := content.Module(content.Deps{})
-	sites, siteModule := site.Module(site.Deps{})
+
+	// The installation's flags, read by kit/config out of the flags block and
+	// answered once for the whole process: configFlags targets nobody, not even by
+	// tenant. One evaluator is built here, for the one door that asks it a question.
+	var flagEval configFlags
+	if cfg.Flags != nil {
+		flagEval = cfg.Flags.Values
+	}
+	// The file service is returned under its own name, and not with `_`, because
+	// rich text resolves the images a body embeds through it: see contentFiles
+	// below, which is the port modules/content and modules/web declare for that.
 	files, fileModule := file.Module(file.Deps{
 		Storage: file.Local(cfg.Files.Dir), MaxBytes: cfg.Files.MaxBytes,
 		QuotaBytes: cfg.Files.QuotaBytes,
@@ -231,6 +277,9 @@ func compose(cfg config.Config) composition {
 		// whatever this product's uploads name them, and nothing here invents one.
 		Retention: cfg.Files.Retention, Tenants: active,
 	})
+	contentFiles := file.RichTextFiles{Opener: files}
+	contents, contentModule := content.Module(content.Deps{Files: contentFiles})
+	sites, siteModule := site.Module(site.Deps{Gate: settingsGate{eval: flagEval}})
 
 	mods := []module.Module{
 		userModule,
@@ -254,7 +303,7 @@ func compose(cfg config.Config) composition {
 		// The public site reads what the two above publish and claims the root.
 		// A product with a storefront of its own composes that instead.
 		web.Module(web.Deps{
-			Site: sites, Content: contents, Theme: design.Default(),
+			Site: sites, Content: contents, Files: contentFiles, Theme: design.Default(),
 			// The two addresses the public site links and does not serve. They
 			// are written here because they are this product's facts: which
 			// shell it composed, and which door of which module answers for a
@@ -292,6 +341,13 @@ func compose(cfg config.Config) composition {
 		RetentionDays: cfg.Audit.RetentionDays,
 		Feature:       "audit-trail",
 	}))
+	// Change control, over the one subject this product applies proposals for:
+	// the site settings composed just above. The subject list and the flag are both
+	// written in apps/platformkit/change.go, and this line is where they meet the
+	// manifest — so the six proposal routes are mounted, the three permissions are
+	// declared, and the settings door answers 409 with the proposal address when the
+	// installation turns the switch on.
+	mods = append(mods, change.Module(change.Deps{Subjects: changeSubjects(sites, site.NewLockedReader())}))
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted, so
 	// composing it earlier would generate screens for a prefix of the
@@ -305,14 +361,77 @@ func compose(cfg config.Config) composition {
 		Theme: design.Default(), Storybook: operatorStorybook(cfg.Server.StorybookDir),
 		Messages: installed, Locale: loginLocale,
 		// The form on the shell's login page posts to the auth module's door.
-		SignIn: pinnedSignInAPI}))
+		SignIn: pinnedSignInAPI,
+		// The way in for a person the tenant has no account for. Nil here and
+		// the sign-in page offers the password door alone; the two halves of
+		// this line — the page and the link to it — are one value, so neither
+		// can offer what the other did not mount.
+		Registration: &admin.Registration{
+			Kind:    admin.RegistrationKindPassword,
+			Address: pinnedRegisterAPI,
+		}}))
+
+	// The edges, in the resolver's words. Every hand-off above that gives one
+	// module another module's contract is declared here, so removing that module
+	// from the app is a refusal naming both, and Explain prints the edge; what is
+	// absent is either this product's own value (the mailer, the theme, the pinned
+	// addresses, the policy) or late-bound rather than built — the user module's
+	// grant check, answered by the auth service a few lines below, which is why
+	// user declares no need of auth and auth declares one of user. See wiring.go.
+	wires := map[string]wire{
+		"user": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[usercontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[usercontracts.Service](w, users) },
+		},
+		"tenant": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](), pkit.Provides[tenantcontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[tenantcontracts.Service](w, tenants) },
+		},
+		"notification": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](), pkit.Needs[tenantcontracts.Service](),
+				pkit.Provides[notificationcontracts.Service]()},
+			puts: func(w *pkit.Wiring) { pkit.Put[notificationcontracts.Service](w, notify) },
+		},
+		"auth": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[usercontracts.Service](),
+				pkit.Needs[notificationcontracts.Service](), pkit.Needs[tenantcontracts.Service](),
+				pkit.Provides[authcontracts.Auth]()},
+			puts: func(w *pkit.Wiring) { pkit.Put[authcontracts.Auth](w, auths) },
+		},
+		"task":    {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		"billing": {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		"content": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[contentcontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[contentcontracts.Service](w, contents) },
+		},
+		"site": {known: true,
+			decls: []pkit.Declaration{pkit.Provides[sitecontracts.Service]()},
+			puts:  func(w *pkit.Wiring) { pkit.Put[sitecontracts.Service](w, sites) },
+		},
+		// file hands out no contract; content and web are handed its opener as a value.
+		"file": {known: true},
+		"web": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[sitecontracts.Service](), pkit.Needs[contentcontracts.Service]()},
+		},
+		"audit": {known: true, decls: []pkit.Declaration{pkit.Needs[tenantcontracts.Service]()}},
+		// The shell asks the auth service three questions (who may do what, which
+		// roles exist, which sessions are live) and reads the tenant list.
+		"admin": {
+			known: true,
+			decls: []pkit.Declaration{pkit.Needs[authcontracts.Auth](), pkit.Needs[tenantcontracts.Service]()},
+		},
+	}
 
 	roles.auth = auths
 	provision.contents, provision.sites, provision.auth = contents, sites, auths
 	provision.tasks, provision.files = tasks, files
 	provision.demoPassword = cfg.Demo.Password
-	checkPersonas(mods)
-	return composition{modules: mods, tenants: tenants, users: users, contents: contents,
+	personas = declaredRoles(mods)
+	return composition{modules: mods, wires: wires, tenants: tenants, users: users, contents: contents,
 		sites: sites, tasks: tasks, files: files,
 		demoPassword: cfg.Demo.Password, auth: auths,
 		notify: notify, mail: mail, plans: plans, messages: installed,
@@ -378,14 +497,61 @@ func mailer(cfg config.Config) notificationcontracts.Mailer {
 // first row of a list ordered by it (migrations/000020). It used to pick
 // whichever name sorted first, which meant adding admin.acme.example.com moved
 // every future link onto it.
-type tenantHosts struct{ tenants tenantcontracts.Service }
+//
+// published is the port the installation is reached at, read once out of
+// server.public_host, and "" when that address names none: see publishedPort.
+type tenantHosts struct {
+	tenants   tenantcontracts.Service
+	published string
+}
 
 func (h tenantHosts) PublicHost(ctx context.Context, tx db.Tx[db.Tenant]) (string, error) {
 	hosts, err := h.tenants.Hosts(ctx, tx)
 	if err != nil || len(hosts) == 0 {
 		return "", err
 	}
+	// A host of record is a name and nothing else: the tenant module refuses a
+	// port in one, because kit/httpx resolves a request by matching the name in
+	// its Host header against this column. So the port a published installation
+	// is reached at cannot live in the row, and the row alone is the whole of an
+	// address only when the installation answers at its scheme's default port.
+	//
+	// An installation published behind a mapping — a container run -p 38591:8080,
+	// a compose `ports:` entry, a NodePort — answers the browser at one port and
+	// its own socket at another, and the socket cannot tell anybody the first.
+	// server.public_host is where the installation says it, and this is the one
+	// line that carries it onto every link this application mails, since both of
+	// the builders (auth's reset link and notification's notice link) make their
+	// URL out of what is returned here. A link with no declared port keeps
+	// falling back to the port the request was answered on, which
+	// modules/auth/internal/served.go appends; a host that already spells a port
+	// is left exactly as it is spelled, which is the rule that fallback already
+	// honours, so the two never disagree.
+	if h.published != "" {
+		if _, _, err := net.SplitHostPort(hosts[0]); err != nil {
+			return hosts[0] + ":" + h.published, nil
+		}
+	}
 	return hosts[0], nil
+}
+
+// publishedPort is the port the address in declared says its installation is
+// reached at, and "" when it names none or does not read as an authority at all.
+//
+// It is a port and not a name: which name a link carries is the tenant's row's
+// answer, and one customer's people are never sent to another's front door by a
+// configuration value. kit/config already refuses anything that is not a host
+// with an optional port here, so the empty answer means "not declared", which is
+// every deployment that answers at 443 or at a port the browser does not write.
+func publishedPort(declared string) string {
+	name, port, err := net.SplitHostPort(declared)
+	if err != nil || name == "" {
+		return ""
+	}
+	if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+		return ""
+	}
+	return port
 }
 
 // recipients is the adapter that lets the notification module send an email
@@ -424,34 +590,30 @@ func (a firstAdmin) Invite(ctx context.Context, tx db.Tx[db.System], tenantID uu
 }
 
 // personas are the people this application is for beyond its administrator, each a
-// role every new tenant is created with (decision 0011, item 6). A coordinator runs
-// the task desk — raises, assigns and resolves — and an observer follows it and
-// changes nothing. The admin role (everything but the operator's) and the member role
-// (nothing until somebody grants it) are auth's own and are not repeated here.
+// role every new tenant is created with (decision 0011, item 6). It is not a list
+// this file writes: compose fills it from what the composed manifests declare
+// (declaredRoles below), because what the task desk needs is the task module's
+// fact and this application only composes the module. The admin role (everything
+// but the operator's) and the member role (nothing until somebody grants it) are
+// auth's own and are not repeated here.
 //
 // What each may do, and what each is refused, is persona_test.go's table; which task a
 // coordinator may resolve is policy/task.rego's, not a grant's.
-var personas = []authcontracts.Role{
-	{Name: "coordinator", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead, taskcontracts.PermissionTaskUpdate}},
-	{Name: "observer", Grants: authcontracts.Permissions{taskcontracts.PermissionTaskRead}},
-}
+var personas []authcontracts.Role
 
-// checkPersonas refuses to compose an application whose personas grant a permission no
-// composed module declares, or an operator one: a role naming it would grant nothing, or
-// would hand the control plane to every tenant. It runs in compose, so bootstrap and
-// every start fail before a database is opened rather than seeding a role that lies.
-func checkPersonas(mods []module.Module) {
-	var declared []tenancy.Grant
+// declaredRoles is every role every composed module declares, in composition
+// order, in the shape auth.SeedRoles writes: this is what a new tenant gets
+// beside admin and member. Reading it off the manifests rather than a literal
+// here is what makes the generated walk in declared_roles_test.go mean anything
+// — the same list a tenant is seeded with is the list the test walks.
+func declaredRoles(mods []module.Module) []authcontracts.Role {
+	var out []authcontracts.Role
 	for _, m := range mods {
-		for _, p := range m.Permissions {
-			declared = append(declared, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+		for _, r := range m.Roles {
+			out = append(out, authcontracts.Role{Name: r.Name, Grants: authcontracts.Permissions(r.Grants)})
 		}
 	}
-	for _, r := range personas {
-		if _, err := authcontracts.CheckedPermissions(r.Grants, declared, tenancy.Tenant{}); err != nil {
-			panic(fmt.Sprintf("platformkit: persona %q: %v", r.Name, err))
-		}
-	}
+	return out
 }
 
 // seedRoles provisions auth's defaults and this application's personas in the

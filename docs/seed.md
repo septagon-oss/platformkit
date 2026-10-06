@@ -564,7 +564,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    No stale `Plan` is applied. This checkout's content/task/user Specs have no
    revision API; they use row locking until T-0138's owner revision exists.
 5. `seed_keys` is a kernel-owned table, one transactional
-   `000036_seed_keys.up.sql` migration (no down file), with
+   `000045_seed_keys.up.sql` migration (no down file), with
    `(tenant_id,module,entity,key)` as primary key, `kind` and nullable `record_id` as
    read fields, `tenant_id NOT NULL`, `ENABLE` and `FORCE ROW LEVEL SECURITY`,
    and the same `platformkit_tenant_match(tenant_id)` `USING`/`WITH CHECK`
@@ -611,7 +611,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    a downstream flagship owns the same flags and its literal client switch.
    `make seed CLIENT=<slug>` is a thin invocation of that command; no server
    is started. A tenant creation hook reads `NewTenant.Demo`, persisted on
-   `Tenant` by a transactional `000035_tenant_demo.up.sql` migration and carried
+   `Tenant` by a transactional `000044_tenant_demo.up.sql` migration and carried
    by `tenancy.Tenant`; only creation sets it. Starter applies for every
    tenant, demo only when that flag is true.
 
@@ -691,12 +691,12 @@ licensing are product decisions.
 **Delivered (T-0194).** The outbox, the envelope and the audit trail all carry
 the attribution. `kit/events.WithAttribution` puts an `Attribution`
 (`ActorKind`, `SourceFile`, `SourceLine`, `InitiatorID`) on the run's context,
-`Apply` puts it around each owner write, `migrations/000037_outbox_attribution.up.sql`
+`Apply` puts it around each owner write, `migrations/000046_outbox_attribution.up.sql`
 stores the four beside `actor`, and the relay carries them onto the CloudEvents
 envelope (`actorkind`, `sourcefile`, `sourceline`, `initiator`). A
 `platformkit seed` run mints one W3C trace, so `traceparent` names the run for
 every row it caused. `audit.Service.Record` copies the four into `audit_events`
-(`modules/audit/migrations/000038_audit_attribution.up.sql`), so the trail
+(`modules/audit/migrations/000047_audit_attribution.up.sql`), so the trail
 outlives the outbox row the relay deletes: a seeded write is labelled `seed`
 between the file and line that asked for it, with no actor because nobody
 signed in, and its initiator beside it. The two read routes return them.

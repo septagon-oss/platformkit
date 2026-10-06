@@ -98,6 +98,21 @@ func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
 	return svc
 }
 
+// roles are the two people the task desk is written for. They are declared here
+// rather than listed by the application because they are the task capability's
+// own: a coordinator runs the desk and an observer follows it, in every
+// installation that composes this module, and the permissions that say so are the
+// two above. It is what lets a test ask, generated, whether a granted role
+// reaches the screens this module serves — a role written into an app's main
+// cannot be checked against a module from the outside.
+//
+// Which task a coordinator may resolve is policy/task.rego's, not a grant's, and
+// a product that wants a further role names it in its own composition.
+var roles = []module.RoleDecl{
+	{Name: "coordinator", Grants: []string{contracts.PermissionTaskRead, contracts.PermissionTaskUpdate}},
+	{Name: "observer", Grants: []string{contracts.PermissionTaskRead}},
+}
+
 // Module mounts one shared lifecycle implementation for routes and jobs.
 func Module(deps Deps) module.Module {
 	svc := deps.Service
@@ -126,6 +141,7 @@ func Module(deps Deps) module.Module {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
+		Roles:       roles,
 		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Screen: "task/tasks", Permission: contracts.PermissionTaskRead},

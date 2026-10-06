@@ -115,7 +115,7 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.select/invalid', 'pk-ui.component.text/loud', 'pk-ui.component.text/muted',
     'pk-ui.component.textarea/invalid',
   ])
-  assert.equal(refused.length, 91)
+  assert.equal(refused.length, 92)
   const namedRefusals = {
     'pk-ui.component.grid/responsive': 'Native component: typed, nonopaque source composition required',
     'pk-ui.component.heading/display': 'Native component: composition text requires one supplied actual face',
@@ -130,6 +130,9 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.media/loading': 'Native component: source members require distinct boxed element members; dormant content and text ranges need their own conversion',
     'pk-ui.component.media/empty': 'Native component: composition text requires one supplied actual face',
     'pk-ui.component.avatar/picture': 'Native component: composition constrained sizing requires further conversion',
+    // Prose is the shared prose column: every child arrives as sanitized Markdown
+    // HTML, so the block's own margins are the first thing no source box carries.
+    'pk-ui.component.prose/default': 'Native component: outer block margins require parent-collapse conversion',
   }
   assert.deepEqual(Object.fromEntries(refused.filter(item => Object.hasOwn(namedRefusals, item.id))
     .map(({ id, reason }) => [id, reason])), namedRefusals)

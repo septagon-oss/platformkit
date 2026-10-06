@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"io/fs"
 	"maps"
 	"net"
@@ -36,6 +37,9 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Telemetry is where spans and numbers go. Its zero value exports nothing,
+	// which is the default the runtime ships with: see Telemetry.
+	Telemetry Telemetry `yaml:"telemetry"`
 	// Bootstrap is read by `platformkit bootstrap` alone; the server never
 	// looks at it. It is in the configuration surface so the one secret the
 	// command takes arrives the way every other secret does, through kit/config
@@ -59,6 +63,28 @@ type Config struct {
 	// not a fact in a file: nothing under seed/ holds a secret, and the loader
 	// refuses a field that looks like one.
 	Demo Demo `yaml:"demo"`
+	// App is what this composition declares about itself to the things that run
+	// before a request does. The slug lives in nats.app, where kit/appname's
+	// grammar guards it and every name is already formed from it; what is here is
+	// the two facts a migration needs and the database cannot supply.
+	App App `yaml:"app"`
+	// Flags are this installation's feature flags, by key. They are configuration
+	// rather than a flag service because that is the honest size of what the
+	// reference application needs: one boolean somebody can throw without a
+	// deployment, read the way every other value here is read.
+	//
+	// A flag never grants a permission, narrows a tenant's scope or replaces a
+	// subscription's entitlement (kit/flags says so of the contract this satisfies);
+	// it decides only whether an optional product behaviour runs. Which key means
+	// what is the consumer's fact, written beside the consumer —
+	// apps/platformkit/change.go names the one this application reads — and a key
+	// spelled wrong is refused at load rather than ignored (dec.KnownFields).
+	//
+	// A pointer, so that Config stays comparable: a map field would make the whole
+	// configuration incomparable, and the exported API gate refuses that as the
+	// break it is (`old is comparable, new is not`). An installation that says
+	// nothing about flags has none, which is a nil pointer and not an empty map.
+	Flags *Flags `yaml:"flags"`
 }
 
 // Seed is the seed command's operator credential. See the field on Config.
@@ -73,6 +99,71 @@ type Seed struct {
 // Supply PLATFORMKIT_DEMO_PASSWORD.
 type Demo struct {
 	Password string `yaml:"password"`
+}
+
+// App is the composition's own declaration, read at the migrating boot and put on
+// that session by kit/db (db.MigrateDeclaring) for migrations/000043_tenant_app
+// to place tenants with. It is a declaration and not a request: nothing at run
+// time consults it, and a deployment that names no slug and no hosts is the
+// single-app deployment migrating a database that has no tenants to place.
+type App struct {
+	// Hosts are the hosts this app serves its tenants at. An existing tenant
+	// joins this app only when every host it holds is one of these; a tenant with
+	// a host outside the list belongs to another composition sharing the database.
+	Hosts []string `yaml:"hosts"`
+	// TenantApps is the operator's explicit placement, tenant slug to app slug,
+	// for the tenants no host can place. Its values go through the same grammar as
+	// nats.app, and a mapping that does not cover every tenant is refused by the
+	// migration rather than completed by a guess.
+	TenantApps map[string]string `yaml:"tenant_apps"`
+}
+
+// Flags is the flags block: one boolean per key. See Config.Flags for why the
+// block is a pointer and what a flag may and may not decide.
+type Flags struct {
+	// Values is the map itself, one level down so a deployment that names no flag
+	// writes no `flags:` block at all rather than an empty nested one.
+	Values map[string]bool `yaml:"values"`
+}
+
+// Telemetry is the measurement surface: one OTLP/gRPC collector, what this
+// process is called, and how much of what it starts is kept.
+//
+// Everything here is optional and the empty configuration exports nothing, which
+// is a decision rather than a default: a deployment that has not chosen a backend
+// pays nothing for spans it will never read, and still propagates a trace it was
+// handed and still leaves a trace context on every outbox row it writes, so the
+// trace continues into a process that does export. An unreachable collector, by
+// contrast, is never a failed boot: the exporter buffers, warns through
+// OpenTelemetry's own error handler and keeps serving.
+type Telemetry struct {
+	// OTLPEndpoint is the collector's URL — https://collector.example:4318, or a
+	// host:port for a collector on the same network with no TLS. Empty exports
+	// nothing.
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
+	// ServiceName is what a trace backend shows this process under. Every replica
+	// of one deployment answers the same name; two deployments differ.
+	ServiceName string `yaml:"service_name"`
+	// Client names the client this installation serves, and is written on the
+	// resource of every span and metric. It is empty by default, and empty is
+	// right for a shared installation: one process serving many tenants cannot
+	// name one client, and a resource attribute is the process's own fact. See
+	// kit/telemetry for why the tenant is never a resource attribute.
+	Client string `yaml:"client"`
+	// SampleRatio is the fraction of the traces this process *starts* that are
+	// kept, 0 to 1. A trace that arrives with a sampled parent stays kept whatever
+	// this says, so an event handled in a worker remains part of the request that
+	// caused it. It is a pointer because 0 is an answer and an omitted key is not:
+	// omitting it keeps every new trace.
+	SampleRatio *float64 `yaml:"sample_ratio"`
+}
+
+// Ratio is the sampling fraction, 1 when the key was omitted.
+func (t Telemetry) Ratio() float64 {
+	if t.SampleRatio == nil {
+		return 1
+	}
+	return *t.SampleRatio
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
@@ -141,15 +232,41 @@ type Database struct {
 // stream and durable consumer names are shared within an account.
 type NATS struct {
 	Transport string `yaml:"transport"`
-	URL       string `yaml:"url"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	CACert    string `yaml:"ca_cert"`
+	// App is this deployment's own app slug — the name every shared name it forms
+	// carries, and the reason two apps on one broker and one database cannot read
+	// one another's work. Empty is the deployment of one app: it keeps the names
+	// this kernel formed before the app segment existed. kit/appname owns the
+	// grammar; Validate is what refuses a slug that could not be a subject token.
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	CACert   string `yaml:"ca_cert"`
+}
+
+// AppName is the slug this process serves, as the type every name two apps could
+// share is formed from. The empty setting is the deployment of one app and answers
+// the zero Name, which is what every constructor of kit/appname reads as "keep the
+// name this kernel formed before the app segment existed"; a setting that is
+// present and broken is refused. One door, so that a reader of `nats.app` and the
+// transport that builds itself from it cannot disagree about what empty means.
+func (n NATS) AppName() (appname.Name, error) {
+	if n.App == "" {
+		return "", nil
+	}
+	app, err := appname.Parse(n.App)
+	if err != nil {
+		return "", fmt.Errorf("nats.app: %w", err)
+	}
+	return app, nil
 }
 
 // Validate checks settings without opening files or connecting to the broker.
 // Diagnostics name keys without echoing endpoints or credentials.
 func (n NATS) Validate() error {
+	if _, err := n.AppName(); err != nil {
+		return err
+	}
 	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
 		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
 	}
@@ -338,6 +455,13 @@ const (
 	DefaultFilesMaxBytes = 25 << 20
 )
 
+// DefaultServiceName is what a trace backend shows a process under when the
+// deployment says nothing. A name is the one attribute that tells one deployment's
+// spans from another's, so it is never left empty: the SDK's own default is
+// "unknown_service:" plus the executable, which is a name no operator reads as
+// this application.
+const DefaultServiceName = "platformkit"
+
 // DefaultReadTimeout is how long a client has to send a whole request when a
 // deployment says nothing. Thirty seconds is generous for every route this
 // application has except an upload on a bad connection, which is the one a
@@ -400,6 +524,13 @@ var keys = []key{
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.
 	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
+	// The collector is an endpoint, and an endpoint is a deployment's fact about
+	// its own network, which is what an environment variable is for.
+	{"telemetry.otlp_endpoint", "PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT", func(c *Config) *string { return &c.Telemetry.OTLPEndpoint }, false},
+	{"telemetry.service_name", "PLATFORMKIT_TELEMETRY_SERVICE_NAME", func(c *Config) *string { return &c.Telemetry.ServiceName }, false},
+	// The fourth secret-shaped key, and not a secret: which customer a shared
+	// installation is serving is not sensitive, but a fleet sets it per deployment.
+	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -515,6 +646,12 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}
 	if err := c.Mail.validate(path); err != nil {
 		return Config{}, err
+	}
+	if r := c.Telemetry.SampleRatio; r != nil && (*r < 0 || *r > 1) {
+		return Config{}, fmt.Errorf("config %s: telemetry.sample_ratio is %v; it is a fraction of the traces this process starts, so between 0 and 1", path, *r)
+	}
+	if c.Telemetry.ServiceName == "" {
+		c.Telemetry.ServiceName = DefaultServiceName
 	}
 	if c.Audit.RetentionDays == 0 {
 		c.Audit.RetentionDays = DefaultRetentionDays
