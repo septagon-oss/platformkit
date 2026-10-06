@@ -403,8 +403,17 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // into, and the same case ran past the 120 s it used to carry during a whole-suite run on 2026-10-06.
 // A whole-suite run is the condition the deadline has to survive rather than the quiet one: every
 // package in the repository is then writing into the same server through the advisory lock this drain
-// holds. Three times the quiet measurement is the number below, and the failure it reports is the
-// same one: a tick with no bound of its own.
+// holds. The failure this number reports is the same one it always reported: a tick with no bound of
+// its own. What the quiet measurement does not carry is the multiplier: three times 48.6 s is 145.8 s,
+// the number below is 300 s, and on 2026-10-06 this case needed 304.34 s at load average 38-43 on 32
+// cores with six other rounds' whole-suite runs asking the same Postgres, and 301.35 s again with its
+// commits not waiting for a WAL flush (`options=-c synchronous_commit=off` carried in the fixture's own
+// URLs, read back off the server as `off`). What one window costs on a machine like that is the server
+// being scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`,
+// `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times, because the
+// bound under test is the production one. The number is left where it is: it exists to turn a tick that
+// would never end into a failure rather than a hang, and re-sizing it to the most loaded machine this
+// program runs on would bound nothing.
 const tickDeadline = 5 * time.Minute
 
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the
