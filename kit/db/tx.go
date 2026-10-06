@@ -386,10 +386,10 @@ func (p *Pending) Close(keep bool) error {
 // error carries a SQLSTATE because it arrived as the server's ErrorResponse, which is
 // how this side tells an answer from a silence.
 //
-// Two: the COMMIT never left this process. A request whose caller went away has had
-// its transaction rolled back by database/sql before this was even asked, and the
-// commit comes back sql.ErrTxDone or the context's own cancellation without a byte
-// having been sent. The transaction is gone and the server never heard about it.
+// Two: database/sql finished the transaction here, before this call sent anything.
+// A request whose caller went away has had its transaction rolled back by the
+// database/sql watchdog, and the commit asked for a moment later comes back
+// sql.ErrTxDone: the handle is closed, so this call handed the server nothing.
 //
 // What is left is the failure this sentinel exists for: the COMMIT went out and the
 // connection died on the way back. Nothing on this side of it knows the outcome —
@@ -398,13 +398,23 @@ func (p *Pending) Close(keep bool) error {
 // only message that would say. A caller that could not see the difference would read
 // "the write is not in the database" into a fact that cannot carry it, and would send
 // the write again.
+//
+// The context's own cancellation belongs to that third group, not to the second.
+// `context.Canceled` is what the driver answers when the deadline expires while it is
+// waiting for a reply it has already asked for, and the request it sent on that
+// connection's behalf was a COMMIT. A caller that read a cancellation as a rollback
+// would free the key of a write the server may have completed, which is the mistake
+// this function exists to prevent, made one moment later in the request. Only
+// ErrTxDone proves the statement never left: it is answered here, from a closed
+// handle, without a round trip. Everything the Close above returns before it reaches
+// Commit — the rollback it was told to do, the settings re-read that refused to commit
+// the transaction — does prove it, which is why those returns are not filtered here.
 func outcomeKnown(err error) bool {
 	var sqlState interface{ SQLState() string }
 	if errors.As(err, &sqlState) && sqlState.SQLState() != "" {
 		return true
 	}
-	return errors.Is(err, sql.ErrTxDone) || errors.Is(err, context.Canceled) ||
-		errors.Is(err, context.DeadlineExceeded)
+	return errors.Is(err, sql.ErrTxDone)
 }
 
 // sealed refuses to commit a transaction that ends under different settings
