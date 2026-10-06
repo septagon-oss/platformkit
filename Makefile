@@ -350,8 +350,11 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
 	# against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
 	# room for a machine doing other things as well. It is not a looser standard: the hang a bound
-	# exists to catch still stops, and the CI job that runs `make check` keeps its own bound of 75
-	# minutes, which is what keeps a hung package from becoming a hung job.
+	# exists to catch still stops. Behind it the CI job that runs `make check` names 75 minutes for
+	# itself, and the forge has three times cut that job off at about an hour over it — 94d387cc at
+	# 3612s = 60m02s, b6f1e93 at 3612s, cc614f57 at 3609s, all three with 75 in their copy of
+	# .gitea/workflows/ci.yml — so the bound that stops a hung package here is this line's, not the
+	# job's, and the budget a step must fit is the runner's.
 	#
 	# Two files hold this command. scripts/check_architecture_test.sh dry-runs `make check` and
 	# `make test` under local selectors and compares what the fresh gate would really run against a
