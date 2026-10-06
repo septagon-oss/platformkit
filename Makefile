@@ -352,6 +352,15 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# room for a machine doing other things as well. It is not a looser standard: the hang a bound
 	# exists to catch still stops, and the CI job that runs `make check` keeps its own bound of 75
 	# minutes, which is what keeps a hung package from becoming a hung job.
+	#
+	# Two files hold this command. scripts/check_architecture_test.sh dry-runs `make check` and
+	# `make test` under local selectors and compares what the fresh gate would really run against a
+	# byte copy of this line, so changing it here without re-pinning it there is red there — as it
+	# was on 2026-10-06, when `make check` passed every one of its tests and then refused this line
+	# because `-timeout=30m` had joined it here and not there. That is the price of a byte pin, and
+	# it is worth paying: the alternative is a fresh gate that narrows because nobody looked at it.
+	# The case refuses a re-pin that drops -count=1, the package pattern or any stated bound, so
+	# what a re-pin may change is everything around the parts that make the run fresh.
 	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
