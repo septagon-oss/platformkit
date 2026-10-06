@@ -67,5 +67,26 @@ fresh lowered; base="$(git rev-parse HEAD)"
 budget 80 docs && commit 'feat: the ceiling comes down with the code'
 expect 0 'a lowered ceiling passes in any commit'
 
+# The window CI fetches (`fetch-depth: <n>`, one refspec, no tag) instead of every branch and tag in the
+# mirror. Both edges of a window are cases: the one that reaches the branch's own history still walks it,
+# and the one that stops above it fails by name. The short clone is the dangerous shape, because the
+# ratchet's own rescue — `git fetch --depth=1 origin $base` — can hand over the base commit as an island
+# of one commit, and `rev-list base..HEAD` answers over the gaps either way.
+fresh window-src; base="$(git rev-parse HEAD)"
+budget 140 docs && commit 'build(budget): go 100 -> 140'
+echo 'package a // x' > a.go && commit 'feat: the feature'
+echo 'package a // y' > a.go && commit 'feat: more'
+echo 'package a // z' > a.go && commit 'feat: more still'
+
+window() { # window <name> <depth> <expected exit> — a clone of that branch at that fetch depth
+	local dir="$root/window-$2"
+	rm -rf "$dir"
+	git clone -q --depth="$2" "file://$root/window-src" "$dir" && cd "$dir"
+	expect "$3" "$1"
+}
+
+window 'a window that reaches the history the branch fills still walks it' 5 0
+window 'a window that stops above it refuses' 2 2
+
 [ "$failures" -eq 0 ] || { echo "$failures case(s) failed"; exit 1; }
 echo 'budget ratchet: all cases hold'

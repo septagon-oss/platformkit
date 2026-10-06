@@ -42,6 +42,11 @@ jobs:
       # action that moves is arbitrary code in a job holding this repository's
       # token. release.yml pins the same way and RELEASE.md says so.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The same window this repository's own runner fetches for the same step at the bottom of this
+          # job: the budget ratchet walks `base..HEAD`, and an unbounded fetch is what ate the Gitea job's
+          # whole ceiling at head 073c88f4. See .gitea/workflows/ci.yml for the measurement.
+          fetch-depth: 256
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
