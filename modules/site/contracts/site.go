@@ -47,14 +47,15 @@ var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 // refuses a change to a published shape (rule B3) whatever the reason and whatever
 // the direction — `UPDATE_GOLDEN=1` regenerates a document that is stale, never one
 // that is broken. So "a site with no colour of its own" cannot be a value this
-// field holds: an empty string is not a colour the contract describes, and a value
-// a client cannot read, save unchanged and get back is not a default. The site that
-// holds no colour is still painted the accent of the palette it links (modules/web
-// .accent), and it gets to hold none through an installation's own history rather
-// than through a value the API could send. Saying whether the default reads is the
-// paint's job, and it measures before it writes the declaration:
-// design.Pair.LegibleAccent repairs what one constant cannot be in both modes at
-// once, which is the arithmetic this constant used to be argued with.
+// field holds: a value a client cannot read, save unchanged and get back is no
+// default at all. A row that does hold none is painted the accent of the palette
+// its sheet links (modules/web .accent). Whether a colour reads is the paint's job,
+// measured per mode, because no #rrggbb reads in both at once: contrast.go holds
+// accent-default on surface-canvas, -primary and -muted at MinContrast in each
+// theme, so the light theme keeps colours of luminance at most 0.134 (its darkest
+// ground, surface-muted #e9e4d8) and the dark theme keeps colours of at least 0.269
+// (its lightest, #1e2a27). One value for both modes may be repaired before it is
+// painted, and that repair is what keeps the page readable in either mode.
 const DefaultPrimaryColor = "#2563eb"
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
