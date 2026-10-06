@@ -1100,7 +1100,7 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 // and nothing else can. Anything that answers it with something else is whoever
 // holds the port, and the case says so at once rather than after the whole bound
 // of waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
 	started := time.Now()
 	deadline := started.Add(bootWait)
@@ -1109,6 +1109,7 @@ func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
 		if len(stopped) > 0 {
 			select {
 			case err := <-stopped[0]:
+				stopped[0] <- err // the read above freed the slot, so this cannot block
 				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
 					addr, time.Since(started).Round(time.Millisecond), err)
 			default:
