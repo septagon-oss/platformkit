@@ -52,10 +52,22 @@ fi
 # CONTRIBUTING.md's "separate owner budget commit before the implementation", made checkable: a raise
 # passes when every commit between the base and HEAD that touches a budget file is a `build(budget):`
 # commit touching nothing else, so the raise stands alone in history where a reviewer reads it. A removed
-# bucket or a changed measurement is never excused this way. CI checks out with fetch-depth 0; history
-# that cannot be read refuses.
+# bucket or a changed measurement is never excused this way. CI checks out the window its own commits
+# fill, not the whole mirror; a history that cannot be walked refuses, below.
 budget_files='loc-budget.json packages-budget.json'
 if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from '; then
+	# Nothing above needs history: a ceiling, a removed bucket and a changed measurement are all read
+	# from two files at the base, which is why a one-commit CI checkout answers them after fetching that
+	# one commit by name. Excusing a raise is the one read that walks, so the shallow window CI fetches
+	# (`fetch-depth: <n>`, see .gitea/workflows/ci.yml) has to reach the fork point before this point is
+	# passed. It can stop above it — the base then arrives as an island of one commit, fetched by SHA —
+	# and `rev-list base..HEAD` still answers, over the gap: it names commits that never touched a budget
+	# file and misses ones that did. A shallow checkout where git cannot say where the base and HEAD
+	# diverge fails here, by name, rather than reading a range it never fetched.
+	if [ "$(git rev-parse --is-shallow-repository)" = true ] && ! git merge-base "$base" HEAD >/dev/null 2>&1; then
+		echo 'budget ratchet: a raise is excused only by the commits that carry it, and this shallow checkout cannot find where the base and HEAD diverge' >&2
+		exit 2
+	fi
 	if ! touched="$(git rev-list --no-merges "$base..HEAD" -- $budget_files 2>/dev/null)"; then
 		echo 'budget ratchet: the history between the base and HEAD cannot be read' >&2
 		exit 2
