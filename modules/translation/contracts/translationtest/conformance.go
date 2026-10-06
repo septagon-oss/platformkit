@@ -14,7 +14,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/translation/contracts"
-	"github.com/septagon-oss/platformkit/modules/translation/internal"
 )
 
 // The clock the cases move the source forward by, spelled once.
@@ -338,7 +337,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("the store holds %d rows, want the two fields", len(rows))
 			}
 			for _, r := range rows {
-				hash, err := internal.Hash(r.SourceText, r.Field == FieldBody)
+				hash, err := contracts.Hash(r.SourceText, r.Field == FieldBody)
 				if err != nil {
 					t.Fatalf("hashing %s: %v", r.Field, err)
 				}

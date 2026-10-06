@@ -16,8 +16,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/translation/contracts"
 )
+
+// actorOf is the principal of the write, which is who translator_id names and who
+// translation.updated names. No actor is the nil UUID — the same answer kit/events
+// gives for the same absence, so the trail and the row name the same nobody.
+func actorOf(ctx context.Context) uuid.UUID {
+	if id, ok := tenancy.ActorFrom(ctx); ok {
+		return id
+	}
+	return uuid.Nil
+}
 
 // Row is one field of one record translated into one language. It is
 // migrations/000043 and nothing else: no other module reads it, so it lives
@@ -158,18 +169,25 @@ func (s *Service) Translated(ctx context.Context, tx db.Tx[db.Tenant], q rest.Tr
 				Value: row.Value, Origin: row.Origin, ReviewedAt: row.ReviewedAt,
 				Revision: row.Revision, SourceText: row.SourceText, SourceHash: row.SourceHash,
 			}
-			current := q.Sources[id][field]
-			if hash, err := Hash(current, rich[field]); err == nil && hash != row.SourceHash {
-				f.Status = rest.FallbackOutdated
-			} else if row.Origin == rest.OriginMachine && row.ReviewedAt == nil {
-				// The one line that decides what a stranger may read. A machine
-				// draft nobody has looked at is not the tenant's Portuguese;
-				// on the public door it is not shown at all, and the value
-				// served is the source.
+			// The review question is asked first, and it is the order that decides
+			// what a stranger may read. A machine draft nobody has looked at is not
+			// the tenant's Portuguese, and its source moving does not make it one:
+			// "outdated" says the translation is behind, not that anybody read it.
+			// Ask staleness first and an unreviewed draft becomes servable the moment
+			// the source moves, which is the exact hole this branch exists to close.
+			if row.Origin == rest.OriginMachine && row.ReviewedAt == nil {
 				if q.Public {
 					f = rest.TranslatedField{Status: rest.FallbackWithheld, Revision: row.Revision, Origin: row.Origin}
 				} else {
 					f.Status = rest.FallbackMachine
+				}
+			} else if current, ok := q.Sources[id][field]; ok {
+				// Only a source the caller actually handed over can move the goal
+				// posts. Absent here means nobody gave us the field's current text,
+				// and hashing "" would report a translation of a source we never saw
+				// as outdated. Outdated is a claim about a comparison, not a default.
+				if hash, err := contracts.Hash(current, rich[field]); err == nil && hash != row.SourceHash {
+					f.Status = rest.FallbackOutdated
 				}
 			}
 			rec.Fields[field] = f
@@ -230,26 +248,52 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuer
 		row := existing[field]
 		value := strings.TrimSpace(q.Values[field])
 		source := q.Source[field]
-		hash, err := Hash(source, q.RichText[field])
+		hash, err := contracts.Hash(source, q.RichText[field])
 		if err != nil {
 			return fmt.Errorf("%w: %s could not be measured against its source: %v", crud.ErrInvalid, field, err)
 		}
-		origin := q.Origin
-		if origin == "" {
-			origin = rest.OriginHuman
+		// Who wrote it and who has read it are two separate facts, and the rule for
+		// each is one line. Provenance is never erased: a machine draft stays
+		// machine however many people improve it, because "machine" answers who
+		// produced the first version of this text and no later keystroke changes
+		// that. The review stamp is the other fact, and a person typing over a draft
+		// is where the two come apart — the draft's origin, the person's review —
+		// which is exactly what the public door then serves.
+		writer := q.Origin
+		if writer == "" {
+			writer = rest.OriginHuman
 		}
-		if row != nil && row.Value == value && row.SourceHash == hash && row.Origin == origin &&
-			(origin == rest.OriginHuman || row.ReviewedAt == nil) {
+		origin := writer
+		if row != nil && row.Origin == rest.OriginMachine {
+			origin = rest.OriginMachine
+		}
+		stamp := origin == rest.OriginMachine && writer == rest.OriginHuman
+		unchanged := row != nil && row.Value == value && row.SourceHash == hash
+		if unchanged {
+			// The same text keeps whatever review it carried: re-asking the machine
+			// for a draft it already produced does not un-read it.
+			stamp = row.ReviewedAt != nil
+		}
+		if row != nil && unchanged && row.Origin == origin && (row.ReviewedAt != nil) == stamp {
 			continue // nothing moved: no row, no revision, no event
+		}
+		var reviewedAt *time.Time
+		if stamp {
+			at := s.now()
+			reviewedAt = &at
 		}
 		next := Row{
 			Module: q.Module, Entity: q.Entity, RecordID: q.RecordID,
 			Field: field, Locale: q.Locale, Value: value,
-			SourceText: source, SourceHash: hash, Origin: origin,
+			SourceText: source, SourceHash: hash, Origin: origin, ReviewedAt: reviewedAt,
+			// The translator is the principal of this write and not of the first
+			// one: origin already says who made the draft, and this column answers
+			// who is responsible for the text as it now stands.
+			TranslatorID: actorOf(ctx),
 			// A translation write always re-bases onto the source it was made
-			// from, so the pair matches by construction: only a machine draft is
-			// not yet somebody's answer.
-			Status: StatusOf(origin, false),
+			// from, so the pair matches by construction: only an unread machine
+			// draft is not yet somebody's answer.
+			Status: contracts.StatusOf(origin, stamp, false),
 		}
 		if row == nil {
 			next.ID = uuid.New()
@@ -264,13 +308,6 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuer
 			}
 		} else {
 			next.ID, next.Revision = row.ID, row.Revision+1
-			next.ReviewedAt = row.ReviewedAt
-			// A person's own text is reviewed by being typed, so a human write
-			// clears the stamp rather than inheriting one from a draft nobody
-			// accepted. A machine write keeps whatever review stands.
-			if origin == rest.OriginHuman {
-				next.ReviewedAt = nil
-			}
 			if err := s.rewrite(ctx, tx, &next); err != nil {
 				return err
 			}
@@ -306,20 +343,25 @@ func (s *Service) rewrite(ctx context.Context, tx db.Tx[db.Tenant], row *Row) er
 }
 
 // lock reads the named fields' rows for one record and locale, taking a row
-// lock on each. The critical section here spans several rows of one table for
+// lock on each. An empty field list is every field of that record in that
+// locale — the spelling rest.ReviewQuery documents for "this record, whole" —
+// so the filter is left off the query rather than being an `IN ()` that matches
+// nothing, which is how "mark reviewed" came to answer 404.
+//
+// The critical section here spans several rows of one table for
 // one record, and the source row's lock above it is what orders it against a
 // source edit; within the table, FOR UPDATE on the rows themselves is enough,
 // so no advisory lock is taken where a row lock already serialises the pair.
 func (s *Service) lock(ctx context.Context, tx db.Tx[db.Tenant], module, entity, locale string, recordID uuid.UUID, fields []string) (map[string]*Row, error) {
 	_ = ctx
-	if len(fields) == 0 {
-		return nil, nil
+	query := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("module = ? AND entity = ? AND locale = ? AND record_id = ?",
+			module, entity, locale, recordID)
+	if len(fields) > 0 {
+		query = query.Where("field IN ?", fields)
 	}
 	var rows []Row
-	err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("module = ? AND entity = ? AND locale = ? AND record_id = ? AND field IN ?",
-			module, entity, locale, recordID, fields).Find(&rows).Error
-	if err != nil {
+	if err := query.Find(&rows).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	out := make(map[string]*Row, len(rows))
@@ -336,6 +378,12 @@ func (s *Service) lock(ctx context.Context, tx db.Tx[db.Tenant], module, entity,
 // reviewed", and a review that could be pressed over a stale paragraph would
 // make the completeness badge mean nothing. Fixing it is a write, and a write
 // re-hashes.
+//
+// A field whose source nobody handed over is refused for the same reason and not
+// skipped: a review is a claim about a comparison, and a review that stamps what
+// it could not check fails open — the stale draft becomes publicly servable, and
+// the badge says the opposite of the truth. Fields empty is every field of the
+// record, which is what the record-level "Mark reviewed" button sends.
 func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQuery) error {
 	rows, err := s.lock(ctx, tx, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields)
 	if err != nil {
@@ -345,22 +393,30 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.Review
 		return fmt.Errorf("%w: there is no %s translation of this %s to review",
 			crud.ErrNotFound, q.Locale, q.Entity)
 	}
-	for _, row := range rows {
-		if q.Expected != nil && row.Revision != q.Expected[row.Field] {
+	order := reviewedOrder(rows)
+	for _, field := range order {
+		row := rows[field]
+		if q.Expected != nil && row.Revision != q.Expected[field] {
 			return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
-				crud.ErrConflict, q.Locale, row.Field, row.Revision, q.Expected[row.Field])
+				crud.ErrConflict, q.Locale, field, row.Revision, q.Expected[field])
 		}
-		source, ok := q.Source[row.Field]
+		source, ok := q.Source[field]
 		if !ok {
-			continue
+			return fmt.Errorf("%w: the %s translation of %s cannot be reviewed: its current source was not supplied to check it against",
+				crud.ErrInvalid, q.Locale, field)
 		}
-		hash, err := Hash(source, q.RichText[row.Field])
-		if err == nil && hash != row.SourceHash {
+		hash, err := contracts.Hash(source, q.RichText[field])
+		if err != nil {
+			return fmt.Errorf("%w: the %s translation of %s could not be measured against its source: %v",
+				crud.ErrInvalid, q.Locale, field, err)
+		}
+		if hash != row.SourceHash {
 			return fmt.Errorf("%w: the source changed after this %s translation of %s was made; save the corrected text before marking it reviewed",
-				crud.ErrInvalid, q.Locale, row.Field)
+				crud.ErrInvalid, q.Locale, field)
 		}
 	}
-	for _, row := range rows {
+	for _, field := range order {
+		row := rows[field]
 		// Only a machine draft has a review to record. A human row is already
 		// somebody's answer — the CHECK on the table says a review stamp means
 		// a machine text — so marking one reviewed is the same pair asked for
@@ -370,8 +426,12 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.Review
 		}
 		reviewed := s.now()
 		row.ReviewedAt = &reviewed
-		row.Status = rest.StateComplete
+		row.Status = contracts.StatusOf(row.Origin, true, false)
 		row.Revision++
+		// The reviewer is the translator of record from this write onward: the
+		// stamp and the column move together, so "who is answerable for this
+		// text" and "who said it was good" name the same person.
+		row.TranslatorID = actorOf(ctx)
 		if err := s.rewrite(ctx, tx, row); err != nil {
 			return err
 		}
@@ -380,6 +440,18 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.Review
 		}
 	}
 	return nil
+}
+
+// reviewedOrder is the field names, sorted, so that a review of a whole record
+// publishes its events in one order rather than the order the map happened to
+// iterate in — a replay of the same click has to be comparable with the first.
+func reviewedOrder(rows map[string]*Row) []string {
+	order := make([]string, 0, len(rows))
+	for field := range rows {
+		order = append(order, field)
+	}
+	slices.Sort(order)
+	return order
 }
 
 // Suggest asks the machine for a draft of each named field and saves it as
@@ -430,8 +502,10 @@ func (s *Service) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.Sugge
 	})
 }
 
-// Untranslate deletes one record's rows in one locale. It is a write, so it is
-// audited: the event names the field that went away, which is the only record
+// Untranslate deletes one record's rows in one locale; an empty field list is
+// every row of that record in that locale, which is what "remove Portuguese"
+// means on the record's own form. It is a write, so it is audited: the event
+// names the field that went away, which is the only record
 // that a Portuguese translation existed and somebody removed it.
 func (s *Service) Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQuery) error {
 	rows, err := s.lock(ctx, tx, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields)
@@ -468,7 +542,15 @@ func (s *Service) ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module,
 		if err := tx.DB().Where("id = ?", row.ID).Delete(&Row{}).Error; err != nil {
 			return crud.Classify(err)
 		}
-		if err := s.publish(ctx, tx, module, entity, recordID, row.Field, row.Locale, &row); err != nil {
+		// The deletion says it removed the row, in the same words Untranslate
+		// uses: a subscriber — the audit trail, a search index — cannot tell a
+		// deletion from an update by anything else in the payload, and a record
+		// whose translations vanished while its events said "complete" is an
+		// index serving text that is no longer stored anywhere.
+		removed := row
+		removed.Status = rest.FallbackRemoved
+		removed.Revision = row.Revision + 1
+		if err := s.publish(ctx, tx, module, entity, recordID, row.Field, row.Locale, &removed); err != nil {
 			return err
 		}
 	}
@@ -482,34 +564,102 @@ func (s *Service) ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module,
 // is the entire reason that port exists: a record with no row in this locale is
 // one of the three answers being asked for, and a query over translations alone
 // cannot see it.
+//
+// Whether a State filter was asked for decides how much of the entity is read,
+// and the reason is worth seeing: the state is derived from the entity's row and
+// the translation row together, so no query over either table alone can answer
+// "only the missing ones". A filtered overview therefore judges every record of
+// the entity — crud.MaxLimit at a time — and answers the caller's page out of the
+// survivors, which is the only way the total it returns can honestly be the total
+// after the filter. An unfiltered one judges the page it was asked for and
+// nothing more, and its counts are that page's.
 func (s *Service) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.OverviewQuery) ([]rest.OverviewRow, rest.OverviewCounts, int64, error) {
 	src, err := s.source(q.Module, q.Entity)
 	if err != nil {
 		return nil, rest.OverviewCounts{}, 0, err
 	}
+	// A locale the tenant no longer declares is not a language this installation
+	// translates into: its rows still exist and nothing serves them, which is the
+	// removed state. No list shows them until somebody asks for them by name —
+	// an operator who stopped speaking Portuguese does not want a column of rows
+	// they cannot act on, and an operator cleaning up wants exactly that list.
+	speaks := len(q.Languages) == 0 || slices.Contains(q.Languages, q.Locale)
+	if !speaks && !q.IncludeRemoved {
+		return nil, rest.OverviewCounts{}, 0, nil
+	}
 	limit := q.Limit
 	if limit <= 0 || limit > crud.MaxLimit {
 		limit = crud.MaxLimit
 	}
-	records, total, err := src.Page(ctx, tx, limit, q.Offset)
+	if q.State == "" {
+		records, total, err := src.Page(ctx, tx, limit, q.Offset)
+		if err != nil {
+			return nil, rest.OverviewCounts{}, 0, err
+		}
+		rows, counts, err := s.judge(ctx, tx, q, src, records, speaks)
+		if err != nil {
+			return nil, rest.OverviewCounts{}, 0, err
+		}
+		return rows, counts, total, nil
+	}
+	var records []rest.SourceRow
+	for offset := 0; ; offset += crud.MaxLimit {
+		page, _, err := src.Page(ctx, tx, crud.MaxLimit, offset)
+		if err != nil {
+			return nil, rest.OverviewCounts{}, 0, err
+		}
+		records = append(records, page...)
+		if len(page) < crud.MaxLimit {
+			break
+		}
+	}
+	judged, counts, err := s.judge(ctx, tx, q, src, records, speaks)
 	if err != nil {
 		return nil, rest.OverviewCounts{}, 0, err
 	}
+	kept := make([]rest.OverviewRow, 0, len(judged))
+	for _, row := range judged {
+		for _, state := range row.States {
+			if state == q.State {
+				kept = append(kept, row)
+				break
+			}
+		}
+	}
+	// The caller's page is cut out of the survivors, which is the only place it
+	// can be cut from once the filter runs over a derived state — and the total
+	// is then the count of survivors, which is what the port promises.
+	start := min(q.Offset, len(kept))
+	return kept[start:min(start+limit, len(kept))], counts, int64(len(kept)), nil
+}
+
+// judge states one page of the entity's records for one locale: the rows this
+// locale holds for them, the source the entity holds now, and the rule in
+// contracts.StateOf applied to the pair.
+//
+// A locale the tenant no longer declares (speaks is false) reports the fields
+// that have a row as removed rather than by their own state: nothing serves
+// them, and a screen that called one of them "outdated" would be offering to fix
+// a translation nobody can publish.
+func (s *Service) judge(ctx context.Context, tx db.Tx[db.Tenant], q rest.OverviewQuery, src rest.TranslationSource,
+	records []rest.SourceRow, speaks bool) ([]rest.OverviewRow, rest.OverviewCounts, error) {
+
+	_ = ctx
 	ids := make([]uuid.UUID, 0, len(records))
 	for _, rec := range records {
 		ids = append(ids, rec.ID)
 	}
-	var rows []Row
+	var stored []Row
 	if len(ids) > 0 {
 		err := tx.DB().Where("module = ? AND entity = ? AND locale = ? AND record_id IN ?",
-			q.Module, q.Entity, q.Locale, ids).Find(&rows).Error
+			q.Module, q.Entity, q.Locale, ids).Find(&stored).Error
 		if err != nil {
-			return nil, rest.OverviewCounts{}, 0, crud.Classify(err)
+			return nil, rest.OverviewCounts{}, crud.Classify(err)
 		}
 	}
 	byRecord := map[uuid.UUID]map[string]*Row{}
-	for i := range rows {
-		row := &rows[i]
+	for i := range stored {
+		row := &stored[i]
 		if byRecord[row.RecordID] == nil {
 			byRecord[row.RecordID] = map[string]*Row{}
 		}
@@ -524,10 +674,15 @@ func (s *Service) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Over
 		row := rest.OverviewRow{ID: rec.ID, UpdatedAt: rec.UpdatedAt, States: map[string]string{}}
 		for _, field := range fields {
 			stored := byRecord[rec.ID][field]
-			hash, err := Hash(rec.Values[field], rich[field])
-			state := StateOf(stored != nil,
-				stored != nil && stored.Origin == rest.OriginMachine && stored.ReviewedAt == nil,
-				stored != nil && err == nil && hash == stored.SourceHash)
+			state := rest.StateMissing
+			if stored != nil && !speaks {
+				state = rest.FallbackRemoved
+			} else {
+				hash, err := contracts.Hash(rec.Values[field], rich[field])
+				state = contracts.StateOf(stored != nil,
+					stored != nil && stored.Origin == rest.OriginMachine && stored.ReviewedAt == nil,
+					stored != nil && err == nil && hash == stored.SourceHash)
+			}
 			row.States[field] = state
 			switch state {
 			case rest.StateMissing:
@@ -546,28 +701,7 @@ func (s *Service) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Over
 		}
 		out = append(out, row)
 	}
-	return out, counts, total, nil
-}
-
-// StateOf is the overview's whole rule, in one expression, exported so the
-// conformance fake derives a state the same way the service does rather than
-// keeping a second opinion about what "outdated" means.
-//
-// A machine draft is counted in a column of its own and never as complete: an
-// "Up-to-date" badge on text nobody has read is the exact lie this screen
-// exists to avoid. And a source this module cannot even measure is a source no
-// translation may be trusted against, which is outdated and not complete.
-func StateOf(hasRow, unreviewedMachine, sourceStillMatches bool) string {
-	switch {
-	case !hasRow:
-		return rest.StateMissing
-	case !sourceStillMatches:
-		return rest.StateOutdated
-	case unreviewedMachine:
-		return rest.StateMachine
-	default:
-		return rest.StateComplete
-	}
+	return out, counts, nil
 }
 
 // publish writes translation.updated in the caller's transaction, so the row
@@ -584,19 +718,6 @@ func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], module, enti
 	})
 }
 
-// StatusOf is the staleness rule as one expression, used by the write that
-// sets a stored status and by the source write that marks it outdated. Two
-// places that each decide what "outdated" means is how a badge starts lying.
-func StatusOf(origin string, stale bool) string {
-	if stale {
-		return rest.FallbackOutdated
-	}
-	if origin == rest.OriginMachine {
-		return rest.FallbackMachine
-	}
-	return rest.StateComplete
-}
-
 // MarkOutdated is the other half of the same rule, and the half a source write
 // runs: a default-language write that changed a translatable field marks every
 // translation of it outdated, in that write's own transaction.
@@ -610,8 +731,8 @@ func (s *Service) MarkOutdated(ctx context.Context, tx db.Tx[db.Tenant], module,
 	_ = ctx
 	result := tx.DB().Model(&Row{}).
 		Where("module = ? AND entity = ? AND record_id = ? AND field = ? AND status <> ?",
-			module, entity, recordID, field, "outdated").
-		Updates(map[string]any{"status": "outdated", "updated_at": s.now()})
+			module, entity, recordID, field, rest.FallbackOutdated).
+		Updates(map[string]any{"status": rest.FallbackOutdated, "updated_at": s.now()})
 	if result.Error != nil {
 		return crud.Classify(result.Error)
 	}

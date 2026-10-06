@@ -6,10 +6,13 @@ import (
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/richtext"
+	"github.com/septagon-oss/platformkit/modules/translation/contracts"
 )
 
 // The two source formats a translatable field can be in, and the one place each
-// is normalised, hashed and split into paragraphs.
+// is split into paragraphs. The digest the two are measured by is
+// contracts.Hash, which is the same rule the fake runs; what is here is the
+// paragraph split the diff needs and nothing else.
 //
 // A richtext field goes through kit/richtext, because that is the format whose
 // canonical serialisation the write already stores and whose AST decides where
@@ -25,60 +28,15 @@ func paragraphsOf(text string, rich bool) ([]string, error) {
 	return splitBlank(NormalisePlain(text)), nil
 }
 
-// Hash is the digest staleness is decided by. The two formats are hashed by
-// their own normalisation, so a stored hash only ever compares against a source
-// put through the same rules — which is the one property the whole stale
-// mechanism rests on.
-func Hash(text string, rich bool) (string, error) {
-	if rich {
-		return richtext.SourceHash(text)
-	}
-	return plainHash(NormalisePlain(text)), nil
-}
+// Hash is contracts.Hash, named here so this package's callers read as one
+// file's rules. One body, two names — see the comment on NormalisePlain below.
+func Hash(text string, rich bool) (string, error) { return contracts.Hash(text, rich) }
 
-// NormalisePlain is the plain-text normalisation: LF newlines, no trailing
-// spaces, no run of more than one blank line, no leading or trailing blank
-// lines, and no interpretation of a single character as markup.
-//
-// It is the shape a person's textarea holds after they stop typing, and it is
-// what makes a translation written from "a\r\nb" and a source saved as "a\nb"
-// the same source.
-func NormalisePlain(text string) string {
-	s := strings.ReplaceAll(text, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
-	lines := strings.Split(s, "\n")
-	for i, line := range lines {
-		lines[i] = strings.TrimRight(line, " \t")
-	}
-	out := make([]string, 0, len(lines))
-	blank := 0
-	for _, line := range lines {
-		if line == "" {
-			blank++
-			if blank > 1 {
-				continue
-			}
-		} else {
-			blank = 0
-		}
-		out = append(out, line)
-	}
-	for len(out) > 0 && out[0] == "" {
-		out = out[1:]
-	}
-	for len(out) > 0 && out[len(out)-1] == "" {
-		out = out[:len(out)-1]
-	}
-	return strings.Join(out, "\n")
-}
-
-// plainHash is SHA-256 of normalised plain text in lowercase hex — the same
-// shape, 64 characters, as the richtext digest, because the column stores one
-// kind of thing and a CHECK on its length is the half that cannot be a comment.
-func plainHash(normal string) string {
-	sum := sha256.Sum256([]byte(normal))
-	return hex.EncodeToString(sum[:])
-}
+// NormalisePlain is contracts.NormalisePlain, spelled here so the paragraph
+// split below reads as one file's rules. The rule itself lives in contracts/ —
+// the fake over there has to hash and normalise by the same rules, and it may not
+// import this package — so there is one body and two names for it.
+func NormalisePlain(text string) string { return contracts.NormalisePlain(text) }
 
 // splitBlank breaks normalised plain text on blank lines. A plain value can
 // contain no fenced block and no table, which is exactly why the plain branch

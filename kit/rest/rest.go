@@ -73,6 +73,12 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// Translations is the door a Spec with a `i18n:"translatable"` field knocks
+	// on: ?lang= reads through it, its commands write through it, and its delete
+	// forgets the record through it. modules/translation implements it and nothing
+	// else does; the composition assigns it by hand, the way RichTextFiles is
+	// assigned, and check() refuses either half wired without the other.
+	Translations Translations
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -463,6 +469,22 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 		return e, err
 	}
+	// A source write that moved a translatable field marks its translations
+	// outdated, in this write's own transaction. The read derives the state from
+	// the source it is holding either way; what lives here is the stored column the
+	// overview counts and the audit trail quotes, and a source write that left it
+	// alone would leave every one of those saying "up to date" about a paragraph
+	// that has since been rewritten.
+	if fields := translatableFields[T](); len(fields) > 0 {
+		for _, field := range fields {
+			if !slices.Contains(columns, field.Column) {
+				continue
+			}
+			if err := s.Translations.MarkOutdated(ctx, tx, s.Module, s.Entity, field.Name, id); err != nil {
+				return e, err
+			}
+		}
+	}
 	// The diff is computed after that write and before the event, because crud.Update
 	// runs the entity's own Validate, and Validate normalises: a task trims its title,
 	// so the body's "  second  " and the row's "second" are two answers to what the
@@ -565,6 +587,16 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
 		return e, err
+	}
+	// The record is gone, so every translation of it is gone with it, in this
+	// same transaction. No foreign key can span two modules' schemas — the rows
+	// live in modules/translation's migration, not this one's — so the promise
+	// this call is what keeps, and the alternative is a table of translations of
+	// records that no longer exist, which no screen can name and no cleanup finds.
+	if len(translatableFields[T]()) > 0 {
+		if err := s.Translations.ForgetRecord(ctx, tx, s.Module, s.Entity, id); err != nil {
+			return e, err
+		}
 	}
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
@@ -864,6 +896,9 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.translationFault()
 	}
 	if bad == "" {
 		for _, field := range crud.Fields[T]() {

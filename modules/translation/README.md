@@ -4,9 +4,12 @@
 can be said in another of the languages a tenant is served in. It owns the
 storage, the staleness rule and the machine-translation door; it owns no route,
 no page and no permission, and a person never opens a screen in this module. The
-record is the door — its route answers `?lang=`, and its permission guards every
-translation write — which is why the module the translated field lives in is the
-module a caller authenticates against.
+record is the door: the route that reads a page is the route that will answer
+`?lang=`, and that route's permission is what guards every translation write —
+which is why the module the translated field lives in is the module a caller
+authenticates against. Those doors are the slice that composes this module, and
+[Reads, writes, refusals](#reads-writes-refusals) says plainly which commands run
+today and which addresses do not exist yet.
 
 Compose it with `translation.Deps{Sources: …}` and hand the returned service to
 every `rest.Spec` that declares a translatable field. Consumers import
@@ -71,15 +74,22 @@ Portuguese, which nothing downstream would ever notice.
 
 ## Reads, writes, refusals
 
-Both doors are the record's.
+These are the port's commands, not routes. **No HTTP door exists yet** — the
+module is composed by nothing (Limits), so no address answers `?lang=`, and the
+`_i18n` overlay, the `Content-Language` header and the field-rule validation of a
+translated write are the slice that mounts those doors. What is wired today is
+in `kit/rest`: `Spec.Translations` (whose absence `check()` refuses for any entity
+declaring a translatable field), `Spec.deleteRow` → `ForgetRecord`, and a source
+`PATCH` that moved a translatable field → `MarkOutdated`.
 
-| Door | What it does |
+| Command | What it does |
 | --- | --- |
-| `GET …?lang=pt-PT` | the record, with the locale's own rows overlaid and every fallback named in `_i18n` |
-| `PATCH …?lang=pt-PT` | writes translation rows, validated by the field's own rules; the record itself is untouched |
-| `POST …/review` | marks reviewed; refuses a field whose source has moved, because a badge nobody checked is a lie |
-| `POST …/suggest` | saves a machine draft, `origin=machine`; refuses when no provider is configured |
-| `DELETE …?lang=pt-PT&field=…` | removes the locale's rows for one field |
+| `Translated` | the locale's rows for a page of records, each with the fallback a reader must be told; `Public: true` withholds an unreviewed machine draft |
+| `Save` | writes the named fields — every field of the record when none is named — validated by the field's own rules at the door above, not here |
+| `Review` | marks reviewed; refuses a field whose source has moved, and refuses one whose source was never handed over, because a badge nobody checked is a lie |
+| `Suggest` | saves a machine draft, `origin=machine`; refuses when no provider is configured |
+| `Untranslate` | removes the locale's rows for the named fields, or all of them when none is named |
+| `Overview` | one entity and locale over a page of the entity's own rows, filtered by derived state when one is asked for |
 
 Every refusal writes nothing, publishes nothing and returns no stale row. A
 stale `expected revision` is `crud.ErrConflict` — two translators in one locale,
@@ -105,8 +115,10 @@ contentSpec.Translations = translationSvc
 ```
 
 **Reused** — the delivery is composed from `kit/richtext.SourceHash` (the digest
-staleness is decided by, uncalled until now), `kit/crud`'s `GetForUpdate`,
-`Classify` and `ErrConflict`/`ErrInvalid`, `kit/events`' `Declare`/`Publish` and
+staleness is decided by, uncalled until now), `kit/crud`'s `Classify` and
+`ErrConflict`/`ErrInvalid` (the module locks its own rows with `clause.Locking`,
+not with `crud.GetForUpdate`, because a translation row is not a `crud.Base`
+entity), `kit/events`' `Declare`/`Publish` and
 the outbox's trace baggage, `modules/audit`'s `SubscribeAll` (which is the whole
 audit trail, so this module writes no audit call), `kit/db`'s tenant-scoped
 `Tx[db.Tenant]` under the `platformkit_tenant_match` RLS policy, and the
@@ -134,10 +146,16 @@ feature (compare, diff, chunk for search) now has one owner for.
 
 - Nothing serves the translator's screens yet: the switcher, the side-by-side
   view and the overview are the next slice, and `Overview` exists for them.
-- Nothing reads the port from `kit/rest` yet. `Spec.Translations`, the `?lang=`
-  write and `Base.I18N`'s population land with it; until then no route answers
-  in a second language, and the module is composed by nothing — which
-  `scripts/bespoke.py` counts as uncomposed rather than bespoke.
+- Nothing answers a request in a second language yet. `Spec.Translations` is
+  wired and refused-unwired, and the record's delete and a source `PATCH` reach
+  two of the port's commands from the kernel; what is missing is the read
+  (`?lang=`, `_i18n`, `Content-Language`), the write doors (the record's PATCH in
+  a locale, the review and suggest commands, and the 422 a rejected richtext
+  construct must produce), the public `lang`/`hreflang`/`x-default` links, the
+  translator's UI, the LibreTranslate adapter behind `locale.Translator`, the
+  Playwright+axe journeys and the second demo language in `config.example.yaml`.
+  The module is composed by nothing until that slice lands, and no claim about a
+  door above is a claim that a door exists.
 - The tenant's declared languages are a parameter of the caller, never stored
   here: which languages a tenant speaks is `modules/tenant`'s answer, reached by
   `SetLocale`.

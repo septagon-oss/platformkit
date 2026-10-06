@@ -29,6 +29,7 @@ package rest
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -220,7 +221,7 @@ type OverviewCounts struct {
 	Missing, Outdated, Machine, Complete int
 }
 
-// Translations is the door: four reads and four writes, every one inside the
+// Translations is the door: two reads and six writes, every one inside the
 // caller's transaction, every refusal writing nothing and publishing nothing.
 //
 // The tenant is never named in a query: it is the transaction's, and
@@ -263,6 +264,34 @@ type Translations interface {
 	// delete, and it is the only thing holding record_id's meaning, since no
 	// foreign key can span two modules.
 	ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module, entity string, recordID uuid.UUID) error
+
+	// MarkOutdated is the source write's half of the staleness rule: a write that
+	// changed one translatable field of one record marks that field's translations
+	// of it outdated, in the same transaction. The read derives the state from the
+	// source it is holding either way; this maintains the column the overview
+	// counts, so the overview does not count a paragraph that has been rewritten
+	// "up to date".
+	MarkOutdated(ctx context.Context, tx db.Tx[db.Tenant], module, entity, field string, recordID uuid.UUID) error
+}
+
+// translationFault refuses the two mounts that could only orphan something: a
+// translatable field with no port to read or write it — the mount whose `?lang=`
+// would answer the source and say nothing, which is the lie a translation feature
+// is not allowed to tell — and a port wired to an entity with no translatable
+// field, which is a wiring somebody believed about a field tag that is not there.
+//
+// It is a mount-time panic like the rest of check: both are composition mistakes,
+// invisible at runtime until a reader is served the wrong text.
+func (s Spec[T]) translationFault() string {
+	fields := translatableFields[T]()
+	switch {
+	case len(fields) > 0 && s.Translations == nil:
+		return fmt.Sprintf("field %q is `i18n:\"translatable\"` and the Spec has no Translations port: ?lang= would read the source and call it the translation",
+			fields[0].Name)
+	case len(fields) == 0 && s.Translations != nil:
+		return "Translations is wired to an entity with no `i18n:\"translatable\"` field, so nothing would ever reach it"
+	}
+	return ""
 }
 
 // SourceRow is one live row of the entity, with the current text of each of its

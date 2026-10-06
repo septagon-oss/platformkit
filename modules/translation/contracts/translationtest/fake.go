@@ -35,8 +35,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/translation/contracts"
-	"github.com/septagon-oss/platformkit/modules/translation/internal"
 )
 
 // Row is one stored translation: the fake's map entry, holding the same facts
@@ -165,14 +165,18 @@ func (f *Fake) Translated(ctx context.Context, tx db.Tx[db.Tenant], q rest.Trans
 			}
 			fld := rest.TranslatedField{Value: r.Value, Origin: r.Origin, ReviewedAt: r.ReviewedAt,
 				Revision: r.Revision, SourceText: r.SourceText, SourceHash: r.SourceHash}
-			hash, err := internal.Hash(q.Sources[id][field], q.RichText[field])
-			if err != nil || hash != r.SourceHash {
-				fld.Status = rest.FallbackOutdated
-			} else if r.Origin == rest.OriginMachine && r.ReviewedAt == nil {
+			if r.Origin == rest.OriginMachine && r.ReviewedAt == nil {
+				// The review question first: an unreviewed draft whose source
+				// moved is still unreviewed, and "outdated" does not make it the
+				// tenant's Portuguese. See internal.Service.Translated.
 				if q.Public {
 					fld = rest.TranslatedField{Status: rest.FallbackWithheld, Revision: r.Revision, Origin: r.Origin}
 				} else {
 					fld.Status = rest.FallbackMachine
+				}
+			} else if current, ok := q.Sources[id][field]; ok {
+				if hash, err := contracts.Hash(current, q.RichText[field]); err == nil && hash != r.SourceHash {
+					fld.Status = rest.FallbackOutdated
 				}
 			}
 			rec.Fields[field] = fld
@@ -207,32 +211,47 @@ func (f *Fake) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuery) 
 			return fmt.Errorf("%w: %s has no source text to translate from", crud.ErrInvalid, field)
 		}
 	}
+	actor, _ := tenancy.ActorFrom(ctx)
 	for _, field := range fields {
 		r := f.find(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, field)
 		value := strings.TrimSpace(q.Values[field])
-		hash, err := internal.Hash(q.Source[field], q.RichText[field])
+		hash, err := contracts.Hash(q.Source[field], q.RichText[field])
 		if err != nil {
 			return fmt.Errorf("%w: %s could not be measured against its source: %v", crud.ErrInvalid, field, err)
 		}
-		origin := q.Origin
-		if origin == "" {
-			origin = rest.OriginHuman
+		// The two facts and their two rules, as internal.Service.Save states them:
+		// provenance is never erased, and a person typing over a draft is the
+		// case where origin and review come apart.
+		writer := q.Origin
+		if writer == "" {
+			writer = rest.OriginHuman
 		}
-		if r != nil && r.Value == value && r.SourceHash == hash && r.Origin == origin &&
-			(origin == rest.OriginHuman || r.ReviewedAt == nil) {
+		origin := writer
+		if r != nil && r.Origin == rest.OriginMachine {
+			origin = rest.OriginMachine
+		}
+		stamp := origin == rest.OriginMachine && writer == rest.OriginHuman
+		unchanged := r != nil && r.Value == value && r.SourceHash == hash
+		if unchanged {
+			stamp = r.ReviewedAt != nil
+		}
+		if r != nil && unchanged && r.Origin == origin && (r.ReviewedAt != nil) == stamp {
 			continue // nothing moved: no row, no revision, no event
 		}
 		next := Row{TenantID: tenantID, Module: q.Module, Entity: q.Entity, RecordID: q.RecordID,
 			Field: field, Locale: q.Locale, Value: value, SourceText: q.Source[field],
-			SourceHash: hash, Origin: origin, Status: internal.StatusOf(origin, false), Revision: 1}
+			SourceHash: hash, Origin: origin, TranslatorID: actor,
+			Status: contracts.StatusOf(origin, stamp, false), Revision: 1}
+		if stamp {
+			at := f.now()
+			next.ReviewedAt = &at
+		}
 		if r == nil {
 			f.rows = append(f.rows, &next)
 		} else {
 			r.Value, r.SourceText, r.SourceHash = next.Value, next.SourceText, next.SourceHash
 			r.Origin, r.Status, r.Revision = origin, next.Status, r.Revision+1
-			if origin == rest.OriginHuman {
-				r.ReviewedAt = nil
-			}
+			r.ReviewedAt, r.TranslatorID = next.ReviewedAt, actor
 			next = *r
 		}
 		f.events = append(f.events, payload(field, &next))
@@ -247,12 +266,7 @@ func (f *Fake) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQue
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	tenantID := db.TenantOf(tx).ID
-	var rows []*Row
-	for _, field := range q.Fields {
-		if r := f.find(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, field); r != nil {
-			rows = append(rows, r)
-		}
-	}
+	rows := f.holding(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields)
 	if len(rows) == 0 {
 		return fmt.Errorf("%w: there is no %s translation of this %s to review", crud.ErrNotFound, q.Locale, q.Entity)
 	}
@@ -261,12 +275,22 @@ func (f *Fake) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQue
 			return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
 				crud.ErrConflict, q.Locale, r.Field, r.Revision, q.Expected[r.Field])
 		}
-		hash, err := internal.Hash(q.Source[r.Field], q.RichText[r.Field])
-		if err == nil && hash != r.SourceHash {
+		source, ok := q.Source[r.Field]
+		if !ok {
+			return fmt.Errorf("%w: the %s translation of %s cannot be reviewed: its current source was not supplied to check it against",
+				crud.ErrInvalid, q.Locale, r.Field)
+		}
+		hash, err := contracts.Hash(source, q.RichText[r.Field])
+		if err != nil {
+			return fmt.Errorf("%w: the %s translation of %s could not be measured against its source: %v",
+				crud.ErrInvalid, q.Locale, r.Field, err)
+		}
+		if hash != r.SourceHash {
 			return fmt.Errorf("%w: the source changed after this %s translation of %s was made; save the corrected text before marking it reviewed",
 				crud.ErrInvalid, q.Locale, r.Field)
 		}
 	}
+	actor, _ := tenancy.ActorFrom(ctx)
 	for _, r := range rows {
 		// Only a machine draft has a review to record; a human row is already
 		// somebody's answer, and asking twice writes nothing and says nothing.
@@ -274,7 +298,8 @@ func (f *Fake) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQue
 			continue
 		}
 		at := f.now()
-		r.ReviewedAt, r.Status, r.Revision = &at, rest.StateComplete, r.Revision+1
+		r.ReviewedAt, r.Status, r.Revision = &at, contracts.StatusOf(r.Origin, true, false), r.Revision+1
+		r.TranslatorID = actor
 		f.events = append(f.events, payload(r.Field, r))
 	}
 	return nil
@@ -286,7 +311,7 @@ func (f *Fake) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQue
 // this call would otherwise never notice.
 func (f *Fake) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.SuggestQuery) error {
 	if f.translator == nil {
-		return internal.ErrNoMachine
+		return contracts.ErrNoMachine
 	}
 	values := map[string]string{}
 	for _, field := range q.Fields {
@@ -296,7 +321,7 @@ func (f *Fake) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.SuggestQ
 		}
 		out, err := f.translator.Translate(ctx, text, q.From, q.Locale)
 		if errors.Is(err, locale.ErrNoProvider) {
-			return internal.ErrNoMachine
+			return contracts.ErrNoMachine
 		}
 		if err != nil {
 			return fmt.Errorf("%w: %s", crud.ErrConflict, err)
@@ -323,16 +348,12 @@ func (f *Fake) Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q rest.Revi
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	tenantID := db.TenantOf(tx).ID
-	for _, field := range q.Fields {
-		r := f.find(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, field)
-		if r == nil {
-			continue
-		}
+	for _, r := range f.holding(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields) {
 		removed := *r
 		removed.Status = rest.FallbackRemoved
 		removed.Revision = r.Revision + 1
 		f.rows = slices.DeleteFunc(f.rows, func(x *Row) bool { return x == r })
-		f.events = append(f.events, payload(field, &removed))
+		f.events = append(f.events, payload(r.Field, &removed))
 	}
 	return nil
 }
@@ -353,6 +374,7 @@ func (f *Fake) ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module, en
 	for _, r := range gone {
 		removed := *r
 		removed.Status = rest.FallbackRemoved
+		removed.Revision = r.Revision + 1
 		f.rows = slices.DeleteFunc(f.rows, func(x *Row) bool { return x == r })
 		f.events = append(f.events, payload(r.Field, &removed))
 	}
@@ -368,13 +390,36 @@ func (f *Fake) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 		return nil, rest.OverviewCounts{}, 0, fmt.Errorf(
 			"%w: nothing in this installation declares %s.%s as translatable", crud.ErrInvalid, q.Module, q.Entity)
 	}
+	speaks := len(q.Languages) == 0 || slices.Contains(q.Languages, q.Locale)
+	if !speaks && !q.IncludeRemoved {
+		return nil, rest.OverviewCounts{}, 0, nil
+	}
 	limit := q.Limit
 	if limit <= 0 || limit > crud.MaxLimit {
 		limit = crud.MaxLimit
 	}
-	records, total, err := src.Page(ctx, tx, limit, q.Offset)
+	total := int64(0)
+	records, pageTotal, err := src.Page(ctx, tx, limit, q.Offset)
 	if err != nil {
 		return nil, rest.OverviewCounts{}, 0, err
+	}
+	if q.State != "" {
+		// A filter over a derived state cannot be pushed into the entity's query,
+		// so the whole set is judged and the page cut out of the survivors —
+		// which is the only way the total can be the total after the filter.
+		records = nil
+		for offset := 0; ; offset += crud.MaxLimit {
+			page, _, err := src.Page(ctx, tx, crud.MaxLimit, offset)
+			if err != nil {
+				return nil, rest.OverviewCounts{}, 0, err
+			}
+			records = append(records, page...)
+			if len(page) < crud.MaxLimit {
+				break
+			}
+		}
+	} else {
+		total = pageTotal
 	}
 	ids := make([]uuid.UUID, 0, len(records))
 	for _, rec := range records {
@@ -399,10 +444,15 @@ func (f *Fake) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 		row := rest.OverviewRow{ID: rec.ID, UpdatedAt: rec.UpdatedAt, States: map[string]string{}}
 		for _, field := range fields {
 			stored := f.find(tenantID, q.Module, q.Entity, q.Locale, rec.ID, field)
-			hash, err := internal.Hash(current[rec.ID][field], rich[field])
-			state := internal.StateOf(stored != nil,
-				stored != nil && stored.Origin == rest.OriginMachine && stored.ReviewedAt == nil,
-				stored != nil && err == nil && hash == stored.SourceHash)
+			state := rest.StateMissing
+			if stored != nil && !speaks {
+				state = rest.FallbackRemoved
+			} else {
+				hash, err := contracts.Hash(current[rec.ID][field], rich[field])
+				state = contracts.StateOf(stored != nil,
+					stored != nil && stored.Origin == rest.OriginMachine && stored.ReviewedAt == nil,
+					stored != nil && err == nil && hash == stored.SourceHash)
+			}
 			row.States[field] = state
 			switch state {
 			case rest.StateMissing:
@@ -419,9 +469,62 @@ func (f *Fake) Overview(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 				counts.Complete++
 			}
 		}
+		if q.State != "" {
+			matches := false
+			for _, state := range row.States {
+				if state == q.State {
+					matches = true
+					break
+				}
+			}
+			if !matches {
+				continue
+			}
+		}
 		out = append(out, row)
 	}
+	if q.State != "" {
+		total = int64(len(out))
+		start := min(q.Offset, len(out))
+		out = out[start:min(start+limit, len(out))]
+	}
 	return out, counts, total, nil
+}
+
+// holding is the rows one record has in one locale, named fields only — or all
+// of them when none is named, which is rest.ReviewQuery's "every field of this
+// record", in field order so both implementations publish in one order.
+func (f *Fake) holding(tenantID uuid.UUID, module, entity, locale string, recordID uuid.UUID, fields []string) []*Row {
+	var out []*Row
+	for _, r := range f.rows {
+		if r.TenantID != tenantID || r.Module != module || r.Entity != entity ||
+			r.Locale != locale || r.RecordID != recordID {
+			continue
+		}
+		if len(fields) > 0 && !slices.Contains(fields, r.Field) {
+			continue
+		}
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(a, b *Row) int { return strings.Compare(a.Field, b.Field) })
+	return out
+}
+
+// MarkOutdated mirrors internal.Service.MarkOutdated: the source write's half of
+// the rule, touching status and nothing else — source_text and source_hash stay
+// as the translator started from them, because they are the evidence the reviewer
+// is working against.
+func (f *Fake) MarkOutdated(_ context.Context, tx db.Tx[db.Tenant], module, entity, field string, recordID uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	tenantID := db.TenantOf(tx).ID
+	for _, r := range f.rows {
+		if r.TenantID == tenantID && r.Module == module && r.Entity == entity &&
+			r.RecordID == recordID && r.Field == field {
+			r.Status = rest.FallbackOutdated
+		}
+	}
+	return nil
 }
 
 func (f *Fake) rich(module, entity string) map[string]bool {
