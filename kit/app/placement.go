@@ -40,15 +40,26 @@ package app
 //
 // The step also declares the tenant's ledger key, in the schema rather than here
 // (migrations/000047's trigger on the row whose app went from nobody's to somebody's),
-// and that is what makes two boots safe for each other's *ledgers* rather than merely
+// and that is what makes two boots safe for each other's *moves* rather than merely
 // consistent about one row. kit/events.MoveLedger holds that key exclusively over every
 // tenant that could still become its app: a placement that arrives first is that move's
 // ordinary contention refusal, and one that arrives after waits and lands behind it,
 // which is the order that owes a move — and this step runs before a boot opens any
-// scoped consumer, so its own next move pays the debt. What it costs is a placement
-// sitting behind another app's rename: one short transaction, the only holder it can ever
-// wait behind, cheaper than the tenant whose claims were already committed when that move
-// read the ledger and answered that nothing was left to move.
+// scoped consumer, so its own next move pays its own debt.
+//
+// Its own, and no further, because the boot that places is not the only one consuming.
+// A replica that has already moved this app's ledger and opened its scoped consumers
+// is consuming for this tenant the moment this write commits, whatever its own move
+// reported a minute earlier: the move it ran could only rename the claims of the tenants
+// that were its app's at the time, and this tenant was nobody's. What stands between
+// that consumer and a second handling of work this tenant already committed is not the
+// order of two boots' moves at all, but the claim's own reading of the tenant's history
+// under the durable it was marked under before this step named it (kit/events's claim).
+// A placement therefore never has to wait for a rename it cannot see coming, and the
+// rename never has to happen first: the debt this step leaves is one the next move finds
+// and pays, and the deliveries in between refuse on their own. What it costs is a
+// placement sitting behind another app's rename: one short transaction, the only holder
+// it can ever wait behind.
 
 import (
 	"context"

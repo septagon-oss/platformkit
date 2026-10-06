@@ -572,7 +572,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 	// A lost acknowledgment of successful work must not turn it into failure.
 	completed := Event{ID: uuid.New(), TenantID: ev.TenantID, Name: ev.Name}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := claim(tx, completed.ID, durable)
+		_, err := claim(tx, completed.ID, durable, "")
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -621,7 +621,7 @@ func TestTerminalRecordingCommitsItsClaimAtomically(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: ev.TenantID}), conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
-		first, err := claim(tx, legacy, durable)
+		first, err := claim(tx, legacy, durable, "")
 		if first {
 			t.Error("legacy terminal event was claimed for handling again")
 		}

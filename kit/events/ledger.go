@@ -54,6 +54,18 @@ package events
 // (SPECIFY item 3, unbuilt) is what turns an empty app into a slug; until it has
 // run, those tenants are nobody's to move.
 //
+// Which is why the move cannot be what a delivery rests on, and does not have to be.
+// A placement is another replica's boot, and the write that names a tenant is also the
+// write that hands that tenant's pending rows to this app's relay — so a scoped
+// consumer that opened before the placement can be shown an event whose mark this
+// rename has not seen, and a rename that lands after the delivery cannot undo what the
+// delivery committed. The delivery therefore reads the tenant's own history under both
+// spellings of one subscription's durable (events.go's claim) and refuses on its own;
+// this move is what makes that history findable by the name the app now answers to —
+// the record a reviewer reads, the row events.Replay clears, the terminal mark claim
+// refuses beside. Renaming is tidiness and audit. Refusing the second handling is not
+// scheduled, and so cannot be late.
+//
 // Why this is not a migration: platformkit_tenant_match answers the empty set to a
 // schema file (migrations/README.md, "A file that writes rows"), and the phase=data
 // door refuses these two tables by name with the remedy that says what to do

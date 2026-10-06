@@ -244,6 +244,15 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 			}
 		}
 		h, durable := s.Handler, s.durable()
+		// older is the durable this very subscription's mark was written under before
+		// the tenant it is delivering into had an app — the same name with the app's
+		// prefix taken off, which is the one rename ledger.go performs and appname
+		// forms. Only a subscription that names an app has one: the app-less name is
+		// already its own. See claim.
+		older := ""
+		if s.App.Named() {
+			older = appname.Durable("", s.Module, s.Name)
+		}
 		sink := Sink{
 			Handle: func(ctx context.Context, ev Event) error {
 				// A handler holds a transaction, so it is bounded. The
@@ -308,7 +317,7 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 							return nil
 						}
 					}
-					first, err := claim(tx, ev.ID, durable)
+					first, err := claim(tx, ev.ID, durable, older)
 					if err != nil || !first {
 						return err
 					}
@@ -428,11 +437,55 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 // done (commit) or given the work itself (rollback). Two deliveries of one
 // event are therefore serialized rather than concurrent, and the timeout is
 // what keeps "serialized" from meaning "stuck".
-func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
+//
+// Which name the mark sits under is a third question, and `older` answers it for
+// the one tenant whose durable spelling can change underneath a running consumer.
+// The durable half of this key is fixed when the subscription is made; the tenant's
+// app is written later, by a step this delivery takes no part in (kit/app's
+// placement, in whichever replica's boot runs it). A placement is also the act that
+// makes that tenant's *pending* rows this app's relay's to publish, so a consumer
+// that opened its scoped subscription while the tenant was still app-less can be
+// handed the same event a second time, at the scoped address, with its own mark
+// sitting under the unscoped name — the key this statement looks for is not the row
+// the table holds, and the handler commits work its tenant already committed.
+// Renaming the row is what a move does, and a move cannot be what this refusal rests
+// on: the move is another replica's step, it refuses whenever a delivery is open, and
+// the relay is not obliged to wait for it. So the mark is read under both spellings
+// of the name one subscription goes by, and the rename is what makes the record
+// findable afterwards rather than what makes the second delivery refuse.
+//
+// Reading the older name cannot refuse work nobody did. A claim under an unscoped
+// durable is written only while its tenant names no app — holdsUnscoped re-reads
+// that inside the claim's own transaction and refuses the mark once one is named —
+// and a tenant's app, once written, is never rewritten or moved (migrations/000043,
+// and 000045 checks `app = ”` at the write itself). So an older-spelling mark in this
+// tenant is this subscription's own history, in this tenant, and no other app's.
+// The same holds of the terminal record beside it: a refusal to run a handler an
+// operator already ended is that refusal, seen under the name it was written at.
+//
+// What the read cannot see is a mark that has not committed yet, and it is worth
+// naming rather than dressing: two spellings are two primary keys, so an app-less
+// delivery still open across the placement is not serialized against this one the way
+// two deliveries under one name are. It is the window the move's own tenant key exists
+// to make rare (migrations/000047), it needs an app-less consumer still running in a
+// tenant that has just been placed, and this package's README names what closing it
+// would cost.
+func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, error) {
+	// One name for an app-less subscription, two for one that names an app: the
+	// statement asks the same question of both ledgers and cannot ask it of a name
+	// that is the same string twice.
+	names := []any{durable}
+	if older != "" && older != durable {
+		names = append(names, older)
+	}
+	args := append([]any{id, durable, db.TenantOf(tx).ID, id}, names...)
 	// Older releases wrote dead letters without a claim. They are terminal too.
-	res := tx.DB().Exec("INSERT INTO "+handled+" (event_id, durable, tenant_id) SELECT ?, ?, ?"+
-		" WHERE NOT EXISTS (SELECT 1 FROM "+deadLetters+" WHERE event_id = ? AND durable = ?) ON CONFLICT DO NOTHING",
-		id, durable, db.TenantOf(tx).ID, id, durable)
+	q := "INSERT INTO " + handled + " (event_id, durable, tenant_id) SELECT ?, ?, ?" +
+		" WHERE NOT EXISTS (SELECT 1 FROM " + deadLetters + " WHERE event_id = ? AND " + durableSet(len(names)) + ")" +
+		" AND NOT EXISTS (SELECT 1 FROM " + handled + " WHERE event_id = ? AND " + durableSet(len(names)) + ")"
+	args = append(args, id)
+	args = append(args, names...)
+	res := tx.DB().Exec(q+" ON CONFLICT DO NOTHING", args...)
 	if res.Error != nil {
 		return false, fmt.Errorf("events: claim %s for %s: %w", id, durable, res.Error)
 	}

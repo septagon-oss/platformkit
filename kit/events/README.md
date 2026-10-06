@@ -238,6 +238,20 @@ durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
 
+A durable is a transport address, and one tenant can be served under two of them:
+the name a subscription carried before the tenant took an app, and the name it
+carries after. A delivery asks both ledgers under both (`claim`), because the write
+that makes a tenant this app's — another replica's placement — is the same write that
+makes the tenant's pending rows this app's relay's, and the rename that would move the
+mark under the newer name runs when the replica holding the tenant gets to it, which
+may be after the delivery. What that reading cannot see is a mark that has not
+committed yet, and two spellings are two primary keys: an app-less delivery still open
+when its tenant is placed is not serialized against this app's copy of the same event.
+Closing that needs a lock the placement waits for at exclusive strength — a placement
+queued behind every open delivery in every tenant it is naming, which is a boot that
+does not start — so the window is left as the at-least-once overlap stated above. It
+ends with the app-less deployment it is a property of.
+
 A payload contract reaches as far as the app that declared it. An event written
 for a tenant some other app holds is checked against that other app's
 declaration, which in a process that never composed it is no declaration at all:

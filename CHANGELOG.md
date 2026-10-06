@@ -64,8 +64,8 @@ row this way is not refused and does not report the tenant as unplaced: it has a
 declaration is the one that is wrong about the row. That write now declares the tenant's
 ledger key too (000047), the key an unscoped claim takes and a ledger move asks for
 exclusively, so a placement either stands in front of a move as its contention refusal or
-lands behind it and owes the move its own boot runs next, and no tenant joins an app whose
-move has already read its ledger and called it empty. The declaration has to be on the session that drains, not the one that migrated, so
+lands behind it and owes the move its own boot runs next. Nor is a tenant that joins behind a move which already
+read its ledger a second handling waiting to happen: the mark sits under the durable this tenant's ledger held before the placement, and `events.claim` asks a delivery's own history under both spellings of one subscription's name, so the rename that follows is tidiness and audit and not what the refusal waits on. The declaration has to be on the session that drains, not the one that migrated, so
 `db.BackfillDeclaring` carries `db.Declaration` to the drain (`app.Drain` and the worker's `schema-backfill` job
 both go through it). `app.tenant_apps_file` is the same mapping as a file of `slug=app` lines for an operator
 whose mapping is too long to read in a YAML blob: `kit/config` reads it at load, the inline map wins a
