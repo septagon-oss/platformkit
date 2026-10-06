@@ -23,6 +23,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -371,8 +372,26 @@ func (s *Service) BeginPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant]
 // no event is published, and the answer is the state either way. An event for a
 // write that wrote nothing would put a door-opening in the trail that nobody
 // opened, and modules/audit would copy the lie faithfully.
+//
+// "Already written" is a fact about a moment, and two requests that arrive
+// together disagree about the moment. Read first and write unconditionally, and
+// two requests enabling one disabled door both read false, both write true, and
+// the trail records the door opening twice for a door that opened once — with
+// the setting itself right, which is what makes the wrong history so hard to
+// notice. So the read takes the row's lock and the write carries its own guard.
+//
+// Both halves are needed, and they are needed because they cover different cases.
+// FOR UPDATE is what makes the read still true when the write lands: a contender
+// waits for it and then re-reads the version the winner committed, so `was` is
+// what the trail is about to say it was. The guard —
+// `WHERE sign_in IS DISTINCT FROM EXCLUDED.sign_in` — is what a lock cannot be,
+// because a tenant with no row yet has no row to lock: two inserts racing for the
+// first one settle at the write, where the loser waits on the row the winner
+// inserted, re-checks the guard against it, affects no row, and publishes nothing.
+// A transition the guard refused is not a change, and the second trail row would
+// describe a change nobody made.
 func (s *Service) SetPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant], enabled bool) (bool, error) {
-	was, err := s.passkeySignInEnabled(ctx, tx)
+	was, err := s.lockedPasskeySignIn(ctx, tx)
 	if err != nil {
 		return false, err
 	}
@@ -382,10 +401,17 @@ func (s *Service) SetPasskeySignIn(ctx context.Context, tx db.Tx[db.Tenant], ena
 	tenant := db.TenantOf(tx)
 	res := tx.DB().Exec(
 		"INSERT INTO passkey_settings (tenant_id, sign_in) VALUES (?, ?) "+
-			"ON CONFLICT (tenant_id) DO UPDATE SET sign_in = EXCLUDED.sign_in",
+			"ON CONFLICT (tenant_id) DO UPDATE SET sign_in = EXCLUDED.sign_in "+
+			"WHERE passkey_settings.sign_in IS DISTINCT FROM EXCLUDED.sign_in",
 		tenant.ID, enabled)
 	if res.Error != nil {
 		return false, fmt.Errorf("auth: set the passkey sign-in door of %s: %w", tenant.ID, res.Error)
+	}
+	if res.RowsAffected == 0 {
+		// The guard found the value this request asked for already written, by a
+		// transaction that won the row this one had nothing to lock. The answer is
+		// the state, and the state did not change under this request's hand.
+		return enabled, nil
 	}
 	if err := events.Publish(ctx, tx, contracts.EventPasskeySignInSet, contracts.PasskeySignInSet{
 		Was: was, Now: enabled, At: db.Now(),
@@ -501,6 +527,16 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	if !ok || !who.user.CanSignIn() {
 		return nil, nil, contracts.ErrCredentials
 	}
+	// From here the actor this transaction records is the person whose signature it
+	// just verified. The request arrived as nobody — both doors admit an anonymous
+	// caller, which is the point of them — or, if a cookie came along, as somebody
+	// else: an extra session in the jar makes a valid assertion no less the answer
+	// this server asked for, and the session it opens belongs to the signer. The
+	// pre-request principal would put a sign-in in the trail under the person who
+	// happened to be holding a cookie, and the trail's actor filter — the answer to
+	// "who signed in as this person" — would find nothing for the person who did.
+	// Everything published below is about this signature and nobody else's.
+	ctx = tenancy.WithActor(ctx, who.user.ID)
 	factor, err := s.recordPasskeyUse(ctx, tx, who.user.ID, cred, holds)
 	if err != nil {
 		return nil, nil, err
@@ -661,6 +697,30 @@ func (s *Service) flagPasskeySuspect(ctx context.Context, factorID, userID uuid.
 			PreviousCount: previous, ObservedCount: observed, At: db.Now(),
 		})
 	})
+}
+
+// lockedPasskeySignIn is the setting read of a command: the same answer,
+// read under the row's lock and held against any other writer of it until this
+// transaction finishes.
+//
+// The unlocked read below stays where the answer is only asked. A command that
+// decides a change from what it read is a different matter — rule 9's recheck has
+// to be a recheck rather than a hope — and this is the one passkey command that
+// writes a value it read. Locking the two reads would put every ceremony in a
+// tenant behind every other one to protect nothing: each of them re-checks what it
+// needs at the statement that spends or opens something.
+func (s *Service) lockedPasskeySignIn(_ context.Context, tx db.Tx[db.Tenant]) (bool, error) {
+	tenant := db.TenantOf(tx)
+	var rows []struct {
+		SignIn bool
+	}
+	res := tx.DB().Table("passkey_settings").Select("sign_in").
+		Where("tenant_id = ?", tenant.ID).Limit(1).
+		Clauses(clause.Locking{Strength: "UPDATE"}).Find(&rows)
+	if res.Error != nil {
+		return false, fmt.Errorf("auth: lock the passkey settings of %s: %w", tenant.ID, res.Error)
+	}
+	return len(rows) > 0 && rows[0].SignIn, nil
 }
 
 // passkeySignInEnabled reads the tenant this request resolved to: may a passkey
