@@ -28,19 +28,32 @@ package httpx
 //
 // Nothing here infers that a command finished from how long ago it started. The
 // kernel cannot see another process's request, so an in-flight claim it cannot
-// reach is a claim it must assume is still running: the repeat is refused, and the
-// scheduled purge is what frees the key of a process that died (see the note on
-// expires_at in claimIdempotency). Refusing a retry of a command that is really
-// gone costs a person one more press, some minutes later; taking over a claim that
-// is not really gone costs them the command twice.
+// reach is a claim it must assume is still running and its repeat is refused (see
+// the note on expires_at in claimIdempotency). Refusing a retry of a command that
+// is really gone costs a person one more press, some minutes later; taking over a
+// claim that is not really gone costs them the command twice.
 //
 // "Still running" is a fact the row can hold rather than one the clock has to
 // guess at, and it does: the request that owns a claim renews its lease while it
-// works, so the purge deletes an unsettled row only once that lease lapsed — the
-// one claim it can prove nobody is answering. The lease is why the five-minute
-// marker and the hourly job can coexist with a command that takes longer than
-// either: TestThePurgeKeepsTheClaimOfACommandStillRunning is the case where the
-// alternative is the same submission committing twice.
+// works, so a claim with a current lease is one somebody is answering at any age,
+// and a lapsed lease is the one claim the kernel can prove nobody is answering. The
+// lease is why the five-minute marker and the hourly job can coexist with a command
+// that takes longer than either: TestThePurgeKeepsTheClaimOfACommandStillRunning is
+// the case where the alternative is the same submission committing twice.
+//
+// What a lapsed lease licenses is a refusal, and never a second run. A claim that
+// outlived its owner says either "it committed and the answer was lost" or "nothing
+// committed", and the kernel owns no statement that tells the two apart after the
+// fact: the answer is written after the commit, detached, by a request that can fail
+// at exactly that step — the store can take the domain row and refuse the response it
+// was written beside, which is TestACommandWhoseAnswerCannotBeStoredIsNotAppliedAgainAfterPurge.
+// Freeing such a key is therefore a permission to write it twice, which is the one
+// promise this table exists to keep. So a claim that lost its owner is spent rather
+// than freed: settleUncertainSQL settles it as "its outcome is not held" for the rest
+// of the day the key was promised, and every press that arrives afterwards is told to
+// read the result. Deleted is a settled answer whose day is over, and a claim older
+// than the day it was written for and nobody is answering: past the day a key is a
+// fresh command by the document's own words (docs/adr/0016).
 
 import (
 	"bytes"
@@ -103,10 +116,12 @@ const (
 	// word from it, and claimRenewal is how often an owning request says "still
 	// here". Three renewals fit inside a lease, so one statement that found the
 	// database slow is not what strips a running command of its fence; and a process
-	// that stops answering altogether gives its key back inside two minutes, which
-	// is shorter than the five-minute marker it used to wait for. Both numbers are
-	// in the migration's note on owner_lease, and the honest recovery bound a caller
-	// is given for a claim whose owner died is the lease plus the purge's own hour.
+	// that stops answering altogether loses it inside two minutes, which is shorter
+	// than the five-minute marker it used to wait for. Both numbers are in the
+	// migration's note on owner_lease. What they buy the caller of a command whose
+	// owner died is an answer rather than a wait: the lease is the moment the claim
+	// becomes provably unanswerable, and the press that arrives after it is told so
+	// instead of being told to wait for a scheduled job.
 	claimLease   = 2 * time.Minute
 	claimRenewal = claimLease / 3
 	// claimLeaseSQL is the same length in the one spelling Postgres adds to now().
@@ -114,6 +129,34 @@ const (
 	// TestTheClaimsLeaseIsTheOneThisPackageRenews keeps them from drifting.
 	claimLeaseSQL = "2 minutes"
 )
+
+// outcomeUncertainSQL is one predicate over the row's own three clocks, and the
+// single reading of the state a claim reaches when the request that wrote it can
+// no longer answer for it: not settled, past the in-flight marker it claimed with,
+// no lease renewed inside a lease, and still inside the day the key was promised
+// for. It is asked of the row rather than of the clock, and it is asked once, here,
+// by the two steps that act on it — the request that arrives to find it and the
+// scheduled job — because the two must not disagree about when a claim is dead.
+//
+// What it deliberately does not claim is to know whether the command ran. It cannot:
+// the answer is written after the commit and outside it, so a store that took the
+// domain rows and refused the response leaves exactly this row behind. That is why
+// the state below settles a key rather than releasing it.
+const outcomeUncertainSQL = "NOT settled AND expires_at < now()" +
+	" AND (owner_lease IS NULL OR owner_lease < now())" +
+	" AND claimed_at > now() - interval '24 hours'"
+
+// settleUncertainSQL is what such a claim becomes: it ran, or it did not, and the
+// answer is gone either way. `response = NULL` is the state an answer too big to
+// hold already uses — the row says the command is over and the repeat is told to
+// read the result — which is the honest reading of a lost one too, and the same one
+// that keeps the key. `expires_at` is re-stated as the day the claim was written for
+// rather than left at the five-minute marker, so the row that is now a fence is not a
+// candidate for the next purge tick. Nothing in this statement guesses an outcome: no
+// status, no body, no replay.
+const settleUncertainSQL = "UPDATE " + idempotencyTable +
+	" SET settled = true, response = NULL, owner_lease = NULL," +
+	" expires_at = claimed_at + interval '24 hours'"
 
 // replayHeaders are the response headers a stored answer carries back, beside the
 // status and the body. They are the three a client acts on — htmx follows
@@ -380,10 +423,15 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 			}
 			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.uncommitted); err != nil {
 				// The command ran and its answer was not kept. The caller has its
-				// response; the next one gets a fresh claim in five minutes rather than
-				// a stored response it was never given, which is the safe direction: a
-				// row left unsettled refuses a repeat, and a row that lies about an
-				// answer replays one.
+				// response and nobody else ever will: the row stays unsettled, which
+				// refuses a repeat while its marker stands and spends the key as "its
+				// outcome is not held" once it lapses — see settleUncertainSQL — rather
+				// than handing back a claim that would run the write a second time. This
+				// statement is not retried, because a record store that is failing is
+				// failing for the request too, and the direction that is safe here is the
+				// one that keeps the fence rather than the one that keeps the answer: a
+				// row that lies about an answer replays one, and a row that admits it holds
+				// nothing asks to be read instead.
 				a.rlog(r.Context()).ErrorContext(r.Context(), "httpx: the idempotency record could not be written",
 					"method", r.Method, "path", r.URL.Path, "error", err)
 			}
@@ -512,6 +560,12 @@ type heldResponse struct {
 	settled   bool
 	expired   bool
 	hash      []byte
+	// outcomeUncertain is the row's own answer to the question the purge asks, read
+	// by the request that arrives first: an unsettled claim past its marker, past its
+	// lease, inside its day. One predicate, in outcomeUncertainSQL, asked in both
+	// places — see settleUncertainSQL for what the state is turned into and why no
+	// statement here claims to know whether the command ran.
+	outcomeUncertain bool
 }
 
 // claimIdempotency is the three-way decision, in one transaction of its own: run,
@@ -553,13 +607,34 @@ func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempot
 				// one the document says, so the row that has nothing left to give goes here,
 				// in the same statement that is about to be asked again. An *unsettled* row
 				// whose deadline passed is a different thing and gets a different answer:
-				// see the note on expires_at below.
+				// see the note on expires_at below, and the uncertain branch under this one.
 				if err := tx.DB().Exec("DELETE FROM "+idempotencyTable+
 					" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND settled",
 					c.tenant, c.actor, c.operation, c.key).Error; err != nil {
 					return err
 				}
 				continue
+			}
+			if h.outcomeUncertain {
+				// Nobody can answer this claim any longer and its day is not over, which
+				// leaves two readings and no statement that chooses between them: the command
+				// committed and the response store refused its record, or the process died
+				// before it wrote anything. The claim is the fence against exactly that
+				// uncertainty, so the press that arrives is the step that writes the verdict
+				// into the row: the row becomes the answer "its outcome is not held" and keeps
+				// the key for the rest of its day. Freeing it here would be the kernel deciding
+				// on nothing that a write it cannot see did not happen.
+				//
+				// The predicate is repeated in the statement rather than trusted from the read
+				// above, because the owner can answer between the two: if it did, no row
+				// matches, nothing was settled by this request, and the answer it wrote stands.
+				if err := tx.DB().Exec(settleUncertainSQL+" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND "+
+					outcomeUncertainSQL,
+					c.tenant, c.actor, c.operation, c.key).Error; err != nil {
+					return err
+				}
+				out = outcomeUncertain()
+				return nil
 			}
 			out = settledAnswer(c, h)
 			return nil
@@ -595,10 +670,21 @@ func settledAnswer(c idempotencyClaim, h *heldResponse) idempotencyAnswer {
 	case !bytes.Equal(h.hash, c.hash[:]):
 		return idempotencyAnswer{refuse: http.StatusUnprocessableEntity, code: CodeIdempotencyKeyReuse + ": this key was already used for a different request"}
 	case !h.holds:
-		return idempotencyAnswer{refuse: http.StatusConflict, code: CodeIdempotencyResponseNotHeld + ": this command ran; its response is not held; read the result rather than sending it again"}
+		return outcomeUncertain()
 	default:
 		return idempotencyAnswer{held: h}
 	}
+}
+
+// outcomeUncertain is the refusal of a command whose answer no longer exists: not
+// "somebody is running it", and not correctable by waiting, because the outcome is a
+// fact somebody has to read out of the list rather than one another write under the
+// same key can settle. Two routes reach it — an answer too big or already on the wire,
+// which the kernel knows ran, and a claim whose owner can no longer be asked, which it
+// does not know — and the sentence says no more than both of them support.
+func outcomeUncertain() idempotencyAnswer {
+	return idempotencyAnswer{refuse: http.StatusConflict,
+		code: CodeIdempotencyResponseNotHeld + ": this command may already have run; its answer is not held; read the result rather than sending it again"}
 }
 
 // inProgress is the refusal of a command somebody else is running: correctable by
@@ -608,9 +694,11 @@ func inProgress() idempotencyAnswer {
 }
 
 // reclaimSQL is gone, and its absence is the point: no statement in this package
-// takes over another request's claim. The recovery of a claim whose owner died is
-// the purge's job, and the purge deletes an unsettled row only once the row's own
-// lease lapsed, which is what lets it be both the recovery and the fence.
+// takes over another request's claim. What a claim whose owner died recovers is a
+// refusal, and the settle that writes it is asked for by whichever step reaches the row
+// first — the arriving request or the scheduled job — on the one condition the row's own
+// lease can carry, that nobody is renewing it. That is what lets the same evidence be the
+// recovery and the fence: it ends nobody's command, and it frees nobody's key.
 
 // attachLease is the owning request saying "still here", for as long as it is
 // here.
@@ -621,11 +709,10 @@ func inProgress() idempotencyAnswer {
 // answering, not a statement that a command which has run for five minutes has
 // finished. Renewal every third of the lease means a claim survives one statement
 // that found the database slow and dies within two minutes of the process that
-// held it — so the purge can delete an unsettled row on evidence instead of on
-// elapsed age, which is the difference between freeing a dead key and stealing a
-// live one. TestThePurgeKeepsTheClaimOfACommandStillRunning is the case the fence
-// is for; TestThePurgeTakesTheClaimOfACommandWhoseLeaseLapsed is the case the
-// evidence is for.
+// held it — so a claim can be settled on evidence instead of on elapsed age, which is
+// the difference between spending a dead key and stealing a live one.
+// TestThePurgeKeepsTheClaimOfACommandStillRunning is the case the fence is for;
+// TestThePurgeSpendsTheClaimOfACommandWhoseLeaseLapsed is the case the evidence is for.
 //
 // A renewal that fails is logged and retried on the next tick rather than
 // abandoned: giving up on the first failure is what would put a slow command back
@@ -633,13 +720,13 @@ func inProgress() idempotencyAnswer {
 // context and by stop, not by a failed statement.
 //
 // The two ways it stops fence differently, and the weaker of them is still the
-// invariant the purge needs. `stop` runs in the record step's defer, so a claim
+// invariant the settle needs. `stop` runs in the record step's defer, so a claim
 // never outlives the request that answered it. The other is the caller hanging up,
 // and a request whose context ended cannot commit any more: database/sql has
 // already rolled its transaction back by the time this notices, which is the fact
 // `hungUp` is written about. So the fence is not standing over work that can still
-// land, and what the purge is ever really told is that no claim which can still
-// write a row is deleted as though nobody owned it.
+// land, and what a lapsed lease is ever really telling the next request is that no
+// claim which can still write a row is spent as though nobody owned it.
 func (a *API) attachLease(ctx context.Context, holder *idempotencyHolder, c idempotencyClaim) {
 	gone := make(chan struct{})
 	once := sync.OnceFunc(func() { close(gone) })
@@ -690,17 +777,20 @@ type idempotencyAnswer struct {
 // claim that ended between our failed INSERT and this read, which the caller
 // answers by claiming again.
 //
-// The last column is the row's own deadline, read on the database clock like
-// everything else here. What it means depends on the row's state, and the two
-// readings must not be confused: on a settled row it is the end of the window the
-// answer is kept for, which this request enforces for itself; on an unsettled one
-// it is the age at which the *purge* may start asking whether anybody still owns
-// the marker, which is not a fact a request may act on as if it were knowledge of
-// whether a process is alive. The lease is what answers that question, and the
-// purge is the only step allowed to ask it.
+// The last two columns are read on the database clock like everything else here.
+// What the row's deadline means depends on the row's state, and the two readings
+// must not be confused: on a settled row it is the end of the window the answer is
+// kept for, which this request enforces for itself; on an unsettled one it is the
+// marker past which the claim is asked, by its own lease, whether anybody is still
+// answering it. A request may act on that answer — the uncertain branch in
+// claimIdempotency asks the purge's own question, from the one predicate in
+// outcomeUncertainSQL, so that the two steps cannot disagree about when a claim is
+// dead — but it may only act on it by refusing and settling the row as unanswered,
+// which is the one action that costs a command nothing whichever way the truth lies.
+// What no step may do on this evidence is delete the row.
 func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
-		" now() > expires_at FROM "+idempotencyTable+
+		" now() > expires_at, ("+outcomeUncertainSQL+") FROM "+idempotencyTable+
 		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 		c.tenant, c.actor, c.operation, c.key).Rows()
 	if err != nil {
@@ -714,7 +804,8 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 		h       heldResponse
 		headers []byte
 	)
-	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.expired); err != nil {
+	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.expired,
+		&h.outcomeUncertain); err != nil {
 		return nil, err
 	}
 	if err := rows.Close(); err != nil {
@@ -728,24 +819,52 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 	return &h, nil
 }
 
-// PurgeIdempotency deletes the answers a day old and the markers nobody is
-// holding. As with limit.Purge it is a scheduled job and never a side effect of a
+// PurgeIdempotency empties the table without ever emptying a fence. Two statements
+// delete, and one of them writes: the answers whose day is over, and the claims
+// older than the day they were written for that nobody is answering any longer, go;
+// a claim that lost its owner inside its day is settled as "its outcome is not held"
+// and stays. As with limit.Purge this is a scheduled job and never a side effect of a
 // claim: a request that also deleted somebody else's row is a request paying for
 // traffic it is not refusing, and a table nobody empties grows at somebody else's
-// rate. The expires_at index above is this statement's query.
+// rate. The expires_at index above is the first statement's query.
 //
-// The second clause is what makes it safe to run while work is happening. An
-// unsettled row past its five-minute marker is one of two commands — one that is
-// still being answered and one whose process is gone — and the row knows which,
-// because the request that owns it renews its lease: a lapsed lease is the fact of
-// a dead owner, and a live one is not a candidate at any age. Deleting on
-// expires_at alone deleted the claim of a command that was simply slow, and the
-// submission that repeated it committed a second row and a second event.
+// The settle is the whole of the difference between this job and the one it replaced.
+// An unsettled row past its marker is one of two commands — one that is still being
+// answered and one whose process is gone — and the row knows which, because the
+// request that owns it renews its lease: a lapsed lease is the fact of a dead owner,
+// and a live one is not a candidate at any age. Deleting on expires_at alone deleted
+// the claim of a command that was simply slow, and the submission that repeated it
+// committed a second row and a second event. But a lapsed lease only ever proves that
+// nobody can answer the claim; it never proves the command did not commit, and the
+// record that would have said so is written after the commit and can itself fail.
+// Deleting such a row hands the key back to the caller that is asking whether its
+// write landed, which is the double apply this table exists to make impossible. The
+// row is therefore kept and marked uncertain, and the key it holds is spent until its
+// own day is over. The cost is one press and a look at the list; the alternative is a
+// row nobody can explain and an effect nobody asked for twice.
 func PurgeIdempotency(ctx context.Context, conn *db.Conn) error {
 	return db.RunSystem(ctx, conn, idempotencyToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		if err := tx.DB().Exec("DELETE FROM " + idempotencyTable +
-			" WHERE expires_at < now() AND (owner_lease IS NULL OR owner_lease < now())").Error; err != nil {
+		// Spent, not freed — the predicate is the purge's own, unqualified, because
+		// this is the whole table asked at once. A row whose lease is current is not
+		// eligible whatever its deadlines, which is why a command slower than the
+		// marker and slower than this job keeps its fence.
+		if err := tx.DB().Exec(settleUncertainSQL + " WHERE " + outcomeUncertainSQL).Error; err != nil {
 			return errors.New("httpx: purge idempotency: " + err.Error())
+		}
+		// The first statement is the promise's end: an answer kept for a day is deleted
+		// when the day is over. The second is its twin for a claim that was never
+		// answered at all — the row has nothing left to promise once its day has passed,
+		// and emptying it is what keeps the table a table somebody can explain — and it
+		// carries the lease guard the settle has because a command that has been running
+		// for a day is a command still being answered.
+		for _, delete := range []string{
+			"DELETE FROM " + idempotencyTable + " WHERE expires_at < now() AND settled",
+			"DELETE FROM " + idempotencyTable + " WHERE claimed_at < now() - interval '24 hours'" +
+				" AND (owner_lease IS NULL OR owner_lease < now())",
+		} {
+			if err := tx.DB().Exec(delete).Error; err != nil {
+				return errors.New("httpx: purge idempotency: " + err.Error())
+			}
 		}
 		return nil
 	})

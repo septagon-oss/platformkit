@@ -23,10 +23,13 @@
 -- hours after it was claimed. A third, owner_lease, says which of those two
 -- readings the row is allowed to have: while a request owns the claim it renews
 -- the lease, so a command slower than the marker it wrote is a command the purge
--- must pass over, and a lease nobody renewed any longer is a command whose process
--- is gone. NULL is the same statement as an expired one — no owner is attached —
--- and it is what the record step writes on its way out, because an answered row is
--- not being answered any longer. The stored body can carry personal data, which is
+-- must pass over, and a lease nobody renewed any longer is a command nobody can answer
+-- for. NULL is the same statement as an expired one — no owner is attached — and it
+-- is what the record step writes on its way out, because an answered row is not being
+-- answered any longer. What an unowned claim earns is a spent key rather than a released
+-- one: the record of the answer is written after the commit and outside it, so a store
+-- that took the domain rows and refused the response leaves this row standing over a
+-- write that happened, and freeing the key would offer that write again. The stored body can carry personal data, which is
 -- the second reason the day is a day and not indefinite. The table is in no export
 -- for the first reason: it is the transport's own memo, and walking it would hand
 -- one person a body somebody else submitted.
@@ -58,17 +61,22 @@ CREATE TABLE platformkit_idempotency (
 	-- The three headers a client acts on — HX-Redirect, Location, Retry-After.
 	-- Content-Type is the column above it and is not stored twice.
 	headers      jsonb       NOT NULL DEFAULT '{}',
-	-- NULL on a settled row means it ran and its answer was too big to hold, or
-	-- had already reached the wire. That is an answer of its own: a repeat is
-	-- told to read the result rather than send the write again.
+	-- NULL on a settled row means its answer is not kept: it was too big to hold, or
+	-- had already reached the wire, or the request that owned the claim stopped
+	-- answering before it could write one. That is an answer of its own, and the honest
+	-- one: a repeat is told the outcome is not held and to read the result rather than
+	-- send the write again.
 	response     bytea,
 	-- The first request's own id, so a replayed answer names the request that
 	-- produced it and an operator can be quoted something findable.
 	request_id   text        NOT NULL DEFAULT '',
 	expires_at   timestamptz NOT NULL,
 	-- The owner's own renewal. Fresh means a request is answering this claim right
-	-- now, whatever its deadlines say; expired or NULL means nobody is, which is the
-	-- only state the purge may delete an unsettled row in. See kit/httpx/idempotency.go.
+	-- now, whatever its deadlines say; expired or NULL means nobody is any longer. That
+	-- is the state in which a claim stops being a claim rather than the state in which
+	-- it is freed: the row settles with no response and keeps its key for the rest of the
+	-- day it was written for, because a lapsed lease proves nobody can answer for the
+	-- command and nothing proves the command did not commit. See kit/httpx/idempotency.go.
 	owner_lease  timestamptz,
 	PRIMARY KEY (tenant_id, actor_id, operation, key)
 );

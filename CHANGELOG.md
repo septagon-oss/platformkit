@@ -80,11 +80,16 @@ runs the command. Nothing infers that a command finished from how long ago it st
 unsettled claim is always refused, because taking over a marker that merely looked old
 applies the command twice, and the exit from a dead process's window is the purge rather
 than the next request — and the purge decides from what the row says, not from how long
-ago it was written: the owning request renews an `owner_lease` while it works, so the job
-frees a claim whose owner stopped renewing and passes over one it is still answering. The rows are `platformkit_idempotency` (`migrations/000044`), keyed
+ago it was written: the owning request renews an `owner_lease` while it works, so a claim
+it is still answering is passed over at any age. What a lapsed lease earns is not a freed
+key. A claim nobody can any longer answer settles as "its outcome is not held" and keeps
+its key for the day it was written for, because the response record is written after the
+commit and can itself fail, and a key freed on the age of a marker is permission for the
+same submission to commit twice. The rows are `platformkit_idempotency` (`migrations/000044`), keyed
 by tenant, caller, operation and key under forced row-level security that no tenant
 transaction can read through, held for a day — a settled answer past that day is a fresh
-command on the request that asks — and emptied by the `idempotency-purge` job.
+command on the request that asks — and emptied by the `idempotency-purge` job, which
+deletes answers past their day and claims older than theirs and returns no key.
 `ui/assets/js/command.js` is the kernel's first htmx extension: a form with
 `hx-ext="command"` mints one key per submission, keeps the pending one across a reload
 until an answer retires it, retries the identical bytes on a transport failure with a

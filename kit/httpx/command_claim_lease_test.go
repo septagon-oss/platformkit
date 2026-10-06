@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -52,12 +53,18 @@ func TestTheClaimsLeaseIsTheOneThisPackageRenews(t *testing.T) {
 	}
 }
 
-// TestThePurgeTakesTheClaimOfACommandWhoseLeaseLapsed is the other half of the
-// fence, and the recovery bound in a number: a process that died mid-command stops
-// renewing, and once its lease has lapsed the purge is allowed to free the key. A
-// cure that only ever kept unsettled rows would pass the live-owner case and leave
-// a dead one holding a key forever.
-func TestThePurgeTakesTheClaimOfACommandWhoseLeaseLapsed(t *testing.T) {
+// TestThePurgeSpendsTheClaimOfACommandWhoseLeaseLapsed is the other half of the
+// fence, and the shape of its recovery: a process that died mid-command stops
+// renewing, and once its lease has lapsed the purge acts — by settling the claim as
+// "its outcome is not held" and keeping the key, not by handing the key back. A lapsed
+// lease is the fact that nobody can answer the claim, and never the fact that the
+// command did not commit: the record that would have said so is written after the
+// commit, detached, and can itself fail, which is
+// TestACommandWhoseAnswerCannotBeStoredIsNotAppliedAgainAfterPurge. Freeing such a key
+// is a permission to write twice. A cure that only ever kept unsettled rows would leave
+// a dead claim holding a key forever, and it does not: the key is spent for the day the
+// claim was written for, no longer than the promise in the document says (docs/adr/0016).
+func TestThePurgeSpendsTheClaimOfACommandWhoseLeaseLapsed(t *testing.T) {
 	_, router, f, runs, path := setupNote(t)
 	if first := send(t, router, path, keyA, "abandoned"); first.Code != http.StatusOK {
 		t.Fatalf("first command = %d %s; want 200", first.Code, first.Body)
@@ -70,14 +77,56 @@ func TestThePurgeTakesTheClaimOfACommandWhoseLeaseLapsed(t *testing.T) {
 	if err := httpx.PurgeIdempotency(t.Context(), f.app); err != nil {
 		t.Fatal(err)
 	}
+	// The row is what stands between this key and a second write, so the row survives
+	// the job that found it, and it survives settled: a purge that left the claim
+	// standing would be a purge that told nobody what it had decided, and one that
+	// deleted it would be the fence deciding, on the age of a marker, that a write it
+	// cannot see never happened.
+	if rows, answers := spentRows(t, f); rows != 1 || answers != 1 {
+		t.Fatalf("after the purge the table holds %d rows and %d answers; want the one claim the job spent", rows, answers)
+	}
 	repeat := send(t, router, path, keyA, "abandoned")
-	if repeat.Code != http.StatusOK || repeat.Header().Get("Idempotency-Replay") == "true" {
-		t.Fatalf("after the purge the dead claim answered %d replay=%q; want a fresh command",
+	if repeat.Code != http.StatusConflict || !strings.Contains(repeat.Body.String(), httpx.CodeIdempotencyResponseNotHeld) {
+		t.Fatalf("after the purge the dead claim answered %d replay=%q; want the refusal that says its outcome is not held",
 			repeat.Code, repeat.Header().Get("Idempotency-Replay"))
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("the command ran %d times; want the one abandoned run", n)
+	}
+	// The day the key was written for is still its whole window, and no longer: aged
+	// past it, the spent answer goes on the job's ordinary terms and the key is a fresh
+	// command. A person whose command died presses again and is told to look; a person
+	// whose day is over is told nothing at all.
+	runSystem(t, f, "UPDATE platformkit_idempotency SET expires_at = now() - interval '1 hour' WHERE claimed_at < now() - interval '1 minute'")
+	if err := httpx.PurgeIdempotency(t.Context(), f.app); err != nil {
+		t.Fatal(err)
+	}
+	if n := heldRows(t, f, true); n != 0 {
+		t.Fatalf("a spent claim past its day left %d rows; want none", n)
+	}
+	fresh := send(t, router, path, keyA, "abandoned")
+	if fresh.Code != http.StatusOK || fresh.Header().Get("Idempotency-Replay") == "true" {
+		t.Fatalf("a key past its day answered %d replay=%q; want a fresh command",
+			fresh.Code, fresh.Header().Get("Idempotency-Replay"))
 	}
 	if n := runs.Load(); n != 2 {
 		t.Errorf("the command ran %d times; want the abandoned run and this one", n)
 	}
+}
+
+// spentRows is what the table holds and how much of it is an answer rather than a
+// claim: the two numbers that tell one purge from another. Counting rows alone cannot
+// say whether a dead claim was spent or merely left standing where it was.
+func spentRows(t *testing.T, f *fixture) (rows, answers int) {
+	t.Helper()
+	err := db.RunSystem(t.Context(), f.app, syscap.NewSystemToken("kit/httpx test: the state of a spent claim"),
+		func(_ context.Context, tx db.Tx[db.System]) error {
+			return tx.DB().Raw("SELECT count(*), count(*) FILTER (WHERE settled) FROM platformkit_idempotency").Row().Scan(&rows, &answers)
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows, answers
 }
 
 // leaseSeconds is how far ahead the row's lease reaches, or -1 for a row with no

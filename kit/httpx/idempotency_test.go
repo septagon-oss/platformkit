@@ -634,17 +634,20 @@ func TestAResponseTooLargeToHoldSaysItRan(t *testing.T) {
 	}
 }
 
-// TestAnAbandonedClaimRefusesTheKeyUntilThePurgeTakesIt is the crash window, from
-// both ends. A claim that is not settled says either "somebody is running this now"
-// or "the process that claimed it died", and the kernel cannot tell them apart: its
-// own claim is committed and detached precisely so that a repeat on another
-// connection can see it. So the age of the marker decides nothing on the request
-// path — four minutes fifty-nine refuses and five minutes one refuses too, because
+// TestAnAbandonedClaimSpendsItsKeyRatherThanFreeingIt is the crash window, from both
+// ends. A claim that is not settled says either "somebody is running this now" or
+// "the process that claimed it died", and the kernel cannot tell them apart: its own
+// claim is committed and detached precisely so that a repeat on another connection can
+// see it. So the age of the marker decides nothing on the request path while the row is
+// inside it — four minutes fifty-nine refuses and five minutes one refuses too, because
 // taking over a slow command applies it twice (Finding: a running owner whose claim
-// aged) — and the exit is the purge, which deletes only a row whose own deadline
-// has passed and so cannot delete one that is being answered. This case holds the
-// whole of that promise: refuse, refuse, then run once the purge has been.
-func TestAnAbandonedClaimRefusesTheKeyUntilThePurgeTakesIt(t *testing.T) {
+// aged). What the row can settle is its own owner: past the marker and past the lease
+// the claim is one nobody can answer, and the answer this case holds is what happens
+// then. Not a freed key — a lapsed lease never says the command did not commit, and the
+// record that would have said so is written after the commit and can itself fail — but
+// a spent one, kept for the rest of the day the key was written for. A day is still a
+// day: older than that, the row has nothing left to promise and the purge empties it.
+func TestAnAbandonedClaimSpendsItsKeyRatherThanFreeingIt(t *testing.T) {
 	_, router, f, runs, path := setupNote(t)
 	if got := send(t, router, path, keyA, "held").Code; got != http.StatusOK {
 		t.Fatalf("the first request answered %d", got)
@@ -673,21 +676,56 @@ func TestAnAbandonedClaimRefusesTheKeyUntilThePurgeTakesIt(t *testing.T) {
 			t.Fatalf("%s ran the command %d times, want the one run it already had", tc.name, n)
 		}
 	}
-	// The purge is the recovery, and it is the only one: the marker of a command
-	// nobody is answering any longer is the row whose deadline the kernel set for
-	// exactly this. It takes one press of the button afterwards, and it is the price
-	// of never applying a slow command twice.
-	runSystem(t, f, "UPDATE platformkit_idempotency SET expires_at = now() - interval '1 second'")
+	// The state a response store that refused its record leaves behind: the marker the
+	// claim was written with is past, nobody is renewing the lease, and the key's own
+	// day is not over. The press that arrives is the step that settles the row — the
+	// purge is not needed to make the answer honest, and an hour of waiting for a
+	// scheduled job never was the recovery this refusal describes.
+	runSystem(t, f, "UPDATE platformkit_idempotency SET settled = false, status = 0, response = NULL,"+
+		" claimed_at = now() - interval '6 minutes', expires_at = now() - interval '1 second',"+
+		" owner_lease = NULL")
+	spent := send(t, router, path, keyA, "held")
+	if spent.Code != http.StatusConflict || !strings.Contains(spent.Body.String(), httpx.CodeIdempotencyResponseNotHeld) {
+		t.Fatalf("an unanswerable claim answered %d, want the refusal that says its outcome is not held: %s",
+			spent.Code, spent.Body)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Fatalf("the unanswerable claim ran the command %d times, want the one run it already had", n)
+	}
+	// The row is the fence now, so the purge passes it by: a job that deleted it would
+	// be a job that returned the key of a write somebody may already have made.
 	if err := httpx.PurgeIdempotency(t.Context(), f.app); err != nil {
 		t.Fatalf("purge: %v", err)
 	}
-	res := send(t, router, path, keyA, "held")
-	if res.Code != http.StatusOK || res.Header().Get("Idempotency-Replay") == "true" {
-		t.Fatalf("after the purge the abandoned key answered %d replay=%q, want a fresh command",
-			res.Code, res.Header().Get("Idempotency-Replay"))
+	if n := heldRows(t, f, true); n != 1 {
+		t.Fatalf("the purge left %d rows, want the one spent answer it settled", n)
+	}
+	again := send(t, router, path, keyA, "held")
+	if again.Code != http.StatusConflict || !strings.Contains(again.Body.String(), httpx.CodeIdempotencyResponseNotHeld) {
+		t.Errorf("the press after the purge answered %d, want the same refusal: %s", again.Code, again.Body)
+	}
+	if n := runs.Load(); n != 1 {
+		t.Errorf("the press after the purge ran the command %d times, want one", n)
+	}
+	// And the promise the other way, that no key is held forever: a claim older than the
+	// day it was written for, with nobody answering it, has nothing left to promise, and
+	// the table it empties is the one somebody has to explain.
+	runSystem(t, f, "UPDATE platformkit_idempotency SET settled = false, response = NULL, status = 0,"+
+		" claimed_at = now() - interval '25 hours', expires_at = now() - interval '24 hours 5 minutes',"+
+		" owner_lease = NULL")
+	if err := httpx.PurgeIdempotency(t.Context(), f.app); err != nil {
+		t.Fatalf("purge of a claim older than its day: %v", err)
+	}
+	if n := heldRows(t, f, true); n != 0 {
+		t.Fatalf("a claim older than its day left %d rows, want none: the day is the promise and the promise is over", n)
+	}
+	fresh := send(t, router, path, keyA, "held")
+	if fresh.Code != http.StatusOK || fresh.Header().Get("Idempotency-Replay") == "true" {
+		t.Fatalf("a key past its day answered %d replay=%q, want a fresh command",
+			fresh.Code, fresh.Header().Get("Idempotency-Replay"))
 	}
 	if n := runs.Load(); n != 2 {
-		t.Errorf("after the purge the command ran %d times, want two", n)
+		t.Errorf("after its day the command ran %d times, want two", n)
 	}
 }
 

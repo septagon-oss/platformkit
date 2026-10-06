@@ -129,9 +129,9 @@
       "kit/httpx/idempotency.go",
       "ui/page/fault.go"
     ],
-    "translation": "Este pedido foi executado, mas a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo.",
+    "translation": "É possível que este pedido já tenha sido executado; a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo.",
     "plural": {
-      "": "Este pedido foi executado, mas a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo."
+      "": "É possível que este pedido já tenha sido executado; a sua resposta não foi guardada. Consulte o resultado em vez de enviar de novo."
     }
   },
   "fault.IDEMPOTENCY_UNAVAILABLE": {

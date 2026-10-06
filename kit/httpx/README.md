@@ -226,14 +226,19 @@ request that can outlive it. So the row is asked instead of the clock. The ownin
 request renews an `owner_lease` for as long as it is answering the claim, and a repeat
 that arrives while the lease is current is refused 409 whatever its row's deadlines
 say — a command slower than the five-minute in-flight marker is a command still being
-answered, not a dead one. The purge is fence and exit together, because it deletes an
-unsettled row only once that lease lapsed: a lapsed lease is the one statement it can
-make about an owner that is gone — gone as in no longer able to commit, which covers the
-caller that hung up mid-command, whose transaction `database/sql` has already rolled back
-by then — and a row being renewed is no candidate at any age. A settled
-answer past its day is a fresh command on the request that asks, not on the schedule's
-convenience. The cost of the refusal is one more press after a crash, and it is the
-price of never applying a slow command twice.
+answered, not a dead one. What a lapsed lease licenses is a refusal, and never a
+second run. A claim past its marker with nobody renewing says either "it committed and
+the answer was lost" or "nothing committed" — the answer is written after the commit,
+detached, and the store can take the domain rows and refuse the record beside them,
+which is `TestACommandWhoseAnswerCannotBeStoredIsNotAppliedAgainAfterPurge` — and no
+statement tells the two apart afterwards. So the press that arrives settles the row as
+"its outcome is not held" and keeps the key for the rest of the day it was written
+for, which is the state an answer too big to hold already uses. The purge keeps that
+row for exactly as long: a settled answer past its day goes, a claim older than its own
+day that nobody is answering goes, and a row being renewed is no candidate at any age.
+The job is therefore what empties the table and never what returns a key. The cost of
+the refusal is one press and a look at the list, and it is the price of never applying
+a command twice.
 
 **Reused.** The claim joins the huma chain beside `a.publicWrites` and reuses
 `routeOf` as its operation identity; holding and replaying the response is the
@@ -290,10 +295,12 @@ into the outcome region inside the form it reports for.
 Two things are still not delivered: the outcome sentence is the server's English, not the
 page's language (the page-wide `[data-request-notice]` nodes `ui/document` renders are
 still where a translated refusal appears, and a per-form translated outcome is a
-catalogue question this change does not answer); and a command whose process died leaves
-its key refused until the purge takes the row, which is a wait with a real bound and no
-promise of speed: the lease lapses within two minutes of the process stopping, the row is
-a candidate once its five-minute in-flight deadline passes, and the job runs hourly — so
-the last press a dead command costs is one more, some minutes to an hour later. No other browser script is replaced here:
+catalogue question this change does not answer); and a command that lost its owner — a process that died, or a response store that
+refused the answer of one that committed — leaves its key spent rather than freed. The
+press that finds it is told so at once, within the two minutes it takes a lease to lapse,
+and the answer it is given is "the outcome is not held; read the result": the person reads
+the list and, if the write is not there, presses again under a new key. What is not
+delivered is the certainty behind that sentence, which nothing at this layer can have: the
+kernel can say a command may have run, and cannot say whether it did. No other browser script is replaced here:
 nothing composes `command.js` but the routes that declare the key, and moving another
 repository's hand-written retry code onto it is that repository's own change.
