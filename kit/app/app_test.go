@@ -388,11 +388,13 @@ const bootWait = 120 * time.Second
 // next red run should say how long a green one took.
 const slowBoot = bootWait / 10
 
-// waitFor returns when addr answers. A caller that has a Run channel passes it:
-// a process that has already stopped is not a process that is still booting, and
-// without that channel this helper would sit out its whole bound and then print
-// "nothing is listening" over the error that says why nothing ever would.
-func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
+// waitFor returns when addr answers. A caller that has a Run channel passes it: a process that has
+// already stopped is not a process that is still booting, and without that channel this helper would
+// sit out its whole bound and then print "nothing is listening" over the error that says why nothing
+// ever would. The channel goes back the way it came before this helper fails: the caller's cleanup
+// reads it to find out what Run said, and a value taken here would leave that read waiting forever —
+// a fixture that turns a failure into a hang is the failure this file exists to stop.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
 	started := time.Now()
 	deadline := started.Add(bootWait)
@@ -401,7 +403,9 @@ func waitFor(t *testing.T, addr string, stopped ...<-chan error) {
 		if len(stopped) > 0 {
 			select {
 			case err := <-stopped[0]:
-				t.Fatalf("the process stopped before it listened on %s (%s): %v", addr, time.Since(started).Round(time.Millisecond), err)
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it listened on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
 			default:
 			}
 		}
