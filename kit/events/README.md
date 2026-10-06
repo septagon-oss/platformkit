@@ -66,6 +66,16 @@ Four consequences, each a test rather than an assurance:
   Pinned by
   `TestAMessageStoredOnOneTenantsAddressIsNotDeliveredInsideAnotherTenantsTransaction`
   and by `TestADeliveryIsCheckedAgainstTheAddressItArrivedAt`.
+* **A claim marks the delivery, not the commit.** A handler that defers an effect
+  past its own transaction (`db.AfterCommit`) and cannot carry that effect out has
+  committed its claim and not finished its work, and a redelivery that finds the
+  claim skips the handler and acks. So the claim is released: the row stays
+  unpublished, the handler runs again over the rows it already wrote, and a failure
+  that never recovers ends as a dead letter — which only works because the claim the
+  dead letter is written under is free again. A handler that defers an effect takes
+  on being run again; that is at-least-once, which is what the transport already is.
+  Pinned by `TestADeliveryWhoseDeferredEffectDidNotRunIsHandledAgain` and by
+  `TestADeliveryThatNeverCarriedItsEffectOutIsDeadLettered`.
 * **Every stored consumer is deleted and made again**, because it went from one
   `filter_subject` to a `filter_subjects` set and NATS cannot change one in
   place. It asks for

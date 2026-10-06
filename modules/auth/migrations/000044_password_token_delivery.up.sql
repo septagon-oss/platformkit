@@ -1,0 +1,24 @@
+-- Which delivery of an event minted this link.
+--
+-- The mail a token row stands for leaves after the commit that makes it spendable
+-- (000014 argues why the secret itself is in no row, and the same argument keeps
+-- the link out of this one: what is stored here is an event id, which is a pointer
+-- to a row, not a credential). Handing it over after the commit means a mail server
+-- that is briefly down cannot be answered by a rollback — the rows are already
+-- somebody else's — so the delivery releases its claim and comes round again
+-- (kit/events, db.ErrEffectNotRun).
+--
+-- Coming round again is the problem this column answers. The retry finds the row
+-- its own earlier attempt minted, and reads it as a link issued seconds ago, which
+-- is exactly what the one-link-per-person-per-interval cap is written to refuse. A
+-- cap that counted this delivery's own mint would suppress the mail it is retrying:
+-- one send attempt, taken as final, and an invitation nobody was ever sent. So the
+-- row says who minted it, and the cap counts every mint but this delivery's own.
+--
+-- NULL is the common answer and means no delivery minted it: a link minted by a
+-- request has no event to name, and it is capped by every recent link the way it
+-- always was. There is no foreign key to platformkit_outbox: that table is purged
+-- after a week and its rows are deleted by a job that knows nothing about auth, and
+-- a link outlives neither its expiry nor its row.
+
+ALTER TABLE password_tokens ADD COLUMN event_id uuid;
