@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -79,7 +80,10 @@ func runInTestDatabase(m *testing.M) (code int) {
 
 // intoDatabase is raw pointed at database — in the path and in the query
 // parameter that beats it in pgx, so both spellings of a connection URL name the
-// one database this process created and intends to remove.
+// one database this process created and intends to remove. The pair naming a
+// database is the only one it removes: every other pair is left as its author
+// wrote it, which is why this rewrites the query text rather than building one
+// with url.Values (see keptQuery).
 func intoDatabase(raw, database string) (string, error) {
 	parsed, err := url.Parse(raw)
 	if err != nil {
@@ -90,11 +94,64 @@ func intoDatabase(raw, database string) (string, error) {
 	}
 	parsed.Path = "/" + database
 	parsed.RawPath = ""
-	query := parsed.Query()
-	query.Del("dbname")
-	query.Del("database")
-	parsed.RawQuery = query.Encode()
+	parsed.RawQuery = strings.Join(keptQuery(parsed.RawQuery, "dbname", "database"), "&")
 	return parsed.String(), nil
+}
+
+// keptQuery is rawQuery split into the pairs it carries, in the order they were
+// written, without the empty one and without the ones named in drop.
+//
+// It exists because this fixture rewrites URLs it did not write, and url.Values
+// cannot do that without re-writing the caller too: Encode percent-encodes every
+// value it is handed and writes a space as `+`, while pgx reads a connection URL the
+// way libpq does — percent-decoding each pair and leaving `+` as a literal plus sign
+// (pgconn's own case, "plus is literal in query values") — so a caller whose
+// `options` names a GUC with a space in it, `options=-c%20statement_timeout%3D7s`,
+// would reach the server as `-c+statement_timeout=7s` and every session in the
+// package would be refused with `unrecognized configuration parameter
+// "+statement_timeout"`. Keeping the pairs byte for byte is also what keeps
+// `application_name=kit%2Fdb` a slash rather than a `%2Fdb`.
+func keptQuery(rawQuery string, drop ...string) []string {
+	kept := []string{}
+	for _, pair := range strings.Split(rawQuery, "&") {
+		if pair == "" {
+			continue
+		}
+		name, _, _ := strings.Cut(pair, "=")
+		if slices.Contains(drop, name) {
+			continue
+		}
+		kept = append(kept, pair)
+	}
+	return kept
+}
+
+// addedOption is query with option joined onto its `options` pair — the caller's own
+// options as written, then this fixture's, spelled by encodeOption. The server reads
+// them in order, so where the two name the same setting this one answers; a query
+// naming `options` more than once is left as its author wrote it apart from the last
+// of them, which is the pair pgx applies.
+func addedOption(query []string, option string) []string {
+	for i := len(query) - 1; i >= 0; i-- {
+		name, value, found := strings.Cut(query[i], "=")
+		if !found || name != "options" {
+			continue
+		}
+		if value != "" {
+			value += "%20"
+		}
+		query[i] = "options=" + value + encodeOption(option)
+		return query
+	}
+	return append(query, "options="+encodeOption(option))
+}
+
+// encodeOption is a value spelled for the query of a connection URL: percent
+// -encoded, with the space spelled %20 rather than url.QueryEscape's `+`, which the
+// server would read as a plus sign, and with a `+` the caller meant kept as %2B so
+// the two cannot be confused. %20 is what libpq asks a URI to use for a space.
+func encodeOption(value string) string {
+	return strings.ReplaceAll(url.QueryEscape(value), "+", "%20")
 }
 
 const (
@@ -218,14 +275,19 @@ func removeOnce(adminURL, database string) (held string, err error) {
 // a search_path through — so a session the pool dials again after a lost
 // connection waits no longer than the one that opened it. A SET would bind the
 // session that ran it and nothing dialled later.
+//
+// A caller whose URL already names `options` keeps them: this fixture adds one
+// option to the string the caller wrote rather than re-writing the caller's whole
+// query, and the server reads the options in order, so the wait it appends is the
+// one that answers. Everything beside it reaches pgx unchanged — keptQuery says what
+// a re-encode would do to a space.
 func withLockWait(rawURL string) (string, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	q := u.Query()
-	q.Set("options", strings.TrimSpace(q.Get("options")+fmt.Sprintf(" -clock_timeout=%d", dropLockWait.Milliseconds())))
-	u.RawQuery = q.Encode()
+	wait := fmt.Sprintf("-clock_timeout=%d", dropLockWait.Milliseconds())
+	u.RawQuery = strings.Join(addedOption(keptQuery(u.RawQuery), wait), "&")
 	return u.String(), nil
 }
 
