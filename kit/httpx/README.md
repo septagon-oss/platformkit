@@ -248,6 +248,17 @@ The job is therefore what empties the table and never what returns a key. The co
 the refusal is one press and a look at the list, and it is the price of never applying
 a command twice.
 
+A claim that could not be written at all is pressed for, not refused. One `INSERT`
+that took the whole `claimBudget` on a Postgres busy elsewhere answered a person who
+had pressed a deliberate button with 503 `IDEMPOTENCY_UNAVAILABLE` and nothing wrong
+but a slow machine, so the gate presses `claimAttempts` times. Pressing again is safe
+for exactly the failures that cannot have left a row behind: a statement that failed
+aborted the transaction it sat in, and this request's own budget running out rolled it
+back. A `COMMIT` nobody read the answer to is the exception, and `claimPressAgain`
+refuses to press for it — the row it may have left is a fence this request cannot prove
+it owns, because all the row knows of its writer is a request id the caller chooses,
+and taking over another request's claim is the double-apply this table exists to stop.
+
 **Reused.** The claim joins the huma chain beside `a.publicWrites` and reuses
 `routeOf` as its operation identity; holding and replaying the response is the
 `buffer` `respond` already owns and the commit verdict in `a.transaction`; the

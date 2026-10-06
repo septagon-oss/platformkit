@@ -108,9 +108,10 @@ const (
 	// a repeat is told to read the result. TestAStoredResponseIsSmallerThanTheBuffer
 	// keeps this below maxBuffer.
 	maxStorableResponse = 1 << 16
-	// claimBudget bounds the two statements of the mechanism, for the reason
+	// claimBudget bounds one press of the mechanism's two statements, for the reason
 	// kit/limit gives for its own: neither is allowed to turn a database that has
-	// stopped answering into a request that never ends.
+	// stopped answering into a request that never ends. claimAttempts says how many
+	// presses that budget buys before the command is refused.
 	claimBudget = 2 * time.Second
 	// claimLease is how long a claim is believed to have an owner after the last
 	// word from it, and claimRenewal is how often an owning request says "still
@@ -627,11 +628,83 @@ type heldResponse struct {
 	outcomeUncertain bool
 }
 
+// claimAttempts is how many times the gate presses for the claim row before it
+// refuses the command. One press is what a healthy database costs; the two behind it
+// are for the failure this kernel measured on a loaded host: a claim whose single
+// INSERT took the whole budget on a Postgres busy copying databases, answered 503
+// "the command could not be claimed, and nothing ran" to a person who had pressed a
+// deliberate button, when the only thing wrong was that the machine was slow. e2e's
+// reload journey was the first thing on this tree to see it, and it saw it because a
+// browser is the only witness that asks twice for the same button press.
+//
+// Pressing again is safe because of what a failed press can and cannot have left
+// behind. A statement that failed, or a transaction that never got as far as one, was
+// aborted: Postgres keeps nothing from an aborted transaction, so the next press meets
+// no row of this request's. The one failure that can leave a row standing is a COMMIT
+// nobody read the answer to — and the row it left is a fence this request cannot prove
+// it owns: the only thing the row knows about its writer is the request id, which the
+// caller can choose. claimPressAgain refuses to press for that one, because taking over
+// a claim another request wrote is the double-apply the whole table exists to prevent.
+const claimAttempts = 3
+
 // claimIdempotency is the three-way decision, in one transaction of its own: run,
 // replay, or refuse. Detached, because an in-flight marker written inside the
 // request's own transaction is invisible to the concurrent repeat that exists to
 // be refused — and the loser of that race is the whole point of it.
+//
+// The press is repeated while the failure says nothing was left behind, because the
+// alternative is to refuse a command on the strength of one slow statement: see
+// claimAttempts. Each press carries its own claimBudget; the total is that budget times
+// the presses, and a request never waits longer than the sentence says.
 func (a *API) claimIdempotency(ctx context.Context, c idempotencyClaim) (idempotencyAnswer, error) {
+	for attempt := 1; ; attempt++ {
+		out, err := a.claimOnce(ctx, c)
+		if err == nil {
+			return out, nil
+		}
+		if attempt >= claimAttempts || !claimPressAgain(err) {
+			return idempotencyAnswer{}, err
+		}
+		a.rlog(ctx).WarnContext(ctx, "httpx: the idempotency claim failed where a press again is safe",
+			"attempt", attempt, "method", c.operation, "key", c.key, "error", err)
+	}
+}
+
+// claimPressAgain says whether a claim that failed may be attempted again. It refuses
+// the one failure that could have committed a row — db.ErrCommitUnacknowledged, whose
+// whole meaning is that the answer was never read (kit/db/tx.go's outcomeKnown keeps
+// the two failures that do state an outcome out of it) — and takes the two shapes of
+// failure that cannot have committed anything this request could mistake for its own.
+//
+// The first is this request's own budget running out: the transaction it bounded was
+// rolled back the moment the budget went off, so there is nothing to find. The second
+// is the database answering the statement with a class that says "not now": 40001 and
+// 40P01 where two writers chose badly, 55P03 where a wait ran out, 08000, 08003 and
+// 08006 where the connection did, 53300 where the slot ran out, 57P01, 57P02 and 57P03
+// where the server itself did. Every class the database answers with and this does not
+// name — 42P01 for a table that is not there, 42501 for a policy that refuses — is the
+// same answer whenever it is asked, and pressing three times would only delay the
+// refusal by six seconds. A failure with no SQLSTATE and no deadline in it is unknown,
+// and the unknown is refused rather than pressed.
+func claimPressAgain(err error) bool {
+	if errors.Is(err, db.ErrCommitUnacknowledged) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var sqlState interface{ SQLState() string }
+	if !errors.As(err, &sqlState) {
+		return false
+	}
+	switch sqlState.SQLState() {
+	case "40001", "40P01", "55P03", "08000", "08003", "08006", "53300", "57P01", "57P02", "57P03":
+		return true
+	}
+	return false
+}
+
+func (a *API) claimOnce(ctx context.Context, c idempotencyClaim) (idempotencyAnswer, error) {
 	var out idempotencyAnswer
 	err := a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		for range 2 {
