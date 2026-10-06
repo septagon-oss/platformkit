@@ -205,6 +205,11 @@ claim, because a refusal nobody received is not an answer to remember, and so do
 transaction that did not commit, whatever the handler had written — which is the case
 of the caller that hung up mid-commit, whose buffered 200 `a.transaction` keeps in
 place because nobody is left to read it, and whose retry with the same key must run.
+A commit that was sent and never answered is the third case, and the only one that is
+not released: `db.ErrCommitUnacknowledged` says the outcome is unknown rather than
+absent, so the claim is spent as "its outcome is not held" for the rest of the key's
+day instead of being handed back. A COMMIT the database answered with an error — a
+deferred constraint — is still a rollback, and its retry still runs.
 `ValidateDeclarations` refuses, at boot, the declarations that cannot mean what they
 say: a safe method, the Public surface or the App door that admits an anonymous caller
 (no principal to scope a key to), and a streamed body. A key that arrives with no

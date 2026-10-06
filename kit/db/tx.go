@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,6 +35,12 @@ var (
 	// ErrScopeTampered is returned when a transaction ends under different
 	// settings than the ones it opened with. See sealed.
 	ErrScopeTampered = errors.New("db: the transaction's tenancy settings were rewritten inside it")
+
+	// ErrCommitUnacknowledged wraps the end of a transaction whose COMMIT reached
+	// the database and whose answer did not come back. It says nothing whatever
+	// about whether the write is in the database — it is the error that says the
+	// caller is not allowed to conclude either way. See Pending.Close.
+	ErrCommitUnacknowledged = errors.New("db: the transaction's commit was sent and its outcome is not known")
 )
 
 // Scope is what a transaction may see. The set is closed: one tenant, or every
@@ -325,6 +332,12 @@ func (p *Pending) handle() *gorm.DB {
 // Close ends the transaction: it commits when keep is true and the settings the
 // open placed are still the ones in force, and rolls back otherwise. It is a
 // no-op when nothing was ever opened, and idempotent.
+//
+// A failed commit comes back in the one shape a caller can act on. An error the
+// database answered, or one that proves the COMMIT was never sent, is returned as
+// itself: the work is not in the database and a retry may run. Anything else is
+// wrapped in ErrCommitUnacknowledged, because nobody who could not read the answer
+// to a commit is owed the conclusion that nothing was written.
 func (p *Pending) Close(keep bool) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -350,12 +363,48 @@ func (p *Pending) Close(keep bool) error {
 		}
 		return err
 	}
-	err := gtx.Commit().Error
-	if err != nil && span != nil {
-		span.RecordError(err)
-		span.SetStatus(codes.Error, err.Error())
+	if err := gtx.Commit().Error; err != nil {
+		if span != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+		}
+		if outcomeKnown(err) {
+			return err
+		}
+		return fmt.Errorf("%w: %w", ErrCommitUnacknowledged, err)
 	}
-	return err
+	return nil
+}
+
+// outcomeKnown reports that a failed COMMIT says what happened to the transaction,
+// which is true in exactly two of the three ways a commit can fail.
+//
+// One: the database answered the COMMIT with an error. Postgres aborts a transaction
+// the moment a statement inside it fails, so a COMMIT it rejects — the deferred
+// constraint the transaction existed to defer, the serialisation conflict it found at
+// the last instant — is an answer, and the answer is "nothing was written". Such an
+// error carries a SQLSTATE because it arrived as the server's ErrorResponse, which is
+// how this side tells an answer from a silence.
+//
+// Two: the COMMIT never left this process. A request whose caller went away has had
+// its transaction rolled back by database/sql before this was even asked, and the
+// commit comes back sql.ErrTxDone or the context's own cancellation without a byte
+// having been sent. The transaction is gone and the server never heard about it.
+//
+// What is left is the failure this sentinel exists for: the COMMIT went out and the
+// connection died on the way back. Nothing on this side of it knows the outcome —
+// Postgres may have written the commit and flushed it before the socket closed — and
+// no reading of the error can make it known, because the error is the absence of the
+// only message that would say. A caller that could not see the difference would read
+// "the write is not in the database" into a fact that cannot carry it, and would send
+// the write again.
+func outcomeKnown(err error) bool {
+	var sqlState interface{ SQLState() string }
+	if errors.As(err, &sqlState) && sqlState.SQLState() != "" {
+		return true
+	}
+	return errors.Is(err, sql.ErrTxDone) || errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded)
 }
 
 // sealed refuses to commit a transaction that ends under different settings

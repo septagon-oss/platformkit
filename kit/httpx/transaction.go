@@ -61,12 +61,21 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	keep, undecided := statusOf(ctx, a, inner.Status())
 	err = p.Close(keep)
 	if err != nil {
-		// Whatever the handler wrote is not in the database. Three of the branches
-		// below log that fact for the log's sake; this one is for the caller's, and it
-		// is stated to the idempotency record step because the response cannot carry
-		// it: the hang-up branch keeps the handler's own 200, and a key settled on an
-		// answer to a rolled-back transaction promises a command that never ran.
-		noteUncommitted(ctx.Context())
+		// Whatever the handler wrote is not in the database — unless the commit was
+		// sent and only its answer was lost, which is the one failure this middleware
+		// may not report as a rollback. Three of the branches below log that fact for
+		// the log's sake; this one is stated to the idempotency record step because the
+		// response cannot carry it: the hang-up branch keeps the handler's own 200, and
+		// a key settled on an answer to a rolled-back transaction promises a command
+		// that never ran. TestACommandWhoseCallerHungUpBeforeTheCommitRunsOnItsRetry is
+		// that case; TestALostCommitAcknowledgementDoesNotReleaseTheCommandKey is the
+		// other one, and it is the reason the two are told apart here rather than by the
+		// status the switch below ends up writing.
+		if errors.Is(err, db.ErrCommitUnacknowledged) {
+			noteCommitUnacknowledged(ctx.Context())
+		} else {
+			noteUncommitted(ctx.Context())
+		}
 	}
 	b, buffered := bufferFrom(ctx.Context())
 	switch {
@@ -80,8 +89,14 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 			"method", ctx.Method(), "path", ctx.URL().Path)
 	case buffered && b.reset():
 		// Nothing has been sent yet, so the response can still tell the truth.
-		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the request transaction did not commit",
-			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		if errors.Is(err, db.ErrCommitUnacknowledged) {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(),
+				"httpx: the request transaction's commit was not acknowledged",
+				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		} else {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the request transaction did not commit",
+				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+		}
 		a.refuse(ctx, http.StatusInternalServerError, "")
 	default:
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: request transaction failed after the response was written",

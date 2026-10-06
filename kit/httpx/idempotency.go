@@ -227,15 +227,35 @@ type idempotencyClaim struct {
 	request   string
 }
 
+// commitVerdict is what the middleware that ended this request's transaction
+// learned about it, and what the response it wrote cannot say. Its three states are
+// the three answers a caller of a command may be given about the write behind the
+// answer, and the record step acts on them differently.
+type commitVerdict uint8
+
+const (
+	// commitCommitted: the transaction ended as the response says it did. This is the
+	// zero value because it is the verdict of every request whose transaction
+	// middleware had nothing to complain about — including the handler's own refusal,
+	// which rolled the transaction back by asking for nothing to be kept.
+	commitCommitted commitVerdict = iota
+	// commitRolledBack: the work is not in the database, whatever the bytes the
+	// handler wrote say. See noteUncommitted.
+	commitRolledBack
+	// commitUnacknowledged: a COMMIT was sent and its answer never came back. The
+	// work may be in the database or nowhere. See noteCommitUnacknowledged.
+	commitUnacknowledged
+)
+
 // idempotencyHolder is where a request that owns its claim says so, on the
 // context, for the middleware on the way back out. A pointer, because the two
 // halves of the mechanism are on opposite sides of the transaction.
 type idempotencyHolder struct {
 	claim *idempotencyClaim
-	// uncommitted is the transaction middleware's verdict, which the response
-	// cannot carry. See noteUncommitted for why the record step needs it and
-	// cannot get it from the buffered status.
-	uncommitted bool
+	// commit is the transaction middleware's verdict, which the response cannot
+	// carry. See noteUncommitted for why the record step needs it and cannot get it
+	// from the buffered status.
+	commit commitVerdict
 	// stopLease ends the renewal this request started when it took the claim. A
 	// goroutine that outlived the request would keep renewing a lease nobody holds,
 	// which is the fence standing after the thing it fences is gone.
@@ -272,7 +292,29 @@ func holderFrom(ctx context.Context) *idempotencyHolder {
 // TestACommandWhoseCallerHungUpBeforeTheCommitRunsOnItsRetry is the case.
 func noteUncommitted(ctx context.Context) {
 	if h := holderFrom(ctx); h != nil {
-		h.uncommitted = true
+		h.commit = commitRolledBack
+	}
+}
+
+// noteCommitUnacknowledged tells the record step that this request sent a COMMIT and
+// lost its answer, which is the one transaction failure the record step may not read
+// as a rollback.
+//
+// The difference from noteUncommitted is the whole of the difference between a fence
+// and a double apply. A rollback is a fact: nothing is in the database, the retry of
+// that command must run, and the key that would stop it is deleted. A lost
+// acknowledgement is the absence of a fact: the write may have landed, and the only
+// statement that could have said so is the one that did not arrive. Freeing the key
+// then takes the caller's last protection away — it comes back with the same key to
+// ask whether its write landed, and the kernel, which cannot say, runs the write a
+// second time. So the claim is settled as the row that admits it holds nothing
+// instead: settleUncertainSQL, the same statement that spends a claim whose owner
+// stopped answering, and the same one honest reading of "it ran, or it did not, and
+// the answer is gone either way". TestALostCommitAcknowledgementDoesNotReleaseTheCommandKey
+// is the case, and it fails on the deletion.
+func noteCommitUnacknowledged(ctx context.Context) {
+	if h := holderFrom(ctx); h != nil {
+		h.commit = commitUnacknowledged
 	}
 }
 
@@ -421,7 +463,7 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 			if status == 0 {
 				status = http.StatusOK
 			}
-			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.uncommitted); err != nil {
+			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.commit); err != nil {
 				// The command ran and its answer was not kept. The caller has its
 				// response and nobody else ever will: the row stays unsettled, which
 				// refuses a repeat while its marker stands and spends the key as "its
@@ -450,7 +492,7 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 	if holder == nil || holder.claim == nil {
 		return
 	}
-	if err := a.recordIdempotency(ctx, *holder.claim, http.StatusInternalServerError, nil, nil, false, true); err != nil {
+	if err := a.recordIdempotency(ctx, *holder.claim, http.StatusInternalServerError, nil, nil, false, commitRolledBack); err != nil {
 		a.rlog(ctx).ErrorContext(ctx, "httpx: the idempotency claim of a panicked command could not be released",
 			"error", err)
 	}
@@ -459,14 +501,21 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 // recordIdempotency is the decision, made as one statement against one table: either
 // release the claim, or settle it with the answer.
 //
+//   - A COMMIT whose answer was lost settles the claim as "its outcome is not held"
+//     and keeps the key, whatever the response says and whatever the verdict's name
+//     suggests. Nothing may run again under this key, and nothing may be promised
+//     from it either: the write may have landed and its answer is not held. This
+//     branch is first because it outranks the two below — the 500 the transaction
+//     middleware substitutes for a commit it could not read is exactly the status that
+//     would otherwise delete the fence. See noteCommitUnacknowledged.
 //   - A 5xx, in any form — the handler's own, the 500 the transaction substitutes
-//     when the commit failed, the 500 a panic recovery wrote — deletes the claim.
+//     when the commit was refused, the 500 a panic recovery wrote — deletes the claim.
 //     A refusal nobody received is not an answer to remember, and a retry of work
 //     that rolled back must run: house rule 9 said backwards.
 //   - A transaction that did not commit deletes it too, whatever the buffered
 //     response says. This is the same fact as the bullet above, read from the side
 //     that cannot answer: a commit that failed on a request whose caller had already
-//     gone away leaves a 200 nobody read behind, and `uncommitted` is how the record
+//     gone away leaves a 200 nobody read behind, and `commitRolledBack` is how the record
 //     step learns the work is not in the database. See noteUncommitted. The panic
 //     that never reached a response at all takes this same branch — see idempotencyRecord.
 //   - A response under 500 that never reached the wire early and fits is stored
@@ -477,9 +526,19 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 //   - A response under 500 that is too big, or that already began (a Flush, a
 //     body past the buffer's bound), settles with a NULL response. It ran, and its
 //     answer is gone; releasing the claim instead is what makes a retry double-apply.
-func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held, uncommitted bool) error {
+func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held bool, commit commitVerdict) error {
 	return a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		if uncommitted || status >= http.StatusInternalServerError {
+		if commit == commitUnacknowledged {
+			// Spent, not freed, and not answered: the statement is the one this package
+			// already uses for a claim whose owner stopped answering, because the row is in
+			// the same state for the same reason — the command may have run, and no step on
+			// this side of the lost answer can say which. It writes no status, no body and
+			// no replay; it writes a fence that holds until the key's own day is over.
+			return tx.DB().Exec(settleUncertainSQL+
+				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
+				c.tenant, c.actor, c.operation, c.key).Error
+		}
+		if commit == commitRolledBack || status >= http.StatusInternalServerError {
 			return tx.DB().Exec("DELETE FROM "+idempotencyTable+
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				c.tenant, c.actor, c.operation, c.key).Error
