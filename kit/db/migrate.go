@@ -711,7 +711,7 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 		return err
 	}
 	if _, err := r.conn.ExecContext(ctx,
-		"SELECT pg_advisory_lock($1::int, $2::int)", compositionLockKey, schema); err != nil {
+		"SELECT pg_advisory_lock($1::int, $2::oid::int)", compositionLockKey, schema); err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
@@ -719,9 +719,12 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 }
 
 // compositionSchema is the namespace the run's own session resolves to, as the OID the
-// lock's second half takes. It is read once and kept on the runner: the lock has to be
-// given back under the key it was taken under, whatever the session's path holds by the
-// time it is given back — and a file may set one.
+// lock's second half takes. An OID is unsigned 32-bit, so a namespace created after the
+// cluster's counter passed 2^31 has an OID no int holds: the value is carried as a bigint
+// and the two lock statements wrap it with `::oid::int`, which is how Postgres itself
+// narrows an OID into an int and is the key the suite's own lock lines contend. Read once
+// and kept on the runner: the lock has to be given back under the key it was taken under,
+// whatever the session's path holds by the time it is given back — and a file may set one.
 func (r *runner) compositionSchema(ctx context.Context) (int64, error) {
 	if r.schema != 0 {
 		return r.schema, nil
@@ -745,7 +748,7 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 		return nil
 	}
 	if _, err := r.conn.ExecContext(ctx,
-		"SELECT pg_advisory_unlock($1::int, $2::int)", compositionLockKey, r.schema); err != nil {
+		"SELECT pg_advisory_unlock($1::int, $2::oid::int)", compositionLockKey, r.schema); err != nil {
 		return fmt.Errorf("db: migrate: unlock: %w", err)
 	}
 	r.locked = false
