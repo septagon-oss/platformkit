@@ -22,6 +22,27 @@ type Schema struct {
 	Fields []Field `json:"fields"`
 }
 
+// RevisionField is the json name of a row's own write counter: the number a
+// stale-base refusal quotes, and the only thing on a row that counts its writes.
+// A Spec that carries it moves it itself, in the same UPDATE as the write that
+// moved anything else (kit/rest), and a caller may read it and may not name it.
+const RevisionField = "revision"
+
+// ServerOwned reports whether a field belongs to the server at a write door.
+//
+// There are two kinds. Base's, which ReadOnly already names: the id, the tenant
+// and the two timestamps. And the row's own write counter, which an entity writes
+// beside them and which is nobody's else to set: a number a caller can type is not
+// a number a stale write can be refused with, and the two facts — the document says
+// readOnly, the kernel moves it — are one rule seen from either side.
+//
+// A door that took either from a body stored what was sent and lost the record it
+// was meant to be keeping, so every write door refuses or discards them together,
+// asked through this one question rather than a second list somebody maintains.
+func ServerOwned(f Field) bool {
+	return f.ReadOnly || (f.Name == RevisionField && f.Type == TypeInt)
+}
+
 // FieldType is the closed set of shapes a screen knows how to render and a
 // query knows how to compare. A field of any other Go type is left out of the
 // schema entirely, so it is neither rendered nor sortable nor filterable — it

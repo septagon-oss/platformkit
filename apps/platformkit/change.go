@@ -30,8 +30,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	change "github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // proposalAddress is where a write the gate refuses has to go instead. It is the
@@ -347,4 +349,76 @@ func taskGate(eval flags.Evaluator) rest.Gate {
 		Subject:    changecontracts.SubjectRef{Module: "task", Entity: "task"},
 		Protection: taskProtection{},
 	}))
+}
+
+// WritableFields is the answer that makes a task proposal a promise: the fields an
+// apply can move are exactly the ones Writer.Save writes, which is the module's own
+// published vocabulary and not a second list this file could drift from.
+//
+// It is the propose door's question — "could any apply ever carry this out as reviewed"
+// — and a diff naming the status a command owns, the revision the server owns, or a
+// column that is not a field of a task at all is refused there rather than digested,
+// approved, applied, and found not to have happened.
+func (taskSubject) WritableFields() []string { return taskcontracts.ProtectableFields }
+
+// proposalNotifier is modules/change's notice port over this application's notification
+// service: four lines, because the module already knows who to tell, what to call it and
+// where the page is. What this file adds is the sentence — which is this product's copy,
+// the same reason the flag keys and the proposal address are here and not in the module.
+//
+// Notify writes the row, publishes notification.created and asks for mail in the same
+// transaction the decision's event was claimed in, so "notification owns delivery records"
+// stays true and nothing in change knows a mail server exists.
+type proposalNotifier struct{ notices notificationcontracts.Service }
+
+var _ changecontracts.Notifier = proposalNotifier{}
+
+func (n proposalNotifier) Told(ctx context.Context, tx db.Tx[db.Tenant], p changecontracts.Notice) error {
+	title, body := verdictSaid(p.Kind, p.State)
+	_, err := n.notices.Notify(ctx, tx, notificationcontracts.Notice{
+		Recipient: p.Recipient, Title: title, Body: body, Link: p.Link, Email: true,
+	})
+	return err
+}
+
+// verdictSaid is the one line a proposer is told, in this product's words, from the two
+// facts the module handed over. The diff is nowhere in it, and cannot be: the Notice the
+// module builds carries no diff to put here, which is what keeps a value under review out
+// of notifications.link and notifications.body forever.
+func verdictSaid(kind, state string) (title, body string) {
+	switch {
+	case kind == changecontracts.NoticeApplied:
+		return "Your proposed change was applied",
+			"The change you proposed has been applied to the record it was made against."
+	case state == changecontracts.StateApproved:
+		return "Your proposed change was approved",
+			"An account other than yours approved it; it is waiting to be applied."
+	case state == changecontracts.StateDeclined:
+		return "Your proposed change was declined",
+			"An account other than yours declined it. Nothing changed."
+	default:
+		return "Your proposed change was decided",
+			"It is now " + state + "."
+	}
+}
+
+// pinnedProposals is the queue's address, as the surface composes it: /app plus the
+// module namespace plus the page modules/change mounts. Quoted here for the same reason
+// the other pinned addresses are — a notice and a refusal both name it, and only the
+// running server says whether the composition really put it there.
+const pinnedProposals = "/app/change/proposals"
+
+// reviewShell is the chrome the two review pages are drawn in: the composition's own
+// brand, stylesheet, way back and merged catalogue, which are the same four facts the
+// fault pages use. modules/change owns the two pages and no opinion about the chrome
+// around them (see ui.Pages), so this is the line where the application supplies one.
+func reviewShell(messages page.Messages) page.Shell {
+	return page.Shell{
+		Chrome:    faultChrome(),
+		Frame:     faultFrame,
+		Tag:       "change",
+		Back:      pinnedHome,
+		BackLabel: "Back to the workspace",
+		Messages:  messages,
+	}
 }

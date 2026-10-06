@@ -18,6 +18,8 @@
 package change
 
 import (
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/change/contracts"
@@ -32,6 +34,29 @@ import (
 type Deps struct {
 	Service  contracts.Service
 	Subjects []contracts.SubjectBinding
+	// Notify is the port a decision about a proposal is told through, and nil means this
+	// installation tells nobody: the manifest keeps Subscriptions nil, which is the
+	// absence written down rather than a silence.
+	Notify contracts.Notifier
+	// ProposalPage is the proposal page as this application serves it, so a notice can
+	// name where to read the thing it is reporting. modules/change owns the proposal and
+	// not the address it answers at.
+	ProposalPage contracts.ProposalPage
+	// Reviews is the queue and the decision page, with the shell they are drawn in. A
+	// composition that wires nothing serves no queue, and the Nav entry below is not
+	// there to lead nowhere, because the entry names the screen this field mounts.
+	Reviews ReviewPages
+}
+
+// ReviewPages is the queue and the decision page as internal composes them, named here so the
+// application that wires them names this module and not its internal package.
+type ReviewPages = internal.Pages
+
+// NewProposalPage is the notice's link for a composition that mounts the queue at this
+// module's own address: the page path, with the proposal on the end. It exists so an
+// application writes that address once instead of spelling the same concatenation twice.
+func NewProposalPage(at string) contracts.ProposalPage {
+	return func(id uuid.UUID) string { return at + "/" + id.String() }
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -63,15 +88,25 @@ func New(deps Deps) module.Module {
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,
-		// No Nav entry: this module has no screen of its own to go to. The list of
-		// what is waiting for a decision is a screen, and it belongs to whoever
-		// composes a review queue — the same reason there is no HTML in internal/.
-		Nav: nil,
-		// Written out so the absence is a decision: nothing about a proposal happens
-		// because time passed, and a proposal never acts on another module's event —
-		// the point is that a human decided.
+		// The queue this module serves, named by the permission that decides who sees the
+		// link. The manifest used to say Nav: nil on the reasoning that a review queue is a
+		// screen and a screen belongs to whoever composes one; the brief that asked for the
+		// approval flow asked for the screen as well, and a kernel that ships a proposal
+		// object with no way to read it leaves every product to write its own queue, which
+		// is the one-client module this repository exists to prevent.
+		Nav: []module.NavEntry{{
+			Label: "Reviews", Screen: "change/proposals",
+			Permission: contracts.PermissionChangeRead,
+		}},
+		// No periodic work: nothing about a proposal happens because time passed, and a
+		// proposal never acts on another module's event — the point is that a human decided.
+		// The subscriptions are the proposer's notices, and only when a composition asked
+		// for them: Deps.Notify is nil otherwise and Tell answers nil for nil.
 		Jobs:          nil,
-		Subscriptions: nil,
-		Routes:        func(s httpx.Surfaces) { internal.RegisterRoutes(s, svc) },
+		Subscriptions: internal.Tell(deps.Notify, deps.ProposalPage),
+		Routes: func(s httpx.Surfaces) {
+			internal.RegisterRoutes(s, svc)
+			internal.MountReviews(s, deps.Reviews)
+		},
 	}
 }

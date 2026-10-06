@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -51,6 +53,28 @@ func NewService(bindings []contracts.SubjectBinding) *Service {
 
 var _ contracts.Service = (*Service)(nil)
 
+// unwritable names the first key of a diff this subject cannot move, and answers true
+// when it can move every one of them.
+//
+// A subject that does not say (a Subject that is not a contracts.Writable) is asked
+// nothing, which is what leaves every binding written before this question standing
+// exactly where it stood: the merged document is then its own owner's business, as it
+// was. Where the subject does say, the keys are asked in sorted order, so two requests
+// carrying the same impossible diff name the same field.
+func unwritable(subject contracts.Subject, diff contracts.Diff) (string, bool) {
+	w, ok := subject.(contracts.Writable)
+	if !ok {
+		return "", true
+	}
+	allowed := w.WritableFields()
+	for _, field := range slices.Sorted(maps.Keys(diff)) {
+		if !slices.Contains(allowed, field) {
+			return field, false
+		}
+	}
+	return "", true
+}
+
 // actor is the person the request came from. No command reads one from a body: an
 // identity a caller could send is an identity a caller could choose, and the whole
 // four-eyes rule is a note on a form otherwise.
@@ -94,6 +118,14 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 	current, revision, err := subject.Lock(ctx, tx)
 	if err != nil {
 		return nil, err
+	}
+	// A diff is only a promise if some apply could keep it. The subject is the one
+	// that knows which of its fields a Save writes, and a name outside that list
+	// merges into nothing: the proposal would be digested, decided and applied, the
+	// row would not move as reviewed, and the state would say it had.
+	if field, ok := unwritable(subject, in.Diff); !ok {
+		return nil, fmt.Errorf("%w: %s/%s has no field %q a proposal can move: it is either not a field of the subject, or one a command owns outright",
+			crud.ErrInvalid, in.SubjectModule, in.SubjectEntity, field)
 	}
 	if _, err := in.Diff.Merge(current); err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
