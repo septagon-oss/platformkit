@@ -1115,8 +1115,11 @@ const (
 // it the same way (kit/db/composition_lock_rehold_test.go).
 const compositionKey = 7240101
 
-// queuedForCompositionKey returns a read of the server that says whether a session of
-// this test's own schema is waiting for the composition key right now.
+// queuedForCompositionKey returns a read of the server that says whether a migration of
+// this test's own schema is under way right now — a session of it queued for the
+// composition key, or a session of it holding that key, which is this boot's own
+// migration still running and the half a boot used to be kept alive for only by accident
+// of sharing one key with the whole database.
 //
 // dbtest gives each test its own schema and makes application_name that schema
 // (kit/db/dbtest), so the read is of this test's backends and nobody else's: another
@@ -1129,8 +1132,7 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 		var waiting bool
 		err := admin.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks l
 			JOIN pg_stat_activity a ON a.pid = l.pid
-			WHERE l.locktype = 'advisory' AND NOT l.granted
-				AND l.classid = `+
+			WHERE l.locktype = 'advisory' AND l.classid = `+
 			strconv.Itoa(compositionKey)+`
 				AND a.application_name = current_setting('search_path'))`).Scan(&waiting)
 		if err != nil {
@@ -1163,9 +1165,10 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 // holds the port, and the case says so in a second rather than after thirty of
 // waiting and one request that was never going to be answered here.
 //
-// While nobody answers, it asks the server whether a session of this test's own schema
-// is waiting for the composition key, and gives the boot the queue's bound (bootQueue)
-// for as long as that is true — see the two windows above. A boot that queued and then
+// While nobody answers, it asks the server whether a composition of this test's own
+// schema is under way — this boot queued behind one, or this boot inside its own — and
+// gives the boot the queue's bound (bootQueue) for as long as that is true — see the two
+// windows above. A boot that queued and then
 // never listened is named as that, because the queue is the fact a reader needs.
 func waitFor(t *testing.T, cfg config.Config) {
 	t.Helper()
