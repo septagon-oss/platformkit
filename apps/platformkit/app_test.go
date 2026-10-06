@@ -816,7 +816,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
-	mods := []module.Module{task.Module(task.Deps{
+	mods := []module.Module{task.New(task.Deps{
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{

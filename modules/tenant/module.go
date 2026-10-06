@@ -71,7 +71,7 @@ type Deps struct {
 //
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.App)
 	return svc, module.Module{
 		Name:        "tenant",

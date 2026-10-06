@@ -242,7 +242,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	for _, apply := range configure {
 		apply(&deps)
 	}
-	shell := admin.Module(deps)
+	shell := admin.New(deps)
 	if err := module.Validate([]module.Module{notes, catalogue, rolesModule, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
