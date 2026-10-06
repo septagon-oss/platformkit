@@ -46,6 +46,60 @@
       "": "This service is unavailable for a moment. Wait and try again."
     }
   },
+  "fault.400": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This request could not be carried out as it was sent.",
+    "plural": {
+      "": "This request could not be carried out as it was sent."
+    }
+  },
+  "fault.401": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This needs a signed-in account, and nobody standing here is signed in.",
+    "plural": {
+      "": "This needs a signed-in account, and nobody standing here is signed in."
+    }
+  },
+  "fault.403": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "You may not do this here.",
+    "plural": {
+      "": "You may not do this here."
+    }
+  },
+  "fault.409": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "This conflicts with how things stand right now.",
+    "plural": {
+      "": "This conflicts with how things stand right now."
+    }
+  },
+  "fault.422": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "What you sent could not be accepted as it is.",
+    "plural": {
+      "": "What you sent could not be accepted as it is."
+    }
+  },
+  "fault.429": {
+    "references": [
+      "ui/page/fault.go"
+    ],
+    "translation": "Too many attempts from this address. Wait and try again.",
+    "plural": {
+      "": "Too many attempts from this address. Wait and try again."
+    }
+  },
   "fault.AUTH_ANONYMOUS": {
     "references": [
       "kit/httpx/authorize.go",

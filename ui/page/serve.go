@@ -107,8 +107,8 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				applyPrivacy(out, v.Sensitive)
 				return out, nil
 			}
-			status, detail, key := refusal(err)
-			if status >= http.StatusInternalServerError {
+			verdict := refusal(err)
+			if verdict.Status >= http.StatusInternalServerError {
 				return nil, err
 			}
 			asked, _ := httpx.RequestFrom(ctx)
@@ -137,7 +137,7 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			// to a program carries it as its instance (kit/httpx's stampRequestID). A
 			// person who was refused by a page handler and is told to quote a number that
 			// was never written down is the reason this line passes it.
-			refused := fault(asked, status, detail, key, r.Locale, httpx.RequestID(ctx), s, 0)
+			refused := fault(asked, verdict.Status, shown(verdict), verdict.Key, r.Locale, httpx.RequestID(ctx), s, 0)
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -214,17 +214,19 @@ func read(ctx context.Context, c Chrome) Request {
 	return r
 }
 
-// refusal is an error's status and detail: a problem's own, or a 500.
-// refusal is a handler's error read as a verdict, the sentence it carries and the
-// catalogue key of the sentence this module ships for it, which is empty for every refusal
-// that does not name one. The key travels with the refusal rather than being derived from
-// the sentence because the sentence is the thing the key is the copy of — and because the
-// language the refusal is answered in is decided by the shell, which owns the catalogues
-// and the negotiation and none of it is this handler's business.
-func refusal(err error) (int, string, string) {
+// refusal is a handler's error read as the verdict it is: its own problem, or the 500
+// standing in for anything else. The verdict is handed over whole rather than flattened to
+// a status and a sentence, because the two fields a person's page needs are precisely the
+// two the problem document does not carry (problem.Problem's Key and Diagnostic): a page
+// built from the status and the detail alone repeats a diagnostic the writer marked an
+// operator's, and loses the copy the writer ships for the reader. The same two fields are
+// what FaultHandler reads off the guard's refusal, and both doors read them through shown
+// and fault below, so the two shapes of one refusal cannot disagree about what a browser
+// may be shown.
+func refusal(err error) *problem.Problem {
 	var p *problem.Problem
 	if errors.As(err, &p) {
-		return p.Status, p.Detail, p.Key
+		return p
 	}
-	return http.StatusInternalServerError, "", ""
+	return problem.New(http.StatusInternalServerError, "")
 }
