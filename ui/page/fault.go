@@ -162,6 +162,18 @@ func FormUnreadable() error {
 // big for this address. Like the unreadable form, it is one verdict at every door that
 // reads a body, so one entry words it for all of them.
 //
+// A withheld reason is the sixth case, and it is keyed the same way for every verdict. A
+// refusal whose Detail a person is not shown — problem.Diagnostic, or a bare status nobody
+// wrote a sentence for — leaves the page with a verdict and no words about the request. The
+// paragraphs above refuse the 400, the 401, the 403, the 409 and the 422 precisely because a
+// module's sentence about the caller's own request is the writer's copy;
+// when that sentence is withheld there is nothing left to translate, and a page that answers
+// a 401 with the 500's "Something went wrong while handling this." blames our end for the
+// reader's own verdict. So the withheld reason is keyed by the verdict at those statuses too,
+// and only there: the moment a Detail reaches the page, the writer's sentence is shown and
+// this branch is not taken. The same argument that made the 413 and the 503 this package's
+// lines — nobody else owns the sentence the framework says about itself — makes these.
+//
 // The 503 joins the 500 on the same ground as the other four: the sentences are
 // the kernel's about its own outage ("authorization is temporarily unavailable",
 // "the plan could not be read right now", "this host cannot be resolved right
@@ -180,8 +192,35 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusRequestEntityTooLarge,
 		http.StatusInternalServerError, http.StatusServiceUnavailable:
 		return "fault." + strconv.Itoa(status), true
+	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden,
+		http.StatusConflict, http.StatusUnprocessableEntity, http.StatusTooManyRequests:
+		// Keyed only over a withheld reason; see the paragraph above. Every one of these
+		// is a verdict a person is put in front of — sign-in, a denial, a stale write, an
+		// unreadable form, a rate limit — and each has a sentence here because the writer
+		// of a withheld Detail chose not to write one for the reader.
+		if strings.TrimSpace(detail) == "" {
+			return "fault." + strconv.Itoa(status), true
+		}
 	}
 	return "", false
+}
+
+// shown is the half of a refusal this shell may repeat to the person in front of it:
+// everything the writer said about their own request, and nothing it marked an operator's.
+//
+// A Diagnostic Detail names a host, a query, a path or a driver's message. The problem
+// document a monitor diffs and the log line keep it; the page is left with the verdict, the
+// reference the person can quote back and the catalogue's sentence for the verdict (faultKey
+// keys that case for every status whose sentence this package writes). Both doors ask through
+// this one function: FaultHandler, which renders a guard's refusal ahead of any handler, and
+// Serve, which renders a handler's own 4xx as markup — and a response that is already HTML has
+// no later stage that could take the detail back out of it, which is why the judgement cannot
+// live on one side of the pair. See (*API).renegotiate for the JSON door's half.
+func shown(p *problem.Problem) string {
+	if p == nil || p.Diagnostic {
+		return ""
+	}
+	return p.Detail
 }
 
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
@@ -231,10 +270,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		// the catalogue's sentence for it; the detail stays in the problem body and the log
 		// line. A refusal that names a Key is a writer that ships copy for its own verdict
 		// and wants it resolved in the reader's language rather than repeated in one.
-		detail, key := p.Detail, p.Key
-		if p.Diagnostic {
-			detail = ""
-		}
+		detail, key := shown(p), p.Key
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
 		loc := refusalLocale(s.Messages, r, req.Tenant)

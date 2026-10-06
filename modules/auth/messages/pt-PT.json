@@ -62,6 +62,24 @@
       "": "Esta morada precisa do link que vai no e-mail; peça outro link."
     }
   },
+  "auth.verify.attempt_limit": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Demasiadas tentativas de confirmação a partir deste endereço; espere e tente de novo.",
+    "plural": {
+      "": "Demasiadas tentativas de confirmação a partir deste endereço; espere e tente de novo."
+    }
+  },
+  "auth.verify.same_origin": {
+    "references": [
+      "modules/auth/internal/ui/page.go"
+    ],
+    "translation": "Confirme o e-mail a partir da própria página de confirmação.",
+    "plural": {
+      "": "Confirme o e-mail a partir da própria página de confirmação."
+    }
+  },
   "permission.role:manage": {
     "references": [
       "modules/auth/module.go"

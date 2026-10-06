@@ -67,7 +67,7 @@ const (
 	// maxTokenLength bounds the credential this page will read, and is the same
 	// limit the JSON door puts on its body field.
 	maxTokenLength = 128
-	// The two sentences this page refuses with, in the language they are authored in, and
+	// The four sentences this page refuses with, in the language they are authored in, and
 	// the catalogue entries that carry them in the others. The sentence stays in the code
 	// because it is what a program reads — the problem body an SDK parses says exactly
 	// this — and the key is what a person is shown, because ui/page renders a refusal in
@@ -76,8 +76,17 @@ const (
 	// way it ships its permission labels: modules/auth/messages, under its own prefix.
 	linkInvalid    = "that verification link is invalid or has expired; request another link"
 	linkNeeded     = "this address needs the link from the email; ask for another one"
+	attemptLimited = "too many account link attempts; wait and try again"
+	siteOrigin     = "confirm the email from the verification page itself"
 	keyLinkInvalid = "auth.verify.link_invalid"
 	keyLinkNeeded  = "auth.verify.link_needed"
+	// The two refusals this page makes about the caller rather than the credential. They
+	// were the last two a person could be shown in a language they never chose: one is what
+	// a rate limit says, the other what a cross-site write says, and neither names anything
+	// an SDK could not read off the status, so the key costs the machine nothing and buys
+	// the reader the sentence the composition ships in their language.
+	keyAttemptLimited = "auth.verify.attempt_limit"
+	keySiteOrigin     = "auth.verify.same_origin"
 	// The five lines of the page itself, in the language they are authored in. They are
 	// code because they are the source language, not because this module wrote them once
 	// and for all: each is looked up under auth.verify.* in the catalogues the merged
@@ -281,10 +290,10 @@ func Mount(s httpx.Surfaces, cmd Confirmation, p Pages) {
 	}, httpx.Public(), func(ctx context.Context, _ page.Request, in *verifyForm) (page.View, error) {
 		r, _ := httpx.RequestFrom(ctx)
 		if !httpx.SameSite(r) {
-			return page.View{}, problem.New(http.StatusForbidden, "confirm the email from the verification page itself")
+			return page.View{}, refuse(http.StatusForbidden, keySiteOrigin, siteOrigin)
 		}
 		if !cmd.MayRedeem(ctx, r) {
-			return page.View{}, problem.New(http.StatusTooManyRequests, "too many account link attempts; wait and try again")
+			return page.View{}, refuse(http.StatusTooManyRequests, keyAttemptLimited, attemptLimited)
 		}
 		form, err := url.ParseQuery(string(in.RawBody))
 		if err != nil {
