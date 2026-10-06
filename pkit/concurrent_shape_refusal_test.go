@@ -28,6 +28,19 @@ import (
 // still refuses a build that never gets there; nothing the case asserts moved.
 const reachesTransportBound = 2 * time.Minute
 
+// finishesBuildBound is how long this case waits for a build to complete once the
+// first has been let go, as opposed to arriving at the hook it holds. It is the
+// same quantity, asked of the whole build: the second build migrates its own fresh
+// database, which is the work reachesTransportBound was priced for, and it does it
+// while the first sits at its transport holding the box's attention. The 15 s it
+// used to allow — after a 10 s first leg that releases the first build, which is a
+// nudge and not a refusal, and stays as it was — refused a loaded box: round 17's
+// log of one has a single kernel migration at 9003 ms and a whole run at 24 s. A
+// build that is merely slow is not the finding this case is looking for; two
+// minutes still refuses one that never gets there. What the case asserts did not
+// move.
+const finishesBuildBound = 2 * time.Minute
+
 func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	firstDB := onOneDatabase(t)
 	t.Cleanup(func() { events.DeclareAll(nil) })
@@ -81,7 +94,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 			stopFirst()
 			select {
 			case second = <-secondResult:
-			case <-time.After(15 * time.Second):
+			case <-time.After(finishesBuildBound):
 				t.Fatal("the second build did not finish")
 			}
 		}
