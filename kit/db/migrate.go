@@ -599,7 +599,7 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 	// the caller's context and nothing else. Left on the session, the file's lock budget
 	// bounds the second ask, and a run that met another boot in front of it refuses at
 	// five seconds: the outcome the paragraph above exists to rule out, arriving through
-	// the one path that asks for the lock twice. kit/db/review_autocommit_lock_reask_test.go
+	// the one path that asks for the lock twice. kit/db/autocommit_lock_reask_test.go
 	// holds a gate across that second ask and fails on the refusal.
 	if err := r.noBudgets(ctx); err != nil {
 		return err

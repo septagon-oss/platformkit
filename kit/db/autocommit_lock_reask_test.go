@@ -34,6 +34,16 @@ func mapSource(owner string, files ...string) db.MigrationSource {
 // longer than the run's lock budget, and opens it again: the run that took its
 // budgets off for the wait comes back and applies the file, and the run that left
 // them on refuses at its budget with the file unapplied.
+//
+// The budget has to be a wait the file's own statement can meet as well, because that
+// statement runs with it on the session (kit/db/certify.go). Measured on a host carrying
+// nine other suites, this fixture's CONCURRENTLY build — the cheapest there is, over a
+// table two columns wide that nothing else has touched — took 337 ms and once 2371 ms,
+// so a 400 ms budget refused the case for the shape of its own fixture rather than for
+// the wait it is about. Five seconds is that measurement with room, and the gate stays
+// shut past it: a run that carried its budget into the ask still refuses before the
+// gate opens, which is the half of the claim the budgets-on-the-session regression
+// would break.
 func TestTheCompositionLockComingBackIsNotBoundedByTheFileBudget(t *testing.T) {
 	adminURL, _ := dbtest.URLs(t)
 	admin := dbtest.Open(t, adminURL)
@@ -88,11 +98,11 @@ END $$`,
 	release := func() { _ = tx.Rollback() }
 	defer release()
 	go func() {
-		time.Sleep(3 * time.Second)
+		time.Sleep(9 * time.Second)
 		release()
 	}()
 
-	lock := 400 * time.Millisecond
+	lock := 5 * time.Second
 	migrateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 	started := time.Now()
@@ -105,8 +115,8 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS gate_sent_once ON gate_probe (id)
 	if err != nil {
 		t.Fatalf("the autocommit file refused while the composition lock was held by someone else: %v", err)
 	}
-	if elapsed < 2*time.Second {
-		t.Errorf("the run came back in %s, inside the 3s the gate was shut: it did not wait for the lock", elapsed)
+	if elapsed < 6*time.Second {
+		t.Errorf("the run came back in %s, inside the 9s the gate was shut: it did not wait for the lock", elapsed)
 	}
 	var asks int
 	if err := admin.QueryRowContext(ctx, `SELECT asks FROM lock_asks WHERE id = 1`).Scan(&asks); err != nil {
