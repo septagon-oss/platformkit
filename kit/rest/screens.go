@@ -26,6 +26,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -113,12 +114,12 @@ func (s Spec[T]) resource() httpx.Resource {
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				return s.updateRow(ctx, tx, id, schema.Fields, values)
+				return s.updateRow(ctx, tx, id, schema.Fields, values, "")
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
 			_, err := answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				return s.deleteRow(ctx, tx, id)
+				return s.deleteRow(ctx, tx, id, "")
 			})
 			return err
 		},
@@ -223,7 +224,10 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 	}
 	out := map[string]any{}
 	for _, f := range fields {
-		if f.ReadOnly {
+		// The two kinds of field the server owns are read back as they are, never as
+		// the form posted them: a control that carried the write count would otherwise
+		// move the row to the number it showed.
+		if entity.ServerOwned(f) {
 			continue
 		}
 		if slices.Contains(refuse, f.Name) {
