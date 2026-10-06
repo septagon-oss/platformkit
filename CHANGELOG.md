@@ -61,7 +61,11 @@ UPDATE waits on that row's lock, re-qualifies against the version the first plac
 nothing — which is where 000043's "a tenant does not move between apps" is made true, since which relay,
 consumer and control-plane scope can reach a tenant follows from that one column. A placement that loses the
 row this way is not refused and does not report the tenant as unplaced: it has an app, and the late
-declaration is the one that is wrong about the row. The declaration has to be on the session that drains, not the one that migrated, so
+declaration is the one that is wrong about the row. That write now declares the tenant's
+ledger key too (000047), the key an unscoped claim takes and a ledger move asks for
+exclusively, so a placement either stands in front of a move as its contention refusal or
+lands behind it and owes the move its own boot runs next, and no tenant joins an app whose
+move has already read its ledger and called it empty. The declaration has to be on the session that drains, not the one that migrated, so
 `db.BackfillDeclaring` carries `db.Declaration` to the drain (`app.Drain` and the worker's `schema-backfill` job
 both go through it). `app.tenant_apps_file` is the same mapping as a file of `slug=app` lines for an operator
 whose mapping is too long to read in a YAML blob: `kit/config` reads it at load, the inline map wins a

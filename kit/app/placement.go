@@ -37,6 +37,18 @@ package app
 // that finds a row already answered does not move the tenant and does not report it as
 // somebody's omission either — the late declaration is the one that is wrong about the
 // row, not the row about itself.
+//
+// The step also declares the tenant's ledger key, in the schema rather than here
+// (migrations/000047's trigger on the row whose app went from nobody's to somebody's),
+// and that is what makes two boots safe for each other's *ledgers* rather than merely
+// consistent about one row. kit/events.MoveLedger holds that key exclusively over every
+// tenant that could still become its app: a placement that arrives first is that move's
+// ordinary contention refusal, and one that arrives after waits and lands behind it,
+// which is the order that owes a move — and this step runs before a boot opens any
+// scoped consumer, so its own next move pays the debt. What it costs is a placement
+// sitting behind another app's rename: one short transaction, the only holder it can ever
+// wait behind, cheaper than the tenant whose claims were already committed when that move
+// read the ledger and answered that nothing was left to move.
 
 import (
 	"context"

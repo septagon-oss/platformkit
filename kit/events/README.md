@@ -160,7 +160,11 @@ than waiting — and a lock over every tenant that could still be the app's by
 the end of the move — its own, and the ones no app is placed under, because a
 placement is what turns an empty app into a slug and a slug never moves again —
 taken before a row is read. The set that can join the app, and not the set that
-already did, is the one a claim can be open in and still land inside it.
+already did, is the one a claim can be open in and still land inside it. A lock set over
+a set others can join is only half of it: the walk that joins them declares the same
+tenant key before it writes the row (migrations/000047), so a placement is either refused
+over by the move or serialized behind it, and no tenant arrives inside an app whose move
+is past its final read.
 The tenant's key is not reach beyond the harm: the durables to lock are discovered from
 committed ledger rows, so the first claim of a subscription, which has none, names nothing
 for the durable list to catch, and a move that found nothing to rename would answer zero
@@ -186,9 +190,10 @@ claim belongs to the tenant it was made in and a tenant belongs to one app
 `handled_at`, `name`, `error` and `failed_at` verbatim, the purge ages on them, and the
 delete that follows removes exactly the rows that copy read, by the keys that
 copy read rather than by a predicate asked a second time (the tenant half of that
-predicate answers about `tenants`, and a placement can commit between the two
-askings); the move then asks whether anything it had to rename is still unscoped
-and refuses if it is; one `platformkit.ledger_moved`
+predicate answers about `tenants`, and the two askings sit either side of a write the move
+does not own); the move then asks whether anything it had to rename is still unscoped
+and refuses if it is — a question its own entry lock makes honest, because the naming
+that could change its answer holds the key the refusal waits for; one `platformkit.ledger_moved`
 record per tenant whose claims moved goes into the same commit. The claims of a tenant
 whose `tenants.app` is empty belong to whichever deployment runs app-less beside this
 one and are left where its consumer looks for them. A delivery mid-claim therefore

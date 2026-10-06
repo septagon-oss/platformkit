@@ -68,7 +68,15 @@ func TestTheEmptySlugPlacementNamesTheTenantItCannotPlace(t *testing.T) {
 	slug := "collect"
 	decl := db.Declaration{App: &slug, Hosts: []string{"shop.example.com"},
 		Tenants: map[string]string{"school": "academy"}}
-	err = db.MigrateDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source)
+	// The migration first, then the drain that owns the placement window. 000047
+	// sits behind 000046, so this run stops at the file the worker drains rather than
+	// bounding its own window (kit/db's planOwner: a file behind a drain cannot apply
+	// until it finishes); the walk, the refusal and the sentence are the file's either
+	// way, and the half that changed is which step of a release runs it.
+	if err := db.MigrateDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source); err != nil {
+		t.Fatalf("the release's schema half: %v", err)
+	}
+	err = db.BackfillDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source)
 	if err == nil {
 		t.Fatalf("%s accepted a tenant neither its hosts nor its mapping speaks for", placedAppFile)
 	}
@@ -86,7 +94,7 @@ func TestTheEmptySlugPlacementNamesTheTenantItCannotPlace(t *testing.T) {
 	// app the declaration for it names — the mapped tenant by its mapping, the tenant
 	// on the declared host by the host, and not one of them by a guess.
 	decl.Tenants["lost"] = "shelf"
-	if err := db.MigrateDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source); err != nil {
+	if err := db.BackfillDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source); err != nil {
 		t.Fatalf("the placement with a mapping that covers the rest: %v", err)
 	}
 	if state := placed(t, ctx, adminURL); state != "lost=shelf,school=academy,shop=collect" {
@@ -129,8 +137,13 @@ func TestTheApplessBootPlacesWhatItsMappingNamesAndRefusesNothing(t *testing.T) 
 	// App stays nil: this is a boot that named itself nothing, which is what
 	// `platformkit migrate` declares for a configuration with no nats.app.
 	decl := db.Declaration{Hosts: []string{"shop.example.com"}, Tenants: map[string]string{"school": "academy"}}
+	// As above: the schema half on the boot, the placement window on the drain that
+	// owns it, and the same app-less declaration on both sessions.
 	if err := db.MigrateDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source); err != nil {
 		t.Fatalf("the release refused a boot that named no app: %v", err)
+	}
+	if err := db.BackfillDeclaring(ctx, adminURL, db.MigrationBudget{}, decl, migrations.Source); err != nil {
+		t.Fatalf("the drain refused a boot that named no app: %v", err)
 	}
 	if state := placed(t, ctx, adminURL); state != "school=academy,shop=" {
 		t.Errorf("after an app-less placement the tenants read %q; want the mapped tenant placed and the host-only one left as it was found", state)

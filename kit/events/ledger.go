@@ -223,11 +223,14 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		// The membership re-check, last, in the transaction that did the renaming. The
 		// locks above describe the membership as of their own reading; this statement asks
 		// the same question of the state the rename ends in, and a difference is an answer
-		// the move cannot keep. A placement can commit while this transaction runs (its own
-		// walk takes no ledger key), and a tenant that took this app between the read of the
-		// durables and its own naming holds claims this move never saw, under a name its
-		// consumer is about to subscribe under: the second handling, arriving by the one door
-		// the lock set above no longer shuts. Refusing is the whole remedy — nothing moved,
+		// the move cannot keep. It is what catches the tenant this move holds no key for
+		// because it did not exist when the entry read ran and was named anyway: the row it
+		// writes is unscoped, its claims arrive under a name its consumer is about to
+		// subscribe under, and the second handling has no other witness. The walk that names
+		// an app now declares the tenant's own key before it writes (migrations/000047), so a
+		// placement can no longer commit between this transaction's reads — refused over by
+		// the entry lock if it came first, serialized behind it if it came after, and owing
+		// the move its own boot runs next. Refusing is the whole remedy: nothing moved,
 		// nothing emitted, and the retry after this transaction ends reads a membership that
 		// cannot move again while it holds the keys.
 		if remains, err := unscopedRemains(tx, app); err != nil {
@@ -316,7 +319,11 @@ func tenantLock(tenantID uuid.UUID) string { return "events ledger tenant " + te
 // to prevent, arriving by the door the key's own placement left open. Declaring the
 // tenant above the read the
 // placement can overtake is what makes that read an answer the move has to respect: from
-// this statement to the end of the transaction, the move of this tenant refuses.
+// this statement to the end of the transaction, the move of this tenant refuses. The
+// placement declares the same key before its own write, for the same reason and with the
+// same lifetime (migrations/000047), and that is the half that made this one enough: the
+// two writers that can change what a move is renaming are the claim and the naming, and
+// both are now visible from before the statement that decides to write.
 //
 // It waits rather than refuses, which is the direction a delivery wants: the only holder
 // it can wait behind is a move's own transaction, which asks the key exclusively, renames
@@ -337,7 +344,10 @@ func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+
 
 // placeable is the predicate that says a tenant could still become this app's by the
 // end of the move: it is the app's already, or it names no app and a placement is the
-// act that names one. See holdTenants for why the move locks both halves.
+// act that names one. See holdTenants for why the move locks both halves. The set is
+// closed from both sides now: the move holds the key of every tenant the predicate names,
+// and the walk that turns an empty app into a slug declares that key before it writes
+// (migrations/000047), so membership cannot move underneath a running move at all.
 const placeable = "app = ? OR app = ''"
 
 // holdTenants takes the move's lock over every tenant that could still be this app's
@@ -381,6 +391,18 @@ const placeable = "app = ? OR app = ''"
 // itself), so the only tenants that can join this app are the empty ones. A claim in one of
 // them is refused over with the app's own, which is the same refusal, written down where the
 // membership is what is in the way.
+//
+// The set was half of it, and the review that found the other half is
+// kit/events/placement_before_ledger_commit_test.go. A tenant holding an already-committed
+// unscoped claim declares nothing until its *next* claim, so a key held over the claim
+// excluded no walk that never claims one: the placement could write the row, commit, and
+// be gone before the move's final read, which answered false because the tenant was still
+// empty when it asked, and the move committed its success over a ledger it had never read.
+// The other half is the placement declaring this key before it names the row
+// (migrations/000047's trigger, the same expression as tenantLockKey below): the walk
+// either holds the key when the move asks, and the move refuses over it, or waits and
+// lands after the move committed — the order that owes a move, which is the order a boot
+// that places before it opens its scoped consumers actually pays.
 //
 // The widening costs an app's move a refusal whenever an app-less delivery is open
 // anywhere, and that is the direction that keeps rows: the traffic that refuses it is the
