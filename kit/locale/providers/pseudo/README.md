@@ -2,8 +2,8 @@
 
 `pseudo.Wrap(messages, recorder)` answers every selection as `en-XA`: the delegate's
 own copy, wrapped in `⟦…⟧` with its vowels accented. The transformation is reversible
-(`Unmark`) and length-preserving, so a document can be measured by machine and read
-back by a person, and nothing about it moves a layout.
+(`Unmark`), and it adds exactly the two delimiter runes: every vowel is one rune for
+one, so how far that widens a line is the font's answer and not this function's.
 
 That is the whole point. Most `Text()` call sites build their key at run time, so no
 source scan can say what a page says in which language; a rendered page can, because
