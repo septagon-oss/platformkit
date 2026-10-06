@@ -273,10 +273,10 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 
 // migrationQueueBudget is how long a migration run may wait for the composition key
 // before this file calls the key stuck. Advisory locks are per-database
-// (kit/db/lock.go) and the key is one for the whole composition
-// (kit/db/migrate.go:571), while dbtest gives a test its own *schema* — so another
-// package's migration, or a second suite sharing the cluster, can be holding the key
-// when a case here starts. Five seconds read as a defect when this file's cases
+// (kit/db/lock.go) and the key names the namespace a composition applies into
+// (kit/db/migrate.go: compositionLockKey), so a run queues behind any other run that
+// wants its own namespace — a second suite sharing the cluster, a second replica, or one
+// of this file's own cases holding the key from another session on purpose. Five seconds read as a defect when this file's cases
 // shared their Postgres with a concurrent `make check` on 2026-10-01 (`retry after
 // cancellation: db: migrate: lock: timeout: context deadline exceeded`, while 20 runs
 // of the same case with the cluster to itself passed in 3.8s). It is a bound on a lock
@@ -286,17 +286,18 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 // the same key.
 const migrationQueueBudget = 5 * time.Minute
 
-// holdsCompositionKey says whether a session of *this* test's own schema holds the
-// composition key right now. dbtest makes application_name the schema
+// holdsCompositionKey says whether a session of *this* test's own schema holds a
+// composition key right now — the class every namespace's composition key carries
+// (kit/db/migrate.go). dbtest makes application_name the schema
 // (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing
-// else: waiting behind another package's queue is then something the case can see,
+// else: waiting behind another queue is then something the case can see,
 // which is what stops that queue from being read as a broken cancellation.
 func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 	t.Helper()
 	var held int
 	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
 		WHERE l.locktype = 'advisory' AND l.granted
-			AND ((l.classid::bigint << 32) | l.objid::bigint) = `+strconv.FormatInt(compositionLockKey, 10)+`
+			AND l.classid = `+strconv.Itoa(compositionLockKey)+`
 			AND a.application_name = current_setting('search_path')`, &held)
 	return held > 0
 }

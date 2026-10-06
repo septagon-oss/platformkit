@@ -379,21 +379,27 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 const migrationGrace = 20 * time.Second
 
 // compositionLockKey is the migration key kit/db takes before a boot serves
-// (compositionLockKey in kit/db/migrate.go). It is named here rather than
-// imported because the harness watches the queue from outside that package.
+// (compositionLockKey in kit/db/migrate.go) — the class half of a key that names the
+// namespace the run applies into. It is named here rather than imported because the
+// harness watches the queue from outside that package, and a boot's wait is patient about
+// any composition in its database, not only its own namespace's.
 const compositionLockKey = 7240101
 
 // waitFor asks until the listener answers, and stops as soon as the boot has
 // no reason left to wait. Run migrates before it serves, and migration takes the
-// database-wide composition key: a boot queued behind another app's migration is
-// a correct boot that has not had its turn, which no clock can tell apart from a
+// composition key of the namespace it applies into (compositionLockKey names its
+// class): a boot queued behind a migration is a correct boot that has not had
+// its turn, which no clock can tell apart from a
 // dead listener. Postgres can, so the wait watches pg_locks (dbtest.Open, the
-// handle kit/db's own lock cases watch with) for a request waiting on that key in
-// this boot's own database, keeps
+// handle kit/db's own lock cases watch with) for a request waiting on that class in
+// this boot's own database — the class rather than this boot's own pair, because a
+// busy composition of any namespace in this database says the same thing about how
+// patient this boot has to be. It keeps
 // waiting while one exists, and refuses once none does and the grace is spent.
 //
-// kit/app/boot_waits_for_migration_queue_test.py holds that key for 35 seconds
-// from another session and fails this harness if a boot it started anyway
+// kit/app/boot_waits_for_migration_queue_test.py holds this boot's own key for 35
+// seconds from another session (naming the schema through PLATFORMKIT_TEST_SCHEMA so it
+// can) and fails this harness if a boot it started anyway
 // returns non-zero. A boot that never listens stays bounded by the test binary's
 // own timeout, which is the honest bound: a listener that never opens is stuck,
 // not slow.
@@ -405,7 +411,7 @@ func waitFor(t *testing.T, migrateURL, addr string) {
 	queueing := func() bool {
 		var waiting int
 		err := watch.QueryRowContext(ctx, `SELECT count(*) FROM pg_locks
-			WHERE locktype = 'advisory' AND objid = $1 AND NOT granted
+			WHERE locktype = 'advisory' AND classid::bigint = $1 AND NOT granted
 			  AND database = (SELECT oid FROM pg_database
 			                 WHERE datname = current_database())`, compositionLockKey).Scan(&waiting)
 		if err != nil {

@@ -12,6 +12,14 @@ from concurrent_index_reader_schedule_test import ROOT, database_url, run
 
 
 CASE = "TestMigrationCancellationRollsBackAndReleasesTheLock"
+# The namespace the case migrates into, named for dbtest through
+# PLATFORMKIT_TEST_SCHEMA. The composition key is keyed to the namespace a run applies
+# into (kit/db/migrate.go: compositionLockKey is its class), and it has to be held before
+# the run asks for it, so the harness names the namespace instead of guessing the random
+# per-process name dbtest would otherwise invent. The database is created for this run and
+# dropped at the end of it, so nothing else shares the schema.
+SCHEMA = "cancel_queue_case"
+COMPOSITION_CLASS = 7240101
 
 
 class CancellationCaseWaitsForItsLock(unittest.TestCase):
@@ -28,7 +36,8 @@ class CancellationCaseWaitsForItsLock(unittest.TestCase):
             scoped_admin = database_url(admin, database)
             env = {**os.environ,
                    "PLATFORMKIT_TEST_ADMIN_URL": scoped_admin,
-                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database)}
+                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database),
+                   "PLATFORMKIT_TEST_SCHEMA": SCHEMA}
             with tempfile.TemporaryDirectory() as directory:
                 binary = str(Path(directory) / "db.test")
                 compiled = run(["go", "test", "-c", "-o", binary, "./kit/db"])
@@ -39,8 +48,10 @@ class CancellationCaseWaitsForItsLock(unittest.TestCase):
                 with (Path(directory) / "holder.log").open("w+") as output:
                     holder = subprocess.Popen(
                         ["psql", scoped_admin, "-X", "-v", "ON_ERROR_STOP=1", "-c",
-                         "SELECT pg_advisory_lock(7240101); SELECT pg_sleep(15); "
-                         "SELECT pg_advisory_unlock(7240101)"],
+                         f"SELECT pg_advisory_lock({COMPOSITION_CLASS}, "
+                         f"hashtext('{SCHEMA}')); SELECT pg_sleep(15); "
+                         f"SELECT pg_advisory_unlock({COMPOSITION_CLASS}, "
+                         f"hashtext('{SCHEMA}'))"],
                         cwd=ROOT, stdin=subprocess.DEVNULL,
                         stdout=output, stderr=subprocess.STDOUT,
                     )
@@ -49,7 +60,8 @@ class CancellationCaseWaitsForItsLock(unittest.TestCase):
                         state = run([
                             "psql", scoped_admin, "-XAt", "-v", "ON_ERROR_STOP=1",
                             "-c", "SELECT count(*) FROM pg_locks WHERE "
-                            "locktype='advisory' AND granted AND objid=7240101 "
+                            "locktype='advisory' AND granted AND "
+                            f"classid={COMPOSITION_CLASS} "
                             "AND database=(SELECT oid FROM pg_database "
                             "WHERE datname=current_database())",
                         ])

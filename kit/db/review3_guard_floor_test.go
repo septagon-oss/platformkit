@@ -103,8 +103,16 @@ func TestASourceCannotDeclareAFloorPastItsOwnHead(t *testing.T) {
 }
 
 // compositionLockKey is kit/db's own, unexported, constant (kit/db/migrate.go):
-// the one lock every migration run of this composition holds for its whole run.
+// the class of the advisory lock a migration run holds for its whole composition,
+// keyed to the namespace it applies into.
 const compositionLockKey = 7240101
+
+// holdCompositionKey is the pair kit/db takes (compositionLockSQL there), spelled out
+// here because this file stands outside that package. The session below reaches the
+// database through the same URL the run migrates through, so `current_schema()` answers
+// the same namespace on both sides and this really is the same lock.
+const holdCompositionKey = "SELECT pg_advisory_lock($1, hashtext(COALESCE(current_schema(), '')))"
+const releaseCompositionKey = "SELECT pg_advisory_unlock($1, hashtext(COALESCE(current_schema(), '')))"
 
 // TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget pins the README's
 // paragraph "Waiting for the composition lock itself is a different wait, and it
@@ -121,20 +129,18 @@ func TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Somebody else's migration is running. Take the same lock it would take. This
-	// database is shared with every other package's tests, whose migrations queue
-	// on the lock with a blocking pg_advisory_lock, so this case queues too:
-	// polling pg_try_advisory_lock never wins while that queue is non-empty, and
-	// under CI's parallel packages it starved for 60s (runs 136, 221, 227 and 229).
-	// The bound is generous because losing a fair race here says nothing about
-	// the behaviour under test.
+	// Somebody else's migration is running in this schema. Take the same lock it would
+	// take. The key names this namespace, so what this case competes with is any other run
+	// into the same schema — another case of this file, a harness holding it from outside —
+	// and the bound is generous because losing a fair race here says nothing about the
+	// behaviour under test.
 	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancelAcquire()
-	if _, err := conn.ExecContext(acquire, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+	if _, err := conn.ExecContext(acquire, holdCompositionKey, int32(compositionLockKey)); err != nil {
 		t.Fatalf("the composition advisory lock was not granted within 5 minutes: %v", err)
 	}
 	defer func() {
-		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()), "SELECT pg_advisory_unlock($1)", compositionLockKey)
+		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()), releaseCompositionKey, int32(compositionLockKey))
 	}()
 
 	lock := 100 * time.Millisecond

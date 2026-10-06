@@ -1109,7 +1109,8 @@ const (
 	bootQueue = 5 * time.Minute
 )
 
-// compositionKey is kit/db/migrate.go's compositionLockKey, spelled out because that
+// compositionKey is kit/db/migrate.go's compositionLockKey — the class of the advisory
+// key a migration run takes for the namespace it applies into — spelled out because that
 // constant is unexported and this file is not in that package — kit/db's own cases name
 // it the same way (kit/db/composition_lock_rehold_test.go).
 const compositionKey = 7240101
@@ -1129,7 +1130,7 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 		err := admin.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks l
 			JOIN pg_stat_activity a ON a.pid = l.pid
 			WHERE l.locktype = 'advisory' AND NOT l.granted
-				AND ((l.classid::bigint << 32) | l.objid::bigint) = `+
+				AND l.classid = `+
 			strconv.Itoa(compositionKey)+`
 				AND a.application_name = current_setting('search_path'))`).Scan(&waiting)
 		if err != nil {
