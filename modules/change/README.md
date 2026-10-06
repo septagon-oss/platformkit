@@ -248,16 +248,39 @@ is a diff over a row measured against a revision, so **a create is not gated** (
 proposal about a row that does not exist yet, and gating create would make an entity
 uncreatable while its switch was on — the first run of the test found that) and **there is no
 proposal for a delete**. A delete changes every value the row held, so a row holding a
-protected value cannot be deleted while the switch is on; empty the field or turn the switch
-off, which is a product's decision, not a bypass this module invents.
+protected value cannot be deleted while the switch is on. The baseline a delete is measured
+against is a blank row holding the entity's own declared defaults, not nothing: a value the row
+starts at is one nobody chose, and a refusal that named `priority` on every task ever created —
+which is what measuring against nothing did, with `Validate` putting the default back the moment
+anyone emptied it — is a way through that closes itself. A task whose deadline is set or whose
+priority was chosen is protected against deletion; a task carrying nothing but defaults is not,
+which is the difference between a door and a wall, and the reason `Writer.Save`'s one override is
+not the only way to remove a row.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
 `Makefile`'s `RACE_PACKAGES` and `concurrency_test.go` is the two-applies case
 that uses it, and no other case in this module runs under `-race` by default;
 `modules/content`, `modules/billing` and every other module's rows are not
-subjects; there is no review queue, which is a screen and therefore belongs to
-whoever composes one; `contracts.Diff` covers RFC 7386 and nothing else — an array
+subjects; `contracts.Diff` covers RFC 7386 and nothing else — an array
 is replaced, never merged, because merge patch has no rule for one and inventing
 one here would be a patch format of our own; and there is no way to re-open a
 declined proposal, which is what proposing it again as a new row is for.
+
+## The two screens
+
+The queue at `/app/change/proposals` and the proposal at `/app/change/proposals/{id}` are this
+module's own pages (`modules/change/internal/ui`), mounted when a composition hands `Deps.Reviews`
+its `page.Shell` and declared by the manifest's one `Nav` entry. The module owns the queue, the
+difference, the decision controls and the row's own history of proposals; it does not own the
+shell around them, the dashboard, or the notice a proposer receives — the shell is handed in, and
+the notice goes out through `contracts.Notifier`, which `apps/platformkit` implements over
+`modules/notification` in four lines. A composition that wires neither serves no queue and no
+notice, and the manifest then declares no screen and no subscription.
+
+A watcher — `change:read` alone — is drawn no decision controls at all, because the page was
+composed for a person who may not press them rather than built for one who may and hidden. The
+authorizer the page asks is the one the kernel enforces with, so the controls and the route
+underneath them cannot disagree about who looks like a reviewer. Every control is a real
+`<form method="post">` carrying the revision the page was drawn from, so two people deciding one
+proposal is one decision and one refusal that says so.

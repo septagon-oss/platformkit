@@ -261,6 +261,25 @@ type Subject interface {
 	Save(ctx context.Context, tx db.Tx[db.Tenant], merged json.RawMessage) (revision int64, err error)
 }
 
+// Writable is a Subject that says which of its own fields an apply can move. It is a
+// second interface rather than a third method on Subject because an exported interface
+// that grows a method is a break every existing implementation has to answer for, and
+// because not every subject can say: a subject that names nothing is asked nothing.
+//
+// The question exists because Propose's promise is that the reviewed bytes are the
+// applied ones. A diff naming a field no Save writes, a field a command owns outright,
+// or a name that is not a field of the subject at all is a proposal no apply could ever
+// carry out as reviewed — and its own comment says a proposal nobody could apply is
+// refused at the propose door rather than at the review. Refusing it there is what makes
+// "approved, applied, and the row says something else" impossible.
+type Writable interface {
+	// WritableFields names, in the subject's own json field names, the fields a
+	// merged document may move. It is vocabulary, not policy: which of them needs a
+	// proposal at which installation is Protection's question, asked at the direct
+	// doors, and answered by nobody here.
+	WritableFields() []string
+}
+
 // SubjectBinding is one subject this composition can apply. The list of them is
 // written out by one author in the application's composition file, its element
 // types are checked by the compiler, and a subject missing from it does not

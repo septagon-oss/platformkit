@@ -81,6 +81,24 @@ that the row may have moved has to be able to say what it moved to; the kernel m
 that number in the same `UPDATE` as the data, which is why no entity behind a gate
 moves it by hand.
 
+The `revision` number is the server's own, and the schema says so. `entity.ServerOwned`
+is the one question — a field Base contributes, or the row's write counter — and every
+door that takes a value from a caller asks it: `merge` refuses a PATCH that names the
+field, `createRow` discards what arrived for it exactly as `crud.Reset` discards an id,
+the generated form draws no control for it and its reader refuses to post one back, and
+the `Changed` computation never asks about it. The reason is one sentence: a number a
+caller can type is not a number a stale write can be refused with, and the whole of the
+stale-base rule above rests on it. A client that wants to *write conditionally* quotes
+the number instead of setting it — the item read and the patch answer `ETag` for a Spec
+whose entity carries the counter, `If-Match` on `PATCH` and `DELETE` is checked against
+the revision the lock found, and a tag the row has passed is 412 naming the number it is
+on now. A malformed tag (`*`, a weak tag, a bare number) is 422 rather than ignored, and
+an absent tag is allowed, which is what keeps every client written before the door — the
+documents this repository checks in, the mobile flows — working. `If-Match` is asked after
+`RecheckTenant`, so a foreign row answers 404 and never gives away its number; on a
+resource whose entity carries no write count there is no tag to quote, and the request is
+refused rather than silently unwritten.
+
 That compare is `crud.RecheckTenant`, and it lives in
 [kit/crud](../crud/crud.go) because the rule already lived there, inside
 `Update`. A second compare in `kit/rest` — that package reading the row's
