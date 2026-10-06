@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
 
@@ -77,6 +78,22 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
 }
 
+// fixtureLockTimeout is the lock budget a fixture asks its migration for, and it is
+// not the runner's default. `CREATE INDEX CONCURRENTLY` — the shape the rule table
+// forces on an index added to a table an installation already has — waits for every
+// transaction that was open when its snapshot was taken, whatever table that
+// transaction touched: measured against this task's Postgres, a write held open on an
+// unrelated table of the same database blocked a build over a table of one row that
+// nothing had ever drawn a snapshot of, and a 3s budget cancelled it. A deployment meets that wait
+// as often as a release happens to land beside a long writer, and five seconds of
+// patience is right there, because a boot should stop and say so. A fixture has no such
+// reason: one database carries every package of this suite at once, so the wait is the
+// ordinary case and refusing to build the schema is not a finding but a test that never
+// ran. Ninety seconds is past the longest write any case here holds a transaction open
+// for, and short enough that a wedged database still reports instead of spending the
+// package's ten minutes.
+const fixtureLockTimeout = 90 * time.Second
+
 // Schema creates an isolated database schema with the kernel's tables and the
 // named capabilities — a module's exported Migrations source, such as
 // task.Migrations, and the sources of the modules it depends on (auth needs
@@ -87,7 +104,8 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	t.Helper()
 	adminURL, appURL := URLs(t)
 	sources := append([]db.MigrationSource{migrations.Source}, extra...)
-	if err := db.Migrate(t.Context(), adminURL, sources...); err != nil {
+	patient := fixtureLockTimeout
+	if err := db.MigrateWith(t.Context(), adminURL, db.MigrationBudget{LockTimeout: &patient}, sources...); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)
