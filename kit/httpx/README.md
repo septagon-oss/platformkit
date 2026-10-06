@@ -209,7 +209,10 @@ A commit that was sent and never answered is the third case, and the only one th
 not released: `db.ErrCommitUnacknowledged` says the outcome is unknown rather than
 absent, so the claim is spent as "its outcome is not held" for the rest of the key's
 day instead of being handed back. A COMMIT the database answered with an error — a
-deferred constraint — is still a rollback, and its retry still runs.
+deferred constraint — is still a rollback, and its retry still runs. A deadline that
+expires while the answer is on its way is the same silence wearing the caller's shape,
+not the hang-up above: only `sql.ErrTxDone` proves the COMMIT never left this process,
+so a cancellation that arrives from the commit itself spends the key as well.
 `ValidateDeclarations` refuses, at boot, the declarations that cannot mean what they
 say: a safe method, the Public surface or the App door that admits an anonymous caller
 (no principal to scope a key to), and a streamed body. A key that arrives with no
