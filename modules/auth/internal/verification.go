@@ -96,24 +96,18 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	if err != nil {
 		return fmt.Errorf("auth: issue email verification: %w", err)
 	}
-	msg := notification.Message{
+	err = s.mail.Mailer.Send(ctx, notification.Message{
 		To: current.Email, Subject: "Verify your email address",
 		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
 			base + VerifyEmailPath + "?token=" + token +
 			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
-	}
-	// The verification token is a credential in the same sense the set-password
-	// link is, so it leaves the same way: on the commit of the transaction that
-	// wrote the row which spends it, never while that row is still private. See
-	// Service.send for what waiting costs and what it buys.
-	return db.AfterCommit(ctx, func(ctx context.Context) error {
-		if err := s.mail.Mailer.Send(ctx, msg); err != nil {
-			// A transport may quote its input in an error. The outbox retains handler
-			// errors, so never carry the mailer's potentially credential-bearing text.
-			return fmt.Errorf("auth: verification email delivery failed")
-		}
-		return nil
 	})
+	if err != nil {
+		// A transport may quote its input in an error. The outbox retains handler
+		// errors, so never carry the mailer's potentially credential-bearing text.
+		return fmt.Errorf("auth: verification email delivery failed")
+	}
+	return nil
 }
 
 func (s *Service) verifyEmail(ctx context.Context, tx db.Tx[db.Tenant], users contracts.EmailRegistrar, token string) error {
