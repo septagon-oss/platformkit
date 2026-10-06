@@ -353,6 +353,12 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# cases above ask that of the recipe's text and of a tree with `go`; this one runs the recipe with
 	# no `go` on PATH at all, which is the shape a failed setup-go step leaves.
 	bash scripts/ci_go_cache_key_without_go_test.sh
+	# `scripts/ci_go_cache_test.sh` reads two blocks out of the workflow and stops reading when a block
+	# ends. An `exit` there closes the pipe under the writer, and under `set -euo pipefail` the SIGPIPE comes
+	# back as 141: a red `make check` with no assertion in it. This case pads both block boundaries
+	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
+	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
+	bash scripts/ci_go_cache_guard_comments_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
