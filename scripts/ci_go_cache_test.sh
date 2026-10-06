@@ -83,15 +83,23 @@ uses_block() {
 # so a save whose list differs from its restore's in ORDER alone writes an archive no restore of the
 # same job can ever match — permanently cold, permanently green. Compared as an ordered list, and read
 # only as far as the block is indented, because the next step's comment lines sit at the same column.
+# Neither reader below `exit`s once it has its block: the writer beside it is still printing, and under
+# `set -euo pipefail` the SIGPIPE it takes back is exit 141 — a red `make check` with no assertion in
+# it, which is the class of red this branch was already called to look at. Stopping the collection is
+# the same answer, asked of the one process that has it. Where the pipe fills is a scheduling question,
+# and this file's own subject decides it: `job_text check` answers 36,779 bytes on this tree and 38,520
+# on the tree of the commit after this one, and this file before the cure below answered twenty passes
+# into the first and twenty exit-141 deaths into the second. A verdict that turns on how much prose a
+# guard's subject carries dies on someone else's pull request.
 step_paths() {
 	step_block "$1" "$2" | awk '
 		{ line = $0; sub(/[[:space:]]+$/, "", line) }
-		line ~ /^[[:space:]]*path:[[:space:]]*[|]?[[:space:]]*$/ && !seen {
+		line ~ /^[[:space:]]*path:[[:space:]]*[|]?[[:space:]]*$/ && !seen && !stopped {
 			seen = 1; base = match(line, /[^[:space:]]/); next
 		}
-		seen {
+		seen && !stopped {
 			if (line == "") next
-			if (match(line, /[^[:space:]]/) <= base) exit
+			if (match(line, /[^[:space:]]/) <= base) { stopped = 1; next }
 			sub(/^[[:space:]]+/, "", line)
 			print line
 		}
@@ -99,16 +107,16 @@ step_paths() {
 }
 
 # step_restore_keys JOB NAME — the `restore-keys:` block of that step, in the order written, which is
-# the order the store is asked in.
+# the order the store is asked in. Reads to the end of the block for the reason written above.
 step_restore_keys() {
 	step_block "$1" "$2" | awk '
 		{ line = $0; sub(/[[:space:]]+$/, "", line) }
-		line ~ /^[[:space:]]*restore-keys:[[:space:]]*[|]?[[:space:]]*$/ && !seen {
+		line ~ /^[[:space:]]*restore-keys:[[:space:]]*[|]?[[:space:]]*$/ && !seen && !stopped {
 			seen = 1; base = match(line, /[^[:space:]]/); next
 		}
-		seen {
+		seen && !stopped {
 			if (line == "") next
-			if (match(line, /[^[:space:]]/) <= base) exit
+			if (match(line, /[^[:space:]]/) <= base) { stopped = 1; next }
 			sub(/^[[:space:]]+/, "", line)
 			print line
 		}
