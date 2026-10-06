@@ -126,7 +126,8 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // So the notice raised here carries ResetPath and nothing else — the person has
 // something to see in the application, and it tells them to check their mail —
 // and the secret goes straight from this transaction to the mail server. The
-// composition wires notification's own Mailer, so there is still one sender.
+// composition wires notification's own Mailer, so there is still one sender. It is
+// handed the message after the commit rather than during it; see send.
 //
 // ON CONFLICT on (tenant_id, user_id) is the single-pending rule: asking again
 // replaces the last link rather than adding a second, so a mailbox with four of
@@ -169,20 +170,41 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	return s.send(ctx, tx, user, title, body, token)
 }
 
-// send renders the one message this module writes and hands it to the mail
-// server. The link is absolute and on the recipient's own tenant's host,
-// because a mail client has no base to resolve a path against and one
-// customer's people must not be sent to another's front door.
+// send renders the one message this module writes and defers its delivery to the
+// commit of the transaction that minted the token. The link is absolute and on the
+// recipient's own tenant's host, because a mail client has no base to resolve a
+// path against and one customer's people must not be sent to another's front door.
+//
+// Everything that decides the message is read here, inside the transaction — the
+// host of record, the interval check, the token row itself — and only the handover
+// waits. A message handed over before the commit is a credential in an inbox that
+// points at a row nobody can see yet: the recipient who follows the link the second
+// it arrives is refused for a credential the installation really did issue, and a
+// transaction that rolls back afterwards leaves a live-looking link in somebody's
+// mailbox that this application has forgotten. Both of those are the recipient's
+// problem and neither is ours to keep, so the mail leaves on the commit and not on
+// the INSERT.
+//
+// What that costs is stated once, in the other direction: a mail server that
+// refuses the message after the commit cannot be answered by a rollback that never
+// happens, so the row is there and the mail is not, and the delivery's retry finds
+// contracts.ResetInterval and sends nothing. The token then expires unused, which
+// is a person who was not invited and can ask again after five minutes; the shape
+// this replaced was a link anybody with the mail could try to spend before the
+// transaction that authorised it existed.
 func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {
 		return err
 	}
-	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
+	msg := notificationcontracts.Message{
 		To: user.Email, Subject: title,
 		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
 			"\n\nThe link works once and stops working in an hour.",
-	})
+	}
+	// The action holds a rendered message and no handle: the transaction it waits
+	// for is over by the time it runs, which is why base is read above.
+	return db.AfterCommit(ctx, func(ctx context.Context) error { return s.mail.Mailer.Send(ctx, msg) })
 }
 
 // baseURL is the scheme and host this tenant's people reach the application at.
