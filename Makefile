@@ -383,6 +383,47 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
+	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
+	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
+	# starts containers removes the labelled ones older than twice that job's own ceiling, and whether
+	# the `if: always()` step names a handle for every container its job can create. It is here because
+	# the leak it refuses was invisible to every other gate in this file: on 2026-10-06 the three ci
+	# runners held thirteen SeaweedFS containers, some nineteen hours old, all of them from the one
+	# `docker run -d` that carried no `--name`, and a cancelled or timed-out job runs no `if: always()`
+	# step of ours at all, because act_runner is SIGKILLed (`.gitea/workflows/ci.yml`'s own header).
+	# The guard reads every workflow under `.gitea/workflows`, then runs ten mutations of its own text
+	# back through the same pass — the store without its label, its name or its pre-removal; a name no
+	# step's env defines; a sweep bound under twice the job's ceiling, moved off the first step, or
+	# narrowed to running containers; a container the always() step names no handle for; the device
+	# journey's NATS unnamed again — so the acceptance's "the test fails when a step reintroduces the
+	# leak" is a line of `make check`. It starts no container and needs PyYAML, which ci.yml's own apt
+	# step installs.
+	bash scripts/ci_container_leak_test.sh
+	# scripts/ci_container_sweep_age_test.sh runs the sweep instead of reading it. The guard above asks
+	# three things of the sweep step's text — that it lists `docker ps -aq --filter label=pkit.ci.run`,
+	# that it says `docker rm -f`, that its SWEEP_OLDER_THAN is at least twice this job's own ceiling —
+	# and says nothing about the one line that compares a container's age to that bound, because all it
+	# does is read. Turn `[ "$epoch" -le "$cutoff" ] || continue` round, or delete it, and every answer
+	# above stays `ok` (measured at this commit: rc 0 on both mutants) while the step removes the
+	# containers of the live jobs sharing the daemon — another repository's included, since `pkit.ci.run`
+	# is a program-wide namespace and the sweep reaches whatever carries it. Raise the bound to 99999 and
+	# that read is still `ok` while the sweep removes nothing at all. This file executes each job's
+	# committed `run:` under `bash -e` against a stub `docker` that lists one container created four
+	# hours ago and one created five minutes ago, and refuses `removed ['young']`, `removed ['old',
+	# 'young']` and `removed nothing` alike, so the bound is pinned as behaviour and not as text. It
+	# starts no container and needs PyYAML, as its neighbour above does.
+	bash scripts/ci_container_sweep_age_test.sh
+	# scripts/ci_container_sweep_age_guard_test.sh asks whether the file above would notice. It runs the
+	# honest sweep and nothing else, so the one thing that can undo it — the sweep's own age comparison —
+	# is covered by no assertion until somebody mutates it: turn that comparison's `-le` to `-ge`, delete
+	# the line, or widen `SWEEP_OLDER_THAN` to 99999, and a guard that only ever sees correct workflows
+	# stays green while the step removes the young containers of live jobs, or nothing at all. This file
+	# writes those three workflows into a temporary directory and points the guard at the copy, so the pin
+	# is the guard's refusals (`removed ['young']`, `removed ['old', 'young']`, `removed nothing`) and not
+	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
+	# and the guard does the parsing, so this line needs no parser of its own.
+	bash scripts/ci_container_sweep_age_guard_test.sh
 	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
 	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
 	# locked above the ranges that report names, and that the gate that named them is still a step in
