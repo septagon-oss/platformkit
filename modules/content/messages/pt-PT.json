@@ -32,5 +32,257 @@
     "plural": {
       "": "Conteúdos"
     }
+  },
+  "field.content.content.id": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Identificador",
+    "plural": {
+      "": "Identificador"
+    }
+  },
+  "field.content.content.createdAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Criado em",
+    "plural": {
+      "": "Criado em"
+    }
+  },
+  "field.content.content.updatedAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Atualizado em",
+    "plural": {
+      "": "Atualizado em"
+    }
+  },
+  "field.content.content.slug": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Nome no URL",
+    "plural": {
+      "": "Nome no URL"
+    }
+  },
+  "field.content.content.slug.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Nome único dentro do tenant",
+    "plural": {
+      "": "Nome único dentro do tenant"
+    }
+  },
+  "field.content.content.title": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Título",
+    "plural": {
+      "": "Título"
+    }
+  },
+  "field.content.content.title.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "O que uma lista e um cabeçalho mostram",
+    "plural": {
+      "": "O que uma lista e um cabeçalho mostram"
+    }
+  },
+  "field.content.content.body": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Corpo",
+    "plural": {
+      "": "Corpo"
+    }
+  },
+  "field.content.content.body.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "O conteúdo em si, em Markdown",
+    "plural": {
+      "": "O conteúdo em si, em Markdown"
+    }
+  },
+  "field.content.content.kind": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Tipo",
+    "plural": {
+      "": "Tipo"
+    }
+  },
+  "field.content.content.kind.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "página ou publicação",
+    "plural": {
+      "": "página ou publicação"
+    }
+  },
+  "field.content.content.status": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "field.content.content.status.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Estado do ciclo de vida",
+    "plural": {
+      "": "Estado do ciclo de vida"
+    }
+  },
+  "field.content.content.publishedAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Publicado em",
+    "plural": {
+      "": "Publicado em"
+    }
+  },
+  "field.content.content.publishedAt.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Momento em que foi publicado",
+    "plural": {
+      "": "Momento em que foi publicado"
+    }
+  },
+  "field.content.content.author": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Autor",
+    "plural": {
+      "": "Autor"
+    }
+  },
+  "field.content.content.author.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "O utilizador que criou este conteúdo",
+    "plural": {
+      "": "O utilizador que criou este conteúdo"
+    }
+  },
+  "enum.content.content.page": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Página",
+    "plural": {
+      "": "Página"
+    }
+  },
+  "enum.content.content.post": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Publicação",
+    "plural": {
+      "": "Publicação"
+    }
+  },
+  "enum.content.content.draft": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Rascunho",
+    "plural": {
+      "": "Rascunho"
+    }
+  },
+  "enum.content.content.published": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Publicado",
+    "plural": {
+      "": "Publicado"
+    }
+  },
+  "enum.content.content.archived": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Arquivado",
+    "plural": {
+      "": "Arquivado"
+    }
+  },
+  "command.content.content.publish": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Publicar conteúdo",
+    "plural": {
+      "": "Publicar conteúdo"
+    }
+  },
+  "command.content.content.publish.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Serve o conteúdo a toda a gente e regista quando. Publicar o que já está publicado não altera nada; o momento de publicação não se move.",
+    "plural": {
+      "": "Serve o conteúdo a toda a gente e regista quando. Publicar o que já está publicado não altera nada; o momento de publicação não se move."
+    }
+  },
+  "command.content.content.unpublish": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Retirar a publicação",
+    "plural": {
+      "": "Retirar a publicação"
+    }
+  },
+  "command.content.content.unpublish.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Devolve o conteúdo a rascunho, esteja publicado ou arquivado, e limpa o momento de publicação.",
+    "plural": {
+      "": "Devolve o conteúdo a rascunho, esteja publicado ou arquivado, e limpa o momento de publicação."
+    }
+  },
+  "command.content.content.archive": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Arquivar conteúdo",
+    "plural": {
+      "": "Arquivar conteúdo"
+    }
+  },
+  "command.content.content.archive.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Guarda o conteúdo e não o serve a ninguém. Arquivar duas vezes não altera nada.",
+    "plural": {
+      "": "Guarda o conteúdo e não o serve a ninguém. Arquivar duas vezes não altera nada."
+    }
   }
 }

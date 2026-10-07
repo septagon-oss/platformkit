@@ -329,5 +329,59 @@
     "plural": {
       "": "Critical"
     }
+  },
+  "command.task.task.assign": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Assign a task",
+    "plural": {
+      "": "Assign a task"
+    }
+  },
+  "command.task.task.assign.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
+    "plural": {
+      "": "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing."
+    }
+  },
+  "command.task.task.resolve": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Resolve a task",
+    "plural": {
+      "": "Resolve a task"
+    }
+  },
+  "command.task.task.resolve.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
+    "plural": {
+      "": "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused."
+    }
+  },
+  "command.task.task.check-sla": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Check a task's SLA",
+    "plural": {
+      "": "Check a task's SLA"
+    }
+  },
+  "command.task.task.check-sla.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
+    "plural": {
+      "": "Records a breach if the deadline has passed with the task unresolved. Records at most one."
+    }
   }
 }

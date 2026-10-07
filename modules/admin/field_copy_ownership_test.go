@@ -46,16 +46,25 @@ func TestOneModulesFieldCopySpeaksForItsOwnEntity(t *testing.T) {
 		}
 		taskForm := drawn("task", "task", reflect.TypeFor[taskcontracts.Task]())
 		contentForm := drawn("content", "content", reflect.TypeFor[contentcontracts.Content]())
-		own := map[string]string{"en": "Short summary of the task", "pt-PT": "Resumo da tarefa"}[tag]
-		if !strings.Contains(taskForm, own) {
-			t.Errorf("%s task form does not carry the task's own note %q", tag, own)
+		// Each entity's own note, in the language of the form being drawn: a form that
+		// speaks Portuguese is expected to carry the Portuguese sentence its own module
+		// wrote, not the English one still sitting in its schema's doc comment.
+		taskNote := map[string]string{"en": "Short summary of the task", "pt-PT": "Resumo da tarefa"}[tag]
+		contentNote := map[string]string{"en": "Headline", "pt-PT": "O que uma lista e um cabeçalho mostram"}[tag]
+		if !strings.Contains(taskForm, taskNote) {
+			t.Errorf("%s task form does not carry the task's own note %q", tag, taskNote)
 		}
-		if !strings.Contains(contentForm, "Headline") {
-			t.Errorf("%s content form lost the note its own schema wrote", tag)
+		if !strings.Contains(contentForm, contentNote) {
+			t.Errorf("%s content form lost the note its own module wrote, %q", tag, contentNote)
 		}
 		for _, borrowed := range []string{"Short summary of the task", "Resumo da tarefa", "Detailed description of the task"} {
 			if strings.Contains(contentForm, borrowed) {
 				t.Errorf("%s content form prints the task's copy %q", tag, borrowed)
+			}
+		}
+		for _, borrowed := range []string{"Headline", "O que uma lista e um cabeçalho mostram"} {
+			if strings.Contains(taskForm, borrowed) {
+				t.Errorf("%s task form prints content's copy %q", tag, borrowed)
 			}
 		}
 	}

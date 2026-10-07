@@ -32,5 +32,257 @@
     "plural": {
       "": "Content"
     }
+  },
+  "field.content.content.id": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Id",
+    "plural": {
+      "": "Id"
+    }
+  },
+  "field.content.content.createdAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Created at",
+    "plural": {
+      "": "Created at"
+    }
+  },
+  "field.content.content.updatedAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Updated at",
+    "plural": {
+      "": "Updated at"
+    }
+  },
+  "field.content.content.slug": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Slug",
+    "plural": {
+      "": "Slug"
+    }
+  },
+  "field.content.content.slug.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "URL name, unique within the tenant",
+    "plural": {
+      "": "URL name, unique within the tenant"
+    }
+  },
+  "field.content.content.title": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Title",
+    "plural": {
+      "": "Title"
+    }
+  },
+  "field.content.content.title.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Headline",
+    "plural": {
+      "": "Headline"
+    }
+  },
+  "field.content.content.body": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Body",
+    "plural": {
+      "": "Body"
+    }
+  },
+  "field.content.content.body.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "The content itself, in Markdown",
+    "plural": {
+      "": "The content itself, in Markdown"
+    }
+  },
+  "field.content.content.kind": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Kind",
+    "plural": {
+      "": "Kind"
+    }
+  },
+  "field.content.content.kind.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "page or post",
+    "plural": {
+      "": "page or post"
+    }
+  },
+  "field.content.content.status": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Status",
+    "plural": {
+      "": "Status"
+    }
+  },
+  "field.content.content.status.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Lifecycle state",
+    "plural": {
+      "": "Lifecycle state"
+    }
+  },
+  "field.content.content.publishedAt": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Published at",
+    "plural": {
+      "": "Published at"
+    }
+  },
+  "field.content.content.publishedAt.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "When this was published",
+    "plural": {
+      "": "When this was published"
+    }
+  },
+  "field.content.content.author": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Author",
+    "plural": {
+      "": "Author"
+    }
+  },
+  "field.content.content.author.help": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "The user who created this",
+    "plural": {
+      "": "The user who created this"
+    }
+  },
+  "enum.content.content.page": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Page",
+    "plural": {
+      "": "Page"
+    }
+  },
+  "enum.content.content.post": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Post",
+    "plural": {
+      "": "Post"
+    }
+  },
+  "enum.content.content.draft": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Draft",
+    "plural": {
+      "": "Draft"
+    }
+  },
+  "enum.content.content.published": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Published",
+    "plural": {
+      "": "Published"
+    }
+  },
+  "enum.content.content.archived": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "Archived",
+    "plural": {
+      "": "Archived"
+    }
+  },
+  "command.content.content.publish": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Publish content",
+    "plural": {
+      "": "Publish content"
+    }
+  },
+  "command.content.content.publish.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move.",
+    "plural": {
+      "": "Serves it to anybody, and records when. Publishing what is already published changes nothing; the publication time does not move."
+    }
+  },
+  "command.content.content.unpublish": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Unpublish content",
+    "plural": {
+      "": "Unpublish content"
+    }
+  },
+  "command.content.content.unpublish.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Takes it back to a draft, from published or from archived, and clears the publication time.",
+    "plural": {
+      "": "Takes it back to a draft, from published or from archived, and clears the publication time."
+    }
+  },
+  "command.content.content.archive": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Archive content",
+    "plural": {
+      "": "Archive content"
+    }
+  },
+  "command.content.content.archive.description": {
+    "references": [
+      "modules/content/internal/handler.go"
+    ],
+    "translation": "Keeps it and serves it to nobody. Archiving twice changes nothing.",
+    "plural": {
+      "": "Keeps it and serves it to nobody. Archiving twice changes nothing."
+    }
   }
 }
