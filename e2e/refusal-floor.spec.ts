@@ -208,6 +208,15 @@ test('the refusal page a signed-in person is shown holds the design floor at 390
 // grant anything. `modules/auth`'s own comment names this exact double-submit as the reason for
 // its `pg_advisory_xact_lock`; nothing in the tree drove it.
 //
+// "the only two roles that grant role management" is a claim about this tenant, and the tenant is
+// shared: every spec in this directory runs against one bootstrapped tenant in one database, a role
+// has no DELETE (the route answers 405, see the restore below), and a spec whose file sorts before
+// this one's can leave a role of its own holding role:manage. The floor counts roles, so a third
+// one makes both writes legitimate — each does leave somebody who can administer — and the case
+// would then blame the lock for a move its own fixture made. So the grant is taken back from every
+// role that is not this case's own before the pair is written: the premise the assertion is stated
+// against is one this case makes for itself, not one it inherits from file discovery order.
+//
 // The assertion is read off the two verdicts, so it needs no privileged read to state it: at most
 // one of the two writes may be accepted. It has a passing branch because one write is allowed and
 // the other is refused by the floor (200 and 422); a tree that lost the lock answers 200 twice.
@@ -232,6 +241,21 @@ test('two concurrent writes cannot take the last administering grant away betwee
   expect(created.status(), await created.text()).toBe(200);
   const held = await page.request.post(`/api/v1/user/users/${actor}/roles`, { data: { roles: ['admin', other] } });
   expect(held.status(), await held.text()).toBe(200);
+
+  // Every role in this tenant that now grants role:manage is one of this case's own: `admin`, which
+  // the signed-in person holds, and `other`. Whatever an earlier spec left holding the grant is given
+  // back empty, which is the write the spec that made it could not make — the route offers no
+  // delete — and leaves this pair the last of its kind. The people holding those roles belong to the
+  // spec that made them, which has finished.
+  const roster = await page.request.get('/api/v1/auth/roles');
+  expect(roster.status(), await roster.text()).toBe(200);
+  const administering = (((await roster.json()).items ?? []) as { name: string; permissions?: string[] }[])
+    .filter((r) => (r.permissions ?? []).some((p) => p === 'role:manage' || p === '*'));
+  for (const third of administering) {
+    if (third.name === 'admin' || third.name === other) continue;
+    const taken = await page.request.put(`/api/v1/auth/roles/${third.name}`, { data: { permissions: [] } });
+    expect(taken.status(), `taking role:manage back from ${third.name}`).toBe(200);
+  }
 
   const emptying = (role: string) =>
     page.request.put(`/api/v1/auth/roles/${role}`, { data: { permissions: [] } });
