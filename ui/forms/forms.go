@@ -54,7 +54,43 @@ type Options struct {
 	// see ControlProps.ChooseLabel. One sentence for the whole form, set by the
 	// screen from its own catalog.
 	ChooseLabel string
+	// Notes are this package's sentences about a control rather than about the
+	// field, given once for the whole form and handed to every control — see
+	// Notes.
+	Notes Notes
 }
+
+// The three sentences this package writes beside a control, spelled once here so
+// the fallback and the catalog ask agree on the English.
+const (
+	noteImmutable      = "Changed by a command of its own, not by this form."
+	noteRelatedRecord  = "The identifier of the related record. There is no picker for it yet."
+	noteCommaSeparated = "Comma separated."
+)
+
+// Notes are the sentences a control says about itself: why a value is read-only
+// here, what an identifier without a picker expects, how a list is typed in.
+// They are props for the same reason ChooseLabel is one — this package knows when
+// each sentence is true, and the page knows what language to say it in. A screen
+// with a catalog passes the three translations; empty keeps the English written
+// here, which is what a form rendered without a catalog has always said.
+type Notes struct {
+	Immutable      string
+	RelatedRecord  string
+	CommaSeparated string
+}
+
+// immutable is the read-only note, and only for a field this form cannot write.
+func (n Notes) immutable(immutable bool) string {
+	if !immutable {
+		return ""
+	}
+	return cmp.Or(n.Immutable, noteImmutable)
+}
+
+func (n Notes) relatedRecord() string { return cmp.Or(n.RelatedRecord, noteRelatedRecord) }
+
+func (n Notes) commaSeparated() string { return cmp.Or(n.CommaSeparated, noteCommaSeparated) }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
 var ErrNamespace = errors.New("forms: namespace must start with a letter and contain only letters, digits, underscores or hyphens")
@@ -164,7 +200,7 @@ func example(id string, model Model, options Options) examples.Example {
 		if !present && model.Create {
 			value = f.Default
 		}
-		body = append(body, Control(ControlProps{Field: field, ChooseLabel: options.ChooseLabel,
+		body = append(body, Control(ControlProps{Field: field, ChooseLabel: options.ChooseLabel, Notes: options.Notes,
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
@@ -237,11 +273,4 @@ func hint(parts ...string) string {
 		}
 	}
 	return strings.Join(kept, " ")
-}
-
-func immutableNote(immutable bool) string {
-	if immutable {
-		return "Changed by a command of its own, not by this form."
-	}
-	return ""
 }

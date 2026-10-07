@@ -59,6 +59,12 @@ trusted composition with an explicit control ID; without one it falls back to th
 component's name-derived identity, which is why a page holding two forms built
 that way collides — pass an ID when you compose more than one.
 
+`Options.Notes` carries the three sentences this package writes about a control —
+that a command of its own owns the value, that an entity identifier has no picker,
+that a list is comma separated. This package decides when each is true; the page
+decides what language it is said in, so a screen with a catalog passes the
+translations and an empty field keeps the English written here.
+
 `MustExample` is `Example` for a composition already gated at mount. The generated
 screens use it because a renderer returns a page, not an error, and `kit/rest`
 already refuses a schema whose field names collide (`rest_test.go` names the

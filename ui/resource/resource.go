@@ -296,6 +296,13 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 		CancelLabel: o.Label("screens.cancel", "Cancel"),
 		SubmitLabel: o.Label("screens.save", "Save"),
 		ChooseLabel: o.Label("screens.choose", "Choose…"),
+		// The heading of the refusal this form answers with, and the sentences each
+		// control says about itself, are asked here because the form builder is one
+		// layer below the catalogue and the language. Left unasked, a Portuguese
+		// form whose every field the module had translated still reported its
+		// refused save in English.
+		FailureTitle: o.Label("screens.failure_title", ""),
+		Notes:        o.notes(),
 	})
 }
 
@@ -312,7 +319,8 @@ func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
 // note and the words of its choices are the catalogue's, and a control drawn on a
 // translated page in a language the catalogue speaks is not drawn in English.
 func (o Options) Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(f, o), Value: value, Error: fieldErr, Immutable: immutable})
+	return forms.Control(forms.ControlProps{Field: formField(f, o), Value: value, Error: fieldErr,
+		Immutable: immutable, Notes: o.notes()})
 }
 
 // formField projects display words at the screen boundary. The portable form
@@ -326,6 +334,21 @@ func formField(f entity.Field, o Options) forms.Field {
 		// A field's own note is the sentence its owner wrote beside it, and a
 		// person reading the form in another language reads that note too.
 		Help: o.word("field", f.Name+".help", f.Doc), Options: options}
+}
+
+// notes asks for the three sentences ui/forms writes about a control — that a
+// value is written by a command of its own, that an identifier has no picker, how
+// a list is typed in. They are asked with an empty fallback on purpose: the
+// English belongs to ui/forms, which is the package that decides when each one is
+// true, and an empty answer is exactly the fallback that package keeps. What the
+// catalogue holds is only the translation, so a Portuguese page never reads a
+// sentence this package wrote in English over it.
+func (o Options) notes() forms.Notes {
+	return forms.Notes{
+		Immutable:      o.Label("screens.immutable_note", ""),
+		RelatedRecord:  o.Label("screens.related_record", ""),
+		CommaSeparated: o.Label("screens.comma_separated", ""),
+	}
 }
 
 // table is the list screen's rows: the field a row is known by first, as the

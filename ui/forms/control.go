@@ -25,6 +25,8 @@ type ControlProps struct {
 	// business keeping its placeholder in English. Empty keeps the component's
 	// own fallback, which is what a form rendered without a catalog says.
 	ChooseLabel string
+	// Notes are this package's own sentences about a control — see Notes.
+	Notes Notes
 }
 
 // widgetInputType names the <input> type each widget that draws an input asks
@@ -60,7 +62,7 @@ func Control(p ControlProps) g.Node {
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
-		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
+		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), p.Notes.immutable(p.Immutable)),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {
@@ -95,9 +97,9 @@ func Control(p ControlProps) g.Node {
 			Required: f.Required, Error: p.Error, HelpText: base.HelpText,
 		}, components.Checkbox).Node
 	case f.Widget == "entity-picker":
-		base.HelpText = hint(base.HelpText, "The identifier of the related record. There is no picker for it yet.")
+		base.HelpText = hint(base.HelpText, p.Notes.relatedRecord())
 	case f.Type == entity.TypeList:
-		base.HelpText = hint(base.HelpText, "Comma separated.")
+		base.HelpText = hint(base.HelpText, p.Notes.commaSeparated())
 	}
 	// The input type is what the widget named, and only then what the Go type
 	// implies. A widget that names one wins over the type because that is what

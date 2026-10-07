@@ -152,5 +152,41 @@
       "ui/resource/resource.go"
     ],
     "translation": "%g"
+  },
+  "screens.failure_title": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "That could not be saved",
+    "plural": {
+      "": "That could not be saved"
+    }
+  },
+  "screens.immutable_note": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Changed by a command of its own, not by this form.",
+    "plural": {
+      "": "Changed by a command of its own, not by this form."
+    }
+  },
+  "screens.related_record": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "The identifier of the related record. There is no picker for it yet.",
+    "plural": {
+      "": "The identifier of the related record. There is no picker for it yet."
+    }
+  },
+  "screens.comma_separated": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Comma separated.",
+    "plural": {
+      "": "Comma separated."
+    }
   }
 }
