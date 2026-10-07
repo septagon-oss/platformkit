@@ -124,10 +124,12 @@ func queryValue(rawQuery, key string) (string, bool) {
 // pg_terminate_backend ends those; the FORCE below ends any that arrive between the two statements.
 // One attempt gets removeTry, and removeTries of them are made, because DROP DATABASE asks the
 // cluster for a forced immediate checkpoint and waits for it, which is server work rather than a
-// lock race and can take seconds when the server is busy.
+// lock race and can take minutes when the server is busy: the same drop measured 0.4-0.9s between
+// heavy phases on this host and did not answer inside 45s while every suite on it was tearing down
+// at once, which is why the window is two minutes rather than the seconds an idle drop needs.
 const (
 	removeTries = 3
-	removeTry   = 30 * time.Second
+	removeTry   = 2 * time.Minute
 )
 
 func removeOwnDatabase(adminURL, database string) error {
@@ -139,11 +141,13 @@ func removeOwnDatabase(adminURL, database string) error {
 	var last error
 	for range removeTries {
 		ctx, cancel := context.WithTimeout(context.Background(), removeTry)
-		_, termErr := admin.ExecContext(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", database)
+		// A session that cannot be ended is not a failed removal: the DROP below either takes
+		// the database, which is what the caller asked for, or reports itself on the next line.
+		_, _ = admin.ExecContext(ctx, "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()", database)
 		_, last = admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+quote(database)+" WITH (FORCE)")
 		cancel()
 		if last == nil {
-			return termErr
+			return nil
 		}
 	}
 	return last
