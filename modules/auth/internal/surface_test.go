@@ -105,18 +105,22 @@ var issuerLegs = map[string]bool{
 	route{"app", "GET", "/api/v1/auth/oidc/callback", "public"}.String(): true,
 }
 
-// mailboxDoors are the two public operations the email-confirmation policy adds
+// mailboxDoors are the three public operations the email-confirmation policy adds
 // beside the /register address it shares with the open policy, and which the
-// open policy does not mount at all.
+// open policy does not mount at all. The third is the read of the notification
+// module's record of the mail the other two asked for: it answers the caller's
+// own request id with one word, and the same policy mounts it because a delivery
+// record no door reads is a table nobody will consult.
 var mailboxDoors = []route{
 	{"public", "POST", "/api/v1/public/auth/resend-verification", "public"},
 	{"public", "POST", "/api/v1/public/auth/verify-email", "public"},
+	{"public", "POST", "/api/v1/public/auth/mail-delivery", "public"},
 }
 
 // TestTheMailboxRegistrationPolicyMountsItsOwnDoors reads the composition the
 // reference application actually runs: the email-confirmation policy rather than
-// the open register door, and no issuer. It answers with 23 operations again, of
-// which two are mailbox doors the table above does not carry and the two OIDC
+// the open register door, and no issuer. It answers with 24 operations again, of
+// which three are mailbox doors the table above does not carry and the two OIDC
 // legs are absent. This is the case that sees a route written into
 // email_registration.go, which neither of the other two compositions mounts.
 func TestTheMailboxRegistrationPolicyMountsItsOwnDoors(t *testing.T) {
