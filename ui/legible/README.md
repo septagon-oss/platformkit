@@ -7,8 +7,10 @@ element siblings numbered). `Violations` are the strings that went around a cata
 `Exempted` are the ones the number does not count. `Exempt(text)` is the exemption
 rule, and `Reached` is the decision handed in by whoever marks the copy —
 `pseudo.Wrapped` in the gate — so this package names no locale and no delimiter.
-`MarkDatum(collected, reached, values)` marks the strings the application itself holds as what a
-person typed, and `Report(label, collected)` prints the verdict one document at a time:
+`MarkDatum(collected, reached, values)` marks the strings the application itself holds as
+what a person typed, and decides a node the frame joined part by part — one marked
+sentence stays one part however many separators it holds inside itself — while
+`Report(label, collected)` prints the verdict one document at a time:
 `TEXT <label> <path> "text"` for every string that went around a catalogue and
 `DATA <label> <path> "text" <why>` for every string it declined to count, with the rule
 that declined.
@@ -32,7 +34,9 @@ shape — a path from the root, a media type, a product tag and its version — 
 holding a slash, because `Yes/No` and `Show/Hide` hold one and are copy. What no rule
 over a shape can decide is which sentences a person typed: "Pump room inspection" and
 "Back to the workspace" are the same kind of text, and only the write that stored the
-first knows it, which is why the gate hands its own seeded values to `MarkDatum`.
+first knows it, which is why the gate hands its own seeded values to `MarkDatum`. A
+joined node is decided by the same rule, part by part, and the mark is what tells a
+frame's separator from the one a sentence holds between its own words.
 
 **Reused** — `golang.org/x/net/html` (`html.Parse`, already a requirement) rather than
 a second HTML reader, and the raw-text skip that falls out of the parse tree: a
@@ -57,6 +61,8 @@ Known over-reach, printed rather than hidden: `of-PT` passes as a language tag, 
 relative address because every one of its segments is spelled the way an address
 segment is. A label's colon and an English month name no longer read as data — `Name:`
 and `Mon 04 Oct 2026 12:00:00 UTC` are copy this reports — so what is exempt is a
-separator *inside* a token (`task:read`, `e.g.` with two dots, `a_b`) and a shape the
-grammar names: a scheme'd URL, a language tag, an id, an amount, a numeric timestamp. `Report` prints every exempt string with the reason, so what the number
+separator *inside* a token (`task:read`, `a.b.c` with two dots inside it, `a_b`) and a shape the
+grammar names: a scheme'd URL, a language tag, an id, an amount, a numeric timestamp. `e.g.`
+is not exempt: one dot inside and one at the end is an abbreviation, which is a word.
+`Report` prints every exempt string with the reason, so what the number
 declined to count stays reviewable.

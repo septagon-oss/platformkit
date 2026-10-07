@@ -149,7 +149,7 @@ func MarkDatum(collected []String, reached Reached, values []string) []String {
 		text := canon(s.Text)
 		s.Datum = typed[text]
 		if !s.Datum {
-			if datum, isReached := composed(joinedParts(text), typed, reached); datum || isReached {
+			if datum, isReached := composed(joinedParts(text, reached), typed, reached); datum || isReached {
 				s.Datum, s.Reached = datum, isReached
 			}
 		}
@@ -183,17 +183,48 @@ func composed(parts []string, typed map[string]bool, reached Reached) (datum, is
 // a word (`and/or`), and stays part of it.
 var joinSplit = regexp.MustCompile(`\s[` + separators + `]\s+`)
 
-// joinedParts cuts a canonical string at the separators that stand between its parts.
-func joinedParts(text string) []string {
-	parts := joinSplit.Split(text, -1)
-	if len(parts) < 2 {
+// joinedParts cuts a canonical string at the separators that stand between its parts,
+// and never inside a run the marking holds together. The mark is the boundary between
+// copy and everything else, and a sentence may hold one of the same glyphs between its
+// own words: the tab of a task titled "New task — urgent" reads
+// `⟦Ñëŵ ŧàsk — ürgèñţ⟧ · Tenant Name`, where the dash belongs to the title and not to
+// the join. Cutting there would hand [composed] half a marked sentence, which explains
+// nothing and so condemns the whole node — the copy would be reported as unreachable
+// the moment a person put a dash in a title. So a piece that does not read as marked
+// copy takes the pieces after it only until the span does read as marked, which is the
+// one test a separator inside a sentence cannot pass on its own, and a piece no span
+// accounts for stays a piece of the join for [composed] to decide on its own.
+func joinedParts(text string, reached Reached) []string {
+	joins := joinSplit.FindAllStringIndex(text, -1)
+	if len(joins) == 0 {
 		return nil
 	}
-	out := make([]string, 0, len(parts))
-	for _, part := range parts {
-		if part = strings.TrimSpace(part); part != "" {
+	pieces := len(joins) + 1
+	// edge[2p] to edge[2p+1] is piece p; edge[2p+1] to edge[2p+2] is the join after it.
+	edge := make([]int, 0, 2*pieces)
+	edge = append(edge, 0)
+	for _, join := range joins {
+		edge = append(edge, join[0], join[1])
+	}
+	edge = append(edge, len(text))
+	out := make([]string, 0, pieces)
+	for p, next := 0, 0; p < pieces; p = next + 1 {
+		start, end, merged := edge[2*p], edge[2*p+1], p
+		for q := p + 1; q < pieces && !reaches(reached, text[start:end]); q++ {
+			if end = edge[2*q+1]; reaches(reached, text[start:end]) {
+				merged = q
+			}
+		}
+		if merged == p {
+			end = edge[2*p+1]
+		}
+		next = merged
+		if part := text[start:end]; part != "" {
 			out = append(out, part)
 		}
+	}
+	if len(out) < 2 {
+		return nil
 	}
 	return out
 }
