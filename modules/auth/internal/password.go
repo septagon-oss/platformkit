@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -103,7 +104,31 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
 
-// offer sends the mail, and only then mints the token and raises the notice.
+// offer mints the token, sends the mail, and puts the credential back if the
+// transport refused it.
+//
+// # Where the row sits, relative to the mail
+//
+// The row is written before the message is handed over, and a refused send puts it
+// back rather than letting the attempt roll back — the attempt commits now, because
+// the record of the refusal is written in the same transaction and a record that
+// rolled back with the failure is a failure nobody can see.
+//
+// Both halves of that are load-bearing. A mailbox that already shows a link with no
+// row behind it is a link that does not work yet: apps/platformkit's four-eyes
+// journey redeems the token the moment the mail appears. And a committed failure may
+// not hold a live credential nobody was sent — which is what the restore is for, and
+// it leaves recent() counting the link that actually left, so the person can ask
+// again at once instead of being answered by a cap they were never mailed under. And
+// because the upsert replaces whatever row this attempt found, a refused resend would
+// otherwise destroy the link the person was sent five minutes ago — which is why the
+// restore writes the old hash, timestamp and expiry back rather than only deleting.
+//
+// The transport is the last thing before the commit that a successful attempt makes:
+// one statement, the record of the send, runs after it. That is deliberate. A mail the
+// person can already read in their mailbox is a link they may use at once, and every
+// statement this transaction still owes is a moment in which that link answers "those
+// credentials are not right".
 //
 // # Where the secret is, and where it is not
 //
@@ -147,6 +172,56 @@ func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 	return nil
 }
 
+// pendingLink is the credential row as one attempt found it, so that the attempt
+// can put it back. The zero value means there was none.
+type pendingLink struct {
+	hash    contracts.Digest
+	created time.Time
+	expires time.Time
+	there   bool
+}
+
+// pendingLinkOf reads the one outstanding link a person holds. It is called under
+// the advisory lock, and it is the whole reason the lock is held across the send:
+// a refused attempt has to restore this value rather than delete "the" row, because
+// the row it replaced may be the only link that person has.
+func pendingLinkOf(tx db.Tx[db.Tenant], table string, id uuid.UUID) (pendingLink, error) {
+	var out pendingLink
+	err := tx.DB().Raw("SELECT token_hash, created_at, expires_at FROM "+table+
+		" WHERE tenant_id = ? AND user_id = ?", db.TenantOf(tx).ID, id).Row().
+		Scan(&out.hash, &out.created, &out.expires)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
+		return out, nil
+	case err != nil:
+		return out, fmt.Errorf("auth: read the outstanding link in %s: %w", table, err)
+	}
+	out.there = true
+	return out, nil
+}
+
+// restoreLink puts a person's credential row back the way this attempt found it.
+// Two wrongs are refused here: leaving a live token that nobody was sent, and
+// deleting the link that person was sent five minutes ago because a mail server
+// refused them a second one.
+func restoreLink(tx db.Tx[db.Tenant], table string, id uuid.UUID, was pendingLink) error {
+	if !was.there {
+		err := tx.DB().Exec("DELETE FROM "+table+" WHERE tenant_id = ? AND user_id = ?",
+			db.TenantOf(tx).ID, id).Error
+		if err != nil {
+			return fmt.Errorf("auth: withdraw the link nobody was sent: %w", err)
+		}
+		return nil
+	}
+	err := tx.DB().Exec("UPDATE "+table+" SET token_hash = ?, created_at = ?, expires_at = ?"+
+		" WHERE tenant_id = ? AND user_id = ?",
+		was.hash, was.created, was.expires, db.TenantOf(tx).ID, id).Error
+	if err != nil {
+		return fmt.Errorf("auth: restore the link this attempt replaced: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if s.mail.Mailer == nil {
 		// A composition with no mailer writes no token either: a link nobody is
@@ -166,23 +241,11 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil || recent {
 		return err
 	}
-	token := secret()
-	base, err := s.baseURL(ctx, tx)
+	was, err := pendingLinkOf(tx, "password_tokens", user.ID)
 	if err != nil {
 		return err
 	}
-	// The send comes first and the credential second. A refused send now commits —
-	// it has to, or the record of it would roll back with it — and the one thing a
-	// committed failure must not hold is a live token nobody was sent, which is the
-	// same reason the branch above writes no token at all. Asking again is the
-	// person's answer to a refusal, and the cap must not answer it with "wait": the
-	// row that used to make recent() true is one that only exists once the mail has
-	// left.
-	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
-		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
-			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
-	}
-	at := db.Now()
+	token, at := secret(), db.Now()
 	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
@@ -190,6 +253,10 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
 	if err != nil {
 		return fmt.Errorf("auth: issue a password token: %w", err)
+	}
+	base, err := s.baseURL(ctx, tx)
+	if err != nil {
+		return err
 	}
 	if s.notify != nil {
 		// A path, and one with no query on it: the notification module refuses
@@ -202,6 +269,19 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		if err != nil {
 			return err
 		}
+	}
+	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
+		// The row goes back the way it came, and the attempt is acknowledged rather
+		// than retried: the record of a refused mail is written in this transaction,
+		// so this transaction has to commit for the record to exist (SPECIFY §3). A
+		// committed failure may not hold a credential nobody was sent — which is what
+		// the restore is for, and it also leaves the cap counting the link that was
+		// really sent rather than this one, so the person can ask again at once.
+		if err := restoreLink(tx, "password_tokens", user.ID, was); err != nil {
+			return err
+		}
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
 	}
 	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
 }
