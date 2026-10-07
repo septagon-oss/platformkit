@@ -342,6 +342,17 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	go mod tidy -diff
 	go tool gotestsum --packages='./...' -- -count=1
 	bash scripts/check_architecture_test.sh
+	# scripts/provenance_case_paths_test.sh asks whether the provenance cases the architecture gate runs
+	# are still the files it invokes. The gate keeps that list in one `for provenance_case in …; do`
+	# line, and a rename that reaches only one side of it goes wrong twice over: a name with no file
+	# behind it fails the gate at `FAIL: … refuses the line the rehearsal report is headed with`, which
+	# blames the rehearsal step for a missing file, and a list emptied out reaches no case at all while
+	# the gate prints its `rehearsal step:` line and moves on. Reading the list out of the gate's own
+	# text, rather than repeating it, is what keeps the two halves from parting — so this file refuses a
+	# loop it cannot find, a loop that names nothing, a named case with no file behind it, and a case
+	# named for the round that wrote it rather than for what it protects. It starts no service, reads one
+	# file and two paths, and answers in under a second.
+	bash scripts/provenance_case_paths_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
