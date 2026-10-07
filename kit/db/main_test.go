@@ -156,7 +156,7 @@ func encodeOption(value string) string {
 
 const (
 	// The teardown's own budget: dropTries removals of dropWindow each, two seconds
-	// apart, so no teardown costs a person more than about two and a half minutes.
+	// apart, so no teardown costs a person more than about six minutes.
 	// The CI Postgres serves four other packages' migrations while this package
 	// finishes, and a removal that gives up on one lost lock race reddens a run in
 	// which every test passed — that was 2026-10-01.
@@ -166,16 +166,16 @@ const (
 	// connected: none` — six timeouts on nobody. Removing a database is not only a
 	// lock race: DROP DATABASE asks the cluster for a forced immediate checkpoint
 	// and waits for it, which the server logs as `checkpoint starting: immediate
-	// force wait`. Measured against this repository's own stack, one empty database
-	// came away in 0.46 s, 2.4 s and 5.4 s with four packages' tests running beside
-	// it, and the checkpoint the server logged for one of them was `total=2.341 s`
-	// of that 2.4 s. On a runner whose Postgres serves four packages through the
-	// race detector that wait exceeds fifteen seconds, so a window that small is
-	// refused by the removal's own cost — and each abandoned attempt asks for a
-	// checkpoint of its own, so the sixth is slower than the first. Three removals
-	// with room to finish beat six that cannot finish once.
+	// force wait`. Measured on this stack between packages, one empty database came
+	// away in 0.4-0.9 s; with four packages' tests beside it, 0.46 s, 2.4 s and
+	// 5.4 s (one `total=2.341 s` in the log), and fifteen seconds on a race-detector
+	// runner. Two runs here on 2026-10-07, on a shared host at load 45-69 with this
+	// program's suites beside it, refused three windows of 45 s each on no session
+	// at all: the queue a forced checkpoint joins exceeds the window; the drop does
+	// not. Each abandoned attempt asks for a checkpoint of its own, so the sixth is
+	// slower than the first — three removals with room to finish beat six that don't.
 	dropTries  = 3
-	dropWindow = 45 * time.Second
+	dropWindow = 2 * time.Minute
 
 	// dropClearWait is how long one removal waits for the sessions it ended to be
 	// gone; dropLockWait, set on the session that asks (see withLockWait), is how
