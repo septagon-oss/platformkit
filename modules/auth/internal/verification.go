@@ -98,26 +98,13 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	if err != nil {
 		return err
 	}
-	token, at := secret(), db.Now()
-	// The send comes first and the credential second: a refused send now commits,
-	// because the record of it has to commit with it, and a committed failure may
-	// not hold a live verification token nobody was sent.
-	err = s.mail.Mailer.Send(ctx, notification.Message{
-		To: current.Email, Subject: "Verify your email address",
-		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-			base + VerifyEmailPath + "?token=" + token +
-			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
-	})
+	// The credential the person already holds, read under the lock, so that a
+	// refused send can put it back rather than delete "the" row.
+	was, err := pendingLinkOf(tx, "verification_tokens", id)
 	if err != nil {
-		// The transport's own words go into the record, through
-		// contracts.RedactMailReason, which is what lets them be recorded at all: a
-		// transport may quote its input in an error, and the handler now returns nil
-		// rather than an error, so nothing with a credential in it reaches the outbox
-		// either. The person is told by the record, not by a retry that would mint a
-		// second secret nobody sees.
-		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
-			notification.MailFailed, err.Error(), token, string(contracts.Hash(token)))
+		return err
 	}
+	token, at := secret(), db.Now()
 	err = tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
 		" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
 		" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
@@ -125,7 +112,33 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	if err != nil {
 		return fmt.Errorf("auth: issue email verification: %w", err)
 	}
+	err = s.mail.Mailer.Send(ctx, notification.Message{
+		To: current.Email, Subject: "Verify your email address",
+		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
+			base + VerifyEmailPath + "?token=" + token +
+			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
+	})
+	if err != nil {
+		// The credential goes back exactly as this attempt found it. Two wrongs are
+		// refused: leaving a live token nobody was sent, and destroying the link that
+		// person already has because a second one was refused. The resend cap then
+		// counts the link that really left, so asking again is answered rather than
+		// held for an interval nobody was mailed under.
+		//
+		// The attempt is acknowledged rather than returned as an error, because the
+		// record of it is written in this transaction and has to commit for it to
+		// exist. The transport's own words still reach the operator — redacted by
+		// contracts.RedactMailReason, into the row — and nothing credential-bearing
+		// reaches the outbox either way, which is all the sanitised error this line
+		// replaced ever protected.
+		if rerr := restoreLink(tx, "verification_tokens", id, was); rerr != nil {
+			return rerr
+		}
+		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
+			notification.MailFailed, err.Error(), token, string(contracts.Hash(token)))
+	}
 	return s.recordMail(ctx, tx, contracts.MailVerification, current.Email, notification.MailSent, "")
+
 }
 
 func (s *Service) verifyEmail(ctx context.Context, tx db.Tx[db.Tenant], users contracts.EmailRegistrar, token string) error {
