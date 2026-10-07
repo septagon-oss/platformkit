@@ -423,6 +423,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# judged on what it exported. These cases drive the gate's own main() with the tool's
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
+	# Which failure of a `go build` names the machine's shared build cache and which names the tree.
+	# check-rehearse, the prerequisite above, ended a `make check` at 08:53Z on 2026-10-07 over an archive
+	# another task's `go` had trimmed out from under it (`could not import context (open
+	# ~/.cache/go-build/08/088b62…-d: no such file or directory)`, then seven packages reporting the names
+	# that archive carried as `undefined:`), and the same command against the same exported tree exited 0
+	# in 5s minutes later. scripts/go_build_retry.sh is the bound on that retry; this case answers it with
+	# a scripted `go`, so it needs no compiler, no second tree and no network — and it asks the step
+	# itself whether both of its builds still go through the helper, because a cure edited out of the one
+	# caller keeps every other case here green.
+	bash scripts/go_build_retry_test.sh
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
 
