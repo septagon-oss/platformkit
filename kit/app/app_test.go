@@ -377,7 +377,12 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 // this program's suites ran beside it. It is five minutes now, the same room kit/db's bounded tick
 // gives itself: still a sixth of the package's own bound, so a boot that never listens fails the run
 // rather than outliving it, and a boot that is only slow on somebody else's machine stops being the
-// finding.
+// finding. The base this branch was replayed onto fixed the same wait its own way (c439d23, at 3 m)
+// and its run is carried here rather than dropped by the replay: 20 s refused
+// `TestTheWorkerAnswersTheSameProbeShapeAsTheWeb` at head `bfd1681` on 2026-10-06, inside a suite of
+// 129 packages each booting a schema of its own, over a boot whose eighteen migrations had cost 98 ms
+// to 5.620 s apiece. Two machines measured one conclusion; the replay keeps the larger of the two
+// numbers.
 
 // bootWait is how long a fixture waits for a process it started to answer. The
 // number is the machine's, not the kernel's: Run migrates a whole installation

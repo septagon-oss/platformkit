@@ -413,7 +413,10 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times, because the
 // bound under test is the production one. The number is left where it is: it exists to turn a tick that
 // would never end into a failure rather than a hang, and re-sizing it to the most loaded machine this
-// program runs on would bound nothing.
+// program runs on would bound nothing. The base this branch was replayed onto measured the same bound
+// its own way (2823dd0): the drain alone cost that machine 117 s, which made the old 120 s a reading
+// of the disk rather than of the tick — the conclusion this paragraph reaches at load, from a
+// different box.
 const tickDeadline = 5 * time.Minute
 
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the
