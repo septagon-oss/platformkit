@@ -5,7 +5,7 @@ import { expect, type Page } from '@playwright/test';
 // The floor itself is `~/.local/share/pkit-999/gates/design_gate.py`, which no goal in this
 // repository runs and whose probe takes no cookie — so it can only ever measure an anonymous
 // page, never one inside the frame. The rules and formulas below are that gate's `rules()` and
-// its probe, transcribed the way `e2e/review-r3-refusal-floor.spec.ts` transcribed them: at most
+// its probe, transcribed the way `e2e/refusal-floor.spec.ts` transcribed them: at most
 // two left edges, two body sizes, six font sizes, one primary CTA above the fold, four section
 // gaps, a measure of at most 75 characters at widths of 1280 and up, no contrast under 4.5:1 for
 // text below 24px, and no sideways scroll.

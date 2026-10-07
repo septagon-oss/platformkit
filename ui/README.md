@@ -91,7 +91,7 @@ were drawn here, so the cure is here too.
   sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
   `document.Bare` and the reference app's fault page already chose),
   `components.Text`'s own size vocabulary, and the gate's own probe as
-  `e2e/review-r3-refusal-floor.spec.ts` transcribes it. That bound is carried by
+  `e2e/refusal-floor.spec.ts` transcribes it. That bound is carried by
   the two sentences under a control (`clHelp`, `clFieldErr`) and by the wrapper
   inside the footer — never by the field's own flex column (`clFieldWrap`),
   because the design tool projects no composition whose sizing is constrained of
