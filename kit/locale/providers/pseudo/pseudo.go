@@ -3,9 +3,10 @@
 // Every sentence it returns is the delegate's own copy, marked so a reader of a
 // rendered document can see at a glance which words went through a catalogue and
 // which somebody wrote in Go: the text is wrapped in ⟦…⟧ and its vowels accented.
-// The transformation is reversible and length-preserving, so a page can be checked
-// by machine and un-read by a person, and nothing about it changes how the page
-// lays out.
+// The transformation is reversible and adds exactly the two delimiter runes — every
+// vowel is one rune for one — so a page can be checked by machine and un-read by a
+// person. How far the accented glyphs then widen a line is the font's answer and not
+// this function's: the mark is a measurement, not a layout guarantee.
 //
 // This is the standard technique — Android's `en-XA`, Chromium's pseudolocales — and
 // the reason it exists: the number that matters is the share of the words a person
@@ -184,8 +185,10 @@ func Wrapped(text string) bool {
 }
 
 // answered says whether the delegate's copy came from an entry rather than from
-// the readable text the call site passed. A delegate that can say does; one that
-// cannot is asked the comparison instead, which over-counts work for a sentence
+// the readable text the call site passed. A delegate that can say does — [xtext.Carrier]
+// names that question, and the assertion here is structural, so this package imports no
+// other provider to ask it. One that cannot is asked the comparison instead, which
+// over-counts work for a sentence
 // whose translation happens to read exactly like its English and under-counts it
 // for a sentence whose arguments hide the difference.
 func answered(delegate any, language, key, answer, fallback string, args []any) bool {

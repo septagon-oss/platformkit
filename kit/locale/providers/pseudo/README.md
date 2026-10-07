@@ -19,7 +19,8 @@ answers.
 
 **Reused** — `kit/locale.Messages`/`Formatter`/`Locale` and `locale.SelectLocale`'s
 composition-time refusal, `xtext.Load` and `xtext.Catalog` as the delegate (including
-its `Carries`, which is how an ask is known to have been answered rather than echoed),
+the `xtext.Carrier` query its catalogue implements, which is how an ask is known to have
+been answered rather than echoed),
 `golang.org/x/text/language` for the tag, and the double-provider shape
 `ui/page/tenant_locale_test.go` already built catalogues with. **Added** — the mark
 itself and the ask recorder: no formatter wrapper existed in the tree (`grep -rn
@@ -29,7 +30,8 @@ vowel rotation that stays a bijection over any payload — including copy whose 
 letters are accented, as Vietnamese and Portuguese write them — and the serial
 page-attribution rule are this package's. **Made reusable** — the recorder's worklist
 (`Unanswered`, per key, per page, per language) is any client's own translation
-backlog, and `Carries` on `xtext.Catalog` answers "is this key translated?" for
+backlog, and `xtext.Carrier` — `Carries(language, key)`, which the catalogue `Load`
+composes implements — answers "is this key translated?" for
 whatever asks it, not only this gate's.
 
 Refusals: a nil delegate panics at composition (`Wrap`), as does a delegate returning

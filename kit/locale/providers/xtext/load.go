@@ -432,6 +432,20 @@ type files struct {
 	carried map[string]map[string]string
 }
 
+// Carrier is the optional half of a composed catalogue that can say whether one
+// language answers a key with copy of its own. Every catalogue Load composed answers,
+// and the question is spelled as an interface rather than added to [Catalog] because an
+// adapter from elsewhere may hold the same contract and not know the answer: the type
+// assertion is where that difference is handled, and the named query is what lets a
+// caller holding a [Catalog] ask without reaching for a type this package keeps to
+// itself.
+type Carrier interface {
+	Carries(language, key string) bool
+}
+
+// Load's catalogue answers its own question, whatever it grows later.
+var _ Carrier = (*files)(nil)
+
 // Carries says whether one language answers this key with copy of its own, rather
 // than with the readable text a call site passed. It exists because a formatter
 // cannot say: `Text` answers a key with no entry in exactly the same words it would
