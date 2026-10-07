@@ -739,13 +739,21 @@ echo 'restore drill: with --files named and no --from, the backup the drill take
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p; /^toolchain[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"
-test_commands() {
-	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
+test_commands() { # <TEST_COUNT> <goals…>: the goal's own line, with the count the case is asking about
+	local count="$1"
+	shift
+	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "TEST_COUNT=$count" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
+}
+race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose line starts with `go test`
+	local count="$1"
+	shift
+	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "TEST_COUNT=$count" "$@" |
+		sed -n '/^go test /s/[[:blank:]]*$//p'
 }
 fresh="go tool gotestsum --packages='./...' -- -count=1"
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
-if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
 	exit 1
 fi
@@ -757,13 +765,42 @@ for goals in test check 'test check' 'check test'; do
 		'test check') expected="$focused"$'\n'"$fresh" ;;
 		'check test') expected="$fresh"$'\n'"$focused" ;;
 	esac
-	actual="$(test_commands "${targets[@]}" TEST_PACKAGES='./design ./ui/css' TEST_FLAGS='-run Selected' TEST_OPTIONS=--watch)"
+	actual="$(test_commands -count=1 "${targets[@]}" TEST_PACKAGES='./design ./ui/css' TEST_FLAGS='-run Selected' TEST_OPTIONS=--watch)"
 	if [[ "$actual" != "$expected" ]]; then
 		printf 'FAIL: make %s changed the local or fresh test boundary:\n%s\n' "$goals" "$actual" >&2
 		exit 1
 	fi
 done
 echo 'test feedback: local selectors preserve fresh full checks in either goal order'
+
+# The count both full-suite goals read, in both shapes it can arrive in. A make command-line value
+# wins over the environment, which is what lets this case ask for either from inside a gate whose own
+# environment already exports TEST_COUNT empty — the loop's. The CI shape must be today's fresh line
+# byte for byte; the empty shape is what a caller asked for with its own gate, and it may take the
+# count and nothing else: -race stays, because a race detector answering from a stale verdict is a
+# worse answer than no detector at all.
+if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
+	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
+	exit 1
+fi
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --" ]]; then
+	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all:\n%s\n' "$(test_commands '' check)" >&2
+	exit 1
+fi
+case "$(race_commands -count=1 check-race)" in
+	'go test -race -count=1 ./'*) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+esac
+empty_race="$(race_commands '' check-race)"
+case "$empty_race" in
+	'go test -race '*'./apps/platformkit') ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
+esac
+if [[ "$empty_race" == *-count* ]]; then
+	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2
+	exit 1
+fi
+echo 'test feedback: the count is one variable, the CI default stays fresh and an empty value costs only the count'
 
 # An unrelated PATH formatter must not change formatting or hide tool errors.
 formatting="$temporary/formatting"
