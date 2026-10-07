@@ -32,6 +32,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -82,6 +83,9 @@ func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 			continue
 		}
 		fresh, ok := newShapes[key]
+		if typedPatchDocumentation20261006(oldDoc, newDoc, key) {
+			continue
+		}
 		if !ok {
 			problems = append(problems, fmt.Sprintf("B3 (breaking): %s is gone", key))
 			continue
@@ -193,6 +197,43 @@ func wireOperations(doc map[string]any) wireRoutes {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].key < out[j].key })
 	return out
+}
+
+// typedPatchDocumentation20261006 permits only the 2026-10-06 correction of
+// four open map request documents. Their decoders already refused unknown,
+// read-only and command-owned keys. No previously working request changes.
+// Once the old document has a typed body, this allowance cannot apply again.
+func typedPatchDocumentation20261006(oldDoc, newDoc map[string]any, key string) bool {
+	id, rest, _ := strings.Cut(key, " ")
+	if rest != "request body application/json" && rest != "request body application/json {}" {
+		return false
+	}
+	component := map[string]string{
+		"task-task-update": "TaskPatch", "user-user-update": "UserPatch",
+		"content-content-update": "ContentPatch", "billing-plan-update": "PlanPatch",
+	}[id]
+	if component == "" {
+		return false
+	}
+	oldRoute, oldOK := wireRoute(oldDoc, id)
+	newRoute, newOK := wireRoute(newDoc, id)
+	if !oldOK || !newOK {
+		return false
+	}
+	oldBody := patchRequestSchema(oldRoute)
+	if !reflect.DeepEqual(oldBody, map[string]any{"type": "object", "additionalProperties": map[string]any{}, "description": "The writable fields to change"}) {
+		return false
+	}
+	next := patchRequestSchema(newRoute)
+	if !reflect.DeepEqual(next, map[string]any{"$ref": "#/components/schemas/" + component}) {
+		return false
+	}
+	shape := wireResolveRef(newDoc, next)
+	return shape["type"] == "object" && shape["additionalProperties"] == false && len(wireMap(shape["properties"])) > 0 && len(wireStringList(shape["required"])) == 0
+}
+
+func patchRequestSchema(route map[string]any) map[string]any {
+	return wireMap(wireMap(wireMap(wireMap(route["requestBody"])["content"])["application/json"])["schema"])
 }
 
 // widenableAuthorization is the set of changes of x-platformkit-auth that cannot
