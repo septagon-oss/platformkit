@@ -313,7 +313,22 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# what it is for — a run that never ends — without judging a busy box dead at 95% of its
 	# need. No behaviour budget moves with it: the kernel's lock_timeout and statement_timeout
 	# still refuse a wait that is too long, and they refuse it in seconds.
-	go tool gotestsum --packages='./...' -- -count=1 -timeout=25m
+	#
+	# That price was measured eight packages at a time, and until 2026-10-07 the command did not
+	# run that schedule: `./...` is 127 packages and `go test` leaves `-p` at the core count, so a
+	# 32-core box booted 32 test binaries against the one Postgres at once. Measured that day at
+	# load 21 to 44, the unbounded schedule needed 24m10s for kit/rest and killed kit/db, kit/httpx,
+	# modules/auth/internal and apps/platformkit at exactly 25m0s, each caught inside
+	# `kit/app.Migrate` → `db.MigrateDeclaring` with a fresh test on its stack and nothing hung —
+	# waiting on the composition advisory lock (`pg_advisory_lock(7240101)`, kit/db/migrate.go) that
+	# every test database in the run shares, and which two of kit/db's own cases keep deliberately
+	# busy — `migrate_test.go` and `migration_cancellation_lock_test.go` each apply a file whose
+	# body is `SELECT pg_sleep(30)`, thirty seconds of that lock held while every other boot waits.
+	# A boot queue is what killed them, and the priced schedule has a short
+	# one: `-p 8` runs the eight-way run the 25m above is the price of. Nothing that is asserted
+	# moves with it — no case skipped, no ceiling lowered, the watchdog still 25m and the kernel's
+	# own budgets still refusing a long wait in seconds — only how many binaries share the box.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=25m -p=8
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh

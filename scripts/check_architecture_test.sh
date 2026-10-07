@@ -747,8 +747,12 @@ test_commands() {
 # eight working packages at 600.0s. Naming `-timeout=25m` in the expected line is what
 # keeps the two halves honest: a caller's TEST_FLAGS still may not replace the stage's
 # own flags, and a Makefile that drops or re-prices the watchdog fails here instead of
-# silently handing the stage back its default stopwatch.
-fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=25m"
+# silently handing the stage back its default stopwatch. The line names `-p=8` for the same
+# reason: that is the schedule the 570s above was measured under, and the fresh stage is what
+# that price buys. A Makefile that lets `-p` drift back to the core count re-boots 32 test
+# binaries at one Postgres, where the price was taken at eight — and the queue for the
+# composition lock, not the work in the packages, is what reads as a hang.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=25m -p=8"
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
 if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
