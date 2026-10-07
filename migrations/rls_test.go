@@ -23,6 +23,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -62,7 +63,14 @@ var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 // TestEveryTableIsScopedOrExemptOnPurpose.
 func TestEveryTableIsScopedOrExemptOnPurpose(t *testing.T) {
 	adminURL, appURL := dbtest.URLs(t)
-	if err := db.Migrate(t.Context(), adminURL, everything...); err != nil {
+	// The patient budget, the one kit/db/dbtest gives a schema it is building: this
+	// walk takes `everything`, which carries modules/notification/000030's concurrent
+	// index build, and one database carries every package of this suite, so the build
+	// waits on transactions this case has nothing to do with. The claim below is about
+	// which tables carry a policy, and a five-second refusal on somebody else's write
+	// answers it with a migration failure rather than a finding.
+	patient := 90 * time.Second
+	if err := db.MigrateWith(t.Context(), adminURL, db.MigrationBudget{LockTimeout: &patient}, everything...); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	admin := dbtest.Open(t, adminURL)
