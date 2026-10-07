@@ -21,13 +21,23 @@ import (
 func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 	for _, poolSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprint(poolSize), func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			defer cancel()
 			adminURL, appURL := dbtest.URLs(t)
-			if err := db.Migrate(ctx, adminURL, migrations.Source, audit.Migrations); err != nil {
+			if err := db.Migrate(t.Context(), adminURL, migrations.Source, audit.Migrations); err != nil {
 				t.Fatal(err)
 			}
 			admin := dbtest.Open(t, adminURL)
+			// The ten seconds start here, at the observation, and not at the fixture. The
+			// case bounds how long the composed job may take while a real delete is held at
+			// a table lock; the schema above it is the fixture's own, and one database carries
+			// every package of this suite, so its DDL and its migration wait behind everybody
+			// else's. Measured at this branch, the window was being spent before the case
+			// began and the fixture's refusal was the failure:
+			//     retention_concurrency_test.go:28: db: migrate: lock: timeout: context
+			//     deadline exceeded        (and, with only the migration moved out, the same
+			//      answer at :41, on the pool's first query)
+			// What the ten seconds bound is unchanged; where they start is.
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer cancel()
 			pool := db.DefaultPool()
 			pool.MaxOpenConns, pool.MaxIdleConns = poolSize, min(4, poolSize)
 			conn, err := db.OpenWithPool(ctx, appURL, pool)
