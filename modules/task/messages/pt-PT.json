@@ -329,5 +329,59 @@
     "plural": {
       "": "Crítica"
     }
+  },
+  "command.task.task.assign": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Atribuir tarefa",
+    "plural": {
+      "": "Atribuir tarefa"
+    }
+  },
+  "command.task.task.assign.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Torna alguém responsável e aceita uma tarefa aberta. Atribuir a mesma pessoa outra vez não altera nada.",
+    "plural": {
+      "": "Torna alguém responsável e aceita uma tarefa aberta. Atribuir a mesma pessoa outra vez não altera nada."
+    }
+  },
+  "command.task.task.resolve": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Resolver tarefa",
+    "plural": {
+      "": "Resolver tarefa"
+    }
+  },
+  "command.task.task.resolve.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Fecha o ciclo. Repetir com a mesma resolução não altera nada; uma resolução diferente é recusada.",
+    "plural": {
+      "": "Fecha o ciclo. Repetir com a mesma resolução não altera nada; uma resolução diferente é recusada."
+    }
+  },
+  "command.task.task.check-sla": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Verificar o SLA da tarefa",
+    "plural": {
+      "": "Verificar o SLA da tarefa"
+    }
+  },
+  "command.task.task.check-sla.description": {
+    "references": [
+      "modules/task/internal/handler.go"
+    ],
+    "translation": "Regista um incumprimento se o prazo terminou com a tarefa por resolver. Regista no máximo um.",
+    "plural": {
+      "": "Regista um incumprimento se o prazo terminou com a tarefa por resolver. Regista no máximo um."
+    }
   }
 }
