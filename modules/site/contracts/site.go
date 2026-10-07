@@ -50,12 +50,12 @@ var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 // field holds: a value a client cannot read, save unchanged and get back is no
 // default at all. A row that does hold none is painted the accent of the palette
 // its sheet links (modules/web .accent). Whether a colour reads is the paint's job,
-// measured per mode, because no #rrggbb reads in both at once: contrast.go holds
-// accent-default on surface-canvas, -primary and -muted at MinContrast in each
-// theme, so the light theme keeps colours of luminance at most 0.134 (its darkest
-// ground, surface-muted #e9e4d8) and the dark theme keeps colours of at least 0.269
-// (its lightest, #1e2a27). One value for both modes may be repaired before it is
-// painted, and that repair is what keeps the page readable in either mode.
+// measured per mode, because no #rrggbb reads in both at once: the gate holds
+// accent-default on each theme's own canvas at MinContrast, which asks the two canvases
+// to be 4.5 × 4.5 = 20.25:1 apart where design.Default() puts #f2efe7 (L 0.8638) over
+// #0e1614 (L 0.0072) at 15.98:1 — a ground at 0.0072 needs the other at 1.1078, past the
+// 1.0 a colour reaches: light keeps L at most 0.1531, dark at least 0.2073. Only ""
+// paints itself, and the widening that would let a row hold it is B3's to refuse.
 const DefaultPrimaryColor = "#2563eb"
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
