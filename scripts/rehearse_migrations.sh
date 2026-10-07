@@ -68,14 +68,6 @@ set -Eeuo pipefail
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
 
-# Both binaries this step needs are built through one helper, because the step is the
-# only one in the goal that compiles a *second* revision from an exported tree and so
-# holds two cold build sessions open against the machine's shared build cache. Why that
-# needs a retry, and what it refuses to retry, is scripts/go_build_retry.sh's own
-# comment; scripts/go_build_retry_test.sh is the pin.
-# shellcheck source=scripts/go_build_retry.sh
-. "$root/scripts/go_build_retry.sh"
-
 # The resolution the lock watcher samples at, and the name it samples on: only
 # this run's migrate session carries it, which is why it is in the DSN. psql's \watch
 # takes seconds and allows a fraction, so the interval it is given is derived from
@@ -346,8 +338,7 @@ restore() { # $1 = database, $2 = dump file (custom format or plain SQL)
 # as "clean" — measured over a tree of 5000 untracked files, which is a working tree mid
 # refactor and reported itself as clean.
 note "candidate: $(git rev-parse --short HEAD)$(test -n "$(git status --porcelain)" && echo ' with a dirty tree')"
-go_build_retry go build -o "$work/platformkit" ./apps/platformkit ||
-	die 2 "this tree does not build, so there is nothing to rehearse"
+go build -o "$work/platformkit" ./apps/platformkit || die 2 "this tree does not build, so there is nothing to rehearse"
 
 if [ -n "$base" ]; then
 	note "base: $ref in $base, migrated and seeded"
@@ -368,16 +359,7 @@ if [ -n "$base" ]; then
 	# 2026-10-01 — the step had never been reached outside a working tree). The base
 	# binary exists to migrate and bootstrap the copy with that release's own runner;
 	# a build stamp naming *this* checkout would misreport which release built it.
-	# The retry is the one line here that is not about the tree. Measured on this host
-	# (2026-10-07): this build died over `could not import context (open
-	# ~/.cache/go-build/08/088b62…-d: no such file or directory)` — an archive the cache
-	# still listed and another `go` process had just trimmed away — and the same command,
-	# on the same exported tree, exited 0 five seconds later minutes afterwards. A step
-	# that ends `make check` over a file the machine pulled out from under it is a step
-	# that gets switched off, so the build is tried again when, and only when, its output
-	# names the cache: a compile error names its source file and is forwarded on the
-	# first try, with that try's exit code.
-	(cd "$src" && go_build_retry go build -buildvcs=false -o "$work/platformkit-base" ./apps/platformkit) ||
+	(cd "$src" && go build -buildvcs=false -o "$work/platformkit-base" ./apps/platformkit) ||
 		die 2 "the base revision does not build; the copy has to be made by that release's own code, not by this one's"
 	write_config "$work/base.yaml" "$(with_database "$app_url" "$base")" "$(with_database "$admin_url" "$base")"
 	# bootstrap migrates the whole ledger with that revision's runner and then
