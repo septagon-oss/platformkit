@@ -213,7 +213,7 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 	// never depends on which side an id landed on. What a row that is not there
 	// costs depends on that side, and only on that side.
 	//
-	// A file the body newly names has to exist: the refusal below is what keeps
+	// Every file the new set names has to exist: the refusal below is what keeps
 	// a body pointing at a removed image from recording the uses of the files
 	// that happen to still be there.
 	//

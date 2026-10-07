@@ -617,7 +617,7 @@ type Service interface {
 	//
 	// Every file it names is locked before its rows are written, in ascending id
 	// order so two records that share two files cannot lock them in opposite
-	// orders. A file the body newly names that is gone answers ErrNotFound
+	// orders. A file the new set names that is gone answers ErrNotFound
 	// naming the id — a use of a file that no longer exists is never written,
 	// and nothing else in the set is written either. A file this rewrite only
 	// ends has no such refusal: its ledger row was filed while the file existed

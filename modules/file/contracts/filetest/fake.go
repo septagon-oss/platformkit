@@ -89,7 +89,7 @@ func (f *Fake) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) 
 }
 
 // SetUses rewrites one field's uses, in the order the SQL service uses them:
-// decide, refuse a file the body newly names that is not there, then write. A
+// decide, refuse a file the new set names that is not there, then write. A
 // file this rewrite only ends is allowed to be gone already — see the case in
 // conformance.go that holds both implementations to that.
 func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
@@ -100,9 +100,9 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 	wanted := contracts.CollapseRefs(refs)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	// Nothing is written until every newly-named id has been found, which is the
-	// whole of the refusal's promise: a body that names one gone file records no
-	// uses at all, rather than the uses of the files that happen to still be
+	// Nothing is written until every id the new set names has been found. That is
+	// the whole of the refusal's promise: a body that names one gone file records
+	// no uses at all, rather than the uses of the files that happen to still be
 	// there. Ids this rewrite is dropping are not asked: they may be gone, and
 	// the rows that name them are what the write is here to remove.
 	for _, id := range wanted {
