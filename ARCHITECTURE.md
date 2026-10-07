@@ -217,14 +217,7 @@ the application role. The owner role performs migrations, not ordinary requests.
 The tenant settings are PostgreSQL `USERSET` values, so the source gate that
 restricts writes to `kit/db` is part of the security boundary, not a substitute
 for database privileges. [ADR 0003](docs/adr/0003-tenancy-by-postgres.md)
-describes the constraint. One effect cannot be a row and cannot wait: `db.AfterCommit`
-registers it to run once the tenant transaction now open commits, and never when
-that transaction rolls back. [modules/auth](modules/auth/internal/password.go)
-uses it for the set-password link it mails itself, one of the two it mails without
-a row, because a payload the outbox keeps for a week is also copied into the audit trail. That message can still be refused after the commit, so a delivery of
-such an event is not marked handled while it owes one: the claim is released, the
-row stays unpublished, and the effect runs again until it succeeds or the failure
-ends as a dead letter an operator replays.
+describes the constraint.
 
 A service records events in its transaction. [kit/events](kit/events/) delivers
 the committed outbox through the selected transport and claims each event for

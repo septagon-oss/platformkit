@@ -19,13 +19,6 @@ from concurrent_index_reader_schedule_test import ROOT, database_url, run  # noq
 
 
 CASE = "TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted"
-# The namespace the case's installation migrates into, named for dbtest through
-# PLATFORMKIT_TEST_SCHEMA: the composition key names the namespace a run applies into
-# (kit/db/migrate.go: compositionLockKey is its class), and the holder below has to ask
-# for that key, which it cannot do of a schema whose random per-process name it does not
-# know. The database is created for this run and dropped at the end of it.
-SCHEMA = "boot_queue_case"
-COMPOSITION_CLASS = 7240101
 # The competing migration's hold: longer than any fixed wait for /health the case
 # could be given by a guess, and short beside the patience a queue for the key gets
 # elsewhere in the tree (kit/db/migrate_test.go's migrationQueueBudget, five minutes).
@@ -46,8 +39,7 @@ class BootWaitsForItsCompositionKey(unittest.TestCase):
             scoped_admin = database_url(admin, database)
             env = {**os.environ,
                    "PLATFORMKIT_TEST_ADMIN_URL": scoped_admin,
-                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database),
-                   "PLATFORMKIT_TEST_SCHEMA": SCHEMA}
+                   "PLATFORMKIT_TEST_DATABASE_URL": database_url(app, database)}
             with tempfile.TemporaryDirectory() as directory:
                 binary = str(Path(directory) / "platformkit.test")
                 compiled = run(["go", "test", "-c", "-o", binary, "./apps/platformkit"])
@@ -62,11 +54,9 @@ class BootWaitsForItsCompositionKey(unittest.TestCase):
                          "DO $$ BEGIN WHILE NOT EXISTS (SELECT 1 FROM pg_class "
                          "WHERE relname = 'schema_migrations') LOOP PERFORM pg_sleep(0.01); "
                          "END LOOP; END $$",
-                         "-c", f"SELECT pg_advisory_lock({COMPOSITION_CLASS}, "
-                         f"hashtext('{SCHEMA}')), clock_timestamp()",
+                         "-c", "SELECT pg_advisory_lock(7240101), clock_timestamp()",
                          "-c", f"SELECT pg_sleep({HOLD_SECONDS})",
-                         "-c", f"SELECT pg_advisory_unlock({COMPOSITION_CLASS}, "
-                         f"hashtext('{SCHEMA}')), clock_timestamp()"],
+                         "-c", "SELECT pg_advisory_unlock(7240101), clock_timestamp()"],
                         cwd=ROOT, stdin=subprocess.DEVNULL,
                         stdout=output, stderr=subprocess.STDOUT,
                     )

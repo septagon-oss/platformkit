@@ -21,9 +21,9 @@ One binary and one image. `--role web|worker|all` chooses what the process does:
 - **all** is both in one process, with the in-memory transport, which is what a
   laptop and a small deployment want. It is the default.
 
-**Every role runs `Migrate` at boot.** `db.Migrate` takes an advisory lock keyed to the
-namespace it applies into before it touches the ledger, so several processes racing to migrate
-is one process migrating and the rest waiting and finding nothing to do. That removes
+**Every role runs `Migrate` at boot.** `db.Migrate` takes a fixed advisory lock
+before it touches the ledger, so several processes racing to migrate is one
+process migrating and the rest waiting and finding nothing to do. That removes
 the ordering problem instead of sequencing it: there is no migration job to run
 first and nothing to wait for.
 

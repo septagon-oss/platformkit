@@ -25,6 +25,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/app"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -41,6 +42,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
 
@@ -536,11 +538,23 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if strings.Contains(link, cfg.Server.PublicHost) {
 		t.Errorf("the invitation link carries the application's public host:\n%s", link)
 	}
-	// The link is in the box, and so is the token it carries. modules/auth hands
-	// the message to the mail server after the transaction that minted the token
-	// commits, so a mailbox holding an invitation is already a token anybody can
-	// spend — there is nothing else to wait for, and no ledger of the kernel's own
-	// to read before spending it.
+	// The link is in the box; the token it carries is not yet readable. The mail is
+	// handed over by modules/auth's offer, as the last thing it does inside the
+	// transaction that mints the token, and an in-process mail server records a
+	// message the instant it is called — so a mailbox holding a link is not yet a
+	// token anybody can spend, and spending it inside that window answers 401 for a
+	// credential the installation really did mint. This case has failed that way
+	// twice, both times with the Postgres shared. What makes the token readable is
+	// the delivery's own commit, and kit/events claims the delivery inside that
+	// transaction: the claim is what an invitation has to be waited for.
+	// This wait is an accommodation of that window, not its cure: the cure moves
+	// the hand-off in modules/auth's offer behind the commit that makes the token
+	// spendable, which is T-0313's work. Until that lands the link in the mailbox
+	// stays a fact about a call, not about committed rows, and this journey reads
+	// the ledger instead of the inbox.
+	eventually(t, "the invitation's delivery to be claimed", func() bool {
+		return deliveryClaimed(t, cfg, "auth", usercontracts.EventInvited)
+	})
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody
@@ -937,6 +951,33 @@ func queueDrained(t *testing.T, conn *db.Conn) bool {
 	return pending == 0
 }
 
+// deliveryClaimed reports whether one module's subscription has taken its claim on
+// an event in this installation. kit/events writes that claim inside the handler's
+// own transaction, so its arrival is the moment anything the handler did — the token
+// it minted, the row it raised, the mail it posted — is visible to the next
+// transaction. That is the one fact about an asynchronous step a case can wait on
+// without a stopwatch; it is the kernel's own ledger (migrations/000003), read in one
+// system transaction, for which queueDrained above is this file's precedent, and the
+// durable is formed by kit/appname from the composition's own slug, so the call site
+// names a module and an event and no string the ledger holds.
+func deliveryClaimed(t *testing.T, cfg config.Config, subscriber, event string) bool {
+	t.Helper()
+	conn, err := db.Open(t.Context(), cfg.Database.URL)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer conn.Close()
+	durable := appname.Durable(appSlug(cfg), subscriber, event)
+	var n int64
+	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Table("platformkit_handled").Where("durable = ?", durable).Count(&n).Error
+	})
+	if err != nil {
+		t.Fatalf("count the deliveries claimed as %s: %v", durable, err)
+	}
+	return n > 0
+}
+
 // notify raises one notification the way another module will: through the
 // service main holds, inside the tenant's own transaction. It asks for mail, so
 // the worker has something to send.
@@ -1109,17 +1150,13 @@ const (
 	bootQueue = 5 * time.Minute
 )
 
-// compositionKey is kit/db/migrate.go's compositionLockKey — the class of the advisory
-// key a migration run takes for the namespace it applies into — spelled out because that
+// compositionKey is kit/db/migrate.go's compositionLockKey, spelled out because that
 // constant is unexported and this file is not in that package — kit/db's own cases name
 // it the same way (kit/db/composition_lock_rehold_test.go).
 const compositionKey = 7240101
 
-// queuedForCompositionKey returns a read of the server that says whether a migration of
-// this test's own schema is under way right now — a session of it queued for the
-// composition key, or a session of it holding that key, which is this boot's own
-// migration still running and the half a boot used to be kept alive for only by accident
-// of sharing one key with the whole database.
+// queuedForCompositionKey returns a read of the server that says whether a session of
+// this test's own schema is waiting for the composition key right now.
 //
 // dbtest gives each test its own schema and makes application_name that schema
 // (kit/db/dbtest), so the read is of this test's backends and nobody else's: another
@@ -1132,7 +1169,8 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 		var waiting bool
 		err := admin.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks l
 			JOIN pg_stat_activity a ON a.pid = l.pid
-			WHERE l.locktype = 'advisory' AND l.classid = `+
+			WHERE l.locktype = 'advisory' AND NOT l.granted
+				AND ((l.classid::bigint << 32) | l.objid::bigint) = `+
 			strconv.Itoa(compositionKey)+`
 				AND a.application_name = current_setting('search_path'))`).Scan(&waiting)
 		if err != nil {
@@ -1165,10 +1203,9 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 // holds the port, and the case says so in a second rather than after thirty of
 // waiting and one request that was never going to be answered here.
 //
-// While nobody answers, it asks the server whether a composition of this test's own
-// schema is under way — this boot queued behind one, or this boot inside its own — and
-// gives the boot the queue's bound (bootQueue) for as long as that is true — see the two
-// windows above. A boot that queued and then
+// While nobody answers, it asks the server whether a session of this test's own schema
+// is waiting for the composition key, and gives the boot the queue's bound (bootQueue)
+// for as long as that is true — see the two windows above. A boot that queued and then
 // never listened is named as that, because the queue is the fact a reader needs.
 func waitFor(t *testing.T, cfg config.Config) {
 	t.Helper()
