@@ -82,6 +82,18 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // configure writes the configuration the reference app would have read from
 // config.yaml, against a schema of this test's own, and returns the path and
 // the loaded value. The database is empty: no tables, no ledger, nothing.
+// fixtureLockTimeout is the lock budget this product's own fixtures ask their migration
+// for, and it is not the runner's default. The reason is one database: `make check` runs
+// every package here against the Postgres this repository's stack starts, so a migration
+// meets the transactions the packages beside it hold open, and
+// modules/notification/000030's concurrent index build waits for all of them whatever
+// table they touched. A deployment wants the five-second default — a boot that cannot get
+// a lock should stop and say so — and kit/app/review3_budget_from_configuration_test.go
+// and kit/db/migrate_expand_contract_test.go keep that answer pinned, one through the
+// configuration and one through the runner. A fixture that stops reports a schema it was
+// never given, which is why kit/db/dbtest gives its own migration the same patience.
+const fixtureLockTimeout = 90 * time.Second
+
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
 	migrateURL, appURL := dbtest.URLs(t)
@@ -94,7 +106,7 @@ func configure(t *testing.T) (string, config.Config) {
 	// installation is, and nowhere else. TestTheControlPlaneIsNotFoundAtATenantHost
 	// in kit/httpx is where globex's answer at the same address is proved.
 	body := "server:\n  addr: \"" + freeAddr(t) + "\"\n  public_host: \"platformkit.localhost\"\n  installation_host: \"" + acmeHost + "\"\n  docs: true\n" +
-		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n" +
+		"database:\n  url: \"" + appURL + "\"\n  migrate_url: \"" + migrateURL + "\"\n  lock_timeout: \"" + fixtureLockTimeout.String() + "\"\n" +
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
 		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
@@ -1314,7 +1326,13 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
 	path, cfg := configure(t)
 	sources := app.MigrationSources(compose(cfg).modules)
-	if err := db.Migrate(t.Context(), cfg.Database.MigrateURL, legacyLayout(t, sources)); err != nil {
+	// The patient budget, not the deployment's: this case is about a ledger whose rows
+	// change owner, and the legacy layout it installs carries the same concurrent build
+	// every other fixture here meets. What it refuses on the budget's own terms is
+	// kit/db's answer to a contended file, pinned in kit/db, not this product's upgrade.
+	patient := fixtureLockTimeout
+	if err := db.MigrateWith(t.Context(), cfg.Database.MigrateURL,
+		db.MigrationBudget{LockTimeout: &patient}, legacyLayout(t, sources)); err != nil {
 		t.Fatalf("the release before this one: %v", err)
 	}
 	admin := dbtest.Open(t, cfg.Database.MigrateURL)

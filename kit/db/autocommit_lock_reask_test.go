@@ -36,12 +36,18 @@ func mapSource(owner string, files ...string) db.MigrationSource {
 // them on refuses at its budget with the file unapplied.
 //
 // The budget has to be a wait the file's own statement can meet as well, because that
-// statement runs with it on the session (kit/db/certify.go). Measured on a host carrying
-// nine other suites, this fixture's CONCURRENTLY build — the cheapest there is, over a
-// table two columns wide that nothing else has touched — took 337 ms and once 2371 ms,
-// so a 400 ms budget refused the case for the shape of its own fixture rather than for
-// the wait it is about. Five seconds is that measurement with room, and the gate stays
-// shut past it: a run that carried its budget into the ask still refuses before the
+// statement runs with it on the session (kit/db/certify.go). That is why the autocommit
+// file below drops an index concurrently instead of building one: a
+// `CREATE INDEX CONCURRENTLY` waits for every transaction that was open when its snapshot
+// was taken, whatever table those transactions touched, so on a host carrying this suite
+// the build alone took 337 ms, 2371 ms, 4711 ms and 7248 ms before refusing at the very
+// five seconds the case is asking about — the fixture refused for the wait of its own
+// statement and never reached the ask it measures. A concurrent drop takes its lock on the
+// one table the file created beside it, so it is instant and the only wait left in the
+// case is the gate. What that build's wait is worth, and what patience a fixture should be
+// given for it, is kit/db/dbtest/schema_contention_test.go's subject, where it is the thing
+// under test rather than the thing in the way. Five seconds stays the budget and the gate
+// stays shut past it: a run that carried its budget into the ask still refuses before the
 // gate opens, which is the half of the claim the budgets-on-the-session regression
 // would break.
 func TestTheCompositionLockComingBackIsNotBoundedByTheFileBudget(t *testing.T) {
@@ -108,9 +114,10 @@ END $$`,
 	started := time.Now()
 	err = db.MigrateWith(migrateCtx, parsed.String(), db.MigrationBudget{LockTimeout: &lock},
 		mapSource("gate",
-			`CREATE TABLE gate_probe (id bigint PRIMARY KEY, sent boolean NOT NULL DEFAULT false);`,
+			`CREATE TABLE gate_probe (id bigint PRIMARY KEY, sent boolean NOT NULL DEFAULT false);
+CREATE INDEX gate_probe_sent ON gate_probe (sent) WHERE sent;`,
 			`-- pkit: autocommit=true
-CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS gate_sent_once ON gate_probe (id) WHERE sent;`))
+DROP INDEX CONCURRENTLY IF EXISTS gate_probe_sent;`))
 	elapsed := time.Since(started)
 	if err != nil {
 		t.Fatalf("the autocommit file refused while the composition lock was held by someone else: %v", err)
