@@ -627,7 +627,7 @@ caller cannot forge one, and every request warms the shared host index through
 no audit row, `kit/cache` imports no `kit/telemetry`, and the cache is never a
 second source of truth. `kit/cache/cachetest/conformance.go` is the suite both the
 in-process store and the Valkey adapter run, over two fixed tenants
-(`kit/cache/cachetest/conformance.go:28-30`) so a key that lets one customer reach
+(`kit/cache/cachetest/conformance.go:29-34`) so a key that lets one customer reach
 another is reproducible from the failure message alone.
 
 **How an app extends it.** Add a field to `app.Caches` (`kit/app/app.go:155`,
@@ -659,7 +659,7 @@ collector is a separate program (`compose.yaml:64`).
 `pkit.tenant.id` on a span, with `pkit.request.id` on spans only
 (`kit/telemetry/telemetry.go:94-97`, `:160`), and `MetricAttrs` is the same list
 without the request id, because a value unique per request makes one series per
-request (`:188`, `:173-186`). The tenant is never a resource attribute: one
+request (`:188`, `:174-186`). The tenant is never a resource attribute: one
 process serves many tenants, as `## Follow a request` says.
 
 **How it is traced and audited.** This pillar *is* the trace: the transport span
