@@ -650,37 +650,9 @@ func partnerFile(files []migration, version int64) string {
 	return fmt.Sprintf("version %d", version)
 }
 
-// compositionLockKey is the *class* half of the advisory lock one migration run holds
-// for its whole composition, so that two replicas do not apply the same file at once.
-//
-// The lock names a namespace, not a database: the thing two runs must not do at once is
-// apply one file into the same ledger, and a ledger — `schema_migrations`, the progress
-// table, every table the files create — lives in one namespace. The pair the run takes is
-// (this class, hashtext(that namespace)), which is why two schemas of one database
-// migrate beside each other while two replicas of one installation still queue: an
-// installation's replicas resolve to the same namespace, and a test suite gives every test
-// its own. Held at the database level the key made every migration run of every schema
-// one queue — measured with `pg_locks` sampled every 2s across one `go test` of four
-// packages: the key granted in 244 of 300 samples and somebody waiting for it in 132, on
-// a tree where `go test ./...` boots a fresh schema 529 times. `kit/app`'s boot wait
-// (kit/app/app_test.go's waitFor) and every watcher of this queue ask for the class, which
-// is why the class stays this constant and the namespace the `objid` half.
+// compositionLockKey is the advisory lock one migration run holds for its whole
+// composition, so that two replicas do not apply the same file at once.
 const compositionLockKey = 7240101
-
-// compositionLockSQL and compositionUnlockSQL are that pair, spelled once each.
-//
-// `current_schema()` is the namespace the session's search_path *resolves to* — the one
-// `createOwnTables` will put the ledger in — where `current_setting('search_path')` is the
-// raw list a URL asked for, which is a setting and not an answer. COALESCE covers a
-// session whose path resolves to no schema at all: such a run's tables land in whatever
-// the server's own path says, and every such run shares that answer, so they share this
-// key. `hashtext` is what kit/app/bootstrap.go already uses to name a lock after a string,
-// and a collision between two namespaces costs a wait and never a lost file, because the
-// lock is only ever held over work that is itself idempotent-checked against the ledger.
-const (
-	compositionLockSQL   = "SELECT pg_advisory_lock($1, hashtext(COALESCE(current_schema(), '')))"
-	compositionUnlockSQL = "SELECT pg_advisory_unlock($1, hashtext(COALESCE(current_schema(), '')))"
-)
 
 // runner is one pinned connection and the budgets in force for one run. Every file and
 // every batch of the run is sent with the budgets re-asserted on the session first,
@@ -718,7 +690,7 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
 	}
-	_, err := r.conn.ExecContext(ctx, compositionLockSQL, int32(compositionLockKey))
+	_, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
 	if err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
@@ -732,7 +704,7 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 	if !r.locked {
 		return nil
 	}
-	if _, err := r.conn.ExecContext(ctx, compositionUnlockSQL, int32(compositionLockKey)); err != nil {
+	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", compositionLockKey); err != nil {
 		return fmt.Errorf("db: migrate: unlock: %w", err)
 	}
 	r.locked = false

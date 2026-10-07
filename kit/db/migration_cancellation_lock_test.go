@@ -64,7 +64,7 @@ func TestACancelledMigrationHoldsNoCompositionLockOnceItReturns(t *testing.T) {
 		var held int
 		scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
 			WHERE l.locktype = 'advisory' AND l.granted
-				AND l.classid = `+strconv.Itoa(compositionLockKey)+`
+				AND ((l.classid::bigint << 32) | l.objid::bigint) = `+strconv.FormatInt(compositionLockKey, 10)+`
 				AND a.application_name = current_setting('search_path')`, &held)
 		if held == 0 {
 			return

@@ -64,13 +64,13 @@ var (
 )
 
 // TestServiceConforms runs the same suite the fake runs, against the real
-// service, a real Postgres and a real tenant transaction. A case that reads a
-// mailed link runs the call behind it in a committed transaction, as a delivery
-// and a request do. The case's own transaction is rolled back; the failed-login
-// events are not, because Login writes them in one of its own (a 401 commits
-// nothing), so the harness reads the outbox rather than a slice — the two kinds
-// of write are indistinguishable there, which is what the suite is entitled to
-// assume about writes it cannot see inside.
+// service, a real Postgres and a real tenant transaction.
+//
+// The case's transaction is rolled back, but the failed-login events are not:
+// Login writes those in a transaction of its own, because the response that
+// carries them is a 401 and kit/httpx does not commit a 401. That is exactly
+// why the harness reads the outbox rather than a slice — the two kinds of write
+// are indistinguishable there, which is what the suite is entitled to assume.
 func TestServiceConforms(t *testing.T) {
 	authtest.RunService(t, func(t *testing.T, run func(authtest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
@@ -81,17 +81,9 @@ func TestServiceConforms(t *testing.T) {
 		seed(t, conn, acme)
 
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
-		// A transaction of its own that ends by committing: the way a worker's
-		// delivery and a request end one, and the moment a mailed credential becomes
-		// spendable. See authtest.Fixture.Commits.
-		commits := func(fn func(context.Context, db.Tx[db.Tenant]) error) error {
-			return db.Run(db.Detached(ctx), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				return fn(ctx, tx)
-			})
-		}
 		err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(authtest.Fixture{
-				Ctx: ctx, Tx: tx, Service: svc, Commits: commits,
+				Ctx: ctx, Tx: tx, Service: svc,
 				Published: func() []string { return outbox(t, tx) },
 				Sent:      notices.Sent,
 				Mailed:    box.Sent,
@@ -103,38 +95,28 @@ func TestServiceConforms(t *testing.T) {
 					return int(n)
 				},
 				Role: func(name string, permissions ...string) {
-					err := commits(func(_ context.Context, tx db.Tx[db.Tenant]) error {
-						return tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, ?)",
-							acme.ID, name, pq.StringArray(permissions)).Error
-					})
+					err := tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, ?)",
+						acme.ID, name, pq.StringArray(permissions)).Error
 					if err != nil {
 						t.Fatalf("grant %s: %v", name, err)
 					}
 				},
 				User: func(email, password string, roles ...string) uuid.UUID {
-					var id uuid.UUID
-					err := commits(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-						u, err := users.Invite(ctx, tx, email, "")
-						if err != nil {
-							return err
-						}
-						id = u.ID
-						if password != "" {
-							if err := users.SetPassword(ctx, tx, id, password); err != nil {
-								return err
-							}
-						}
-						if len(roles) > 0 {
-							if _, err := users.SetRoles(ctx, tx, id, roles); err != nil {
-								return err
-							}
-						}
-						return nil
-					})
+					u, err := users.Invite(ctx, tx, email, "")
 					if err != nil {
-						t.Fatalf("create %s: %v", email, err)
+						t.Fatalf("invite %s: %v", email, err)
 					}
-					return id
+					if password != "" {
+						if err := users.SetPassword(ctx, tx, u.ID, password); err != nil {
+							t.Fatalf("set a password for %s: %v", email, err)
+						}
+					}
+					if len(roles) > 0 {
+						if _, err := users.SetRoles(ctx, tx, u.ID, roles); err != nil {
+							t.Fatalf("grant %v to %s: %v", roles, email, err)
+						}
+					}
+					return u.ID
 				},
 			})
 			return errRollback

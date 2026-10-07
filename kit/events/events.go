@@ -9,10 +9,7 @@
 // Delivery is at-least-once, and Consume is what turns that into exactly-once
 // handling: it claims each (event, subscription) pair in platformkit_handled
 // inside the handler's own transaction, so a redelivery of work already done
-// finds the claim taken and skips the handler. One case is not "already done": a
-// handler that deferred an effect past its own commit and could not carry it out.
-// Its rows are in, its claim is released, and the event comes back. See claim and
-// db.ErrEffectNotRun.
+// finds the claim taken and skips the handler.
 //
 // This is also the job queue: durable, retried, transactional background work
 // is what an outbox is, and asking for it twice buys nothing. Periodic work is
@@ -22,7 +19,6 @@ package events
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -281,9 +277,6 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 				// Only the id is known here. It is all kit/db needs to scope
 				// the transaction, and it is what row-level security reads.
 				ctx = tenancy.WithTenant(ctx, tenancy.Tenant{ID: ev.TenantID})
-				// And which row is being delivered goes on the context beside it, for
-				// the code underneath the handler that takes no event: see DeliveryOf.
-				ctx = context.WithValue(ctx, deliveryKey{}, ev.ID)
 				// One span per delivery, on the trace of the work that published the
 				// event rather than of the worker that woke up. See trace.go.
 				ctx, span := startDelivery(ctx, ev)
@@ -294,28 +287,6 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					}
 					return h(ctx, tx, ev)
 				})
-				if errors.Is(err, db.ErrEffectNotRun) {
-					// The handler's rows committed and an effect it deferred to after
-					// the commit did not happen. The claim marks the delivery done, and
-					// this one is not: it is owed an effect it cannot be told to forget.
-					// Leaving the claim would make every redelivery a no-op that acks —
-					// the rows committed, the effect never runs again, and the outbox row
-					// is stamped over work nobody did. So the claim goes, the failure goes
-					// back to the transport, and the work comes round on its own ladder:
-					// the outbox row stays unpublished until a delivery finishes, and when
-					// the ladder runs out the dead letter is writable, because the claim
-					// that would have swallowed it is gone. The handler is run again over
-					// rows it already wrote, which is what deferring an effect promises:
-					// see AfterCommit.
-					slog.ErrorContext(ctx, "events: delivery committed its rows and its deferred effect did not run, releasing the claim",
-						"event", ev.Name, "id", ev.ID, "durable", durable, "error", err)
-					if releaseErr := releaseClaim(ctx, conn, ev.ID, durable); releaseErr != nil {
-						// Nothing left to do but say it: the claim stands, so the event is
-						// terminal until an operator reviews it, which is what replay is for.
-						slog.ErrorContext(ctx, "events: the claim of an unfinished delivery is still held",
-							"event", ev.Name, "id", ev.ID, "durable", durable, "error", releaseErr)
-					}
-				}
 				endSpan(span, err)
 				return err
 			},
@@ -402,55 +373,6 @@ func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable string) (bool, error) {
 // handlerTimeout bounds each transaction and any wait on another delivery's
 // claim. Broker redeliveries may overlap it; the claim serializes their effects.
 const handlerTimeout = 25 * time.Second
-
-// deliveryKey is the outbox row a delivery is handling, on the context that
-// delivery's work runs under.
-type deliveryKey struct{}
-
-// DeliveryOf reports the id of the outbox row whose delivery ctx is the handling
-// of, and false for work that is no delivery: a request, a periodic job, a boot.
-//
-// A handler is handed its event; this is for the code underneath one, which is
-// given no event and takes no argument for it. A module that records which
-// delivery wrote a row — modules/auth stamps the invitation's event onto the token
-// row it mints, so that the retry of that delivery can tell the link it already
-// minted from somebody else's newer ask, which is what keeps a released claim from
-// becoming a mail that is never sent — reads it from here rather than through one
-// more parameter on every exported method a request calls too. It is the shape
-// httpx.WithServed already is for the same reason.
-func DeliveryOf(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(deliveryKey{}).(uuid.UUID)
-	return id, ok
-}
-
-// releaseToken is the capability the release below needs. It is a system
-// transaction because the tenant transaction that wrote the claim is closed by
-// the time its deferred effects fail, and the failure may be that a new one
-// cannot be opened.
-var releaseToken = syscap.NewSystemToken("release the claim of a delivery whose deferred effect did not run")
-
-// releaseClaim takes back one subscription's mark against one event, so the next
-// delivery of it is a first delivery and not a skip.
-//
-// It deletes one row and names it twice: the event and the durable, which is the
-// whole primary key. Another subscription's mark on the same event is another
-// piece of work, and one subscription's mark against another event is somebody
-// else's failure to explain. It is idempotent, and what it costs is said in claim:
-// the redelivery that arrives after the release runs the handler rather than
-// waiting on its lock, so a handler whose effect failed can have its rows written
-// twice. That is at-least-once, which is what this package's transport contract
-// always was; the claim is what usually improves on it, and a delivery that owes
-// an effect is exactly the case where the mark must not stand.
-func releaseClaim(ctx context.Context, conn *db.Conn, id uuid.UUID, durable string) error {
-	// WithoutCancel: the deadline that timed out this attempt must not also veto the
-	// record of it. The transport is about to retry, and a claim left held by an
-	// attempt that ran out of time is work nobody can see.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), handlerTimeout)
-	defer cancel()
-	return db.RunSystem(ctx, conn, releaseToken, func(_ context.Context, tx db.Tx[db.System]) error {
-		return tx.DB().Exec("DELETE FROM "+handled+" WHERE event_id = ? AND durable = ?", id, durable).Error
-	})
-}
 
 // deadLetter atomically claims a terminal outcome and records its cause. The
 // same unique claim serializes this with successful or concurrent handling.

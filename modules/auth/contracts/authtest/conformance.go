@@ -23,18 +23,8 @@ import (
 // installs, because that is what the tenant module's create hook does and every
 // tenant that exists has been through it.
 type Fixture struct {
-	Ctx context.Context
-	Tx  db.Tx[db.Tenant]
-	// Commits runs fn in a tenant transaction of the harness's own and ends it by
-	// committing, which is how a worker's delivery and a request end one. A case that
-	// reads a message out of the mailbox must first let the transaction that minted
-	// the credential reach its commit: a mailed link is a credential somebody can
-	// spend, and the module's own case refuses an implementation that hands one over
-	// while its row is still uncommitted
-	// (TestAnInvitationLeavesOnlyAfterItsTokenCommits). What fn committed is visible
-	// to the case's transaction afterwards; what the case has not committed yet is
-	// not visible to fn, so a person is created through it.
-	Commits func(fn func(context.Context, db.Tx[db.Tenant]) error) error
+	Ctx     context.Context
+	Tx      db.Tx[db.Tenant]
 	Service contracts.Service
 	// User creates a user and returns their id. An empty password makes
 	// somebody who has been invited and cannot sign in yet.
@@ -306,14 +296,11 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"the worker looks the address up, and mails only somebody who is here": func(t *testing.T, f Fixture) {
 			f.User("ada@acme.example.com", Password)
-			f.Commits(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
-					if err := f.Service.Reissue(ctx, tx, address); err != nil {
-						t.Errorf("Reissue(%q) = %v, want nil however unknown the address", address, err)
-					}
+			for _, address := range []string{"ada@acme.example.com", "nobody@acme.example.com"} {
+				if err := f.Service.Reissue(f.Ctx, f.Tx, address); err != nil {
+					t.Errorf("Reissue(%q) = %v, want nil however unknown the address", address, err)
 				}
-				return nil
-			})
+			}
 			sent := mailed(f)
 			if len(sent) != 1 {
 				t.Fatalf("Reissue sent %d messages, want one — for the address that is here", len(sent))
@@ -337,14 +324,11 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"one link per person per interval, however often somebody asks": func(t *testing.T, f Fixture) {
 			f.User("ada@acme.example.com", Password)
-			f.Commits(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				for range 5 {
-					if err := f.Service.Reissue(ctx, tx, "ada@acme.example.com"); err != nil {
-						t.Fatalf("Reissue: %v", err)
-					}
+			for range 5 {
+				if err := f.Service.Reissue(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+					t.Fatalf("Reissue: %v", err)
 				}
-				return nil
-			})
+			}
 			// A public route that costs a mail is somebody else's inbox filled
 			// by a stranger unless the recipient is capped too. The cap is on
 			// the person being written to; the route's own cap is on the
@@ -359,9 +343,9 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
 				t.Fatalf("Login: %v", err)
 			}
-			f.Commits(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				return f.Service.Reissue(ctx, tx, "ada@acme.example.com")
-			})
+			if err := f.Service.Reissue(f.Ctx, f.Tx, "ada@acme.example.com"); err != nil {
+				t.Fatalf("Reissue: %v", err)
+			}
 			sent := mailed(f)
 			if len(sent) != 1 {
 				t.Fatalf("Reissue sent %d messages, want one", len(sent))
@@ -401,14 +385,11 @@ func cases() map[string]func(*testing.T, Fixture) {
 		"an invitation is offered a link, and somebody who can already sign in is not": func(t *testing.T, f Fixture) {
 			invited := f.User("invited@acme.example.com", "")
 			active := f.User("ada@acme.example.com", Password)
-			f.Commits(func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-				for _, id := range []uuid.UUID{invited, active, uuid.New()} {
-					if err := f.Service.Offer(ctx, tx, id); err != nil {
-						t.Errorf("Offer(%s) = %v, want nil", id, err)
-					}
+			for _, id := range []uuid.UUID{invited, active, uuid.New()} {
+				if err := f.Service.Offer(f.Ctx, f.Tx, id); err != nil {
+					t.Errorf("Offer(%s) = %v, want nil", id, err)
 				}
-				return nil
-			})
+			}
 			if got := mailed(f); len(got) != 1 {
 				t.Fatalf("Offer sent %d messages, want one — for the person who cannot sign in", len(got))
 			}

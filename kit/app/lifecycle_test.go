@@ -403,13 +403,13 @@ func TestTheBrokerIsAskedOfTheRoleThatNeedsIt(t *testing.T) {
 	// backstop, not the check: Run migrates before it asks the role's transport
 	// (Start's documented order), and the wait for the composition's advisory lock is
 	// patient by design — bounded by the caller's context and nothing else
-	// (kit/db/migrate.go, holdCompositionLock). That lock names the namespace a run
-	// applies into, so a boot here queues behind another run of the same schema — a
-	// replica, or one of kit/db's cases that hold the key of their own namespace from a
-	// second session while they watch a run queue behind it — and, on a loaded host,
-	// behind whatever else this Postgres is doing. At 5s this assertion was a stopwatch
-	// on that queue: in `make check` on 2026-09-30 it failed with "worker Run = db:
-	// migrate: lock: timeout: context deadline exceeded" — a wait cut short, not a refusal
+	// (kit/db/migrate.go, holdCompositionLock). That lock is one key in one database,
+	// and every test schema this suite makes lives in that one database, so a boot here
+	// queues behind any migration run another package has under way, including
+	// kit/db's cases that hold pg_advisory_lock(7240101) from a second session while
+	// they watch a run queue behind it. At 5s this assertion was a stopwatch on that
+	// queue: in `make check` on 2026-09-30 it failed with "worker Run = db: migrate:
+	// lock: timeout: context deadline exceeded" — a wait cut short, not a refusal
 	// arriving. It now stands where this package's two drain cases already stand for a
 	// boot, and what watches for a listener that must not exist is the dial below,
 	// which is the observation the bound used to stand in for.

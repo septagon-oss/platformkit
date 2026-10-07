@@ -1,7 +1,6 @@
 package authtest_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/google/uuid"
@@ -27,10 +26,7 @@ func TestFakeConforms(t *testing.T) {
 		fake.Grant(contracts.RoleMember)
 		run(authtest.Fixture{
 			Ctx: ctx, Tx: tx, Service: fake, Published: fake.Published,
-			// No transaction to end: the fake keeps its rows in maps, so the work is
-			// already visible to whoever asks, which is what committing means here.
-			Commits: func(fn func(context.Context, db.Tx[db.Tenant]) error) error { return fn(ctx, tx) },
-			Role:    fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,
+			Role: fake.Grant, Sent: notices.Sent, Mailed: box.Sent, Sessions: fake.SessionsOf,
 			User: func(email, password string, roles ...string) uuid.UUID {
 				u, err := users.Invite(ctx, tx, email, "")
 				if err != nil {
