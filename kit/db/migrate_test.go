@@ -270,24 +270,42 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 	}
 }
 
-// cancellationCompositionKey is kit/db's composition key (kit/db/migrate.go:
-// compositionLockKey), spelled out here rather than borrowed from another file's
-// declaration so this case stands on its own.
+// cancellationCompositionKey is the first half of kit/db's composition key
+// (kit/db/migrate.go: compositionLockKey), spelled out here rather than borrowed from
+// another file's declaration so this case stands on its own. The lock is the two-key
+// one: since main's 5605448 a run takes (compositionLockKey, the OID of the namespace
+// it resolves to), because one history table belongs to one namespace, and review3_guard_floor_test.go
+// and composition_lock_rehold_test.go hold and release that pair. A session holding
+// the bare key blocks nothing, which is why this case names the pair too.
 const cancellationCompositionKey = 7240101
 
+// cancellationNamespaceLock is the acquisition and its inverse, asked of the session
+// this case runs them on: `current_schema()` there is the schema dbtest opened for
+// this test, which is the schema the run under test migrates, so the two of them want
+// one and the same lock.
+const (
+	cancellationNamespaceLock   = "SELECT pg_advisory_lock($1::int, to_regnamespace(current_schema())::oid::int)"
+	cancellationNamespaceUnlock = "SELECT pg_advisory_unlock($1::int, to_regnamespace(current_schema())::oid::int)"
+)
+
 // cancellationKeyWaiter counts the sessions of this test's own schema that are
-// queued for the composition key and not yet granted one, and
-// cancellationKeyHolder the ones that hold one. `application_name =
+// queued for the composition lock and not yet granted one, and
+// cancellationKeyHolder the ones that hold one. pg_locks spells a two-key advisory
+// lock as classid = the first key and objid = the second (measured on the development
+// Postgres: a holder of pg_advisory_lock(7240101, 84) appears as classid 7240101,
+// objid 84), so the second half names this schema's own namespace. `application_name =
 // current_setting('search_path')` is dbtest's own address scheme: every URL it hands
 // out wears the test's schema, so these two questions are about this test's backends
 // and not about every other package running beside it.
 const (
 	cancellationKeyWaiter = `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-		WHERE l.locktype = 'advisory' AND l.classid = 0 AND l.objid = 7240101 AND NOT l.granted
+		WHERE l.locktype = 'advisory' AND l.classid = 7240101
+		AND l.objid = to_regnamespace(current_schema())::oid AND NOT l.granted
 		AND a.application_name = current_setting('search_path')`
 
 	cancellationKeyHolder = `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-		WHERE l.locktype = 'advisory' AND l.classid = 0 AND l.objid = 7240101 AND l.granted
+		WHERE l.locktype = 'advisory' AND l.classid = 7240101
+		AND l.objid = to_regnamespace(current_schema())::oid AND l.granted
 		AND a.application_name = current_setting('search_path')`
 )
 
@@ -296,10 +314,11 @@ const (
 // starts wear the test's schema, and the hand-off below has to be able to tell its own
 // runs from the session standing in the queue beside them.
 //
-// The queue for this key is the whole database's — an advisory lock is per-database,
-// and every package's boot migrates its own schema against that one key while `make
-// check` runs them all at once, this package's two cases that hold the key on purpose
-// (review3_guard_floor_test.go, composition_lock_rehold_test.go) among them. So getting
+// The queue for this key belongs to this namespace — the second half of the lock is
+// this schema's OID, so a run of another package's schema is not standing in it — and
+// what this case can still queue behind is another session of its own schema, which is
+// what the two cases that hold the key on purpose
+// (review3_guard_floor_test.go, composition_lock_rehold_test.go) do. So getting
 // the key is a wait in a queue this test does not control, which is why the bound is the
 // five minutes review3_guard_floor_test.go gives its own acquisition: losing a fair race
 // here says nothing about the behaviour under test.
@@ -319,7 +338,7 @@ func takeCompositionKey(t *testing.T, migrateURL string) func() {
 	}
 	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancelAcquire()
-	if _, err := conn.ExecContext(acquire, "SELECT pg_advisory_lock($1)", cancellationCompositionKey); err != nil {
+	if _, err := conn.ExecContext(acquire, cancellationNamespaceLock, cancellationCompositionKey); err != nil {
 		t.Fatalf("the composition key was not free to hold within five minutes: %v", err)
 	}
 	handed := false
@@ -330,7 +349,7 @@ func takeCompositionKey(t *testing.T, migrateURL string) func() {
 		handed = true
 		release, cancelRelease := context.WithTimeout(context.WithoutCancel(t.Context()), 10*time.Second)
 		defer cancelRelease()
-		if _, err := conn.ExecContext(release, "SELECT pg_advisory_unlock($1)", cancellationCompositionKey); err != nil {
+		if _, err := conn.ExecContext(release, cancellationNamespaceUnlock, cancellationCompositionKey); err != nil {
 			t.Errorf("handing the composition key back: %v", err)
 		}
 		_ = conn.Close()
