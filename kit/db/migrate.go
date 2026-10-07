@@ -590,6 +590,18 @@ type runner struct {
 // refuses at five seconds and is read as a failed deploy. What bounds this wait is the
 // caller's context, and when that runs out the operator gets a context deadline, not
 // ErrContended: nothing was refused, the run simply did not finish.
+//
+// One answer to that wait is not a failed run: PostgreSQL picks a session out of a
+// deadlock it finds and cancels that one's statement (40P01). Picked while asking for
+// the composition lock, the run holds nothing — the cancelled statement is the only one
+// it had sent on this connection, and the budgets it put there before it are session
+// settings, not locks — so the wait it was told to leave is a wait it may re-enter, and
+// the cycle it stood in has already been broken by the cancellation. The ask is therefore
+// re-issued a bounded number of times, and a cycle that forms again every time says so
+// with the server's own words and the file unapplied. kit/db/composition_lock_deadlock_test.go
+// raises 40P01 of the ask from the database side and pins both halves: the run that is
+// picked twice and then gets the lock applies its files, the run that is picked every
+// time refuses and records nothing.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
@@ -604,11 +616,35 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if err := r.noBudgets(ctx); err != nil {
 		return err
 	}
-	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+	var err error
+	for attempt := 0; ; attempt++ {
+		_, err = r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
+		if err == nil || !deadlockVictim(err) || attempt >= compositionLockVictims {
+			break
+		}
+	}
+	if err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
 	return r.budgets(ctx)
+}
+
+// compositionLockVictims is how many times a session picked out of a deadlock re-asks
+// for the composition lock before reporting what the server answered. It bounds the retry
+// rather than aiming at a schedule: the cancellation breaks one cycle, and a database
+// whose next wait joins another is a state a boot should name rather than sit in — with
+// no wait between the asks, five of them are all the retry costs.
+const compositionLockVictims = 4
+
+// deadlockVictim reports the answer that says "this session was chosen to step out of a
+// wait" rather than "this run's work is wrong": 40P01, deadlock_detected, with nothing of
+// the cancelled statement kept. It is read apart from contended, which reports a budget
+// that ran out — that one is the deployment's own limit, stated as ErrContended, and it
+// stays the refusal it is.
+func deadlockVictim(err error) bool {
+	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
+	return isPostgres && pg.Code == "40P01"
 }
 
 // noBudgets takes the session's two budgets off for one wait on the composition lock.
