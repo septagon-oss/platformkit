@@ -332,6 +332,17 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # the two goals that run the suite read. It starts nothing and reads no database, which is what makes it
 # a `check` line and not a job step.
 #
+# scripts/make_check_count_default_test.sh asks the count's question of the one shape no other case can
+# take: CI's own, where nothing names the variable at all. The arch probe pins `TEST_COUNT=-count=1` on
+# the nested make, and a command-line value overrides whatever the Makefile assigns; ci_go_cache_test.sh
+# reads the `?=` default's line. A later assignment that empties the variable below that default passes
+# both (measured by review 1: the guard answers ok, the probe still prints the fresh line) while CI's own
+# expansion loses the flag and cached test results start travelling across commits. So this case starts a
+# child make with TEST_COUNT, MAKEFLAGS and MAKEOVERRIDES removed from the environment — what a caller
+# that sets nothing inherits — and refuses an expansion that is not today's fresh suite line, the same
+# for the race goal, and any workflow that sets the variable itself. Two dry runs and one grep; nothing
+# is compiled, started or tested.
+#
 # scripts/ci_go_cache_one_saver_per_key_test.sh asks the one question about those steps that no
 # single step can see: whether two jobs that run side by side save under the same exact key. A save
 # runs only when its restore was not an exact hit, so a key two jobs share ends up holding whichever
@@ -356,6 +367,7 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
+	bash scripts/make_check_count_default_test.sh
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
