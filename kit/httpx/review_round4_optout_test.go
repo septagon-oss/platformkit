@@ -54,6 +54,12 @@ func (noHeadroom) Allow(context.Context, string, int, time.Duration) (bool, time
 	return false, 30 * time.Second, nil
 }
 
+// Count belongs to the port beside Allow: the door states the quota left on the
+// refusal it decides, and reads it from the counter rather than from a number it kept.
+func (noHeadroom) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
+	return 1, 30 * time.Second, nil
+}
+
 // declineKernel composes one application: a guarded workspace door, a door that needs only
 // a session, an anonymous public write, and the renderer above as its failure page.
 func declineKernel(t *testing.T) (*httpx.API, http.Handler, *decliningFault) {

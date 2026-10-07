@@ -49,7 +49,15 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	out := rows[:0:0]
 	for _, row := range rows {
-		if row.Name() != appFile {
+		// The fixture is an installation on the day the release that carries the file
+		// boots, which is every file *before* it — not "every file except it". The two
+		// came apart the first time anything was appended after it: a set holding a
+		// later file is not the version before, and the migrator says so in the one way
+		// it can ("precedes applied version N") rather than by naming the tenants this
+		// case is about, which is how the refusal reads as a missing proof when it is a
+		// fixture with a newer file in it. Names are zero-padded versions, so the
+		// comparison is the order the ledger keeps.
+		if row.Name() < appFile {
 			out = append(out, row)
 		}
 	}

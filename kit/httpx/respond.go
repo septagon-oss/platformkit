@@ -32,6 +32,15 @@ func (a *API) respond(next http.Handler) http.Handler {
 		// count below: see answerNote.
 		note := &answerNote{}
 		r = r.WithContext(context.WithValue(r.Context(), answerNoteKey{}, note))
+		// The keyed write's own slot, held for the same reason and beside the same
+		// buffer: the guard that takes the claim runs below here and holds a
+		// huma.Context, so the claim it took travels outward to the one defer that
+		// knows what the client was finally given.
+		r = r.WithContext(withClaim(r.Context()))
+		// The keyed write's own slot, beside the buffer it shares a lifetime with:
+		// the guard that takes the claim runs below here and holds a huma context, so
+		// the claim travels outward the same way the resolved tenant does.
+		r = r.WithContext(withClaim(r.Context()))
 		defer func() {
 			if v := recover(); v != nil {
 				if v == http.ErrAbortHandler {
@@ -43,7 +52,22 @@ func (a *API) respond(next http.Handler) http.Handler {
 					a.fail(b, r, http.StatusInternalServerError, "")
 				}
 			}
+			// A 429 that named no wait is a refusal that tells a client nothing it can
+			// act on, and this is the last moment its headers are still ours. The guard
+			// that decided a limit already named the window; a handler that counted
+			// somewhere this package cannot see gets the floor and a line naming it.
+			if b.status == http.StatusTooManyRequests && b.Header().Get(RetryAfterHeader) == "" {
+				b.Header().Set(RetryAfterHeader, secondsUp(defaultRetryAfter, 1))
+				a.log.WarnContext(r.Context(), "httpx: a 429 answered with no Retry-After, so the kernel said its own",
+					"method", r.Method, "path", r.URL.Path, "seconds", int64(defaultRetryAfter.Seconds()),
+					"why", "the route counted its own limit and did not state the wait")
+			}
+			// Whether the answer is still held decides what can be remembered of it:
+			// past the first byte there is nothing here left to hold back, only the
+			// status a caller has already seen.
+			held := !b.begun()
 			b.send()
+
 			// The count is here rather than at the writer that answered, because this
 			// is the one place that knows what the client was finally given: the buffer
 			// may have replaced what any of the writers below it chose, and a refusal
@@ -52,6 +76,16 @@ func (a *API) respond(next http.Handler) http.Handler {
 			// could not be written is not an answer either.
 			if b.status >= http.StatusBadRequest {
 				countRefusal(note.context(r.Context()), b.status)
+			}
+			// And the answer is remembered, after the client was given it and not
+			// before. This is the ordering that keeps a recorded 200 from being a
+			// committed 500: everything above this line may still replace the response,
+			// and what a keyed write promises is the answer the caller actually got.
+			if n, ok := r.Context().Value(claimKey{}).(*claimNote); ok {
+				// Read after send, because send is where a replaced answer has finished
+				// being replaced: the headers and the bytes here are the ones the caller
+				// was given, which is the only answer worth remembering.
+				a.complete(r.Context(), n, b.status, b.Header().Get("Content-Type"), b.body.Bytes(), held)
 			}
 		}()
 		next.ServeHTTP(b, r)

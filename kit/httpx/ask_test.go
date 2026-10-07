@@ -77,6 +77,13 @@ func (l limiterF) Allow(context.Context, string, int, time.Duration) (bool, time
 	return l.allowed, time.Minute, nil
 }
 
+// Count is the read the ask door takes to state the remaining quota on the answer it
+// is about to refuse. This fake is built to answer the second attempt rather than to
+// keep a window, so it reports the one event it was asked about.
+func (l limiterF) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
+	return 1, time.Minute, nil
+}
+
 // askSetup mounts one signed-in door that calls the command, over the same
 // fixture every file in this package uses, with a reach and a limiter the case
 // names. A nil limiter leaves the door uncounted, which is what a composition

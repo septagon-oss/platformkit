@@ -35,6 +35,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -799,6 +800,11 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 		// the list below.
 		Installation: a.opts.Installation.Host,
 		WriteLimiter: limit.Postgres(a.held.read),
+		// The memory beside the counter: the same connection the limiter is counted
+		// on, the same detached write, the same reason — a retried write arrives at
+		// whichever replica the load balancer chose, so the record of the first one
+		// has to live somewhere both of them can read.
+		Idempotency: idempotency.Postgres(a.held.read),
 		// Every attributable refusal is an event and, where modules/audit is composed, an
 		// audit row: see recordDenial.
 		Denied: recordDenial(a.held, a.log),
@@ -1121,6 +1127,12 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 		// `modules/auth`'s sweep would have made an installation that takes the limit
 		// and not the login page one that never forgets a row.
 		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
+		// The same argument one row over, and the same schedule: a record of a keyed
+		// write holds that caller's own request and answer, and the day the brief
+		// gives it is enforced by this job and nothing else. Leaving it to the hot
+		// path would make a refusal pay for the traffic it is refusing, and leaving
+		// it out entirely would make the table one anybody can grow.
+		{Name: "idempotency-purge", Cron: purgeCron, Run: idempotency.Purge},
 	}
 }
 

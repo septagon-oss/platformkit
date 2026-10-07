@@ -46,6 +46,13 @@ const (
 	askPerPerson     = 10
 	askWindow        = 6 * time.Hour
 	askPermissionKey = "access-request"
+
+	// The two counters by the names the wire gives them. A policy name is part of the
+	// contract RateLimit-Policy makes — "the field that SHOULD remain consistent over a
+	// sequence of HTTP responses" — so it is a constant beside the numbers it is the
+	// quota of, and not a string at the call site that writes it.
+	askPerPermissionPolicy = "access-per-permission"
+	askPerPersonPolicy     = "access-per-person"
 )
 
 // AccessNotice is one ask, addressed to one person who may grant it. The words
@@ -236,12 +243,26 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 	// request's own transaction.
 	meter := context.WithoutCancel(ctx)
 	id := user.String()
+	// The response this ask is being written into, if there is one: the door is
+	// reached from the JSON route and from the page, and both are inside respond by
+	// the time a counter is spent. A caller of Ask from outside a request — a test, a
+	// worker — gets the same verdict and no fields, because there is no answer here to
+	// state them on.
+	b, held := bufferFrom(ctx)
+	if held {
+		// The policy line before any verdict it describes: it names every counter this
+		// door spends, in the order it spends them, so a client can tell which limit it
+		// is approaching across the asks it makes. It is the same three lines on every
+		// ask and costs no statement to write.
+		b.Header().Set(RateLimitPolicyHeader, policyField(askPolicies()...))
+	}
 	for _, c := range []struct {
-		key   string
-		limit int
+		key    string
+		limit  int
+		policy limitPolicy
 	}{
-		{askPermissionKey + "/" + id + "/" + permission, askPerPermission},
-		{askPermissionKey + "/" + id, askPerPerson},
+		{askPermissionKey + "/" + id + "/" + permission, askPerPermission, limitPolicy{askPerPermissionPolicy, askPerPermission, askWindow}},
+		{askPermissionKey + "/" + id, askPerPerson, limitPolicy{askPerPersonPolicy, askPerPerson, askWindow}},
 	} {
 		ok, after, err := d.limiter.Allow(meter, c.key, c.limit, askWindow)
 		if err != nil {
@@ -249,10 +270,31 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 			return problem.New(http.StatusServiceUnavailable, "access requests cannot be counted right now")
 		}
 		if !ok {
+			if held {
+				// The rate line is the one field that costs a reading, so it is taken here,
+				// after the refusal it reports, and Count is the read that records nothing —
+				// the row Allow has just written, not a second event against it. A refusal
+				// whose reading failed keeps the policy and the wait and says no quota, which
+				// is the field a caller is least entitled to have guessed for them.
+				if seen, _, err := d.limiter.Count(meter, c.key, askWindow); err == nil {
+					b.Header().Set(RateLimitHeader, answerField(measured{
+						policy: c.policy, remaining: c.limit - seen, left: after}))
+				}
+				b.Header().Set(RetryAfterHeader, secondsUp(after, 1))
+			}
 			return tooMany(after)
 		}
 	}
 	return nil
+}
+
+// askPolicies is every counter this door spends, in the order it spends them, named
+// as the wire names them.
+func askPolicies() []limitPolicy {
+	return []limitPolicy{
+		{askPerPermissionPolicy, askPerPermission, askWindow},
+		{askPerPersonPolicy, askPerPerson, askWindow},
+	}
 }
 
 func tooMany(after time.Duration) error {

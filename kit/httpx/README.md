@@ -155,6 +155,117 @@ a public-looking prefix and answer at every customer's host), and refused at a
 namespace's root, where the routes of that namespace answer: `Static("/assets",
 tree)`, never `Static("/", tree)`.
 
+## A write that is sent twice
+
+Two clients can send one write twice — a phone that gave up and retried, a curl
+whose operator pressed the up-arrow — and at `POST /api/v1/task/tasks` a second copy
+of the answer is the work done twice. Two headers live here; the store behind one of
+them lives in [../idempotency](../idempotency), and the counter behind the other in
+[../limit](../limit).
+
+**The header.** A write that carries `Idempotency-Key` is answered from a
+[record](../idempotency/idempotency.go) rather than run again: the same key, the same
+body and the same caller get the first attempt's status, `Content-Type` and body, and
+the handler does not run. The same key with a different body is a 422 —
+`IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
+retry that arrives while the first is still running is a 409,
+`IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.
+A write that sends no header is answered exactly as it always was. The verbs are
+POST and PATCH; PUT and DELETE are idempotent in the protocol already, so a record of
+them would be a body kept for nothing. The key is 1–128 visible ASCII characters,
+bare or as a Structured-Fields string — it is a primary-key column, so a value of
+arbitrary shape is a row anybody can mint; a malformed one is a 400 before the request
+body is read, which is also why the middleware runs *after* [the body
+gate](httpx.go) and never has to buffer a request to fingerprint it.
+
+| Attempt | Answer | The handler ran |
+| --- | --- | --- |
+| first with a key | whatever the route decided | yes |
+| same key, same body | the first attempt's answer | no |
+| same key, another body | 422 `IDEMPOTENCY_KEY_IN_USE` | no |
+| same key, first still running | 409 `IDEMPOTENCY_IN_FLIGHT` | no |
+| no key at all | whatever the route decides | yes |
+
+It is declared on the operation, through [the table](surfaces.go), so the document and
+the guard cannot say two things — the same reason `x-platformkit-surface` and
+`x-platformkit-streams-body` are in that table. The exceptions are in one sentence each:
+`kit/rest`'s streamed uploads are skipped, because that adapter reads the request from
+the `Request` field and would read a body the guard already consumed, and honouring a
+key there would mean a 400 for a header the client legitimately sent; the control
+plane's writes are skipped, because this task's brief keys the app and public surfaces
+and leaves the operator console's to the product. The claim is taken before the
+handler runs, never after; the answer is recorded by the [one writer](respond.go) that
+writes a status code, and only when the response is final — not a 1xx, not a refused
+upgrade, not a response no writer claimed because the request was already over. A
+handler that wrote half a body and panicked leaves no record, so its caller retries
+and gets the 500 again rather than a 201 that was never earned.
+
+**The fields.** A limited write answers with `RateLimit-Policy` on every reply — the
+field the draft asks to stay consistent across a sequence of responses, and the one
+that costs no statement to write, because it names the quota and window the guard was
+built with. The `RateLimit` line is on the refusal, where reading the counter is worth
+one more statement, and it carries `r` and `t` as the counter reported them. The window
+that was refused also answers with `Retry-After`, so a client that only understands RFC
+9110 still knows how long to wait. The policy is `public-writes`, one named constant
+beside the window and the quota it describes — which were two literals in
+[public_writes.go](public_writes.go) and are now one record with a name. The name, the
+`q` and the `w` a client reads have to be the numbers the counter was keyed with, and
+one sentence that quotes `60` three times is the only place they could ever have agreed.
+What this delivery does *not* do is let a module name a policy of its own per route: a
+route has no way to say so today, so the kernel applies the one anonymous-write policy
+it has always applied and calls it by name — a second policy is a change to
+`WriteLimiter`, not a second string. `WriteLimiter` did grow one method, `Count`,
+because `r` is a number the counter holds and no other honest source is available:
+`kit/limit`'s `Limiter` satisfies the wider port unchanged, and the alternative — one
+`Reserve` returning the decision, the quota left and the window left together — is a
+change to an interface published at v1.1.0, whose review is the baseline diff under
+scripts/baselines and not a middleware's decision in passing.
+
+| Field | Carried on | Says |
+| --- | --- | --- |
+| `RateLimit-Policy` | every reply the limit applies to | the quota, the window, per policy |
+| `RateLimit` | the reply the limit refused | the quota left and the window left, per policy |
+| `Retry-After` | every 429 | how long to wait, in seconds |
+
+The counter's key is unchanged: tenant slug, method, the mounted route and
+`ClientAddr(r)` — the peer address, and deliberately not `X-Forwarded-For`, which the
+caller can write and which every office behind one egress shares. Two tenants behind
+one egress are therefore counted apart, and a forged header buys an attacker nothing.
+Both fields are rendered with quoted policy names and no commas
+inside a list element, because RFC 9110 joins the two lists with commas, and a comma
+inside an element would be a client reading one policy as two. The `request` scope
+`kit/limit` already offers as a limiter for an unauthenticated request was read and
+not used: it names the shape of a limit the auth module wanted, not the policy that
+guards the anonymous write, and keying this counter by it would change what every
+existing counter means.
+
+### Built on what came before
+
+Decision 0022 asks a delivery to name what it composed rather than what it rebuilt.
+**Reused:** the answer a replay carries is written by the same machinery every other
+answer is written by — `respond`'s buffer, its `send`, and `writeProblem` as the one
+encoder of the refusal shape — so a replay is an answer rather than a copy of one, and
+inherits the rule that one status code is written once; the record is written from the
+one defer that knows what the client was finally given, beside the refusal count that
+already lives there, after `send` rather than before it; the memory store's claim, its
+takeover of an abandoned claim and its verdict table are the shape `kit/limit`'s
+`Allow` already answers with — one statement that decides and reports, and a database
+which is not there is a refusal rather than an allowance; the purge rides `kit/jobs`
+beside the limit sweep it belongs to; and `ClientAddr`, `WriteLimiter`, the body limit,
+`problem`'s document,
+`Public()` auth and `api.Recorded()` (the same list the catalogue walks) all appear here
+in the shape they were written in. `kit/limit` is unchanged: the fields are stated from
+the two readings it already publishes. **Added:** `Options.Idempotency` and the
+`idempotency` middleware — nothing keyed a write before, because the kernel answered a
+second POST as a first; `limitPolicy`, the record that carries the quota, the window and
+the name a caller reads, so the two fields cannot drift from the counter; and
+`isOpsPath`, which the request-time chain and the declaration table now read together.
+**Made reusable:** `decide` in `kit/idempotency`, the verdict table the memory answers
+from and the Postgres store's cases drive, so one suite holds both implementations; and
+the `publicWrite*` constants, which name the limit that used to be two literals at its
+one call site.
+
+
 ## The database boundary
 
 This package imports `kit/db`, and the import is the contract rather than an

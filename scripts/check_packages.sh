@@ -121,7 +121,12 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/trace and kit/telemetry both sit in the kernel list: the first carries
         # the W3C trace context a caller sent as a value, the second names the
         # vocabulary of a span and a number. Neither owns an exporter or a provider.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
+        # kit/idempotency is in the kernel list rather than only in the bound of the
+        # runner beside kit/limit, because kit/httpx holds the store: the promise a
+        # caller makes with a key is kept on the request path the page layer shares,
+        # so the record package is in the closure of everything that reaches the web
+        # kernel. What stays out is the other direction: it links no HTTP.
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/idempotency " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
         web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext

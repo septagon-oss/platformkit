@@ -76,6 +76,11 @@ const (
 	OpsRoot           = "/ops"
 	catalogPath       = apiRoot + "/app/resources"
 	publicJSONSegment = "public"
+	// opsJSONSegment is the control plane's segment of the JSON address. It is a
+	// name rather than a literal because the surface question is asked in two places
+	// — here, where the address is composed, and kit/httpx/idempotency.go, which
+	// decides what the document declares and can only read the address.
+	opsJSONSegment = "ops"
 )
 
 // classify is the whole of "which surface is this request on". It reads the
@@ -97,10 +102,20 @@ const (
 //     is safe: it parses no session, sets no cookie, and can hold no route that
 //     needs a principal, because R1 refuses those at mount. A route that lands
 //     here by accident loses powers rather than gaining them.
+//
+// isOpsPath is the whole of "the control plane's own address", said once: the
+// request path reads it to decide which chain to run, and kit/httpx/idempotency.go
+// reads the same sentence to decide what the document declares a header on. Two
+// spellings of it is how a route ends up served under one rule and documented under
+// another.
+func isOpsPath(path string) bool {
+	return path == OpsRoot || strings.HasPrefix(path, OpsRoot+"/") ||
+		strings.HasPrefix(path, apiRoot+"/ops/")
+}
+
 func classify(path string) Surface {
 	switch {
-	case path == OpsRoot || strings.HasPrefix(path, OpsRoot+"/") ||
-		strings.HasPrefix(path, apiRoot+"/ops/"):
+	case isOpsPath(path):
 		return SurfaceOps
 	case path == AppRoot || strings.HasPrefix(path, AppRoot+"/") ||
 		strings.HasPrefix(path, apiRoot+"/app/"):
@@ -456,7 +471,7 @@ func (r *Router) jsonPrefix() string {
 		case SurfacePublic:
 			return join(apiRoot, publicJSONSegment)
 		case SurfaceOps:
-			return join(apiRoot, "ops")
+			return join(apiRoot, opsJSONSegment)
 		}
 		return join(apiRoot, "app")
 	}
@@ -464,7 +479,7 @@ func (r *Router) jsonPrefix() string {
 	case SurfacePublic:
 		return join(apiRoot, publicJSONSegment, r.module)
 	case SurfaceOps:
-		return join(apiRoot, "ops", r.module)
+		return join(apiRoot, opsJSONSegment, r.module)
 	}
 	return join(apiRoot, r.module)
 }
@@ -684,7 +699,17 @@ const (
 	publicWriteLimit  = 60
 	publicWriteWindow = time.Minute
 	publicWriteKey    = "httpx/public-write"
+
+	// publicWritePolicy is the same limit under the name the wire gives it. A policy
+	// name is part of what `RateLimit-Policy` promises to keep consistent across a
+	// sequence of responses, so it lives beside the numbers it is the quota of: a
+	// client that sees "public-writes" in one answer and "writes" in the next has been
+	// given two limits rather than one stated twice.
+	publicWritePolicyName = "public-writes"
 )
+
+// publicWritePolicy is the limit above, as a policy the response can name.
+var publicWritePolicy = limitPolicy{publicWritePolicyName, publicWriteLimit, publicWriteWindow}
 
 // MountedRoute is one route as the composition describes it: what a projection,
 // a boot log and a test read to know what is served where. It is a value rather
