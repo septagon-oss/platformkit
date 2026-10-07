@@ -59,6 +59,14 @@ func (a *API) transaction(ctx huma.Context, next func(huma.Context)) {
 	// thinks, so commit and say so; if nothing has been sent, nobody decided,
 	// and a transaction nobody decided about must not commit.
 	keep, undecided := statusOf(ctx, a, inner.Status())
+	// A command that claimed an idempotency key leaves its marker inside this
+	// transaction, so the marker and the effect it stands for commit or roll back as
+	// one. Nothing else can tell the caller, later, which way an unanswered COMMIT
+	// went: see markCommandEffect.
+	if markErr := markCommandEffect(ctx.Context(), p, keep); markErr != nil {
+		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the command's effect marker could not be written",
+			"method", ctx.Method(), "path", ctx.URL().Path, "error", markErr)
+	}
 	err = p.Close(keep)
 	if err != nil {
 		// Whatever the handler wrote is not in the database — unless the commit was

@@ -85,7 +85,13 @@ it is still answering is passed over at any age. What a lapsed lease earns is no
 key. A claim nobody can any longer answer settles as "its outcome is not held" and keeps
 its key for the day it was written for, because the response record is written after the
 commit and can itself fail, and a key freed on the age of a marker is permission for the
-same submission to commit twice. The rows are `platformkit_idempotency` (`migrations/000044`), keyed
+same submission to commit twice. An unanswered COMMIT is the same uncertainty with a name
+attached — `db.ErrCommitUnacknowledged` — and it resolves rather than staying spent: the
+command's own transaction writes a marker into `platformkit_command_effect`
+(`migrations/000045`) beside whatever else it wrote, and the next press with that key
+answers from the stored response when the marker is there and runs the command when it
+is not, since a marker inside a transaction is in the database exactly when that
+transaction's work is. The rows are `platformkit_idempotency` (`migrations/000044`), keyed
 by tenant, caller, operation and key under forced row-level security that no tenant
 transaction can read through, held for a day — a settled answer past that day is a fresh
 command on the request that asks — and emptied by the `idempotency-purge` job, which

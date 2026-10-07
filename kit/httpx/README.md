@@ -207,8 +207,14 @@ of the caller that hung up mid-commit, whose buffered 200 `a.transaction` keeps 
 place because nobody is left to read it, and whose retry with the same key must run.
 A commit that was sent and never answered is the third case, and the only one that is
 not released: `db.ErrCommitUnacknowledged` says the outcome is unknown rather than
-absent, so the claim is spent as "its outcome is not held" for the rest of the key's
-day instead of being handed back. A COMMIT the database answered with an error — a
+absent, so the claim keeps its key for the rest of the day it was written for, holding
+the answer the handler wrote beside a mark that says the answer is held and not owed.
+The next press with that key resolves the mark rather than guessing at it: every keyed
+command writes a marker row into `platformkit_command_effect` inside its own transaction
+(`markCommandEffect`, migration `000045`), so the marker is in the database exactly when
+the command's effect is, and the press reads it — present, the stored answer is the
+answer to that commit and replays; absent, the transaction is not in the database and
+that press runs the command. A COMMIT the database answered with an error — a
 deferred constraint — is still a rollback, and its retry still runs. A deadline that
 expires while the answer is on its way is the same silence wearing the caller's shape,
 not the hang-up above: only `sql.ErrTxDone` proves the COMMIT never left this process,
@@ -221,10 +227,15 @@ already refused the only declaration that could reach that state on purpose, so 
 that lost its principal on the way is a route that cannot keep the promise the header
 advertises, and running the command would be a 200 promising an answer nothing recorded.
 
-The rows live in `platformkit_idempotency` (migration `000044`), keyed by tenant,
+The rows live in `platformkit_idempotency` (migration `000044`) and their effect markers
+in `platformkit_command_effect` (migration `000045`), keyed by tenant,
 caller, operation and key, written only by this package under its own system token,
 held for a day after the answer and emptied by the `idempotency-purge` job
-(`httpx.PurgeIdempotency`, scheduled by `kit/app`).
+(`httpx.PurgeIdempotency`, scheduled by `kit/app`). The marker table is the one thing
+here a tenant transaction writes, and it has to be: written outside the transaction it
+describes it would say nothing about it. A tenant can therefore place a marker for its
+own tenant's keys, which buys it the kernel believing a command committed that did not —
+the direction a forged row points spends a key rather than freeing one.
 
 Nothing here infers that a command finished from how long ago it started. A claim that
 is not settled says either "somebody is running this now" or "the process that claimed
@@ -239,9 +250,12 @@ second run. A claim past its marker with nobody renewing says either "it committ
 the answer was lost" or "nothing committed" — the answer is written after the commit,
 detached, and the store can take the domain rows and refuse the record beside them,
 which is `TestACommandWhoseAnswerCannotBeStoredIsNotAppliedAgainAfterPurge` — and no
-statement tells the two apart afterwards. So the press that arrives settles the row as
+statement tells the two apart afterwards, because no row names the process that died. So
+the press that arrives settles the row as
 "its outcome is not held" and keeps the key for the rest of the day it was written
-for, which is the state an answer too big to hold already uses. The purge keeps that
+for, which is the state an answer too big to hold already uses. (The unacknowledged
+COMMIT above is the one case that does say who wrote the row and can ask the marker; a
+lapsed lease says only that nobody is answering, and what it earns is still a refusal.) The purge keeps that
 row for exactly as long: a settled answer past its day goes, a claim older than its own
 day that nobody is answering goes, and a row being renewed is no candidate at any age.
 The job is therefore what empties the table and never what returns a key. The cost of

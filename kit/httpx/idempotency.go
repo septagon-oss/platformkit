@@ -99,6 +99,13 @@ const IdempotencyRefusalHeader = "Idempotency-Refusal"
 // idempotencyTable is the one this package owns. See migrations/000044_idempotency.
 const idempotencyTable = "platformkit_idempotency"
 
+// effectTable is the marker a keyed command writes inside its own transaction, so that
+// the marker is in the database exactly when the command's effect is and nowhere when
+// it is not. It is the one statement in the kernel that can say which way a COMMIT
+// nobody read went, and the only thing read out of it is whether a row is there and
+// which request wrote it. See migrations/000045_command_effect.
+const effectTable = "platformkit_command_effect"
+
 const (
 	// maxStorableResponse is the largest answer this mechanism will keep. A
 	// command answers with the entity's JSON or with nothing, so 64 KiB is far
@@ -142,7 +149,11 @@ const (
 // What it deliberately does not claim is to know whether the command ran. It cannot:
 // the answer is written after the commit and outside it, so a store that took the
 // domain rows and refused the response leaves exactly this row behind. That is why
-// the state below settles a key rather than releasing it.
+// the state below settles a key rather than releasing it. What resolves such a claim
+// is the effect marker the command's own transaction wrote (platformkit_command_effect,
+// migrations/000045): a request whose COMMIT was never acknowledged leaves `unconfirmed`
+// beside the answer it did get, and the next press with that key reads the marker — the
+// command ran if the marker is there and ran nowhere if it is not.
 const outcomeUncertainSQL = "NOT settled AND expires_at < now()" +
 	" AND (owner_lease IS NULL OR owner_lease < now())" +
 	" AND claimed_at > now() - interval '24 hours'"
@@ -257,6 +268,10 @@ type idempotencyHolder struct {
 	// carry. See noteUncommitted for why the record step needs it and cannot get it
 	// from the buffered status.
 	commit commitVerdict
+	// answer is the response the handler wrote, copied off the buffer at the moment
+	// the commit's acknowledgement was lost and before the 500 that says nothing about
+	// the command replaced it. See noteCommitUnacknowledged.
+	answer *heldAnswer
 	// stopLease ends the renewal this request started when it took the claim. A
 	// goroutine that outlived the request would keep renewing a lease nobody holds,
 	// which is the fence standing after the thing it fences is gone.
@@ -314,9 +329,38 @@ func noteUncommitted(ctx context.Context) {
 // the answer is gone either way". TestALostCommitAcknowledgementDoesNotReleaseTheCommandKey
 // is the case, and it fails on the deletion.
 func noteCommitUnacknowledged(ctx context.Context) {
-	if h := holderFrom(ctx); h != nil {
-		h.commit = commitUnacknowledged
+	h := holderFrom(ctx)
+	if h == nil {
+		return
 	}
+	h.commit = commitUnacknowledged
+	// And take the answer the handler wrote while it is still the answer: the
+	// middleware on the way out replaces those bytes with the 500 a caller can do
+	// nothing with, and the row this request settles needs the first one, because the
+	// next press with this key answers from it once the effect marker says the write
+	// landed. The copy is not caution: buffer.reset clears the header map in place and
+	// truncates the body this reads.
+	b, ok := bufferFrom(ctx)
+	if !ok || b.begun() {
+		return
+	}
+	status := b.status
+	if status == 0 {
+		// The same reading the record step gives a response nobody set a status on.
+		status = http.StatusOK
+	}
+	h.answer = &heldAnswer{status: status, header: b.Header().Clone(), body: bytes.Clone(b.body.Bytes())}
+}
+
+// heldAnswer is a response kept whole — status, headers, bytes — rather than as the
+// record step finds it. Only the unacknowledged COMMIT needs both: what the caller was
+// finally handed about that command is a 500 admitting the kernel cannot say whether
+// the command ran, and what it is owed once the effect marker has said is the answer
+// the command produced. See noteCommitUnacknowledged.
+type heldAnswer struct {
+	status int
+	header http.Header
+	body   []byte
 }
 
 // idempotency is the claim: it runs the command, hands back a stored answer, or
@@ -464,7 +508,7 @@ func (a *API) idempotencyRecord(next http.Handler) http.Handler {
 			if status == 0 {
 				status = http.StatusOK
 			}
-			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder.commit); err != nil {
+			if err := a.recordIdempotency(r.Context(), *holder.claim, status, b.Header(), body, held, holder); err != nil {
 				// The command ran and its answer was not kept. The caller has its
 				// response and nobody else ever will: the row stays unsettled, which
 				// refuses a repeat while its marker stands and spends the key as "its
@@ -493,7 +537,7 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 	if holder == nil || holder.claim == nil {
 		return
 	}
-	if err := a.recordIdempotency(ctx, *holder.claim, http.StatusInternalServerError, nil, nil, false, commitRolledBack); err != nil {
+	if err := a.recordIdempotency(ctx, *holder.claim, http.StatusInternalServerError, nil, nil, false, holder); err != nil {
 		a.rlog(ctx).ErrorContext(ctx, "httpx: the idempotency claim of a panicked command could not be released",
 			"error", err)
 	}
@@ -502,13 +546,19 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 // recordIdempotency is the decision, made as one statement against one table: either
 // release the claim, or settle it with the answer.
 //
-//   - A COMMIT whose answer was lost settles the claim as "its outcome is not held"
-//     and keeps the key, whatever the response says and whatever the verdict's name
-//     suggests. Nothing may run again under this key, and nothing may be promised
-//     from it either: the write may have landed and its answer is not held. This
-//     branch is first because it outranks the two below — the 500 the transaction
-//     middleware substitutes for a commit it could not read is exactly the status that
-//     would otherwise delete the fence. See noteCommitUnacknowledged.
+//   - A COMMIT whose answer was lost keeps the key and marks the row `unconfirmed`.
+//     The answer the handler wrote is stored beside the mark — the caller was handed a
+//     500 that says the kernel cannot tell, and once the marker says the write landed
+//     that 500 is a dead end while the command's own answer is what was asked for. The
+//     next press with this key reads platformkit_command_effect: the mark comes off and
+//     the stored answer is replayed when the marker is there, the command runs under
+//     this key when it is not. Where no answer could be held — it was too big, or was
+//     already on the wire — the row settles as the statement that admits it holds
+//     nothing, the same one settleUncertainSQL writes. Nothing is released here, and
+//     nothing runs again before the marker is read: this branch is first because it
+//     outranks the two below — the 500 the transaction middleware substitutes for a
+//     commit it could not read is exactly the status that would otherwise delete the
+//     fence. See noteCommitUnacknowledged and resolveUnconfirmed.
 //   - A 5xx, in any form — the handler's own, the 500 the transaction substitutes
 //     when the commit was refused, the 500 a panic recovery wrote — deletes the claim.
 //     A refusal nobody received is not an answer to remember, and a retry of work
@@ -527,19 +577,23 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 //   - A response under 500 that is too big, or that already began (a Flush, a
 //     body past the buffer's bound), settles with a NULL response. It ran, and its
 //     answer is gone; releasing the claim instead is what makes a retry double-apply.
-func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held bool, commit commitVerdict) error {
+func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status int, header http.Header, body []byte, held bool, h *idempotencyHolder) error {
 	return a.detached(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		if commit == commitUnacknowledged {
-			// Spent, not freed, and not answered: the statement is the one this package
-			// already uses for a claim whose owner stopped answering, because the row is in
-			// the same state for the same reason — the command may have run, and no step on
-			// this side of the lost answer can say which. It writes no status, no body and
-			// no replay; it writes a fence that holds until the key's own day is over.
-			return tx.DB().Exec(settleUncertainSQL+
-				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
-				c.tenant, c.actor, c.operation, c.key).Error
+		if h.commit == commitUnacknowledged {
+			// Spent, not freed, and not answered until the marker is read. The row says
+			// the command may have run and holds, beside that, the answer the command
+			// wrote if there was one to hold: which of the two readings is true is the
+			// marker's to say, on the next press with this key. No status, no body and no
+			// replay is promised by this statement either way — the fence holds until the
+			// key's own day is over.
+			if h.answer == nil || len(h.answer.body) > maxStorableResponse {
+				return tx.DB().Exec(settleUncertainSQL+
+					" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
+					c.tenant, c.actor, c.operation, c.key).Error
+			}
+			return storeAnswer(tx, c, true, h.answer.status, h.answer.header, h.answer.body)
 		}
-		if commit == commitRolledBack || status >= http.StatusInternalServerError {
+		if h.commit == commitRolledBack || status >= http.StatusInternalServerError {
 			return tx.DB().Exec("DELETE FROM "+idempotencyTable+
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				c.tenant, c.actor, c.operation, c.key).Error
@@ -551,20 +605,31 @@ func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status 
 				" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 				status, c.tenant, c.actor, c.operation, c.key).Error
 		}
-		// A held answer is stored as bytes even when it has none: what a repeat reads
-		// to decide it may replay is `response IS NOT NULL`, and the redirect a page's
-		// own command answers with has no body to lose.
-		stored := body
-		if stored == nil {
-			stored = []byte{}
-		}
-		return tx.DB().Exec("UPDATE "+idempotencyTable+
-			" SET settled = true, status = ?, content_type = ?, headers = ?::jsonb, response = ?::bytea,"+
-			" request_id = ?, expires_at = claimed_at + interval '24 hours', owner_lease = NULL"+
-			" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
-			status, header.Get("Content-Type"), replayHeaderJSON(header), stored, c.request,
-			c.tenant, c.actor, c.operation, c.key).Error
+		return storeAnswer(tx, c, false, status, header, body)
 	})
+}
+
+// storeAnswer writes the response a caller got beside the claim that describes it.
+//
+// unconfirmed is the one difference between the two calls, and it is a great deal: it
+// says the transaction this answer came out of is not known to have committed, so what
+// the row holds is an answer held rather than an answer owed, and the next press reads
+// the effect marker before it replays it. See recordIdempotency.
+func storeAnswer(tx db.Tx[db.System], c idempotencyClaim, unconfirmed bool, status int, header http.Header, body []byte) error {
+	// A held answer is stored as bytes even when it has none: what a repeat reads
+	// to decide it may replay is `response IS NOT NULL`, and the redirect a page's
+	// own command answers with has no body to lose.
+	stored := body
+	if stored == nil {
+		stored = []byte{}
+	}
+	return tx.DB().Exec("UPDATE "+idempotencyTable+
+		" SET settled = true, unconfirmed = ?, status = ?, content_type = ?, headers = ?::jsonb,"+
+		" response = ?::bytea, request_id = ?, expires_at = claimed_at + interval '24 hours',"+
+		" owner_lease = NULL"+
+		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
+		unconfirmed, status, header.Get("Content-Type"), replayHeaderJSON(header), stored, c.request,
+		c.tenant, c.actor, c.operation, c.key).Error
 }
 
 // replay writes the stored answer as it was written the first time, plus the one
@@ -626,6 +691,11 @@ type heldResponse struct {
 	// places — see settleUncertainSQL for what the state is turned into and why no
 	// statement here claims to know whether the command ran.
 	outcomeUncertain bool
+	// unconfirmed says the answer beside it came out of a COMMIT whose acknowledgement
+	// never reached the request that wrote it: the answer is held, not owed, and the
+	// next press resolves it against the command's effect marker. See recordIdempotency
+	// and the branch in claimOnce that reads it.
+	unconfirmed bool
 }
 
 // claimAttempts is how many times the gate presses for the claim row before it
@@ -747,6 +817,60 @@ func (a *API) claimOnce(ctx context.Context, c idempotencyClaim) (idempotencyAns
 				}
 				continue
 			}
+			if h.unconfirmed {
+				// The request that wrote this row sent a COMMIT and never read its answer.
+				// Nothing on this side of that silence could say which way it went, which is
+				// why the row kept the key and held its answer without owing it. The command's
+				// own transaction wrote a marker beside whatever it wrote, and that marker says
+				// the thing: a row here means the commit landed and the answer held below is the
+				// answer to it; no row means the transaction is not in the database, whatever the
+				// caller was handed, and this press — the same key and the same bytes — runs.
+				if !bytes.Equal(h.hash, c.hash[:]) {
+					out = keyReuse()
+					return nil
+				}
+				// The row's own lock before the marker is read, because two presses that arrive
+				// at once must not both be told to run: the second waits here, and reads the row
+				// the first one is writing when it wakes.
+				locked, err := lockClaim(tx, c)
+				if err != nil {
+					return err
+				}
+				if !locked {
+					continue
+				}
+				applied, err := commandCommitted(tx, c, h.requestID)
+				if err != nil {
+					return err
+				}
+				if !applied {
+					// Not a takeover on a guess and not a freed key: this is the same fact
+					// commitRolledBack states, arrived at from the other side, that the work this
+					// claim describes is not in the database. The guard is the row this press read —
+					// still unconfirmed, still the dead request's — so a press that raced ahead of
+					// this one is not walked on: no row matches, this one claims again below, and
+					// finds the other press's own claim running.
+					res := tx.DB().Exec(rerunClaimSQL, c.request, claimLeaseSQL,
+						c.tenant, c.actor, c.operation, c.key, h.requestID)
+					if res.Error != nil {
+						return res.Error
+					}
+					if res.RowsAffected == 1 {
+						out.run = true
+						return nil
+					}
+					continue
+				}
+				if err := tx.DB().Exec("UPDATE "+idempotencyTable+
+					" SET unconfirmed = false WHERE tenant_id = ? AND actor_id = ? AND operation = ?"+
+					" AND key = ? AND unconfirmed",
+					c.tenant, c.actor, c.operation, c.key).Error; err != nil {
+					return err
+				}
+				h.unconfirmed = false
+				out = settledAnswer(c, h)
+				return nil
+			}
 			if h.outcomeUncertain {
 				// Nobody can answer this claim any longer and its day is not over, which
 				// leaves two readings and no statement that chooses between them: the command
@@ -779,6 +903,90 @@ func (a *API) claimOnce(ctx context.Context, c idempotencyClaim) (idempotencyAns
 	return out, nil
 }
 
+// keyReuse is the refusal of a key that already answered another command: the same key
+// with other bytes is a different command wearing an old name, and it is refused
+// whether or not the first one's outcome is known.
+func keyReuse() idempotencyAnswer {
+	return idempotencyAnswer{refuse: http.StatusUnprocessableEntity, code: CodeIdempotencyKeyReuse + ": this key was already used for a different request"}
+}
+
+// lockClaim takes the row's own lock for the rest of this transaction. It is asked
+// before an unresolved claim is resolved, because the two answers the resolution gives
+// — replay this, or run that — are both things two presses must not do at once.
+func lockClaim(tx db.Tx[db.System], c idempotencyClaim) (bool, error) {
+	rows, err := tx.DB().Raw("SELECT 1 FROM "+idempotencyTable+
+		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? FOR UPDATE",
+		c.tenant, c.actor, c.operation, c.key).Rows()
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}
+
+// commandCommitted is the reading of the effect marker, and the whole reason the table
+// exists: did the transaction that ran this command reach its COMMIT?
+//
+// It asks for the marker of the request the claim names, not of the key. A marker older
+// than this claim says a command under this key committed at some point, which is a
+// statement about a different submission and cannot settle this one: the key is spent
+// and its caller is told to read the result, which is the smaller of the two faults
+// this package knows how to make.
+func commandCommitted(tx db.Tx[db.System], c idempotencyClaim, request string) (bool, error) {
+	rows, err := tx.DB().Raw("SELECT 1 FROM "+effectTable+
+		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND request_id = ?",
+		c.tenant, c.actor, c.operation, c.key, request).Rows()
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}
+
+// rerunClaimSQL is the one statement in this package that gives a claim back to the
+// request pressing for it, and the only condition it does that on is written beside it:
+// the row is still the unconfirmed one this press read, and the marker says the
+// transaction that wrote it is not in the database. See claimOnce for the reading and
+// markCommandEffect for the marker.
+const rerunClaimSQL = "UPDATE " + idempotencyTable +
+	" SET settled = false, unconfirmed = false, status = 0, content_type = ''," +
+	" headers = '{}'::jsonb, response = NULL, request_id = ?, claimed_at = now()," +
+	" expires_at = now() + interval '5 minutes', owner_lease = now() + ?::interval" +
+	" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?" +
+	" AND unconfirmed AND request_id = ?"
+
+// markCommandEffect asks the request's transaction to write this command's effect
+// marker as part of itself, when the transaction is on its way to a COMMIT.
+//
+// The marker has to be inside the transaction to be worth anything: written after the
+// commit it would be written by the request that can fail at that step — the exact
+// fault review 7 measured — and written before a rollback it would stand over work the
+// database refused. Inside, it commits with the effect and rolls back with it, which is
+// the whole of what makes an unanswered COMMIT answerable afterwards.
+//
+// Nothing about the command is in the row: the marker's use is its existence and the
+// request it names, so one statement writes both and an ON CONFLICT writes them again
+// rather than refusing — a key whose older submission committed real work gets a marker
+// that names the submission whose commit is in question now, which is the only claim a
+// later press can act on.
+func markCommandEffect(ctx context.Context, p *db.Pending, keep bool) error {
+	h := holderFrom(ctx)
+	if !keep || h == nil || h.claim == nil {
+		return nil
+	}
+	tx, open := p.Opened()
+	if !open {
+		// Nothing is going to commit, so there is nothing whose outcome to mark.
+		return nil
+	}
+	c := *h.claim
+	return tx.DB().Exec("INSERT INTO "+effectTable+
+		" (tenant_id, actor_id, operation, key, request_id) VALUES (?, ?, ?, ?, ?)"+
+		" ON CONFLICT (tenant_id, actor_id, operation, key)"+
+		" DO UPDATE SET request_id = EXCLUDED.request_id, applied_at = clock_timestamp()",
+		c.tenant, c.actor, c.operation, c.key, c.request).Error
+}
+
 // settledAnswer is the whole of the answer for a settled row, and for one still in
 // flight: an idempotent command's status is what the second caller is being told,
 // so it is decided here rather than in three places.
@@ -800,7 +1008,7 @@ func settledAnswer(c idempotencyClaim, h *heldResponse) idempotencyAnswer {
 	case !h.settled:
 		return inProgress()
 	case !bytes.Equal(h.hash, c.hash[:]):
-		return idempotencyAnswer{refuse: http.StatusUnprocessableEntity, code: CodeIdempotencyKeyReuse + ": this key was already used for a different request"}
+		return keyReuse()
 	case !h.holds:
 		return outcomeUncertain()
 	default:
@@ -825,12 +1033,18 @@ func inProgress() idempotencyAnswer {
 	return idempotencyAnswer{refuse: http.StatusConflict, code: CodeIdempotencyInProgress + ": another request with this key is still running", retryAfter: 2}
 }
 
-// reclaimSQL is gone, and its absence is the point: no statement in this package
-// takes over another request's claim. What a claim whose owner died recovers is a
-// refusal, and the settle that writes it is asked for by whichever step reaches the row
-// first — the arriving request or the scheduled job — on the one condition the row's own
-// lease can carry, that nobody is renewing it. That is what lets the same evidence be the
-// recovery and the fence: it ends nobody's command, and it frees nobody's key.
+// Nothing in this package takes over another request's claim on the strength of a
+// clock. What a claim whose owner died recovers is a refusal, and the settle that
+// writes it is asked for by whichever step reaches the row first — the arriving
+// request or the scheduled job — on the one condition the row's own lease can carry,
+// that nobody is renewing it. That is what lets the same evidence be the recovery and
+// the fence: it ends nobody's command, and it frees nobody's key.
+//
+// One statement does reach across a claim, and it is not licensed by the clock:
+// rerunClaimSQL, which runs a command whose claim is unconfirmed once its effect marker
+// has said the transaction that wrote the claim is not in the database. That is not the
+// absence of evidence, which is what a lapsed lease is; it is evidence of absence, read
+// from inside the commit in question.
 
 // attachLease is the owning request saying "still here", for as long as it is
 // here.
@@ -921,7 +1135,7 @@ type idempotencyAnswer struct {
 // which is the one action that costs a command nothing whichever way the truth lies.
 // What no step may do on this evidence is delete the row.
 func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
-	rows, err := tx.DB().Raw("SELECT settled, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
+	rows, err := tx.DB().Raw("SELECT settled, unconfirmed, status, content_type, headers, response, response IS NOT NULL, request_hash, request_id,"+
 		" now() > expires_at, ("+outcomeUncertainSQL+") FROM "+idempotencyTable+
 		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
 		c.tenant, c.actor, c.operation, c.key).Rows()
@@ -936,7 +1150,7 @@ func readHeld(tx db.Tx[db.System], c idempotencyClaim) (*heldResponse, error) {
 		h       heldResponse
 		headers []byte
 	)
-	if err := rows.Scan(&h.settled, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.expired,
+	if err := rows.Scan(&h.settled, &h.unconfirmed, &h.status, &h.contentType, &headers, &h.body, &h.holds, &h.hash, &h.requestID, &h.expired,
 		&h.outcomeUncertain); err != nil {
 		return nil, err
 	}
@@ -981,6 +1195,14 @@ func PurgeIdempotency(ctx context.Context, conn *db.Conn) error {
 		// eligible whatever its deadlines, which is why a command slower than the
 		// marker and slower than this job keeps its fence.
 		if err := tx.DB().Exec(settleUncertainSQL + " WHERE " + outcomeUncertainSQL).Error; err != nil {
+			return errors.New("httpx: purge idempotency: " + err.Error())
+		}
+		// Effect markers age out with the claims they resolve, which is the day the key
+		// was promised for: a marker is worth nothing once no claim can ask it a question,
+		// and applied_at is later than the claimed_at its claim expires from, so a marker
+		// is never gone before the row that reads it.
+		if err := tx.DB().Exec("DELETE FROM " + effectTable +
+			" WHERE applied_at < now() - interval '24 hours'").Error; err != nil {
 			return errors.New("httpx: purge idempotency: " + err.Error())
 		}
 		// The first statement is the promise's end: an answer kept for a day is deleted

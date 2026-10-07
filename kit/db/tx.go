@@ -316,6 +316,20 @@ func endErr(span trace.Span, err error) {
 	span.End()
 }
 
+// Opened returns the transaction this Pending has actually opened, and whether it
+// opened one at all. Asking does not open anything: a request that never queried keeps
+// its transaction unopened, which is the whole reason Pending exists, and a caller that
+// needed a row written inside the transaction has to know whether there is one to write
+// inside rather than conjuring a round trip to find out.
+func (p *Pending) Opened() (Tx[Tenant], bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.gtx == nil {
+		return Tx[Tenant]{}, false
+	}
+	return Tx[Tenant]{db: p.gtx, scope: Tenant{tenant: p.tenant}}, true
+}
+
 // Err is the failure that stopped the transaction opening, if one did.
 func (p *Pending) Err() error {
 	p.mu.Lock()
