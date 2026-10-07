@@ -42,6 +42,7 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.Notifier](),
 	pkit.Needs[authcontracts.Mailer](),
 	pkit.Needs[authcontracts.Hosts](),
+	pkit.Needs[authcontracts.MailLedger](),
 	pkit.Needs[authcontracts.OIDCProviders](),
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[usercontracts.Granting](),
@@ -69,8 +70,12 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// takes, handed to the one module that has to put a secret in a message
 		// without it becoming a row first: a set-password link belongs in the
 		// mail and in nothing else.
-		Mailer:  pkit.Get[authcontracts.Mailer](w),
-		Hosts:   pkit.Get[authcontracts.Hosts](w),
+		Mailer: pkit.Get[authcontracts.Mailer](w),
+		Hosts:  pkit.Get[authcontracts.Hosts](w),
+		// The same service Notify is resolved from, under the ledger's own key:
+		// the record of the two mails this module sends itself, so that a send
+		// leaves a row before the mail can be read back at the delivery door.
+		Mails:   pkit.Get[authcontracts.MailLedger](w),
 		Tenants: pkit.Get[jobs.TenantLister](w),
 		// The installation's own provider is the fallback; the tenant's row wins
 		// where it names one, which is what lets two tenants on this one process

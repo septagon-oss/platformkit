@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -103,6 +104,53 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		}
 		return done(), nil
 	})
+
+	// The read of the delivery record, for the one question the acknowledgment
+	// cannot answer: "did the mail actually leave?" See contracts.MailLedger.
+	//
+	// 200 in every case, one field, one of four words. An id that left no record —
+	// because the cap wrote none, because nobody has the address, because it is
+	// another tenant's, because the caller typed nonsense — is `pending`, which is
+	// the same sentence the neutral acknowledgment already gives and the answer
+	// every request that produced no mail gets. What this door cannot be is
+	// oracle-free: an id that answers `failed` necessarily had somebody to mail, so
+	// it leaks existence with exactly the probability that a transport refuses.
+	// The bounds are in these lines: an unguessable handle the caller already holds
+	// about its own call, one indexed lookup of the same shape either way, the
+	// module's tightest public budget in front of it, RLS behind it, and a response
+	// that names no address, no kind and no reason.
+	httpx.Register(surfaces.Public, huma.Operation{
+		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
+		Summary:     "Ask what became of the mail one call asked for",
+		Description: "Answers one word — pending, sent, suppressed or failed — about the mail the call bearing this request id caused. It names no address, no kind and no reason; a call that left no delivery record is answered exactly as one from another tenant is.",
+		Tags:        []string{"auth"}, DefaultStatus: http.StatusOK,
+		Errors: []int{http.StatusForbidden, http.StatusTooManyRequests},
+	}, httpx.Public(), func(ctx context.Context, in *mailDeliveryInput) (*mailDeliveryOutput, error) {
+		r, _ := httpx.RequestFrom(ctx)
+		if !httpx.SameSite(r) {
+			return nil, problem.New(http.StatusForbidden, "ask about the mail from the page that asked for it")
+		}
+		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
+			return nil, problem.New(http.StatusTooManyRequests, "too many account link attempts; wait and try again")
+		}
+		out := &mailDeliveryOutput{}
+		out.Body.State = notificationcontracts.MailStatePending
+		// No ledger wired is no record to read, and the answer is the same one an
+		// unknown id gets: a deployment must not be able to tell the two apart.
+		if svc.mail.Mails == nil || in.Body.RequestID == "" {
+			return out, nil
+		}
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		outcome, known, err := svc.mail.Mails.MailOutcome(ctx, tx, in.Body.RequestID)
+		if err != nil {
+			return nil, rest.Fault(err)
+		}
+		out.Body.State = notificationcontracts.MailState(outcome, known)
+		return out, nil
+	})
 }
 
 // Registration and resend share delivery availability, request-origin and IP
@@ -130,5 +178,27 @@ type resendVerificationInput struct {
 type verifyEmailInput struct {
 	Body struct {
 		Token string `json:"token" minLength:"1" maxLength:"128" writeOnly:"true" doc:"The verification link's one-time credential"`
+	}
+}
+
+// mailDeliveryInput is the id of the caller's own call, and nothing else. The
+// handle is the string the register or forgot call was already answered with in
+// X-Request-ID (kit/httpx/request_id.go), which kit/events.Publish stores in the
+// outbox row and the relay hands back to the worker that mails the link — so the
+// page already holds what it needs to ask, and no new token, response field or
+// correlation table is involved.
+type mailDeliveryInput struct {
+	Body struct {
+		RequestID string `json:"requestId" maxLength:"64" doc:"The X-Request-ID of the call that asked for the mail"`
+	}
+}
+
+type mailDeliveryOutput struct {
+	// State is the one word the shell is allowed to say: pending, sent, suppressed
+	// or failed. No recipient, no kind, no reason, no timestamp and no count — the
+	// reason there is no 404 is that every answer has the same shape, so the door
+	// cannot be walked for the addresses that have a record.
+	Body struct {
+		State string `json:"state" enum:"pending,sent,suppressed,failed" doc:"What became of the mail that call asked for"`
 	}
 }

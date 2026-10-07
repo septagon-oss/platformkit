@@ -449,9 +449,22 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 		}
 		return nil
 	})
-	if err == nil || mailer.token == "" || strings.Contains(err.Error(), mailer.token) {
-		t.Fatal("delivery failure was lost or exposed a bearer")
+	// The send is acknowledged now, and that is a decision rather than a detail:
+	// the record of a refused mail is written in this transaction, so the
+	// transaction has to commit for the record to exist (SPECIFY §3, T-0239). What
+	// the handler still must not do is carry the transport's text — a transport may
+	// quote its input, and the outbox retains handler errors — and the retry ladder
+	// this line used to pin never protected anything here: the token row was minted
+	// in the same transaction and rolled back with it, so every redelivery mailed a
+	// fresh secret nobody had seen. The person is told instead, from the record;
+	// TestRefusedMailIsRecordedWithoutItsCredential is that half.
+	if err != nil || mailer.token == "" {
+		t.Fatalf("refused delivery err=%v token=%q, want the attempt acknowledged", err, mailer.token)
 	}
+	// Asking again is the person's answer to a refusal, so the caps must not answer
+	// it for a mail that never left: the row that makes the resend interval true
+	// exists only once the transport has taken the message, which the recovery two
+	// lines below is the proof of.
 	var accounts, tokens int
 	if err := admin.QueryRow("SELECT count(*) FROM users WHERE status='unverified'").Scan(&accounts); err != nil {
 		t.Fatal(err)
@@ -467,7 +480,7 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 	if len(mailer.box.Sent()) != 1 {
 		t.Fatal("queued delivery did not recover")
 	}
-	for _, table := range []string{"verification_tokens", "password_tokens", "users", "sessions", "notifications", "audit_events", "platformkit_outbox", "platformkit_dead_letters"} {
+	for _, table := range []string{"verification_tokens", "password_tokens", "users", "sessions", "notifications", "audit_events", "platformkit_outbox", "platformkit_dead_letters", "direct_mail_deliveries"} {
 		for _, secret := range []string{mailer.token, authtest.Password} {
 			var count int
 			if err := admin.QueryRowContext(t.Context(), fmt.Sprintf("SELECT count(*) FROM %s r WHERE strpos(r::text,$1)>0", table), secret).Scan(&count); err != nil {

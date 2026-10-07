@@ -103,7 +103,7 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 	return s.offer(ctx, tx, user, inviteSubject, inviteBody)
 }
 
-// offer mints the token, raises the notice, and sends the mail.
+// offer sends the mail, and only then mints the token and raises the notice.
 //
 // # Where the secret is, and where it is not
 //
@@ -133,18 +133,55 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // these mails still has one that works. recent() is the other half of that —
 // one link per person per ResetInterval, so an address somebody types
 // repeatedly is one mail and not twenty.
+// passwordLock serialises the two things that must not happen twice for one
+// person: sending a second link inside the cap, and minting a token a concurrent
+// attempt is about to replace. It is the same advisory lock verificationLock takes
+// (verification.go), keyed the same way, and it is taken before recent() because
+// recent() is a read: two attempts that both read "no link yet" would both mail.
+// The key includes the tenant even though table visibility is already RLS-bound.
+func passwordLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
+	key := "auth/password/" + db.TenantOf(tx).ID.String() + "/" + id.String()
+	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("auth: lock a password link: %w", err)
+	}
+	return nil
+}
+
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if s.mail.Mailer == nil {
 		// A composition with no mailer writes no token either: a link nobody is
-		// sent is a live credential in a table for an hour, for nothing.
+		// sent is a live credential in a table for an hour, for nothing. It leaves
+		// a suppressed record, because the deployment rather than the caller is
+		// what has to learn that no transport is wired.
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
-		return nil
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailSuppressed, "no mail transport is wired")
+	}
+	// Before the cap, so that an attempt waiting here reads the one that holds the
+	// lock's committed token row instead of mailing the person twice.
+	if err := passwordLock(tx, user.ID); err != nil {
+		return err
 	}
 	recent, err := s.recent(tx, user.ID)
 	if err != nil || recent {
 		return err
 	}
 	token := secret()
+	base, err := s.baseURL(ctx, tx)
+	if err != nil {
+		return err
+	}
+	// The send comes first and the credential second. A refused send now commits —
+	// it has to, or the record of it would roll back with it — and the one thing a
+	// committed failure must not hold is a live token nobody was sent, which is the
+	// same reason the branch above writes no token at all. Asking again is the
+	// person's answer to a refusal, and the cap must not answer it with "wait": the
+	// row that used to make recent() true is one that only exists once the mail has
+	// left.
+	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
+		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
+			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
+	}
 	at := db.Now()
 	err = tx.DB().Exec(
 		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
@@ -166,23 +203,23 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 			return err
 		}
 	}
-	return s.send(ctx, tx, user, title, body, token)
+	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
 }
 
-// send renders the one message this module writes and hands it to the mail
-// server. The link is absolute and on the recipient's own tenant's host,
-// because a mail client has no base to resolve a path against and one
-// customer's people must not be sent to another's front door.
-func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
-	base, err := s.baseURL(ctx, tx)
-	if err != nil {
-		return err
-	}
-	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
-		To: user.Email, Subject: title,
+// mailMessage renders the one message this module writes. The link is absolute
+// and on the recipient's own tenant's host, because a mail client has no base to
+// resolve a path against and one customer's people must not be sent to another's
+// front door.
+//
+// The token is in this string and in nothing it returns to: the caller hands it
+// straight to the mail server, and the record written beside the send names no
+// subject, body, link or credential.
+func mailMessage(to, title, body, base, token string) notificationcontracts.Message {
+	return notificationcontracts.Message{
+		To: to, Subject: title,
 		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
 			"\n\nThe link works once and stops working in an hour.",
-	})
+	}
 }
 
 // baseURL is the scheme and host this tenant's people reach the application at.
