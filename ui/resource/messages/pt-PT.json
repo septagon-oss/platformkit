@@ -152,5 +152,41 @@
       "ui/resource/resource.go"
     ],
     "translation": "%g"
+  },
+  "screens.failure_title": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Não foi possível guardar",
+    "plural": {
+      "": "Não foi possível guardar"
+    }
+  },
+  "screens.immutable_note": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Alterado por um comando próprio, não por este formulário.",
+    "plural": {
+      "": "Alterado por um comando próprio, não por este formulário."
+    }
+  },
+  "screens.related_record": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "O identificador do registo relacionado. Ainda não existe um seletor para ele.",
+    "plural": {
+      "": "O identificador do registo relacionado. Ainda não existe um seletor para ele."
+    }
+  },
+  "screens.comma_separated": {
+    "references": [
+      "ui/resource/resource.go"
+    ],
+    "translation": "Separados por vírgula.",
+    "plural": {
+      "": "Separados por vírgula."
+    }
   }
 }
