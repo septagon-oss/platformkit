@@ -37,6 +37,14 @@ type Delivery struct {
 	Mailer contracts.Mailer
 	Hosts  contracts.Hosts
 	Secure bool
+
+	// Mails is what this module records about a mail it sends itself, with no
+	// notice behind it: one row per send, saying who it went to, which kind it was,
+	// what became of it and which call asked — and no subject, body, link or
+	// credential. A composition that wires none sends its mail exactly as it did
+	// before the record existed and leaves no trace of the attempt, which is the bug
+	// the record exists to close rather than a mode to preserve.
+	Mails contracts.MailLedger
 }
 
 // Service is signing in and what a role may do.

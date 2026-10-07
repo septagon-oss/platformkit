@@ -27,6 +27,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			// The confirmation link is built here, in the worker, and the sign-up request
 			// that asked for it is gone: the port it was answered at rides the event.
 			ctx = WithServed(ctx, registered.Served)
+			ctx = WithOrigin(ctx, event)
 			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
 		},
 	}, {
@@ -37,6 +38,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 				return fmt.Errorf("auth: read verification request: %w", err)
 			}
 			ctx = WithServed(ctx, asked.Served)
+			ctx = WithOrigin(ctx, event)
 			found, err := svc.users.ByEmail(ctx, tx, asked.Email)
 			if errors.Is(err, crud.ErrNotFound) {
 				return nil
@@ -60,7 +62,15 @@ func verificationLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 }
 
 func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) error {
-	if s.mail.Mailer == nil || s.mail.Hosts == nil {
+	if s.mail.Mailer == nil {
+		// Nothing to send it through, which is the deployment's fault and the
+		// operator's to see: a suppressed record, and the person is answered
+		// exactly as they are when the mail does go, because a record is not a
+		// promise about what their mailbox will show.
+		return s.recordMail(ctx, tx, contracts.MailVerification, email,
+			notification.MailSuppressed, "no mail transport is wired")
+	}
+	if s.mail.Hosts == nil {
 		return fmt.Errorf("auth: verification delivery is unavailable")
 	}
 	if err := verificationLock(tx, id); err != nil {
@@ -89,13 +99,9 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 		return err
 	}
 	token, at := secret(), db.Now()
-	err = tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
-		" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
-		" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
-		contracts.Hash(token), db.TenantOf(tx).ID, id, current.Email, at, at.Add(contracts.VerificationLifetime)).Error
-	if err != nil {
-		return fmt.Errorf("auth: issue email verification: %w", err)
-	}
+	// The send comes first and the credential second: a refused send now commits,
+	// because the record of it has to commit with it, and a committed failure may
+	// not hold a live verification token nobody was sent.
 	err = s.mail.Mailer.Send(ctx, notification.Message{
 		To: current.Email, Subject: "Verify your email address",
 		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
@@ -103,11 +109,23 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
 	})
 	if err != nil {
-		// A transport may quote its input in an error. The outbox retains handler
-		// errors, so never carry the mailer's potentially credential-bearing text.
-		return fmt.Errorf("auth: verification email delivery failed")
+		// The transport's own words go into the record, through
+		// contracts.RedactMailReason, which is what lets them be recorded at all: a
+		// transport may quote its input in an error, and the handler now returns nil
+		// rather than an error, so nothing with a credential in it reaches the outbox
+		// either. The person is told by the record, not by a retry that would mint a
+		// second secret nobody sees.
+		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
+			notification.MailFailed, err.Error(), token, string(contracts.Hash(token)))
 	}
-	return nil
+	err = tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
+		" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
+		" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
+		contracts.Hash(token), db.TenantOf(tx).ID, id, current.Email, at, at.Add(contracts.VerificationLifetime)).Error
+	if err != nil {
+		return fmt.Errorf("auth: issue email verification: %w", err)
+	}
+	return s.recordMail(ctx, tx, contracts.MailVerification, current.Email, notification.MailSent, "")
 }
 
 func (s *Service) verifyEmail(ctx context.Context, tx db.Tx[db.Tenant], users contracts.EmailRegistrar, token string) error {

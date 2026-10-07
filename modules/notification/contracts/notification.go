@@ -148,4 +148,12 @@ type Service interface {
 	// ListFor is a page of one person's notifications, newest first. There is
 	// no tenant-wide list, which is why this module mounts no rest.Spec.
 	ListFor(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID, q crud.Query) ([]*Notification, int64, error)
+
+	// MailLedger is the record of the mails that leave a composition with no
+	// notification row behind them. It is embedded rather than passed beside
+	// Service because a composition that wires notifications already holds the
+	// value a caller needs to record a direct mail: one wiring, no second port to
+	// discover. See mail.go for what belongs in a record and why the ledger of
+	// notices does not carry these rows.
+	MailLedger
 }

@@ -26,6 +26,22 @@ never succeed is recorded by the kernel in `platformkit_dead_letters`.
 `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
 
+The mails a composition sends *outside* a notice are recorded elsewhere, in
+`direct_mail_deliveries` (migration 000044) and through
+[`contracts.MailLedger`](contracts/mail.go): a set-password link and a
+verification link are minted by `modules/auth` and handed to `contracts.Mailer`
+directly, so the secret is in the message and in no row, and until this table
+existed neither the attempt nor its outcome was written down anywhere. One row
+per send, appended in the transaction of the step that decided it, saying who it
+went to, which kind it was (`auth.set_password`, `auth.verification` — the sender
+names its own kinds), what became of it (`sent`, `suppressed`, `failed` with the
+transport's own words redacted by `contracts.RedactMailReason`), and which call
+asked. It holds no subject, body, link or credential.
+**`delivery_ledger_coverage` does not count these rows and never will**: the
+register's number is requested channels of notices with a terminal row, and a
+mail with no notice and no `requested` half would silently narrow what that name
+means. Ask the two tables two questions.
+
 ## Authorization
 
 ### Permissions
@@ -38,6 +54,7 @@ The `SendMail` event subscription (`modules/notification/internal/mail.go`) is r
 
 None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
+`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read only by the request id of the caller's own call; `direct_mail_deliveries` has no route and no permission of its own.
 
 ### Duties the module enforces itself
 
