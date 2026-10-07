@@ -48,7 +48,7 @@ test.beforeAll(async ({ browser }) => {
   await page.goto('/app/admin/login');
   await signIn(page);
 
-  // The member, through the same three calls `review-r3-refusal-floor.spec.ts` makes: a role of its own (so no other
+  // The member, through the same three calls `refusal-floor.spec.ts` makes: a role of its own (so no other
   // spec's grant changes what this person can see), an invitation carrying the name, and a password.
   const created = await page.request.put(`/api/v1/auth/roles/${role}`, { data: { permissions: ['task:read'] } });
   expect(created.status(), await created.text()).toBe(200);
