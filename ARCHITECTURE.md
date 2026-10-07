@@ -58,6 +58,11 @@ establish management screens, deployed connections or migration of downstream cl
 
 ## Independently usable parts
 
+[Wire](kit/wire/README.md) checks a composition's OpenAPI or AsyncAPI contract
+against its published golden using B1–B6. It links only the standard library;
+the reference composition delegates both document gates to it. Products supply
+their renderer, golden path and explicit reviewed authorization allowances.
+
 Import the owner of the capability you need: [entity](kit/entity/README.md) for
 field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
 without REST, [locale](kit/locale/README.md) for worker or page translations, and
