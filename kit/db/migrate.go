@@ -616,26 +616,37 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if err := r.noBudgets(ctx); err != nil {
 		return err
 	}
-	var err error
-	for attempt := 0; ; attempt++ {
-		_, err = r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
-		if err == nil || !deadlockVictim(err) || attempt >= compositionLockVictims {
-			break
-		}
-	}
-	if err != nil {
+	if err := r.execReaskable(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
 	return r.budgets(ctx)
 }
 
-// compositionLockVictims is how many times a session picked out of a deadlock re-asks
-// for the composition lock before reporting what the server answered. It bounds the retry
-// rather than aiming at a schedule: the cancellation breaks one cycle, and a database
-// whose next wait joins another is a state a boot should name rather than sit in — with
-// no wait between the asks, five of them are all the retry costs.
-const compositionLockVictims = 4
+// reasksAfterDeadlock is how many times a statement is re-issued after PostgreSQL picks
+// this session out of a deadlock, for the statements a run is allowed to send twice: the
+// ask for the composition lock, and each half of a concurrent index repair
+// (kit/db/certify.go), which are `DROP INDEX CONCURRENTLY IF EXISTS` and a statement the
+// rule table already requires to carry `IF NOT EXISTS`. It bounds the retry rather than
+// aiming at a schedule: the cancellation breaks one cycle, and a database whose next wait
+// joins another is a state a boot should name rather than sit in — with no wait between
+// the re-asks, this many are all the retry costs.
+const reasksAfterDeadlock = 4
+
+// execReaskable sends one of the statements named above and re-sends it while the server
+// keeps choosing this session out of somebody else's cycle. A cancelled one of these left
+// nothing behind and undid nothing: the ask holds no lock and is the session's first
+// statement, and each half of the repair is written to be sent twice. Anything else the
+// server answers — a budget that ran out, a statement that is simply wrong — comes back to
+// the caller unchanged, on the first answer it gives.
+func (r *runner) execReaskable(ctx context.Context, statement string, args ...any) error {
+	for attempt := 0; ; attempt++ {
+		_, err := r.conn.ExecContext(ctx, statement, args...)
+		if err == nil || !deadlockVictim(err) || attempt >= reasksAfterDeadlock {
+			return err
+		}
+	}
+}
 
 // deadlockVictim reports the answer that says "this session was chosen to step out of a
 // wait" rather than "this run's work is wrong": 40P01, deadlock_detected, with nothing of

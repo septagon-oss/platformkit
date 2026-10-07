@@ -32,7 +32,12 @@ import (
 // A file that builds several concurrent indexes in one statement needs each of them
 // behind IF NOT EXISTS, which is what "re-runnable" asks of it anyway: the repair
 // below re-runs the whole statement, so a second name that is already valid has to
-// answer "skipping" rather than "already exists".
+// answer "skipping" rather than "already exists". That re-run, and the concurrent drop
+// beside it, are sent through execReaskable for the same reason the repair itself is
+// allowed to exist: the two shapes are the ones the rule table makes sendable twice, so
+// being picked out of another session's deadlock costs the run a re-send rather than a
+// refused file. Measured: a rebuild of this repair answered 40P01 under `make check` and
+// the file it was certifying was lost for that boot.
 var concurrentIndex = regexp.MustCompile(`(?is)\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+CONCURRENTLY\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)`)
 
 // certifiableName is the only shape of name this check can read: `shape` puts a quoted
@@ -70,11 +75,11 @@ func (r *runner) certifyConcurrentIndex(ctx context.Context, migration migration
 				`SELECT format('DROP INDEX CONCURRENTLY IF EXISTS %s', $1::regclass::text)`, name).Scan(&drop); err != nil {
 				return fmt.Errorf("db: migrate: name the half-built index %s: %w", name, err)
 			}
-			if _, err := r.conn.ExecContext(ctx, drop); err != nil {
+			if err := r.execReaskable(ctx, drop); err != nil {
 				return fmt.Errorf("db: migrate: drop the half-built index %s: %w", name, r.refused(err))
 			}
 		}
-		if _, err := r.conn.ExecContext(ctx, migration.sql); err != nil {
+		if err := r.execReaskable(ctx, migration.sql); err != nil {
 			return fmt.Errorf("db: migrate: rebuild %s: %w", name, err)
 		}
 		if valid, exists, err = concurrentIndexState(ctx, r.conn, name); err != nil {
