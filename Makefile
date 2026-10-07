@@ -195,9 +195,10 @@ check-fixtures: ## Compile the Go program every design test embeds
 
 # The number decision 0075's i18n row reads: the share of the words a person reads on
 # a served page that a catalogue reached. It renders every document the reference
-# composition serves in the pseudo-locale, prints the ratio and the list of what went
-# around a catalogue, and refuses a fall below testdata/i18n-coverage.json — which is
-# both the floor and the set of pages measured. -v is what prints: `check`'s suite runs
+# composition serves without a row or a query in front of it, in the pseudo-locale,
+# prints the ratio, the list of what went around a catalogue and the documents it could
+# not reach with the reason for each, and refuses a fall below
+# testdata/i18n-coverage.json — which is both the floor and the set of pages measured. -v is what prints: `check`'s suite runs
 # through gotestsum, whose format drops the output of a passing test, so a number that
 # is only a log line on a green run is a number nobody reads. The gate therefore runs
 # twice — once here, printed, and once inside the suite, silent — which is what keeps

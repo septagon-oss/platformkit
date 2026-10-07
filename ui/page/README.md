@@ -94,7 +94,9 @@ than keys, declare the source language rather than the request's, and
 `TestEveryPageSaysTheSameLanguageTwice` in the reference application holds `<html lang>`
 and `Content-Language` to one answer. What refuses a page whose body holds a literal
 no catalogue answers is the pseudo-locale gate: the reference application renders every
-document its composition declares in `en-XA`, where
+document its composition serves without a row or a query in front of it in `en-XA` — the
+documents it cannot reach are printed with their reason and count towards nothing —
+where
 [kit/locale/providers/pseudo](../../kit/locale/providers/pseudo) wraps what a catalogue
 answered, [ui/legible](../legible) reads the document back and exempts what is data, and
 `make check` prints the share that reached a catalogue and refuses any fall below

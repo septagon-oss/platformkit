@@ -1,8 +1,15 @@
 package main
 
-// The pseudo-locale gate: every document this application serves, rendered in a
-// locale that marks what a catalogue answered, and the share of the words a person
-// reads that a translator can reach.
+// The pseudo-locale gate: the documents this application serves without being handed
+// a row or a query, rendered in a locale that marks what a catalogue answered, and the
+// share of the words a person reads that a translator can reach.
+//
+// The set is the documents a request can reach as written, and that is a limit worth
+// naming rather than glossing: a route whose address holds `{id}`, and a document that
+// only appears once a query names an example, are printed as skips with the reason and
+// are not in either number. A page that exists only past a write this gate would have
+// to make — a row's history after a transition, a banner behind a shell that answers
+// 200 — is out of the set for the same reason: the gate reads, it does not change.
 //
 // How it works, in the order it happens:
 //
@@ -11,8 +18,9 @@ package main
 //     wrap is reversible, so the page a person would read is on the wire with a mark
 //     around every sentence that came from a catalogue.
 //  2. The routes are read off the running composition — every Mounted() route the
-//     kernel declared as a document (`Page`), never a list written here, because a
-//     list drifts and a measurement boundary must not.
+//     kernel declared as a document (`Page`) whose address is complete as it stands,
+//     never a list written here, because a list drifts and a measurement boundary must
+//     not.
 //  3. Each one is requested with Accept: text/html and Accept-Language: pt-PT, which
 //     asks two questions at once: did this string reach a key, and does the one
 //     language this deployment ships answer that key.
