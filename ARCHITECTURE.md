@@ -734,7 +734,7 @@ their numbers into prose; run `make check-loc` and `make check-packages`.
 check`, then `make check-race`, `govulncheck`, the native editor and browser
 checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
-workflows](.github/workflows/ci.yml) are kept in step with it and do not run
+workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
 release workflow beside them. An absent GitHub check establishes nothing. A
 publisher for the image, SBOM and release notes is not yet approved, so no tag
