@@ -390,6 +390,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# 'young']` and `removed nothing` alike, so the bound is pinned as behaviour and not as text. It
 	# starts no container and needs PyYAML, as its neighbour above does.
 	bash scripts/ci_container_sweep_age_test.sh
+	# scripts/ci_container_sweep_age_guard_test.sh asks whether the file above would notice. It runs the
+	# honest sweep and nothing else, so the one thing that can undo it — the sweep's own age comparison —
+	# is covered by no assertion until somebody mutates it: turn that comparison's `-le` to `-ge`, delete
+	# the line, or widen `SWEEP_OLDER_THAN` to 99999, and a guard that only ever sees correct workflows
+	# stays green while the step removes the young containers of live jobs, or nothing at all. This file
+	# writes those three workflows into a temporary directory and points the guard at the copy, so the pin
+	# is the guard's refusals (`removed ['young']`, `removed ['old', 'young']`, `removed nothing`) and not
+	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
+	# and the guard does the parsing, so this line needs no parser of its own.
+	bash scripts/ci_container_sweep_age_guard_test.sh
 	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
 	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
 	# locked above the ranges that report names, and that the gate that named them is still a step in
