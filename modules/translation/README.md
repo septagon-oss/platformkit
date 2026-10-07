@@ -74,15 +74,31 @@ Portuguese, which nothing downstream would ever notice.
 
 ## Reads, writes, refusals
 
-These are the port's commands. The read door exists in `kit/rest`; the write
-doors do not, and the module is composed by nothing (Limits).
+These are the port's commands. Both doors exist in `kit/rest`; the module is
+composed by nothing yet, which is what Limits says plainly.
 
 | Door | What it does |
 | --- | --- |
 | `GET …?lang=pt-PT` | for a Spec whose entity declares a translatable field and whose `Translations` port is wired: the locale's rows overlaid, every field that fell back named in `_i18n`, and `Content-Language` set. A resource with no translatable field does not offer `?lang=` at all, and its JSON is what it always was |
-| `PATCH …`, `POST …/review`, `POST …/suggest`, `DELETE …?lang=` | **not mounted.** The commands behind them are the four below; the doors, and the field's own validation of a translated value (the 422 a refused richtext construct), are the slice that composes this module |
+| `POST …/translate` | writes this language's text of the named fields, as a person's own typing. The body carries each field's expected revision, so two translators in one locale have one loser and the six fields of a save are refused together. The record's own columns are untouched: this command cannot move the English |
+| `POST …/review-translation` | marks the named fields reviewed, or every field of the record when the body names none |
+| `POST …/suggest-translation` | asks the machine for a draft of the named fields and saves it unreviewed; refuses, writing nothing, where the installation names no translator |
+| `POST …/untranslate` | removes this language's rows for the named fields, or for all of them |
 
-What `kit/rest` does today, beside the read: `Spec.Translations` (whose absence
+Every one of the four is a command **of the record**, mounted by the same
+`Spec.Mount` that mounts its `PATCH`, guarded by that Spec's own `Write`
+permission, and refused before it touches anything if the language is one the
+tenant is never served in or is the tenant's own. The text is validated by the
+field's own rules — the same `richtext.Prepare`, ceiling and `Files` port the
+record's own write runs — so a translated body that would be refused in English
+is 422 in Portuguese, with the same remedy in the problem document.
+
+The record's `PATCH` keeps one meaning: it writes the record. Translating it is
+a different act, with a different language in its body and a different
+staleness rule, and an address whose meaning depends on a query parameter is an
+address a caller cannot reason about and a shell cannot describe.
+
+What `kit/rest` does beside the two doors: `Spec.Translations` (whose absence
 `check()` refuses for any entity declaring a translatable field), `Spec.deleteRow`
 → `ForgetRecord`, and a source `PATCH` that moved a translatable field →
 `MarkOutdated`.
@@ -90,7 +106,7 @@ What `kit/rest` does today, beside the read: `Spec.Translations` (whose absence
 | Command | What it does |
 | --- | --- |
 | `Translated` | the locale's rows for a page of records, each with the fallback a reader must be told; `Public: true` withholds an unreviewed machine draft |
-| `Save` | writes the named fields — every field of the record when none is named — validated by the field's own rules at the door above, not here |
+| `Save` | writes the fields the caller named — every field of the record when none is named — with the text, the expected revision and the source the door handed over; the field's own rules ran at the door above, not here |
 | `Review` | marks reviewed; refuses a field whose source has moved, and refuses one whose source was never handed over, because a badge nobody checked is a lie |
 | `Suggest` | saves a machine draft, `origin=machine`; refuses when no provider is configured |
 | `Untranslate` | removes the locale's rows for the named fields, or all of them when none is named |
@@ -155,13 +171,17 @@ feature (compare, diff, chunk for search) now has one owner for.
   cookie, no `Accept-Language`, no `Vary`, and no preference stored — the tenant's
   declared list decides whether a tag is answered at all, and a read in the
   tenant's default language asks nothing of this table.
-- The write doors are missing: the record's `PATCH` in a locale, the review and
-  suggest commands, and the 422 a rejected richtext construct must produce, which
-  needs a door to refuse at. So does the public `lang`/`hreflang`/`x-default` set,
-  the translator's UI, the LibreTranslate adapter behind `locale.Translator`, the
-  Playwright+axe journeys and the second demo language in `config.example.yaml`.
-  The module is composed by nothing until that slice lands, and no claim about a
-  door above is a claim that a door exists.
+- Still missing: the public `lang`/`hreflang`/`x-default` set, the translator's
+  UI (switcher, side-by-side, overview), the machine adapter behind
+  `locale.Translator` — no provider's URL, model or price lives in this
+  repository, so nothing here pretends to be one — the Playwright+axe journeys
+  and the second demo language in `config.example.yaml`. Above all, **nothing
+  composes this module yet**: `grep -rl modules/translation apps` answers
+  nothing, so no tenant is served a translated record today and every door above
+  is a door no installation mounts until somebody writes the two lines in
+  `apps/platformkit/modules.go`. Naming that here is the point: a README that
+  described doors as present while nothing wired them is the finding this module
+  was reviewed for.
 - The tenant's declared languages are a parameter of the caller, never stored
   here: which languages a tenant speaks is `modules/tenant`'s answer, reached by
   `SetLocale`.

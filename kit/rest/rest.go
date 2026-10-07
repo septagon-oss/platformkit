@@ -404,6 +404,13 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 				return nil, nil
 			})
 	}
+	// The four translation doors, and only for a resource that declared a field
+	// worth translating: the same rule that keeps `?lang=` off a plain resource's
+	// reads keeps a `translate` command off its writes. They carry the record's own
+	// write permission, which is what guards a translation of it.
+	if len(translatableFields[T]()) > 0 {
+		s.mountTranslationDoors(surfaces)
+	}
 	for _, field := range schema.Fields {
 		if field.Widget == "richtext" {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
