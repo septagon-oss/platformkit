@@ -9,7 +9,7 @@ package main
 // What a golden cannot do on its own is refuse a *breaking* change: UPDATE_GOLDEN=1
 // rewrites whatever it is handed, and the shape a build already installed in a
 // pocket parses does not care what was convenient to regenerate. So the pair is
-// diffed by the rules in wire_compatibility_test.go before the flag is honoured,
+// diffed by the rules in kit/wire before the flag is honoured,
 // and those rules refuse the regeneration, not the change.
 //
 // UPDATE_GOLDEN=1 go test ./apps/platformkit -run OpenAPI rewrites the document.
@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/module"
+	wiregate "github.com/septagon-oss/platformkit/kit/wire"
 )
 
 const openapiGolden = "testdata/openapi.json"
@@ -91,27 +92,7 @@ func TestTheOpenAPIDocumentIsTheCompositionServed(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("GET /openapi.json = %d %s, want 200: the reference composition serves its document", code, body)
 	}
-	served := []byte(body)
-
-	if os.Getenv("UPDATE_GOLDEN") != "" {
-		// The refusal runs before the rewrite. A break cannot be laundered by
-		// regenerating the file it breaks, and there is no second variable to set:
-		// an escape hatch a tired person can pull is the same failure as a golden
-		// nobody regenerates.
-		refuseWireBreak(t, mustReadOpenAPIGolden(t), served)
-		if err := os.WriteFile(openapiGolden, served, 0o644); err != nil {
-			t.Fatalf("write %s: %v", openapiGolden, err)
-		}
-		t.Logf("rewrote %s", openapiGolden)
-		return
-	}
-
-	golden := mustReadOpenAPIGolden(t)
-	refuseWireBreak(t, golden, served)
-	if string(golden) != string(served) {
-		t.Fatalf("%s is stale; run with UPDATE_GOLDEN=1.\nfirst difference at byte %d",
-			openapiGolden, firstDifference(golden, served))
-	}
+	wiregate.GoldenWithAllowances(t, openapiGolden, func() []byte { return []byte(body) }, wireAuthorizationAllowances())
 }
 
 // TestTheCatalogOperationDescribesWhatAShellParses is the hole this delivery
@@ -381,31 +362,6 @@ func wireAt(t *testing.T, doc map[string]any, address string) map[string]any {
 		node = child
 	}
 	return node
-}
-
-// refuseWireBreak reports every rule the pair violates — all of them, so one run
-// names everything a delivery broke rather than the first thing it broke — and then
-// stops the test. Stopping it is the point: the only caller that would otherwise go
-// on is the regeneration, and a rewrite that follows a refusal is the refusal's
-// opposite. Reporting with t.Error alone let the UPDATE_GOLDEN branch fall through
-// to os.WriteFile, so the flag wrote the document it had just named broken, and the
-// next run — the one make check does, with no flag and no message — compared the
-// served document against the broken file and called them equal. That measured
-// sequence is pinned by wire_break_laundering_test.go.
-//
-// Nothing overrides a refusal, including UPDATE_GOLDEN=1. A planned break ships the
-// way this file's header and wire_compatibility_test.go say: land the new address,
-// register the old one as an alias row, delete that row a release later.
-func refuseWireBreak(t *testing.T, golden, served []byte) {
-	t.Helper()
-	problems := breakingWireChanges(t, golden, served)
-	for _, problem := range problems {
-		t.Error(problem)
-	}
-	if len(problems) > 0 {
-		t.Fatalf("%s is left as it was: the rules above stand, and UPDATE_GOLDEN=1 regenerates a document that is stale, never one that is broken",
-			openapiGolden)
-	}
 }
 
 func mustReadOpenAPIGolden(t *testing.T) []byte {
