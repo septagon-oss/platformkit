@@ -95,8 +95,13 @@ func intoDatabase(raw, database string) (string, error) {
 	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 		return "", fmt.Errorf("%q is not a PostgreSQL URL", raw)
 	}
-	if _, found := queryValue(parsed.RawQuery, "dbname"); found {
-		return "", fmt.Errorf("%s names its database in the query as well as the path; remove one", raw)
+	// Both spellings are refused: pgconn maps dbname onto database and reads either
+	// (pgconn/config.go), so a URL that carries one would keep its own database and this
+	// fixture would believe it had handed the caller a different one.
+	for _, key := range []string{"dbname", "database"} {
+		if _, found := queryValue(parsed.RawQuery, key); found {
+			return "", fmt.Errorf("%s names its database in the query as well as the path; remove one", raw)
+		}
 	}
 	parsed.Path = "/" + database
 	parsed.RawPath = ""
