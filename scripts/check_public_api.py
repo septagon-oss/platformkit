@@ -10,9 +10,47 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 
 ROOT = Path(__file__).resolve().parent.parent
 TOOL = "golang.org/x/exp/cmd/apidiff@v0.0.0-20260908205506-85c1c2202aba"
+
+# Asking the module proxy for the pinned tool is the one step in this gate that needs a
+# network: `go run <module>@<version>` fetches the module's retirement notice before it
+# builds anything, and on a host whose resolver has stopped answering for a few seconds
+# that single lookup ends the whole check — `loading deprecation for golang.org/x/exp:
+# … dial tcp: lookup proxy.golang.org: i/o timeout`, which is a sentence about the host
+# and not about anybody's exported API. So a failure to reach the proxy is tried again
+# after a wait instead of ending the run. This cannot swallow a finding: with
+# `-m -incompatible` apidiff exits 0 whatever it finds (cmd/apidiff/main.go exits 1 only
+# when it cannot write its report), and this gate's verdict is the baseline diff below,
+# which no retry touches. Any other non-zero exit is reported on the first try.
+FETCH_MARKERS = ("loading deprecation", "dial tcp", "no such host", "i/o timeout",
+                 "connection refused", "server misbehaving", "bad gateway",
+                 "service unavailable", "gateway time-out", "unexpected eof",
+                 "eof while", "tls:", "context deadline exceeded")
+# One wait per extra try: two seconds of retrying an eight-second lookup buys about
+# nothing, so the second wait is long enough to sit out a resolver blip of the size the
+# loop's own logs show, and the whole retry is still well inside the minute this check
+# costs when the network is answering.
+FETCH_WAITS = (5, 20)
+
+
+def fetch_wait(after, output):
+    """Seconds to wait before try `after + 2`, or None when this failure is final.
+
+    The markers are the ways `go run <module>@<version>` says it could not reach a
+    module proxy or the sumdb: a refused or timed-out dial, a name that did not resolve,
+    a proxy that answered 5xx or broke the connection. Anything else that ends one of
+    these commands non-zero — a package that will not compile, an export file that will
+    not parse — is a fact about the tree and is reported on the first try, with the
+    command's own output. The bound is here rather than in the caller's loop so that
+    scripts/check_public_api_fetch_test.sh can pin it: a gate that retried without ever
+    giving up would be a gate that hangs.
+    """
+    if after >= len(FETCH_WAITS) or not any(marker in output.lower() for marker in FETCH_MARKERS):
+        return None
+    return FETCH_WAITS[after]
 
 
 def main():
@@ -36,12 +74,29 @@ def main():
     evidence = {"tool": TOOL, "go_version": go_version, "commits": {}, "commands": []}
 
     def run(command, cwd):
-        result = subprocess.run(command, cwd=cwd, env=env, text=True,
-                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
-        evidence["commands"].append({"arguments": command, "exit_code": result.returncode})
-        if result.returncode:
-            raise RuntimeError(result.stdout + result.stderr)
-        return result.stdout
+        # Every try is the same command in the same directory against the same pinned
+        # tool; only whether the proxy answered differs. `tries` in the evidence is the
+        # difference between a quiet run and one that got there on the third attempt,
+        # which is what a reader needs to weigh the result later.
+        waits = 0
+        while True:
+            result = subprocess.run(command, cwd=cwd, env=env, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=300)
+            if result.returncode == 0:
+                evidence["commands"].append({"arguments": command, "exit_code": 0,
+                                             "fetch_retries": waits})
+                return result.stdout
+            refused = (result.stdout + result.stderr).strip()
+            wait = fetch_wait(waits, refused)
+            evidence["commands"].append({"arguments": command, "exit_code": result.returncode,
+                                         "fetch_retries": waits})
+            if wait is None:
+                raise RuntimeError(refused)
+            waits += 1
+            print(f"+ retry {waits} after a module fetch that did not answer, waiting {wait}s: "
+                  f"{refused.splitlines()[-1] if refused else 'no output'}",
+                  file=sys.stderr, flush=True)
+            time.sleep(wait)
 
     with tempfile.TemporaryDirectory(prefix="platformkit-api-check-") as directory:
         temporary = Path(directory)
