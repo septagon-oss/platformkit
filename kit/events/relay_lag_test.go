@@ -2,7 +2,7 @@ package events
 
 // Which row of a batch answers for its series. The relay's own pass is covered by
 // kit/events' relay tests and the datapoint's attribute set by
-// review_round1_outbox_lag_test.go; what neither can reach is the choice the gauge
+// outbox_lag_test.go; what neither can reach is the choice the gauge
 // turns into a reading, because one binary gets one meter provider and that reader
 // belongs to the review's case. So the choice is a function of its own and is tested
 // here, over the rows a relay pass actually reads.

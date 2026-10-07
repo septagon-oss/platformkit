@@ -114,8 +114,8 @@ func (e *exported) noteMetrics(err error) {
 // note records an attempt nobody attributed to either half. The two wrappers
 // above always name theirs, so the kernel writes no attempt here; what lives
 // here is the record read as one pipeline, which is how two reviewers pinned it
-// (review_round3_resource_never_names_a_tenant_test.go and
-// review_round10_an_export_failure_names_no_address_test.go both build an
+// (resource_never_names_a_tenant_test.go and
+// an_export_failure_names_no_address_test.go both build an
 // `exported`, hand it the collector's refusal and read /ready's answer). An
 // attempt nobody can place is held against both halves, because the honest
 // reading of a delivery nobody can attribute is that neither half can claim it.

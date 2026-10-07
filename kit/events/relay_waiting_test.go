@@ -3,7 +3,7 @@ package events
 // What the drained-series read answers, and for whom.
 //
 // relay_drain_test.go owns the choice the correction makes (which series a pass owes a zero
-// to) and review_round5_a_relay_pass_drains_whatever_its_ledger_holds_test.go owns the size
+// to) and a_relay_pass_drains_whatever_its_ledger_holds_test.go owns the size
 // it has to survive. What is left, and what this file owns, is the answer itself — because
 // the read no longer asks the queue about the series the caller named. It asks the queue
 // what it holds, for every tenant, and answers the caller's question out of that. Two things

@@ -2,7 +2,7 @@
 //
 // It is a package of its own because of how OpenTelemetry binds meters: the instruments
 // kit/telemetry shares were taken from the global meter, and the global binds to the
-// provider installed *first* in a process. kit/events/review_round1_outbox_lag_test.go
+// provider installed *first* in a process. kit/events/outbox_lag_test.go
 // installs the reader of that test binary, so no second case in that binary can collect
 // what the relay records — the delivery's own relay_lag_test.go says so, and states that
 // the value's path to a reader is therefore untested there. This binary gets its own

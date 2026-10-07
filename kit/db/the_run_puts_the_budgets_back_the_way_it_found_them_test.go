@@ -1,6 +1,6 @@
 package db_test
 
-// review_round14_the_run_puts_the_budgets_back_the_way_it_found_them_test.go is review
+// the_run_puts_the_budgets_back_the_way_it_found_them_test.go is review
 // round 14's pin over b4b68ee ("a nontransactional file waits its own wait; the lock
 // budget does not reach it").
 //

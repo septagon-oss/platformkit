@@ -5,7 +5,7 @@ package app
 // "kit/health reports the exporter's last success", and that report is produced by
 // traceExporter/metricExporter wrapping the OTLP exporters and noting what they
 // answered. The cases that exist feed `exported.note` an error the test itself made
-// (review_round3_resource_never_names_a_tenant_test.go, whose comment is explicit —
+// (resource_never_names_a_tenant_test.go, whose comment is explicit —
 // "no case anywhere reads the report back") or assert the shape of the resource; and
 // the review rounds' own "Unverified" lists name the gap in as many words: "What
 // remains genuinely unexercised is a *real* OTLP export attempt against a dead
@@ -35,7 +35,7 @@ package app
 // rather than avoiding them: otel's global wrapper delegates to the provider installed
 // *first* and to no later one (internal/global/state.go, delegateTraceOnce.Do), which is
 // what kit/app/telemetry.go's header comment states as the rule. Another case in this
-// package installs providers before this one — review_round1_endpoint_form_test.go
+// package installs providers before this one — endpoint_form_test.go
 // installs a real pair for "collector.example:4317" and for "localhost:4317" — so the
 // wrapper's delegate is theirs by the time this case runs, and it stays theirs. That is
 // the arrangement the composition claims for itself and the reason this case still sees
