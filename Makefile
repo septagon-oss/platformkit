@@ -415,6 +415,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
+	# Which failures of the API gate's one network step are worth another try. The target
+	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
+	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
+	bash scripts/check_public_api_fetch_test.sh
+	# The other half of that bound: a fetch that fails twice and then succeeds must still be
+	# judged on what it exported. These cases drive the gate's own main() with the tool's
+	# subprocess calls answered from memory, so they need no network and no second tree.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
 

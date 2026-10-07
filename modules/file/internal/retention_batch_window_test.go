@@ -51,7 +51,7 @@ func TestTheRetentionSweepReachesEveryFileWhoseClassRanOut(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	// One more file than the job's own batch, all of them in a class the
 	// deployment priced far beyond their age: none of these is ever a deletion,
