@@ -98,6 +98,14 @@ type Deps struct {
 	// by the application over the tenant module.
 	Hosts contracts.Hosts
 
+	// Mails is what this module records about the mails it sends itself: one row
+	// per send, with no subject, body, link or credential in it. It is the
+	// notification module's own ledger of them, named here the way Mailer and Hosts
+	// are, so Deps reads as one list of capabilities. A composition that wires none
+	// sends exactly as it did before the record existed and leaves no trace of the
+	// attempt — which is the bug this closes, not a mode to preserve.
+	Mails contracts.MailLedger
+
 	// Tenants is how the hourly sweep reaches every tenant, to delete the
 	// sessions and tokens that have expired.
 	Tenants jobs.TenantLister
@@ -192,7 +200,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	}
 	secure := !config.Local(deps.PublicHost)
 	svc := internal.NewService(deps.Users, deps.Notify, internal.Delivery{
-		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure,
+		Mailer: deps.Mailer, Hosts: deps.Hosts, Secure: secure, Mails: deps.Mails,
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
@@ -236,7 +244,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(internal.WithServed(ctx, invited.Served), tx, invited.UserID)
+				return svc.Offer(internal.WithOrigin(internal.WithServed(ctx, invited.Served), ev), tx, invited.UserID)
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
@@ -245,7 +253,7 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(internal.WithServed(ctx, asked.Served), tx, asked.Email)
+				return svc.Reissue(internal.WithOrigin(internal.WithServed(ctx, asked.Served), ev), tx, asked.Email)
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {

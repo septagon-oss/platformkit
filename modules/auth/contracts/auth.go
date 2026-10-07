@@ -257,6 +257,23 @@ type Notifier interface {
 type (
 	Mailer = notificationcontracts.Mailer
 	Hosts  = notificationcontracts.HostLookup
+	// MailLedger is the notification module's own record of a mail this module
+	// sent without a notice behind it, named here the way Mailer and Hosts are so
+	// that Deps reads as one list of capabilities.
+	//
+	// It is not a port this module can do without: a composition that wires none
+	// sends its mail exactly as it did before the record existed and leaves no
+	// trace of the attempt, which is the bug rather than a mode to preserve.
+	MailLedger = notificationcontracts.MailLedger
+)
+
+// The two mails this module sends itself, named the way every event name is
+// named. They are this module's names for its own mails and belong here, not in
+// the shared ledger: a CHECK or a constant in modules/notification listing them
+// would make the next module that mails a schema change.
+const (
+	MailSetPassword  = "auth.set_password"
+	MailVerification = "auth.verification"
 )
 
 // Service is signing in, signing out, recognising a session, and resolving what
