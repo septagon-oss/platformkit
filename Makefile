@@ -376,6 +376,20 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# leak" is a line of `make check`. It starts no container and needs PyYAML, which ci.yml's own apt
 	# step installs.
 	bash scripts/ci_container_leak_test.sh
+	# scripts/ci_container_sweep_age_test.sh runs the sweep instead of reading it. The guard above asks
+	# three things of the sweep step's text — that it lists `docker ps -aq --filter label=pkit.ci.run`,
+	# that it says `docker rm -f`, that its SWEEP_OLDER_THAN is at least twice this job's own ceiling —
+	# and says nothing about the one line that compares a container's age to that bound, because all it
+	# does is read. Turn `[ "$epoch" -le "$cutoff" ] || continue` round, or delete it, and every answer
+	# above stays `ok` (measured at this commit: rc 0 on both mutants) while the step removes the
+	# containers of the live jobs sharing the daemon — another repository's included, since `pkit.ci.run`
+	# is a program-wide namespace and the sweep reaches whatever carries it. Raise the bound to 99999 and
+	# that read is still `ok` while the sweep removes nothing at all. This file executes each job's
+	# committed `run:` under `bash -e` against a stub `docker` that lists one container created four
+	# hours ago and one created five minutes ago, and refuses `removed ['young']`, `removed ['old',
+	# 'young']` and `removed nothing` alike, so the bound is pinned as behaviour and not as text. It
+	# starts no container and needs PyYAML, as its neighbour above does.
+	bash scripts/ci_container_sweep_age_test.sh
 	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
 	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
 	# locked above the ranges that report names, and that the gate that named them is still a step in
