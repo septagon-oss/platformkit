@@ -103,6 +103,14 @@ of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
 
+[apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
+as one sentence — the modules it uses, the ports the kernel asks the application
+for, and the roles it says a tenant begins as — and what it resolves to is
+committed beside it as
+[COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md), which
+`TestCompositionFile` compares on every `make check` and refuses when the
+composition moves and the file does not.
+
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
 tenants, host lookup and active-tenant enumeration exist before notification
@@ -286,7 +294,7 @@ no SQL runs twice. `db.Adoption` is that declaration; a fresh database has
 nothing to adopt and reads the same ledger either way. An adopted file is an
 applied file, so changing one still refuses.
 
-The runner validates the selected source files, obtains a database advisory
+The runner validates the selected source files, obtains its namespace's advisory
 lock, checks applied histories, and executes each pending file with its history
 row in one transaction — which is the mode a file declares in its header, and two
 modes say otherwise: an `autocommit` file's one statement runs outside the
@@ -726,7 +734,7 @@ their numbers into prose; run `make check-loc` and `make check-packages`.
 check`, then `make check-race`, `govulncheck`, the native editor and browser
 checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
-workflows](.github/workflows/ci.yml) are kept in step with it and do not run
+workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
 release workflow beside them. An absent GitHub check establishes nothing. A
 publisher for the image, SBOM and release notes is not yet approved, so no tag

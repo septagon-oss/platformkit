@@ -95,13 +95,13 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service, cookies Cook
 		Method:      http.MethodPost,
 		Path:        "/password/reset",
 		Summary:     "Set a password with a link",
-		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds. A token that is unknown, spent or expired is one answer.",
+		Description: "Consumes the token the link carried and sets the password. Every session this person had ends, including any the caller holds, and this browser is signed in — an invitation that left the invited person back at the sign-in form was half a door. The one account left signed out is a person who enrolled a second factor: their password changes and their other sessions end, and the sign-in finishes with the code. A token that is unknown, spent or expired is one answer.",
 		Tags:        []string{"auth"},
 		Errors: []int{http.StatusUnauthorized, http.StatusUnprocessableEntity,
 			http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{
 			contracts.EventPasswordReset, usercontracts.EventPasswordSet,
-			contracts.EventSessionRevoked,
+			contracts.EventSessionRevoked, contracts.EventLoggedIn,
 		}},
 	}, httpx.Public(), handleResetPassword(svc, cookies))
 
@@ -204,7 +204,23 @@ func done() *doneOutput {
 func refusal(err error) error {
 	switch {
 	case errors.Is(err, contracts.ErrCredentials):
-		return problem.New(http.StatusUnauthorized, "those credentials are not right")
+		// One sentence for every way a sign-in fails — no such address, the wrong
+		// password, an account still waiting to be verified, a person who has been
+		// invited and has not yet chosen a password — because telling them apart is
+		// an enumeration oracle. What it now also does is name the next step: the
+		// walkthrough found people at this sentence with no idea what to do, and
+		// three of the twelve apps that scored nothing stopped here. The advice is
+		// the same for all four, because the door that answers each of them is the
+		// one the sign-in card names.
+		//
+		// It names that link by what it is rather than by its label, and the
+		// difference is the language the person is reading in: this sentence is
+		// JSON from the API and is not translated, the card under it is, and a
+		// refusal that quoted "Forgot your password?" on a page whose link reads
+		// "Esqueceu a sua palavra-passe?" sends the person looking for a phrase
+		// that is not on the screen. What it is stays true in every language.
+		return problem.New(http.StatusUnauthorized,
+			"those credentials are not right. Check the address, or use the forgotten-password link under this form to be sent a link that sets a new one")
 	case errors.Is(err, contracts.ErrTooManyAttempts):
 		return problem.New(http.StatusTooManyRequests, "too many failed attempts for that address; wait and try again")
 	case errors.Is(err, contracts.ErrFactorRequired):
@@ -246,9 +262,27 @@ type sessionOutput struct {
 // wanted to be signed out and they are.
 type clearOutput struct {
 	SetCookie http.Cookie `header:"Set-Cookie"`
-	Body      struct {
-		SignedOut bool `json:"signedOut"`
-	}
+	Body      clearOutputBody
+}
+
+// clearOutputBody is the body of every answer whose job is to say what happened
+// to this browser's cookie. It is a named type rather than the anonymous struct
+// it was, because the set-password route answers with the same shape plus one
+// field, and two shapes that differ by one optional field have to be one schema
+// to stay the schema the published document already names: a new name for it is
+// a break on an address a shipped client already calls, and the wire gate is
+// right to refuse one.
+//
+// SignedIn is that one field, and it belongs to the set-password route alone.
+// SignedOut keeps the meaning it has always had there — every session this
+// person held before the link was spent is ended — and SignedIn says whether
+// this browser holds a session now. Both are true of the same answer, and
+// neither says what the other does. A route that opens no session leaves the
+// field out, which is why it is optional: the sign-out routes never set it, and
+// a false there would be a fact nothing wrote.
+type clearOutputBody struct {
+	SignedOut bool `json:"signedOut"`
+	SignedIn  bool `json:"signedIn,omitempty"`
 }
 
 type identityOutput struct {

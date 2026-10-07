@@ -40,6 +40,22 @@ type Module struct {
 	// Permissions are the permission keys this module defines, "<resource>:<action>".
 	Permissions []Permission
 
+	// Roles are the people this module is for: a role it can describe without
+	// being told, because the grants it needs are its own permissions. "A role a
+	// module declares opens that module's screens" is only a rule if the
+	// declaration exists somewhere the kernel can read it, and before this field
+	// nowhere did: the only roles in an installation were auth's two and whatever
+	// the composition happened to list by hand, so nothing could check that a
+	// granted role reached the screens its module serves, and an administrator
+	// granting "editor" was granting a guess.
+	//
+	// Seeding is the composition's act, not this manifest's: apps/platformkit
+	// builds auth.SeedRoles' defaults from these rows (its seedRoles), and
+	// kit/app's Validate refuses a declaration that lies. A module that wants a
+	// role nobody should get in every tenant declares nothing and lets the product
+	// name it.
+	Roles []RoleDecl
+
 	// Events are the events this module emits, by name: "<module>.<event>",
 	// inside the module's own namespace. A name is all the kernel needs to
 	// refuse a route that would publish what no manifest promised, to name a
@@ -201,6 +217,25 @@ type Permission struct {
 	Operator bool
 }
 
+// RoleDecl is one role a module declares for its own capability: seeded into
+// every new tenant by the composition, and granting nothing but permissions this
+// module's own manifest defines. It carries no client, sector, jurisdiction or
+// price: the shape of the grant is the whole of what a module may say about a
+// person, and which of its roles a product composes is the product's list.
+type RoleDecl struct {
+	// Name is the role as it appears in the tenant's role table and on the
+	// roles screen: a lower-case identifier, at most auth's MaxRoleName
+	// characters, and not one of the two names auth owns (admin, member), which
+	// Validate refuses rather than letting a module shadow.
+	Name string
+
+	// Grants are the permission keys this role holds, each one declared by this
+	// module and none of them an operator's. An empty list is a role that grants
+	// nothing — the shape auth's own member role holds by design, and the reason
+	// a module may not declare one.
+	Grants []string
+}
+
 // NavEntry is one link in the application's navigation, shown to a caller who
 // holds Permission. There is no Order: nav is rendered in composition order,
 // which is the order main lists the modules in, and a second ordering nothing
@@ -229,6 +264,22 @@ var moduleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // screens are mounted at, which is the only reason a nav entry can name a
 // screen without naming where the shell lives.
 var screenName = regexp.MustCompile(`^[a-z][a-z0-9_]*(/[a-z][a-z0-9_]*)*$`)
+
+// roleName is auth's ValidRoleName grammar restated, because kit/module may not
+// import a module's contracts and a name that fails the module's check would
+// fail the seed's write later, with a worse message. The two are kept in step by
+// the case in kit/module's tests that names auth's constant.
+var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
+// maxRoleName is auth.MaxRoleName, for the same reason roleName restates its
+// grammar: the column the seed writes into is bounded by it.
+const maxRoleName = 64
+
+// reservedRoleNames are the two roles auth owns and seeds itself in every
+// tenant: the administrator and the empty member. A module that declared either
+// would be declaring a grant into a row auth has already written, and ON
+// CONFLICT DO NOTHING would make the lie silent.
+var reservedRoleNames = map[string]bool{"admin": true, "member": true}
 
 // surfacesNames are the words that belong to the kernel: a module called
 // "public", "ops" or "app" would compose a route whose prefix and its surface
@@ -271,7 +322,8 @@ func Validate(mods []Module) error {
 	add := func(format string, args ...any) { bad = append(bad, fmt.Sprintf(format, args...)) }
 
 	names := map[string]bool{}
-	owner := map[string]string{} // permission key -> the module that defined it
+	owner := map[string]string{}     // permission key -> the module that defined it
+	roleOwner := map[string]string{} // role name -> the module that declared it
 	for _, m := range mods {
 		switch {
 		case m.Name == "":
@@ -314,6 +366,49 @@ func Validate(mods []Module) error {
 			}
 		}
 
+		// A declared role is a promise about this module's own permissions, so every
+		// check but one is local to it. The refusals are all compose-time, which is
+		// where checkPersonas already put a bad persona grant: boot and bootstrap fail
+		// before the database opens, and a role that seeds a lie never reaches a tenant.
+		own := map[string]Permission{}
+		for _, p := range m.Permissions {
+			own[p.Key] = p
+		}
+		seenRole := map[string]bool{}
+		for _, rd := range m.Roles {
+			name := strings.ToLower(strings.TrimSpace(rd.Name))
+			switch {
+			case name == "":
+				add("module %q declares a role with no name", m.Name)
+			case !roleName.MatchString(name):
+				add("module %q: role %q is not a lower-case identifier, which is what the roles table and the roles route both require", m.Name, rd.Name)
+			case len(name) > maxRoleName:
+				add("module %q: role %q is longer than %d characters", m.Name, name, maxRoleName)
+			case reservedRoleNames[name]:
+				add("module %q: role %q is auth's own to seed; a module may not declare it", m.Name, name)
+			case seenRole[name]:
+				add("module %q: role %q is declared twice", m.Name, name)
+			case roleOwner[name] != "":
+				add("module %q: role %q is already declared by module %q; two modules seeding one name would write two answers into one row", m.Name, name, roleOwner[name])
+			default:
+				seenRole[name], roleOwner[name] = true, m.Name
+			}
+			if len(rd.Grants) == 0 {
+				add("module %q: role %q grants nothing; a role nobody asked for is auth's member role and that one is seeded already", m.Name, name)
+			}
+			for _, g := range rd.Grants {
+				p, declared := own[g]
+				switch {
+				case !declared:
+					add("module %q: role %q grants %q, which this module does not declare; a module may only open what it owns",
+						m.Name, name, g)
+				case p.Operator:
+					add("module %q: role %q grants %q, an operator permission; a customer's role may not reach the control plane",
+						m.Name, name, g)
+				}
+			}
+		}
+
 		// The files an adoption names are checked by db.Migrate against the
 		// module's SQL before it connects; what only the manifest can say is
 		// that there is SQL to check against at all.
@@ -336,6 +431,17 @@ func Validate(mods []Module) error {
 				!(m.Name == KernelName && slices.Contains(KernelEvents, e.Name)) {
 				add("module %q: event %q is not namespaced by the module that emits it", m.Name, e.Name)
 			}
+		}
+		// The other half of one emitter per name: one emitter, one shape. The
+		// namespace rule above makes it impossible for two modules to declare one
+		// name, so the manifest that can still write one name twice is its own, and
+		// a manifest that does has promised two documents for one event. The check
+		// is kit/events', because what counts as one shape is the projection of the
+		// payload type rather than the Go type; the refusal is the manifest gate's,
+		// because a composition that contradicts itself is refused where every
+		// other composition problem is answered, with the list read once.
+		for _, problem := range events.OneShapePerName(m.Emits()) {
+			add("module %q: %s", m.Name, problem)
 		}
 	}
 

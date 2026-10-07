@@ -91,6 +91,19 @@ carrying somebody else's token. That costs a real deployment something, and the 
 is alive, because from that moment its own older traffic is unreadable to it. A scoped address is not a scoped
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
+**A kernel module names itself, and the app names it.** Every module of the kernel
+now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
+`admin.Module` — declaring the contracts it needs and provides, the contributions it
+takes, the phase it runs in and the configuration section it reads, and building
+itself from the wiring. An application's composition is one list:
+`pkit.NewApp("acme").Use(user.Module, audit.Module, admin.Module)`. The constructors
+keep their behaviour under the one name free in every package, `New`, which is a
+**breaking rename** for any caller that wrote `user.Module(deps)`: the field list is
+unchanged, only the name it is called by. Two configuration sections are read by the
+kernel now: `deployment.mail.method` (`smtp` or `mailbox`) and
+`deployment.payments.method` (`manual`), each refused before any module builds when
+the deployment leaves it ambiguous.
+
 **A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
 the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
 key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
@@ -559,6 +572,18 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**The migration lock belongs to one application's namespace, not to one database.**
+`db.Migrate` holds its advisory lock for the namespace it is about to write: the key
+carries the OID of `current_schema()` beside its own constant, because the ledger it
+protects — `schema_migrations`, and every table an applied file creates — lands wherever
+that run's `search_path` resolves. Two applications that share one Postgres database in
+separate namespaces therefore apply their own files while one another migrates; two
+replicas of one application still reach one namespace through one URL and still queue,
+so ADR 0005's boot where one process migrates and the rest wait and find nothing to do
+is the same guarantee it was. A run whose path resolves to no namespace at all is refused
+rather than locked around, because `pg_advisory_lock(key, NULL)` answers NULL without
+taking the lock, and that would be a run that set out believing it was alone.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
@@ -862,6 +887,31 @@ module, which the compiler and `./scripts/check_imports.sh` both refuse. So
 nothing here is a gate that now passes. What moves is adoption: the
 alias has a value package wrapping the owner rather than only a name, and a
 downstream consumer's value package does the same when its pin moves.
+
+**The development stack runs a mail catcher, and the browser journeys read the link they
+were sent.** An empty `mail.host` — the default, and what an installation without a relay
+has — records every notification and sends none of the ones marked for email. That is safe,
+and it leaves a development machine unable to finish the one journey that needs a link: an
+invitation nobody can open is the walkthrough the front door was written against. So
+[compose.yaml](compose.yaml) composes `mailpit` (SMTP on 1025, its API on 8025, both
+overridable the way the stack's other ports are), [scripts/e2e.sh](scripts/e2e.sh) writes the
+`mail:` block of the configuration it generates and refuses a run whose catcher is not
+answering before it builds anything, and every job that runs `make e2e` (both check
+jobs, and the release job) starts the same image, by container name where it can. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
+catcher by recipient for each of the four account links this application mails — an
+invitation, a sign-up confirmation, a resent confirmation and a forgotten-password reset —
+and assert what the delivered message says: that its link carries the address and port the
+tenant is served at, and that the person it was addressed to can open it and be signed in by
+choosing a password there. Two defects came out of writing it. The sign-up's event carried
+no served address, so its confirmation link was built from the tenant's name alone and
+opened port 80 rather than the port the sign-up was answered on — `user.registration_unverified`
+now carries `served`, the way `user.invited` and the two password events already did. And the
+forgot page, the confirmation page and the reset page are mounted on two different surfaces,
+because that is where auth mounts the three doors: asking the workspace router for a public
+door names an alias row that answers 307, which `ui/assets/js/session.js` refuses to follow
+by design, so the button told the person the outcome was unknown and sent nothing —
+`TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
+the running application what it says.
 
 ## [1.1.1] - 2026-09-18
 

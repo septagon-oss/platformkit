@@ -406,6 +406,9 @@
               },
               "email": {
                 "type": "string"
+              },
+              "served": {
+                "type": "string"
               }
             },
             "required": [
@@ -436,6 +439,9 @@
                 "type": "string"
               },
               "email": {
+                "type": "string"
+              },
+              "served": {
                 "type": "string"
               }
             },
@@ -559,6 +565,9 @@
                 "type": "string"
               },
               "email": {
+                "type": "string"
+              },
+              "served": {
                 "type": "string"
               }
             },
@@ -2961,6 +2970,9 @@
               "email": {
                 "type": "string"
               },
+              "served": {
+                "type": "string"
+              },
               "status": {
                 "type": "string"
               },
@@ -3096,6 +3108,9 @@
                 "type": "string"
               },
               "email": {
+                "type": "string"
+              },
+              "served": {
                 "type": "string"
               },
               "userId": {

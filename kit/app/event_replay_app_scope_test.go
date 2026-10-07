@@ -46,8 +46,15 @@ func installationDelivery(t *testing.T, permissions ...string) (http.Handler, *s
 	if err != nil {
 		t.Fatal(err)
 	}
-	router, err := a.buildAPI(t.Context(), conn, cache.Memory("pkit"))
+	store := cache.Memory("pkit")
+	api, router, err := a.buildAPI(t.Context(), store)
 	if err != nil {
+		t.Fatal(err)
+	}
+	// Start hands the connection and the store to the API it just built; a test
+	// that serves the installation's commands over a real database hands them
+	// the same way.
+	if err := api.Connect(conn, store); err != nil {
 		t.Fatal(err)
 	}
 	return router, owner

@@ -139,7 +139,9 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // hostPattern is a hostname: labels of letters, digits and hyphens, separated
 // by dots. It is deliberately narrower than the DNS allows — no underscores, no
 // trailing dot, no port — because kit/httpx has already normalised the incoming
-// Host header to exactly this shape before it asks the loader.
+// Host header to exactly this shape before it asks the loader. A port is not the
+// key a tenant is resolved by, so a published installation declares its public
+// port in server.public_host, the key a mailed link reads a port from.
 var hostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 // ValidSlug normalises and checks a slug.
@@ -462,4 +464,20 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 		}
 	}
 	return out, nil
+}
+
+// Languages is the set a tenant's locale may be set to: what this installation's
+// copy is written in, read off the catalogues the composition installed.
+//
+// It is a contract and not a Deps field because the composition is the thing
+// that read the files, and the module that refuses a locale has to be told what
+// exists — this module names no tag of its own. A composition that installs no
+// catalogues composes no provider, and then nothing is checked against anything.
+//
+// It is a struct around the tags rather than the slice itself because a slice is
+// the resolver's own spelling of "take every contribution of the element"
+// (pkit.Needs[[]E]): a named []string would be read as a demand for every
+// contributed string, and this is one value holding a list.
+type Languages struct {
+	Tags []string
 }

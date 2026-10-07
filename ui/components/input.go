@@ -148,7 +148,7 @@ func inputFieldWithSlots(
 
 	fieldClass := clFieldWrap
 	if p.FullWidth {
-		fieldClass = fieldClass.Merge(clFieldWrapFull)
+		fieldClass = clFieldWrapFull
 	}
 	field := []g.Node{h.Class(fieldClass.Compile()), g.Attr("data-component", componentName)}
 	if typ == "hidden" {

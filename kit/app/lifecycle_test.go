@@ -403,16 +403,16 @@ func TestTheBrokerIsAskedOfTheRoleThatNeedsIt(t *testing.T) {
 	// backstop, not the check: Run migrates before it asks the role's transport
 	// (Start's documented order), and the wait for the composition's advisory lock is
 	// patient by design — bounded by the caller's context and nothing else
-	// (kit/db/migrate.go, holdCompositionLock). That lock is one key in one database,
-	// and every test schema this suite makes lives in that one database, so a boot here
-	// queues behind any migration run another package has under way, including
-	// kit/db's cases that hold pg_advisory_lock(7240101) from a second session while
-	// they watch a run queue behind it. At 5s this assertion was a stopwatch on that
-	// queue: in `make check` on 2026-09-30 it failed with "worker Run = db: migrate:
-	// lock: timeout: context deadline exceeded" — a wait cut short, not a refusal
-	// arriving. It now stands where this package's two drain cases already stand for a
-	// boot, and what watches for a listener that must not exist is the dial below,
-	// which is the observation the bound used to stand in for.
+	// (kit/db/migrate.go, holdCompositionLock). That lock names one namespace, since
+	// 5605448, so a boot here no longer queues behind a migration of some other
+	// package's schema — but kit/db's own cases still hold pg_advisory_lock(7240101)
+	// from a second session to watch a run queue behind theirs, and what every boot in
+	// this suite shares beside its own namespace is the machine. At 5s this assertion
+	// was a stopwatch on that queue: in `make check` on 2026-09-30 it failed with
+	// "worker Run = db: migrate: lock: timeout: context deadline exceeded" — a wait cut
+	// short, not a refusal arriving. It now stands where this package's two drain cases
+	// already stand for a boot, and what watches for a listener that must not exist is
+	// the dial below, which is the observation the bound used to stand in for.
 	runCtx, cancelRun := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancelRun()
 	if err := worker.Run(runCtx); err == nil || !strings.Contains(err.Error(), "broker is down") {

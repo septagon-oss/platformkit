@@ -301,10 +301,27 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 		})
 	}
 	out := make([]components.TableRow, 0, len(rows))
+	// named is what a row whose leading column is blank is called by, kept beside the cells
+	// rather than written into them: a cell is a field's own value, and the presentation a
+	// field names composes from it (see compose) — borrowing another field's value would put
+	// an address in a person's disc. What reads this is the row's link, which is the one thing
+	// on the screen that is not a field: it is the row, and so it takes the row's name.
+	named := make(map[string]string, len(rows))
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
 			cells[f.Name] = display.Display(f, row[f.Name])
+		}
+		// The leading cell is the row's only link, so its text is that link's accessible name. A
+		// blank there means this row has nothing in the column the entity leads with, and an empty
+		// link is a row a screen reader reads as "link" — so the row names itself, by the next
+		// candidate it has a value for rather than by its id. See label. The blank is read off the
+		// row, not off the cell above: display.Display spells "nothing" as a dash, and a dash is
+		// not empty, so a cell tested here could never fall back.
+		if display.Text(row[primary.Name]) == "" {
+			if name := label(row, r.Schema.Fields); name != "" {
+				named[display.Text(row["id"])] = name
+			}
 		}
 		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
 	}
@@ -343,8 +360,11 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 			if !c.Primary {
 				return nil
 			}
-			return components.Link(components.LinkProps{
-				Label: display.Text(row.Cells[c.Key]), Href: at + "/" + row.ID})
+			text := display.Text(row.Cells[c.Key])
+			if name, ok := named[row.ID]; ok {
+				text = name
+			}
+			return components.Link(components.LinkProps{Label: text, Href: at + "/" + row.ID})
 		},
 	})
 }
@@ -416,15 +436,15 @@ func direction(sort string) string {
 	return "asc"
 }
 
-// known is the field a row is recognised by: the first writable string the
-// entity declares. A schema has no "this is the title" flag, and inventing one
-// would be a tag every entity would have to remember; the field an entity leads
-// with is the one it leads with.
+// known is the field a row is recognised by, for the whole table at once: the field the entity marked
+// `ui:"display"` if it declared one, and otherwise the first writable text-shaped field it declares.
+//
+// A `text` column counts beside a `string` one: both hold a name, and the reference app's own users
+// are a `text` table — an entity of text columns that has not marked a field used to answer its own
+// heading and its row's only link with a UUID. The mark still wins when both apply; see candidates.
 func known(fields []entity.Field) entity.Field {
-	for _, f := range fields {
-		if !f.ReadOnly && f.Type == entity.TypeString {
-			return f
-		}
+	if c := candidates(fields); len(c) > 0 {
+		return c[0]
 	}
 	if len(fields) > 0 {
 		return fields[0]
@@ -432,10 +452,36 @@ func known(fields []entity.Field) entity.Field {
 	return entity.Field{Name: "id"}
 }
 
-// label is what one row is called.
+// candidates is the order a row is named in, in the one place that order is written down: the marked
+// field, then every other writable string or text field in schema order. known takes its head for a
+// whole table; label walks it for one row, because the field an entity calls its name can be blank in
+// a row that has not been filled in yet.
+func candidates(fields []entity.Field) []entity.Field {
+	var out []entity.Field
+	for _, f := range fields {
+		if f.Display {
+			out = append(out, f)
+		}
+	}
+	for _, f := range fields {
+		if f.Display || f.ReadOnly {
+			continue // the marked ones are already at the head, and a caller may not write this one
+		}
+		if f.Type == entity.TypeString || f.Type == entity.TypeText {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// label is what one row is called, for one row: the first of those candidates this row has a value
+// for, and the id only when it has nothing else — today's last resort, kept for an entity of no
+// text-shaped fields at all.
 func label(row map[string]any, fields []entity.Field) string {
-	if v := display.Text(row[known(fields).Name]); v != "" {
-		return v
+	for _, f := range candidates(fields) {
+		if v := display.Text(row[f.Name]); v != "" {
+			return v
+		}
 	}
 	return display.Text(row["id"])
 }
