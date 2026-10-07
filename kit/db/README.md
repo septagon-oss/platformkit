@@ -60,7 +60,13 @@ caller's context alone. The replica that gets the lock second has the first one'
 applied files to read and finds nothing pending, so a boot that waits and applies
 nothing beats one that refuses at five seconds and is read as a failed deploy. When
 that context runs out the operator gets a context deadline, not `ErrContended`: nothing
-was refused, the run did not finish.
+was refused, the run did not finish. One answer to that wait is neither of those: being
+picked out of somebody else's deadlock (`40P01`) cancels an ask while the run holds
+nothing, because that ask is the first statement the session has sent, and the cycle is
+already broken by the cancelling. The ask is therefore re-issued, four times at most,
+and a database that picks the same session every time is reported with the server's own
+words and its files unapplied. `kit/db/composition_lock_deadlock_test.go` raises
+`40P01` of the ask from the catalog side and pins both answers.
 
 **What each file cost.** Every applied file logs `db: applied migration` at info
 with the runner's own `duration_ms`, and a data file's line carries `batches=` beside
