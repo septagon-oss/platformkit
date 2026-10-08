@@ -157,6 +157,27 @@ cannot be two lists. **Made reusable:**
 any other gate above this package, and `designconfig`'s slug-keyed set as the
 place a process holds many clients' identities.
 
+## Limits
+
+Two grounds are gated nowhere, and their numbers are in
+[CHANGELOG](../CHANGELOG.md): the sidebar a ringed control sits on, and
+`surface-active`, which no shipped rule draws a line on.
+
+One bound is arithmetic rather than a choice, and it is why a row's colour is an
+intention and the paint is a measurement. One colour legible in both modes would
+have to reach `MinContrast` on each theme's own canvas, which asks the two
+canvases to be 4.5 × 4.5 = 20.25:1 apart; `design.Default()` puts `#f2efe7`
+(L 0.86380) over `#0e1614` (L 0.00718) at 15.98:1, so the light half keeps a
+colour at L ≤ 0.15307 and the dark half refuses every colour below L 0.20730.
+All 16,777,216 colours measured with `Contrast` give none that clears both.
+This pair therefore holds no colour `LegibleAccent` returns unchanged in light
+and dark at once — which is what `modules/site`'s `contracts.DefaultPrimaryColor`
+is written against: a colour the paint may move, fixed to one literal by the
+shape the wire publishes it in (`^#[0-9a-fA-F]{6}$`, rule B3). Widening that
+grammar is a release act — a new address with `httpx.API.Alias`, as
+`apps/platformkit/wire_compatibility_test.go` says a planned break ships — and
+not an entry beside a gate.
+
 Font assets and their licences are described, not shipped: see
 [assets.go](assets.go) and the
 [editor bundler](../tools/designexport/openpencil/README.md#deliver-source-backed-font-assets).
