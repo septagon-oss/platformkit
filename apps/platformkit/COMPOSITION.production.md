@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `production` · 16 modules · role `all`.
+App `platformkit` · environment `production` · 17 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in production builds 16 modules.
+pkit: platformkit in production builds 17 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
@@ -88,6 +88,10 @@ pkit: content.Module is built after file.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
+pkit: scim.Module is built after user.Module and auth.Module.
+pkit: scim.Module needs usercontracts.Service from user.Module.
+pkit: scim.Module needs authcontracts.Auth from auth.Module.
+pkit: scim.Module defines the permission scim:provision.
 pkit: change.Module is built after access.Module.
 pkit: change.Module takes every changecontracts.SubjectBinding from access.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
@@ -110,6 +114,7 @@ pkit: task.Module provides taskcontracts.Service; no module in platformkit needs
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.
 pkit: auth.Module provides pkit.Authenticator; no module in platformkit needs it.
+pkit: scim.Module provides scimcontracts.Service; no module in platformkit needs it.
 pkit: change.Module provides changecontracts.Service; no module in platformkit needs it.
 
 ## What the application answers the kernel

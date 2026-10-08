@@ -79,7 +79,8 @@ func TestARouteAtADeclaredAddressAnswersAtThatAddressWithItsOwnChain(t *testing.
 	f.allow = true
 	f.signedIn()
 
-	httpx.Register(api.Surfaces(probe).App.At("/scim/v2"), huma.Operation{
+	probeApp := api.Surfaces(probe).App.At("/scim/v2")
+	httpx.Register(probeApp, huma.Operation{
 		OperationID: "protocol-probe", Method: http.MethodGet, Path: "/things",
 	}, httpx.Permission("task:read"), func(context.Context, *struct{}) (*protocolProbe, error) {
 		return &protocolProbe{Body: protocolBody{Name: "thing"}}, nil
@@ -125,11 +126,14 @@ func TestARouteAtADeclaredAddressAnswersAtThatAddressWithItsOwnChain(t *testing.
 
 	// A document, not a page: the module's own pages keep the surface's page
 	// prefix whatever else it declared, which is what its links and its cache
-	// headers are written against.
-	if at := api.Surfaces(probe).App.At("/scim/v2").Path("/things"); at != "/scim/v2/things" {
+	// headers are written against. Asked of the router the route was mounted on,
+	// which is the one holding the declaration: `At` after `ValidateDeclarations`
+	// is refused rather than honoured, so a fresh router would answer with the
+	// table's prefix and prove nothing about the door that actually opened.
+	if at := probeApp.Path("/things"); at != "/scim/v2/things" {
 		t.Errorf("Path at a declared address = %q, want /scim/v2/things", at)
 	}
-	if p := api.Surfaces(probe).App.PagePath("settings"); p != "/app/probe/settings" {
+	if p := probeApp.PagePath("settings"); p != "/app/probe/settings" {
 		t.Errorf("the module's page lives at %q, want the workspace's own page prefix", p)
 	}
 }

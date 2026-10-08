@@ -1,0 +1,11 @@
+{
+  "permission.scim:provision": {
+    "references": [
+      "modules/scim/module.go"
+    ],
+    "translation": "provisionar identidades externas",
+    "plural": {
+      "": "provisionar identidades externas"
+    }
+  }
+}
