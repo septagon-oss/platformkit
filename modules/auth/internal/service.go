@@ -283,26 +283,19 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 // detachedWriteBudget bounds auth writes that must survive a refused request.
 // A busy or unreachable database must not keep that request open indefinitely.
 //
-// What the bound is a bound on is the wait for a connection and for one
-// statement, not the statement itself: each of these writes runs outside the
-// request's transaction — which is the whole reason it is detached, since
-// kit/httpx rolls a request that answers 400 or worse back — and so it needs a
-// second pool connection while the request that is refusing somebody still
-// holds its own. Waiting for one is therefore ordinary on a loaded box, and what
-// the wait costs depends entirely on which write it is: a purge that misses its
-// window costs nothing anybody can feel, and `markFirstFactorProved` missing it
-// costs the person holding a valid passkey an answer that says their passkey did
-// not answer. Two seconds read that as a failure of the passkey.
-//
-// It was 2s, which is a number chosen to be short rather than to be enough: the
-// e2e journey at e2e/passkey-second-tenant.spec.ts lost a sign-in this way on a
-// box where kit/jobs was itself reporting `context deadline exceeded` for its own
-// relays at the same minute. Raising it does not make a starved pool healthy — it
-// makes the starvation outlast a refusal rather than masquerade as one. It cannot
-// hold a connection longer than the request that owns it would have been open
-// anyway: a request whose detached write cannot get a connection is a request
-// whose own next statement could not either.
-const detachedWriteBudget = 10 * time.Second
+// Two seconds, and the number is a tested contract rather than a guess:
+// TestDetachedAuthWritesBoundPoolWait exhausts a one-connection pool and fails
+// a detached write that still has not given up after three, because holding the
+// pool is how every other request on this process dies. Round 15 raised this to
+// 10s to stop a loaded box being read as somebody's broken passkey (see
+// e2e/passkey-second-tenant.spec.ts, refused by `make e2e` on 2026-10-08: a
+// ceremony 358ms old answered 401 after 2244.95ms, which is this budget with a
+// pool wait inside it) and `make check` answered with that test in three places.
+// It came back down, and the lesson is the shape of the problem: giving up is
+// the designed answer, so the cure is a sign-in that does not need a second
+// connection to answer a passkey, or a connection reserved for the writes that
+// must outlive a refusal — not a longer wait. Both are named in IMPLEMENT.md.
+const detachedWriteBudget = 2 * time.Second
 
 // forget deletes one expired session, in a transaction of its own.
 //
