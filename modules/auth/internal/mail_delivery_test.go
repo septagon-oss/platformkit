@@ -307,9 +307,11 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 		var out struct {
 			State string `json:"state"`
 		}
-		if err := json.NewDecoder(res.Result().Body).Decode(&out); err != nil {
-			t.Fatalf("decode %d: %v", res.Code, err)
-		}
+		// A refusal is problem+json, which holds no state field: what a refusal
+		// says is in its status, so a body that decodes to nothing is an answer.
+		// Every answer that is not a refusal is checked against the state it owes
+		// below, which is what still refuses to let a broken body pass.
+		_ = json.NewDecoder(res.Result().Body).Decode(&out)
 		return res.Code, out.State
 	}
 	if code, state := ask(asked); code != http.StatusOK || state != notification.MailSent {
@@ -327,5 +329,45 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	// read that names nothing.
 	if code, _ := ask(asked, func(r *http.Request) { r.Header.Set("Sec-Fetch-Site", "cross-site") }); code != http.StatusForbidden {
 		t.Errorf("a cross-site ask=%d, want 403", code)
+	}
+
+	// An id from another tenant's call is a request that mailed nothing here. Row
+	// level security answers it the same way as an id nobody ever minted — 200 and
+	// the one word — because a door that distinguished the two would name which
+	// ids exist in some other tenant, which is the enumeration this door exists to
+	// make impossible. The row is written first, over globex's own transaction,
+	// because an ask about an id with no row behind it proves nothing about RLS.
+	const elsewhere = "33333333-3333-4333-8333-333333333333"
+	err = db.Run(tenancy.WithTenant(t.Context(), globex), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return mailLedger().RecordMail(ctx, tx, notification.MailRecord{
+			Kind: contracts.MailVerification, Recipient: "elsewhere@example.com",
+			Outcome: notification.MailSent, RequestID: elsewhere,
+		})
+	})
+	if err != nil {
+		t.Fatalf("record in globex: %v", err)
+	}
+	if code, state := ask(elsewhere); code != http.StatusOK || state != notification.MailStatePending {
+		t.Errorf("another tenant's request id=%d %q, want 200 pending", code, state)
+	}
+
+	// And the door is behind the per-address budget that caps spending a link, so
+	// somebody working through id after id is refused inside the number the module
+	// already agreed to. The asks above spent some of that budget, so the loop
+	// asks one at a time until the refusal comes and pins that it comes at all:
+	// the promise is the cap, not where this test's own share of it begins.
+	var code int
+	for i := 0; i < contracts.ResetRedemptions; i++ {
+		var state string
+		if code, state = ask(asked); code == http.StatusTooManyRequests {
+			break
+		}
+		if code != http.StatusOK || state != notification.MailSent {
+			t.Fatalf("ask %d within the cap=%d %q, want 200 sent", i+1, code, state)
+		}
+	}
+	if code != http.StatusTooManyRequests {
+		t.Errorf("%d further asks about a mailed request did not reach the cap of %d",
+			contracts.ResetRedemptions, contracts.ResetRedemptions)
 	}
 }
