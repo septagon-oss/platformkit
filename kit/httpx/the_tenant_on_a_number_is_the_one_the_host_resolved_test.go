@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 11 (T-0110). Two assertions about the tenant dimension that no case
+// Two assertions about the tenant dimension that no case
 // in this tree holds, both reached through what the router answers (a status, a
 // response header) and through the keys a span or a datapoint carries — never
 // through a sentence a refusal prints.
@@ -20,10 +20,11 @@ package httpx_test
 //     request that filled it. kit/httpx/respond.go allocates it per request today and
 //     traced.go says why ("Nothing guards it: the write happens inside the call stack
 //     of the read"); the natural next edit is to hoist it onto the router, which is
-//     correct for everything except the count. Round 3 pins that each of two tenants
-//     is charged its own, and round 8 pins that a host resolving nothing invents no
-//     tenant — but each of those asks a router that never served the *other* case
-//     first. A hoisted note charges the second request's 404 to the first request's
+//     correct for everything except the count.
+//     two_tenants_one_number_test.go pins that each of two tenants is charged its
+//     own, and an_unresolved_host_invents_no_number_test.go pins that a host
+//     resolving nothing invents no tenant — but each asks a router that never
+//     served the *other* case first. A hoisted note charges the second request's 404 to the first request's
 //     tenant, and both existing cases stay green.
 
 import (
@@ -199,8 +200,8 @@ func TestACallerNamesNoTenantOnASpanOrANumberItDidNotResolve(t *testing.T) {
 	// the request keeps. This is where a bag-read tenant lands: with nothing resolved
 	// there is no tenancy value to prefer, and a kernel that filled the gap from the
 	// carried bag would file an anonymous request's refusals under a customer named in
-	// a header. Round 8 pins the Host-header form of this rule; nothing pinned its
-	// baggage form.
+	// a header. an_unresolved_host_invents_no_number_test.go pins the Host-header form
+	// of this rule; nothing pinned its baggage form.
 	spans.Reset()
 	rec = round11Sent(t, router, "nobody-round11.test", "/api/v1/round11/secret", [][2]string{
 		{"X-Request-ID", "a,b,c"},

@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 1 (T-0110). The delivery's claim, in its own words:
+// The delivery's claim, in its own words:
 //
 //   countRefusal ... is called by both writers of a refusal — fail, for the ones
 //   the kernel makes for itself outside the operation chain, and refuse, for the

@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 22 (T-0110). HIGH-only remit (decision 0037/0039); this file pins
+// This file pins
 // the one sentence of the delivery that no earlier round of this task ran as a
 // number for every answer the router gives.
 //

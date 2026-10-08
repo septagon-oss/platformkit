@@ -1,18 +1,18 @@
 package app
 
-// Review round 21 (T-0110). A pin, not a defect: it closes the one line of round 20's
-// own "Unverified" list that a case could close.
+// The metric half of one promise, read through an export that really fails.
 //
-//	"The metric half of the same promise. My case proves a failed *span* export
-//	 reaches the report. The periodic metric reader ticks every fifteen seconds and
-//	 its failed export goes through the sibling `metricExporter` wrapper; I never
-//	 waited a tick, so that half is unexercised."  — REVIEW round 20, Unverified
+//	The gap states itself: a case proves a failed *span* export reaches the
+//	report, while the periodic metric reader — which ticks every fifteen seconds
+//	and sends its failed export through the sibling `metricExporter` wrapper — is
+//	never waited for, so that half goes unexercised.
 //
 // The brief's line is "kit/health reports the exporter's last success", and this
 // composition wraps *two* exporters (kit/app/telemetry.go: traceExporter,
-// metricExporter) into one record. Round 20 reached the trace half through a real
-// OTLP attempt. The metric half was only read in the source: a wrapper attached to
-// a reader that never ticks, a reader that never exports at shutdown, a
+// metricExporter) into one record. The trace half is reached through a real OTLP
+// attempt by a_collector_that_never_answered_test.go. The metric half was only read in
+// the source: a wrapper attached to a reader that never ticks, a reader that never
+// exports at shutdown, a
 // `note` call that only the trace path reaches, and the process would keep a
 // collector that took no numbers at all out of the operator's reading — while
 // /ready, which any client may poll, says nothing about it.
@@ -55,11 +55,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 )
 
-// deadPort21 is a port the kernel handed back and this case closed at once: what
+// deadMetricPort is a port the kernel handed back and this case closed at once: what
 // dials it is refused immediately, which is a dead collector without a container.
-// Named apart from round 20's helper rather than shared with it, so that file
-// remains the reviewer's bytes and this one stands on its own.
-func deadPort21(t *testing.T) string {
+// Named apart from the collector case's helper rather than shared with it, so the two
+// files stand on their own and one edit cannot move both.
+func deadMetricPort(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -73,13 +73,13 @@ func deadPort21(t *testing.T) string {
 }
 
 func TestALeavingProcessReportsWhatTheCollectorSaidAboutItsNumbers(t *testing.T) {
-	where := deadPort21(t)
+	where := deadMetricPort(t)
 
 	prevTraces, prevMetrics := otel.GetTracerProvider(), otel.GetMeterProvider()
 	prevHandler := otel.GetErrorHandler()
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {}))
 	shutdown, report, err := installTelemetry(context.Background(), config.Telemetry{
-		ServiceName:  "pkit-review21",
+		ServiceName:  "pkit-metrics-half",
 		OTLPEndpoint: where,
 	}, slog.New(slog.DiscardHandler))
 	if err != nil {

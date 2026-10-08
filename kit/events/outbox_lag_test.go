@@ -1,6 +1,6 @@
 package events_test
 
-// Review round 1 (T-0110). The brief's headline is "the tenant on every number", and
+// The brief's headline is "the tenant on every number", and
 // one of the three instruments it names is the outbox lag gauge. kit/telemetry's test
 // checks the gauge carries a tenant when kit/telemetry is handed one; nothing checked
 // that the code that actually produces the number — relayBatch — attaches one. This

@@ -1,7 +1,7 @@
 package httpx_test
 
-// Review round 2 (T-0110). This round's remit is whether review round 1's MEDIUM
-// finding 1 is cured, and the cure's own words make that a two-part claim:
+// Whether every refusal reaches the counter exactly once is a two-part claim, and
+// the cure's own words make it that way:
 //
 //	fix(httpx): every refusal is counted, once, from the answer the client got
 //	... respond counts the status the client was finally given, once ...
@@ -9,7 +9,8 @@ package httpx_test
 //	buffer replaces an answer (a held 200 becomes a 500 when the commit fails, a
 //	panic replaces whatever was written) ...                  (1deb242, traced.go)
 //
-// Round 1's three cases ask one question — "did the number notice at all" (got < 1)
+// The three cases in refusal_counter_test.go ask one question — "did the number
+// notice at all" (got < 1)
 // — and the cure answers it. Nobody on either side asks the second half, which is
 // the half a fix that *relocates* a count can break while keeping the first true:
 // that one refused request moves the counter by exactly one. A count left behind at
@@ -46,8 +47,8 @@ import (
 
 // onceFixture is the router these cases run against: a public route that reads a
 // query value, a signed-in route, a handler that returns an error, and a handler
-// that panics. Same host and tenant as round 1's fixture, built here so the
-// reviewer's own file stays untouched by this round.
+// that panics. Same host and tenant as refusal_counter_test.go's fixture, built here
+// so that file keeps the bytes its author wrote.
 func onceFixture(t *testing.T) http.Handler {
 	t.Helper()
 	_, app := dbtest.Schema(t)
@@ -134,7 +135,7 @@ func TestOneRefusedRequestMovesItsClassByExactlyOne(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		before := review2ClassTotals(t)
+		before := classTotals(t)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, tc.req())
 
@@ -153,7 +154,7 @@ func TestOneRefusedRequestMovesItsClassByExactlyOne(t *testing.T) {
 				tc.what, rec.Code, class)
 			continue
 		}
-		after := review2ClassTotals(t)
+		after := classTotals(t)
 		if got := after[class] - before[class]; got != 1 {
 			t.Errorf("%s: the client was answered %d (class %q) and pkit.http.refusals moved by "+
 				"%d for that one request, want exactly 1 — the cure promises every refusal is "+
@@ -172,10 +173,10 @@ func TestOneRefusedRequestMovesItsClassByExactlyOne(t *testing.T) {
 	}
 }
 
-// review2ClassTotals is the running total per class, read the way round 1's cases
-// read it. An instrument nothing has recorded on is absent from a collection rather
-// than present at zero, so absence is this number's zero.
-func review2ClassTotals(t *testing.T) map[string]int64 {
+// classTotals is the running total per class, read the way
+// refusal_counter_test.go reads it. An instrument nothing has recorded on is absent
+// from a collection rather than present at zero, so absence is this number's zero.
+func classTotals(t *testing.T) map[string]int64 {
 	t.Helper()
 	out := map[string]int64{}
 	m, ok := metrics(t)["pkit.http.refusals"]

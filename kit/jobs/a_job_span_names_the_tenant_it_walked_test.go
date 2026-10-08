@@ -1,6 +1,6 @@
 package jobs
 
-// Review round 4 (T-0110). The brief's denominator counts jobs among the boundaries that
+// The brief's denominator counts jobs among the boundaries that
 // must "emit a tenant-attributed span", and the CHANGELOG says 80 of the 81 registered
 // boundaries carry a tenant on their span. No case in this package had ever read a span
 // back: nothing in kit/jobs' own tests names OpenTelemetry, so the claim about the job

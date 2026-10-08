@@ -1,6 +1,6 @@
 package telemetry_test
 
-// Review round 19's pin of the one number this delivery publishes.
+// The one number this delivery publishes, quoted in two documents.
 //
 // The brief asks the commit to state `tenant_attributed_boundary_coverage` as a
 // ratio, and the delivery states it twice: `CHANGELOG.md` gives "80 of the 81
@@ -10,8 +10,8 @@ package telemetry_test
 // are this branch's own writing, and the brief's rule is that the branch which
 // changes a figure updates the quote in the same change.
 //
-// This class rotted twice on this branch already: round 17 found the note's first
-// sentence implying `file-reconcile` was the only boundary carrying no tenant, and
+// This class has rotted twice already: one note's first sentence implied
+// `file-reconcile` was the only boundary carrying no tenant, and
 // `daed86a` found the guide calling the excluded four "relay and purge jobs" while
 // the note named a migration drain among them — two documents disagreeing about the
 // same four jobs. A case with a regex over the prose would tax prose, so nothing

@@ -1,6 +1,6 @@
 package events_test
 
-// Review round 1 (T-0110). The brief's Specify item 2 names what each of the four
+// The brief's Specify item 2 names what each of the four
 // boundary spans carries: "each carrying `pkit.tenant` and the request id". Three of
 // them do — the request's own span, the transaction under Tx and the job's tenant
 // span all read the id out of the W3C Baggage the router writes.

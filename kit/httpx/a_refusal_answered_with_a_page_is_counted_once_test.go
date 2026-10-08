@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 13 (T-0110). What this round is the first to be able to ask.
+// What this file is the first to be able to ask.
 //
 // `7fc5e34` merged `origin/main` (T-0111, a locale per tenant) over this branch's
 // refusal counting, and the merge landed inside the two functions that decide who
@@ -11,7 +11,7 @@ package httpx_test
 // hands the verdict to the registered renderer, because the page it renders has a
 // language the tenant declares.
 //
-// Rounds 1, 2, 8 and 11 pinned the counter for refusals answered as JSON: the
+// The cases this file joins pinned the counter for refusals answered as JSON: the
 // router's own 400/404/405, a guard's 403, a handler's error and panic, an
 // unresolved host, a forged baggage. Every one of those fixtures registers no
 // `httpx.Options.Fault`, so `wantsDocument(r)` is answered by `writeProblem` and
@@ -59,7 +59,8 @@ const pageMarker = "<!--round13-->"
 
 // pageFault is a renderer that answers: the status the verdict carries, the marker,
 // and nothing but the page. Returning false — the opt-out — is the other branch and
-// is round 1's and round 2's fixture, which is what those files already cover.
+// is the fixture of refusal_counter_test.go and refusal_counted_once_test.go, which
+// is what those files already cover.
 func pageFault(w http.ResponseWriter, _ *http.Request, p *problem.Problem) bool {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(p.Status)
@@ -67,7 +68,7 @@ func pageFault(w http.ResponseWriter, _ *http.Request, p *problem.Problem) bool 
 	return true
 }
 
-// pageFixture is round 2's fixture with one addition: a renderer registered, so a
+// pageFixture is refusal_counted_once_test.go's fixture with one addition: a renderer
 // browser navigation gets a document. Built here, byte for byte otherwise, so the
 // earlier round's own file stays the bytes its author wrote (decision 0008).
 func pageFixture(t *testing.T) http.Handler {
@@ -148,7 +149,7 @@ func TestOneRefusalShownToAPersonMovesItsClassByExactlyOne(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		before := review2ClassTotals(t)
+		before := classTotals(t)
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, tc.req())
 
@@ -178,7 +179,7 @@ func TestOneRefusalShownToAPersonMovesItsClassByExactlyOne(t *testing.T) {
 				tc.what, rec.Code, class)
 			continue
 		}
-		after := review2ClassTotals(t)
+		after := classTotals(t)
 		if got := after[class] - before[class]; got != 1 {
 			t.Errorf("%s: the client was answered %d (class %q) with a page, and "+
 				"pkit.http.refusals moved by %d for that one request, want exactly 1 — fail counts "+

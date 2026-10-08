@@ -1,6 +1,6 @@
 package events_test
 
-// Review round 3 (T-0110). Three new columns, one question nobody asked.
+// Three new columns, one question nobody asked.
 //
 // migrations/000027 put traceparent and tracestate on platformkit_outbox and
 // migrations/000029 put baggage beside them; modules/audit's 000028 put trace_id

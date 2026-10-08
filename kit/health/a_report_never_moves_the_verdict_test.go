@@ -1,6 +1,6 @@
 package health_test
 
-// Review round 3 (T-0110). A new type whose whole job is to not do something, and
+// A new type whose whole job is to not do something, and
 // nothing tested that it does not do it.
 //
 // Report was extracted from Check by this branch (kit/health/health.go:61) for one

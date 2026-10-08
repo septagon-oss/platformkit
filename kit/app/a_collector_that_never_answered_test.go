@@ -80,7 +80,7 @@ func TestACollectorThatNeverAnsweredIsReportedAsDown(t *testing.T) {
 	prevHandler := otel.GetErrorHandler()
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(error) {}))
 	shutdown, report, err := installTelemetry(context.Background(), config.Telemetry{
-		ServiceName:  "pkit-review20",
+		ServiceName:  "pkit-collector-down",
 		OTLPEndpoint: where,
 	}, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -106,7 +106,7 @@ func TestACollectorThatNeverAnsweredIsReportedAsDown(t *testing.T) {
 	}
 
 	// One span, sampled, ended, so the batcher holds something it has to send.
-	_, span := telemetry.Tracer().Start(context.Background(), "review20.probe")
+	_, span := telemetry.Tracer().Start(context.Background(), "collector-down.probe")
 	span.End()
 
 	// No deadline of this test's on the flush: the exporter bounds its own attempt

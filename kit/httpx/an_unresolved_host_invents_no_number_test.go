@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 8 (T-0110). This pins the metric form of a rule this delivery states
+// This pins the metric form of a rule this delivery states
 // twice in prose and its own case only reaches on the span:
 //
 //	kit/telemetry/README.md — "A key is written only where its value was learned —
@@ -13,11 +13,11 @@ package httpx_test
 // that refusals of class not_found were counted at all (>= 1). A counter answer
 // satisfies that assertion whether it holds one series or one per sprayed host, and
 // it never reads a datapoint's attributes — so the same rule, on the instrument where
-// the key is part of a time series' identity, is asserted by nothing. Review round 3
-// walked this path and named it as the thing it deliberately did not pin ("pins
-// nothing that would resist a change either way"). That gap is closable in the
-// direction the code already documents, because the alternative is not merely less
-// informative:
+// the key is part of a time series' identity, is asserted by nothing.
+// two_tenants_one_number_test.go walked this path and named it as the thing it
+// deliberately did not pin ("pins nothing that would resist a change either way").
+// That gap is closable in the direction the code already documents, because the
+// alternative is not merely less informative:
 //
 //   - A tenant key is a metric attribute, so it is part of a time series' identity.
 //     A key filled in from the Host header of a request whose host resolved nothing

@@ -1,6 +1,6 @@
 package app
 
-// Review round 17's two cases about the coverage figure this branch publishes.
+// Two cases about the coverage figure this branch publishes.
 //
 // The brief asks the commit to state `tenant_attributed_boundary_coverage` as
 // "registered operations + jobs + subscriptions that emit a tenant-attributed span

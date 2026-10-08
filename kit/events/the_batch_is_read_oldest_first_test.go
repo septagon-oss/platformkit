@@ -1,6 +1,6 @@
 package events_test
 
-// Review round 4 (T-0110). This case pins the half of `797272b fix(events)` that its own
+// This case pins the half of `797272b fix(events)` that its own
 // test cannot reach.
 //
 // That commit made `pkit.outbox.lag` record one value per (tenant, event) series, on the
@@ -17,7 +17,8 @@ package events_test
 // physical order in the table is newest-first: with the ORDER BY the relay takes them
 // oldest-first and the number names the longest wait the queue is holding; without it the
 // pass runs newest-first and the same code reports the shortest wait as the queue's lag —
-// which is the reading round 3 measured at 10 seconds about a queue five minutes deep. The
+// which is the reading one measurement put at 10 seconds about a queue five minutes
+// The
 // assertion is on what the transport was handed, in the order it was handed it, so it fails
 // at the query and not at a comment.
 

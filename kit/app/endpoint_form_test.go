@@ -1,6 +1,6 @@
 package app
 
-// Review round 1 (T-0110). Two documents in this repository name the shape of
+// Two documents in this repository name the shape of
 // telemetry.otlp_endpoint, and the code refuses it.
 //
 //   config.example.yaml:  The collector's gRPC endpoint: "collector.example:4317",
@@ -31,7 +31,7 @@ func TestTheEndpointFormTheConfigurationExamplePrintsIsAccepted(t *testing.T) {
 	for _, endpoint := range []string{"collector.example:4317", "localhost:4317"} {
 		shutdown, report, err := installTelemetry(t.Context(), config.Telemetry{
 			OTLPEndpoint: endpoint,
-			ServiceName:  "pkit-review",
+			ServiceName:  "pkit-endpoint-form",
 		}, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Errorf("installTelemetry(%q) = %v; config.example.yaml and kit/config both print a "+

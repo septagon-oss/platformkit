@@ -1,6 +1,6 @@
 package telemetry_test
 
-// Review round 1 (T-0110). RefusalClass's comment makes a promise about the set:
+// RefusalClass's comment makes a promise about the set:
 //
 //   It is closed, so a new refusal reason lands in one of these twelve and never in
 //   a class somebody invented at a call site.

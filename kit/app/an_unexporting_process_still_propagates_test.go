@@ -1,6 +1,6 @@
 package app
 
-// Review round 9 (T-0110). Three places promise that a process which exports nothing
+// Three places promise that a process which exports nothing
 // still propagates the trace it was handed and still leaves one on what it publishes:
 //
 //	kit/telemetry/README.md  "Propagators(), which every PlatformKit process installs
@@ -54,7 +54,7 @@ func TestAProcessThatExportsNothingStillPropagatesTheTrace(t *testing.T) {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator())
 
 	shutdown, report, err := installTelemetry(t.Context(),
-		config.Telemetry{ServiceName: "pkit-review"}, slog.New(slog.DiscardHandler))
+		config.Telemetry{ServiceName: "pkit-no-export"}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("installTelemetry with no otlp_endpoint: %v", err)
 	}

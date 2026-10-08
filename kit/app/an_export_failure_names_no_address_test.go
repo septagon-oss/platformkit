@@ -7,9 +7,9 @@ import (
 	"testing"
 )
 
-// TestAnExportFailureNamesNoAddress is review round 10's pin. ready() prints a Report's
-// error beside its message, and round 3 read the message for the collector's address
-// ("cluster.local", "4317", …) and never the error. The error is the unchecked half.
+// TestAnExportFailureNamesNoAddress covers the unchecked half of ready(): it prints a
+// Report's error beside its message, and what was read for the collector's address
+// ("cluster.local", "4317", …) was the message, never the error.
 func TestAnExportFailureNamesNoAddress(t *testing.T) {
 	e := &exported{}
 	e.note(errors.New("dial otel-collector.observability.svc.cluster.local:4317: connect: connection refused"))

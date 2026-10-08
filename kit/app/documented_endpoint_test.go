@@ -1,14 +1,14 @@
 package app
 
-// Review round 2 (T-0110). Review round 1's finding 3 was that both documents in
-// this repository print a form of telemetry.otlp_endpoint that the boot refuses:
+// Both documents in this repository print a form of telemetry.otlp_endpoint that
+// the boot refuses:
 //
 //	config.example.yaml:  The collector's gRPC endpoint: "collector.example:4317"
 //	kit/config/config.go: https://collector.example:4318, or a host:port for a
 //	                      collector on the same network with no TLS
 //
 // 14dc934 cures it by normalising a bare host:port to its http:// URL in collector().
-// Round 1's own case hard-codes two endpoint strings, which proves the two documents
+// A case that hard-codes two endpoint strings proves the two documents
 // were true *when it was written* and nothing more: the finding was a documentation
 // claim the code did not honour, and the only guard against that recurring is a case
 // that reads what the documents print. This file does that, and asks the two

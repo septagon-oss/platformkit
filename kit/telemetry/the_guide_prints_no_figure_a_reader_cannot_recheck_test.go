@@ -1,14 +1,14 @@
 package telemetry_test
 
-// Review round 18's pins of this package's guide.
+// Two checks over this package's guide.
 //
-// Round 17 found that the guide quoted a base commit (`0c3a040`) which a merge had
-// moved, so the sentence it quoted for had gone stale while the reading behind it
-// was still true. Attempt 22 cured that by removing the SHA and printing the command
-// instead — and, in the same block, printed one *figure*: the `# 8 here` comment
+// The guide once quoted a base commit (`0c3a040`) which a merge had moved, so the
+// sentence it quoted for had gone stale while the reading behind it was still true.
+// The cure removed the SHA and printed the command instead — and, in the same block,
+// printed one *figure*: the `# 8 here` comment
 // beside `grep -c 'go.opentelemetry.io/otel' go.mod`. A quoted SHA goes stale on a
 // merge; a quoted count goes stale on a `go mod tidy` or a new exporter. The failure
-// mode is the same one round 17 filed, one character removed from its cause, so the
+// mode is the same one, one character removed from its cause, so the
 // first case below checks the printed figure against the tree that prints it. It
 // pins a figure this branch is the sole writer of — go.mod's OpenTelemetry lines are
 // what this branch's `build(deps)` commit added — so a case that fails when the quote
@@ -21,10 +21,9 @@ package telemetry_test
 //
 // The third pins the agreement between the two guards the guide claims speak for the
 // same sentence — `scripts/check_packages.sh`'s last line and
-// `TestOnlyTheCompositionLinksTheMeasurementSDK`, above — which is the claim round
-// 17 found false of the script, and which only holds while both name the same import
-// paths. This is the case that would have caught a cure that widened one and not the
-// other. It costs nothing to check and cannot be satisfied by moving a figure.
+// `TestOnlyTheCompositionLinksTheMeasurementSDK`, above — the claim the script once
+// failed, and which holds only while both name the same import paths. This is the
+// case that would have caught a cure that widened one and not the It costs nothing to check and cannot be satisfied by moving a figure.
 
 import (
 	"os"
@@ -54,7 +53,7 @@ func readGuide(t *testing.T) string {
 // and the number is a claim about this tree. The case runs the same count the
 // comment claims and refuses the day they part. It says nothing about the other side
 // of the pair — the base is whatever `git merge-base` prints, and pinning its value
-// would be pinning a moving tree, which is what round 17's finding was about.
+// would be pinning a moving tree, which is the regression this file refuses.
 func TestTheGuidesPrintedFigureIsWhatTheTreeHas(t *testing.T) {
 	guide := readGuide(t)
 	const probe = "grep -c 'go.opentelemetry.io/otel' go.mod"
@@ -89,9 +88,9 @@ func TestTheGuidesPrintedFigureIsWhatTheTreeHas(t *testing.T) {
 	}
 }
 
-// TestTheGuideNamesACommandRatherThanACommit: round 17's finding 3 was a quoted base
-// SHA a merge had moved. The cure quotes `git merge-base HEAD origin/main` instead of
-// a pin. This case refuses the regression in the shape the finding had — a
+// TestTheGuideNamesACommandRatherThanACommit refuses a quoted base SHA a merge can
+// move. The guide quotes `git merge-base HEAD origin/main` instead of a pin, and this
+// case refuses the regression in the shape it had — a
 // commit-shaped hex literal anywhere in the guide — and asks that the command still be
 // there, so the paragraph cannot keep the promise by dropping the comparison too.
 func TestTheGuideNamesACommandRatherThanACommit(t *testing.T) {

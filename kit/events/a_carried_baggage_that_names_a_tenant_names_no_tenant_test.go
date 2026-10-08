@@ -1,6 +1,6 @@
 package events_test
 
-// Review round 12 (T-0110). The merged tree gave the outbox row a third propagated
+// The merged tree gave the outbox row a third propagated
 // member and gave the CloudEvents envelope a third extension attribute: `baggage`,
 // written by `traceContext` through the global propagator (kit/events/trace.go) and
 // read back by `startDelivery`, which extracts it onto the handler's context.

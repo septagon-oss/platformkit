@@ -1,6 +1,6 @@
 package httpx_test
 
-// Review round 3 (T-0110). This is the case the delivery's own number is about.
+// This is the case the delivery's own number is about.
 //
 // e9fc2f9 states tenant_attributed_boundary_coverage as 80/81, and the package
 // README states why a tenant belongs on every datapoint: "one process, many
@@ -173,8 +173,8 @@ func TestEachTenantsNumberNamesOnlyItsOwnTenant(t *testing.T) {
 		}
 	}
 	// The two refusals the root router wrote are counted, once each, whatever they
-	// are attributed to: counted twice would be the review-round-1 defect back, and
-	// counted zero would be a refusal nobody sees.
+	// are attributed to: counted twice would be the double count these cases exist to
+	// refuse, and counted zero would be a refusal nobody sees.
 	if got := notFound() - beforeNotFound; got != 2 {
 		t.Errorf("refusals of class not_found moved by %d across two requests that each matched nothing, want exactly 2", got)
 	}

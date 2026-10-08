@@ -1,6 +1,6 @@
 package telemetry_test
 
-// Round 16's pin. Three documents say the same thing: the request id is left off a
+// Three documents say the same thing: the request id is left off a
 // metric on purpose because "the exemplar OpenTelemetry attaches to every
 // measurement names the trace and span it came from" (kit/telemetry/telemetry.go,
 // kit/httpx/tracing_test.go's cardinality guard, CHANGELOG). That sentence is the

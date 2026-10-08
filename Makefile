@@ -353,6 +353,15 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# named for the round that wrote it rather than for what it protects. It starts no service, reads one
 	# file and two paths, and answers in under a second.
 	bash scripts/provenance_case_paths_test.sh
+	# scripts/test_comments_explain_what_they_protect_test.sh reads every whole-line comment of every
+	# test file — with each comment group's line breaks collapsed — and refuses one that cites the round,
+	# finding number or attempt number that filed the case instead of the behaviour it protects. The
+	# collapse is the point: a phrase split across two `//` lines is invisible to `rg` and to the
+	# per-package comment pins, and one file's own opener was written that way. It excludes the files the
+	# naming census already counts as debt, derived from each file's name rather than listed, so a rename
+	# brings its prose under the rule in the same commit. It starts nothing and reads tracked text; the
+	# planted cases it proves itself on are written into a directory of its own, outside the tree.
+	bash scripts/test_comments_explain_what_they_protect_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh

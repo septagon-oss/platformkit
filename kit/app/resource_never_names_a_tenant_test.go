@@ -1,6 +1,6 @@
 package app
 
-// Review round 3 (T-0110). The brief asks for resource attributes service.name,
+// The brief asks for resource attributes service.name,
 // pkit.client and pkit.tenant; the delivery refuses the third on purpose and says
 // so twice (kit/telemetry's README: "A resource describes the *process*, and this
 // process serves many tenants … so a tenant in the resource would be a lie for

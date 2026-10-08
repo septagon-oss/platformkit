@@ -1,10 +1,9 @@
 package events_test
 
-// Review round 2 (T-0110). Review round 1's finding 2 was that the delivery span
-// carried no pkit.request.id; 769d065 cures it by storing the W3C baggage member on
-// the outbox row (migrations/000029) and extracting it in startDelivery. This round's
-// remit is whether that cure holds, and the cure's Verified paragraph claims two
-// things the case round 1 left does not test:
+// The delivery span carried no pkit.request.id; 769d065 cures it by storing the W3C
+// baggage member on the outbox row (migrations/000029) and extracting it in
+// startDelivery. What the cure claims, in its own message, is two things the case
+// this one joins in the same package does not test:
 //
 //	`startDelivery` extracts it through the same propagator, so the id lands on the
 //	delivery span and, because it is the handler's context, on every transaction span

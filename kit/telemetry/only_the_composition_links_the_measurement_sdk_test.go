@@ -1,6 +1,6 @@
 package telemetry_test
 
-// Review round 17's pin of the one dependency rule this delivery is built on.
+// The pin of the one dependency rule this delivery is built on.
 //
 // `kit/telemetry/README.md` states it as a gate rather than as a hope: "Those are
 // chosen once, by the composition, in `kit/app`, which is the only package in this
