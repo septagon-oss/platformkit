@@ -1,6 +1,6 @@
 package config_test
 
-// Review round 16's pin (T-0110). The loader refuses an out-of-range sample ratio
+// The loader refuses an out-of-range sample ratio
 // (kit/config/config.go: "telemetry.sample_ratio is %v; it is a fraction of the traces this process
 // starts, so between 0 and 1") and every other refusal in this loader names a case — TestLevelAndURLsAreValidated,
 // TestTheRedirectPathHasToBeUnderTheAuthPrefix, TestAnInvalidOverrideIsRefusedByName,

@@ -1,8 +1,9 @@
 package db_test
 
-// the_run_puts_the_budgets_back_the_way_it_found_them_test.go is review
-// round 14's pin over b4b68ee ("a nontransactional file waits its own wait; the lock
-// budget does not reach it").
+// the_run_puts_the_budgets_back_the_way_it_found_them_test.go is the case over
+// b4b68ee ("a nontransactional file waits its own wait; the lock budget does not reach
+// it"): a migration run puts every session budget back the way it found it, and this
+// file reads the session from inside a run to check that it does.
 //
 // The commit draws a line and then trusts three sentences of prose to keep it. ADR 0011
 // says of a nontransactional statement that "no `lock_timeout` bounds the wait", so that
@@ -11,9 +12,9 @@ package db_test
 // taken off for the wait (runner.unbudgeted); and "budgets() still runs before every file
 // and every batch, so nothing the patience touches leaks". All three are claims about what
 // one session is set to at a given moment, and no case in the tree read a session across
-// that boundary: the branch's own new file asks the index and the clock, and
-// review_guarantees_test.go reads current_setting only inside a transactional file with no
-// autocommit file in front of it.
+// that boundary: autocommit_statement_waits_past_the_lock_budget_test.go asks the index
+// and the clock, and contention_err_contended_under_budget_deployment_named_test.go reads
+// current_setting only inside a transactional file with no autocommit file in front of it.
 //
 // So this case reads the session the way the kernel's own case does — from inside the run,
 // by the file that has to be answered for — across one run of three files, with a reader
@@ -34,8 +35,8 @@ package db_test
 // it found. The probe sits in the third file rather than the second because the mode's own
 // file cannot hold one: the runner hands a file's whole text to one ExecContext, and two
 // statements in one simple query run inside an implicit transaction block, which
-// CREATE INDEX CONCURRENTLY refuses (SQLSTATE 25001). That is worth knowing on its own and
-// is said in the review.
+// CREATE INDEX CONCURRENTLY refuses (SQLSTATE 25001) — the boundary the probe's
+// placement works around, written here because the placement reads as arbitrary without it.
 
 import (
 	"context"

@@ -1,15 +1,14 @@
 package app
 
-// Review round 20 (T-0110). The one promise of this delivery that no committed case
-// reaches through a real exporter is `kit/health`'s half of it. The brief asks that
-// "kit/health reports the exporter's last success", and that report is produced by
-// traceExporter/metricExporter wrapping the OTLP exporters and noting what they
-// answered. The cases that exist feed `exported.note` an error the test itself made
-// (resource_never_names_a_tenant_test.go, whose comment is explicit —
-// "no case anywhere reads the report back") or assert the shape of the resource; and
-// the review rounds' own "Unverified" lists name the gap in as many words: "What
-// remains genuinely unexercised is a *real* OTLP export attempt against a dead
-// endpoint, as opposed to the wrapped exporter being handed an error."
+// The one promise of this delivery that no committed case reaches through a real
+// exporter is `kit/health`'s half of it. The brief asks that "kit/health reports the
+// exporter's last success", and that report is produced by traceExporter/metricExporter
+// wrapping the OTLP exporters and noting what they answered. The cases that exist feed
+// `exported.note` an error the test itself made (resource_never_names_a_tenant_test.go,
+// whose comment is explicit — "no case anywhere reads the report back") or assert the
+// shape of the resource. Neither reaches what only an attempt can show: a *real* OTLP
+// export tried against an endpoint that is not there, rather than a note() handed an
+// error the test made for it.
 //
 // That gap is where the interesting failure hides. If the SDK never hands a batch to
 // the wrapped exporter on a process whose collector is unreachable — because the
