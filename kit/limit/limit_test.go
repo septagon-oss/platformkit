@@ -52,23 +52,33 @@ func TestBothLimitersAgree(t *testing.T) {
 var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"the limit-th event is allowed and the next is not": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for i := range 3 {
-			ok, _, retry, err := l.Reserve(ctx, "ada", 3, window)
+			ok, remaining, retry, err := l.Reserve(ctx, "ada", 3, window)
 			if err != nil {
-				t.Fatalf("Allow %d: %v", i+1, err)
+				t.Fatalf("Reserve %d: %v", i+1, err)
 			}
 			if !ok {
 				t.Fatalf("event %d of 3 was refused", i+1)
 			}
-			if retry != 0 {
-				t.Errorf("an allowed event asked the caller to wait %s", retry)
+			// An allowed event states its window: `RateLimit`'s `t` is that number and
+			// the caller who is still inside the quota is the one it is worth most to.
+			// Before the port answered all three from one statement, an allowed event
+			// reported no window at all and the field could only be written on a refusal.
+			if retry <= 0 || retry > window {
+				t.Errorf("an allowed event reported %s of a %s window", retry, window)
+			}
+			if want := 3 - (i + 1); remaining != want {
+				t.Errorf("event %d reported %d left, want %d", i+1, remaining, want)
 			}
 		}
-		ok, _, retry, err := l.Reserve(ctx, "ada", 3, window)
+		ok, remaining, retry, err := l.Reserve(ctx, "ada", 3, window)
 		if err != nil {
-			t.Fatalf("Allow: %v", err)
+			t.Fatalf("Reserve: %v", err)
 		}
 		if ok {
 			t.Error("the fourth event of a limit of three was allowed")
+		}
+		if remaining != 0 {
+			t.Errorf("a refused event reported %d left, want none", remaining)
 		}
 		if retry <= 0 || retry > window {
 			t.Errorf("retryAfter is %s, want what is left of %s", retry, window)
