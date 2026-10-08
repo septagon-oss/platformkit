@@ -361,7 +361,42 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- $(TEST_COUNT)
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
+	# installation into a schema of their own; the package measured 407s with three database packages
+	# sharing one Postgres, and the run of 2026-10-06 killed it at 600s while it was still working —
+	# six passing cases then reported as `(unknown)` over a goroutine dump of tests parked in
+	# t.Parallel. A whole-suite run of 2026-10-06 on a host carrying six of this program's suites at
+	# once took `modules/tenant/internal` to 18m37s and `kit/rest` — a package that opens no database
+	# at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
+	# against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
+	# room for a machine doing other things as well. It is not a looser standard: the hang a bound
+	# exists to catch still stops. Behind it the CI job that runs `make check` names 75 minutes for
+	# itself, and the forge has three times cut that job off at about an hour over it — 94d387cc at
+	# 3612s = 60m02s, b6f1e93 at 3612s, cc614f57 at 3609s, all three with 75 in their copy of
+	# .gitea/workflows/ci.yml — so the bound that stops a hung package here is this line's, not the
+	# job's, and the budget a step must fit is the runner's.
+	#
+	# The count beside it is TEST_COUNT's (PR #141), and the two are written in this order because
+	# scripts/ci_go_cache_test.sh reads the count variable as it sits directly after the option separator,
+	# so the count goes first and the bound after it. A caller that empties TEST_COUNT for its own cached
+	# runs then loses the count, and the line that comes back carries the bound on its own — two spaces
+	# and all, because make substitutes nothing for an empty variable and leaves the separator on both
+	# sides. The shell folds them; the pin in the arch probe is of the bytes the recipe emits, in the same
+	# shape as the double space that probe already pins in the local goal's line. One caution for whoever
+	# edits this paragraph next: that guard greps this recipe's text, so setting the separator and the
+	# variable side by side anywhere in here would answer it from a comment.
+	#
+	# Three files hold this command, and that is the price of a byte pin. The arch probe
+	# scripts/check_architecture_test.sh dry-runs `make check` and `make test` under local selectors and
+	# compares the fresh goal against a byte copy of it; scripts/make_check_count_default_test.sh asks
+	# for the same bytes in CI's own shape, where nothing names TEST_COUNT; and scripts/ci_go_cache_test.sh
+	# refuses a recipe that stops interpolating the count at all. All three were red on 2026-10-06, the day
+	# -timeout=30m joined -count=1 here and nowhere else. Re-pinning is a decision somebody makes
+	# rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
+	# stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
+	# The alternative is a fresh gate that narrows because nobody looked at it.
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh

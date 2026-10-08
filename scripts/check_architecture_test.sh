@@ -751,7 +751,30 @@ race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose l
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "TEST_COUNT=$count" "$@" |
 		sed -n '/^go test /s/[[:blank:]]*$//p'
 }
-fresh="go tool gotestsum --packages='./...' -- -count=1"
+# The fresh boundary, as bytes. This pin is a byte-pin on purpose: any change to the line `make check`
+# runs is red here until somebody reads this file and re-pins it, which is the only thing standing
+# between a per-package clock, a build tag or a `-skip` added under time pressure and a fresh gate that
+# quietly stops being fresh. The cost is that the line lives in three files — here, in the Makefile, and
+# in scripts/make_check_count_default_test.sh — so re-pinning is a decision somebody makes rather than a
+# fix. It has been made twice: -timeout=30m joined -count=1 on 2026-10-06, because a whole-suite run
+# measured 18m37s in `modules/tenant/internal` and 20m in `kit/rest` on a host carrying several suites at
+# once and that day's run killed `apps/platformkit` at go test's 10-minute default while it was still
+# working; and PR #141 turned the count into TEST_COUNT, which moved the order the two flags arrive in.
+# The measurements are written above the line in the Makefile. The loop below refuses a re-pin that drops
+# a part the fresh gate is made of, so pasting the failing line back in with `--packages` narrowed,
+# `-count=1` gone or the stated bound dropped is refused rather than rewarded — and it reads this pin,
+# not the Makefile, so it cannot be satisfied by the edit it watches.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
+	case " $fresh " in
+	*" $fresh_part"*) ;;
+	*)
+		echo "FAIL: the pinned fresh boundary no longer carries $fresh_part; that part is the fresh gate, so re-pin what the Makefile runs around it rather than this:" >&2
+		echo "$fresh" >&2
+		exit 1
+		;;
+	esac
+done
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
 if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
@@ -777,14 +800,18 @@ echo 'test feedback: local selectors preserve fresh full checks in either goal o
 # wins over the environment, which is what lets this case ask for either from inside a gate whose own
 # environment already exports TEST_COUNT empty — the loop's. The CI shape must be today's fresh line
 # byte for byte; the empty shape is what a caller asked for with its own gate, and it may take the
-# count and nothing else: -race stays, because a race detector answering from a stale verdict is a
-# worse answer than no detector at all.
+# count and nothing else — not -race, because a race detector answering from a stale verdict is a
+# worse answer than no detector at all, and not the per-package bound either: that is a clock rather
+# than a count. The expected line below therefore carries `-timeout=30m` after the count leaves, and two
+# spaces where the count was, because make substitutes nothing for an empty $(TEST_COUNT) and leaves the
+# separator on both sides. The `test` goal's own line above is pinned the same way, with its gotestsum
+# options empty.
 if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
 	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
 	exit 1
 fi
-if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --" ]]; then
-	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all:\n%s\n' "$(test_commands '' check)" >&2
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m" ]]; then
+	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
 case "$(race_commands -count=1 check-race)" in
