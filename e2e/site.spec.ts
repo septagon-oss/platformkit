@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { makePublisher, publishAs } from './steps/content';
+import { signIn } from './steps/kernel';
+import { openHome, signInDoor } from './steps/public';
 
 // The public site: what an operator publishes through the admin's generated
 // screens is what an anonymous visitor reads at the root of the host. The
@@ -7,28 +9,19 @@ import { makePublisher, publishAs } from './steps/content';
 // journey is about the seam between the two modules and the shell, not about
 // the forms, which admin-tasks.spec.ts already drives.
 
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
 test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
-  await page.goto('/');
+  await openHome(page);
   await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
   // The frame enters the workspace at its root: the address the public page is
   // allowed to offer is /app, and the root is what turns a visitor who has no
-  // session towards the form. The link is therefore followed rather than the form
-  // navigated to directly — the journey goes through the only door a public page
-  // may name and still arrives at the same form and the same landing.
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app');
-
-  await page.getByRole('link', { name: 'Sign in to the admin' }).click();
-  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  // session towards the form. The step follows that entry rather than navigating to
+  // the form, and insists the door carries the guarded address back in `next`.
+  await signInDoor(page);
+  await signIn(page);
 
   const created = await page.request.post('/api/v1/content/contents', {
     data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `## Hello\n\nThis is **home** number ${stamp}.` },
