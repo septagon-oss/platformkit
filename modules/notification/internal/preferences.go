@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
@@ -59,6 +60,32 @@ func (Prefs) Quiet(_ context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) 
 	}
 }
 
+// choosing is the caller one of these three commands has to be: the person whose
+// answer it writes.
+//
+// Row-level security answers "whose tenant", which is not the question a channel
+// switch asks: two people in one tenant are two people, and one of them turning
+// mail off for the other is the same harm with a tenant-shaped excuse. So the id
+// the command is handed is checked against the credential the request carries,
+// inside the transaction the write happens in — house rule 9. A caller with no
+// principal is not anonymous here: it is platform work, the composition or a job
+// that named the person it is writing for, which is how these rows were written
+// before there was a credential to compare with, and it is what the notice path and
+// every command's own test do. A principal that is not the recipient is refused
+// before anything is read: nothing is written, nothing is published, no row comes
+// back.
+//
+// The reads (Settings, Quiet, Mine) are asked this by whoever holds them: Mine sets
+// the recipient itself, and Settings and Quiet run in the notice's own transaction,
+// where the person being asked is the person being told.
+func choosing(ctx context.Context, recipient uuid.UUID) error {
+	if principal, ok := tenancy.PrincipalFrom(ctx); ok && principal.UserID != recipient {
+		return fmt.Errorf("%w: notification: a person's channel switches and quiet window are their own to change, and this caller is somebody else",
+			tenancy.ErrPolicyDenied)
+	}
+	return nil
+}
+
 // SetChannel writes one answer. It is idempotent in the way a command has to
 // be: the row already says this, so nothing is written and nothing is
 // published — a second click is not two rows in the audit trail and one person
@@ -75,6 +102,9 @@ func (Prefs) Quiet(_ context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) 
 func (p Prefs) SetChannel(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID, intent string, channel contracts.Channel, enabled bool) (*contracts.Preference, error) {
 	if err := channel.Validate(); err != nil {
 		return nil, fmt.Errorf("%w: %w", crud.ErrInvalid, err)
+	}
+	if err := choosing(ctx, recipient); err != nil {
+		return nil, err
 	}
 	if channel == contracts.ChannelInApp {
 		return nil, fmt.Errorf("%w: in-app is not a preference: the row is the notice", crud.ErrInvalid)
@@ -125,6 +155,9 @@ func (Prefs) locked(tx db.Tx[db.Tenant], recipient uuid.UUID, intent string, cha
 // Setting the window that is already set changes nothing and publishes nothing,
 // for the reason SetChannel gives.
 func (p Prefs) SetQuietHours(ctx context.Context, tx db.Tx[db.Tenant], q contracts.QuietHours) (*contracts.QuietHours, error) {
+	if err := choosing(ctx, q.RecipientID); err != nil {
+		return nil, err
+	}
 	row, err := p.lockedQuiet(tx, q.RecipientID)
 	if err != nil {
 		return nil, err
@@ -155,6 +188,9 @@ func (p Prefs) SetQuietHours(ctx context.Context, tx db.Tx[db.Tenant], q contrac
 // never set one is in, so there is nothing to refuse when the row is not there,
 // and nothing to publish when nothing changed.
 func (p Prefs) ClearQuietHours(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) error {
+	if err := choosing(ctx, recipient); err != nil {
+		return err
+	}
 	row, err := p.lockedQuiet(tx, recipient)
 	if err != nil || row == nil {
 		return err

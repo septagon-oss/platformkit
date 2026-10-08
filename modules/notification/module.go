@@ -147,19 +147,20 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 // caller's transaction under the tenant that transaction names.
 //
 // The screens and routes that reach it are the product's share of this brief:
-// every command here is scoped to the principal whose id it is handed, so the
-// page is a form over one's own rows and there is no shape of it that reaches
-// another person's choices.
+// every command compares the person whose id it is handed against the credential
+// the request carries (internal.choosing), so the page is a form over one's own rows
+// and there is no shape of it that reaches another person's choices.
 func Settings() contracts.PreferenceService { return internal.Prefs{} }
 
 // Senders is the tenant's own sending address as a contracts.Senders and a
 // contracts.SenderAdmin: the module keeps the row, the token, the refusal and the
-// audit, and the two collaborators below are what it cannot be the authority
-// about — whether a domain says so, and where the key that signs for it lives.
-// Either may be nil, and each nil is a named refusal rather than a surprise: a
-// deployment with no verifier cannot verify anything, and a deployment with no
-// key suppresses the mail it could not sign.
-func Senders(verifier contracts.SenderVerifier, keys contracts.DKIMKeys) (contracts.Senders, contracts.SenderAdmin) {
-	s := &internal.Senders{Verifier: verifier, Keys: keys}
+// audit, and the three collaborators below are what it cannot be the authority
+// about — whether a domain says so, where the key that signs for it lives, and what
+// the caller's roles grant. Any may be nil: a deployment with no verifier cannot
+// verify anything, a deployment with no key suppresses the mail it could not sign,
+// and a deployment with no grant checker refuses a signed-in caller's sender
+// commands rather than guessing they were allowed (contracts.GrantChecker).
+func Senders(verifier contracts.SenderVerifier, keys contracts.DKIMKeys, grants contracts.GrantChecker) (contracts.Senders, contracts.SenderAdmin) {
+	s := &internal.Senders{Verifier: verifier, Keys: keys, Grants: grants}
 	return s, s
 }

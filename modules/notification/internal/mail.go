@@ -112,6 +112,18 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
 						"this tenant has no sender: mail is refused until its administrator sets one")
 				}
+				// Verification is re-read here, and not carried in from the moment the
+				// notice was raised. The request decided against the sender that existed
+				// then; between that commit and this one the administrator can save a
+				// different domain or selector, which takes the row back to pending, and
+				// a queue is exactly where that gap lives. Signing as a domain that stopped
+				// vouching for itself is the refusal this module exists to make, so the
+				// check is against the row this transaction reads and the answer is terminal:
+				// a failed or suppressed row, not a retry that says the same thing.
+				if sender.Status != contracts.SenderVerified {
+					return record(tx, row.ID, ChannelEmail, OutcomeSuppressed,
+						"this tenant's sender is "+sender.Status+", not verified: the mail was queued while it was, and nothing sends as an identity that stopped being believed")
+				}
 			}
 			msg := contracts.Message{To: to, Subject: row.Title, Body: body, Lang: "en"}
 			if sender != nil {

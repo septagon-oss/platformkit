@@ -42,6 +42,11 @@ const (
 	EventPreferenceSet  = "notification.preference_set"
 	EventSenderSet      = "notification.sender_set"
 	EventSenderVerified = "notification.sender_verified"
+	// EventSenderRemoved is the deletion of a sender that was not believed. It is
+	// its own name and not a sender_set saying "pending": the row is gone, and an
+	// audit trail that says "this tenant had a pending sender" when somebody removed
+	// it answers the wrong question.
+	EventSenderRemoved = "notification.sender_removed"
 )
 
 // Events is every event this module emits, for the manifest. Device registration
@@ -52,7 +57,7 @@ const (
 var Events = []string{
 	EventCreated, EventEmailRequested, EventRead,
 	EventPushRequested, EventWebPushRequested, EventWebhookRequested,
-	EventPreferenceSet, EventSenderSet, EventSenderVerified,
+	EventPreferenceSet, EventSenderSet, EventSenderVerified, EventSenderRemoved,
 }
 
 // RequestedEvent is the event a chosen channel is asked for by — the one table
@@ -143,6 +148,17 @@ type SenderSet struct {
 // from this address as of this moment, which is the fact a delivery dispute
 // turns on.
 type Verified struct {
+	SenderID uuid.UUID `json:"senderId"`
+	Domain   string    `json:"domain"`
+	Selector string    `json:"selector"`
+	Actor    uuid.UUID `json:"actorId"`
+	At       time.Time `json:"at"`
+}
+
+// SenderRemoved is the payload of EventSenderRemoved: this tenant's sending
+// identity at this domain and selector was taken away, by whom and when. Like
+// SenderSet it names the sender without the key, the token or the proof.
+type SenderRemoved struct {
 	SenderID uuid.UUID `json:"senderId"`
 	Domain   string    `json:"domain"`
 	Selector string    `json:"selector"`

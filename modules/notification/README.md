@@ -67,12 +67,12 @@ requested channels — is `internal.Coverage`.
 `contracts/` is the whole surface: `Service` (notify, list, mark read), `PreferenceService`
 and `Preferences` (one person's channel switches and quiet window), `Senders` and
 `SenderAdmin` (the tenant's one sending address), `Decide` and the channel vocabulary, the
-nine names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
-`HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `Provider`).
+ten names in `Events`, and the ports the composition owes the module (`RecipientLookup`,
+`HostLookup`, `Mailer`, `Senders`, `DKIMKeys`, `SenderVerifier`, `GrantChecker`, `Provider`).
 Consumers import that and `contracts/notificationtest` — a fake `Service`, a fake `Mailer`
 and `RunService`, the suite the real service also runs — and never `internal/`. The two
 faces the composition reaches are `notification.Settings()` and
-`notification.Senders(verifier, keys)`; the two HTTP routes are hand-written, because a
+`notification.Senders(verifier, keys, grants)`; the two HTTP routes are hand-written, because a
 `rest.Spec` list route is the whole tenant and these rows are addressed to a person.
 
 There is no mobile counterpart to derive or compose here, and this module is why not: with
@@ -103,13 +103,14 @@ vendor library and a deployment that sends nothing imports nothing), `contracts.
 as the one error a provider returns when another attempt would say the same thing, and
 and the shape of a provider test — an in-process relay in the carrier's own package that
 asserts what went on the wire rather than what a mock said (`providers/gomail`, whose relay
-lives in `gomail_test.go` and is therefore a pattern to copy, not a package to import).
+lives in `gomail_test.go`: a testing approach to copy, not an API to import).
 
 ## Authorization
 
 ### Permissions
 
 One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines.
+The key is checked inside the transaction, not only at a route: `Senders.administered` asks the composition's `contracts.GrantChecker` whether the caller's roles grant it, and refuses when the deployment wires no checker to answer. A deployment that grants it to nobody therefore has working sender commands refused, which is the failure it will notice.
 No nav entry names it: a nav entry decides who sees a link, and this key guards a mail identity, not a page.
 The module's two routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing.
 The `SendMail` event subscription (`modules/notification/internal/mail.go`), and the one carrier subscription per wired provider (`internal.Carrier`), are run by the kernel and are not guarded by a permission.
@@ -123,6 +124,8 @@ Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.Princ
 
 `Service.MarkRead` in `modules/notification/internal/service.go` answers `crud.ErrNotFound` when the row's `RecipientID` is not the caller, so nobody learns whether another person's notification exists.
 `caller` in `handler.go` answers 403 when there is no principal or the user id is nil.
+`SetChannel`, `SetQuietHours` and `ClearQuietHours` in `internal/preferences.go` answer `tenancy.ErrPolicyDenied` when the context carries a principal who is not the recipient they name: one person's opt-out and quiet window are theirs to change, and row-level security cannot say so because both people are in one tenant.
+The mail subscription re-reads the tenant's sender before it sends (`internal/mail.go`): a sender that went back to pending after the notice was queued is a suppressed row, not a message signed as a domain that stopped vouching for itself.
 This is a recipient check, not a separation-of-duties rule.
 
 ### Public faces
@@ -136,7 +139,7 @@ None. `sender:manage` is not marked `Operator: true` — its scope is the tenant
 
 ### Provisioning
 
-`sender:manage` is the one key a role would be granted, and it is granted by nothing today, because the module mounts no route over the sender face: the composition holds `Senders(verifier, keys)` and the product writes the page. Granting it is therefore the product's act over its own roles, and until it does, the commands are reachable only from inside the composition.
+`sender:manage` is the one key a role would be granted, and it is granted by nothing today, because the module mounts no route over the sender face: the composition holds `Senders(verifier, keys, grants)` and the product writes the page. Granting it is therefore the product's act over its own roles, and until it does, the commands are reachable only from inside the composition — and a signed-in caller needs a `contracts.GrantChecker` wired over the roles table before any of them is reachable at all.
 Every signed-in person can read and mark their own notifications and set their own channel switches without any grant: those commands are scoped by the principal, not by a key.
 Roles and the roles API therefore do not affect this module's two routes.
 
@@ -148,9 +151,11 @@ What this module does not do, stated here rather than only in the branch that le
   the two routes answer the question a bell asks; nobody renders it. There is no nav entry
   and no page, so a `requested` in-app row is read only by a client that already knows the path.
 - **No settings or sender page, and no route over either face.** `Settings()` and
-  `Senders(verifier, keys)` are the commands and `sender:manage` is the key; the product
+  `Senders(verifier, keys, grants)` are the commands and `sender:manage` is the key; the product
   writes the form and the route, and until it does a person cannot change a channel switch
-  from a screen and an administrator cannot set a tenant's sender from anywhere but Go.
+  from a screen and an administrator cannot set a tenant's sender from anywhere but Go. The
+  same is true of the grant: nothing in this repository implements `contracts.GrantChecker`,
+  whose implementation is a few lines over the auth module's `Permissions`.
 - **No templates per event per locale, and no HTML alternative.** `internal/templates` holds
   one text template, `contracts.Message.HTML` and `Lang` are read by the carrier and written
   by nobody, and `internal/mail.go` sets `Lang: "en"`; locale is the product's copy table.
@@ -175,18 +180,21 @@ What this module does not do, stated here rather than only in the branch that le
 `go test ./modules/notification/...` runs the contracts suite against the real service,
 a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
 sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
-send against 000030 (`TestARedeliveredSendWritesOneSentRow`), one tenant's writes against
-another tenant's rows with a caller both transactions name (`TestOneTenantsLedgerIsNotAnothers`,
-`TestAnotherTenantThatHoldsTheKeyWritesNothingOfThisTenants`), the sender commands against a
-caller that names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`) and a wired
-carrier through its ledger row
-(`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`).
-`TestAnotherTenantWritesNothingOfThisTenants` is the same cross-tenant conversation with an
-actorless fixture, and it stands red for that reason alone: its first line is a `Put` by a
-transaction that names no caller, which the rule above refuses before any of its isolation
-assertions is reached. The case named above makes the same attempts with a caller named —
-which is the assertion that the separation comes from the row's policy and not from who was
-asking.
-`providers/gomail`'s assertions run against an in-process relay in its own package, so what
-a real relay answers — DKIM as the far end verifies it, STARTTLS negotiation, AUTH — is
-observed by no test here.
+send against 000030 (`TestARedeliveredSendWritesOneSentRow`) and the same committed replay
+over every asynchronous channel (`TestEveryCarriedChannelIgnoresACommittedEventReplay`), a
+wired carrier through its ledger row
+(`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`), one tenant's writes against another tenant's rows with a caller both transactions name
+(`TestOneTenantsLedgerIsNotAnothers`, `TestAnotherTenantWritesNothingOfThisTenants`,
+`TestAnotherTenantThatHoldsTheKeyWritesNothingOfThisTenants`), two verifications of one
+sender against one provider call and one event
+(`TestConcurrentSenderVerificationChecksAndPublishesOnce`), the sender commands against a
+caller that names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`), a member whose
+roles do not grant `sender:manage` (`TestSenderCommandsRefuseAMemberWithoutTheManageGrant`),
+a sender deletion's audit event (`TestDeletingAPendingSenderPublishesItsAuditEvent`), a
+queued mail whose sender is no longer verified
+(`TestQueuedMailRechecksSenderVerificationBeforeDelivery`), and one recipient's choices
+against another recipient's principal (`TestPreferenceCommandsRefuseAnotherRecipientsChoices`).
+`providers/gomail` runs against an in-process relay in its own package, including
+`TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
+never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
+STARTTLS negotiation — is observed by no test here.

@@ -188,14 +188,18 @@ type DKIMKeys interface {
 // SenderAdmin is what an administrator of the tenant does about it. All three
 // commands recheck their caller and the tenant's own row inside the transaction
 // they run in: a caller the transaction does not name is refused (there is no
-// actor to put in the audit event that is the record of the change), and a row
-// that is not this tenant's reads as nobody's. A refusal writes nothing,
-// publishes nothing and returns no stale row.
+// actor to put in the audit event that is the record of the change), a caller who
+// arrives as a signed-in person is refused unless the deployment says their roles
+// grant PermissionSenderManage (GrantChecker below), and a row that is not this
+// tenant's reads as nobody's. A refusal writes nothing, publishes nothing and
+// returns no stale row.
 //
-// The grant over the identity is the application's share, and the key is defined
-// here (PermissionSenderManage) because kit/app refuses to start a route whose
-// permission no manifest defines: a product that mounts a page for this face
-// guards it with this key, and a role that does not hold it never reaches it.
+// The key is defined here (PermissionSenderManage) because kit/app refuses to
+// start a route whose permission no manifest defines: a product that mounts a page
+// for this face guards it with this key, and a role that does not hold it never
+// reaches it. The route's guard and the command's check are the same question
+// asked twice on purpose — the second time inside the authoritative transaction,
+// where a request that was authorized a moment ago cannot answer for it.
 type SenderAdmin interface {
 	// Put saves the tenant's sender, creating it or replacing what is there.
 	// Status is never taken from the caller: a row whose domain or selector
@@ -214,8 +218,27 @@ type SenderAdmin interface {
 	// Delete removes a sender that is not believed. Removing the tenant's only
 	// verified one is refused — correctable by putting its replacement first —
 	// because the write that takes the last one away leaves a tenant's people
-	// unable to be told anything by mail, and finding none is a query.
+	// unable to be told anything by mail, and finding none is a query. A removal
+	// publishes notification.sender_removed, so the trail says who took it away.
 	Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error
+}
+
+// GrantChecker answers, for the caller of the transaction it is handed, the one
+// question this module cannot answer for itself: does this person hold this
+// permission? The roles table belongs to the auth module and what a role name
+// grants is nobody else's fact to know, so the module asks rather than reads —
+// the same shape kit/httpx's Authorizer has, with the transaction named instead of
+// found on the context, because a command runs inside a transaction the caller
+// opened and not inside a request.
+//
+// A composition satisfies it over the auth module's Permissions and
+// authcontracts.Grants in a few lines. Nil is not "nobody may": it is "this
+// deployment has no answer", and a signed-in caller is refused on that answer —
+// the refusal an installation wants while it is deciding who administers its mail
+// identity. Work with no person behind it (a job, a retried event) is authorized by
+// the composition that runs it and is never asked this question.
+type GrantChecker interface {
+	Holds(ctx context.Context, tx db.Tx[db.Tenant], permission string) (bool, error)
 }
 
 // SenderVerifier is the composition's answer to "does this domain really say

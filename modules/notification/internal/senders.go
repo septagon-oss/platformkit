@@ -33,6 +33,10 @@ import (
 type Senders struct {
 	Verifier contracts.SenderVerifier
 	Keys     contracts.DKIMKeys
+	// Grants answers whether the caller of a sender command holds
+	// contracts.PermissionSenderManage. Nil means the deployment has no answer, and
+	// a signed-in caller is refused on it — see contracts.GrantChecker.
+	Grants contracts.GrantChecker
 }
 
 var (
@@ -71,7 +75,7 @@ func (s *Senders) For(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Send
 // changing takes the row back to pending with a fresh token, and the pair
 // staying the same keeps the verification it already earned.
 func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sender) (*contracts.Sender, error) {
-	actor, err := adminActor(ctx)
+	actor, err := s.administered(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +112,8 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 	})
 }
 
-// adminActor is the caller one of these three commands has to be able to name.
+// administered is the caller one of these three commands has to be able to name,
+// and to hold the key that says they may.
 //
 // tenancy.ActorFrom is unset for work with no person behind it — a job, the
 // relay, a retried event — and for a read that is the honest answer rather than a
@@ -120,15 +125,36 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 // refused before the row is read: it writes nothing, publishes nothing and
 // returns no row, which is what contracts.SenderAdmin promises.
 //
-// The grant above the identity is the application's: the key this module defines
-// (contracts.PermissionSenderManage) exists so the route it composes can guard
-// the face with it, and kit/app refuses a route whose permission no manifest
-// defines. What the module can enforce from inside the transaction is that the
-// caller is somebody the transaction names and that the row is this tenant's.
-func adminActor(ctx context.Context) (uuid.UUID, error) {
+// A caller who arrives as a signed-in principal is asked the second question the
+// grant is for: their roles have to grant contracts.PermissionSenderManage, answered
+// by the composition (contracts.GrantChecker) because what a role name grants is the
+// auth module's fact and not this module's. A deployment that wires no checker has
+// no answer to give, so a person is refused rather than assumed in — house rule 9's
+// recheck, inside the authoritative transaction, which is the half a route's guard
+// cannot do. Work with no principal at all is platform work, authorized by whoever
+// composed the job that runs it, and is not asked this question.
+func (s *Senders) administered(ctx context.Context, tx db.Tx[db.Tenant]) (uuid.UUID, error) {
 	actor, ok := tenancy.ActorFrom(ctx)
 	if !ok {
 		return uuid.Nil, fmt.Errorf("%w: notification: this tenant's sender is changed by a caller its own transaction names, and this one names nobody", tenancy.ErrPolicyDenied)
+	}
+	principal, signedIn := tenancy.PrincipalFrom(ctx)
+	if !signedIn {
+		return actor, nil
+	}
+	if principal.UserID != actor {
+		return uuid.Nil, fmt.Errorf("%w: notification: this caller's session is one person and its actor is another", tenancy.ErrPolicyDenied)
+	}
+	if s.Grants == nil {
+		return uuid.Nil, fmt.Errorf("%w: notification: this deployment wires no way to check %s, so a signed-in caller cannot be granted it",
+			tenancy.ErrPolicyDenied, contracts.PermissionSenderManage)
+	}
+	held, err := s.Grants.Holds(ctx, tx, contracts.PermissionSenderManage)
+	if err != nil {
+		return uuid.Nil, fmt.Errorf("notification: check %s: %w", contracts.PermissionSenderManage, err)
+	}
+	if !held {
+		return uuid.Nil, fmt.Errorf("%w: notification: this caller's roles do not grant %s", tenancy.ErrPolicyDenied, contracts.PermissionSenderManage)
 	}
 	return actor, nil
 }
@@ -141,7 +167,7 @@ func adminActor(ctx context.Context) (uuid.UUID, error) {
 // same moment must not both see pending, and the second must find the row
 // already believed rather than run a second check into a second proof.
 func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Sender, error) {
-	actor, err := adminActor(ctx)
+	actor, err := s.administered(ctx, tx)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +207,8 @@ func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 // Deleting nothing deletes nothing: an unknown id is ErrNotFound, the same
 // answer another tenant's id gives.
 func (s *Senders) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
-	if _, err := adminActor(ctx); err != nil {
+	actor, err := s.administered(ctx, tx)
+	if err != nil {
 		return err
 	}
 	row, err := crud.GetForUpdate[*contracts.Sender](tx, id)
@@ -192,7 +219,15 @@ func (s *Senders) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 		return fmt.Errorf("%w: %s is this tenant's verified sender; save its replacement before removing it",
 			crud.ErrConflict, row.Header())
 	}
-	return crud.Delete[*contracts.Sender](tx, id, true)
+	if err := crud.Delete[*contracts.Sender](tx, id, true); err != nil {
+		return err
+	}
+	// The removal is as much a fact about this tenant's mail identity as the write
+	// that made it, and modules/audit records published events and not rows: a
+	// deletion that publishes nothing is one nobody can attribute afterwards.
+	return events.Publish(ctx, tx, contracts.EventSenderRemoved, contracts.SenderRemoved{
+		SenderID: row.ID, Domain: row.Domain, Selector: row.Selector, Actor: actor, At: db.Now(),
+	})
 }
 
 // locked is the tenant's one live sender row, or nil, with the row's write lock

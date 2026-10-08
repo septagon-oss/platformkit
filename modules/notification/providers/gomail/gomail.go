@@ -97,7 +97,16 @@ func (s *Sender) Send(ctx context.Context, m contracts.Message) error {
 	}
 	opts := []mail.Option{mail.WithPort(s.port())}
 	if s.cfg.Username != "" {
-		opts = append(opts, mail.WithUsername(s.cfg.Username), mail.WithPassword(s.cfg.Password))
+		// Username and password alone are not authentication: go-mail defaults to
+		// SMTPAuthNoAuth, so a client built with credentials it was never told to
+		// speak sends them nowhere and takes the relay's 530 — which it classifies
+		// as permanent, so every mail this deployment mails would be recorded failed
+		// and acknowledged. The mechanism is PLAIN (RFC 4616), the one the stdlib
+		// sender this package replaced used through smtp.PlainAuth: net/smtp refuses
+		// to offer it over plaintext to a relay that is not the local machine, which
+		// is the same judgement Config.TLS asks the operator to make explicit.
+		opts = append(opts, mail.WithUsername(s.cfg.Username), mail.WithPassword(s.cfg.Password),
+			mail.WithSMTPAuth(mail.SMTPAuthPlain))
 	}
 	if s.cfg.TLS {
 		opts = append(opts, mail.WithTLSPolicy(mail.TLSMandatory))
@@ -130,6 +139,12 @@ func (s *Sender) message(m contracts.Message) (*mail.Msg, error) {
 		return nil, fmt.Errorf("notification: %s is not a usable envelope sender: %w", s.cfg.EnvelopeFrom, err)
 	}
 	if m.Sender != nil {
+		// The gate the worker already applied, applied again at the door: an identity
+		// that stopped being believed after the message was queued must not leave.
+		if m.Sender.Status != contracts.SenderVerified {
+			return nil, contracts.Permanent("this tenant's sender " + m.Sender.Header() +
+				" is " + m.Sender.Status + ", not verified, so nothing sends as it")
+		}
 		// Header() is RFC 5322's quoted form, so a display name with an apostrophe or
 		// a comma arrives as a name rather than as a broken header — the reason this
 		// goes through net/mail in contracts rather than through fmt.Sprintf here.
