@@ -71,13 +71,22 @@ PLATFORMKIT_VALKEY_PORT ?= 6379
 PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
 export PLATFORMKIT_TEST_VALKEY_URL
 
-# Local feedback uses Go's package/dependency cache. The full check below always
-# runs fresh, independently of these local selectors or an earlier test goal.
+# Local feedback uses Go's package/dependency cache. The full check below runs
+# fresh at TEST_COUNT's default of -count=1, independently of these local
+# selectors or an earlier test goal: only a caller that sets TEST_COUNT itself
+# opts its own runs out of running every test.
 TEST_PACKAGES ?= ./...
 TEST_FLAGS ?=
 # gotestsum options apply only to local feedback; --watch keeps the default
 # all-package scope so Go's cache also checks consumers of an edited package.
 TEST_OPTIONS ?=
+# The count both full-suite goals pass to the go command. Its default is the promise CI
+# depends on: -count=1, so a build cache restored across commits can never answer a test
+# the commit never ran. CI sets nothing, so CI keeps this default. A caller whose own
+# gate re-runs the same tree sets TEST_COUNT= empty and gets Go's test cache for the
+# packages whose inputs did not change; that is the caller opting its own runs into the
+# cache, never CI out of it. Local feedback (make test) still carries no count at all.
+TEST_COUNT ?= -count=1
 # Runner reports: GOTESTSUM_JSONFILE=/tmp/pkit-tests.jsonl and
 # GOTESTSUM_JUNITFILE=/tmp/pkit-tests.xml (overwritten on each run).
 # Inspect timings: go tool gotestsum tool slowest --jsonfile /tmp/pkit-tests.jsonl --num 10
@@ -264,7 +273,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
-	go test -race -count=1 $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -318,9 +327,21 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
 # this change's promises can be undone from somewhere else — the key by anyone who moves the digest
 # into a `hashFiles` expression, which act_runner answers "" for rather than failing, and the brief's
-# "never cache test results across commits" by anyone who folds `-count=1` into `GOFLAGS` — so both
-# halves are pinned where they live: the workflow, and the two goals that run the suite. It starts
-# nothing and reads no database, which is what makes it a `check` line and not a job step.
+# "never cache test results across commits" by anyone who moves the count out of TEST_COUNT's default
+# and into `GOFLAGS` — so both halves are pinned where they live: the workflow, and the one variable
+# the two goals that run the suite read. It starts nothing and reads no database, which is what makes it
+# a `check` line and not a job step.
+#
+# scripts/make_check_count_default_test.sh asks the count's question of the one shape no other case can
+# take: CI's own, where nothing names the variable at all. The arch probe pins `TEST_COUNT=-count=1` on
+# the nested make, and a command-line value overrides whatever the Makefile assigns; ci_go_cache_test.sh
+# reads the `?=` default's line. A later assignment that empties the variable below that default passes
+# both (measured by review 1: the guard answers ok, the probe still prints the fresh line) while CI's own
+# expansion loses the flag and cached test results start travelling across commits. So this case starts a
+# child make with TEST_COUNT, MAKEFLAGS and MAKEOVERRIDES removed from the environment — what a caller
+# that sets nothing inherits — and refuses an expansion that is not today's fresh suite line, the same
+# for the race goal, and any workflow that sets the variable itself. Two dry runs and one grep; nothing
+# is compiled, started or tested.
 #
 # scripts/ci_go_cache_one_saver_per_key_test.sh asks the one question about those steps that no
 # single step can see: whether two jobs that run side by side save under the same exact key. A save
@@ -340,12 +361,13 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT)
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
+	bash scripts/make_check_count_default_test.sh
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
