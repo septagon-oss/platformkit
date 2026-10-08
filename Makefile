@@ -275,7 +275,22 @@ check-race: ## Run the concurrency kernel under -race
 
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and the suite is past it. This is main's own answer, re-homed onto the line
+	# this branch carries: a0abf8a put `-timeout=30m` on `make check` on 2026-10-08, and this merge base
+	# (9666ab6, 2026-10-03) predates it, so the gate here has been dying of the default ever since.
+	# What that death looks like was measured here on 2026-10-08, this tree, one goal over five packages:
+	# `modules/auth/internal` 600.025s, `modules/tenant/internal` 600.013s, `kit/httpx` 600.012s and
+	# `apps/platformkit` 600.041s — four packages stopped at the same instant they were never running to,
+	# with one assertion failure among them (`apps/platformkit`'s own application never answered
+	# `/health` because its migration was still queued when the clock took the context). Every
+	# `=== FAIL:` the gate has reported since 2026-10-05 is `(unknown)`, gotestsum's word for a test the
+	# alarm took, over packages this branch never touched: modules/task/internal on 2026-10-05,
+	# modules/tenant/internal on 2026-10-07 and 2026-10-08. Thirty minutes is upstream's worst
+	# observation — 18m37s in modules/tenant/internal on a host carrying six of this program's suites —
+	# plus room. It is not a looser standard: the hang a bound exists to catch still stops, at thirty
+	# minutes rather than at ten, and no assertion, count or package pattern on this line moves.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
