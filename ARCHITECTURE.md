@@ -485,10 +485,10 @@ its only dependency is the kernel.
 
 **How it is traced and audited.** Two trails, and the distinction is the point.
 The *write* is the owner's: an accepted proposal is applied through the subject's
-`Save` (`modules/change/contracts/change.go:254-266`), which the owning module
-implements over its own service, so the domain audit row is the owner's event —
-`site.settings_updated` for the reference subject
-(`apps/platformkit/change.go:164-172`, `modules/site/contracts/events.go:15`). The
+`Save` (`modules/change/contracts/change.go:254-266`), which the composition
+implements over the owner's own service (`apps/platformkit/change.go:164-172`),
+so the domain audit row is the owner's event — `site.settings_updated` for the
+reference subject (`modules/site/contracts/events.go:15`). The
 *decision* is this module's, one event per transition and no fifth name
 (`modules/change/contracts/events.go:11-19`), published beside the row that moved
 (`modules/change/internal/service.go:307`) and so audited the way every declared
