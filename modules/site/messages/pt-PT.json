@@ -23,5 +23,140 @@
     "plural": {
       "": "Site"
     }
+  },
+  "field.site.settings.title": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Título",
+    "plural": {
+      "": "Título"
+    }
+  },
+  "field.site.settings.title.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "O nome do site",
+    "plural": {
+      "": "O nome do site"
+    }
+  },
+  "field.site.settings.tagline": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Lema",
+    "plural": {
+      "": "Lema"
+    }
+  },
+  "field.site.settings.tagline.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "A linha por baixo do nome",
+    "plural": {
+      "": "A linha por baixo do nome"
+    }
+  },
+  "field.site.settings.homeSlug": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Slug da página inicial",
+    "plural": {
+      "": "Slug da página inicial"
+    }
+  },
+  "field.site.settings.homeSlug.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "O slug do conteúdo servido em /",
+    "plural": {
+      "": "O slug do conteúdo servido em /"
+    }
+  },
+  "field.site.settings.theme": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Tema",
+    "plural": {
+      "": "Tema"
+    }
+  },
+  "field.site.settings.theme.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Esquema de cores, ou sistema para seguir o do visitante",
+    "plural": {
+      "": "Esquema de cores, ou sistema para seguir o do visitante"
+    }
+  },
+  "field.site.settings.primaryColor": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Cor principal",
+    "plural": {
+      "": "Cor principal"
+    }
+  },
+  "field.site.settings.primaryColor.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Cor da marca, #rrggbb",
+    "plural": {
+      "": "Cor da marca, #rrggbb"
+    }
+  },
+  "field.site.settings.logoFileId": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Ficheiro do logótipo",
+    "plural": {
+      "": "Ficheiro do logótipo"
+    }
+  },
+  "field.site.settings.logoFileId.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "O identificador do ficheiro do logótipo",
+    "plural": {
+      "": "O identificador do ficheiro do logótipo"
+    }
+  },
+  "enum.site.settings.light": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Claro",
+    "plural": {
+      "": "Claro"
+    }
+  },
+  "enum.site.settings.dark": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Escuro",
+    "plural": {
+      "": "Escuro"
+    }
+  },
+  "enum.site.settings.system": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Sistema",
+    "plural": {
+      "": "Sistema"
+    }
   }
 }

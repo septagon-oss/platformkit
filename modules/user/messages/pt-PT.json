@@ -77,5 +77,248 @@
     "plural": {
       "": "Funções"
     }
+  },
+  "field.user.user.id": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Id",
+    "plural": {
+      "": "Id"
+    }
+  },
+  "field.user.user.email": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Email",
+    "plural": {
+      "": "Email"
+    }
+  },
+  "field.user.user.email.help": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "O endereço com que esta pessoa inicia a sessão, único dentro do tenant",
+    "plural": {
+      "": "O endereço com que esta pessoa inicia a sessão, único dentro do tenant"
+    }
+  },
+  "field.user.user.handle": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Nome curto",
+    "plural": {
+      "": "Nome curto"
+    }
+  },
+  "field.user.user.handle.help": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "O nome em minúsculas pelo qual esta pessoa é identificada neste tenant, vazio até ser reclamado",
+    "plural": {
+      "": "O nome em minúsculas pelo qual esta pessoa é identificada neste tenant, vazio até ser reclamado"
+    }
+  },
+  "field.user.user.preferredLocale": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Idioma preferido",
+    "plural": {
+      "": "Idioma preferido"
+    }
+  },
+  "field.user.user.preferredLocale.help": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "O idioma que esta pessoa escolheu, vazio enquanto o navegador e o tenant decidem",
+    "plural": {
+      "": "O idioma que esta pessoa escolheu, vazio enquanto o navegador e o tenant decidem"
+    }
+  },
+  "field.user.user.status": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Estado",
+    "plural": {
+      "": "Estado"
+    }
+  },
+  "field.user.user.status.help": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Estado do ciclo de vida",
+    "plural": {
+      "": "Estado do ciclo de vida"
+    }
+  },
+  "field.user.user.roles.help": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "As funções que esta pessoa tem neste tenant",
+    "plural": {
+      "": "As funções que esta pessoa tem neste tenant"
+    }
+  },
+  "enum.user.user.invited": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Convidado",
+    "plural": {
+      "": "Convidado"
+    }
+  },
+  "enum.user.user.pending": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Pendente",
+    "plural": {
+      "": "Pendente"
+    }
+  },
+  "enum.user.user.unverified": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Não verificado",
+    "plural": {
+      "": "Não verificado"
+    }
+  },
+  "enum.user.user.active": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Ativo",
+    "plural": {
+      "": "Ativo"
+    }
+  },
+  "enum.user.user.inactive": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "Inativo",
+    "plural": {
+      "": "Inativo"
+    }
+  },
+  "command.user.user.approve-registration": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Aprovar uma inscrição pendente",
+    "plural": {
+      "": "Aprovar uma inscrição pendente"
+    }
+  },
+  "command.user.user.approve-registration.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Ativa uma conta pendente sem alterar a sua palavra-passe nem as suas funções. As contas ativas ficam inalteradas; convites e contas desativadas não podem ser aprovadas.",
+    "plural": {
+      "": "Ativa uma conta pendente sem alterar a sua palavra-passe nem as suas funções. As contas ativas ficam inalteradas; convites e contas desativadas não podem ser aprovadas."
+    }
+  },
+  "command.user.user.set-password": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Definir a palavra-passe de uma pessoa",
+    "plural": {
+      "": "Definir a palavra-passe de uma pessoa"
+    }
+  },
+  "command.user.user.set-password.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Guarda um hash argon2id e ativa uma pessoa convidada. Não é idempotente: definir uma palavra-passe igual à anterior é ainda uma alteração de palavra-passe, e quem o fez de propósito tem de o ver no seu próprio registo de auditoria.",
+    "plural": {
+      "": "Guarda um hash argon2id e ativa uma pessoa convidada. Não é idempotente: definir uma palavra-passe igual à anterior é ainda uma alteração de palavra-passe, e quem o fez de propósito tem de o ver no seu próprio registo de auditoria."
+    }
+  },
+  "command.user.user.roles": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Definir as funções de uma pessoa",
+    "plural": {
+      "": "Definir as funções de uma pessoa"
+    }
+  },
+  "command.user.user.roles.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Substitui as funções que esta pessoa tem. O mesmo conjunto repetido, em qualquer ordem, não altera nada nem publica nada.",
+    "plural": {
+      "": "Substitui as funções que esta pessoa tem. O mesmo conjunto repetido, em qualquer ordem, não altera nada nem publica nada."
+    }
+  },
+  "command.user.user.handle": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Reclamar ou alterar o nome curto de uma pessoa",
+    "plural": {
+      "": "Reclamar ou alterar o nome curto de uma pessoa"
+    }
+  },
+  "command.user.user.handle.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "O nome em minúsculas pelo qual esta pessoa é identificada neste tenant, usado em URLs e menções. Pode ser alterado, porque cada chave e cada entrada do registo dizem o uuid e nada tem de seguir o nome: quem o tinha antes fica em user.handle_set. Um nome curto que outra pessoa tenha é um conflito que diz a regra e não quem o tem, e um nome curto não pode ser libertado.",
+    "plural": {
+      "": "O nome em minúsculas pelo qual esta pessoa é identificada neste tenant, usado em URLs e menções. Pode ser alterado, porque cada chave e cada entrada do registo dizem o uuid e nada tem de seguir o nome: quem o tinha antes fica em user.handle_set. Um nome curto que outra pessoa tenha é um conflito que diz a regra e não quem o tem, e um nome curto não pode ser libertado."
+    }
+  },
+  "command.user.user.deactivate": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Desativar uma pessoa",
+    "plural": {
+      "": "Desativar uma pessoa"
+    }
+  },
+  "command.user.user.deactivate.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Impede essa pessoa de iniciar a sessão. As sessões dela deixam de funcionar com ela, porque uma sessão só é aceite para uma pessoa ativa, pelo que não há nenhuma lista de sessões a percorrer. Desativá-la outra vez não altera nada.",
+    "plural": {
+      "": "Impede essa pessoa de iniciar a sessão. As sessões dela deixam de funcionar com ela, porque uma sessão só é aceite para uma pessoa ativa, pelo que não há nenhuma lista de sessões a percorrer. Desativá-la outra vez não altera nada."
+    }
+  },
+  "command.user.user.language": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Escolher o idioma em que esta pessoa é respondida",
+    "plural": {
+      "": "Escolher o idioma em que esta pessoa é respondida"
+    }
+  },
+  "command.user.user.language.description": {
+    "references": [
+      "modules/user/internal/handler.go"
+    ],
+    "translation": "Escreve o idioma da própria pessoa com a sessão iniciada, que se sobrepõe à negociação do navegador em cada página que lhe é mostrada e sobrevive a sair e voltar a entrar. Um idioma vazio retira a escolha e deixa-a ao navegador e à predefinição do tenant. Uma marca em que este tenant não é servido é recusada: o conjunto é a declaração do tenant e uma escolha fora dele seria uma preferência que, em silêncio, não significaria nada.",
+    "plural": {
+      "": "Escreve o idioma da própria pessoa com a sessão iniciada, que se sobrepõe à negociação do navegador em cada página que lhe é mostrada e sobrevive a sair e voltar a entrar. Um idioma vazio retira a escolha e deixa-a ao navegador e à predefinição do tenant. Uma marca em que este tenant não é servido é recusada: o conjunto é a declaração do tenant e uma escolha fora dele seria uma preferência que, em silêncio, não significaria nada."
+    }
   }
 }
