@@ -2,6 +2,7 @@ package internal_test
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -11,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/contracts/notificationtest"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
 
@@ -80,41 +82,55 @@ func TestTheMailLedgerAnswersTheRequestThatAsked(t *testing.T) {
 	}
 }
 
-// TestTheMailLedgerRefusesWhatTheTableRefuses pins that the port runs the table's
-// own rules: a caller cannot reach a CHECK by getting past the method, and the
-// fake's caller and Postgres's caller are refused the same record.
-func TestTheMailLedgerRefusesWhatTheTableRefuses(t *testing.T) {
-	_, conn := dbtest.Schema(t, notification.Migrations)
+// TestTheSQLMailLedgerMeetsTheSuite runs the shared conformance suite over the
+// table, so that "the port applies the table's rules" is a fact one suite states
+// about both implementations rather than two opinions that can drift. The five
+// refusals this function replaces (`TestTheMailLedgerRefusesWhatTheTableRefuses`)
+// are its cases 2, 3 and 4, asked of both implementations now instead of one.
+//
+// The schema belongs to this function and not to the harness, because the
+// harness is called once per case: a schema per case would be seven migrations of
+// the same composition for one promise, and the connections the parent opens
+// outlive every subtest, which is what lets one schema answer them all.
+func TestTheSQLMailLedgerMeetsTheSuite(t *testing.T) {
+	admin, conn := dbtest.Schema(t, notification.Migrations)
 	svc := internal.NewService(directory{})
-	cases := []struct {
-		name  string
-		wrong contracts.MailRecord
-		want  error
-	}{
-		{"a mail that did not go says why", contracts.MailRecord{
-			Kind: "auth.set_password", Recipient: "ada@example.com", Outcome: contracts.MailFailed,
-		}, contracts.ErrMailReason},
-		{"a mail with no address", contracts.MailRecord{
-			Kind: "auth.set_password", Outcome: contracts.MailFailed, Reason: "refused",
-		}, contracts.ErrMailRecipient},
-		{"a kind that is a sentence", contracts.MailRecord{
-			Kind: "Set the password", Recipient: "ada@example.com", Outcome: contracts.MailSent,
-		}, contracts.ErrMailKind},
-		{"the ledger's vocabulary", contracts.MailRecord{
-			Kind: "auth.set_password", Recipient: "ada@example.com", Outcome: "requested",
-		}, contracts.ErrMailOutcome},
-		{"an outcome nobody records", contracts.MailRecord{
-			Kind: "auth.set_password", Recipient: "ada@example.com", Outcome: "",
-		}, contracts.ErrMailOutcome},
-	}
-	for _, c := range cases {
-		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-			return svc.RecordMail(ctx, tx, c.wrong)
+	notificationtest.RunMailLedger(t, func(t *testing.T, run func(notificationtest.MailFixture)) {
+		run(notificationtest.MailFixture{
+			Ctx:    t.Context(),
+			Ledger: svc,
+			Step: func(ctx context.Context, fn func(context.Context, db.Tx[db.Tenant]) error) error {
+				return db.Run(tenancy.WithTenant(ctx, acme), conn, fn)
+			},
+			Rows: func(t testing.TB) []contracts.MailRecord { return mailRows(t, admin) },
 		})
-		if !errors.Is(err, c.want) {
-			t.Errorf("%s: err=%v, want %v", c.name, err, c.want)
-		}
+	})
+}
+
+// mailRows is the table read back in ledger order, the way its own seq column
+// orders it, which is the order the fake's slice happens to be in.
+func mailRows(t testing.TB, admin *sql.DB) []contracts.MailRecord {
+	t.Helper()
+	rows, err := admin.QueryContext(t.Context(),
+		"SELECT recipient, kind, outcome, reason, request_id FROM direct_mail_deliveries ORDER BY seq")
+	if err != nil {
+		t.Fatal(err)
 	}
+	defer rows.Close()
+	var out []contracts.MailRecord
+	for rows.Next() {
+		var r contracts.MailRecord
+		var request sql.NullString
+		if err := rows.Scan(&r.Recipient, &r.Kind, &r.Outcome, &r.Reason, &request); err != nil {
+			t.Fatal(err)
+		}
+		r.RequestID = request.String
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	return out
 }
 
 // TestAMailRecordCommitsWithItsSendOrNotAtAll is the half the fake cannot share:
