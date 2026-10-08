@@ -741,7 +741,30 @@ test_commands() {
 	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
 }
-fresh="go tool gotestsum --packages='./...' -- -count=1"
+# This pin is a byte-pin on purpose: any change to the line `make check` runs is red here until
+# somebody reads this file and re-pins it, which is the only thing standing between a per-package
+# clock, a build tag or a `-skip` added under time pressure and a fresh gate that quietly stops being
+# fresh. The cost is that the line lives in two files — here and in the Makefile — so re-pinning is a
+# decision somebody makes rather than a fix. It has been made once on this branch: -timeout=30m joined
+# -count=1 because the whole-suite run of 2026-10-08 killed modules/auth/internal and apps/platformkit
+# at go test's undeclared 10-minute default while both were still working, having measured 373s and
+# 435s for those two packages alone on the same tree. origin/main made the same move in e21457b and
+# kept it through the count's move into TEST_COUNT in a0abf8a; the measurements are in the comment
+# above the line in the Makefile. The loop below refuses a re-pin that drops a part the fresh gate is
+# made of, so pasting a failing line back in with `--packages` narrowed, `-count=1` gone or the stated
+# bound dropped is refused rather than rewarded — and it reads this pin, not the Makefile, so it
+# cannot be satisfied by the edit it watches.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
+	case " $fresh " in
+	*" $fresh_part"*) ;;
+	*)
+		echo "FAIL: the pinned fresh boundary no longer carries $fresh_part; that part is the fresh gate, so re-pin what the Makefile runs around it rather than this:" >&2
+		echo "$fresh" >&2
+		exit 1
+		;;
+	esac
+done
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
 if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2

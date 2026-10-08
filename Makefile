@@ -340,7 +340,21 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and this suite is past it on a shared host. Measured on this tree with one
+	# package running and nothing else asking: modules/auth/internal 373s, apps/platformkit 435s —
+	# under the default, and not by much. Run as './...' beside the other tasks this host carries, the
+	# first of those two was still working when the default killed the package at 600.027s, and the
+	# cases that were in flight came back as `(unknown)` failures over a goroutine dump of tests parked
+	# in t.Parallel and a transaction still open (`make check` at 6bf4f2c, the run the gate recorded at
+	# 2026-10-08T18:57Z: "FAIL github.com/septagon-oss/platformkit/modules/auth/internal 600.027s",
+	# 12 failures, the next run of the same tree green). origin/main has run this line with a stated
+	# bound since e21457b, kept through the count's move into TEST_COUNT by a0abf8a; this branch was
+	# cut before it arrived. The value is origin/main's: the worst package it observed on a loaded host
+	# (18m37s, modules/tenant/internal) plus room. It is not a looser standard — a hung package still
+	# stops, and the CI job that runs this goal keeps its own bound over the job, which is what stops a
+	# hang becoming a hung runner.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
