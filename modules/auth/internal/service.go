@@ -282,7 +282,27 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 
 // detachedWriteBudget bounds auth writes that must survive a refused request.
 // A busy or unreachable database must not keep that request open indefinitely.
-const detachedWriteBudget = 2 * time.Second
+//
+// What the bound is a bound on is the wait for a connection and for one
+// statement, not the statement itself: each of these writes runs outside the
+// request's transaction — which is the whole reason it is detached, since
+// kit/httpx rolls a request that answers 400 or worse back — and so it needs a
+// second pool connection while the request that is refusing somebody still
+// holds its own. Waiting for one is therefore ordinary on a loaded box, and what
+// the wait costs depends entirely on which write it is: a purge that misses its
+// window costs nothing anybody can feel, and `markFirstFactorProved` missing it
+// costs the person holding a valid passkey an answer that says their passkey did
+// not answer. Two seconds read that as a failure of the passkey.
+//
+// It was 2s, which is a number chosen to be short rather than to be enough: the
+// e2e journey at e2e/passkey-second-tenant.spec.ts lost a sign-in this way on a
+// box where kit/jobs was itself reporting `context deadline exceeded` for its own
+// relays at the same minute. Raising it does not make a starved pool healthy — it
+// makes the starvation outlast a refusal rather than masquerade as one. It cannot
+// hold a connection longer than the request that owns it would have been open
+// anyway: a request whose detached write cannot get a connection is a request
+// whose own next statement could not either.
+const detachedWriteBudget = 10 * time.Second
 
 // forget deletes one expired session, in a transaction of its own.
 //

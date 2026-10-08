@@ -543,6 +543,21 @@ func (s *Service) FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant
 	}
 	if door == contracts.PasskeyCeremonySecondFactor {
 		if err := s.RequireFirstFactorProof(ctx, tx, who.user.Email, from); err != nil {
+			// One line, said to nobody but the operator, for the one refusal at this
+			// door that is not about the answer at all. To the caller the two facts stay
+			// indistinguishable — same 401, same sentence, same cost — which is what
+			// RequireFirstFactorProof's own comment asks for and what this does not
+			// change. What it cannot be is silent: the person's device answered a prompt
+			// this server minted, and the answer they get says their passkey did not
+			// answer. That sentence is about their key, and the thing that failed is our
+			// own window, whose write is detached and therefore can come back having
+			// written nothing while still refusing to say so (markFirstFactorProved).
+			// A browser journey that lost a sign-in this way had nothing in its server's
+			// log to say so: every one of six refusals below shares one error value.
+			if errors.Is(err, contracts.ErrCredentials) {
+				slog.WarnContext(ctx, "auth: a passkey answered and the first-factor window was not there",
+					"user", who.user.ID)
+			}
 			return nil, nil, err
 		}
 	}
