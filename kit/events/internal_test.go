@@ -536,9 +536,27 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			if err := Relay(finish, conn, transport); err != nil {
 				t.Fatal(err)
 			}
+			// The committed child is the fact under test, and it becomes true when
+			// Postgres commits it, not when this test next looks. At restart=false
+			// nothing ever cancelled that delivery: the pass ended, its transaction
+			// carried on, and its commit races this read — a pass that finds the
+			// parent row still locked by the cancelled pass's own transaction skips
+			// it with SKIP LOCKED and returns nil without waiting for anything.
+			// The window the pass was given is the window the commit is given, and
+			// the assertion on the other side of it is the same number as before.
 			var completed int
-			if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil || completed != 1 {
-				t.Fatalf("committed child events=%d, want 1: %v", completed, err)
+			settle := time.Now().Add(3 * time.Second)
+			for {
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
+					t.Fatalf("committed child events: %v", err)
+				}
+				if completed >= 1 || !time.Now().Before(settle) {
+					break
+				}
+				time.Sleep(20 * time.Millisecond)
+			}
+			if completed != 1 {
+				t.Fatalf("committed child events=%d, want 1", completed)
 			}
 		})
 	}
