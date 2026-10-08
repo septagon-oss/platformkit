@@ -23,5 +23,140 @@
     "plural": {
       "": "Site"
     }
+  },
+  "field.site.settings.title": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Title",
+    "plural": {
+      "": "Title"
+    }
+  },
+  "field.site.settings.title.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "The site's name",
+    "plural": {
+      "": "The site's name"
+    }
+  },
+  "field.site.settings.tagline": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Tagline",
+    "plural": {
+      "": "Tagline"
+    }
+  },
+  "field.site.settings.tagline.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "The line under the name",
+    "plural": {
+      "": "The line under the name"
+    }
+  },
+  "field.site.settings.homeSlug": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Home slug",
+    "plural": {
+      "": "Home slug"
+    }
+  },
+  "field.site.settings.homeSlug.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Slug of the content served at /",
+    "plural": {
+      "": "Slug of the content served at /"
+    }
+  },
+  "field.site.settings.theme": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Theme",
+    "plural": {
+      "": "Theme"
+    }
+  },
+  "field.site.settings.theme.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Colour scheme, or system to follow the visitor's",
+    "plural": {
+      "": "Colour scheme, or system to follow the visitor's"
+    }
+  },
+  "field.site.settings.primaryColor": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Primary color",
+    "plural": {
+      "": "Primary color"
+    }
+  },
+  "field.site.settings.primaryColor.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Brand colour, #rrggbb",
+    "plural": {
+      "": "Brand colour, #rrggbb"
+    }
+  },
+  "field.site.settings.logoFileId": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Logo file id",
+    "plural": {
+      "": "Logo file id"
+    }
+  },
+  "field.site.settings.logoFileId.help": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "File id of the logo",
+    "plural": {
+      "": "File id of the logo"
+    }
+  },
+  "enum.site.settings.light": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Light",
+    "plural": {
+      "": "Light"
+    }
+  },
+  "enum.site.settings.dark": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "Dark",
+    "plural": {
+      "": "Dark"
+    }
+  },
+  "enum.site.settings.system": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "System",
+    "plural": {
+      "": "System"
+    }
   }
 }

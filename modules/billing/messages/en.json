@@ -48,5 +48,149 @@
     "plural": {
       "": "Billing"
     }
+  },
+  "field.billing.plan.code": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Code",
+    "plural": {
+      "": "Code"
+    }
+  },
+  "field.billing.plan.code.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Stable identifier, unique within the tenant",
+    "plural": {
+      "": "Stable identifier, unique within the tenant"
+    }
+  },
+  "field.billing.plan.name": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Name",
+    "plural": {
+      "": "Name"
+    }
+  },
+  "field.billing.plan.name.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Display name",
+    "plural": {
+      "": "Display name"
+    }
+  },
+  "field.billing.plan.priceCents": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Price cents",
+    "plural": {
+      "": "Price cents"
+    }
+  },
+  "field.billing.plan.priceCents.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Price of one interval, in the currency's minor unit",
+    "plural": {
+      "": "Price of one interval, in the currency's minor unit"
+    }
+  },
+  "field.billing.plan.currency": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Currency",
+    "plural": {
+      "": "Currency"
+    }
+  },
+  "field.billing.plan.currency.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "ISO 4217 code",
+    "plural": {
+      "": "ISO 4217 code"
+    }
+  },
+  "field.billing.plan.interval": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Interval",
+    "plural": {
+      "": "Interval"
+    }
+  },
+  "field.billing.plan.interval.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "How long one period lasts",
+    "plural": {
+      "": "How long one period lasts"
+    }
+  },
+  "field.billing.plan.features": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Features",
+    "plural": {
+      "": "Features"
+    }
+  },
+  "field.billing.plan.features.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Feature names this plan includes",
+    "plural": {
+      "": "Feature names this plan includes"
+    }
+  },
+  "field.billing.plan.active": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Active",
+    "plural": {
+      "": "Active"
+    }
+  },
+  "field.billing.plan.active.help": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Whether this plan accepts new subscriptions",
+    "plural": {
+      "": "Whether this plan accepts new subscriptions"
+    }
+  },
+  "enum.billing.plan.month": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Month",
+    "plural": {
+      "": "Month"
+    }
+  },
+  "enum.billing.plan.year": {
+    "references": [
+      "modules/billing/contracts/billing.go"
+    ],
+    "translation": "Year",
+    "plural": {
+      "": "Year"
+    }
   }
 }
