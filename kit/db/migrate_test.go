@@ -355,8 +355,10 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	// db: migrate: lock: context canceled`, six attempts of
 	// kit/db/migration_cancellation_returns_error_test.py on 2026-10-04, and reproduced
 	// without any load at all by
-	// kit/db/cancellation_case_waits_for_its_lock_test.py, which holds the key against
-	// this case for fifteen seconds.
+	// a case that held the composition key against this case for fifteen seconds
+	// (kit/db/cancellation_case_waits_for_its_lock_test.py, retired 2026-10-08: it drove
+	// the single-key lock T-0314's per-namespace lock replaced). The two windows and the
+	// two bounds are what that measurement left behind, and they still stand.
 	if why := waitUntil(t, migrationQueueBudget, done, "the run held the composition key", func() bool {
 		return holdsCompositionKey(t, admin)
 	}); why != "" {
