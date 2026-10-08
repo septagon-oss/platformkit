@@ -287,16 +287,26 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 const migrationQueueBudget = 5 * time.Minute
 
 // holdsCompositionKey says whether a session of *this* test's own schema holds the
-// composition key right now. dbtest makes application_name the schema
-// (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing
-// else: waiting behind another package's queue is then something the case can see,
-// which is what stops that queue from being read as a broken cancellation.
+// composition key right now. The key is the pair the run takes it under —
+// (compositionLockKey, the OID of the namespace its own session resolves to), which is
+// what kit/db/migrate.go's holdCompositionLock passes to
+// `pg_advisory_lock($1::int, $2::oid::int)` and what pg_locks therefore spells
+// classid = compositionLockKey, objid = that namespace, objsubid = 2 for the two-key
+// form (the same reading kit/db/composition_lock_oid_test.go asserts). Before T-0314 the
+// run locked the single key, and this read folded (classid, objid) into one int; that
+// predicate answers nothing at all now, which is what made
+// TestMigrationCancellationRollsBackAndReleasesTheLock report a run that "returned first"
+// while it was still inside its pg_sleep. dbtest makes application_name the schema
+// (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing else:
+// waiting behind another namespace's queue is then something the case can see, which is
+// what stops that queue from being read as a broken cancellation.
 func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 	t.Helper()
 	var held int
 	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-		WHERE l.locktype = 'advisory' AND l.granted
-			AND ((l.classid::bigint << 32) | l.objid::bigint) = `+strconv.FormatInt(compositionLockKey, 10)+`
+		WHERE l.locktype = 'advisory' AND l.granted AND l.objsubid = 2
+			AND l.classid = `+strconv.FormatInt(compositionLockKey, 10)+`::oid
+			AND l.objid = coalesce(to_regnamespace(a.application_name), 0)::oid
 			AND a.application_name = current_setting('search_path')`, &held)
 	return held > 0
 }
