@@ -340,7 +340,18 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and the suite has grown past it. origin/main carries the same line
+	# (a0abf8a, PR #141's follow-up) and this branch predates it: measured here on 2026-10-08,
+	# `make check` on this tree killed `apps/platformkit` at 600.058s and
+	# `modules/auth/internal` at 600.036s with every case reported `(unknown)` over a goroutine
+	# dump of tests parked in the fixture that creates their database, and `kit/db` and
+	# `kit/httpx` passed at 575.8s and 570.8s — the whole suite is now bounded by the deadline,
+	# not by its work. Thirty minutes is that worst observation with room for a host doing other
+	# things as well; the hang a bound exists to catch still stops, and no assertion moves.
+	# The three bytes below are one command: scripts/check_architecture_test.sh dry-runs this
+	# goal and compares the line against a byte copy of it, so that copy moves with it.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
