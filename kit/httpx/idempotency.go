@@ -41,8 +41,13 @@ const IdempotencyKeyHeader = "Idempotency-Key"
 const (
 	// maxKeyedBody is the largest body a keyed request may carry. It is
 	// MaxBodyBytes rather than a second number: that is the ceiling every schema'd
-	// body already has, so a keyed write is bounded exactly as an unkeyed one and
-	// this package invents no limit for a caller to trip over.
+	// body already has, so a keyed write of that shape is bounded exactly as an
+	// unkeyed one. It bites on one route only — the one that reads its own request,
+	// which takes Options.MaxUpload of it without a key — and that is the deal the
+	// header is: a promise about a write costs the memory that keeps the promise, and
+	// the alternative to refusing a body this guard cannot digest is running the write
+	// twice on the caller's own account. The document says so wherever the header is
+	// declared (keyDescription).
 	maxKeyedBody = MaxBodyBytes
 
 	// maxRecordedAnswer is the largest answer the memory can hold. Past it the
@@ -127,12 +132,21 @@ func isToken(v string) bool {
 }
 
 // fingerprint is what the request was, digested. Every field here is one a caller
-// can change while believing they retried the same write — the query, the content
-// type, one byte of the body — and a record keyed on the body alone would replay a
-// write aimed at a different address or of a different shape as the same one.
-func fingerprint(method, route, rawQuery, contentType string, body []byte) [sha256.Size]byte {
+// can change while believing they retried the same write — the address, the query,
+// the content type, one byte of the body — and a record keyed on the body alone
+// would replay a write aimed at a different address or of a different shape as the
+// same one.
+//
+// Both the pattern and the path go in, and they answer two different questions.
+// The pattern is what a record is *filed* under (Scope.Route, a bounded set of
+// strings this package can enumerate); the path is which resource behind that
+// pattern the write was aimed at. `PATCH /records/first` and `PATCH /records/second`
+// match one pattern and are two writes, and a memory that could not tell them apart
+// would answer for a resource it never touched — the second caller told their write
+// succeeded while the first one's answer is what came back.
+func fingerprint(method, route, path, rawQuery, contentType string, body []byte) [sha256.Size]byte {
 	h := sha256.New()
-	for _, part := range []string{method, route, rawQuery, contentType} {
+	for _, part := range []string{method, route, path, rawQuery, contentType} {
 		_, _ = h.Write([]byte(part))
 		_, _ = h.Write([]byte{'\n'})
 	}
@@ -146,27 +160,21 @@ func fingerprint(method, route, rawQuery, contentType string, body []byte) [sha2
 //
 // It runs last in the huma chain, after a.bodies, and that place is the point four
 // times over. It reads a body, and a.bodies is where reading a body became safe —
-// the ceiling it applied is the ceiling this guard digests under, rather than a
-// second bound this package would have to invent and keep in step. It needs the
-// caller, whom a.authenticate put on the context and a.authorize has just checked,
-// so a replay re-presents the caller's grants and tenant scope before it answers
-// anything and a caller who has lost the permission since the first attempt is
-// refused by the guard above rather than served a stored answer. It must not sit
-// above a.transaction, which may replace the response with a 500 when the commit
-// fails: a guard above it would remember an answer the buffer then threw away. And
-// the answer it remembers is finalised below it, in respond, which is the one place
+// the ceiling it applied is the reason a read here cannot be a request that never
+// ends, and the keyed ceiling this guard digests under (maxKeyedBody) is the one the
+// document declares, rather than a second bound this package would have to invent and
+// keep in step. It needs the caller, whom a.authenticate put on the context and
+// a.authorize has just checked, so a replay re-presents the caller's grants and tenant
+// scope before it answers anything and a caller who has lost the permission since the
+// first attempt is refused by the guard above rather than served a stored answer. It
+// must not sit above a.transaction, which may replace the response with a 500 when the
+// commit fails: a guard above it would remember an answer the buffer then threw away.
+// And the answer it remembers is finalised below it, in respond, which is the one place
 // that knows what the client was finally given — so what gets written down is the
 // answer, not a draft of one.
 func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	store := a.opts.Idempotency
 	if store == nil || !keyedSurface(ctx.Context()) || !keyedMethod(ctx.Method()) {
-		next(ctx)
-		return
-	}
-	if _, streams := ctx.Operation().Extensions[StreamedBodyExtension]; streams {
-		// The one kind of route that reads its own request: its body is a file,
-		// digesting it would copy a file, and it answers for its own bytes. It gets
-		// no declaration in the document either — see declaresKey.
 		next(ctx)
 		return
 	}
@@ -185,6 +193,11 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	key := strings.Trim(raw, `"`)
 
 	r, _ := humachi.Unwrap(ctx)
+	// Every keyed request, including the one route that reads its own body. Reading
+	// it here is what makes the promise: the digest is the whole of how a retry is
+	// known to be the same write, and a guard that stepped around a class of route
+	// would be a header that lies on that route — the caller sends the promise, the
+	// document declares it, and the write runs twice.
 	body, err := io.ReadAll(io.LimitReader(r.Body, maxKeyedBody+1))
 	if err != nil {
 		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the keyed request body could not be read",
@@ -200,7 +213,19 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	// an exhausted reader: the replacement reaches huma through the same request it
 	// reads a schema'd body from (humachi's BodyReader is this *http.Request's Body),
 	// and a re-read of the same reader is what would make the retry a different body.
+	//
+	// Both requests that may read it are replaced, and they are not always the same
+	// one. Every WithContext between here and the handler copies the request, which
+	// copies the Body *field*: a reader set on one of them is invisible to the others,
+	// and this package keeps two — the one huma decodes a schema'd body from, and the
+	// one a.carry put on the context for the route that reads its own (bodies.go is
+	// written against that one). A guard that replaced only the first would leave a
+	// streamed handler reading the exhausted reader: an empty upload, digested as a
+	// write, remembered as one, and never delivered.
 	r.Body = io.NopCloser(bytes.NewReader(body))
+	if carried, ok := RequestFrom(ctx.Context()); ok && carried != nil && carried != r {
+		carried.Body = io.NopCloser(bytes.NewReader(body))
+	}
 
 	t, _ := tenancy.FromContext(ctx.Context())
 	var caller uuid.UUID
@@ -208,12 +233,13 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 		caller = p.UserID
 	}
 	scope := idempotency.Scope{
-		Tenant:      t.ID,
-		Caller:      caller,
-		Method:      ctx.Method(),
-		Route:       routeOf(ctx),
-		Key:         key,
-		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), r.URL.RawQuery, r.Header.Get("Content-Type"), body),
+		Tenant: t.ID,
+		Caller: caller,
+		Method: ctx.Method(),
+		Route:  routeOf(ctx),
+		Key:    key,
+		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), ctx.URL().Path,
+			r.URL.RawQuery, r.Header.Get("Content-Type"), body),
 	}
 
 	v, err := store.Claim(context.WithoutCancel(ctx.Context()), scope, time.Now().UTC())
@@ -296,6 +322,15 @@ type claimNote struct {
 	store idempotency.Store
 	scope idempotency.Scope
 	claim uuid.UUID
+	// ctx is the context the claim was taken on: the one the store's Connections
+	// found the pool on, because Claim ran below a.transaction, which is where the
+	// connection is put there. The response's own context does not carry it — that
+	// middleware is below this slot — so a completion made on the context the defer
+	// holds is a lookup that answers ErrNoConnection, which is a write that finished
+	// and reports itself in flight forever. Carried beside the claim for that reason,
+	// and read through WithoutCancel rather than kept live: the transaction this
+	// context may cancel is closed by now, and the pool handle in it is not.
+	ctx context.Context
 }
 
 // noteClaim records this attempt on the request's note. It does nothing on a request
@@ -303,7 +338,7 @@ type claimNote struct {
 // shares: nothing was claimed, so there is nothing to land.
 func noteClaim(ctx huma.Context, store idempotency.Store, scope idempotency.Scope, claim uuid.UUID) {
 	if n, ok := ctx.Context().Value(claimKey{}).(*claimNote); ok {
-		n.store, n.scope, n.claim = store, scope, claim
+		n.store, n.scope, n.claim, n.ctx = store, scope, claim, ctx.Context()
 	}
 }
 
@@ -322,17 +357,26 @@ const completeBudget = 2 * time.Second
 //
 // It runs after the response is final, which is the ordering that keeps a recorded
 // 200 from being a committed 500 — the lie buffer.go exists to prevent, pointed the
-// other way. A 5xx is deliberately not written down at all: the claim stays open
-// until its lease runs out, so a caller whose write died in this process's own
-// failure gets a 409 while the kernel cannot say whether the work happened and a
-// fresh attempt once it honestly can, rather than a permanent replay of an outage.
+// other way. Every status the caller was actually given is written down, a 5xx with
+// the rest: the caller who retried a 500 gets the same 500 back rather than a second
+// attempt at a write whose outcome nobody knows, and the answer they were given is a
+// fact this process can still state. What is never written down is an answer that
+// was not given — a panic this deep that reset the buffer, or a response that never
+// reached the caller — and the claim of a request that ended that way stays open
+// until its lease runs out, so the retry is refused 409 while the kernel cannot say
+// whether the work happened and allowed once, honestly, it can.
 //
-// It runs on a detached context, so an answer the client received is not
-// un-remembered by a client that hung up — and the caller who retries is precisely
-// the caller this row is for.
+// It runs on the claim's own context (§ claimNote.ctx), detached, so neither a client
+// that hung up nor the transaction that closed underneath this defer can un-remember
+// an answer the caller received — and the caller who retries is precisely the caller
+// this row is for.
 func (a *API) complete(ctx context.Context, n *claimNote, status int, contentType string, body []byte, held bool) {
 	if n == nil || n.store == nil || n.claim == uuid.Nil {
 		return
+	}
+	now := n.ctx
+	if now == nil {
+		now = ctx
 	}
 	answer := idempotency.Answer{Status: status, ContentType: contentType, Body: body}
 	if !held || len(answer.Body) > maxRecordedAnswer {
@@ -344,7 +388,7 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, contentTyp
 			"method", n.scope.Method, "path", n.scope.Route, "status", status, "bytes", len(body), "held", held)
 		answer = idempotency.Answer{}
 	}
-	detached, cancel := context.WithTimeout(context.WithoutCancel(ctx), completeBudget)
+	detached, cancel := context.WithTimeout(context.WithoutCancel(now), completeBudget)
 	defer cancel()
 	err := n.store.Complete(detached, n.scope, n.claim, answer, time.Now().UTC())
 	if err == nil {
@@ -362,14 +406,19 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, contentTyp
 }
 
 // declaresKey reports whether the document should declare the header on an
-// operation: the verbs a key is promised on, minus the one kind of route that reads
-// its own request (no schema'd body to replay a write of, and no declaration of a
-// header it does not honour), minus the control plane.
+// operation: the verbs a key is promised on, minus the control plane.
 //
 // It is a function of the operation and not of the request, because the document is
-// built once at registration and the guard's predicate is the same three facts — a
+// built once at registration and the guard's predicate is the same two facts — a
 // route the document says nothing about and a route the guard ignores would be the
 // same mistake made twice, in two places that cannot see each other.
+//
+// The route that reads its own request is in, and the reason it is not the exception
+// it used to be is that the guard bounds what it digests at the same ceiling every
+// other keyed write has: a keyed body is at most maxKeyedBody, whatever the route
+// would swallow without a key. A route whose answer is larger than maxRecordedAnswer
+// spends its key rather than replaying it, which the document says once (§
+// keyDescription) instead of leaving a caller to discover on a retry.
 func declaresKey(op *huma.Operation) bool {
 	if op == nil {
 		return false
@@ -378,11 +427,6 @@ func declaresKey(op *huma.Operation) bool {
 	case http.MethodPost, http.MethodPatch:
 	default:
 		return false
-	}
-	if op.Extensions != nil {
-		if _, streams := op.Extensions[StreamedBodyExtension]; streams {
-			return false
-		}
 	}
 	return declaresIdempotencySurface(op)
 }
@@ -397,8 +441,12 @@ func declaresIdempotencySurface(op *huma.Operation) bool {
 }
 
 // keyDescription is what the document says about the header. One string, so the
-// promise the wire keeps and the promise the document makes cannot drift apart.
-const keyDescription = "Replays this write for 24 hours. A retry with byte-identical request and body gets the answer the first attempt was given; the same key with another body is refused 422, and the same key while the first attempt is still running is refused 409. Optional: a write without a key runs as it always did. A UUID is the usual value."
+// promise the wire keeps and the promise the document makes cannot drift apart. The
+// byte ceiling is in it because the header is what makes it bite: a route that reads
+// its own request takes a body this big without one (Options.MaxUpload), and a caller
+// that asks for a promise about a write larger than the promise holds is refused 413
+// rather than run unremembered.
+var keyDescription = "Replays this write for 24 hours. A retry with byte-identical request and body gets the answer the first attempt was given; the same key with another body, path or query is refused 422, and the same key while the first attempt is still running is refused 409. Optional: a write without a key runs as it always did. A keyed body is bounded to " + strconv.Itoa(maxKeyedBody) + " bytes; a larger write is refused 413 rather than made unremembered. A UUID is the usual value."
 
 // declareKey writes the parameter into the operation the document is built from and
 // the middleware reads — the same *huma.Operation, which is the property record

@@ -333,7 +333,7 @@ func TestTheDocumentDeclaresTheHeaderOnWhatTheGuardReplays(t *testing.T) {
 		"declared-patch":  true,  // PATCH is a keyed verb
 		"declared-get":    false, // GET is idempotent already
 		"declared-delete": false, // and so is DELETE, which unsafeMethod would have keyed
-		"declared-stream": false, // it reads its own request and honours no key
+		"declared-stream": true,  // it reads its own request, and a key it ignored would be a promise broken
 		"declared-ops":    false, // the control plane is not a surface the brief keys
 	}
 	seen := 0
@@ -359,10 +359,13 @@ func TestTheDocumentDeclaresTheHeaderOnWhatTheGuardReplays(t *testing.T) {
 }
 
 // TestAPublicWriteSaysItsPolicyBeforeItRunsOut and the refusal after it, which are
-// the two halves of why the fields exist. The policy line is on every answer this
-// limit applies to — it is the field the draft asks a server to keep consistent across
-// a sequence of responses, and it costs no statement to write — and the rate line is
-// on the refusal, where reading the counter is worth one SELECT.
+// the two halves of why the fields exist. Both lines go on every answer this limit
+// applies to: the policy because it names the ceiling a client is walking towards and
+// costs no statement, the rate because the number a client backs off by has to be the
+// one the counter gave for the request it just took. An allowed write that carried no
+// rate line left the client to discover the quota by exceeding it, which is the traffic
+// these two fields exist to prevent — and the line is the counter's own reading of the
+// event it just recorded, not a second look at the row.
 func TestAPublicWriteSaysItsPolicyBeforeItRunsOut(t *testing.T) {
 	_, router, k := keyedSetup(t, idempotency.Memory(nil), &window{allow: 1})
 
@@ -374,8 +377,8 @@ func TestAPublicWriteSaysItsPolicyBeforeItRunsOut(t *testing.T) {
 		!strings.Contains(got, "q=60") || !strings.Contains(got, "w=60") {
 		t.Errorf(`RateLimit-Policy on an allowed write = %q, want the policy named with its quota and window`, got)
 	}
-	if got := first.Header().Get("RateLimit"); got != "" {
-		t.Errorf("an allowed write carries a rate line it did not read: %q", got)
+	if got := first.Header().Get("RateLimit"); !strings.Contains(got, `"public-writes";r=59;t=`) {
+		t.Errorf(`the allowed write's rate line = %q, want the quota the counter said was left and the window it said was left`, got)
 	}
 	if got := first.Header().Get("Retry-After"); got != "" {
 		t.Errorf("an allowed write carries Retry-After: %q", got)

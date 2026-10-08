@@ -52,7 +52,7 @@ func TestBothLimitersAgree(t *testing.T) {
 var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"the limit-th event is allowed and the next is not": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for i := range 3 {
-			ok, retry, err := l.Allow(ctx, "ada", 3, window)
+			ok, _, retry, err := l.Reserve(ctx, "ada", 3, window)
 			if err != nil {
 				t.Fatalf("Allow %d: %v", i+1, err)
 			}
@@ -63,7 +63,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 				t.Errorf("an allowed event asked the caller to wait %s", retry)
 			}
 		}
-		ok, retry, err := l.Allow(ctx, "ada", 3, window)
+		ok, _, retry, err := l.Reserve(ctx, "ada", 3, window)
 		if err != nil {
 			t.Fatalf("Allow: %v", err)
 		}
@@ -78,12 +78,12 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"a closed window starts again": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		const brief = 300 * time.Millisecond
 		for range 2 {
-			if _, _, err := l.Allow(ctx, "ada", 1, brief); err != nil {
+			if _, _, _, err := l.Reserve(ctx, "ada", 1, brief); err != nil {
 				t.Fatalf("Allow: %v", err)
 			}
 		}
 		time.Sleep(2 * brief)
-		ok, _, err := l.Allow(ctx, "ada", 1, brief)
+		ok, _, _, err := l.Reserve(ctx, "ada", 1, brief)
 		if err != nil {
 			t.Fatalf("Allow: %v", err)
 		}
@@ -93,7 +93,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	},
 
 	"Count records nothing": func(t *testing.T, l limit.Limiter, ctx context.Context) {
-		if _, _, err := l.Allow(ctx, "ada", 10, window); err != nil {
+		if _, _, _, err := l.Reserve(ctx, "ada", 10, window); err != nil {
 			t.Fatalf("Allow: %v", err)
 		}
 		for range 5 {
@@ -113,7 +113,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 
 	"Forget drops the key": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for range 3 {
-			if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
+			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
 				t.Fatalf("Allow: %v", err)
 			}
 		}
@@ -128,7 +128,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"two keys and two tenants are four counters": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		globex := tenancy.WithTenant(ctx, tenancy.Tenant{ID: uuid.New(), Slug: "globex"})
 		for range 3 {
-			if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
+			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
 				t.Fatalf("Allow: %v", err)
 			}
 		}
@@ -162,11 +162,11 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 	l := limit.Postgres(httpx.ConnFrom)
 
 	for i, ctx := range []context.Context{first, second, first} {
-		if ok, _, err := l.Allow(ctx, "ada", 3, window); err != nil || !ok {
+		if ok, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil || !ok {
 			t.Fatalf("attempt %d = %v, %v; want allowed", i+1, ok, err)
 		}
 	}
-	ok, retry, err := l.Allow(second, "ada", 3, window)
+	ok, _, retry, err := l.Reserve(second, "ada", 3, window)
 	if err != nil {
 		t.Fatalf("Allow: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 	if err := l.Forget(first, "ada"); err != nil {
 		t.Fatalf("Forget: %v", err)
 	}
-	if ok, _, err := l.Allow(second, "ada", 3, window); err != nil || !ok {
+	if ok, _, _, err := l.Reserve(second, "ada", 3, window); err != nil || !ok {
 		t.Errorf("after the first replica forgot the key, the second = %v, %v", ok, err)
 	}
 }
@@ -191,7 +191,7 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 	l := limit.Postgres(httpx.ConnFrom)
-	if _, _, err := l.Allow(ctx, "ada", 3, window); err != nil {
+	if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
 		t.Fatalf("Allow: %v", err)
 	}
 	if err := limit.Purge(t.Context(), conn); err != nil {
@@ -218,7 +218,7 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 // stopped working.
 func TestAContextWithNoConnectionIsAnError(t *testing.T) {
 	l := limit.Postgres(httpx.ConnFrom)
-	if _, _, err := l.Allow(t.Context(), "ada", 3, window); !errors.Is(err, limit.ErrNoConnection) {
+	if _, _, _, err := l.Reserve(t.Context(), "ada", 3, window); !errors.Is(err, limit.ErrNoConnection) {
 		t.Errorf("Allow with no connection = %v, want ErrNoConnection", err)
 	}
 	if _, _, err := l.Count(t.Context(), "ada", window); !errors.Is(err, limit.ErrNoConnection) {

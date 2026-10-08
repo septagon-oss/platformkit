@@ -70,18 +70,15 @@ type limiterF struct {
 	errF    error
 }
 
-func (l limiterF) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
+// Reserve reports the one event this fake was asked about, together with the quota
+// left under the limit it was given and the window it named: the door states both on
+// the answer its decision produced, so the fake has to answer with them rather than
+// keep a window it is not built to keep.
+func (l limiterF) Reserve(_ context.Context, _ string, limit int, _ time.Duration) (bool, int, time.Duration, error) {
 	if l.errF != nil {
-		return false, 0, l.errF
+		return false, 0, 0, l.errF
 	}
-	return l.allowed, time.Minute, nil
-}
-
-// Count is the read the ask door takes to state the remaining quota on the answer it
-// is about to refuse. This fake is built to answer the second attempt rather than to
-// keep a window, so it reports the one event it was asked about.
-func (l limiterF) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 1, time.Minute, nil
+	return l.allowed, max(limit-1, 0), time.Minute, nil
 }
 
 // askSetup mounts one signed-in door that calls the command, over the same

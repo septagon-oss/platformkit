@@ -288,25 +288,28 @@ type Options struct {
 // the consumer rather than imported from the provider, so that a page renderer that
 // reaches for the router does not inherit a dependency on how the counting is
 // stored. kit/limit's Limiter satisfies it — a Postgres counter or an in-memory one,
-// at the composition's choice — and a test satisfies it with a counter.
+// at the composition's choice — and a test satisfies it with a counter. It is one
+// method wide, and the signature is written out rather than named after kit/limit's
+// own type because this package does not import kit/limit and must not: scripts/
+// check_packages.sh keeps the counter behind the composition, so a screen that wants
+// a limit does not link the table that stores one.
 //
-// Two methods, and the second is here because of what this kernel now says on the
-// wire. `Allow` decides a refusal and reports the window left, which is the whole of
-// `Retry-After` and of `t`; `Count` reads how many events the window holds, which is
-// the whole of `r`. Nothing in this package computes a limit's numbers from a number
-// it kept, so the only honest source for `r` is the counter, and `Count` is the
-// method that reads one without spending it. What this port deliberately does not
-// have is a single `Reserve` returning all three at once: that shape would save the
-// one statement a refusal costs, and to get it kit/limit's published Limiter would
-// have to change, which is a break whose review is scripts/baselines' diff rather
-// than a middleware's choice. Every Limiter still satisfies this port unchanged.
+// One method, and one reading, because this package now says a limit's numbers on
+// the wire. `RateLimit-Policy` is the name, quota and window the guard was built
+// with, and costs no statement. `RateLimit`'s `r` and `t` are the quota left and the
+// window left, and those are facts of the attempt this guard just made: read
+// separately, from a second statement, they describe a row another request has since
+// moved, which is a number the caller has no reason to believe. So the decision and
+// the two numbers come back from the one statement that recorded the event, and this
+// port has one method rather than a decision and a read.
 type WriteLimiter interface {
-	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
-
-	// Count reads the window this guard is enforcing: how many events are in it and
-	// how long it has left. It records nothing, which is what allows a response to be
-	// stated from a counter without the response spending that counter.
-	Count(ctx context.Context, key string, window time.Duration) (n int, retryAfter time.Duration, err error)
+	// Reserve records one event under key and reports, from that one statement,
+	// whether the event is within limit (the limit-th is allowed and the one after it
+	// is not), how much of limit is left in the window it landed in, and how long that
+	// window has left. The last two are reported on an allowed event as well as a
+	// refused one: the caller who is still inside the quota is the one a stated number
+	// can keep from ever arriving at the refusal.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 }
 
 // The two body ceilings, and the reason there are two.

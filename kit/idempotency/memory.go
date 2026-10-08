@@ -23,8 +23,9 @@ import (
 const maxTracked = 10_000
 
 // Memory returns a store that remembers in this process's memory. now is the
-// clock the lease and the retention are measured against, so a test moves it
-// rather than waiting for the window it is watching to close.
+// clock a record is measured against on the calls that name no moment of their
+// own — see clock. It is nil for the store every case here uses, which reads the
+// wall clock like the shared one does.
 func Memory(now func() time.Time) Store {
 	if now == nil {
 		now = time.Now
@@ -54,6 +55,7 @@ func (s Scope) key() string {
 }
 
 func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error) {
+	at = m.clock(at)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune(at)
@@ -77,6 +79,7 @@ func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error
 }
 
 func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error {
+	at = m.clock(at)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cur, found := m.records[s.key()]
@@ -89,6 +92,20 @@ func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer,
 	cur.row.answer = a
 	m.records[s.key()] = cur
 	return nil
+}
+
+// clock is the caller's reading of now, or this store's own when the call named
+// none. The zero time is never kept as a moment: it is a claim older than the
+// retention by the whole of the calendar, so a record written with one would be
+// answered as First by the next attempt and the key's whole promise would last as
+// long as one call. Postgres needs no such guard — a timestamptz column cannot
+// hold the zero time — which is the difference between a map that stores a time
+// and a row that is required to.
+func (m *memory) clock(at time.Time) time.Time {
+	if at.IsZero() {
+		return m.now()
+	}
+	return at
 }
 
 // prune drops what can no longer be replayed, and empties the map if that was not

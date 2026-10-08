@@ -36,17 +36,32 @@ import (
 // so two customers never share a counter and no caller has to remember to say
 // which tenant it is counting in.
 type Limiter interface {
-	// Allow records one event under key and reports whether the window is
-	// still within limit: the limit-th event is allowed and the one after it is
-	// not. retryAfter is what is left of the window, and it is zero when the
-	// answer is yes.
-	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
+	// Reserve records one event under key and reports, from the one statement that
+	// recorded it, the three numbers that statement knows: whether the window is
+	// still within limit — the limit-th event is allowed and the one after it is not
+	// — how much of limit is left in the window the event landed in, and how long
+	// that window has left.
+	//
+	// One statement, and one reading, because the three answers are one fact about
+	// one row. A caller that asks the row twice gets two windows: the event it
+	// recorded and the count it read a moment later are not the same attempt, and a
+	// server that states a quota it did not decide on states a number the caller has
+	// no reason to believe. Before this method existed the decision and the reading
+	// were separate calls, and the refusal the wire carried named a quota the counter
+	// had already moved past.
+	//
+	// remaining is clamped at zero, and retryAfter is what is left of the window
+	// whichever way the answer went — the caller who was allowed is the one the
+	// number is most useful to, because it is the only moment they can back off
+	// before the refusal rather than after it.
+	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 
 	// Count reports how many events key has in the window that is open now, and
 	// how long that window has left. It records nothing, because a limit with
 	// three answers rather than two — allow, delay, refuse — has to be read
 	// before the attempt it is about, and a read that counted would make every
-	// successful sign-in an attempt against the lockout.
+	// successful sign-in an attempt against the lockout. It is not the way a
+	// response states itself: that is Reserve, which reads the row it wrote.
 	Count(ctx context.Context, key string, window time.Duration) (n int, retryAfter time.Duration, err error)
 
 	// Forget drops a key: the caller has been proved right about whoever they
@@ -108,11 +123,12 @@ type postgres struct {
 	app   appname.Name
 }
 
-func (p postgres) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, time.Duration, error) {
+func (p postgres) Reserve(ctx context.Context, key string, limit int, window time.Duration) (bool, int, time.Duration, error) {
 	// One statement: the row is inserted, or the open window's count is raised,
 	// or a window that has closed is started again — and the count that comes
 	// back is the one this event landed in. Two statements would be two
-	// replicas reading the same number and writing it back.
+	// replicas reading the same number and writing it back, and would be two
+	// answers about one attempt.
 	const q = `INSERT INTO ` + table + ` (key, window_start, count) VALUES (?, now(), 1)
 		ON CONFLICT (key) DO UPDATE SET
 			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.count + 1 ELSE 1 END,
@@ -120,12 +136,18 @@ func (p postgres) Allow(ctx context.Context, key string, limit int, window time.
 		RETURNING count, extract(epoch FROM (window_start + ?::interval - now()))`
 	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
 	if err != nil {
-		return false, 0, err
+		return false, 0, 0, err
 	}
-	if n <= limit {
-		return true, 0, nil
-	}
-	return false, left, nil
+	allowed, remaining, left := decided(limit, n, left)
+	return allowed, remaining, left, nil
+}
+
+// decided is the arithmetic of one reading, shared by both stores so the counter
+// in a map and the counter in a row cannot disagree about what the same count
+// under the same quota means. `left` is the window's own clock: it may have closed
+// while the statement ran.
+func decided(quota, count int, left time.Duration) (allowed bool, remaining int, retryAfter time.Duration) {
+	return count <= quota, max(quota-count, 0), max(left, 0)
 }
 
 func (p postgres) Count(ctx context.Context, key string, window time.Duration) (int, time.Duration, error) {

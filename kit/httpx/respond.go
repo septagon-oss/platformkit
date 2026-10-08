@@ -34,12 +34,11 @@ func (a *API) respond(next http.Handler) http.Handler {
 		r = r.WithContext(context.WithValue(r.Context(), answerNoteKey{}, note))
 		// The keyed write's own slot, held for the same reason and beside the same
 		// buffer: the guard that takes the claim runs below here and holds a
-		// huma.Context, so the claim it took travels outward to the one defer that
-		// knows what the client was finally given.
-		r = r.WithContext(withClaim(r.Context()))
-		// The keyed write's own slot, beside the buffer it shares a lifetime with:
-		// the guard that takes the claim runs below here and holds a huma context, so
-		// the claim travels outward the same way the resolved tenant does.
+		// huma.Context, so the claim it took — and with it the context the store read
+		// its connection from — travels outward to the one defer that knows what the
+		// client was finally given. Exactly one slot per request, because the guard
+		// fills the value this function's defer reads: a second install would leave one
+		// slot filled and another, read, empty.
 		r = r.WithContext(withClaim(r.Context()))
 		defer func() {
 			if v := recover(); v != nil {

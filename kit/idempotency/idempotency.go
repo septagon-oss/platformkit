@@ -125,9 +125,14 @@ const (
 	// the whole retention. No caller can set it.
 	lease = 5 * time.Minute
 
-	// retention is how long a record lives, from its claim (the brief's day).
-	// Purge is the only thing that enforces it, so the table is bounded by one
-	// day of keyed writes and nothing on the hot path pays for that.
+	// retention is how long a record lives, from its claim (the brief's day). The
+	// purge is the only thing that deletes, so the table is bounded by one day of
+	// keyed writes and nothing on the hot path pays for that. The hot path does
+	// enforce it for the one key it is standing on: a claim that finds a record past
+	// the retention takes it (postgres.Claim's takeover, and memory.Claim through the
+	// same decide) rather than handing its caller the answer of a write it has
+	// stopped remembering — which is what makes the day a promise rather than the
+	// schedule of whatever job happens to run it.
 	retention = 24 * time.Hour
 )
 
@@ -201,16 +206,34 @@ func (p postgres) Claim(ctx context.Context, s Scope, at time.Time) (Verdict, er
 	if v.Kind != First || !found {
 		return v, nil
 	}
-	// The inherited claim: a claim older than the lease is an abandoned one, and
-	// taking it is one conditional statement rather than a read and a write, so
-	// two simultaneous retries of one abandoned claim cannot both take it. The
-	// loser gets InFlight and the row it did not write.
+	// decide has just said First about a row that exists, which leaves exactly two
+	// reasons it can say that: the claim is older than its lease, so whoever held it
+	// has stopped being able to answer for it, or the record is older than the
+	// retention, so the memory it holds is one this package no longer owes anybody.
+	// Taking it is one conditional statement rather than a read and a write, so two
+	// simultaneous attempts cannot both take it; the loser gets InFlight and the row
+	// it did not write.
+	//
+	// The two conditions are the two comparisons decide made, restated in SQL rather
+	// than read back into Go and acted on — and both are needed. A takeover that
+	// could touch only an unfinished row would leave a caller whose key aged out
+	// told that a write which finished a day ago is still in flight, until the
+	// hourly purge happened to run; `retention` is a day and the purge is what the
+	// brief calls a schedule, not a guarantee.
+	//
+	// The SET list clears the answer along with the claim, because the row that comes
+	// back out of this statement is a new write's record: a stale fingerprint behind a
+	// new claim would make the next attempt of the caller's own write a conflict, and
+	// a stale answer behind a new claim would be replayed as this one's.
 	taken = false
 	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		res := tx.DB().Exec(`UPDATE `+table+` SET claim = ?, claimed_at = ?
+		res := tx.DB().Exec(`UPDATE `+table+` SET claim = ?, claimed_at = ?, fingerprint = ?,
+				completed_at = NULL, recorded = FALSE, status = NULL, content_type = NULL, body = NULL
 			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
-			  AND completed_at IS NULL AND claimed_at < ?`,
-			claim, at, s.Tenant, s.Caller, s.Method, s.Route, s.Key, at.Add(-lease))
+			  AND (claimed_at <= ? OR (completed_at IS NULL AND claimed_at <= ?))`,
+			claim, at, s.Fingerprint[:],
+			s.Tenant, s.Caller, s.Method, s.Route, s.Key,
+			at.Add(-retention), at.Add(-lease))
 		if res.Error != nil {
 			return res.Error
 		}

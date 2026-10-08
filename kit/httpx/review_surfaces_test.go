@@ -331,12 +331,9 @@ func TestAStaticTreeIsNeverMountedOutsideTheChainOfTheSurfaceItWasGiven(t *testi
 // nothing else about it.
 type countedWrites struct{ keys []string }
 
-func (c *countedWrites) Allow(_ context.Context, key string, _ int, _ time.Duration) (bool, time.Duration, error) {
+func (c *countedWrites) Reserve(_ context.Context, key string, limit int, window time.Duration) (bool, int, time.Duration, error) {
 	c.keys = append(c.keys, key)
-	return true, 0, nil
-}
-func (c *countedWrites) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 0, 0, nil
+	return true, max(limit-1, 0), window, nil
 }
 func (c *countedWrites) Forget(context.Context, string) error { return nil }
 

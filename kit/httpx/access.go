@@ -249,6 +249,10 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 	// worker — gets the same verdict and no fields, because there is no answer here to
 	// state them on.
 	b, held := bufferFrom(ctx)
+	// What each spent counter reported, in the order it was spent, for the rate line
+	// at the end: both counters are decided by their own statement and neither number
+	// is read back out of a row that has had other writers since.
+	var spent []measured
 	if held {
 		// The policy line before any verdict it describes: it names every counter this
 		// door spends, in the order it spends them, so a client can tell which limit it
@@ -264,26 +268,30 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 		{askPermissionKey + "/" + id + "/" + permission, askPerPermission, limitPolicy{askPerPermissionPolicy, askPerPermission, askWindow}},
 		{askPermissionKey + "/" + id, askPerPerson, limitPolicy{askPerPersonPolicy, askPerPerson, askWindow}},
 	} {
-		ok, after, err := d.limiter.Allow(meter, c.key, c.limit, askWindow)
+		allowed, remaining, after, err := d.limiter.Reserve(meter, c.key, c.limit, askWindow)
 		if err != nil {
 			// An outage is never an allowance here: see the note above.
 			return problem.New(http.StatusServiceUnavailable, "access requests cannot be counted right now")
 		}
-		if !ok {
+		if !allowed {
 			if held {
-				// The rate line is the one field that costs a reading, so it is taken here,
-				// after the refusal it reports, and Count is the read that records nothing —
-				// the row Allow has just written, not a second event against it. A refusal
-				// whose reading failed keeps the policy and the wait and says no quota, which
-				// is the field a caller is least entitled to have guessed for them.
-				if seen, _, err := d.limiter.Count(meter, c.key, askWindow); err == nil {
-					b.Header().Set(RateLimitHeader, answerField(measured{
-						policy: c.policy, remaining: c.limit - seen, left: after}))
-				}
+				// The rate line names only the counter that refused: the other is still
+				// inside its quota and its number belongs to an answer this ask did not get.
+				b.Header().Set(RateLimitHeader, answerField(measured{
+					policy: c.policy, remaining: remaining, left: after}))
 				b.Header().Set(RetryAfterHeader, secondsUp(after, 1))
 			}
 			return tooMany(after)
 		}
+		// An allowed ask says its limit too: the policy line above named the ceiling,
+		// and this is the number under it, from the same statement that spent the event.
+		// Both counters are named because both were spent, and the order is the order
+		// the policies are named in — a reader matching one line to the other should not
+		// have to work out which is which.
+		spent = append(spent, measured{policy: c.policy, remaining: remaining, left: after})
+	}
+	if held && len(spent) > 0 {
+		b.Header().Set(RateLimitHeader, answerField(spent...))
 	}
 	return nil
 }

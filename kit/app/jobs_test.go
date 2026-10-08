@@ -39,7 +39,7 @@ func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 	count := func(name string) {
 		t.Helper()
 		ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), tenancy.Tenant{ID: uuid.New(), Slug: name}), conn)
-		if _, _, err := limit.Postgres(httpx.ConnFrom).Allow(ctx, name, 3, time.Minute); err != nil {
+		if _, _, _, err := limit.Postgres(httpx.ConnFrom).Reserve(ctx, name, 3, time.Minute); err != nil {
 			t.Fatalf("count a %s window: %v", name, err)
 		}
 	}

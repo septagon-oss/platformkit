@@ -188,23 +188,29 @@ gate](httpx.go) and never has to buffer a request to fingerprint it.
 
 It is declared on the operation, through [the table](surfaces.go), so the document and
 the guard cannot say two things — the same reason `x-platformkit-surface` and
-`x-platformkit-streams-body` are in that table. The exceptions are in one sentence each:
-`kit/rest`'s streamed uploads are skipped, because that adapter reads the request from
-the `Request` field and would read a body the guard already consumed, and honouring a
-key there would mean a 400 for a header the client legitimately sent; the control
+`x-platformkit-streams-body` are in that table. The one exception is in one sentence: the control
 plane's writes are skipped, because this task's brief keys the app and public surfaces
-and leaves the operator console's to the product. The claim is taken before the
+and leaves the operator console's to the product. The route that reads its own request
+— `kit/rest`'s streamed upload — is *not* an exception, and the reason it is not is that
+a key the guard ignored was a promise the document made and the wire broke: that body is
+digested under the same ceiling every keyed write has (`MaxBodyBytes`, said in the
+declaration), and the reader is replaced on both requests a handler may read it from —
+the one huma decodes a schema'd body from and the one `carry` put on the context for the
+route that reads its own. A keyed upload past that ceiling is refused 413 rather than run
+unremembered. The claim is taken before the
 handler runs, never after; the answer is recorded by the [one writer](respond.go) that
 writes a status code, and only when the response is final — not a 1xx, not a refused
 upgrade, not a response no writer claimed because the request was already over. A
 handler that wrote half a body and panicked leaves no record, so its caller retries
 and gets the 500 again rather than a 201 that was never earned.
 
-**The fields.** A limited write answers with `RateLimit-Policy` on every reply — the
-field the draft asks to stay consistent across a sequence of responses, and the one
-that costs no statement to write, because it names the quota and window the guard was
-built with. The `RateLimit` line is on the refusal, where reading the counter is worth
-one more statement, and it carries `r` and `t` as the counter reported them. The window
+**The fields.** A limited write answers with both fields, on the reply that was allowed
+as much as the one that was refused: `RateLimit-Policy` is the field the draft asks to
+stay consistent across a sequence of responses, and it costs no statement to write,
+because it names the quota and window the guard was built with, and `RateLimit` carries
+`r` and `t` as the counter reported them — for an allowed reply too, because a client
+that hears the quota only when it is refused has already spent the traffic the field
+exists to save. Both numbers come from the one statement that recorded the event. The window
 that was refused also answers with `Retry-After`, so a client that only understands RFC
 9110 still knows how long to wait. The policy is `public-writes`, one named constant
 beside the window and the quota it describes — which were two literals in
@@ -214,17 +220,17 @@ one sentence that quotes `60` three times is the only place they could ever have
 What this delivery does *not* do is let a module name a policy of its own per route: a
 route has no way to say so today, so the kernel applies the one anonymous-write policy
 it has always applied and calls it by name — a second policy is a change to
-`WriteLimiter`, not a second string. `WriteLimiter` did grow one method, `Count`,
-because `r` is a number the counter holds and no other honest source is available:
-`kit/limit`'s `Limiter` satisfies the wider port unchanged, and the alternative — one
-`Reserve` returning the decision, the quota left and the window left together — is a
-change to an interface published at v1.1.0, whose review is the baseline diff under
-scripts/baselines and not a middleware's decision in passing.
+`WriteLimiter`, not a second string. The port is one method wide, `Reserve`, which
+answers the decision, the quota left and the window left from a single statement; it
+replaced `Allow`+`Count` rather than sitting beside them, because two calls are two
+readings of a row that had other writers between them. That widens `kit/limit`'s
+published `Limiter` the same way — one method, same SQL, one more answer — and the break
+is a deliberate one, recorded in the re-recorded baseline under scripts/baselines.
 
 | Field | Carried on | Says |
 | --- | --- | --- |
 | `RateLimit-Policy` | every reply the limit applies to | the quota, the window, per policy |
-| `RateLimit` | the reply the limit refused | the quota left and the window left, per policy |
+| `RateLimit` | every reply the limit applies to | the quota left and the window left, per policy |
 | `Retry-After` | every 429 | how long to wait, in seconds |
 
 The counter's key is unchanged: tenant slug, method, the mounted route and
@@ -254,14 +260,15 @@ which is not there is a refusal rather than an allowance; the purge rides `kit/j
 beside the limit sweep it belongs to; and `ClientAddr`, `WriteLimiter`, the body limit,
 `problem`'s document,
 `Public()` auth and `api.Recorded()` (the same list the catalogue walks) all appear here
-in the shape they were written in. `kit/limit` is unchanged: the fields are stated from
-the two readings it already publishes. **Added:** `Options.Idempotency` and the
+in the shape they were written in. **Added:** `Options.Idempotency` and the
 `idempotency` middleware — nothing keyed a write before, because the kernel answered a
 second POST as a first; `limitPolicy`, the record that carries the quota, the window and
 the name a caller reads, so the two fields cannot drift from the counter; and
 `isOpsPath`, which the request-time chain and the declaration table now read together.
-**Made reusable:** `decide` in `kit/idempotency`, the verdict table the memory answers
-from and the Postgres store's cases drive, so one suite holds both implementations; and
+**Reused internally:** the verdict table behind `kit/idempotency`'s unexported `decide`,
+which both the in-memory store and the Postgres store answer from, so one suite holds
+both implementations — internal reuse inside that package, not a unit anybody imports, and
+the same is true of `limitPolicy`'s encoder above; and
 the `publicWrite*` constants, which name the limit that used to be two literals at its
 one call site.
 

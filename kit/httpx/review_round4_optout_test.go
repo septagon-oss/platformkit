@@ -50,14 +50,11 @@ func (f *decliningFault) render(http.ResponseWriter, *http.Request, *problem.Pro
 
 type noHeadroom struct{}
 
-func (noHeadroom) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
-	return false, 30 * time.Second, nil
-}
-
-// Count belongs to the port beside Allow: the door states the quota left on the
-// refusal it decides, and reads it from the counter rather than from a number it kept.
-func (noHeadroom) Count(context.Context, string, time.Duration) (int, time.Duration, error) {
-	return 1, 30 * time.Second, nil
+// Reserve says there is no headroom, with the quota the counter that says so reports:
+// zero, which is the number the refusal states because it is the number the refusal
+// was decided on.
+func (noHeadroom) Reserve(_ context.Context, _ string, _ int, _ time.Duration) (bool, int, time.Duration, error) {
+	return false, 0, 30 * time.Second, nil
 }
 
 // declineKernel composes one application: a guarded workspace door, a door that needs only

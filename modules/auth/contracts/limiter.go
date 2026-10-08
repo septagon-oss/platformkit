@@ -243,7 +243,7 @@ func (l *Limiter) Requested(ctx context.Context, ip string) bool {
 // one. Unlike login's availability policy, a failed mail limiter fails closed.
 func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, error) {
 	key := "auth/verification-mail/" + emailHash(email)
-	allowed, _, err := l.store.Allow(ctx, key, 1, VerificationResendInterval)
+	allowed, _, _, err := l.store.Reserve(ctx, key, 1, VerificationResendInterval)
 	return allowed, err
 }
 
@@ -280,9 +280,11 @@ func (l *Limiter) count(ctx context.Context, key string) int {
 	return n
 }
 
-// within records one event and reports whether the key is still inside max.
+// within records one event and reports whether the key is still inside max. The
+// quota the statement also reports is dropped here: this module states no limit on
+// the wire, and a number nothing reads is a number nothing keeps honest.
 func (l *Limiter) within(ctx context.Context, key string, max int) bool {
-	ok, _, err := l.store.Allow(ctx, key, max, AttemptWindow)
+	ok, _, _, err := l.store.Reserve(ctx, key, max, AttemptWindow)
 	if err != nil {
 		slog.ErrorContext(ctx, "auth: the limiter could not be written; the attempt is allowed", "key", key, "error", err)
 		return true

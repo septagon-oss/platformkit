@@ -61,37 +61,34 @@ func (a *API) publicWrites(ctx huma.Context, next func(huma.Context)) {
 	// types into a public address.
 	t, _ := tenancy.FromContext(ctx.Context())
 	key := publicWriteKey + " " + t.Slug + " " + ctx.Method() + " " + routeOf(ctx) + " " + ClientAddr(r)
-	ok, retryAfter, err := a.opts.WriteLimiter.Allow(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
+	allowed, remaining, retryAfter, err := a.opts.WriteLimiter.Reserve(context.WithoutCancel(ctx.Context()), key, publicWriteLimit, publicWriteWindow)
 	if err != nil {
 		a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the public write limit could not be read; proceeding",
 			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
 		next(ctx)
 		return
 	}
-	// The policy goes on every answer this limit applies to and not only the refusal:
-	// the whole point of stating a quota on the wire is that a client backs off before
-	// it runs out rather than after, and a client that only hears the number when it is
-	// refused has already spent the traffic the header exists to save. Naming the policy
-	// costs no statement — it is the name, quota and window this guard was built with —
-	// so it is here, on the 2xx as well as the 429.
+	// Both fields go on every answer this limit applies to and not only the refusal:
+	// the whole point of stating a limit on the wire is that a client backs off before
+	// it runs out rather than after, and a client that only hears the number when it
+	// is refused has already spent the traffic the header exists to save.
+	//
+	// The policy line costs no statement — it is the name, quota and window this guard
+	// was built with. The rate line is what the counter itself reported, and it is the
+	// same reading that decided this answer: Reserve records the event and returns the
+	// quota left and the window left from that one statement, so the number a caller
+	// is given is the number that was true of their own attempt rather than one taken
+	// from the row after another request had moved it. That is the whole of why this
+	// port has one method: a `Count` after the decision is a second look at a row that
+	// has had other writers since, and a limit stated from it is a guess.
 	sayPolicy(ctx, publicWritePolicy)
-	if ok {
+	sayAnswer(ctx, measured{policy: publicWritePolicy, remaining: remaining, left: retryAfter})
+	if allowed {
 		next(ctx)
 		return
 	}
-	// The rate line needs a reading of the counter, so it is taken on the refusal,
-	// after the refusal it describes. Count records nothing — that is what it is for —
-	// so this is a read of the row Allow just wrote and not a second event against it;
-	// and if it fails the answer keeps the policy and the wait and loses only the
-	// remaining quota, which is the field a caller is least entitled to a guess about.
 	a.rlog(ctx.Context()).InfoContext(ctx.Context(), "httpx: public write refused by the limit",
 		"method", ctx.Method(), "path", ctx.URL().Path, "tenant", t.Slug)
-	if seen, _, err := a.opts.WriteLimiter.Count(context.WithoutCancel(ctx.Context()), key, publicWriteWindow); err == nil {
-		sayAnswer(ctx, measured{policy: publicWritePolicy, remaining: publicWriteLimit - seen, left: retryAfter})
-	} else {
-		a.rlog(ctx.Context()).WarnContext(ctx.Context(), "httpx: the refused write's remaining quota could not be read",
-			"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
-	}
 	sayRetryAfter(ctx, retryAfter)
 	a.refuse(ctx, http.StatusTooManyRequests, CodeLimitExhausted+": too many anonymous submissions from this address")
 }

@@ -30,7 +30,7 @@ type window struct {
 	start time.Time
 }
 
-func (m *memory) Allow(ctx context.Context, key string, limit int, w time.Duration) (bool, time.Duration, error) {
+func (m *memory) Reserve(ctx context.Context, key string, limit int, w time.Duration) (bool, int, time.Duration, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.prune()
@@ -42,10 +42,8 @@ func (m *memory) Allow(ctx context.Context, key string, limit int, w time.Durati
 	}
 	cur.count++
 	m.windows[k] = cur
-	if cur.count <= limit {
-		return true, 0, nil
-	}
-	return false, cur.start.Add(w).Sub(now), nil
+	allowed, remaining, left := decided(limit, cur.count, cur.start.Add(w).Sub(now))
+	return allowed, remaining, left, nil
 }
 
 func (m *memory) Count(ctx context.Context, key string, w time.Duration) (int, time.Duration, error) {
