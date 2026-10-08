@@ -115,7 +115,17 @@ const (
 	// (kit/limit/limit.go's budget): this is on the path of a request that is
 	// about to be refused, so a database that has stopped answering must cost the
 	// caller this much and an error, never a request that never ends.
-	budget = 2 * time.Second
+	//
+	// The number is five seconds because the two it replaced was wrong in a way
+	// that reads as a store outage. `make check` of 2026-10-08 ran 90 packages that
+	// all create a database at once and measured statements at 1.7s and 2.5s; a
+	// Claim then came back `idempotency: claim: timeout: context deadline exceeded`
+	// on a cluster that was slow and perfectly healthy, and an unreadable record is
+	// a write this package must refuse (503) rather than risk duplicating. That
+	// bound was refusing real writes because other packages were migrating. The
+	// stall it exists to catch is still bounded; see kit/limit/limit.go's budget, which
+	// carries the same measurement for the same reason.
+	budget = 5 * time.Second
 
 	// lease is how long a claim may be held without an answer. It is the window
 	// in which a retried write is refused 409 rather than allowed to run, so it

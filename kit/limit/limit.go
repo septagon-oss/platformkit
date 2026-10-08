@@ -77,7 +77,16 @@ const (
 	// request that is about to be refused and must never be the thing that
 	// holds one open: a database that has stopped answering costs the caller
 	// this much and then an error it can fail open on.
-	budget = 2 * time.Second
+	//
+	// Five seconds is a measurement, not a round number. The two-second bound read
+	// a shared cluster that was merely slow as one that had stopped: the suite's
+	// own `make check` of 2026-10-08 caught statements taking 1.7s and 2.5s while
+	// its packages were creating databases at once, and `Reserve` answered that
+	// ordinary slowness with `limit: timeout: context deadline exceeded`, which is
+	// the counter's own outage reported as a request. What the bound is for still
+	// holds — a database that has stopped answering costs the caller this and then
+	// the fail-open answer — and nothing on this path is unbounded.
+	budget = 5 * time.Second
 
 	// keep is how long a row outlives its window before Purge deletes it. A
 	// day is far longer than any window a caller here uses and short enough

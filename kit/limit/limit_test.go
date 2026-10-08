@@ -89,13 +89,13 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 		const brief = 300 * time.Millisecond
 		for range 2 {
 			if _, _, _, err := l.Reserve(ctx, "ada", 1, brief); err != nil {
-				t.Fatalf("Allow: %v", err)
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		time.Sleep(2 * brief)
 		ok, _, _, err := l.Reserve(ctx, "ada", 1, brief)
 		if err != nil {
-			t.Fatalf("Allow: %v", err)
+			t.Fatalf("Reserve: %v", err)
 		}
 		if !ok {
 			t.Error("the window never closed; a limit that only ever accumulates is a lockout")
@@ -104,7 +104,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 
 	"Count records nothing": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		if _, _, _, err := l.Reserve(ctx, "ada", 10, window); err != nil {
-			t.Fatalf("Allow: %v", err)
+			t.Fatalf("Reserve: %v", err)
 		}
 		for range 5 {
 			n, _, err := l.Count(ctx, "ada", window)
@@ -124,7 +124,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 	"Forget drops the key": func(t *testing.T, l limit.Limiter, ctx context.Context) {
 		for range 3 {
 			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
-				t.Fatalf("Allow: %v", err)
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		if err := l.Forget(ctx, "ada"); err != nil {
@@ -139,7 +139,7 @@ var cases = map[string]func(*testing.T, limit.Limiter, context.Context){
 		globex := tenancy.WithTenant(ctx, tenancy.Tenant{ID: uuid.New(), Slug: "globex"})
 		for range 3 {
 			if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
-				t.Fatalf("Allow: %v", err)
+				t.Fatalf("Reserve: %v", err)
 			}
 		}
 		for _, tt := range []struct {
@@ -178,7 +178,7 @@ func TestTwoReplicasShareOneLimit(t *testing.T) {
 	}
 	ok, _, retry, err := l.Reserve(second, "ada", 3, window)
 	if err != nil {
-		t.Fatalf("Allow: %v", err)
+		t.Fatalf("Reserve: %v", err)
 	}
 	if ok {
 		t.Error("the second replica had a limit of its own, which is three limits on three pods")
@@ -202,7 +202,7 @@ func TestPurgeDropsWindowsThatClosedLongAgo(t *testing.T) {
 	ctx := httpx.WithConn(tenancy.WithTenant(t.Context(), acme), conn)
 	l := limit.Postgres(httpx.ConnFrom)
 	if _, _, _, err := l.Reserve(ctx, "ada", 3, window); err != nil {
-		t.Fatalf("Allow: %v", err)
+		t.Fatalf("Reserve: %v", err)
 	}
 	if err := limit.Purge(t.Context(), conn); err != nil {
 		t.Fatalf("Purge: %v", err)

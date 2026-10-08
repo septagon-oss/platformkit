@@ -350,8 +350,14 @@ func withClaim(ctx context.Context) context.Context {
 
 // completeBudget bounds the write-down, from kit/limit's budget for the same reason:
 // it runs beside an answer already given, and a stalled database must cost the log
-// line rather than a response that never finishes.
-const completeBudget = 2 * time.Second
+// line rather than a response that never finishes. It is five seconds for the reason
+// kit/limit and kit/idempotency give — the shared development cluster measured 1.7s
+// and 2.5s for a single statement while its packages were all creating databases at
+// once — and here the cost of getting it wrong is worse than a log line: a Complete
+// that times out leaves the record claimed and its answer unkept, so the caller who
+// retried was refused 409 for a write that had finished. Nothing on the wire waits
+// for this, so the bound protects a connection and a worker, not a response.
+const completeBudget = 5 * time.Second
 
 // complete writes down the answer this request finally gave.
 //
