@@ -154,7 +154,10 @@ func setup(t *testing.T) (*httpx.API, *chi.Mux, *fixture) {
 	return setupWith(t, false)
 }
 
-func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
+// setupWith builds the fixture's API. jsonMediaTypes, when a test names any, go
+// to Options.JSONMediaTypes, which is where a composition says that a protocol's
+// own media type is JSON — see kit/httpx/protocol_test.go.
+func setupWith(t *testing.T, docs bool, jsonMediaTypes ...string) (*httpx.API, *chi.Mux, *fixture) {
 	t.Helper()
 	admin, app := dbtest.Schema(t)
 	f := &fixture{
@@ -173,16 +176,17 @@ func setupWith(t *testing.T, docs bool) (*httpx.API, *chi.Mux, *fixture) {
 		// The installation is reached at the same host as the tenant, so a probe mounted on
 		// the control plane answers here. TestTheControlPlaneIsNotFoundAtATenantHost is
 		// where the gate itself is tested.
-		Installation: host,
-		PublicHost:   host,
-		Docs:         docs,
-		Tenants:      f,
-		Conn:         app,
-		Authorize:    f,
-		Entitle:      f,
-		Authenticate: f.authenticate,
-		Log:          slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		Denied:       func(_ context.Context, d httpx.Denial) { f.denials = append(f.denials, d) },
+		Installation:   host,
+		PublicHost:     host,
+		Docs:           docs,
+		Tenants:        f,
+		Conn:           app,
+		Authorize:      f,
+		Entitle:        f,
+		Authenticate:   f.authenticate,
+		JSONMediaTypes: jsonMediaTypes,
+		Log:            slog.New(slog.NewTextHandler(f.logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		Denied:         func(_ context.Context, d httpx.Denial) { f.denials = append(f.denials, d) },
 	})
 	return api, router, f
 }

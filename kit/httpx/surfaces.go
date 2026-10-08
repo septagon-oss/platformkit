@@ -201,6 +201,9 @@ type Router struct {
 	// atRoot says this router came from Home and therefore mounts at the
 	// surface's own root rather than beneath the module's segment.
 	atRoot bool
+	// at is a declared protocol address (see At): the whole prefix, so a route
+	// mounted here composes <at>/… and takes no part of the surface table.
+	at string
 }
 
 // Surface is which of the three this router is.
@@ -447,6 +450,11 @@ func (r *Router) InvalidateHost(hosts ...string) error { return r.api.Invalidate
 // HTML at the door (R6), which is why the table has a hole in it rather than a
 // fourth guess.
 func (r *Router) jsonPrefix() string {
+	// A declared address is the whole prefix: the table composes nothing onto
+	// it, which is the point — the protocol named this address, not the table.
+	if r.at != "" {
+		return r.at
+	}
 	// A router with no module name is the composition's own, and the
 	// composition's namespace is the surface's segment: /api/v1/app, the
 	// address the workspace catalog answers at. A module never gets one of
@@ -543,6 +551,11 @@ func (r *Router) relFault(rel string) string {
 	if r.module != "" && !r.atRoot {
 		prefixes = append(prefixes, "/"+r.module)
 	}
+	// A declared protocol address is a prefix of the same kind: a route that
+	// reaches it by writing it out relative to some other router would answer at
+	// two addresses, and the gate that refuses a doubled /api/v1/api/v1 refuses
+	// a doubled /scim/v2/scim/v2 for the same reason.
+	prefixes = append(prefixes, r.api.declaredPrefixes()...)
 	for _, taken := range prefixes {
 		if rel == taken || strings.HasPrefix(rel, taken+"/") {
 			want := "/" + strings.TrimPrefix(strings.TrimPrefix(rel, taken), "/")
@@ -606,7 +619,7 @@ type surfaceKey struct{}
 // is where it is spent.
 func (a *API) surface(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		s := classify(r.URL.Path)
+		s := a.surfaceOf(r.URL.Path)
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), surfaceKey{}, s)))
 	})
 }
@@ -851,6 +864,7 @@ func accepted(s Surface, auth Auth) (ok bool, why string) {
 func (a *API) validateSurfaces() []string {
 	a.mu.Lock()
 	mounts, refusals, homes := append([]mounted(nil), a.mounts...), append([]string(nil), a.refusals...), a.homes
+	a.frozen = true
 	a.mu.Unlock()
 
 	out := append([]string(nil), refusals...)
@@ -866,7 +880,7 @@ func (a *API) validateSurfaces() []string {
 		if m.page && m.surface == SurfaceOps {
 			out = append(out, "httpx: "+where+" is a page on the Ops router; the control plane is a JSON surface — the operator's chrome is the workspace at the installation host, so mount it on the App router")
 		}
-		if got := classify(m.path); got != m.surface {
+		if got := a.surfaceOf(m.path); got != m.surface {
 			out = append(out, fmt.Sprintf("httpx: %s takes %s from the %s router and classifies as %s; a route's address and its chain must agree — mount it on the %s router",
 				where, m.path, m.surface, got, got))
 		}
