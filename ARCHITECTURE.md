@@ -461,9 +461,13 @@ answer in a language this tenant refused. The declaration is a row
 rule, and the comment above that function says why each source sits where it does
 (`apps/platformkit/catalog.go:22-38`). Owner modules ship their own
 `messages/<tag>.json`; `modules/notification` deliberately ships none, because its
-words belong to the module that raised the notice. A request for a language its
-tenant never declared is refused, and the fix is to declare it —
-`scripts/e2e.sh:119-125` shows bootstrap's `--language` doing exactly that.
+words belong to the module that raised the notice. A reader who asks in a language
+its tenant never declared is not served in that language and is not refused for
+asking: the preferences the tenant does not serve are dropped and the tenant's own
+default answers (`ui/page/locale.go:104-113`, the case at
+`ui/page/tenant_locale_test.go:131-140`). Being served in the caller's language is
+the tenant's declaration to make — `scripts/e2e.sh:119-125` shows bootstrap's
+`--language` doing exactly that.
 
 ### Change control: modules/change
 
@@ -479,10 +483,22 @@ its only dependency is the kernel.
 `FORCE` row-level security (`modules/change/migrations/000038_change.up.sql:13`,
 `:74-75`), inside a uniqueness key that starts with the tenant (`:65`).
 
-**How it is traced and audited.** Applying an accepted proposal goes through the
-owning module's own command, so the audit row is that module's event and never a
-change-module event; the contracts say so where `Subject` is declared
-(`modules/change/contracts/change.go:254-266`). No span of its own.
+**How it is traced and audited.** Two trails, and the distinction is the point.
+The *write* is the owner's: an accepted proposal is applied through the subject's
+`Save` (`modules/change/contracts/change.go:254-266`), which the owning module
+implements over its own service, so the domain audit row is the owner's event —
+`site.settings_updated` for the reference subject
+(`apps/platformkit/change.go:164-172`, `modules/site/contracts/events.go:15`). The
+*decision* is this module's, one event per transition and no fifth name
+(`modules/change/contracts/events.go:11-19`), published beside the row that moved
+(`modules/change/internal/service.go:307`) and so audited the way every declared
+event is (`modules/audit/module.go:89-93`). `Applied` carries the subject's
+revision before and after, so the trail alone answers "this change produced that
+revision" (`modules/change/contracts/events.go:59-73`), and the reference product
+waits for `change.proposal_applied` in the trail and checks whose name it credits
+(`apps/platformkit/change_control_test.go:279-285`). Neither trail stands in for
+the other, and a save that fails publishes nothing: the write errors out before the
+event is built (`modules/change/internal/service.go:296-300`). No span of its own.
 
 **How an app extends it.** Implement `Subject` and bind it: `changeSubjects`
 (`apps/platformkit/change.go:188`) and the one line that calls it
@@ -552,7 +568,7 @@ and no message catalogue of its own.
 the delivery ledger in `000027_notification_deliveries`. An address and a host
 arrive only through the two ports the application implements over the user and
 tenant modules, so this module never names either
-(`modules/notification/module.go:31-45`).
+(`modules/notification/module.go:31-44`).
 
 **How it is traced and audited.** Its three events
 (`modules/notification/contracts/events.go:22-24`) reach the trail through
@@ -598,7 +614,7 @@ delivery that dies on the eleventh retries the eleventh (`:15-21`) — and
 stand (`modules/file/module.go:53`), and hand the store to another module the way
 the reference app hands it to content (`apps/platformkit/modules.go:212`,
 `modules/content/module.go:71`). Over quota is correctable — free space, or ask
-for quota (`modules/file/module.go:83-87`); a store that cannot prove erasure is
+for quota (`modules/file/module.go:83-86`); a store that cannot prove erasure is
 not, at that adapter: S3 leaves `verified_at` NULL and leans on a bucket lifecycle
 rule (`:51-52`).
 
@@ -746,9 +762,14 @@ create (`migrations/rls_test.go:45`). No span belongs to this pillar: it is the
 pillar that checks the others.
 
 **How an app extends it.** Add a spec, and share steps through
-`e2e/steps/content.ts`. A spec that passes for the wrong reason is caught by
-`retries: 0` and by the run's own database: a flaky spec is a bug report, not a
-retry.
+`e2e/steps/content.ts`. What this pillar's settings buy is a failure that repeats,
+not an assertion that means something: one worker and `retries: 0` make a passing
+spec a pass seen on the first attempt (`e2e/playwright.config.ts:12-14`), and a
+database created for the run and dropped after it (`scripts/e2e.sh:50`, `:78`) make
+the state it found the state the run created. That the spec expects the right thing
+is the spec's own claim to carry — it names the refusal or the rendered state it
+wants, and the refusals themselves are proved by the command tests, not here. A
+flaky spec is a bug report, not a retry.
 
 ### Mobile
 
@@ -783,7 +804,7 @@ renamed JSON tag fails `make check` rather than a shipped build.
 **How an app extends it.** Nothing — a shell renders the document, and a
 product's share is not to extend it but not to break it. Nothing overrides a
 refusal, including `UPDATE_GOLDEN=1`; a planned breaking change ships as a new
-address plus an alias row (`apps/platformkit/wire_compatibility_test.go:24-31`,
+address plus an alias row (`apps/platformkit/wire_compatibility_test.go:24-30`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
 strands a reader, a narrowed authorisation — and additive change is always allowed
