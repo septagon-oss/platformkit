@@ -51,7 +51,7 @@ func TestTheCompositionSnippetIsTheContract(t *testing.T) {
 		},
 	}}}
 	svc := change.NewService(deps.Subjects)
-	if m := change.Module(deps); svc == nil || m.Name != "change" || len(m.Permissions) != 3 {
+	if m := change.New(deps); svc == nil || m.Name != "change" || len(m.Permissions) != 3 {
 		t.Fatal("the composition in README.md builds no service, or no manifest carrying the three keys it declares")
 	}
 

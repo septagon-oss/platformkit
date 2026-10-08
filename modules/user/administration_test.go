@@ -68,7 +68,7 @@ func TestAnAdapterWithNothingToAskIsRefused(t *testing.T) {
 					t.Fatalf("form %d panicked with %v, want the message naming the missing Ask", i, reason)
 				}
 			}()
-			user.Module(deps)
+			user.New(deps)
 			t.Errorf("form %d composed an adapter with nothing to ask", i)
 		}()
 	}

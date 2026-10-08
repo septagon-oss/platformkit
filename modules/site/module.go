@@ -55,7 +55,7 @@ func NewLockedReader() contracts.LockedReader { return internal.NewService() }
 // neither module had a generated screen. The kernel has the shape now, and this
 // is the module that shows what it takes: a Load that answers with the defaults
 // rather than a 404, a Save, and a Face saying what a visitor may see.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",

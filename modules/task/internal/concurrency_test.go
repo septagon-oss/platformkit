@@ -230,7 +230,7 @@ func TestTaskRESTWaitsForCommittedState(t *testing.T) {
 					},
 					Log: slog.New(slog.DiscardHandler),
 				})
-				task.Module(task.Deps{}).Routes(surfacesOf(api))
+				task.New(task.Deps{}).Routes(surfacesOf(api))
 				if err := api.ValidateDeclarations(); err != nil {
 					return err
 				}

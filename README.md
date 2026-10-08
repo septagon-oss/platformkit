@@ -46,8 +46,10 @@ describes the available settings; its defaults are for local development.
 ## Build your application
 
 Use PlatformKit as a versioned Go dependency and compose it with your own modules.
-[The reference application](apps/platformkit/modules.go) shows how to connect
-module constructors and their typed dependencies. Start with
+[The reference application](apps/platformkit/app.go) shows how to name the
+modules you use and let them wire themselves by contract, and
+[apps/platformkit/product.go](apps/platformkit/product.go) shows the share an
+application owns: the values no module may decide. Start with
 [the task module](modules/task/) when adding a capability: its public contracts
 describe the behavior, while its implementation stays behind that boundary.
 

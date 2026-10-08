@@ -153,3 +153,12 @@ func (s Skin) Label(permission string) string {
 	}
 	return ""
 }
+
+// recordedSkin is the three facts the app named about how it looks and reads,
+// before any module is built. compose hands it to every build through
+// Wiring.Skin; Plan hands the same value to the app's renderers after adding the
+// words the built manifests chose (Skin.Label), which is the one field a build
+// may not read.
+func (a *App) recordedSkin() Skin {
+	return Skin{Theme: a.theme, Home: a.frontDoor(), Copy: a.copy}
+}

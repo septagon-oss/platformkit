@@ -26,13 +26,10 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
-
-	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // faultPage renders the refusal for this application's shell.
@@ -131,8 +128,7 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
-func faultPage(c composition) httpx.Fault {
-	messages := c.messages
+func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
@@ -141,7 +137,7 @@ func faultPage(c composition) httpx.Fault {
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
 		// label is that module's words, read off the manifest that defines it.
-		Granter: c.granter,
+		Granter: granter,
 		// The ask door exists in this composition, so the refusal page may offer
 		// it. A product that wired no AskForAccess leaves this empty and the page
 		// draws no button — the kernel never offers a door it has not mounted.
@@ -173,43 +169,18 @@ func workspaceCatalog() func(api *httpx.API) {
 	})
 }
 
-// appOptions is the same composition app.go sentences, read as app.Options: the
-// in-process answer for a test that wants the handler rather than a process, and
-// the reason the two cannot disagree about who provides what. The four fields
-// that belong to a process rather than to a composition — the role, the
-// transports, the stores, the installation's host — are filled here, because pkit
-// leaves them to whoever is starting something.
-func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
-	p, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
-	if err != nil {
-		panic("platformkit: " + err.Error())
-	}
-	opts := p.Options()
-	opts.Role = role
-	// The four fields pkit leaves to whoever is starting something. Transports and
-	// Caches are not decoration: kit/app refuses a role whose mode has no
-	// constructor and a composition whose cache.adapter names a store it never
-	// learned to reach, so a test that lost these lines fails in app.New with a
-	// message about memory and jetstream, or about Caches.Valkey, rather than
-	// booting the wrong thing.
-	opts.Transports = transports()
-	opts.Caches = caches()
-	opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
-	return opts
-}
-
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once
 // per composition. One page per shell, and the shell is this file's to build —
 // the admin module builds its own, for the screens it mounts.
-func faultShell(c composition) page.Shell {
+func faultShell(messages page.Messages, granter page.Granter) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		Granter:   c.granter,
+		Granter:   granter,
 		Ask:       pinnedAsk,
-		Messages:  c.messages,
+		Messages:  messages,
 	}
 }

@@ -50,7 +50,7 @@ func NewService(bindings []contracts.SubjectBinding) contracts.Service {
 }
 
 // Module is the manifest, and the service it is built on.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	svc := deps.Service
 	if svc == nil {
 		svc = NewService(deps.Subjects)

@@ -32,8 +32,10 @@ var schema embed.FS
 // owners' 34s under one name, which kit/db refuses before the ledger ever sees
 // it (migration_files.go, "invalid or repeated version"). The rule the number
 // follows is the one this source already followed when it left 000030 behind:
-// continue past the highest number anywhere in the composition. As this tree
-// stands that is modules/site's 000039, so the retention file is 40.
+// continue past the highest number anywhere in the composition. The image
+// dimensions and use-ledger files were written as 43 and 44 and moved to 44 and
+// 45 when the foundation's own 000043_tenant_app reached main while this branch
+// was open — the same collision, one version further along, that sent 34 to 40.
 var Migrations = db.MigrationSource{
 	Owner:  "file",
 	Files:  db.Sub(schema, "migrations"),

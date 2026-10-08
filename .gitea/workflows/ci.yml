@@ -1,32 +1,41 @@
 # Verification only. The runner supplies a dedicated Docker daemon and a fresh
 # job network; no workstation services or deployment credentials are required.
 #
-# Four jobs, not one. The single `check` job ran make check, race, govulncheck,
-# the design suite, its browser verification and e2e back to back under one limit;
-# at 45 minutes that cut off runs 192, 193, 204, 210, 237, 243, 245 and 257 with
-# every test that had run passed (task T-0219 read each of those logs: no
-# `--- FAIL:` line anywhere, `context deadline exceeded` on the step in flight).
-# Raising the limit to 75 was a retry in another form. Split, the work is four
-# independent jobs that the two kernel runners — `stitch-core` and
-# `stitch-core-2` — take at once, each bounded at twice a span it has measured
-# rather than at whatever the longest neighbour needed. Where a job has completed a
-# run of its own — `go-checks`, `race-and-vuln` and `e2e` at run 307, whose id is
-# 46460, the name the forge's API answers — that run prices it, because below twenty
-# runs a job's empirical p95 *is* its slowest run, and a step span read out of main's
-# merged job never carried the checkout, the fixture or the store the split gave each
-# job of its own. `scripts/ci_job_limits_cover_their_measured_runs_test.py` refuses a
-# limit under twice the slowest completed run the forge recorded for that job.
-# `design-editor` has completed no run of its own, and its arithmetic is still the 13
-# `ci.yml` runs on main at number ≥ 180, step spans read from each step's own
-# `::group::` marker.
+# How to read a red tick from this job. A job whose runner lost *this* job reports every step,
+# `actions/checkout` included, as failure, and uploads no log at all, so whatever reads the verdict
+# for a merge finds no failing line to quote. A job that fails a check written here reports the steps
+# before the failure as success and leaves a log to read. 2026-10-02 measured the first shape three
+# times in one day, each on runner `stitch-core`, each over fourteen to eighteen minutes: job 46966
+# (run 46512) on one pull request, job 47128 (run 46674) on a push to main, job 47205 (run 46750) on
+# another. That runner stayed online through all three — the journey job it took the same minute as
+# the last of them (47206) has a log and per-step conclusions — so what was lost is that job's own
+# execution and log upload, not the host. A head refused that way holds no line to fix: what answers
+# it is a fresh run of the same head, and no edit to this repository does.
 #
-# The fixture the jobs share — the database client, the broker, the app role — is one
-# script, `scripts/ci_setup.sh`, which each job calls with the units its suite dials.
-# A fixture written four times is a fixture that drifts. Postgres itself stays a per-job
-# `services:` block, because that is the shape the runner probes and owns (mobile.yml has
-# used it since its first green run), and the object store stays with the one job that
-# runs `make check`; scripts/ci_setup_test.sh refuses a job that calls the script without
-# a database of its own.
+# The loss can also land in the middle, and then the two rules above have to be read together, because
+# the shape is the misleading one: the finished steps keep their `success`, the log stops mid-step with
+# no `Job failed` and no `Cleaning up container` trailer, and every step the job had not reached reads
+# `failure` — including the steps with no `if:` at all and the one with `if: success()`, which a check
+# that really failed reports as `skipped`. That difference is the whole test. 2026-10-05 measured it:
+# job 51417 (run 50923) ends its log inside the editor suite's own sampler at 23:17:11 — load 2.08,
+# 18 076 MB free, seven tests `✔` and none failed — with `completed_at` 23:31:36, and its five
+# unfinished steps, three of them unable to be anything but skipped once the editor step is red, are
+# reported failure without being evaluated. Job 51237 (run 50748), which really did refuse the editor
+# suite the same day, prints `✖ failing tests:` and reports the steps behind it `skipped`. A head
+# refused in the first shape is answered the same way as a head refused at its start: a fresh run, and
+# nothing written here. What a change can do is keep its own steps out of the window a tail leaves,
+# which is why the Go cache save stands with the Go steps rather than behind ~24 minutes of Chromium.
+# Two things stay in that tail on purpose and both are limits of this file, not oversights: the budget
+# verdict, because a ceiling that rose must not stop the job before it has said whether the code works,
+# and the `if: always()` cleanup, which an unfinished job never reaches — so the containers and image
+# such a run names for itself are left on that runner for whoever sweeps it (read from the forge, not
+# from the runner: what a step that never ran leaves behind is inferred here, not measured). Whoever
+# sweeps it now has a name: every `docker run -d` below carries `--label pkit.ci.run=<this run>`, and
+# the first step of each job that starts a container removes the labelled ones older than twice that
+# job's own ceiling, which is what bounds what a killed job can leave behind. An image is outside that
+# sweep — `docker ps` lists containers, not images — so a killed job's image stays until its runner
+# prunes. scripts/ci_container_leak_test.sh, one of the `make check` lines, refuses a step that loses
+# its name, its label, its pre-removal or its sweep.
 name: ci
 
 on:
@@ -42,22 +51,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # go-checks is the whole `make check`: build, vet, fmt, the budget and tenancy
-  # greps, the architecture rehearsals and every Go test in the tree — so this is
-  # the job that owes the object store, because modules/file's S3 adapter's cases
-  # fail rather than skip without one.
-  go-checks:
+  check:
+    # This self-hosted capacity accepts trusted same-repository changes only.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × this job's own measured p95. It has had one run: job 46910 of run 307
-    # (id 46460, at 35fe554c), 05:12:12Z → 05:21:37Z = 565s, so 1130s, and minutes
-    # round up — 19 minutes, 1140s. The first price, 18, was main's step spans: `make check`
-    # p95 464s over 13 runs (min 323, p50 372, max 526), the ratchet 0.3s, setup
-    # and checkout about 55s — 1040s. That first run of the job itself ran past
-    # main's *maximum* of 526s, which is what the pin named above now refuses. The
-    # ceiling catches a job that lost a server, not one that is merely slow: at 45
-    # minutes the same work had already been cut off eight times on main.
-    timeout-minutes: 19
+    # 45 cut off runs 192, 193, 204, 210, 237 and 243 after every test that ran had passed: the job runs
+    # make check, race, govulncheck and e2e in sequence. Task T-0219 splits it across the two kernel
+    # runners; until then the limit leaves room.
+    #
+    # What this file cannot promise is that the number below is the bound the job meets. At 94d387cc
+    # (run 51760, job 52276) the forge ended this job with `##[error]context deadline exceeded` 60m02s
+    # after it began, with 75 written here; the same 60m02s ended b6f1e93 (3612s) and cc614f57 (3609s),
+    # whose copies of this file also said 75, while one earlier head (4f477f58) did reach 4502s = 75m02s
+    # on this same line. The ceiling is the runner's to give. `make check`, `make check-race`,
+    # govulncheck and gate 10 come to 45m19s in that refused head's own log, which is why the editor's
+    # steps left this job for one of their own (`editor`, at the foot of this file) instead of this
+    # number being argued with: a job that fits inside the smaller number this forge has used twice is
+    # the only promise a checkout can keep. Whether 60 or 75 is what it should enforce is T-0219's call.
+    #
+    # The split T-0219 asks for has begun below: two of the design tool's steps stand in a job of their
+    # own there, and 45m09s of run 43926 (job 44369) reached the old ceiling 46 seconds into `make e2e` —
+    # a step whose own measured cost on this runner is 103s, and whose whole chain came back green in
+    # 43m16s at 0c3a040 (job 44137). What had spent the budget in front of those 103 seconds was that
+    # same suite, which shares no database, no runtime and no binary with gate 10. The two raises are
+    # independent: this number came from six runs that needed it, the job below keeps its own 45 because
+    # its steps were measured at 16 minutes and nothing has cut it off. See that job for the seam.
+    timeout-minutes: 75
     env:
       PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
       PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
@@ -67,21 +86,13 @@ jobs:
       # set it, and the job sets it, so the one production adapter of kit/cache is
       # exercised by the gate that ships it and not only by hand.
       PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
-      # The object store the suite the S3 adapter's cases dial. It is this job's own concern
-      # because it is the only job that runs them; the step below starts the store
-      # under this alias, and modules/file's workflow_store_fixture_test reads both
-      # halves of that arrangement out of this file.
+      # The object store the S3 adapter's cases dial. They fail rather than skip
+      # without one, as the NATS transport's do, so the fixture belongs here: this
+      # job stands up its own services rather than the compose stack the Makefile's
+      # localhost:8333 default belongs to.
       PLATFORMKIT_TEST_S3_ENDPOINT: s3:8333
       GOFLAGS: -p=4
     services:
-      # The database is the runner's own service, in this shape and no other: the
-      # runner brings it up, probes it, and puts it on the network every step of this
-      # job shares — which is what the `postgres:` host in the URLs above means. It is
-      # written per job because a service map cannot be shared without a composite
-      # action these runners' support for is not something a checkout can check; what
-      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
-      # scripts/ci_setup_test.sh refuses a job that calls that script without a
-      # database of its own to point at.
       postgres:
         image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
         env:
@@ -93,71 +104,235 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
-      # The PR's own commits, and nothing else. `fetch-depth: 0` was this job asking for every branch and
-      # every tag the forge holds, because `getRefSpecForAllHistory` (actions/checkout@v4.4.0
-      # src/ref-helper.ts:69) hands git `+refs/heads/*` and `+refs/tags/*` unconditionally — 247 heads and
-      # 250 tags when this was written, the tags one `v1.1.2-proof.<date>.<sha>` per delivery beside the
-      # release line, and no line of `scripts`, `tools`, `modules`, `kit`, `apps` or the Makefile reads
-      # one. It asked because the job's last step is the budget ratchet walking `base..HEAD`, and a window
-      # that stops above the branch would read that ratchet over commits it never fetched. The window is
-      # what head 073c88f4 cost: this checkout was open 1123s (job 51473, step 0 from 23:40:42Z to
-      # 23:59:25Z), the job was cut at its own 19-minute ceiling 3s later, and every real step reported
-      # skipped — the same line head b7ead19b died on, which 93a053b narrowed everywhere except here. In
-      # the same run, of the same commit, `--depth=1` checkouts returned in 4.6s and 17.7s (jobs 51476 and
-      # 51475), and the fetch this line asks for is one refspec with `--no-tags`
-      # (src/git-command-manager.ts:281): 256 commits of one branch, 6.5MB and 1.1s measured against the
-      # repository, where every branch and tag is 17MB, 1482 commits of main, and 18.3s. 256 is 2.7x the
-      # deepest branch the forge held when this was priced (94 commits ahead of main) and 5.4x this PR's
-      # own 47. A window can stop short, and that is a named failure rather than a green read: see the
-      # shallow case in scripts/check_budget_ratchet_test.sh and scripts/ci_checkout_history_test.sh, which
-      # refuses a `walks` job that fetches no window or an unbounded one.
+      # First, and on purpose. A job this runner kills - a cancelled run, a ceiling reached, the
+      # lost-execution shape the header of this file describes - never reaches the `if: always()`
+      # cleanup at the end, so the containers it started stay on that host holding memory, and a
+      # runner holding a running container never reads idle. 2026-10-06 counted 13 SeaweedFS
+      # containers between the three kernel runners, some 19 hours old, each from a job that had
+      # ended long before; the ones over three hours old were removed by hand, and while they stood,
+      # the runners could not be restarted for reading busy.
+      #
+      # Every container this program starts by hand carries `--label pkit.ci.run=<run id>`, so this
+      # step finds them with `docker ps -aq --filter label=pkit.ci.run`. `-a`, not `-q`: the
+      # running-only filter does not see a stopped container, and a SeaweedFS whose process died is
+      # stopped, still on disk, still holding the memory its data directory took. Measured on this
+      # host's daemon (Docker 29.8.2) with two labelled containers, one created and never started
+      # and one started and let exit: `docker ps -q --filter label=pkit.ci.run` listed neither once
+      # both had stopped, `docker ps -aq --filter label=pkit.ci.run` listed both.
+      #
+      # The age bound is twice this job's own ceiling, so no live job's container is in range. The
+      # label is a namespace the whole program shares, and a sweep here reaches every container on
+      # this daemon that carries it, including another repository's CI started with the same label;
+      # the bound is what makes that safe, and it holds only while every job that uses the label has
+      # a ceiling below half of it. `docker inspect -f '{{.Created}}'` is UTC to the nanosecond and
+      # GNU `date -u -d` parses it.
+      #
+      # Best-effort, and it never fails the job: a container that vanishes between the listing and
+      # the removal, or one another job is winning the race for, is not this job's failure, and a
+      # runner with nothing to sweep is the normal case, not a finding.
+      - name: Remove containers a killed job left on this runner
+        env:
+          SWEEP_OLDER_THAN: '10800'
+        run: |
+          cutoff=$(( $(date -u +%s) - SWEEP_OLDER_THAN ))
+          swept=0
+          for id in $(docker ps -aq --filter label=pkit.ci.run); do
+            created=$(docker inspect -f '{{.Created}}' "$id" 2>/dev/null) || continue
+            epoch=$(date -u -d "$created" +%s 2>/dev/null) || continue
+            [ "$epoch" -le "$cutoff" ] || continue
+            docker rm -f "$id" >/dev/null 2>&1 || continue
+            echo "swept $id created $created"
+            swept=$(( swept + 1 ))
+          done
+          echo "removed $swept container(s) created more than ${SWEEP_OLDER_THAN}s ago"
+
+      # Full history, and this is the only job that owes it: the budget verdict at the foot of the job
+      # walks `git rev-list $base..HEAD` over the commits that touched a ceiling
+      # (scripts/check_budget_ratchet.sh:59), so a shallow fetch here would read that verdict green
+      # across commits nobody fetched. `scripts/ci_checkout_history_test.sh` pins both halves — this
+      # line stays deep while that walk exists, and no other job goes deep without one.
+      #
+      # This job therefore keeps the exposure the two above lose: its checkout was still fetching 49
+      # minutes into run 49357, and its ceiling is 75. Bounding it from here would mean either a
+      # shallow fetch (which takes the budget verdict's commits away) or a stall timeout (which turns
+      # the wait into a faster red and nothing else). What answers it is outside this file: the forge's
+      # git-http throughput under a contended queue, or T-0219's split of these steps across runners.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
-          fetch-depth: 256
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # Stays false, and the two steps below are why: they own these same two paths, and one
+          # path wants one owner. `cache: true` would add a second one — setup-go v7 restores and
+          # saves GOMODCACHE/GOCACHE under a key of its own, `restoreCache(cachePaths, primaryKey)`
+          # with no restore keys at all (dist/setup/index.js), so the same bytes would be uploaded
+          # twice, warm forward under neither key, and the first commit after a go.sum change would
+          # still download every module cold. Its key comes from `hashFiles` too, which on this
+          # runner is a node process the runner spawns inside the job container and whose failure it
+          # discards: with no `__OUTPUT__` guard in what comes back, `getHashFilesFunction` returns
+          # "" and no error (act/runner/expression.go, act_runner v3.3.2) — and setup-go turns an
+          # empty hash into `throw new Error('Some specified paths were not resolved, unable to
+          # cache dependencies.')`, which reddens setup over a cache. The digest is taken in a shell
+          # step below instead, where an empty answer is a visible thing and not a frozen key.
           cache: false
 
-      # The socket probe, bought here rather than inside scripts/ci_setup.sh, because the
-      # case that refuses its absence reads this file. The pinned runner image ships
-      # neither `ss` nor `lsof`, and `make check` runs scripts/free_port_test.sh, whose
-      # case 3a asks the machine "whose listener is this?" and stops at exit 2 when the
-      # machine cannot answer; `make check-e2e-guards` and `make e2e` both call
-      # scripts/e2e.sh, which asks the same question of itself and refuses the run when
-      # it has no answer. Measured 2026-10-04 by running this repository inside that
-      # digest: four `ok` lines, then exit 2 at the first question about ownership; with
-      # iproute2 installed, all sixteen cases and exit 0. The database client is the
-      # other half of the fixture and `scripts/ci_setup.sh` installs it beside the role.
-      - name: Install the socket probe
+      # T-0277: this job compiled from nothing on every run. Both setup-go steps asked for no cache,
+      # and the loop's own build cache is already shared, so CI is where a shared one pays. Measured in
+      # this worktree on 2026-10-05 at the 4 CPU this job's GOFLAGS: -p=4 asks for, on a box at load 24:
+      # `go build ./...` (= `make build`, check's first prerequisite) into an empty GOCACHE is 28.1s of
+      # wall over 228.3s of CPU and leaves 781 MB behind; into a warm one, 2.9s over 4.7s. The race
+      # build of every package is 56.8s over 227.1s cold and 3.3s over 4.9s warm, 848 MB more. Test
+      # binaries and the module download are on top of that and unmeasured here, but the two steps
+      # above are a gap of 25.2s + 53.5s ≈ 80s of this job's wall clock on their own.
+      #
+      # The key names what actually decides the bytes — the platform, the resolved toolchain, this
+      # job's own name and a digest over both dependency files — with three prefix restore keys,
+      # longest first, so a go.sum bump still warms the build from the archive the previous key wrote.
+      # The recipe is one file, scripts/ci_go_cache_key.sh, called by both Go jobs with their own name:
+      # one recipe, one key per job, because a key two jobs save under belongs to whichever of them
+      # the store kept (see the file's own header). It asks `go env` where the caches live rather than
+      # writing a path down, and it refuses by emitting no key and exiting 0, so a tree it cannot name
+      # runs cold and green. A miss is a cold job either way: both steps below carry
+      # continue-on-error, and neither asks for fail-on-cache-miss.
+      #
+      # Two limits of this shape, both accepted:
+      #   - An exact hit never re-saves (the save below asks for `cache-hit != 'true'`), so a key's
+      #     GOCACHE holds the first-party archives as they were when the key was first written and
+      #     ages with the commits until go.sum, go.mod or the toolchain moves the digest; third-party
+      #     modules and the packages that did not change stay warm the whole time. A time component in
+      #     the key (an ISO week, say) would trade that archive's exact hit for a weekly re-save; the
+      #     measurement the steps beside it are for is the first run of a new key against the second.
+      #   - The two jobs share the *prefix*, not the archive, so the first run of a job's key after a
+      #     dependency or toolchain change restores the other job's archive of the same toolchain —
+      #     `check`'s is the ~1.3 GB raw the measurement above describes, and `design` reads a fraction
+      #     of it — and pays that once per change before saving its own; every later run takes this
+      #     job's own exact key. Whether that one restore costs more than it warms is readable in the
+      #     step's `Cache Size:` and wall time.
+      - name: Name this job's Go cache
+        id: gocache
+        run: bash scripts/ci_go_cache_key.sh check
+
+      - name: Restore the Go module and build cache
+        id: restore
+        if: steps.gocache.outputs.key != ''
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.gocache.outputs.key }}
+          restore-keys: |
+            ${{ steps.gocache.outputs.prefix-job }}
+            ${{ steps.gocache.outputs.prefix-version }}
+            ${{ steps.gocache.outputs.prefix-os }}
+          path: |
+            ${{ steps.gocache.outputs.modcache }}
+            ${{ steps.gocache.outputs.gocache }}
+
+      # Three things the operating system is asked for, one step, because a step that
+      # installs one of them and not the other half of the question is what this line
+      # is: `psql` answers the migration rehearsal, `ss` answers gate 10's question
+      # "whose socket is this?", which scripts/free_port.sh refuses to answer from
+      # itself, because a 200 on /health says something is listening and not that the
+      # listener is mine, and PyYAML answers the three guards `make check` runs that read
+      # a workflow as data instead of as text — scripts/mobile_journey_fetch_test.sh asks
+      # which label the device journey runs on,
+      # scripts/ci_go_cache_one_saver_per_key_test.sh asks whether one exact cache key has
+      # more than one saving job, and scripts/ci_go_cache_job_archives_test.sh runs each
+      # job's naming command and asks whether the archives it names are its own. A guard
+      # that cannot parse its own subject is a red pull request no change in the tree
+      # caused.
+      #
+      # The packages are not optional here, and the image does not provide them. This job's
+      # image is pinned — gitea/runner-images:ubuntu-24.04@sha256:e77e2b1ebba51adb… is
+      # the digest job 49823 of run 49357 names when it creates the container — and that
+      # digest ships neither `ss` nor `lsof`. Measured 2026-10-04 by running this
+      # repository inside it (`docker run -v $PWD:/w:ro -w /w … bash
+      # scripts/free_port_test.sh`): the case stopped after four `ok` lines with exit 2,
+      # at the first question about who holds a port. `make check` runs that file, and
+      # `make check-e2e-guards` and `make e2e` both call scripts/e2e.sh, which asks the
+      # same question of itself and refuses the run when the machine cannot answer — so
+      # without this line three of this job's own steps are red for a reason no change
+      # in the tree caused. The same run with iproute2 installed answered all sixteen
+      # cases and exited 0. Case 6 of scripts/free_port_test.sh refuses a future edit
+      # that takes the package back out, and says which steps would refuse to run.
+      #
+      # The third package is PyYAML, asked for on the same evidence and measured the same way.
+      # `make check` runs scripts/mobile_journey_fetch_test.sh, which reads
+      # .gitea/workflows/mobile.yml as YAML to ask which label the device journey runs on, to check
+      # that no second job asks for it, and to take the fetch step out of the job as it is written
+      # there. Running that file inside this same digest on 2026-10-05 (`docker run -v $PWD:/w:ro
+      # -w /w … bash scripts/mobile_journey_fetch_test.sh`) died on its first question with
+      # `ModuleNotFoundError: No module named 'yaml'` and exit 1; the same run with python3-yaml
+      # installed answered `ok` and exited 0. With nothing pinning the package by name, its
+      # refusal is a traceback rather than a sentence, which is why the line above is named in
+      # the Makefile's comment over the goal that runs the case.
+      #
+      # The two guards T-0277 put in `make check` are missing from that digest the same way, and
+      # this is the line that proves it rather than the reason it is written down. Measured
+      # 2026-10-05 by the same kind of run, into the same image and the same repository mount:
+      # python3 answers 3.12.3, `dpkg -l python3-yaml` answers `un` (not installed), `import yaml`
+      # raises ModuleNotFoundError with exit 1, and
+      # `bash scripts/ci_go_cache_one_saver_per_key_test.sh` — line 322 of the `check` goal at the
+      # head CI refused, and the first line of it that asks for the module — died on that
+      # traceback with that code. CI refused the head `5bf518b2` as
+      # `make: *** [Makefile:322: check] Error 1` with every earlier step green and no
+      # assertion in the log, which is what a missing parser looks like from the job page.
+      # In the same container with python3-yaml installed beside the other two, the same
+      # file printed `ok   each exact cache key in ci.yml has one saving job (2 key(s))`
+      # and exited 0. Case 11 of scripts/ci_go_cache_test.sh is the matching refusal: it
+      # asks the Makefile which goals it runs parse YAML and this job whether it installs
+      # a reader before the step that runs them.
+      - name: Install the database client, the socket probe and the YAML reader
         run: |
           apt-get update
-          apt-get install --yes --no-install-recommends iproute2
+          apt-get install --yes --no-install-recommends postgresql-client iproute2 python3-yaml
 
-      - name: Start the message bus and the application role
-        id: setup
+      - name: Start NATS with JetStream on this job's network
+        id: nats
         env:
           JOB_NETWORK: ${{ job.container.network }}
-          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-nats
-        run: bash scripts/ci_setup.sh nats app-role
+          # Each container this job starts by hand is named after the run that started it, from the same
+          # run id the image tag below is built from. The cleanup step at the end of the job needs a
+          # handle that outlives the step which made the container: a step the job's own deadline cuts off
+          # never finishes writing $GITHUB_OUTPUT, so the id it recorded is lost, and a container still
+          # running is what makes `docker image rm` refuse below and the job's network unremovable. The
+          # run id is known to every step without any output, so a name is a handle the job cannot lose.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias nats \
+            nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
+            --jetstream --http_port 8222)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://nats:8222/healthz >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
 
       # The S3-compatible object store modules/file's S3 adapter is tested against,
       # on this job's network under the name the endpoint above names. Image,
-      # credentials and port are compose.yaml's own s3 service, so the store this
-      # job tests is the store `make up` starts. The probe is that service's own
+      # credentials and port are compose.yaml's s3 service, so the store this job
+      # tests is the store `make up` starts. The probe is that service's own
       # healthcheck: an anonymous bucket list is refused by design (403), and the
       # refusal is what says somebody is listening.
       - name: Start the object store
         id: s3
         env:
           JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-s3
+          # The same handle the NATS, mail catcher, Valkey and editor steps carry, for the same
+          # reason: the id this step writes to $GITHUB_OUTPUT is lost when the job is cut off before
+          # the write, and a container with no handle the cleanup can reach is what the runner is
+          # still holding three hours later.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-s3
         run: |
           test -n "$JOB_NETWORK"
           docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias s3 \
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias s3 \
             -e AWS_ACCESS_KEY_ID=pkittest -e AWS_SECRET_ACCESS_KEY=pkittestsecret \
             chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d server -s3 -dir=/data)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -168,21 +343,49 @@ jobs:
           docker logs "$container"
           exit 1
 
+      # The development mail catcher, on this job's network under the name the e2e
+      # step's environment names. compose.yaml's mailpit service is the same image
+      # and the same ports: the journeys that open a mailed link read it from here,
+      # so the mail path they exercise — SMTP out of the application, the link back
+      # into a browser — is the one a developer gets from `make up`, not a stand-in
+      # the job invented. Started by hand for the same reason as NATS: this job
+      # stands up its own services rather than the compose stack whose localhost
+      # defaults belong to a workstation.
+      - name: Start the mail catcher
+        id: mailpit
+        env:
+          JOB_NETWORK: ${{ job.container.network }}
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-mailpit
+        run: |
+          test -n "$JOB_NETWORK"
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias mailpit \
+            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d)
+          echo "container=$container" >> "$GITHUB_OUTPUT"
+          for i in $(seq 1 30); do
+            if curl -fsS http://mailpit:8025/api/v1/info >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs "$container"
+          exit 1
+
+      - name: Create the platformkit_app role
+        env:
+          PGPASSWORD: platformkit
+        run: psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
+
       # noeviction, as compose.yaml names it: the generation counter a Move raises is
       # written with no TTL, and a store that evicts it reads back as generation 0,
-      # which believes again the entries the first Move closed. docs/cache.md. In
-      # this job because this is the job that runs `make check`, whose Valkey
-      # conformance case fails rather than skips once PLATFORMKIT_TEST_VALKEY_URL is
-      # set — an address a job sets for itself is a promise.
+      # which believes again the entries the first Move closed. docs/cache.md.
       - name: Start Valkey on this job's network
         id: valkey
         env:
           JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-go-checks-valkey
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-valkey
         run: |
           test -n "$JOB_NETWORK"
           docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias valkey \
             valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
             --maxmemory-policy noeviction)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -193,19 +396,151 @@ jobs:
           docker logs "$container"
           exit 1
 
-      # The whole gate. As of main's `3ce4c8f`, `check` depends on two more goals —
-      # `check-rehearse` (this release's migrations against a copy of the previous
-      # release's seeded database: 19 s measured) and `check-apidiff` (the exported
-      # surface against v1.1.0: about a minute). They run *inside* this step and not as
-      # two steps of their own, which is what main does: main's job therefore pays for
-      # both twice, once as the step named for them and once again as a prerequisite of
-      # the `make check` line beneath it, and a job whose every step carries a measured
-      # price does not buy that. Which of the two broke still reads on its own line,
-      # because each prints its own banner before it. The cost to this job's ceiling is
-      # the ~80 s, unmeasured by job 46910 (565 s) because that run predates the two
-      # prerequisites; 565 + 80 is still under half of the 1140 s above.
+      # Two questions no other step here answers, and both were steps nobody was
+      # forced to run: what this release's migrations cost against a copy of the
+      # database an installation actually has (ADR 0011), and which exported name
+      # a pinned consumer compiled against the last release. `make check` now
+      # depends on both; they are separate steps so a contributor sees which of
+      # the two broke rather than reading it out of a make line. The rehearsal
+      # writes a receipt on the path where it is true, and it is printed here
+      # because every action in this repository is pinned by commit and an
+      # upload action would need a pin nobody has verified — the job log carries
+      # it, the way .gitea/workflows/public-consumption.yml carries its reports.
+      # A consumer's own CI refuses a pin that cannot name one
+      # (scripts/PIN-REHEARSAL.md).
+      - name: Migration rehearsal (make check-rehearse)
+        env:
+          REHEARSE_RECEIPT: ${{ runner.temp }}/rehearsal.json
+        run: |
+          make check-rehearse
+          cat "$REHEARSE_RECEIPT"
+
+      - name: Exported surface against the supported tag (make check-apidiff)
+        run: make check-apidiff
+
       - name: make check
         run: make check
+
+      # Second, and load-bearing: the outbox, the request transaction, the advisory
+      # locks over a tenant's administration, the limit counters and the router under
+      # the race detector. The Makefile target has existed since the concurrency
+      # kernel and CONTRIBUTING has said CI runs it, but no workflow ever called it —
+      # so the one gate that would notice a lock released before the commit that needs
+      # it has only ever run in a contributor's shell. It stays a separate step from
+      # `make check` because -race roughly doubles the suite; the packages it covers
+      # are the Makefile's standing RACE_PACKAGES list, widened by the commit that put
+      # advisory locks in modules/auth and modules/user.
+      - name: make check-race
+        run: make check-race
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # Ahead of every step that brings in node and Chromium, behind every step that compiles. Two
+      # measurements set this position, and the first version of it got both backwards.
+      #
+      # What a step of this job is worth depends on the minutes it covers. `make check` ran 22:48:52 →
+      # 22:59:12, `make check-race` to 23:08:45 and govulncheck to 23:09:12 (run 50923, job 51417) —
+      # every package, every test binary and the -race build are compiled by here — and behind this
+      # line the job asks the compiler for almost nothing: `make check`'s own `build:` goal already
+      # compiled ./..., which includes apps/platformkit and tools/designexport, so gate 10's
+      # `go build -o … ./apps/platformkit` (scripts/e2e.sh:137) and the editor suite's three
+      # `go run ./tools/designexport` (editor/replacement.test.mjs:1696, 1790, 2013) take from a cache
+      # holding only that build goal 2.89s and 0.49s — the two final links — measured here at -p=4
+      # against a GOCACHE seeded by `go build -buildvcs=false -o /dev/null ./...`, which took 37.94s,
+      # and 28.73s and 2.85s against an empty one. So the position costs this job 3.4s of compile, and
+      # what it decides is whether the next run finds this archive at all — the ~80s of wall clock the
+      # measurement above this job's own naming step says its two cold builds owe to it.
+      #
+      # And position decides whether the step happens at all. That same job lost its runner with this
+      # step still in front of it: the last byte of its log is the Chromium suite's sampler at 23:17:11,
+      # `completed_at` is 23:31:36, and the fourteen minutes twenty-five seconds between them are why
+      # the forge reported this step — and every other step it had not reached — as failure with no
+      # line of it executed. See this file's header. A save that stands behind ~24 minutes of browser
+      # work (this file's own figure for the editor step alone is 15m24s serial) is a save that may
+      # never run, and the `design` job's copy of this step, twelve steps earlier in the same run,
+      # wrote its archive in 9 seconds. The archive is worth nothing to the next run if the run that
+      # writes it is lost on the way to it. scripts/ci_go_cache_test.sh case 12 refuses a save that
+      # moves back behind node.
+      #
+      # The guards on the step itself are unchanged and still why they are what they are. `success()`
+      # keeps a job that already failed from spending its remaining minutes uploading;
+      # `cache-hit != 'true'` because an exact hit means the archive under this key is already the one
+      # this job just used, and on a miss `restore` leaves `cache-hit` unset rather than false
+      # (src/restoreImpl.ts, actions/cache v6.1.0), which is why the test reads `!= 'true'`;
+      # `continue-on-error` answers the one shape of failure that would otherwise reach the job — the
+      # library downgrades an unreachable or refused cache server to a warning, but restoreImpl still
+      # calls `core.setFailed` on a thrown error and saveImpl warns and exits 0, so the flag is
+      # written as the property, not because the library is trusted.
+      #
+      # What it costs, measured here rather than assumed: GOMODCACHE (496 MB, the whole build list)
+      # plus the 781 MB of GOCACHE that `go build ./...` alone leaves behind is 1.3 GB raw, 400 MB
+      # gzipped, 56 s of single-threaded gzip. This job's archive is larger than that — the -race
+      # build and every test binary are in it — so if this step's own log reports `Cache Size:` above
+      # about 2 GiB, the narrowing is `path:` GOMODCACHE only, same keys: a build cache that costs
+      # more to ship than to recompile is not a cache, and the module download is the dearer byte on a
+      # runner. The 117 MB `design` reports for the same two paths is a floor for that number, not the
+      # number.
+      - name: Save the Go module and build cache
+        if: success() && steps.gocache.outputs.key != '' && steps.restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.gocache.outputs.key }}
+          path: |
+            ${{ steps.gocache.outputs.modcache }}
+            ${{ steps.gocache.outputs.gocache }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: ''
+          package-manager-cache: false
+
+      # Gate 10's browser: chromium alone, because this is a gate and not a
+      # compatibility matrix. The design tool installs its own pinned Playwright in
+      # its own job, so nothing here is waiting for a download it does not use.
+      - name: Install the browser
+        working-directory: e2e
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      # Gate 10, and the step the deadline of run 43926 killed 46 seconds into. It
+      # costs 103s on this runner (job 44137) and 176s on a development box, and it
+      # used to stand last behind every other gate, which is why the failure that
+      # named it said nothing about it. It now follows the Go gates and its own
+      # browser, and the budget verdict still runs after it.
+      # Gate 10's two refusals to drive an application it did not start, before the gate they guard.
+      # They stand here rather than in the `make check` step above for one measured reason: each one
+      # starts scripts/e2e.sh, which stops at its own node check before it prints anything either case
+      # greps for, and node appears two steps after `make check`. Here node, the browser, python3 (the
+      # decoy listener; `make check`'s own check-apidiff step proves it on this runner) and Postgres all
+      # exist. 17s for both on a development box, 2026-10-04; the mid-build case waits on gate 10's own
+      # log and so costs its build when the cure is intact and its whole run when it is not.
+      - name: Gate 10's port refusals (make check-e2e-guards)
+        # The same catcher, under the same names, as the step below. The mid-build
+        # case starts scripts/e2e.sh and waits for it to reach its database, and
+        # scripts/e2e.sh refuses a run with nothing answering the catcher before it
+        # creates anything — so a guards run that names no catcher would be refused
+        # for the mail, never reach the port, and the case would report its own
+        # premise missing rather than the refusal it is looking for.
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
+        run: make check-e2e-guards
+
+      - name: make e2e
+        # The catcher this job started earlier, under the alias its network gives it
+        # (`Start the mail catcher`, beside the object store). scripts/e2e.sh refuses
+        # to boot the application without one, and a localhost default is not
+        # reachable from a job that runs its services by service name.
+        env:
+          PLATFORMKIT_E2E_MAIL_HOST: mailpit
+          PLATFORMKIT_E2E_MAIL_PORT: '1025'
+          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
+        run: make e2e
 
       # Last, and deliberately. A ceiling that rose is a decision for an owner
       # to review, not a reason to stop the job before it has said whether the
@@ -218,188 +553,262 @@ jobs:
       - name: Remove this job's manually created resources
         if: always()
         env:
-          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-          S3_CONTAINER: ${{ steps.s3.outputs.container }}
+          NATS_CONTAINER: ${{ steps.nats.outputs.container }}
           VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
-          RUN: platformkit-${{ github.run_id }}
+          MAILPIT_CONTAINER: ${{ steps.mailpit.outputs.container }}
+          S3_CONTAINER: ${{ steps.s3.outputs.container }}
+          NATS_NAME: platformkit-${{ github.run_id }}-nats
+          VALKEY_NAME: platformkit-${{ github.run_id }}-valkey
+          MAILPIT_NAME: platformkit-${{ github.run_id }}-mailpit
+          S3_NAME: platformkit-${{ github.run_id }}-s3
         run: |
-          # Both handles reach the same container: the id the step recorded when it
-          # finished, and the name it was given, which is the handle that survives a
-          # step the job's own deadline cut off mid-write. `ci-cleanup` skips a handle
-          # that names nothing — the step that would have made that container may
-          # never have run.
-          bash scripts/ci_cleanup.sh \
-            "$NATS_CONTAINER" "$RUN-go-checks-nats" \
-            "$S3_CONTAINER" "$RUN-go-checks-s3" \
-            "$VALKEY_CONTAINER" "$RUN-go-checks-valkey"
+          status=0
+          # Each container is dropped by the id its own step recorded, when that step finished, and by the
+          # run's name always. Both handles reach the same container, and the name is the one a step cut
+          # off mid-flight still leaves behind. The editor's own containers and the three images the
+          # editor job built are removed by that job's own cleanup step, beside the containers they are.
+          # A handle that names nothing is not a failure — the step that would have made that container
+          # may never have run.
+          drop() {
+            for handle in "$@"; do
+              [ -n "$handle" ] || continue
+              docker inspect "$handle" >/dev/null 2>&1 || continue
+              docker rm -f "$handle" || status=1
+            done
+          }
+          drop "$NATS_CONTAINER" "$NATS_NAME"
+          drop "$VALKEY_CONTAINER" "$VALKEY_NAME"
+          drop "$MAILPIT_CONTAINER" "$MAILPIT_NAME"
+          drop "$S3_CONTAINER" "$S3_NAME"
+          exit "$status"
 
-  # Second, and load-bearing: the outbox, the request transaction, the advisory
-  # locks over a tenant's administration, the limit counters and the router under
-  # the race detector. The Makefile target has existed since the concurrency
-  # kernel and CONTRIBUTING has said CI runs it, but no workflow ever called it —
-  # so the one gate that would notice a lock released before the commit that needs
-  # it has only ever run in a contributor's shell. It is its own job rather than a
-  # later step of the first because -race roughly doubles the suite: measured at
-  # p95 420s on its own, it used to sit behind 464s of `make check` in one job and
-  # arrive at the deadline with its verdict unsaid. govulncheck rides along with
-  # it: it consumes the build cache the race run just filled, and nothing else
-  # needs a moment of it.
-  race-and-vuln:
+  # The design tool's own gates, in a job of their own.
+  #
+  # A deadline belongs to a job, and one job used to carry every gate in this
+  # repository one after another. Run 43926 reached 45m09s of that with `make check`
+  # and `make check-race` 168s slower than the same steps at 0c3a040 (449s/314s
+  # against 345s/250s) — the suite grows with every review round, and this runner's
+  # pace varies by more than that between a quiet box and a busy one — and the
+  # deadline then expired inside `make e2e`. The two steps that had already spent
+  # 924 of those seconds (40s and 884s, in that same run) observe the design tool in
+  # Chromium and build the Go programs its tests embed: no service, no database, no
+  # port, no application binary. Moving only those was the whole change then; the
+  # editor-image steps stayed in `check` because they run containers on
+  # `${{ job.container.network }}`, and whether a job with no service containers is
+  # given one was a question the forge answers and this repository cannot — the
+  # runner guide states the context exists, not when it is populated. Run 51760
+  # answered it: its serviceless `design` job, this one, wrote its own container onto
+  # `…-design-network` at 11:21:53Z and reclaimed that network at 12:01:21Z, and the
+  # editor steps now stand in `editor` beside this job on the strength of that log line. Measured at
+  # 0c3a040's pace, `check` is now 28 minutes of steps (31 at the refused head's)
+  # and this job 16. Each carries its own ceiling: this job keeps the 45 it was written against, and
+  # `check` above carries the 75 main gave it for the runs 45 cut off there.
+  design:
+    # The same trusted-repository rule as `check`: same forge, same self-hosted
+    # capacity, same token.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # 2 × this job's own measured p95: one run, job 46911 of run 307,
-    # 05:32:11Z → 05:41:34Z = 563s, so 1126s, rounded up — 19 minutes, 1140s. The
-    # first price, 17 (990s), was main's step spans: `make check-race` p95 420s
-    # (min 219, p50 294, max 433) plus govulncheck p95 20s plus about 55s of setup
-    # is 495s, doubled. The job ran 130s past that maximum, and the reason is the
-    # split itself: on main 464s of `make check` preceded the race run inside one
-    # job, so its step span never carried the checkout, the setup or the store this
-    # job starts for itself. The same pin refuses the under-price.
-    timeout-minutes: 19
-    env:
-      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
-      # The same store as go-checks, because RACE_PACKAGES names two cases that dial
-      # it: kit/httpx's host-invalidation store connections and apps/platformkit's
-      # suspension that has to reach a second process. Set for `make check` on main,
-      # where one job ran both suites; set here too, so the split does not quietly
-      # hand those two cases back the skip they were written not to need.
-      PLATFORMKIT_TEST_VALKEY_URL: redis://valkey:6379
-      GOFLAGS: -p=4
-    services:
-      # The database is the runner's own service, in this shape and no other: the
-      # runner brings it up, probes it, and puts it on the network every step of this
-      # job shares — which is what the `postgres:` host in the URLs above means. It is
-      # written per job because a service map cannot be shared without a composite
-      # action these runners' support for is not something a checkout can check; what
-      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
-      # scripts/ci_setup_test.sh refuses a job that calls that script without a
-      # database of its own to point at.
-      postgres:
-        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
-        env:
-          POSTGRES_PASSWORD: platformkit
-          POSTGRES_DB: platformkit
-        options: >-
-          --health-cmd "pg_isready -U postgres -d platformkit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    timeout-minutes: 45
     steps:
-      # One commit, no tag: at `fetch-depth` above zero the action fetches the one refspec and adds
-      # `--no-tags` (actions/checkout@v4.4.0 src/git-command-manager.ts:281), which is why this job's fetch
-      # answers in seconds while the job above is still negotiating the forge's 123 heads and 168 tags. What
-      # classed this job as a history reader was `modules/admin/internal/review_round1_build_stamp_test.go`,
-      # and what that case asks of git is
-      # `git rev-parse HEAD` — the checked-out commit, one object, which a one-commit fetch delivers as well
-      # as a whole-mirror fetch does. Its sibling `review_round2_worktree_stamp_test.go` builds its own
-      # throwaway repository, and no other file under RACE_PACKAGES runs git at all: four files in the tree
-      # exec git, these two and tools/locbudget's `ls-files`, which reads no commit. Nothing here walks
-      # `base..HEAD`, so nothing here may spend its ceiling waiting for a fetch it never reads — at head
-      # b7ead19b this job died inside the fetch of every branch and every tag at 1129s with every real step
-      # reported skipped, the shape scripts/ci_checkout_history_test.sh names for head b6f1e93's design
-      # job. That script classes this job `reads` now, and takes the class away the moment a history walk
-      # reaches what its steps run.
+      # One commit, because nothing in this job reads another. `fetch-depth: 0` asks for every branch
+      # and every tag — at the time of writing 128 heads and 199 tags, the `v1.1.2-proof.*` tag every
+      # delivery pushes among them — in a single fetch that carries no deadline of its own. At
+      # b6f1e93 that fetch was still running when this job's 45 minutes expired: the job log writes
+      # `##[error]context deadline exceeded` at 22:15:51 inside `Fetching the repository`, and the
+      # forge reported the job's only failed step as `Run actions/checkout@…`, which is the line that
+      # refused the head while every real step of the job was reported skipped. The same action
+      # fetched the single ref its post step needed in 26 seconds in that same log. What the fetch was
+      # bought for is nothing: `grep -rnwi --exclude-dir=node_modules git tools/designexport/openpencil`
+      # answers 0 lines, so its four steps (npm ci, npm audit, `npm test`, which builds a Go program
+      # per test, and the browser observations) read no git object. Verified locally in a `--depth=1
+      # --single-branch` clone of the same head: 586 native design tests, 0 failures.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 1
           persist-credentials: false
 
+      # Every design test embeds a real Go program and builds it before observing
+      # anything — which is why the Makefile's own check-fixtures target exists — so
+      # this job compiles against the pinned toolchain even though it runs no Go gate.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+          # Stays false for the reason written out beside the same input in `check`: the restore and
+          # save steps below own these two paths, and setup-go v7's own cache has no restore keys.
           cache: false
 
-      - name: Start the message bus and the application role
-        id: setup
-        env:
-          JOB_NETWORK: ${{ job.container.network }}
-          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-race-and-vuln-nats
-        run: bash scripts/ci_setup.sh nats app-role
+      # This job compiles too — every design test builds a real Go program before observing it
+      # (fixtures-compile.test.mjs, and browser/fixtures.test.mjs line 28 runs `go build`) — so it calls
+      # the same recipe `check` calls, with its own name: the two jobs form two keys, each saving the
+      # archive its own build wrote, because a key both of them saved under would belong to whichever
+      # one the cache store kept and leave the other restoring bytes that are mostly not its own, cold
+      # and green, until go.sum moved. What they share is the key's prefix, so `design`'s first run of a
+      # new digest still warms from `check`'s archive before it has one of its own. The two trees are
+      # not the same bytes — `go list -deps -test` over this tree answers 859 third-party packages over
+      # 131 modules for what `check` builds and 41 over 8 for this job's target — so one archive could
+      # never warm both. scripts/ci_go_cache_test.sh refuses either job forming a key of its own, and
+      # scripts/ci_go_cache_one_saver_per_key_test.sh refuses the one key this used to have.
+      - name: Name this job's Go cache
+        id: gocache
+        run: bash scripts/ci_go_cache_key.sh design
 
-      # The store go-checks starts, for the same reason: two cases in
-      # RACE_PACKAGES dial it and fail rather than skip once the URL is set.
-      - name: Start Valkey on this job's network
-        id: valkey
-        env:
-          JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-race-and-vuln-valkey
+      - name: Restore the Go module and build cache
+        id: restore
+        if: steps.gocache.outputs.key != ''
+        continue-on-error: true
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.gocache.outputs.key }}
+          restore-keys: |
+            ${{ steps.gocache.outputs.prefix-job }}
+            ${{ steps.gocache.outputs.prefix-version }}
+            ${{ steps.gocache.outputs.prefix-os }}
+          path: |
+            ${{ steps.gocache.outputs.modcache }}
+            ${{ steps.gocache.outputs.gocache }}
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: ''
+          package-manager-cache: false
+
+      # The audit half of this step is the reason this job exists as its own step list: it answers
+      # against npm's *current* advisory feed, not against anything this file or the lock pins, so it
+      # can turn red over a commit that touches nothing but a workflow. That is `0bfae63`, refused
+      # here on 2026-10-06 for `source-map-js 1.0.0 - 1.2.1` (high, GHSA-68fv-2mgg-jv7q) and
+      # `dompurify <=3.4.15` (GHSA-p98j-92pf-mc4p, GHSA-6688-9rhm-gjv2) over lockfile bytes byte-
+      # identical to `main`'s, which had passed the same step. The cure was the two locked versions,
+      # both already inside the range their parent declares, and `--audit-level` stayed at `high`.
+      # `make check` now holds those two floors itself — scripts/openpencil_lock_above_advisory_test_
+      # sh reads this lock and this step, and refuses a version that falls back into a published range
+      # or a step that stops auditing — so the number is known at the pull request rather than twelve
+      # minutes into a runner. The level is not a thing to negotiate: at `critical` the finding above
+      # this line is a paragraph instead of a refusal.
+      - name: Native design conformance and dependency audit
+        working-directory: tools/designexport/openpencil
         run: |
-          test -n "$JOB_NETWORK"
-          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias valkey \
-            valkey/valkey@sha256:081c2f5cb575efc901aa80ff9cdbd1ec6a301682fd35e1ebb4b0990a4a4a8507 \
-            --maxmemory-policy noeviction)
-          echo "container=$container" >> "$GITHUB_OUTPUT"
-          for i in $(seq 1 30); do
-            if docker exec "$container" valkey-cli ping 2>/dev/null | grep -q PONG; then exit 0; fi
-            sleep 1
-          done
-          docker logs "$container"
-          exit 1
+          npm ci --ignore-scripts
+          npm audit --omit=dev --audit-level=high
+          npm test
 
-      - name: make check-race
-        run: make check-race
+      # Its own Playwright and its own chromium: the tooling pins a different build
+      # from e2e/'s, and `--with-deps` runs apt itself (measured: it fetches its own
+      # package lists), so this job needs no database-client step to reach them.
+      - name: Native browser observations
+        working-directory: tools/designexport/openpencil
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:browser
 
-      - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+      # Last, and for the same reason as the step of the same name in `check` — this suite compiles
+      # Go itself (browser/fixtures.test.mjs: `go build -o <executable> <file>`), so the save that
+      # covers this job's own binaries has to sit behind it. Guarded the same way: a cache the runner
+      # cannot reach is a cold job, never a red tick.
+      - name: Save the Go module and build cache
+        if: success() && steps.gocache.outputs.key != '' && steps.restore.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          key: ${{ steps.gocache.outputs.key }}
+          path: |
+            ${{ steps.gocache.outputs.modcache }}
+            ${{ steps.gocache.outputs.gocache }}
 
-      - name: Remove this job's manually created resources
-        if: always()
-        env:
-          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-          VALKEY_CONTAINER: ${{ steps.valkey.outputs.container }}
-          RUN: platformkit-${{ github.run_id }}
-        run: bash scripts/ci_cleanup.sh \
-          "$NATS_CONTAINER" "$RUN-race-and-vuln-nats" \
-          "$VALKEY_CONTAINER" "$RUN-race-and-vuln-valkey"
-
-  # The design tooling and its browsers. Every one of its steps that launches a
-  # Chromium used to sit between `make check-race` and `make e2e`, which is the
-  # moment the runner had just stopped being asked for memory by a Go suite and
-  # started being asked by node: runs 219, 225, 235, 239 and 271 came back
-  # `locator.click: Target crashed` and `Unable to capture screenshot` with no
-  # assertion anywhere in the log. Here this job's browsers are the only thing
-  # this job runs, and no Go suite compiles beside them.
-  design-editor:
+  # The editor image and the two journeys that drive it, in a job of their own.
+  #
+  # A deadline belongs to a job, and this is the third time one expired in this file. At 94d387cc (run
+  # 51760, job 52276) the `check` job was killed at 12:21:54Z by `##[error]context deadline exceeded`,
+  # 60m02s after it began, with the editor suite still open; every step behind it - the two font
+  # profiles, the budget verdict - was reported skipped, which is how the forge says "the job ran out"
+  # while naming the one step that was open. Read out of that same log, the job's own minutes are:
+  # checkout and Go setup 1m05s, the Go cache restore 4m40s, the services 0m24s, the rehearsal 1m33s,
+  # check-apidiff 0m27s, `make check` 10m06s, `make check-race` 9m47s, govulncheck 0m27s, the Go cache
+  # save 4m50s, node and the browser 0m50s, `make check-e2e-guards` 0m20s, `make e2e` 9m23s - 45m19s
+  # - and then 14m43s in this suite before the ceiling took it, with the font profiles (1m43s at main's
+  # run 51415) and the budget verdict still to come. The step this job refuses is therefore not the
+  # editor suite; it is the step that happened to be open when the sum of everything else arrived.
+  #
+  # The bound the sum arrived at is the runner's, not this file's: `timeout-minutes: 75` stands above
+  # the `check` job and the job died at sixty. Two other heads met the same number - b6f1e93 at
+  # 3612s and cc614f57 at 3609s, both with 75 in their copy of this file - so 60 minutes is what this
+  # forge enforces today and 75 is what it once allowed (4f477f58 reached 4502s = 75m02s on the same
+  # line). Nothing is raised here in consequence: the number a runner refuses at is the owner's call,
+  # and this file cannot raise it from a checkout. What a checkout can do is stop asking one job to
+  # carry both a 20-minute Go suite and a 17-minute browser suite.
+  #
+  # What moves is the pair of steps that observe the built editor and its two font profiles, with the
+  # install and the image builds they need. Nothing is skipped, no case is narrowed and no bound is
+  # widened: the suite runs the same 31 tests, in the same one Chromium at a time, against images built
+  # from the same Dockerfile, and each job's ceiling covers what that job measures. The four steps that
+  # moved cost 1028s at main's pace — 28s of install, 58s of image builds, 839s of editor suite and 103s
+  # of font profiles — and this job adds about 3m of checkout, Go and node to them: 20m against the 45m
+  # it is given. `check` keeps the 75m main gave it and would have ended 2633s = 43m53s in at the refused
+  # head's own marks. Each job has room of its own instead of one shared budget between them.
+  #
+  # The reason these steps used to stay in `check` is answered by the run this change cites. The steps
+  # run their containers on `${{ job.container.network }}` and reach them by alias, and the comment
+  # that stood here said a job with no service containers may not be given one - a question the forge
+  # answers and this repository cannot. Run 51760's `design` job, which declares no services at all,
+  # wrote its own container onto `…-design-network` in its log line 20 (11:21:53Z, `docker run image=…
+  # network="…design-network"`), and its cleanup reclaimed that network at 12:01:21Z. A serviceless job
+  # on this runner is given a network; the two steps now stand in one, and `test -n "$JOB_NETWORK"` -
+  # kept, unchanged, at the head of both - refuses the run on the spot if that ever stops being true.
+  #
+  # `fetch-depth: 1`, because no step of this job reads a git object: `grep -rnwi --exclude-dir=
+  # node_modules git tools/designexport/openpencil` answers nothing, and the image build takes its
+  # sources from URLs with checksums in the Dockerfile rather than from a clone. The job is therefore
+  # the third shape scripts/ci_checkout_history_test.sh knows - one commit, and no reader of another.
+  #
+  # `cache: false` on setup-go, and no restore or save step: this job compiles Go once - editor/re-
+  # placement.test.mjs:2028 runs `go run ./tools/designexport --example … --props`, 192 packages over
+  # seven external modules - and the archive those two steps would restore costs 4m40s to fetch on
+  # this runner (run 51760's own log, the same step in `check`). A cold module download for one
+  # program is the cheaper half; it is measured in the commit's Verified: line, not assumed.
+  editor:
+    # The same trusted-repository rule as `check` and `design`: same forge, same self-hosted capacity,
+    # same token, and a job that reaches the network only to pull its own pinned sources.
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: pkit-ci-linux-amd64
-    # No completed run of this job of its own, so no run of its own can price it:
-    # its only run, job 46912 of run 307, reports all ten steps — checkout
-    # first among them — as failure with null start and end times, and the forge
-    # holds no log for it, so it contributes no span. This bound is therefore still
-    # main's: 2 × the measured p95 of the sum over 7 complete runs, min 1740s, p50
-    # 1745s, p95 1835s → 3670s, and the pin named at the head of this file has no
-    # row for a job with no completed run. The first run that reaches a verdict
-    # reprices it. The number is ugly and it says why: two of its steps
-    # install a Chromium from two different Playwright pins (this directory pins
-    # playwright 1.62.1, e2e pins @playwright/test ^1.63.0), and the second install
-    # cannot reuse the first build. Aligning those pins is measured to take about
-    # 850s off this job, which would make the honest limit 34 minutes; that change
-    # touches the design owner's own dependency and is not smuggled into a split.
-    timeout-minutes: 62
-    env:
-      # The suites below build and run Go programs the design tests embed, so this
-      # job needs the compiler the Makefile's own toolchain line names. It needs no
-      # database and no NATS: nothing under tools/designexport opens either.
-      GOFLAGS: -p=4
+    timeout-minutes: 45
     steps:
-      # One commit. The split gave this job the deep fetch the single `check` job owed to
-      # `scripts/check_budget_ratchet.sh`, and this job has no such step: main measured what
-      # `fetch-depth: 0` buys here at head b6f1e93, where it was still running when that
-      # job's 45 minutes expired (`##[error]context deadline exceeded` written inside
-      # `Fetching the repository`, and the forge reported the head refused at
-      # `Run actions/checkout@…` while every real step was reported skipped).
-      # `grep -rnwi --exclude-dir=node_modules git tools/designexport/openpencil` answers
-      # 0 lines, and `scripts/ci_checkout_history_test.sh` refuses either half of the
-      # mistake: a job still fetching history nothing reads, and a job narrowed while a
-      # step of it still walks `base..HEAD`.
+      # First, and for the same reason as the step of the same name at the head of `check`, which
+      # carries the measurement behind it: this job starts three containers by hand — the editor and
+      # the two font profiles — and a job the runner cuts off at its ceiling never reaches the
+      # `if: always()` step at its foot, so the containers it started would stand on that runner
+      # holding memory. The label they all carry is what makes them findable by a job that can speak
+      # for neither of them. The bound is 10800s, the same number `check`'s sweep carries and more
+      # than twice the largest ceiling in this file (this job's 45 minutes, `check`'s 75), so one
+      # bound covers every job that shares the label and no live job's container is ever in range;
+      # scripts/ci_container_leak_test.sh refuses a sweep under twice the ceiling of the job it stands
+      # in, and scripts/ci_container_sweep_age_test.sh runs this body against a stub docker and asks
+      # that the four-hour-old labelled container goes and the five-minute-old one stays. Best-effort:
+      # a container another job is winning the race for is not this job's failure, and a runner with
+      # nothing to sweep is the normal case.
+      - name: Remove containers a killed job left on this runner
+        env:
+          SWEEP_OLDER_THAN: '10800'
+        run: |
+          cutoff=$(( $(date -u +%s) - SWEEP_OLDER_THAN ))
+          swept=0
+          for id in $(docker ps -aq --filter label=pkit.ci.run); do
+            created=$(docker inspect -f '{{.Created}}' "$id" 2>/dev/null) || continue
+            epoch=$(date -u -d "$created" +%s 2>/dev/null) || continue
+            [ "$epoch" -le "$cutoff" ] || continue
+            docker rm -f "$id" >/dev/null 2>&1 || continue
+            echo "swept $id created $created"
+            swept=$(( swept + 1 ))
+          done
+          echo "removed $swept container(s) created more than ${SWEEP_OLDER_THAN}s ago"
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 1
           persist-credentials: false
 
+      # The editor's replacement suite projects a real example through this repository's own exporter
+      # (`go run ./tools/designexport`), so the job compiles against the pinned toolchain even though
+      # it runs no Go gate; the reason it keeps no Go archive is written above.
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -411,24 +820,26 @@ jobs:
           cache: ''
           package-manager-cache: false
 
-      - name: Native design conformance and dependency audit
+      # The install and the two verify steps below are the four steps `check` ran, byte for byte; only
+      # the job that pays for them changed. The install is what they cannot run without: every module
+      # they load comes from this directory's node_modules — register.mjs throws unless
+      # @open-pencil/core, /fig and /scene-graph resolve at the pinned version; the files under editor/
+      # and preview/ import playwright and @open-pencil/scene-graph, several more reach for
+      # @open-pencil/core/canvas, core/layout and the core fig and raster format modules;
+      # editor/replacement.test.mjs imports opentype.js and axe-core; and the preview files, through
+      # browser/fixtures.test.mjs, read woff bytes out of the devDependency
+      # @fontsource/ibm-plex-sans — which is why the install is plain `npm ci` and not `--omit=dev`
+      # (the same absence of modules refused the head 8045158a, whose first node command died on
+      # `Cannot find module '@open-pencil/core'` at register.mjs:8 before it had asked the container for
+      # anything). It stands before the image builds so a broken install costs no build time, and with
+      # --with-deps because e2e/ pins @playwright/test ^1.63 and this directory pins playwright 1.62.1 —
+      # two pins, two chromium builds, one shared cache, and e2e/'s step cannot fetch what this one
+      # names (measured locally: 1.62.1 starts chromium-1234, 1.63.0 its own chromium-1243).
+      - name: Install the editor tests' dependencies
         working-directory: tools/designexport/openpencil
         run: |
           npm ci --ignore-scripts
-          npm audit --omit=dev --audit-level=high
-          npm test
-
-      - name: Install the browser
-        working-directory: tools/designexport/openpencil
-        run: npx playwright install --with-deps chromium
-
-      - name: Native browser observations
-        working-directory: tools/designexport/openpencil
-        # The suite's exit code is the verdict — `run` passes it through unchanged. What it
-        # adds is the host's account taken *during* the suite: one line every 30 s naming the
-        # browsers still alive and the job's own memory, and the full report when the suite
-        # fails. See scripts/ci_browser_report.sh and its cases in scripts/ci_browser_report_test.sh.
-        run: bash "$GITHUB_WORKSPACE/scripts/ci_browser_report.sh" run observations npm run test:browser
+          npx playwright install --with-deps chromium
 
       - name: Corrected editor image builds without publishing
         env:
@@ -449,7 +860,7 @@ jobs:
         run: |
           test -n "$JOB_NETWORK"
           docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias openpencil \
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias openpencil \
             --read-only --cap-drop ALL --security-opt no-new-privileges:true \
             --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
             --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -461,37 +872,92 @@ jobs:
           done
           curl -fsS "$PLATFORMKIT_OPENPENCIL_URL/healthz" >/dev/null
           # One editor suite at a time. Each file under editor/ launches its own Chromium, and
-          # node's default test concurrency is one file per core, so this step handed the runner
-          # three browsers at the moment its Go suites had just stopped asking for memory. What
+          # node's default test concurrency is one file per core, so this step hands the runner one
+          # browser per core at the moment the image builds above have just stopped asking for memory.
+          # What
           # comes back from that is not an assertion: the browser dies and the case reports
           # `locator.click: Target crashed` against a five-second wait. The step has refused two
           # of main's own pushes that way (`e32fb81a`, `063b6535`, job logs read by task T-0110
           # round 26). Root reports it refused this branch's head `2be69fa1` too; that run's log
           # was unreadable from here — the forge API answers 403 to an unauthenticated checkout.
-          # The directory states a bound for its other browser suite too —
-          # `npm run test:browser` runs `--test-concurrency=2`, two browsers and nothing
-          # else in this job — and this is the step that never named one.
+          # The directory already states the bound for its other browser suite —
+          # `npm run test:browser` passes `--test-concurrency=2` — and this is the step that
+          # never named one.
           # Measured here at this head against this image and the step's own docker flags, on a
           # box at load 18-31 with 38 GB free: unbound, 31 tests in 413.2 s of wall over 475.6 s
           # of test time (ratio 1.15, so at least two files overlap); bound, 31 tests in 441.3 s
           # over 438.6 s (ratio 0.99, and the process tree held one Chromium). Both forms pass
           # all 31 here; only the bound form cannot starve a neighbour. The cost is the overlap:
           # T-0110 round 26 put the same step at 12m49s unbound on CI's runner against about
-          # 15m24s serial, inside this job's own limit. No assertion, skip, retry or reordering.
-          #
-          # And when it fails, the host speaks — while the browsers are still there to be
-          # counted. A Chromium the runner reclaimed and a control that never rendered both
-          # reach the case as a failed wait; runs 219, 225, 235, 239 and 271 were the first and
-          # were read as the second. A report taken after `node --test` returns sees no browser
-          # at all, because the suite closed them: the five runs above would each have printed
-          # "(no browser process is alive now)", which is the same line a healthy run prints. So
-          # `run` keeps a sample of the live process count and the job's memory every 30 s while
-          # the suite is up, writes them as it takes them (a step the job limit takes down still
-          # leaves them in the log), and prints the full account — OOM lines, cgroup counters,
-          # the containers — only when the suite failed. It changes no verdict: the wrapped
-          # command's exit code is the step's exit code.
-          bash "$GITHUB_WORKSPACE/scripts/ci_browser_report.sh" run editor \
-            node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
+          # 15m24s serial, inside the job's 45 minutes. No assertion, skip, retry or reordering.
+          # The sampler below is this branch's own addition: a Chromium that crashes leaves
+          # the log with no way to tell starvation from a broken build, and /proc/meminfo in
+          # a job container is the host's, which is the number the next refusal will need.
+          # The two cgroup lines are the other half of that answer, added after the refusal
+          # this comment ends with: `MemAvailable` is the host's and says nothing about the
+          # ceiling this container answers to, so a run whose own cgroup was out while the
+          # host had 23 GB free would still have printed a number that cleared memory.
+          # `memory.events` carries `oom_kill`, the only record of that death that survives
+          # it. v1 and v2 paths are both asked, because the image does not choose the host's
+          # layout, and the sentence for "nothing was readable" is printed rather than
+          # silence: a sampler that prints nothing and a container with no ceiling look the
+          # same to whoever reads this log next, and `bash -e` takes the step with either
+          # unreadable file unless the read is asked in an `if`.
+          container_memory() { # what this container answers to, in its cgroup's own words
+              local seen=0 file
+              for file in /sys/fs/cgroup/memory.max /sys/fs/cgroup/memory/memory.limit_in_bytes \
+                          /sys/fs/cgroup/memory.current /sys/fs/cgroup/memory/memory.usage_in_bytes \
+                          /sys/fs/cgroup/memory.events /sys/fs/cgroup/memory/memory.failcnt; do
+                  if [ -r "$file" ]; then
+                      printf 'job container %s %s\n' "${file##*/cgroup/}" "$(tr '\n' ' ' < "$file" | sed 's/ $//')"
+                      seen=1
+                  fi
+              done
+              if [ "$seen" = 0 ]; then echo 'job container reports no readable memory ceiling'; fi
+          }
+          ( while :; do
+              awk '/MemAvailable/{printf "runner MemAvailable %d MB\n", $2/1024}' /proc/meminfo
+              cut -d' ' -f1-3 /proc/loadavg | sed 's/^/runner load average /'
+              container_memory
+              sleep 30
+            done ) & sampler=$!
+          trap 'kill "$sampler" 2>/dev/null || true' EXIT
+          # When the suite is allowed to start. `--test-concurrency=1` bounds what this step
+          # puts on the runner; it says nothing about what the runner already owes. Run 51006
+          # (job 51505) lost `page and nested layer mode controls retain inheritance, refusal
+          # and two worker saves` at 00:45:30 with `page.evaluate: Target crashed` inside the
+          # first `page.evaluate` of its first Chromium, 8.8 s after that test began — while
+          # the sampler printed `runner MemAvailable 23498 MB` across the minute it died in,
+          # and `runner load average 24.62 15.06 11.03` one minute before it and
+          # `37.26 18.90 14.11` thirty seconds after. The host was not out of memory; its run
+          # queue was two to three deep per core. The three runners that answer
+          # `pkit-ci-linux-amd64` share one machine, so a Chromium started here can wait on a
+          # core for seconds at a time, and a renderer can die before the page it never
+          # reached has asked one question. Nothing in this repository made that queue: it is
+          # whatever else `pkit-ci-linux-amd64` was handed at the same minute.
+          # So the suite waits for a core before its first browser starts, and prints what it
+          # waited through. A browser suite that starts on a host with a free share answers
+          # about this tree; one that starts at load 37 answers about the host, and the eleven
+          # refusals of this step that T-0110 round 26 listed were that. The bound is this
+          # step's own choice: twelve minutes covers the gap the run's own log shows between
+          # two samples of a host that is busy rather than stuck, and the step sits at minute
+          # 28 of a job with 75, with about 20 minutes of suite and preview left. When the
+          # bound passes it runs anyway and says so in the log — refusing would report no
+          # verdict to replace the one it distrusts, and the queue belongs to nobody here.
+          # No assertion, skip, retry, reorder or second attempt: the same 31 tests still have
+          # to pass, and a test that fails after the wait still fails the job.
+          host_has_a_share() { awk -v cores="$(nproc)" '{ exit ($1 <= cores) ? 0 : 1 }' /proc/loadavg; }
+          waited=0
+          while ! host_has_a_share; do
+              if [ "$waited" -ge 720 ]; then
+                  echo "editor suite: host still has no free share after ${waited}s — load $(cut -d' ' -f1-3 /proc/loadavg) across $(nproc) cores; running anyway"
+                  break
+              fi
+              echo "editor suite: waiting for a free core — load $(cut -d' ' -f1-3 /proc/loadavg) across $(nproc) cores, waited ${waited}s"
+              sleep 15
+              waited=$((waited + 15))
+          done
+          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
@@ -509,7 +975,7 @@ jobs:
             esac
             export PLATFORMKIT_OPENPENCIL_URL="http://openpencil-$target:8080"
             docker rm -f "$CONTAINER_NAME-$profile" >/dev/null 2>&1 || true
-            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
+            container=$(docker run -d --name "$CONTAINER_NAME-$profile" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias "openpencil-$target" \
               --read-only --cap-drop ALL --security-opt no-new-privileges:true \
               --tmpfs /tmp:rw,noexec,nosuid,nodev,size=32m,uid=101,gid=101 \
               --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m,uid=101,gid=101 \
@@ -523,176 +989,35 @@ jobs:
             node --import ./register.mjs --test "preview/$test_file"
           done
 
-      - name: Remove this job's manually created resources
+      # The containers this job creates by hand, and the three images it builds, are removed here and
+      # nowhere else. Each container is dropped by the id its own step recorded, when that step
+      # finished, and by the run's name always: both handles reach the same container, and the name is
+      # the one a step the ceiling cuts off mid-flight still leaves behind. Run 245 lost the editor's id
+      # that way and its container held the run's image against the three image removals below, which
+      # are deliberately not forced. A handle that names nothing is not a failure — the step that would
+      # have made that container may never have run.
+      - name: Remove this job's editor containers and images
         if: always()
         env:
           EDITOR_CONTAINER: ${{ steps.editor.outputs.container }}
           PREVIEW_CONTAINER: ${{ steps.preview.outputs.latin }}
           COMPLETE_PREVIEW_CONTAINER: ${{ steps.preview.outputs.complete }}
           IMAGE: platformkit-openpencil:ci-${{ github.run_id }}
-          RUN: platformkit-${{ github.run_id }}
+          EDITOR_NAME: platformkit-${{ github.run_id }}-editor
+          PREVIEW_NAME: platformkit-${{ github.run_id }}
         run: |
           status=0
-          # By the id the step recorded when it finished, and by the name it gave the
-          # container: a step the job limit took down never finished writing its
-          # output, and run 245's editor container is the reason main wrote that rule.
-          bash scripts/ci_cleanup.sh \
-            "$EDITOR_CONTAINER" "$RUN-editor" \
-            "$PREVIEW_CONTAINER" "$RUN-latin" \
-            "$COMPLETE_PREVIEW_CONTAINER" "$RUN-complete" || status=1
+          drop() {
+            for handle in "$@"; do
+              [ -n "$handle" ] || continue
+              docker inspect "$handle" >/dev/null 2>&1 || continue
+              docker rm -f "$handle" || status=1
+            done
+          }
+          drop "$EDITOR_CONTAINER" "$EDITOR_NAME"
+          drop "$PREVIEW_CONTAINER" "$PREVIEW_NAME-latin"
+          drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"
           if docker image inspect "$IMAGE" >/dev/null 2>&1; then docker image rm "$IMAGE" || status=1; fi
           if docker image inspect "$IMAGE-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-preview" || status=1; fi
           if docker image inspect "$IMAGE-complete-preview" >/dev/null 2>&1; then docker image rm "$IMAGE-complete-preview" || status=1; fi
           exit "$status"
-
-  # The journey a person walks: scripts/e2e.sh boots the app on a database of its
-  # own and drives it with one Playwright spec. It used to be the last step of a
-  # 50-minute job, which is where a job that had already spent its budget on
-  # browsers reached it — run 192 is the one that died there with `context deadline
-  # exceeded` and nothing failing. Now it is a job of its own, and its own limit.
-  e2e:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: pkit-ci-linux-amd64
-    # 2 × this job's own measured p95: one run, job 46913 of run 307,
-    # 05:25:06Z → 05:29:58Z = 292s, so 584s, rounded up — 10 minutes, 600s. The
-    # first price, 8 (480s), was main's step spans: `make e2e` p95 113s over 7 runs
-    # (min 102, p50 104) plus the browser install's 57s plus about 55s of setup —
-    # 450s. That run spent 61% of 480s, which is not a margin; the pin named at the
-    # head of this file refuses it now.
-    #
-    # It is 12 now, and the reason is a step with no span of its own: `make
-    # check-e2e-guards` joined this job when main wrote its two refusal cases (17s for
-    # both on a development box, and the mid-build one waits on gate 10's own log, so on
-    # the cure it costs gate 10's build — 103s at job 44137). Twice the job's slowest
-    # run is 584s; the widest honest account of the new step is its 20s on main's runner
-    # plus that 103s build, so 707s, which rounds up to 12 minutes (720s). The first
-    # completed run of this job reprices both numbers.
-    timeout-minutes: 12
-    env:
-      PLATFORMKIT_TEST_ADMIN_URL: postgres://postgres:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_DATABASE_URL: postgres://platformkit_app:platformkit@postgres:5432/platformkit?sslmode=disable
-      PLATFORMKIT_TEST_NATS_URL: nats://nats:4222
-      GOFLAGS: -p=4
-    services:
-      # The database is the runner's own service, in this shape and no other: the
-      # runner brings it up, probes it, and puts it on the network every step of this
-      # job shares — which is what the `postgres:` host in the URLs above means. It is
-      # written per job because a service map cannot be shared without a composite
-      # action these runners' support for is not something a checkout can check; what
-      # is shared is the rest of the fixture (scripts/ci_setup.sh), and
-      # scripts/ci_setup_test.sh refuses a job that calls that script without a
-      # database of its own to point at.
-      postgres:
-        image: postgres:16@sha256:f1c3376c26f2609ab9f29f71f824103fe2fcd8ee0346485cb6122a4f93df6f94
-        env:
-          POSTGRES_PASSWORD: platformkit
-          POSTGRES_DB: platformkit
-        options: >-
-          --health-cmd "pg_isready -U postgres -d platformkit"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
-    steps:
-      # One commit: `grep -w git scripts/e2e.sh` answers no line, and nothing else in
-      # this job touches the object database — the steps are setup-go, apt, docker, node,
-      # a browser and two make goals. `scripts/ci_checkout_history_test.sh` checks this.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
-
-      # gate 10 asks its own question — "is this listener mine?" — before it builds, and
-      # a machine with no `ss` and no `lsof` answers it with silence, which scripts/e2e.sh
-      # reads as "I cannot tell" and refuses the run over. Same package, same measured
-      # reason as `go-checks`'s step of the same name; the two jobs share no filesystem.
-      - name: Install the socket probe
-        run: |
-          apt-get update
-          apt-get install --yes --no-install-recommends iproute2
-
-      - name: Start the message bus and the application role
-        id: setup
-        env:
-          JOB_NETWORK: ${{ job.container.network }}
-          NATS_CONTAINER_NAME: platformkit-${{ github.run_id }}-e2e-nats
-        run: bash scripts/ci_setup.sh nats app-role
-
-      # The development mail catcher, the same image and ports compose.yaml's mailpit
-      # service runs, on this job's network under the name the two steps below name.
-      # scripts/e2e.sh refuses to boot the application with nothing answering the catcher
-      # — the journeys that open a mailed link read the link out of its API — and a
-      # localhost default is not reachable from a job that reaches its services by name.
-      # Started by hand, and named beside its id, for the reason every other container in
-      # this file is: an id a step the deadline cut off never finished writing is no
-      # handle, and a catcher still running is what makes the job's network unremovable.
-      - name: Start the mail catcher
-        id: mailpit
-        env:
-          JOB_NETWORK: ${{ job.container.network }}
-          CONTAINER_NAME: platformkit-${{ github.run_id }}-e2e-mailpit
-        run: |
-          test -n "$JOB_NETWORK"
-          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-          container=$(docker run -d --name "$CONTAINER_NAME" --network "$JOB_NETWORK" --network-alias mailpit \
-            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d)
-          echo "container=$container" >> "$GITHUB_OUTPUT"
-          for i in $(seq 1 30); do
-            if curl -fsS http://mailpit:8025/api/v1/info >/dev/null; then exit 0; fi
-            sleep 1
-          done
-          docker logs "$container"
-          exit 1
-
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: 24
-          cache: ''
-          package-manager-cache: false
-
-      # npm ci here, and `make e2e` re-checks the tree against the lock itself:
-      # scripts/e2e.sh installs when node_modules disagrees with package-lock.json,
-      # and this is the step that pays for the browser binary the spec needs.
-      - name: Install the browser
-        working-directory: e2e
-        run: |
-          npm ci
-          npx playwright install --with-deps chromium
-
-      # Gate 10's two refusals to drive an application it did not start, beside the gate
-      # they guard and after the browser they need: each one starts scripts/e2e.sh, which
-      # stops at its own node check before it prints anything either case greps for, so
-      # the step needs node, the browser, python3 (the decoy listener) and Postgres, and
-      # this is the job that has all four. They were not folded into `make check` for the
-      # same measured reason — `make check` runs two steps before node exists.
-      - name: Gate 10's port refusals (make check-e2e-guards)
-        # The same catcher, under the same names, as the step below: both start
-        # scripts/e2e.sh, and it refuses a run with nothing answering the catcher before
-        # it creates anything. A guards run with no catcher would report its own premise
-        # missing rather than the port refusal it is looking for.
-        env:
-          PLATFORMKIT_E2E_MAIL_HOST: mailpit
-          PLATFORMKIT_E2E_MAIL_PORT: '1025'
-          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
-        run: make check-e2e-guards
-
-      - name: make e2e
-        env:
-          PLATFORMKIT_E2E_MAIL_HOST: mailpit
-          PLATFORMKIT_E2E_MAIL_PORT: '1025'
-          PLATFORMKIT_E2E_MAILPIT_URL: http://mailpit:8025
-        run: make e2e
-
-      - name: Remove this job's manually created resources
-        if: always()
-        env:
-          NATS_CONTAINER: ${{ steps.setup.outputs.nats }}
-          MAILPIT_CONTAINER: ${{ steps.mailpit.outputs.container }}
-          RUN: platformkit-${{ github.run_id }}
-        run: bash scripts/ci_cleanup.sh \
-          "$NATS_CONTAINER" "$RUN-e2e-nats" \
-          "$MAILPIT_CONTAINER" "$RUN-e2e-mailpit"

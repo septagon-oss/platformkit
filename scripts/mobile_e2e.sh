@@ -40,16 +40,17 @@ if [[ ! "$digest" =~ ^[0-9a-fA-F]{64}$ ]]; then
 	exit 1
 fi
 
-# The Android tools are installed by the SDK and not always put on PATH: the host the
-# pkit-ci label runs on has adb and the emulator under ~/Android/Sdk with no
-# ANDROID_HOME exported at all. Found there is found; only a tool nowhere to be found
-# is missing. Maestro is searched for the same reason and not with `command -v` alone:
-# it is a Gradle start-up script plus a lib directory, so the host that has it keeps it
-# under a tools prefix of its own — $MAESTRO_HOME where one is exported, and
+# The Android tools are installed by the SDK and not always put on PATH: the job image of
+# the pkit-ci-android label exports ANDROID_HOME=/opt/android-sdk, while a developer's
+# machine has adb and the emulator under ~/Android/Sdk with no ANDROID_HOME exported at
+# all. Found there is found; only a tool nowhere to be found is missing. Maestro is
+# searched for the same reason and not with `command -v` alone: it is a Gradle start-up
+# script plus a lib directory, so the host that has it keeps it under a tools prefix of
+# its own — $MAESTRO_HOME where one is exported, and
 # ~/.local/share/platformkit-tools/maestro/bin where this loop's tooling installs it —
-# and none of those prefixes is on a CI shell's PATH. A tool that exists and is not
-# looked for is a journey that reports itself impossible, which is the wrong answer to
-# give twice.
+# and a CI shell does not always have those prefixes on its PATH. A tool that exists and
+# is not looked for is a journey that reports itself impossible, which is the wrong answer
+# to give twice.
 for dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk"; do
 	[ -n "$dir" ] || continue
 	for part in platform-tools emulator; do
@@ -62,10 +63,14 @@ for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_
 done
 export PATH
 
-# Fail fast, naming the missing piece. The host the pkit-ci label runs on was measured
-# to have /dev/kvm world-readable, an x86_64 system image and two AVDs; a runner that
-# turns out not to have them is a runner-label decision (or the hosted-device fallback
-# the specify note names), not a reason to skip a flow.
+# Fail fast, naming the missing piece. The journey runs on the pkit-ci-android label:
+# its image keeps adb and the emulator under $ANDROID_HOME (/opt/android-sdk) and
+# Maestro under $MAESTRO_HOME/bin (/opt/maestro) — all three already on its PATH — and
+# carries one x86_64 Google APIs system image and the one AVD beside it, which the
+# repository names through PK_MOBILE_AVD; the job container is started with the host's
+# /dev/kvm passed through. A runner that turns out not to have them is a runner-label
+# decision (or the hosted-device fallback the specify note names), not a reason to skip
+# a flow.
 missing=()
 for tool in adb emulator maestro; do
 	command -v "$tool" >/dev/null || missing+=("$tool")

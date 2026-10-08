@@ -188,7 +188,7 @@ func TestEmailSignupValidatesConsentCredentialsAndComposition(t *testing.T) {
 			deps := auth.Deps{Users: realUsers()}
 			emailSignup(&deps)
 			change(&deps)
-			auth.Module(deps)
+			auth.New(deps)
 		}()
 	}
 }
@@ -209,7 +209,7 @@ func TestEmailVerificationCannotCrossTenantHosts(t *testing.T) {
 	seed(t, conn, globex)
 	deps := auth.Deps{Users: realUsers(), Mailer: mailbox, Hosts: authtest.Host(host), PublicHost: host}
 	emailSignup(&deps)
-	svc, mod := auth.Module(deps)
+	svc, mod := auth.New(deps)
 	api, tenants := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Conn: conn, Authorize: svc, Authenticate: svc.Authenticate,

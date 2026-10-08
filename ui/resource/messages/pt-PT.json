@@ -54,6 +54,16 @@
     "translation": "Próxima página",
     "plural": { "": "Próxima página" }
   },
+  "screens.page": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Ir para a página %s",
+    "plural": { "": "Ir para a página %s" }
+  },
+  "screens.current_page": {
+    "references": ["ui/resource/resource.go"],
+    "translation": "Página %s, atual",
+    "plural": { "": "Página %s, atual" }
+  },
   "screens.breadcrumb": {
     "references": ["ui/resource/resource.go"],
     "translation": "Caminho",

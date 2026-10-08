@@ -227,6 +227,11 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # The largest frame an uploaded image is decoded into: a file whose header
+  # claims more pixels is refused with the reason rather than allocated, which
+  # is the decompression bomb. It bounds a decode and not an upload — max_bytes
+  # is that — and zero means the module's own forty megapixels.
+  max_image_pixels: 40000000
   # How long each retention class lives, keyed by the `kind` an upload carried.
   # A kind this table does not name is never deleted, only logged, so the empty
   # table below keeps everything and is the safe default for an example. A

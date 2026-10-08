@@ -44,7 +44,7 @@ func realUsers() usercontracts.Service {
 	// with roles before any auth service exists to ask, and the door itself has
 	// its own cases — the conformance suite in modules/user drives the port
 	// both ways (see usercontracts.Granting).
-	svc, _ := user.Module(user.Deps{
+	svc, _ := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
 	})

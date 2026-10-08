@@ -1,6 +1,7 @@
 package filetest
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"crypto/sha256"
@@ -34,6 +35,7 @@ type Fake struct {
 	storage   contracts.Storage
 	max       int64
 	rows      map[uuid.UUID]contracts.File
+	uses      []contracts.FileUse
 	holds     map[uuid.UUID]*contracts.Hold
 	published []string
 }
@@ -47,6 +49,111 @@ func NewFake(storage contracts.Storage, max int64) *Fake {
 }
 
 var _ contracts.Service = (*Fake)(nil)
+
+// Uses and SetUses are the same two decisions the SQL service makes, made over
+// a slice: contracts.CollapseRefs and contracts.DiffUses decide what a body's
+// references mean and which rows that changes, and what differs between this
+// file and internal/service.go is how a row is kept, never what is kept.
+//
+// What the fake cannot do is pretend at a second tenant: it stores each use
+// under the scope its context resolved, and reads them back through the same
+// scope, so a use written for one tenant is invisible to another. It is the
+// file rows themselves that carry no tenant here, because the map has never
+// keyed one — which is the honest limit already stated at the top of this file,
+// and why the case that refuses a second tenant's file lives in
+// internal, against the row-level policy that decides it for real.
+
+// Uses is the live list of one file.
+func (f *Fake) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) ([]contracts.UseRow, error) {
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if _, ok := f.rows[fileID]; !ok {
+		return nil, fmt.Errorf("%w: %s", crud.ErrNotFound, fileID)
+	}
+	out := []contracts.UseRow{}
+	for _, row := range f.uses {
+		if row.FileID != fileID || row.TenantID != scope.TenantID() {
+			continue
+		}
+		out = append(out, contracts.UseRow{
+			Use:       contracts.Use{Module: row.Module, Entity: row.Entity, Record: row.Record, Field: row.Field, Locale: row.Locale},
+			ID:        row.ID,
+			CreatedAt: row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
+// SetUses rewrites one field's uses, in the order the SQL service uses them:
+// decide, refuse a file the new set names that is not there, then write. A
+// file this rewrite only ends is allowed to be gone already — see the case in
+// conformance.go that holds both implementations to that.
+func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
+	wanted := contracts.CollapseRefs(refs)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Nothing is written until every id the new set names has been found. That is
+	// the whole of the refusal's promise: a body that names one gone file records
+	// no uses at all, rather than the uses of the files that happen to still be
+	// there. Ids this rewrite is dropping are not asked: they may be gone, and
+	// the rows that name them are what the write is here to remove.
+	for _, id := range wanted {
+		if _, ok := f.rows[id]; !ok {
+			return nil, fmt.Errorf("%w: %s is not a file of this tenant", crud.ErrNotFound, id)
+		}
+	}
+	var from []uuid.UUID
+	live := map[uuid.UUID]bool{}
+	for _, row := range f.uses {
+		if row.TenantID == scope.TenantID() && row.Module == use.Module && row.Entity == use.Entity &&
+			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
+			from = append(from, row.FileID)
+			live[row.FileID] = true
+		}
+	}
+	add, remove := contracts.DiffUses(from, wanted)
+	kept := f.uses[:0]
+	for _, row := range f.uses {
+		if row.TenantID == scope.TenantID() && slices.Contains(remove, row.FileID) &&
+			row.Module == use.Module && row.Entity == use.Entity &&
+			row.Record == use.Record && row.Field == use.Field && row.Locale == use.Locale {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	for _, id := range add {
+		kept = append(kept, contracts.FileUse{
+			Base:   crud.Base{ID: uuid.New(), TenantID: scope.TenantID(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
+			FileID: id, Module: use.Module, Entity: use.Entity, Record: use.Record, Field: use.Field, Locale: use.Locale,
+		})
+	}
+	slices.SortFunc(kept, func(a, b contracts.FileUse) int { return bytes.Compare(a.FileID[:], b.FileID[:]) })
+	f.uses = kept
+	if len(remove) == 0 {
+		return nil, nil
+	}
+	var unused []uuid.UUID
+	for _, id := range remove {
+		still := false
+		for _, row := range f.uses {
+			if row.FileID == id && row.TenantID == scope.TenantID() {
+				still = true
+			}
+		}
+		if !still {
+			unused = append(unused, id)
+		}
+	}
+	return unused, nil
+}
 
 // Published is the names of the events the fake would have emitted.
 func (f *Fake) Published() []string {
@@ -78,14 +185,62 @@ func (f *Fake) Upload(ctx context.Context, open contracts.Tx, up contracts.Uploa
 		_ = f.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
+	// The same image pass the SQL service runs — the same function, not a
+	// second implementation of it — at the kernel's default ceiling. A
+	// deployment's own ceiling is a Deps value, and the case that exercises a
+	// deployment that changed one lives in internal, beside the Deps that sets
+	// it; what this suite pins is that both implementations of Upload agree
+	// about what an image becomes.
+	body, err := f.storage.Get(ctx, scope, key)
+	if err != nil {
+		_ = f.storage.Delete(ctx, scope, key)
+		return nil, err
+	}
+	var pass *contracts.ImagePass
+	if contracts.ReadsAsImage(up, counted.head[:min(counted.n, int64(len(counted.head)))]) {
+		got, perr := contracts.ProcessImage(body, contracts.DefaultMaxImagePixels)
+		if perr != nil {
+			err = perr
+		} else {
+			pass = &got
+		}
+	}
+	_ = body.Close()
+	if err != nil {
+		// The same rule as the service: a pass that failed refuses and removes
+		// the object only when the caller called it an image or asked for more
+		// pixels than this deployment decodes.
+		if contracts.RefusesPass(err, up.Image) {
+			_ = f.storage.Delete(ctx, scope, key)
+			return nil, err
+		}
+		err = nil
+	}
+	size, digestHex, contentType := counted.n, hex.EncodeToString(digest.Sum(nil)), up.ContentType
+	var width, height int
+	if pass != nil {
+		sum := sha256.Sum256(pass.Bytes)
+		size, digestHex, contentType = int64(len(pass.Bytes)), hex.EncodeToString(sum[:]), pass.ContentType
+		width, height = pass.Width, pass.Height
+		// A key of its own, exactly as the SQL service does it: Storage is
+		// write-once, and the streamed object is left for the orphan sweep.
+		reencoded := contracts.Key(uuid.NewString())
+		meta := contracts.MetaFor(&contracts.File{ContentType: contentType, Visibility: up.Visibility})
+		if err := f.storage.Put(ctx, scope, reencoded, bytes.NewReader(pass.Bytes), size, meta); err != nil {
+			_ = f.storage.Delete(ctx, scope, key)
+			return nil, err
+		}
+		_ = f.storage.Delete(ctx, scope, key)
+		key = reencoded
+	}
 	if _, err := open(ctx); err != nil {
 		_ = f.storage.Delete(ctx, scope, key)
 		return nil, err
 	}
 	row := contracts.File{
 		Base: crud.Base{ID: uuid.New(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
-		Name: up.Name, ContentType: up.ContentType, Visibility: up.Visibility, Kind: up.Kind,
-		Size: counted.n, SHA256: hex.EncodeToString(digest.Sum(nil)), StorageKey: key.String(),
+		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind,
+		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
 	}
 	if err := row.Validate(ctx); err != nil {
 		_ = f.storage.Delete(ctx, scope, key)

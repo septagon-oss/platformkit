@@ -12,35 +12,17 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
+// buildWait is how long one of these boots gets to reach the point the case is asking about. Build
+// migrates the database it was handed before it ever touches a transport, so this is a wall on the
+// Postgres rather than on the code under test: the case refused at 15.53 s — twice, on 2026-10-06,
+// inside `make check`, on a host carrying eight of this program's whole suites at once — with
+// `the first build did not reach its transport`, while the same package passed in 168.435 s when it
+// was asked on its own. The assertion is unchanged: a build that never gets there is still a failure,
+// and a build that gets there late is still the thing this case is about.
+const buildWait = 2 * time.Minute
+
 // A concurrent boot can declare an event while another boot is opening its
 // transport. Whichever composition is refused must leave its database empty.
-
-// reachesTransportBound is how long this case waits for a build to arrive at the
-// transport hook it holds there. It is a watchdog over a rendezvous, not the
-// assertion: what the case checks is that a refused build leaves nothing written.
-// Alone, the build arrives in under a second (`go test ./pkit
-// -run '^TestConcurrentShapeRefusalHasNoEffects$' -count=1` -> ok in 0.297s).
-// Inside `make check`, with the whole of ./... sharing one Postgres, the build had
-// to migrate first and had not arrived at 15 seconds —
-// `concurrent_shape_refusal_test.go:45: the first build did not reach its
-// transport` — which is a stopwatch refusing a loaded box, the same mistake this
-// round removed from kit/app's boot harness and from the check stage. Two minutes
-// still refuses a build that never gets there; nothing the case asserts moved.
-const reachesTransportBound = 2 * time.Minute
-
-// finishesBuildBound is how long this case waits for a build to complete once the
-// first has been let go, as opposed to arriving at the hook it holds. It is the
-// same quantity, asked of the whole build: the second build migrates its own fresh
-// database, which is the work reachesTransportBound was priced for, and it does it
-// while the first sits at its transport holding the box's attention. The 15 s it
-// used to allow — after a 10 s first leg that releases the first build, which is a
-// nudge and not a refusal, and stays as it was — refused a loaded box: round 17's
-// log of one has a single kernel migration at 9003 ms and a whole run at 24 s. A
-// build that is merely slow is not the finding this case is looking for; two
-// minutes still refuses one that never gets there. What the case asserts did not
-// move.
-const finishesBuildBound = 2 * time.Minute
-
 func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	firstDB := onOneDatabase(t)
 	t.Cleanup(func() { events.DeclareAll(nil) })
@@ -68,7 +50,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	}()
 	select {
 	case <-firstAtTransport:
-	case <-time.After(reachesTransportBound):
+	case <-time.After(buildWait):
 		t.Fatal("the first build did not reach its transport")
 	}
 
@@ -94,7 +76,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 			stopFirst()
 			select {
 			case second = <-secondResult:
-			case <-time.After(finishesBuildBound):
+			case <-time.After(buildWait):
 				t.Fatal("the second build did not finish")
 			}
 		}

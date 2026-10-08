@@ -162,7 +162,7 @@ func TestBootMigratesAndServes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The probes as an orchestrator sends them: at the pod's address, which
 	// names no tenant, so no transaction is opened at all.
@@ -372,61 +372,66 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-// migrationGrace is how long a boot may go without anything in front of it
-// before its listener counts as broken. It covers the steps between taking the
-// composition key and opening the socket; it is not the budget for the queue,
-// which is the queue's own.
-const migrationGrace = 20 * time.Second
+// The 120 s this bound first carried was itself exceeded on 2026-10-06 — `nothing is listening on
+// 127.0.0.1:43281 after 2m0s` — by a migration the host did not reach in two minutes while eight of
+// this program's suites ran beside it. It is five minutes now, the same room kit/db's bounded tick
+// gives itself: still a sixth of the package's own bound, so a boot that never listens fails the run
+// rather than outliving it, and a boot that is only slow on somebody else's machine stops being the
+// finding. The base this branch was replayed onto fixed the same wait its own way (c439d23, at 3 m)
+// and its run is carried here rather than dropped by the replay: 20 s refused
+// `TestTheWorkerAnswersTheSameProbeShapeAsTheWeb` at head `bfd1681` on 2026-10-06, inside a suite of
+// 129 packages each booting a schema of its own, over a boot whose eighteen migrations had cost 98 ms
+// to 5.620 s apiece. Two machines measured one conclusion; the replay keeps the larger of the two
+// numbers.
 
-// compositionLockKey is the migration key kit/db takes before a boot serves
-// (compositionLockKey in kit/db/migrate.go). It is named here rather than
-// imported because the harness watches the queue from outside that package.
-const compositionLockKey = 7240101
+// bootWait is how long a fixture waits for a process it started to answer. The
+// number is the machine's, not the kernel's: Run migrates a whole installation
+// before it listens, and a migration of thirty files measured 2.8 s when this
+// package ran alone and over 20 s with three database packages sharing one
+// Postgres — which is why a bound sized for the quiet case reads "nothing is
+// listening" for a process that was still working. Every wall-clock bound in
+// this suite is stated as a constant for the same reason: a wait nobody named is
+// a wait nobody can size, and one that is too small reports the machine rather
+// than the code.
+const bootWait = 5 * time.Minute
 
-// waitFor asks until the listener answers, and stops as soon as the boot has
-// no reason left to wait. Run migrates before it serves, and migration takes the
-// database-wide composition key: a boot queued behind another app's migration is
-// a correct boot that has not had its turn, which no clock can tell apart from a
-// dead listener. Postgres can, so the wait watches pg_locks (dbtest.Open, the
-// handle kit/db's own lock cases watch with) for a request waiting on that key in
-// this boot's own database, keeps
-// waiting while one exists, and refuses once none does and the grace is spent.
-//
-// kit/app/boot_waits_for_migration_queue_test.py holds that key for 35 seconds
-// from another session and fails this harness if a boot it started anyway
-// returns non-zero. A boot that never listens stays bounded by the test binary's
-// own timeout, which is the honest bound: a listener that never opens is stuck,
-// not slow.
-func waitFor(t *testing.T, migrateURL, addr string) {
+// slowBoot is when a wait starts saying something: a boot that takes a tenth of
+// the bound is the machine being asked for more than it can do at once, and the
+// next red run should say how long a green one took.
+const slowBoot = bootWait / 10
+
+// waitFor returns when addr answers. A caller that has a Run channel passes it: a process that has
+// already stopped is not a process that is still booting, and without that channel this helper would
+// sit out its whole bound and then print "nothing is listening" over the error that says why nothing
+// ever would. The channel goes back the way it came before this helper fails: the caller's cleanup
+// reads it to find out what Run said, and a value taken here would leave that read waiting forever —
+// a fixture that turns a failure into a hang is the failure this file exists to stop.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	ctx := t.Context()
-	watch := dbtest.Open(t, migrateURL)
-
-	queueing := func() bool {
-		var waiting int
-		err := watch.QueryRowContext(ctx, `SELECT count(*) FROM pg_locks
-			WHERE locktype = 'advisory' AND objid = $1 AND NOT granted
-			  AND database = (SELECT oid FROM pg_database
-			                 WHERE datname = current_database())`, compositionLockKey).Scan(&waiting)
-		if err != nil {
-			t.Fatalf("read the migration queue: %v", err)
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "nothing has answered yet"
+	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it listened on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
 		}
-		return waiting > 0
-	}
-
-	grace := time.Now().Add(migrationGrace)
-	for {
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
+			if took := time.Since(started); took > slowBoot {
+				t.Logf("listening after %s: this machine was busy", took.Round(time.Millisecond))
+			}
 			return
-		}
-		if queueing() {
-			grace = time.Now().Add(migrationGrace)
-		} else if time.Now().After(grace) {
-			t.Fatalf("nothing is listening on %s and no migration is queueing ahead of it", addr)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
+	t.Fatalf("nothing is listening on %s after %s (%s): the process is still migrating, or never started",
+		addr, time.Since(started).Round(time.Second), last)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -497,7 +502,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -517,7 +522,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)
@@ -583,7 +588,7 @@ func TestWorkerRelaysAndAnswersItsProbes(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// A worker serves the two probes and nothing else.
 	for _, path := range []string{"/health", "/ready"} {
@@ -678,7 +683,7 @@ func TestTheWorkerAnswersTheSameProbeShapeAsTheWeb(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	for path, want := range map[string]string{"/health": `{"status":"ok"}`, "/ready": `{"status":"ok"}`} {
 		code, body := get(t, cfg.Server.Addr, cfg.Server.Addr, path)
@@ -722,7 +727,7 @@ func TestTheWorkspaceCatalogAnswersAtTheWorkspaceRoot(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	// The document is for a caller the installation recognises: the resources it
 	// may reach, not everybody's.
@@ -782,7 +787,7 @@ func TestACompositionThatMountsNothingOnTheWorkspaceIsRefused(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- b.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	if code, _ := get(t, cfg.Server.Addr, tenantHost, "/api/v1/faceless/notice"); code != http.StatusOK {
 		t.Errorf("the workspace route = %d, want 200", code)
 	}
@@ -819,7 +824,7 @@ func TestTheBootLineNamesTheEventSchemaCoverage(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -853,7 +858,7 @@ func TestAModulesMovedAddressIsServedAsARedirect(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Database.MigrateURL, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 
 	req, _ := http.NewRequest(http.MethodGet, "http://"+cfg.Server.Addr+"/api/v1/greeting?lang=pt", nil)
 	req.Host = tenantHost

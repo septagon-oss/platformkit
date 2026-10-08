@@ -58,7 +58,7 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	settings, contents := sitetest.NewFake(), contenttest.NewFake()
-	m := web.Module(web.Deps{
+	m := web.New(web.Deps{
 		Site: settings, Content: contents, Theme: design.Default(),
 		// Two addresses this module links and does not own: the workspace's
 		// sign-in page and the file module's public door. The composition names

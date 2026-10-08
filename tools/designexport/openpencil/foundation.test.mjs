@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { execFileSync, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -10,12 +10,11 @@ import { SkiaRenderer } from '@open-pencil/core/canvas'
 import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { buildFoundation, prepareIcon } from './foundation.mjs'
+import { exportCore } from './browser/fixtures.test.mjs'
 
 const repo = fileURLToPath(new URL('../../../', import.meta.url))
 const cli = fileURLToPath(new URL('./generate.mjs', import.meta.url))
-const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-  cwd: repo, encoding: 'utf8',
-}))
+const snapshot = exportCore()
 const digest = value => createHash('sha256').update(value).digest('hex')
 
 function named(graph, name, parent) {

@@ -188,7 +188,7 @@ func TestAPersonaGrantingWhatNoModuleDeclaresIsRefusedAtCompose(t *testing.T) {
 	_, cfg := configure(t)
 	composed := compose(cfg)
 	plan := func() error {
-		_, err := sentences(cfg, composed).Plan(pkit.Deployment{
+		_, err := sentencesOf(cfg).Plan(pkit.Deployment{
 			Environment: pkit.Development,
 			Config:      cfg,
 			Transports:  transports(),
