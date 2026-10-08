@@ -11,8 +11,10 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/internal"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
@@ -49,6 +51,7 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -111,6 +114,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, svc)
 	pkit.Put[httpx.Authorizer](w, svc)
 	pkit.Put[pkit.Authenticator](w, svc.Authenticate)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
 

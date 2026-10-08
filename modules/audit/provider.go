@@ -4,7 +4,9 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	contracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
+	"github.com/septagon-oss/platformkit/modules/audit/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -18,11 +20,13 @@ import (
 // everybody), and how long a row lives, which is a deployment's setting.
 var Module = pkit.NewModule("audit", wire,
 	pkit.Needs[jobs.TenantLister](),
+	pkit.Contributes[personaldata.Part](),
 	pkit.Optional[contracts.Plan](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	settings := pkit.Config(w, func(c config.Config) config.Audit { return c.Audit })
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return New(Deps{
 		Tenants:       pkit.Get[jobs.TenantLister](w),
 		RetentionDays: settings.RetentionDays,

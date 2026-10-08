@@ -3,8 +3,10 @@ package task
 import (
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
+	"github.com/septagon-oss/platformkit/modules/task/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -25,6 +27,7 @@ var Module = pkit.NewModule("task", wire,
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Optional[tenancy.Policy](),
 	pkit.Provides[taskcontracts.Service](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -37,5 +40,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Tenants: pkit.Get[jobs.TenantLister](w),
 	})
 	pkit.Put[taskcontracts.Service](w, svc)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }

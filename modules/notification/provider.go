@@ -3,8 +3,10 @@ package notification
 import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
+	"github.com/septagon-oss/platformkit/modules/notification/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -36,6 +38,7 @@ var Module = pkit.NewModule("notification", wire,
 	// shorter name.
 	pkit.Provides[authcontracts.Notifier](),
 	pkit.Provides[contracts.Mailer](),
+	pkit.Contributes[personaldata.Part](),
 	pkit.FromDeployment(
 		pkit.Implementation{Name: "smtp", Inputs: []string{"mail.host", "mail.port", "mail.from"}},
 		pkit.Implementation{Name: "mailbox"},
@@ -68,5 +71,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Notifier](w, svc)
 	pkit.Put[contracts.Mailer](w, mailer)
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
