@@ -1,9 +1,11 @@
 # 0020: A person's data: export and erasure
 
-Status: proposed, 2026-10-08. This is the specify-phase record of T-0294: it fixes the contract, the
-per-module inventory, and what each of the two operations does to each column. Nothing here is
-verified until the cases under *What will prove it* exist and pass — that table names the debt this
-record takes on, and a claim in a `Verified:` paragraph that does not cite one of them is not a claim.
+Status: accepted in part, 2026-10-08. T-0294's specify record, and the kernel half of it is now
+built: the contract, the claim, and the boot that refuses a module whose tables say more than its
+manifest does. The two operations themselves — the export job, the erasure command and
+`modules/subject` — are unwritten, so every promise in §4 to §7 below is a promise about a design
+and not about behaviour. The table at the end says which rows are pinned and which are debt; a claim
+in a `Verified:` paragraph that does not cite a pinned row is not a claim.
 
 ## Problem
 
@@ -131,36 +133,48 @@ type Table struct {
 }
 ```
 
-`Module.PersonalData Declaration` is the field. The kernel reads it four ways, which is what makes it
-a declaration and not documentation: it refuses at boot (§3), it generates the export manifest (§5),
-it bounds the erasure's verification (§4), and it says which columns the bundle is allowed to contain.
+`Module.PersonalData Declaration` is the field. The kernel reads it three ways, which is what makes
+it a declaration and not documentation: it is refused against the module's own migration bytes (§3),
+it bounds what the per-person erasure re-reads to prove it worked (§4), and it is the list the
+export bundle reports against (§5).
 
-`id` and `tenant_id` are exempt from `NotPerson` by the kernel's own conventions: every table in this
+`id` and `tenant_id` are exempt from the claim by the kernel's own conventions: every table in this
 repository has both, and `tenant_id` is the column `db.Tenant` already defines. Nothing else is
-exempt.
+exempt — which has a consequence worth writing down before anybody meets it as a surprise:
+**a module whose tables carry a uuid at all cannot declare `none`, however obviously that uuid names
+a plan or a file.** It declares the table and files the column in `NotPerson`. The alternative —
+accepting a sentence in place of the list — is the hole every future module would fall through the
+day it adds a column whose name does not answer its own question.
 
 ### 3. What the boot refuses
 
-Each of these is a `Validate`/`Expand`-time refusal in `kit/module` and `kit/app`, on the manifest and
-on the module's own migration files — bytes, not a database, so a deployment that never boots a
-schema still gets the refusal:
+Each of these is a `Validate`-time refusal in `kit/module`, on the manifest and on the module's own
+migration files — bytes, and not a database, so a deployment that never boots a schema still gets
+it. The claim is asked of a module that **has** SQL and of nobody else: a module with no tables of
+its own creates no person column by construction, and asking `modules/admin` for a sentence about
+nothing would teach every future module that the field is a formality you fill in to be quiet.
 
-| id | refusal | why it has to be a refusal |
+| id | refusal | state at this revision |
 | --- | --- | --- |
-| P1 | a module declares neither `Tables` nor a `None` reason | silence is the failure mode: the person who adds a module never thinks to think about this one |
-| P2 | a module declares `None` with an empty or whitespace reason | "none" is a claim somebody has to be able to read and disagree with; a bare `none` is a checkbox |
-| P3 | a table in `Tables` that the module's own SQL never creates or alters | the declaration is a claim about this module's bytes; naming another module's table is exactly the coupling house rule 3 refuses |
-| P4 | a column named in `Tables` that the module's SQL does not carry, in either direction | a declaration that has drifted from the schema is worse than none: the erasure below verifies against it |
-| P5 | a `uuid` column in a table the module creates that appears in none of `Person`, `About`, `NotPerson` | this is the completeness rule. It needs no vocabulary of likely column names, so a module that invents `sent_to_id` is refused rather than quietly uncovered |
-| P6 | a module whose SQL carries a person column and declares `None` | the brief's rule, and P5 is what makes it checkable |
-| P7 | a module that declares `Tables` and contributes no `Part`, or contributes a `Part` whose `Module` is not its manifest name, or two `Part`s with one name | the declaration and the implementation have to be the same module's |
-| P8 | a `Part` whose `Data` returns a part naming a table outside its own declaration | the bundle is assembled from what was declared, so undeclared bytes in an export are bytes nobody approved for export |
+| P1 | a module with SQL declares neither `Tables` nor a `None` reason | **in** — `kit/module/personal_data_test.go`; the refusal the field exists for |
+| P2 | a `None` whose reason is empty or whitespace | **in** — refused wherever it appears, including beside a table list |
+| P3 | a table the module's own SQL never creates or alters | **in** — a module may not name another module's table here |
+| P4 | a column named in `Tables` that the SQL does not carry, or carries with the wrong type | **in** — a `Person` on a `text` column, and a `Text` on a `uuid`, which would scrub nothing and report success |
+| P5 | a `uuid` column in a table the module creates that appears in none of `Person`, `About`, `NotPerson` | **in** — the completeness rule; see why below |
+| P6 | a `CREATE TABLE` the reader cannot read, or an `ADD COLUMN` it cannot attach to one | **in** — a file it cannot fully read is an error out of `ReadMigrations`, so a column nobody saw is never a person column nobody had to declare |
+| P7 | a module that declares `Tables` and contributes no `Part`, or contributes one whose `Module` is not its manifest name, or two with one name | **not yet** — it arrives with the first `Export`/`Erase`, because until a module implements the contract every declaration in the tree would fail it |
+| P8 | a `Part` whose exported part names a table outside its own declaration | **not yet** — same reason: it reads bytes no `Export` produces yet |
 
-There is deliberately **no** list of likely person-column names in the kernel. A constant like
-`{"user_id","actor","author_id",…}` would be both over-broad (it names columns the kernel has no
-business knowing) and under-broad (it goes stale the day a module adds a differently-named one), and
-it is the kind of specialist fact house rule 6 keeps out of a shared module. P5 gets the same
-coverage from the module's own SQL, which is the only source that cannot go stale.
+P5 needs no vocabulary of likely person-column names, and the kernel deliberately carries none. A
+constant like `{"user_id","actor","author_id",…}` would be both over-broad — it names columns the
+kernel has no business knowing — and under-broad, stale the day a module adds a differently-named
+one, and it is the kind of specialist fact house rule 6 keeps out of a shared module. P5 gets the
+same coverage from the module's own SQL, which is the only source that cannot go stale.
+
+What P5 cannot do is decide which **text** columns carry an identifier: a text column names nobody
+until somebody writes an address into it, so `Text` is the module's own claim and a column left out
+of it is caught by the erasure's re-read (§4) rather than at boot. Saying that plainly is the honest
+version of a rule that would otherwise read as complete.
 
 ### 4. Erasure anonymises, and the declaration verifies it
 
@@ -288,11 +302,9 @@ the brief's list is not the whole list.
 | change | `change_proposals` | proposals they proposed or reviewed, with the diff | keeps `proposer`/`reviewer` ids, scrubs `comment` and the strings inside the `diff` document — the diff is `text` holding JSON, so the scrub reads it as JSON and writes it back as JSON |
 | audit | `audit_events` | the person's trail: name, occurred_at, payload, request_id, client_ip | keeps `actor` and `name`, scrubs the strings inside `payload`, `client_ip` → NULL |
 | kernel | `platformkit_outbox`, `platformkit_dead_letters` | the rows this person's requests caused that are still held, and any dead letter naming them | scrubs `actor`'s payloads and leaves `actor` — the same rule as the trail. Supplied by `modules/subject`, which is the only module that may import the kernel's own tables, and it says so in the manifest rather than in a comment |
-| tenant | `None` | — | "the organisation is the data subject here: `tenants.name` is a company's name, `tenant_hosts.host` is a domain, `tenant_locales` is a language row — no table names a natural person" |
-| billing | `None` | — | "`billing_plans` is the operator's price list and `billing_subscriptions` belongs to a tenant: no column names a natural person" |
-| site | `None` | — | "`site_settings` is one row of a tenant's own presentation choices" |
-| admin | `None` | — | "no tables at all: `modules/admin` generates screens and holds no rows" |
-| web | `None` | — | "no tables at all: `modules/web` serves the public surface" |
+| billing | `billing_subscriptions` (`NotPerson` `plan_id`) | nothing — no row of this module is a person's | nothing; **it cannot declare `none`**, because `plan_id` is a uuid and the completeness rule admits no exception for a name that answers its own question |
+| site | `site_settings` (`NotPerson` `logo_file_id`) | nothing | nothing, and the same rule applies to `logo_file_id` |
+| tenant, admin, web | not asked — **they own no SQL**: `modules/tenant`'s tables are the kernel's `migrations/`, `modules/admin` generates screens, `modules/web` serves the public surface | — | "the organisation is the data subject where a tenant row is concerned: `tenants.name` is a company's name, `tenant_hosts.host` is a domain, `tenant_locales` is a language row" — the reason lives in this record, because §3 asks nothing of a module that creates no table |
 
 ### 9. What the new module owes the kernel's conventions
 
@@ -309,11 +321,12 @@ layers, and `internal/ui` renders HTML only for the pages that are its own.
 
 ## Consequences this has to pay for
 
-**The refusal is boot-time, so it is also a breaking change to every existing module.** Thirteen
-kernel modules gain a `PersonalData` declaration in the same commit as the field — eight
-implementing, five saying `none` in a sentence — or the reference application stops starting. That is
-the point of the field, and it is why the five `None` reasons above are written as sentences and not
-`""`.
+**The refusal is boot-time, so it is also a change to every module that owns SQL.** Ten kernel
+modules gained a `PersonalData` claim in the same change as the field — eight naming person columns,
+two (`billing`, `site`) filing the uuid columns they hold as rows and not people — or the reference
+application stopped starting. That is the point of the field. Three more (`tenant`, `admin`, `web`)
+own no SQL and are not asked; their reasons are the sentence in §8 rather than a line of Go that
+nothing could check.
 
 **A `Text` column is a promise that a scrub runs there.** Adding a text column to a declared table
 without declaring it makes the *erasure* fail (P4 checks the declaration against the SQL, and §4's
@@ -343,7 +356,7 @@ and the `Subject` type; the declaration's four column sets and the eight refusal
 values and the scrub token; the verification-before-commit rule; the bundle's layout, ordering and
 digests; `MaxBundleBytes` at 64 MiB; the seven-day single-use hashed grant and the refusal it answers
 with; the two permissions, the one role, the state machine and its idempotency keys; the per-module
-table above including the five `None` reasons.
+table above including the reasons `tenant`, `admin` and `web` hold no person column.
 
 The product's share, left to the product: which sector's retention or legal-hold classes outrank an
 erasure and how that is worded to the person; every sentence the person reads (the copy tables under
@@ -354,16 +367,17 @@ a fact this module may hold; whether a deployment mails the link at all, since m
 
 ## What will prove it
 
-None of these exist yet at `83b4967`. Each is what the implementation round owes, and the acceptance
-lines of the brief are the first two rows.
+The boot rows below are pinned and pass at this revision; the rest is what the implementation round
+owes, and the acceptance lines of the brief are the first two rows.
 
 | claim | case |
 | --- | --- |
+| A module with SQL that says nothing about its columns is refused, and the ten reference modules pass the rule they enforce on others | **in**: `TestAModuleWithTablesThatSaysNothingAboutThemIsRefused`, `TestAModuleWithNoTablesOfItsOwnIsNotAsked`, `TestAReasonThatContradictsTheSQLIsRefused` in `kit/module/personal_data_test.go`; and `kit/personaldata`'s own cases read the ten real modules' migration files — audit's `records uuid[]`, auth's eight person columns, `site_settings.logo_file_id` and `users`' none at all — through the same `Check` the boot runs |
 | A test exports a seeded person and finds their rows from each module | `apps/platformkit` case beside `erasure_audit_test.go`: seed a person with a session, a notification, a file, a task, a content row, a change proposal and an audit trail; run the export; open the zip and assert each module's part names the row the fixture wrote |
 | Erasing leaves no email or name of theirs in any table, while their audit rows remain, anonymised | the same fixture, then erase, then one query per declared `Text` column across all eight owners asserting zero matches for the email, the display name and the handle, and one asserting the person's `audit_events` still exist with their `name` and `actor` intact |
 | An erasure whose declaration lied rolls back and names the columns | a module fixture that declares a text column it does not scrub; the command refuses, and nothing in the transaction was written or emitted |
-| A module with a person column that declares nothing is refused at boot | `kit/module` case with a fixture manifest; and the reverse: a `None` module whose SQL names a person |
-| Every real module passes the rule it will be refused by | a case over the composed application's manifests and each module's embedded migration FS — the reason P3–P5 read bytes and not a live schema is that this case runs without a database |
+| ~~A module with a person column that declares nothing is refused at boot~~ | in, above |
+| ~~Every real module passes the rule it will be refused by~~ | in, above — read from the modules' own embedded SQL, without a database |
 | The last reachable administrator cannot be erased | `modules/subject` case with one administrator, mirroring `modules/user/internal/administration_test.go:368` |
 | A second erasure answers the first receipt and scrubs nothing twice | redelivery case, mirroring `TestARedeliveryCertifiesOneRemovalOnce` |
 | The seven-day link is single-use, hashed at rest, and answers the same refusal expired or forged | `modules/subject` case reading `subject_grants` for the plaintext token and finding nothing |
