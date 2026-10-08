@@ -229,7 +229,7 @@ jobs:
       # reader wants to know is what they are about to run. syft is the tool
       # ADR 0009 names; the action is the tool.
       - name: SBOM
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           # By digest, which is what was pushed, and with the registry
           # credentials: a new package is private until the owner says otherwise.
