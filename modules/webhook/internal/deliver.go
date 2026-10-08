@@ -96,10 +96,7 @@ func Deliver(svc *Service, tenants jobs.TenantLister, every time.Duration, batch
 		Transport: svc.Policy().transport(timeout),
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= maxRedirects {
-				return http.ErrUseLastResponse
-			}
-			return nil
+			return svc.Policy().refuseHop(req.URL, via)
 		},
 	}
 	return jobs.Job{
@@ -212,9 +209,9 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 // caller's own error.
 func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *http.Client) {
 	status, err := s.post(ctx, client, a)
-	state, reason := classify(status, err)
+	state, reason, fault := classify(status, err)
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return s.record(ctx, tx, a, status, state, reason)
+		return s.record(ctx, tx, a, status, state, reason, fault)
 	}); err != nil && ctx.Err() == nil {
 		// Logged where it happened rather than returned, because the row stays
 		// in_flight and the lease will claim it again: the attempt is not lost,
@@ -255,27 +252,38 @@ func (s *Service) post(ctx context.Context, client *http.Client, a attempt) (int
 }
 
 // classify turns an answer into one of the log's two terminal non-success
-// states. dropped means "never again" and covers the address refusal, the closed
-// window and the 4xx that will keep answering; failed means "and another try".
-func classify(status int, err error) (state, reason string) {
+// states. dropped means "never again" and covers the address refusal, the
+// redirect that would carry the signed body off TLS, the closed window and the
+// 4xx that will keep answering; failed means "and another try".
+//
+// The third answer is whose fault this is, and the fault clock counts only the
+// receiver's. A socket this deployment declined to open is said in the row and
+// stops the endpoint's three-day clock from starting, because an endpoint that
+// delivered fine until someone turned AllowLocalEndpoints off is the
+// deployment's incident, not a tenant's endpoint being disabled for it. A
+// receiver that answers 404 — permanently, but *answers* — is the endpoint's
+// fault, and is the failure the brief promises to disable an endpoint for.
+func classify(status int, err error) (state, reason string, fault bool) {
 	switch {
 	case err != nil && AddressRefused(err):
-		return contracts.StateDropped, contracts.ReasonAddressRefused + ": " + err.Error()
+		return contracts.StateDropped, contracts.ReasonAddressRefused + ": " + err.Error(), false
+	case err != nil && RedirectRefused(err):
+		return contracts.StateDropped, err.Error(), true
 	case err != nil:
-		return contracts.StateFailed, err.Error()
+		return contracts.StateFailed, err.Error(), true
 	case status >= 200 && status < 300:
-		return contracts.StateSent, ""
+		return contracts.StateSent, "", false
 	case retryable(status, nil):
-		return contracts.StateFailed, retryReason(status)
+		return contracts.StateFailed, retryReason(status), true
 	default:
-		return contracts.StateDropped, retryReason(status)
+		return contracts.StateDropped, retryReason(status), true
 	}
 }
 
 // record writes the outcome. One advisory lock, then the endpoint's row lock,
 // then the decisions — in that order everywhere, so no two transactions can
 // hold one each and wait.
-func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, status int, state, reason string) error {
+func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, status int, state, reason string, fault bool) error {
 	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtext(?)::bigint)", outcomeLock).Error; err != nil {
 		return fmt.Errorf("webhook: take the outcome lock: %w", err)
 	}
@@ -292,6 +300,9 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 			" SET failing_since = NULL, last_success_at = ? WHERE id = ?", at, endpoint.ID).Error; err != nil {
 			return fmt.Errorf("webhook: clear the fault clock of %s: %w", endpoint.ID, err)
 		}
+		return nil
+	}
+	if !fault {
 		return nil
 	}
 	// The fault clock, stamped by the *first* failure after a success: COALESCE
@@ -318,20 +329,22 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 		} else if err := s.note(tx, a.row.ID, ladderStop(endpoint)); err != nil {
 			return err
 		}
-		// The fault rule, in this same transaction: the attempt that crossed the
-		// three-day line is the one that disables the endpoint, and its event and
-		// its notice commit with the state change that says so.
-		_, err := s.DisableIfFailed(ctx, tx, endpoint.ID, at)
-		return err
+	} else if reason == "" {
+		// A dropped attempt queues nothing. If it is the last thing that can happen
+		// to this event, say so in the row rather than leaving the reader to work it
+		// out from the absence of a successor.
+		if err := s.note(tx, a.row.ID, "the receiver answered "+retryReason(status)); err != nil {
+			return err
+		}
 	}
-
-	// A dropped attempt queues nothing. If it is the last thing that can happen
-	// to this event, say so in the row rather than leaving the reader to work it
-	// out from the absence of a successor.
-	if state == contracts.StateDropped && reason == "" {
-		return s.note(tx, a.row.ID, "the receiver answered "+retryReason(status))
-	}
-	return nil
+	// The fault rule, in this same transaction and whatever the ladder did with
+	// this attempt: the attempt that crossed the three-day line is the one that
+	// disables the endpoint, and its event and its notice commit with the state
+	// change that says so. It runs for a dropped attempt too — a receiver that
+	// answers 404 has not recovered across three days any more than one that
+	// answers 500, and its administrator deserves to be told either way.
+	_, err = s.DisableIfFailed(ctx, tx, endpoint.ID, at)
+	return err
 }
 
 // ladderStop is the sentence the last attempt of an event carries when no retry
@@ -362,9 +375,13 @@ func (s *Service) queue(ctx context.Context, tx db.Tx[db.Tenant], row contracts.
 	return nil
 }
 
-// note adds a sentence to a row that already has its state.
+// note adds a sentence to a row that already has its state. The CASE keeps what
+// the attempt already said — the status the receiver answered is the fact, and
+// why the ladder stopped beside it is the one a reader needs next — and it is
+// written with its THEN because `CASE WHEN x ? ELSE …` is not SQL: the sentence
+// belongs to the row, and a rollback that loses the outcome loses the attempt.
 func (s *Service) note(tx db.Tx[db.Tenant], id uuid.UUID, reason string) error {
-	res := tx.DB().Exec("UPDATE "+deliveryTable+" SET reason = CASE WHEN reason = '' ? ELSE reason || '; ' || ? END WHERE id = ?",
+	res := tx.DB().Exec("UPDATE "+deliveryTable+" SET reason = CASE WHEN reason = '' THEN ? ELSE reason || '; ' || ? END WHERE id = ?",
 		reason, reason, id)
 	return res.Error
 }

@@ -76,8 +76,8 @@ visible in the log.
 ## Two resources, and what a caller may change
 
 `GET/PATCH/DELETE /endpoints/{id}`, `GET /endpoints` and `GET /deliveries{,/{id}}`
-come from `rest.Spec`; the delivery log offers **no write at all**, because a
-delivery is a fact. Five routes are this module's own:
+come from `rest.Spec`; the delivery log offers **no CRUD write at all**, because a
+delivery is a fact. Four routes answer with something other than the entity:
 
 | Route | Why it is not a PATCH field |
 |---|---|
@@ -86,6 +86,17 @@ delivery is a fact. Five routes are this module's own:
 | `POST /endpoints/{id}/target` | both fields re-check the address policy and the catalogue |
 | `POST /endpoints/{id}/enable`, `/disable` | the lifecycle: a status a PATCH could set is a flow of events nobody chose to stop |
 | `POST /deliveries/{id}/replay` | queues a *new* row, `cause='replay'`, and answers with it |
+
+The last three are `rest.Command`, which mounts the route and records the door on
+the resource in one declaration. The first two are mounted by hand, because the
+answer is a value the entity must never hold, and they record their own door
+afterwards — `httpx.Surfaces.AddCommand`, the seam `rest.Command` itself calls.
+A route that is in the API and not in `Resources()` is a door no generated screen
+can draw and no native shell can find, which is how registration and rotation read
+until the second review. Neither carries a `Run`: a derived screen performs a
+write and redirects, and it has nowhere to show a value that exists in one
+response and in no read, so ui/screens draws no button behind them and the two
+doors stay JSON doors. See [Interface](#interface).
 
 The secret is not a field of `Endpoint`. It lives in `webhook_endpoint_secrets`,
 encrypted with a deployment key a tenant can neither read nor set, and the
@@ -128,7 +139,7 @@ entity would be a `whsec_` value on the generated form and in
 The manifest in `modules/webhook/module.go` (`permissions`) declares two keys, whose constants are in `modules/webhook/contracts/permissions.go`.
 
 - `webhook:read` guards the four generated read routes of the two Specs (`spec.Read`), the two generated screens `webhook/endpoints` and `webhook/deliveries`, and both nav entries (`Nav` in `Module`). It never reaches a secret: no readable field carries one.
-- `webhook:update` guards every write. `endpointSpec.Write` covers the generated `PATCH` and `DELETE`; `httpx.Register(s.App, …, write, …)` guards the create and the rotate and the replay; and `rest.Command(…, rest.CommandOptions{Auth: write})` guards `target`, `enable` and `disable`. A replay *sends*, so it is a write and never a read.
+- `webhook:update` guards every write. `endpointSpec.Write` covers the generated `PATCH` and `DELETE`; `httpx.Register(s.App, …, write, …)` guards the create and the rotate; and `rest.Command(…, rest.CommandOptions{Auth: write})` guards `target`, `enable`, `disable` and `replay`. A replay *sends*, so it is a write and never a read. The same `Auth` is what the two recorded doors are filtered by in the catalogue, so a caller who cannot call a route is not told the door exists.
 
 The module declares no export. Its one subscription (`SubscribeAll: true`, `svc.Fanout`) and its two jobs (`webhook-deliver`, the retention sweep) are not requests and are guarded by nothing but the tenant transaction they open.
 
@@ -184,10 +195,13 @@ the reference application composes nothing: it has no notice template for a mach
 fault, and a deployment that needs the notice durable subscribes to
 `webhook.endpoint.disabled`, which commits with the disablement.
 
-Two of this application's personas are granted the two doors, in
-`apps/platformkit/roles.go`: a coordinator reads and registers (the persona that
-resolves a task is the persona that registers the machine a resolution pages), and
-an observer reads the log and registers nothing.
+Neither of `apps/platformkit/roles.go`'s two personas is granted either door:
+they are the task module's, and `roles.go` says so — a module's doors are not a
+reason to widen somebody else's persona. The tenant's `admin` role holds every
+tenant-scoped permission, which is what lets an administrator register an
+endpoint on day one; `apps/platformkit/persona_test.go` is the table of what each
+persona may do and is refused. The signing key and the two other deployment keys
+are read by `webhook.Module`'s provider out of `config.Webhook`.
 
 ## Reused
 
@@ -219,8 +233,11 @@ because HMAC needs the plaintext back and `kit/secrets` does not exist yet.
 ## Made reusable
 
 Three things. `internal.AddressPolicy` is a deployment-level SSRF gate that reads
-the resolved address and is a single value shared by the write and the dial — any
-module that ever POSTs somewhere a tenant named can take it. The claim/send/
+the resolved address and is a single value shared by the write and the dial — the
+shape any module that ever POSTs somewhere a tenant named would want, and today
+only this one has, because `internal/` is this module's and a neighbour would
+have to take it from `contracts/` first. The claim is the shape, not that the
+type is importable: nothing outside `modules/webhook` can read it as it stands. The claim/send/
 record split in `internal/deliver.go`, with the advisory lock named for the
 cross-row critical section and the lease that doubts an `in_flight` row, is the
 shape for any module that must talk to somebody else's server on this platform's
@@ -243,9 +260,13 @@ Stated because each one is a promise someone could otherwise read into the modul
   ladder's 12 rungs span about 4 days 20 hours, so an endpoint that fails one event
   while succeeding others (which resets `failing_since`) can retry that event for
   roughly 4.9 days. Closing the gap means carrying `MIN(attempted_at)` for the pair.
-* **A redirect is followed, up to three.** The policy gate reads the address that
-  was *registered*; a receiver that answers 3xx to another host moves where the
-  signed body goes. Refusing non-https redirect targets is open work.
+* **A redirect is followed, up to three, and never off TLS.** `AddressPolicy`
+  reads the address of every hop, so a receiver that answers 3xx to another host
+  moves where the signed body goes — but a hop that steps down to plain HTTP is
+  refused before the socket opens, the attempt is `dropped` with the address in
+  its reason, and the signed body goes nowhere. `AllowLocalEndpoints` does not
+  open that: the flag says this deployment dials a local *destination*, not that
+  it carries a signature in the clear.
 * **The SSRF gate refuses what a laptop and a cloud metadata endpoint look like,
   not every reserved block.** Loopback, link-local, private, unique-local and
   `0.0.0.0` are refused, resolved rather than textual; the metadata addresses stay
@@ -272,12 +293,17 @@ route, and no surface or prefix literal in this module.
 | `webhook:read` | `GET /endpoints`, `GET /endpoints/{id}`, `GET /deliveries`, `GET /deliveries/{id}` |
 | `webhook:update` | `POST /endpoints`, `PATCH /endpoints/{id}`, `DELETE /endpoints/{id}`, `POST /endpoints/{id}/rotate`, `/target`, `/enable`, `/disable`, `POST /deliveries/{id}/replay` |
 
-Both resources are `rest.Spec` resources, so `GET /api/v1/admin/resources` lists
+Both resources are `rest.Spec` resources, so `GET /api/v1/app/resources` lists
 them, the generated screens are `webhook/endpoints` and `webhook/deliveries`, and
-the nav entries are read-guarded. The delivery log's Spec offers no write, and its
-one verb — the replay — is a command on the log that answers with a *new* row.
-Nothing in this module renders HTML: `internal/ui` does not exist, because no page
-here is this module's own.
+the nav entries are read-guarded. The catalogue names every write this module
+has, not only the CRUD ones: `register` and `rotate` on the endpoint, `target`,
+`enable` and `disable` beside them, and `replay` on the delivery log — the last
+two of the first pair named without a screen button, because a screen cannot show
+a secret shown once and an administrator who cannot see the key has an endpoint
+they cannot wire. The delivery log's Spec offers no CRUD write, and its one verb
+is a command on the log that answers with a *new* row. Nothing in this module
+renders HTML: `internal/ui` does not exist, because no page here is this module's
+own.
 
 ## Verification
 

@@ -3,10 +3,12 @@ package internal
 import (
 	"context"
 	"net/http"
+	"reflect"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -14,16 +16,21 @@ import (
 	"github.com/septagon-oss/platformkit/modules/webhook/contracts"
 )
 
-// The addresses the hand-mounted routes answer at, relative to the surface the
-// kernel put them on. The Spec owns the two collections; these are the five
-// routes whose answer, or whose checks, are not the entity.
+// The addresses the two shown-once routes answer at, relative to the surface
+// the kernel put them on, and the verbs their doors are catalogued under. The
+// Spec owns the two collections and `rest.Command` owns the five lifecycle
+// routes; these are the routes whose answer is not the entity. The registration
+// is a command over the collection — the row is what it produces — answered at
+// the collection's own POST, and the rotation is one over a single endpoint.
 const (
-	createPath  = "/endpoints"
-	rotatePath  = "/endpoints/{id}/rotate"
-	replayPath  = "/deliveries/{id}/replay"
-	targetVerb  = "target"
-	enableVerb  = "enable"
-	disableVerb = "disable"
+	createPath   = "/endpoints"
+	rotatePath   = "/endpoints/{id}/rotate"
+	registerVerb = "register"
+	rotateVerb   = "rotate"
+	replayVerb   = "replay"
+	targetVerb   = "target"
+	enableVerb   = "enable"
+	disableVerb  = "disable"
 )
 
 // faults is what these answer with; 409 because enable, disable and a replay of
@@ -35,16 +42,24 @@ var faults = []int{http.StatusNotFound, http.StatusConflict, http.StatusUnproces
 var unavailable = problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
 
 // RegisterRoutes mounts the routes a Spec cannot: the two that answer with a
-// secret, the one that answers with a different entity, and the three commands
-// that move the lifecycle.
+// secret, the one that answers with a different row, and the three commands that
+// move the lifecycle.
 //
-// The three commands are rest.Command, so they get the Spec's write guard, the
-// catalogue's door record and the generated screen's button from the same place
-// the CRUD routes do. The other three are hand-mounted because a Spec answers
-// with the entity, and the answer here is a value the entity must never hold
-// (auth's shown-once token is a separate type for the same reason) or is a
-// different row entirely.
-func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *Service) {
+// The lifecycle commands and the replay are `rest.Command`, so they get the
+// Spec's write guard, the catalogue's record of the door and the generated
+// screen's button from the same place the CRUD routes do — one declaration, and
+// the API document, the catalogue and the screen cannot disagree about it.
+//
+// The create and the rotate are hand-mounted, because a Spec answers with the
+// entity and the answer here is a value the entity must never hold (auth's
+// shown-once token is a separate type for the same reason). Hand-mounting had a
+// cost the second review found: `Resources()` is filled in beside `rest.Command`'s
+// own mount, so a route mounted by hand was in the API and nowhere a generated
+// client looks — registration and rotation were doors a screen could not draw
+// and a device could not find. Both now record their own door, at the end, and
+// the comment there says why a derived screen must not perform either one.
+func RegisterRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint],
+	deliveries rest.Spec[*contracts.Delivery], svc *Service) {
 	write := httpx.Permission(contracts.PermissionWebhookUpdate)
 
 	// The create: the only place besides the rotate where the signing secret
@@ -97,36 +112,24 @@ func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *
 		return &rest.Item[*contracts.Issued]{Body: issued}, nil
 	})
 
-	// The replay: the answer is the queued attempt, which is a delivery row and
-	// not the row named in the path — which is also why the delivery log's Spec
-	// offers no write of its own.
-	httpx.Register(s.App, huma.Operation{
-		OperationID: "webhook-delivery-replay",
-		Method:      http.MethodPost,
-		Path:        replayPath,
-		Summary:     "Send one event to one endpoint again",
-		Description: "Queues a new attempt, marked as a replay, for the event and endpoint of the delivery named. " +
-			"An endpoint that is disabled is refused with 409 and nothing is written; a pair with an attempt already " +
+	// The replay is rest.Command rather than a hand mount: its answer is the
+	// entity of the log's own Spec — a *new* delivery row, which is why the log
+	// offers no write of its own and why a fact stays a fact — and one
+	// declaration is what puts the door in the API document, the catalogue and
+	// the generated screen together rather than in two places that can disagree.
+	// No events: a replay queues a row and publishes nothing.
+	rest.Command(s, deliveries, replayVerb,
+		"Send one event to one endpoint again",
+		"Queues a new attempt, marked as a replay, for the event and endpoint of the delivery named. "+
+			"An endpoint that is disabled is refused with 409 and nothing is written; a pair with an attempt already "+
 			"waiting answers with that attempt and writes nothing.",
-		// No events extension: a replay queues a row and publishes nothing. The
-		// attempt's outcome is the log's next rows, and the disablement event
-		// belongs to the disable route, not to this one.
-		Tags:   []string{"webhook"},
-		Errors: faults,
-	}, write, func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Delivery], error) {
-		tx, ok := httpx.TxFrom(ctx)
-		if !ok {
-			return nil, unavailable
-		}
-		row, err := svc.Replay(ctx, tx, in.ID)
-		if err != nil {
-			return nil, rest.Fault(err)
-		}
-		return &rest.Item[*contracts.Delivery]{Body: row}, nil
-	})
+		nil,
+		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Delivery, error) {
+			return svc.Replay(ctx, tx, id)
+		}, rest.CommandOptions{Auth: write})
 
 	// The three commands that answer with the endpoint.
-	rest.Command(s, spec, targetVerb,
+	rest.Command(s, endpoints, targetVerb,
 		"Change what an endpoint receives and where",
 		"Replaces the address and the event list. Both are re-checked: the address against this deployment's policy, and every name against what this application emits.",
 		[]string{contracts.EventEndpointUpdated},
@@ -134,7 +137,7 @@ func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *
 			return svc.Target(ctx, tx, id, in.URL, contracts.EventNames(in.Events))
 		}, rest.CommandOptions{Auth: write})
 
-	rest.Command(s, spec, enableVerb,
+	rest.Command(s, endpoints, enableVerb,
 		"Enable a webhook endpoint",
 		"Takes a disabled endpoint back and starts the fault clock again. Enabling an enabled endpoint changes nothing.",
 		[]string{contracts.EventEndpointEnabled},
@@ -142,13 +145,45 @@ func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *
 			return svc.Enable(ctx, tx, id)
 		}, rest.CommandOptions{Auth: write})
 
-	rest.Command(s, spec, disableVerb,
+	rest.Command(s, endpoints, disableVerb,
 		"Disable a webhook endpoint",
 		"Stops delivery now and ends this endpoint's queued attempts with a reason. Its history stays readable, and re-enabling delivers later events only.",
 		[]string{contracts.EventEndpointDisabled},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Endpoint, error) {
 			return svc.Disable(ctx, tx, id)
 		}, rest.CommandOptions{Auth: write})
+
+	// The two doors above are hand-mounted because their answer is a signing
+	// secret, and they are recorded on their resource by hand for the same
+	// reason: `rest.Command` records the door beside the route it mounts, and a
+	// route a Spec cannot mount leaves nothing in `Resources()` for a generated
+	// screen or a native shell to read.
+	//
+	// Neither carries a Run, and that is the design rather than a gap: Run is
+	// what a derived screen performs, and what a screen does after performing is
+	// redirect — it has nowhere to show a value that exists in one response and
+	// in no read. A page that rotated a secret would lose it, and an endpoint
+	// whose administrator cannot see its key is an endpoint nobody can wire. So
+	// the door is named — verb, argument shape, guard and absolute address — for
+	// the clients that read a response, and ui/screens draws no button behind a
+	// command with no Run, which is what `httpx.Command.Run`'s own doc says a nil
+	// Run is for. The replay, whose answer is a row the log already lists, is a
+	// button, and the kernel mounted it above.
+	s.AddCommand(endpoints.Module, endpoints.Entity, httpx.Command{
+		Verb: registerVerb, Collection: true,
+		Summary: "Register a webhook endpoint",
+		Description: "An HTTPS address that wants events, and the event types it wants; the signing secret is answered once, in this response. " +
+			"Performed over the JSON route and by no derived screen, because the answer is a secret shown once.",
+		Auth: write, Endpoint: s.App.Path(createPath),
+		Fields: crud.FieldsOf(reflect.TypeFor[createBody]()),
+	})
+	s.AddCommand(endpoints.Module, endpoints.Entity, httpx.Command{
+		Verb:    rotateVerb,
+		Summary: "Replace an endpoint's signing secret",
+		Description: "Mints a new secret and answers with it once; the old one stops signing immediately. " +
+			"Performed over the JSON route and by no derived screen, because the answer is a secret shown once.",
+		Auth: write, Endpoint: s.App.Path(rotatePath),
+	})
 }
 
 // createInput is the new endpoint. The secret is not a field: the server mints

@@ -21,6 +21,19 @@ import (
 // three days would spend somebody's queue to learn nothing.
 var errAddressRefused = errors.New("webhook: the address is not a public endpoint")
 
+// errSchemeDowngrade is the redirect half of the same decision, and it is
+// refused for the reason the signature exists at all: the endpoint was
+// registered as an HTTPS address, and a receiver that hands the attempt to a
+// plain-HTTP one has moved where the signed event and its body are read. The
+// hop is refused rather than the event sent unlabelled, because the receiver
+// that asked for TLS is the receiver whose administrator would be surprised to
+// find the payload on the wire in the clear.
+var errSchemeDowngrade = errors.New("webhook: the endpoint redirects to a plain HTTP address")
+
+// RedirectRefused reports whether a send failure is that refusal, which the
+// outcome transaction reads as an attempt that must never be sent again.
+func RedirectRefused(err error) bool { return errors.Is(err, errSchemeDowngrade) }
+
 // AddressPolicy is the SSRF gate, one value read by both checks so they cannot
 // disagree: the write that stores an address and the dial that opens a socket to
 // it.
@@ -137,6 +150,30 @@ func (p AddressPolicy) transport(timeout time.Duration) *http.Transport {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: time.Second,
 	}
+}
+
+// refuseHop is the redirect gate, asked of every hop before the socket opens:
+// the same policy value that decides the dial decides the redirect, so the two
+// cannot disagree about what this deployment will carry a signed event over.
+//
+// The rule is one sentence — an event asked for of an HTTPS address is not
+// carried to a plain-HTTP one. AllowLocal does not weaken it: the flag says
+// "this deployment dials a local receiver", and the test's own loopback HTTP
+// server is exactly the address the flag permits *as a destination* and still
+// refuses *as a downgrade*. A redirect that stays on TLS, to any host the dial
+// gate will open, is followed up to maxRedirects hops; past that the caller
+// sees the last redirect answer, which is a status like any other.
+func (p AddressPolicy) refuseHop(to *url.URL, via []*http.Request) error {
+	if len(via) >= maxRedirects {
+		return http.ErrUseLastResponse
+	}
+	if to == nil || len(via) == 0 {
+		return nil
+	}
+	if via[0].URL.Scheme == "https" && to.Scheme != "https" {
+		return fmt.Errorf("%w: %s", errSchemeDowngrade, to)
+	}
+	return nil
 }
 
 // dialContext resolves first and refuses by the answer, then dials that address

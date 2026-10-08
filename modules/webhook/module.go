@@ -178,7 +178,7 @@ func New(deps Deps) module.Module {
 		Routes: func(s httpx.Surfaces) {
 			mounted.Mount(s)
 			deliverySpec.Mount(s)
-			internal.RegisterRoutes(s, mounted, svc)
+			internal.RegisterRoutes(s, mounted, deliverySpec, svc)
 		},
 	}
 }
