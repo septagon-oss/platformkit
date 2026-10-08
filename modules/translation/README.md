@@ -126,6 +126,71 @@ event, so emitting this is what puts a row in the trail — actor, request id,
 traceparent — and writing the trail here as well would be a second account of
 what already happened.
 
+## Authorization
+
+Decision 0011's six questions, answered for a module that declares no permission
+and mounts no route (`Permissions: nil`, `Routes: nil` in the manifest). The
+record is the door, so the record's grants are the whole authorization story.
+
+### Permissions
+
+None. The module declares no permission key and would refuse one: a key here
+would be a second door to a row the record's `Spec` already guards, and a caller
+holding it could translate a record they cannot read. What guards a translation
+is the mounting Spec's own `Read` for `?lang=` and `Overview`'s callers, and its
+`Write` for `POST …/translate`, `…/review-translation`, `…/suggest-translation`
+and `…/untranslate`, which is what those four commands are mounted behind
+(`kit/rest/translations_write.go`). Whether an account is a translator rather
+than an editor is the product's share, asked of the same grant.
+
+### Object scope
+
+Rows are keyed `(tenant_id, module, entity, record_id, field, locale)`, and the
+tenancy half is row-level security — `platformkit_tenant_match`, `ENABLE` and
+`FORCE`, so a `SELECT` that names no tenant answers zero rows rather than
+somebody else's page. Per-record scope is the door's: the write commands lock the
+source row with `crud.GetForUpdate` and call `crud.RecheckTenant` before the
+port sees a field, which is where a right-tenant, wrong-record caller is
+refused. This module does not re-ask whether the caller may see a given record;
+it has no route on which to ask, and a port that guessed would be a port that
+could read a row the door had refused.
+
+### Duties the module enforces itself
+
+Four, each inside the authoritative transaction, each refusing with nothing
+written and nothing published:
+
+- an unreviewed machine draft never reaches a public read (`Public: true`);
+- a `Review` whose source has moved, or was never handed over, stamps nothing;
+- a stale `expected revision` is `crud.ErrConflict` over every field before any
+  field is written — a save that loses on one of six writes none of them;
+- a machine that returns the text it was given saves nothing, because filing
+  English as Portuguese is a draft no reader would ever notice.
+
+### Public faces
+
+`GET …?lang=pt-PT` on a Spec with a translatable field: the locale's rows, every
+fallback named in `_i18n`, `Content-Language` the tag asked for. Withheld from a
+public reader: anything a machine wrote that no person has reviewed — the source
+and a `withheld` status answer instead. No page, no screen, no admin surface:
+the translator's own screens are the next slice and are not this module's.
+
+### The operator boundary
+
+The machine translator's address, key and price are an operator's facts and live
+in the installation's configuration (`translation.Deps.Translator`), never in a
+tenant's data or a caller's request: a tenant cannot point the module at a
+provider, and where none is configured `Suggest` refuses and writes nothing.
+Which languages exist at all is the installation's catalogue; which of them a
+tenant speaks is `modules/tenant`'s answer to its own operator.
+
+### Provisioning
+
+Nothing. No rows to seed, no default to write: a tenant's languages come from
+`modules/tenant`, and a translation row appears only when somebody writes one.
+Adding the module to an installation adds a table and an event to the deployment
+and changes what no existing tenant sees until a field of theirs is tagged.
+
 ## Composition
 
 ```go
@@ -182,6 +247,23 @@ feature (compare, diff, chunk for search) now has one owner for.
   `apps/platformkit/modules.go`. Naming that here is the point: a README that
   described doors as present while nothing wired them is the finding this module
   was reviewed for.
+- Composing it is a slice of its own rather than two lines, because three
+  published facts move with it and none of them moves here. A Spec whose entity
+  declares a translatable field answers `GET` as `TranslatedPageContentBody`
+  where the reference application's pinned document publishes `PageContentBody`
+  — the wrapper exists to carry `Content-Language`, and
+  `TestTheOpenAPIDocumentIsTheCompositionServed` refuses a renamed response
+  schema as a breaking change whatever `UPDATE_GOLDEN` says, so the door's body
+  has to keep the page's name before any entity is tagged. `translation.updated`
+  has to reach `testdata/asyncapi.json` as a channel, which
+  `TestEveryDeclaredEventIsInTheDocumentAndCovered` counts. And this file gains
+  what the section above already answers, read by
+  `TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions` for every
+  module the application names. Tagging content's `title` and `body` and wiring
+  both lines at `9d09d98` failed those three cases, in that order, while
+  `modules/content`'s own suite stayed green beside them once its `Deps` is
+  handed the fake port — which is why the tagging, the wiring and the three
+  documents belong in one later commit and not in a hurried one.
 - The tenant's declared languages are a parameter of the caller, never stored
   here: which languages a tenant speaks is `modules/tenant`'s answer, reached by
   `SetLocale`.
