@@ -237,6 +237,24 @@ files:
   # fails the load rather than quietly deleting nothing.
   retention: {}
 
+# Outbound webhooks: the HTTPS addresses a tenant registers so a machine of its own
+# hears what happened here, signed with Standard Webhooks' own headers.
+webhook:
+  # The key that wraps the signing secret of every endpoint at rest. It is 32 bytes,
+  # and the module refuses to be composed without one. This is the laptop's key, the
+  # same kind of default as the database passwords above: a deployment that runs
+  # anywhere but here replaces it with PLATFORMKIT_WEBHOOK_SECRET_KEY, and an
+  # installation that rotates it cannot open the secrets wrapped with the old one, so
+  # this is a value that outlives the file it was first written in.
+  secret_key: "0123456789abcdef0123456789abcdef"
+  # Loopback and private addresses to be dialled. Turn it on next to a receiver on
+  # this machine; leave it off anywhere a tenant could name an address on the
+  # deployment's own network. Neither setting opens the instance-metadata address.
+  allow_local_endpoints: false
+  # How long a finished attempt keeps the whole event it signed. Zero means the
+  # module's own 90 days.
+  retention_days: 0
+
 # What this composition declares about itself, read at the migrating boot and put
 # on that session for migrations/000042_tenant_app to place tenants with. The slug
 # itself is nats.app, where kit/appname's grammar guards it and every shared name

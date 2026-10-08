@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 16 modules · role `all`.
+App `platformkit` · environment `development` · 17 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 16 modules.
+pkit: platformkit in development builds 17 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
@@ -63,6 +63,14 @@ pkit: audit.Module uses auditcontracts.Plan from product.Module.
 pkit: audit.Module reads config.Audit.
 pkit: audit.Module defines the permission audit:read.
 pkit: audit.Module handles every event this application emits.
+pkit: webhook.Module is built after product.Module and tenant.Module.
+pkit: webhook.Module needs jobs.TenantLister from tenant.Module.
+pkit: webhook.Module needs webhookcontracts.Catalogue from product.Module.
+pkit: webhook.Module could use webhookcontracts.Alerts; platformkit composes no provider, so it will not.
+pkit: webhook.Module reads config.Webhook.
+pkit: webhook.Module defines the permission webhook:read and webhook:update.
+pkit: webhook.Module emits webhook.endpoint.created, webhook.endpoint.updated, webhook.endpoint.deleted, webhook.endpoint.disabled and webhook.endpoint.enabled.
+pkit: webhook.Module handles every event this application emits.
 pkit: auth.Module is built after product.Module, user.Module, tenant.Module, notification.Module and emailregistration.Module.
 pkit: auth.Module needs authcontracts.Users from user.Module.
 pkit: auth.Module needs authcontracts.Provisioner from user.Module.

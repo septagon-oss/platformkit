@@ -714,7 +714,11 @@ func isInvalid(err error) bool  { return errors.Is(err, crud.ErrInvalid) }
 
 // verify is the receiver's check, written here from the README's twelve lines
 // rather than called from the module: a test that verified a signature with the
-// same function that signed it would prove nothing at all.
+// same function that signed it would prove nothing at all. It is the check the
+// reference Standard Webhooks library writes — split the header on spaces, split
+// each part on its first comma, accept the first v1 entry whose base64 HMAC
+// matches — and not a mirror of the module's own header builder, which is exactly
+// how a wrong separator in the header survived its own suite once.
 func verify(t *testing.T, secret, id, timestamp string, body []byte, header string) bool {
 	t.Helper()
 	key, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(secret, "whsec_"))
@@ -724,12 +728,21 @@ func verify(t *testing.T, secret, id, timestamp string, body []byte, header stri
 	mac := hmac.New(sha256.New, key)
 	_, _ = mac.Write([]byte(id + "." + timestamp + "."))
 	_, _ = mac.Write(body)
-	want := "v1 " + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	want := base64.StdEncoding.EncodeToString(mac.Sum(nil))
 	at, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil || abs(time.Now().Unix()-at) > 300 {
 		return false
 	}
-	return hmac.Equal([]byte(want), []byte(header))
+	for _, entry := range strings.Split(header, " ") {
+		parts := strings.SplitN(entry, ",", 2)
+		if len(parts) != 2 || parts[0] != "v1" {
+			continue
+		}
+		if hmac.Equal([]byte(parts[1]), []byte(want)) {
+			return true
+		}
+	}
+	return false
 }
 
 func abs(n int64) int64 {

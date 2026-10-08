@@ -96,3 +96,10 @@ type Service interface {
 // was addressed to a receiver holding it. Rotating twice inside one window drops
 // the oldest, which is stated here rather than hidden in a column comment.
 const GraceWindow = 24 * time.Hour
+
+// SecretKeyBytes is the width of the deployment key that wraps an endpoint's
+// signing secret: AES-256-GCM's own, so the one number the composition reads is
+// the one number the seal needs. It is named here rather than in the package that
+// seals, because the composition that reads the setting and the code that uses it
+// are different packages and neither may own the other's constant.
+const SecretKeyBytes = 32

@@ -17,8 +17,15 @@ outbox ──▶ Fanout (kit/events handler, one subscription per emitted event)
 ## The receiver's check, in Go
 
 The secret is `whsec_` + base64 of 32 random bytes, answered once by the create
-and once by each rotation. Standard Webhooks' own spelling, so a customer's
-existing receiver library verifies it unchanged.
+and once by each rotation — Standard Webhooks' own spelling, which is what their
+library expects as a key.
+
+`webhook-signature` is a **space-delimited list of `<version>,<base64>` entries**,
+and the comma is not decoration: the reference library splits the header on spaces
+and then requires a comma in each part, so a header written `v1 <base64>` is one no
+standard receiver accepts however correct its HMAC. This module answers one entry,
+`v1,<base64>`; the list form is what leaves room for a second — a rotated-out key,
+a v2 — without renaming the header.
 
 ```go
 func verify(secret string, id, timestamp, signature string, body []byte) error {
@@ -27,17 +34,26 @@ func verify(secret string, id, timestamp, signature string, body []byte) error {
 		return err
 	}
 	want := hmac.New(sha256.New, key) // HMAC-SHA256
-	_, _ = want.Write([]byte(id + "." + timestamp + "." + string(body)))
-	if !hmac.Equal(want.Sum(nil), mustBase64(strings.TrimPrefix(signature, "v1 "))) {
-		return errors.New("bad signature")
-	}
+	_, _ = want.Write([]byte(id + "." + timestamp + "."))
+	_, _ = want.Write(body)
 	at, err := strconv.ParseInt(timestamp, 10, 64)
 	if err != nil || math.Abs(float64(time.Now().Unix()-at)) > 300 {
 		return errors.New("stale timestamp")
 	}
-	return nil // and: deduplicate on webhook-id — delivery is at-least-once
+	for _, entry := range strings.Split(signature, " ") {
+		parts := strings.SplitN(entry, ",", 2)
+		if len(parts) == 2 && parts[0] == "v1" && hmac.Equal(mustBase64(parts[1]), want.Sum(nil)) {
+			return nil // and: deduplicate on webhook-id — delivery is at-least-once
+		}
+	}
+	return errors.New("bad signature")
 }
 ```
+
+`modules/webhook/internal/signature_header_test.go` runs that algorithm against a
+delivery this module actually sent, rather than against this module's own header
+builder: a test that verified a signature with the function that signed it would
+prove nothing.
 
 Deduplicate on `webhook-id`. The module is at-least-once on the wire by
 construction: a crash between the send and the transaction that records its
@@ -93,23 +109,85 @@ entity would be a `whsec_` value on the generated form and in
 * A replay against a disabled endpoint: 409, and nothing is written.
 * An endpoint that has failed for three days: `disabled`, its `queued` rows
   dropped with a reason, its history kept, its administrator told through the
-  `Alerts` port — which a deployment may compose as nothing.
+  `Alerts` port — which a deployment may compose as nothing. A notice that *fails*
+  is the same shape as a notice that is absent: it runs behind its own savepoint
+  inside the outcome transaction, so the notifier's own half is undone and the
+  endpoint, its outbox event and the log still commit. An error from that port
+  would otherwise roll the outcome back, leave the attempt `in_flight`, and have the
+  lease re-send it about every minute for as long as the notifier stayed down.
+* A replay whose pair has no attempt waiting writes a new row; a pair with one
+  already `queued` or `in_flight` is that command having been performed, and answers
+  with that row. A replay that has been answered is a finished attempt, and asking
+  again queues another: the partial unique index covers the two waiting states and
+  no others.
+
+## Authorization
+
+### Permissions
+
+The manifest in `modules/webhook/module.go` (`permissions`) declares two keys, whose constants are in `modules/webhook/contracts/permissions.go`.
+
+- `webhook:read` guards the four generated read routes of the two Specs (`spec.Read`), the two generated screens `webhook/endpoints` and `webhook/deliveries`, and both nav entries (`Nav` in `Module`). It never reaches a secret: no readable field carries one.
+- `webhook:update` guards every write. `endpointSpec.Write` covers the generated `PATCH` and `DELETE`; `httpx.Register(s.App, …, write, …)` guards the create and the rotate and the replay; and `rest.Command(…, rest.CommandOptions{Auth: write})` guards `target`, `enable` and `disable`. A replay *sends*, so it is a write and never a read.
+
+The module declares no export. Its one subscription (`SubscribeAll: true`, `svc.Fanout`) and its two jobs (`webhook-deliver`, the retention sweep) are not requests and are guarded by nothing but the tenant transaction they open.
+
+### Object scope
+
+None. No command asks `tenancy.Policy` which row the caller may see: every read and write is inside the caller's own tenant transaction, and row level security on all three tables — `ENABLE` and `FORCE`, with the `platformkit_tenant_match` policy — is what answers "another tenant's row" with `ErrNotFound`. A row this tenant cannot see is a 404 on every surface, including the one whose body would have said whether it exists.
+
+### Duties the module enforces itself
+
+Rule 9, in every command, inside the transaction that writes:
+
+- `Create`, `Target` re-check the address against `AddressPolicy` (with the deployment's flag) and every event name against the `Catalogue` port; both refuse with `crud.ErrInvalid` naming the value, and a `Create` with no actor is refused, because a disablement notice has to have somebody to address.
+- `Rotate`, `Enable`, `Disable`, `Replay` take `crud.GetForUpdate` on the endpoint — the aggregate root — before reading any state they decide on, so two commands on one row settle in lock order and a stale read decides nothing.
+- `Disable` and `Enable` are no-ops on a row already in that state: they write nothing and publish nothing, which is what makes two concurrent disablements publish exactly one event.
+- `Replay` refuses a disabled endpoint with `crud.ErrConflict` (409) and queues nothing; a pair with a replay already `queued` or `in_flight` answers with that row and writes nothing; the partial unique index is the backstop for a caller that took no lock.
+- `endpointSpec.Immutable` refuses `url`, `events`, `status`, `disabledAt`, `disabledReason`, `lastSuccessAt` and `createdBy` on the generic PATCH: the two fields that decide where events go are the `target` command's, and the rest belong to the lifecycle.
+
+### Public faces
+
+None. No route in this module is `httpx.Public()`, no route is on `s.Ops`, and no path literal names a surface: every route is on `s.App`, the tenant surface, and a request without a session is refused by the surface before this module's handler is reached. The module uses no `kit/limit`.
+
+### The operator boundary
+
+None. No entry in `permissions` sets `Operator: true`, and neither Spec sets `OperatorRead` or `OperatorWrite`: an installation's operators do not read a customer's endpoint list, and the delivery log holds that customer's own event bodies. `AllowLocalEndpoints` is deployment configuration rather than a permission — no column, field or route carries it — and the instance-metadata address stays refused whatever it says.
+
+### Provisioning
+
+The module declares no role. A composition grants the two keys through the tenant's roles (see `modules/auth/README.md`); in the reference application the seeded administrator role satisfies both, and neither of `apps/platformkit/roles.go`'s two task personas holds either — a module's doors are not a reason to widen somebody else's persona. The signing key and the two other deployment keys are read by `webhook.Module`'s provider out of `config.Webhook`.
 
 ## Composition
+
+It is a kernel module: `apps/platformkit/app.go` names `webhook.Module` in `Use`,
+beside `audit` and `task`, so its two screens, its routes, its subscription and its
+two jobs are in the reference application. The provider reads three deployment keys
+(`webhook.secret_key`, overridden by `PLATFORMKIT_WEBHOOK_SECRET_KEY`,
+`webhook.allow_local_endpoints`, `webhook.retention_days`) and needs three answers:
 
 ```go
 webhook.New(webhook.Deps{
 	SecretKey: key,            // 32 bytes, read once from deployment config
 	Catalogue: eventTypes,     // the names this composition emits
-	Alerts:    notices,        // or nil
+	Alerts:    notices,        // or nil: see the refusal above
 	Tenants:   tenants,        // modules/tenant
 })
 ```
 
-Nothing outside this repository composes it yet, and that is deliberate: with one
-client in this tree, wiring it into the reference application would make it a
-module composed by exactly one client — a bespoke module. It lands uncomposed and
-generic, with the two ports a product fills.
+`Catalogue` is answered by the composition as a literal — in the reference
+application, `apps/platformkit/webhook_catalogue.go`, assembled from the emitting
+modules' own constants, with
+`TestTheWebhookCatalogueNamesWhatTheCompositionEmits` asking the resolved
+composition whether the list still matches what it emits. `Alerts` is `Optional` and
+the reference application composes nothing: it has no notice template for a machine
+fault, and a deployment that needs the notice durable subscribes to
+`webhook.endpoint.disabled`, which commits with the disablement.
+
+Two of this application's personas are granted the two doors, in
+`apps/platformkit/roles.go`: a coordinator reads and registers (the persona that
+resolves a task is the persona that registers the machine a resolution pages), and
+an observer reads the log and registers nothing.
 
 ## Reused
 
@@ -150,3 +228,68 @@ clock without holding a lock open. And the `Catalogue` port with a literal in th
 composition plus one drift test is the answer for any module that needs to offer
 "what this application can do" as a list of names, which nothing else in the tree
 could express while `modules/admin` holds the after-everything declaration.
+
+## Limits
+
+Stated because each one is a promise someone could otherwise read into the module.
+
+* **At-least-once, never exactly-once.** A crash between the send and the outcome
+  transaction loses the record of an attempt that physically happened; the lease
+  expires and the row goes out again. `webhook-id` is what a receiver deduplicates on.
+* **One waiting replay per pair, and no more.** The command is idempotent while an
+  attempt is `queued` or `in_flight`; a pair whose replay has been answered can be
+  replayed again, and that second replay is a new row with the next attempt number.
+* **The window is counted from the current claim, not the first attempt.** The
+  ladder's 12 rungs span about 4 days 20 hours, so an endpoint that fails one event
+  while succeeding others (which resets `failing_since`) can retry that event for
+  roughly 4.9 days. Closing the gap means carrying `MIN(attempted_at)` for the pair.
+* **A redirect is followed, up to three.** The policy gate reads the address that
+  was *registered*; a receiver that answers 3xx to another host moves where the
+  signed body goes. Refusing non-https redirect targets is open work.
+* **The SSRF gate refuses what a laptop and a cloud metadata endpoint look like,
+  not every reserved block.** Loopback, link-local, private, unique-local and
+  `0.0.0.0` are refused, resolved rather than textual; the metadata addresses stay
+  refused under `AllowLocalEndpoints`. Not yet refused: NAT64 and 6to4 forms of
+  those same addresses, benchmark, broadcast and multicast ranges.
+* **A rotated secret is kept for a day and never signs with.** `previous_*` is
+  stored so a support question can be answered; the space-delimited signature list
+  would let the module sign with both keys during the window, and it does not, so a
+  receiver mid-rotation must pick up the new secret.
+* **The stored refusal sentences are English.** `contracts.Reason*` are written
+  into rows. The two permission labels have pt-PT words; a reason on a delivery row
+  is the language it was written in. Reason *keys*, translated at render, is open
+  work.
+* **The `Catalogue` port has one implementation, in the reference application**, and
+  no exported fake for a deployment writing its own.
+
+## Interface
+
+Every route is on the tenant surface (`s.App`); there is no public and no operator
+route, and no surface or prefix literal in this module.
+
+| Door | Route |
+|---|---|
+| `webhook:read` | `GET /endpoints`, `GET /endpoints/{id}`, `GET /deliveries`, `GET /deliveries/{id}` |
+| `webhook:update` | `POST /endpoints`, `PATCH /endpoints/{id}`, `DELETE /endpoints/{id}`, `POST /endpoints/{id}/rotate`, `/target`, `/enable`, `/disable`, `POST /deliveries/{id}/replay` |
+
+Both resources are `rest.Spec` resources, so `GET /api/v1/admin/resources` lists
+them, the generated screens are `webhook/endpoints` and `webhook/deliveries`, and
+the nav entries are read-guarded. The delivery log's Spec offers no write, and its
+one verb — the replay — is a command on the log that answers with a *new* row.
+Nothing in this module renders HTML: `internal/ui` does not exist, because no page
+here is this module's own.
+
+## Verification
+
+```
+go test ./modules/webhook/... -count=1                  # acceptance, isolation, ladder, fault rule
+go test ./modules/webhook/internal/ -count=3 -race -run TestTwoDisablesOfOneEndpointPublishOnce
+go test ./apps/platformkit/ -count=1 -run TestTheReferenceCompositionPlacesTheWebhookModule
+go test ./apps/platformkit/ -count=1 -run TestTheWebhookCatalogueNamesWhatTheCompositionEmits
+```
+
+`TestASubscriberReceivesASignedEvent`, `TestARetryAfterAFiveHundredIsDelivered` and
+`TestAnotherTenantsEndpointNeverHearsTheEvent` are the brief's three acceptance
+cases. Not run: `make e2e` (no journey writes an endpoint), the mobile journey (the
+two screens are generated, and no flow names them), and every browser check — no
+page here is this module's own to open.

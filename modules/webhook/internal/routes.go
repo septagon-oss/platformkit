@@ -45,7 +45,6 @@ var unavailable = problem.New(http.StatusServiceUnavailable, "the database is no
 // (auth's shown-once token is a separate type for the same reason) or is a
 // different row entirely.
 func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *Service) {
-	read := httpx.Permission(contracts.PermissionWebhookRead)
 	write := httpx.Permission(contracts.PermissionWebhookUpdate)
 
 	// The create: the only place besides the rotate where the signing secret
@@ -109,11 +108,11 @@ func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *
 		Description: "Queues a new attempt, marked as a replay, for the event and endpoint of the delivery named. " +
 			"An endpoint that is disabled is refused with 409 and nothing is written; a pair with an attempt already " +
 			"waiting answers with that attempt and writes nothing.",
+		// No events extension: a replay queues a row and publishes nothing. The
+		// attempt's outcome is the log's next rows, and the disablement event
+		// belongs to the disable route, not to this one.
 		Tags:   []string{"webhook"},
 		Errors: faults,
-		Extensions: map[string]any{httpx.EventsExtension: []string{
-			contracts.EventEndpointDisabled,
-		}},
 	}, write, func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Delivery], error) {
 		tx, ok := httpx.TxFrom(ctx)
 		if !ok {
@@ -150,10 +149,6 @@ func RegisterRoutes(s httpx.Surfaces, spec rest.Spec[*contracts.Endpoint], svc *
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Endpoint, error) {
 			return svc.Disable(ctx, tx, id)
 		}, rest.CommandOptions{Auth: write})
-
-	// The read door is named here so it is not a comment: the two Specs mount
-	// every read this module has, and neither is reachable without it.
-	_ = read
 }
 
 // createInput is the new endpoint. The secret is not a field: the server mints

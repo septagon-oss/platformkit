@@ -22,7 +22,14 @@ import (
 // that actually protects it is the one beside this constant: additive, optional,
 // and never a change of meaning. A consumer that must refuse is the *next* build,
 // reading this field, and that is who the field is written for.
-const CatalogVersion = 2
+// Version 3 is the first document in which a listed resource may name fewer than
+// the five CRUD operations: `webhook/endpoint` offers no create (the create's answer
+// is a signing secret, which is a row's shape and not the entity's) and
+// `webhook/delivery` offers no write at all (a delivery is a fact). A shell written
+// against version 2 derives five buttons and would draw a New against an address
+// that refuses it, so `operations` is required reading from here, and the installed
+// build that has not read it is exactly who this number speaks to.
+const CatalogVersion = 3
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell

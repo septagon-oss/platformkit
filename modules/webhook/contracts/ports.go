@@ -35,9 +35,18 @@ type Catalogue interface {
 // endpoint it happened to, and hands back the row so the implementation can
 // address the person who registered it.
 //
-// It runs inside the outcome transaction, so the notice and the disablement and
-// the outbox event are one commit: a disabled endpoint nobody was told about is
-// the failure mode this port exists to remove.
+// It runs inside the outcome transaction, behind its own savepoint, so the
+// disablement, its outbox event and this notice commit together — and so that a
+// notice that fails undoes only itself. An error here never rolls the disablement
+// back: a notifier that is down must not leave the endpoint enabled with its
+// failed attempt in flight, which would have the sender dial a dead receiver once a
+// lease for as long as the notifier stayed down. The endpoint stops, the event is
+// published and the failure is logged; a deployment that needs the notice to be
+// durable rather than best-effort subscribes to webhook.endpoint.disabled, which
+// commits with the state change and is retried by the outbox.
+//
+// A disabled endpoint nobody was told about is the failure mode this port exists to
+// remove, and a notifiers' outage is not allowed to become one.
 //
 // nil is a legal composition: the disablement still happens, still publishes,
 // still writes the log, and notifies nobody. A deployment that tells people some

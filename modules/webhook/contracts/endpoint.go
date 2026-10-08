@@ -48,6 +48,12 @@ const (
 	ReasonRetryWindowClose = "the retry window closed"
 	ReasonAddressRefused   = "the address is not a public endpoint"
 	ReasonLeaseExpired     = "no answer before the lease expired"
+	// ReasonEndpointDisabled is the end an attempt comes to because the endpoint it
+	// was addressed to is disabled — the row arrived after the disablement's own
+	// transaction had ended every queued one, or was already on the wire when the
+	// administrator clicked. Either way the ladder stops here and the log says why,
+	// which is a different sentence from "the retry window closed".
+	ReasonEndpointDisabled = "the endpoint is disabled"
 )
 
 // MaxName is the length of the longest name a caller may send, in characters.
@@ -95,7 +101,12 @@ type Endpoint struct {
 	// Events are the event types this endpoint wants, each one a name the
 	// composition can emit. Immutable to the PATCH for the same reason URL is;
 	// the same command sets both.
-	Events EventNames `json:"events" gorm:"column:events;type:text[];not null" validate:"required" ui:"widget:multi-select" doc:"Event types delivered to this address"`
+	// No widget, and none is missing: `ui/forms` draws no control for a list of
+	// names, and a widget named that no screen can draw is refused at mount rather
+	// than shipped. The list is hidden from the table and read on the detail page as
+	// text; changing it is the `target` command, which re-checks every name against
+	// what this composition emits — a check a form control could not do on its own.
+	Events EventNames `json:"events" gorm:"column:events;type:text[];not null" validate:"required" ui:"hide:list" doc:"Event types delivered to this address"`
 
 	// Status is the lifecycle. Set by Disable and Enable, and by the fault rule
 	// in the delivery outcome transaction.

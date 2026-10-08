@@ -207,6 +207,11 @@ nats:
   url: "${PLATFORMKIT_TEST_NATS_URL:-nats://localhost:4222}"
 log:
   level: "warn"
+# Outbound webhooks are composed, so the composition needs the key that wraps an
+# endpoint's signing secret: thirty-two bytes of this run's own, and no receiver
+# anywhere verifies a delivery signed with them.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"
 audit:
   retention_days: 365
 files:

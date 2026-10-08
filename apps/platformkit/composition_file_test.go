@@ -40,6 +40,11 @@ log:
   level: "info"
 files:
   dir: "data/files"
+# The key that wraps each webhook endpoint's signing secret. This one is the
+# fixture's, thirty-two characters of nothing; a deployment puts its own in
+# PLATFORMKIT_WEBHOOK_SECRET_KEY and a laptop copies the example's.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"
 auth:
   oidc:
     issuer: ""

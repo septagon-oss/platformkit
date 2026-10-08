@@ -27,7 +27,7 @@ func TestMigrateCommandAppliesTheComposedSources(t *testing.T) {
 	t.Cleanup(func() { owner.Close() })
 
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	body := fmt.Sprintf("server:\n  addr: \":0\"\n  public_host: \"rehearse.localhost\"\ndatabase:\n  url: %q\n  migrate_url: %q\nnats:\n  url: \"nats://127.0.0.1:4222\"\nlog:\n  level: \"info\"\n", appURL, migrateURL)
+	body := fmt.Sprintf("server:\n  addr: \":0\"\n  public_host: \"rehearse.localhost\"\ndatabase:\n  url: %q\n  migrate_url: %q\nnats:\n  url: \"nats://127.0.0.1:4222\"\nlog:\n  level: \"info\"\nwebhook:\n  secret_key: %q\n", appURL, migrateURL, webhookKey)
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)
 	}

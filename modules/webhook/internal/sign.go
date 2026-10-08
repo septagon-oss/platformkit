@@ -31,6 +31,10 @@ const secretPrefix = "whsec_"
 // seals, so one encoding mistake cannot survive into the stored secret.
 type signingKey []byte
 
+// version is the one signature version Standard Webhooks defines, and the prefix
+// a receiver's library looks its entry up by.
+const version = "v1"
+
 // newKey returns 32 fresh bytes and their whsec_ spelling.
 func newKey(r io.Reader) (signingKey, string, error) {
 	raw := signingKey(make([]byte, secretBytes))
@@ -44,6 +48,15 @@ func newKey(r io.Reader) (signingKey, string, error) {
 // webhook-id + "." + webhook-timestamp + "." + body, base64-encoded, prefixed
 // with the version the receiver's check reads.
 //
+// The spelling is "v1,<base64>", and the comma is the whole finding: the
+// specification's header is a space-delimited list of "<version>,<signature>"
+// entries, and the reference library splits the header on spaces and then
+// requires a comma in each part. A header written "v1 <base64>" is one the
+// library reads as a version with no signature and rejects with "no matching
+// signature found", so the space would be a module that signs correctly and is
+// refused by every standard receiver. The list form is also what leaves room for
+// a second entry — a rotated-out key, a v2 — without changing the header's name.
+//
 // The body is the stored payload's bytes, so every attempt at one event signs
 // the same string — which is the property the retry ladder depends on and the
 // one a test can falsify.
@@ -54,7 +67,7 @@ func sign(key signingKey, id uuid.UUID, at time.Time, body []byte) string {
 	mac.Write([]byte(fmt.Sprintf("%d", at.Unix())))
 	mac.Write([]byte("."))
 	mac.Write(body)
-	return "v1 " + base64.StdEncoding.EncodeToString(mac.Sum(nil))
+	return version + "," + base64.StdEncoding.EncodeToString(mac.Sum(nil))
 }
 
 // box wraps a signing key for rest: AES-256-GCM under the deployment's key. The

@@ -29,6 +29,7 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
+	webhookcontracts "github.com/septagon-oss/platformkit/modules/webhook/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -55,14 +56,14 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 	// what is composed, and nothing is found that Use does not name.
 	for _, name := range []string{
 		"product", "user", "tenant", "notification", "auth", "emailregistration", "file",
-		"task", "billing", "content", "site", "web", "audit", "change", "access", "admin",
+		"task", "billing", "content", "site", "web", "audit", "webhook", "change", "access", "admin",
 	} {
 		if !namesAModule(r.modules, name) {
 			t.Errorf("%s.Module is named in Use and answers no manifest in the resolved composition", name)
 		}
 	}
-	if len(r.modules) != 16 {
-		t.Errorf("the composition resolved to %d modules, want the 16 the sentence names: %v", len(r.modules), moduleNames(r.modules))
+	if len(r.modules) != 17 {
+		t.Errorf("the composition resolved to %d modules, want the 17 the sentence names: %v", len(r.modules), moduleNames(r.modules))
 	}
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted.
@@ -86,6 +87,12 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 		"taskcontracts.Service":                         holds(p, func() bool { v, ok := pkit.Value[taskcontracts.Service](p); return ok && v != nil }),
 		"richtext.Files (what file hands content)":      holds(p, func() bool { v, ok := pkit.Value[richtext.Files](p); return ok && v != nil }),
 		"jobs.TenantLister (what tenant hands a sweep)": holds(p, func() bool { v, ok := pkit.Value[jobs.TenantLister](p); return ok && v != nil }),
+		// The edge modules/webhook declares and this product answers: which event
+		// names may be put on an endpoint.
+		"webhookcontracts.Catalogue (what this composition emits)": holds(p, func() bool {
+			v, ok := pkit.Value[webhookcontracts.Catalogue](p)
+			return ok && len(v.EventTypes()) > 0
+		}),
 	}
 	for contract, filled := range holders {
 		if !filled {

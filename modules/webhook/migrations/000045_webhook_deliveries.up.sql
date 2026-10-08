@@ -65,10 +65,14 @@ CREATE INDEX webhook_deliveries_event ON webhook_deliveries (tenant_id, event_id
 -- replayed.
 CREATE UNIQUE INDEX webhook_deliveries_initial ON webhook_deliveries (event_id, endpoint_id)
 	WHERE cause = 'initial';
--- A second replay of one pair writes nothing and answers with the row that is
--- already there.
+-- One replay of one pair is waiting at a time, which is the command having been
+-- performed twice. The predicate covers the two states that are still waiting and
+-- no others: a replay that has been sent, failed or dropped is an attempt that
+-- finished, and the administrator who asks again is asking for another one. An
+-- index over every replay row would answer the second request with the first
+-- replay's finished row, which is a fact about last week pretending to be work.
 CREATE UNIQUE INDEX webhook_deliveries_replay ON webhook_deliveries (event_id, endpoint_id)
-	WHERE cause = 'replay';
+	WHERE cause = 'replay' AND state IN ('queued', 'in_flight');
 
 ALTER TABLE webhook_deliveries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE webhook_deliveries FORCE ROW LEVEL SECURITY;

@@ -37,6 +37,10 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Webhook is the deployment's share of the outbound webhook sender: the key
+	// that wraps each endpoint's signing secret at rest, which addresses this
+	// deployment is willing to dial, and how long a signed attempt is kept.
+	Webhook Webhook `yaml:"webhook"`
 	// Telemetry is where spans and numbers go. Its zero value exports nothing,
 	// which is the default the runtime ships with: see Telemetry.
 	Telemetry Telemetry `yaml:"telemetry"`
@@ -387,6 +391,27 @@ type Audit struct {
 	RetentionDays int `yaml:"retention_days"`
 }
 
+// Webhook is what modules/webhook cannot decide for itself: the key that wraps
+// every endpoint's signing secret, whether this deployment dials addresses on the
+// private grid, and how long a finished attempt keeps the payload it signed.
+type Webhook struct {
+	// SecretKey wraps the signing secret of every registered endpoint at rest.
+	// It is 32 bytes — AES-256-GCM's own width — and the module refuses to be
+	// composed without one, because an installation whose key nobody wrote down
+	// cannot move its endpoints to another machine. Put it in
+	// PLATFORMKIT_WEBHOOK_SECRET_KEY, as every other secret here is put; the
+	// development example carries a laptop key so `make run` boots.
+	SecretKey string `yaml:"secret_key"`
+	// AllowLocalEndpoints permits loopback and private ranges to be dialled. It is
+	// deployment-level: no column, field or route carries it, and it never opens
+	// the instance-metadata address. It exists for a developer's laptop running a
+	// receiver beside the application, and for this module's own tests.
+	AllowLocalEndpoints bool `yaml:"allow_local_endpoints"`
+	// RetentionDays is how long a finished delivery row — which holds the whole
+	// event it signed — is kept. Zero means the module's own default.
+	RetentionDays int `yaml:"retention_days"`
+}
+
 // DefaultRetentionDays is a year, the shortest period the obligations that ask
 // for an audit trail at all tend to accept.
 const DefaultRetentionDays = 365
@@ -480,6 +505,10 @@ var keys = []key{
 	// credential, and config.yaml is a file somebody will commit.
 	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	// The fifth: the key that wraps every webhook signing secret. A deployment
+	// that loses it cannot sign again with a secret it never read back, so this one
+	// is written down by whoever can also restore it.
+	{"webhook.secret_key", "PLATFORMKIT_WEBHOOK_SECRET_KEY", func(c *Config) *string { return &c.Webhook.SecretKey }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},

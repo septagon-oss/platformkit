@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -181,6 +182,17 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 				}
 				continue
 			}
+			if !endpoint.IsEnabled() {
+				// The disablement's own transaction ends every queued row, so a row
+				// that reaches here for an endpoint that is disabled arrived between
+				// that commit and this claim. It is ended the same way, with the same
+				// reason in it, rather than dialling an address an administrator just
+				// stopped trusting.
+				if dropErr := s.dropRow(tx, row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDisabled); dropErr != nil {
+					return dropErr
+				}
+				continue
+			}
 			key, err := s.CurrentSecret(tx, row.EndpointID)
 			if err != nil {
 				return err
@@ -199,7 +211,7 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 // ends in an outcome transaction, and the failure to write one is logged by the
 // caller's own error.
 func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *http.Client) {
-	status, err := post(ctx, client, a)
+	status, err := s.post(ctx, client, a)
 	state, reason := classify(status, err)
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return s.record(ctx, tx, a, status, state, reason)
@@ -214,12 +226,15 @@ func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *ht
 // post is the socket. The body is the stored payload's bytes and nothing else:
 // the signature covers them, so a re-marshal per attempt would break a receiver
 // that verified the first attempt and not the retry.
-func post(ctx context.Context, client *http.Client, a attempt) (int, error) {
+// The timestamp is the module's own clock, the one Deps.Now hands out: the ladder
+// is computed with it, and the header a receiver compares against its own wall
+// clock has to be the same time the sender scheduled with.
+func (s *Service) post(ctx context.Context, client *http.Client, a attempt) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.endpoint.URL, bytes.NewReader(a.row.Payload))
 	if err != nil {
 		return 0, err
 	}
-	at := db.Now()
+	at := s.now()
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set(headerID, a.row.EventID.String())
@@ -291,11 +306,16 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 	}
 
 	if state == contracts.StateFailed {
-		if availableAt, retry := nextAttempt(a.firstSent, a.row.Attempt, at); retry {
+		// The endpoint's status is read from the row this transaction has just
+		// locked, and it stops the ladder: an administrator's disable that landed
+		// while this attempt was on the wire is the end of this event's attempts,
+		// not one more rung. "Disable stops delivery now" is about the attempt
+		// already in flight as much as about the queued ones the disablement drops.
+		if availableAt, retry := nextAttempt(a.firstSent, a.row.Attempt, at); retry && endpoint.IsEnabled() {
 			if err := s.queue(ctx, tx, a.row, contracts.CauseRetry, a.row.Attempt+1, availableAt); err != nil {
 				return err
 			}
-		} else if err := s.note(tx, a.row.ID, contracts.ReasonRetryWindowClose); err != nil {
+		} else if err := s.note(tx, a.row.ID, ladderStop(endpoint)); err != nil {
 			return err
 		}
 		// The fault rule, in this same transaction: the attempt that crossed the
@@ -312,6 +332,19 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 		return s.note(tx, a.row.ID, "the receiver answered "+retryReason(status))
 	}
 	return nil
+}
+
+// ladderStop is the sentence the last attempt of an event carries when no retry
+// follows it, and the two reasons there is none: the window the brief gives closed
+// around the failures, or somebody disabled the endpoint this attempt was asked
+// for. A reader of the log is told which, because the two ask for different
+// answers — one is "the receiver was dead for three days", the other is "you asked
+// for this to stop".
+func ladderStop(endpoint *contracts.Endpoint) string {
+	if !endpoint.IsEnabled() {
+		return contracts.ReasonEndpointDisabled
+	}
+	return contracts.ReasonRetryWindowClose
 }
 
 // queue appends one row: a retry of the same payload, or a replay's successor.
@@ -380,8 +413,34 @@ func (s *Service) DisableIfFailed(ctx context.Context, tx db.Tx[db.Tenant], endp
 		// choice, and this is where it is honoured.
 		return true, nil
 	}
+	// The notice goes out beside the disablement, inside this transaction, behind a
+	// savepoint — and the savepoint is the whole difference between a notifier that
+	// is down and a notifier that does not exist. Without it the port's error would
+	// be this transaction's error: the endpoint would stay enabled, the attempt would
+	// stay in flight, the lease would re-claim it and a dead receiver would be
+	// dialled again about every lease for as long as the notifier stayed down — a
+	// stream of requests outside the ladder, which is the one thing the ladder exists
+	// to make impossible. With it, the notice's own half is undone, the endpoint, its
+	// outbox event and the log commit, and the failure is said out loud.
+	//
+	// A deployment that needs the notice to be durable does not read this port's
+	// return value: it subscribes to webhook.endpoint.disabled, which commits with
+	// the state change and is retried by the outbox.
+	const notice = "webhook_notice"
+	if err := tx.DB().Exec("SAVEPOINT " + notice).Error; err != nil {
+		return false, fmt.Errorf("webhook: open the notice savepoint: %w", err)
+	}
 	if err := s.alerts.EndpointDisabled(ctx, tx, endpoint); err != nil {
-		return false, fmt.Errorf("webhook: tell %s its endpoint %s stopped: %w", endpoint.CreatedBy, endpoint.Name, err)
+		if back := tx.DB().Exec("ROLLBACK TO SAVEPOINT " + notice).Error; back != nil {
+			// Nothing of this transaction survives, which is the right answer: an
+			// outcome whose notice cannot even be forgotten is an outcome nobody can
+			// write, and the lease will send the attempt again.
+			return false, fmt.Errorf("webhook: tell %s its endpoint %s stopped: %w; and its half could not be rolled back: %v",
+				endpoint.CreatedBy, endpoint.Name, err, back)
+		}
+		slog.ErrorContext(ctx, "webhook: could not tell an administrator their endpoint stopped",
+			"endpoint", endpoint.ID, "to", endpoint.CreatedBy, "error", err)
+		return true, nil
 	}
 	return true, nil
 }

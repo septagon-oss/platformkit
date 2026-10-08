@@ -213,8 +213,10 @@ func (s *Service) Target(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 // clears failing_since rather than leaving it, because a re-enabled endpoint that
 // kept its old failure date would be disabled again on its first failed attempt.
 //
-// It publishes nothing new: the absence of a delivery is not a fact about the
-// world, and the log's next row will say what happened next.
+// It publishes webhook.endpoint.enabled: an address that will be dialled again is
+// a fact about the world, and the person a disablement told is the person an
+// enablement is for. Enabling an endpoint that was already enabled changes nothing
+// and publishes nothing.
 func (s *Service) Enable(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Endpoint, error) {
 	endpoint, err := crud.GetForUpdate[*contracts.Endpoint](tx, id)
 	if err != nil {
@@ -403,13 +405,17 @@ func (s *Service) Replay(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	}
 	// A pair with an attempt already waiting is that command having already been
 	// performed: answer with the row that is waiting, write nothing, emit nothing.
+	// "Waiting" means queued or on the wire, and nothing more: a replay that has
+	// already been sent, failed or dropped is an attempt that finished, and an
+	// administrator who asks again is asking for another one — answering with the
+	// finished row would be rule 9's stale row, and would send nothing.
 	//
 	// This is a read rather than an INSERT that catches the unique index, and the
 	// reason is Postgres': a statement that violates a constraint aborts the
 	// transaction, so the recovery would have been issued in a block that no
 	// longer accepts commands. The index stays as the backstop for a caller that
 	// does not take the lock below at all.
-	if waiting := s.replayedAlready(tx, row.EventID, row.EndpointID); waiting != nil {
+	if waiting := s.waitingReplay(tx, row.EventID, row.EndpointID); waiting != nil {
 		return waiting, nil
 	}
 	// The pair's attempt number continues: a replay of an event that failed four
@@ -431,26 +437,26 @@ func (s *Service) Replay(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	return replayed, nil
 }
 
-// replayWaiting answers a second replay with the row the first one wrote, so the
-// caller sees the same answer twice and the log gains nothing the second time.
-func (s *Service) replayWaiting(tx db.Tx[db.Tenant], eventID, endpointID uuid.UUID) (*contracts.Delivery, error) {
+// waitingReplay reports the replay of this pair that is still waiting to be
+// answered — the row a previous replay of the same command queued — or nil when
+// there is none. A finished replay is deliberately not an answer to a fresh
+// request, and the partial unique index covers the same two states this read does,
+// so "one waiting replay per pair" is a fact of the schema and of this read at
+// once, and a pair whose last replay has been answered is free to be replayed.
+//
+// A read that fails for any reason other than finding nothing answers nil, which
+// is safe: the index is the backstop, and the caller holds the endpoint's row
+// lock, so the worst this can do is fail to reuse a row it did not read.
+func (s *Service) waitingReplay(tx db.Tx[db.Tenant], eventID, endpointID uuid.UUID) *contracts.Delivery {
 	var waiting contracts.Delivery
 	res := tx.DB().Table(deliveryTable).
-		Where("event_id = ? AND endpoint_id = ? AND cause = 'replay'", eventID, endpointID).
+		Where("event_id = ? AND endpoint_id = ? AND cause = 'replay' AND state IN ('queued', 'in_flight')",
+			eventID, endpointID).
 		Limit(1).Take(&waiting)
 	if res.Error != nil {
-		return nil, crud.Classify(res.Error)
-	}
-	return &waiting, nil
-}
-
-// replayedAlready reports the row a previous replay of this pair queued.
-func (s *Service) replayedAlready(tx db.Tx[db.Tenant], eventID, endpointID uuid.UUID) *contracts.Delivery {
-	waiting, err := s.replayWaiting(tx, eventID, endpointID)
-	if err != nil {
 		return nil
 	}
-	return waiting
+	return &waiting
 }
 
 // checkEvents refuses a name this composition does not emit, by name. The

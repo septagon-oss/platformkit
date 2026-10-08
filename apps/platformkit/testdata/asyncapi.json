@@ -3347,6 +3347,338 @@
       },
       "summary": "Every tenant's delivery of user.user.updated.",
       "title": "user.user.updated"
+    },
+    "webhook.endpoint.created": {
+      "address": "platformkit.*.webhook.endpoint.created",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.created; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "webhook.endpoint.created": {
+          "contentType": "application/json",
+          "name": "webhook.endpoint.created",
+          "payload": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "disabledAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "disabledReason": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastSuccessAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "name",
+              "url",
+              "events",
+              "status",
+              "createdBy"
+            ],
+            "type": "object"
+          },
+          "summary": "webhook — webhook.endpoint.created",
+          "title": "webhook.endpoint.created"
+        }
+      },
+      "summary": "Every tenant's delivery of webhook.endpoint.created.",
+      "title": "webhook.endpoint.created"
+    },
+    "webhook.endpoint.deleted": {
+      "address": "platformkit.*.webhook.endpoint.deleted",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.deleted; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "webhook.endpoint.deleted": {
+          "contentType": "application/json",
+          "name": "webhook.endpoint.deleted",
+          "payload": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "disabledAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "disabledReason": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastSuccessAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "name",
+              "url",
+              "events",
+              "status",
+              "createdBy"
+            ],
+            "type": "object"
+          },
+          "summary": "webhook — webhook.endpoint.deleted",
+          "title": "webhook.endpoint.deleted"
+        }
+      },
+      "summary": "Every tenant's delivery of webhook.endpoint.deleted.",
+      "title": "webhook.endpoint.deleted"
+    },
+    "webhook.endpoint.disabled": {
+      "address": "platformkit.*.webhook.endpoint.disabled",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.disabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "webhook.endpoint.disabled": {
+          "contentType": "application/json",
+          "name": "webhook.endpoint.disabled",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "endpointId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "failingSince": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "endpointId",
+              "name",
+              "url",
+              "reason",
+              "failingSince",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "webhook — webhook.endpoint.disabled",
+          "title": "webhook.endpoint.disabled"
+        }
+      },
+      "summary": "Every tenant's delivery of webhook.endpoint.disabled.",
+      "title": "webhook.endpoint.disabled"
+    },
+    "webhook.endpoint.enabled": {
+      "address": "platformkit.*.webhook.endpoint.enabled",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.enabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "webhook.endpoint.enabled": {
+          "contentType": "application/json",
+          "name": "webhook.endpoint.enabled",
+          "payload": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "disabledAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "disabledReason": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastSuccessAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "name",
+              "url",
+              "events",
+              "status",
+              "createdBy"
+            ],
+            "type": "object"
+          },
+          "summary": "webhook — webhook.endpoint.enabled",
+          "title": "webhook.endpoint.enabled"
+        }
+      },
+      "summary": "Every tenant's delivery of webhook.endpoint.enabled.",
+      "title": "webhook.endpoint.enabled"
+    },
+    "webhook.endpoint.updated": {
+      "address": "platformkit.*.webhook.endpoint.updated",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.updated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "webhook.endpoint.updated": {
+          "contentType": "application/json",
+          "name": "webhook.endpoint.updated",
+          "payload": {
+            "properties": {
+              "createdAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "createdBy": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "disabledAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "disabledReason": {
+                "type": "string"
+              },
+              "events": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "id": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "lastSuccessAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "createdAt",
+              "updatedAt",
+              "name",
+              "url",
+              "events",
+              "status",
+              "createdBy"
+            ],
+            "type": "object"
+          },
+          "summary": "webhook — webhook.endpoint.updated",
+          "title": "webhook.endpoint.updated"
+        }
+      },
+      "summary": "Every tenant's delivery of webhook.endpoint.updated.",
+      "title": "webhook.endpoint.updated"
     }
   },
   "defaultContentType": "application/cloudevents+json",
@@ -4594,6 +4926,91 @@
       "tags": [
         {
           "name": "user"
+        }
+      ]
+    },
+    "webhook.endpoint.created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhook.endpoint.created"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhook.endpoint.created/messages/webhook.endpoint.created"
+        }
+      ],
+      "summary": "The webhook module publishes webhook.endpoint.created.",
+      "tags": [
+        {
+          "name": "webhook"
+        }
+      ]
+    },
+    "webhook.endpoint.deleted": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhook.endpoint.deleted"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhook.endpoint.deleted/messages/webhook.endpoint.deleted"
+        }
+      ],
+      "summary": "The webhook module publishes webhook.endpoint.deleted.",
+      "tags": [
+        {
+          "name": "webhook"
+        }
+      ]
+    },
+    "webhook.endpoint.disabled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhook.endpoint.disabled"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhook.endpoint.disabled/messages/webhook.endpoint.disabled"
+        }
+      ],
+      "summary": "The webhook module publishes webhook.endpoint.disabled.",
+      "tags": [
+        {
+          "name": "webhook"
+        }
+      ]
+    },
+    "webhook.endpoint.enabled": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhook.endpoint.enabled"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhook.endpoint.enabled/messages/webhook.endpoint.enabled"
+        }
+      ],
+      "summary": "The webhook module publishes webhook.endpoint.enabled.",
+      "tags": [
+        {
+          "name": "webhook"
+        }
+      ]
+    },
+    "webhook.endpoint.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/webhook.endpoint.updated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/webhook.endpoint.updated/messages/webhook.endpoint.updated"
+        }
+      ],
+      "summary": "The webhook module publishes webhook.endpoint.updated.",
+      "tags": [
+        {
+          "name": "webhook"
         }
       ]
     }
