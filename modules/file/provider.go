@@ -4,9 +4,11 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
+	"github.com/septagon-oss/platformkit/modules/file/internal"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -33,6 +35,7 @@ var Module = pkit.NewModule("file", wire,
 	pkit.Provides[filecontracts.Service](),
 	pkit.Provides[richtext.Files](),
 	pkit.Provides[rest.FileUses](),
+	pkit.Contributes[personaldata.Part](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -48,5 +51,6 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	pkit.Put(w, svc)
 	pkit.Put[richtext.Files](w, RichTextFiles{Opener: svc})
 	pkit.Put[rest.FileUses](w, RecordUses{Service: svc})
+	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil
 }
