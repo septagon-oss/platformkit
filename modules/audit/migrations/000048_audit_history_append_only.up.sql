@@ -67,8 +67,9 @@
 -- Limits section carries the sentence that it is still owed.
 
 -- The two bodies touch only pg_catalog (pg_trigger's OID, has_table_privilege,
--- current_user), so the path is pinned: a caller's search_path must not be able to
--- resolve a different pg_class or a different has_table_privilege under it.
+-- has_column_privilege, pg_attribute, current_user), so the path is pinned: a caller's
+-- search_path must not be able to resolve a different pg_class, a different
+-- pg_attribute, or a different privilege function under it.
 CREATE FUNCTION audit_events_never_rewritten() RETURNS trigger
 	LANGUAGE plpgsql
 	SET search_path = pg_catalog
@@ -91,6 +92,24 @@ BEGIN
 	-- different role from the application rather than the application wearing a hat.
 	IF has_table_privilege(current_user, TG_RELID, 'DELETE')
 		AND NOT has_table_privilege(current_user, TG_RELID, 'INSERT')
+		-- "May not append" is asked of every column and not only of the table. INSERT is
+		-- grantable at either level and both are deployments an installation actually runs:
+		-- GRANT INSERT ON audit_events, and GRANT INSERT (tenant_id, occurred_at, name,
+		-- actor, event_id, payload, records, request_id, client_ip, traceparent) ON
+		-- audit_events, which is what a least-privilege writer is handed when the trail's
+		-- own generated columns are to stay generated. has_column_privilege reports a
+		-- table-level grant through each of the table's columns too, so this one clause
+		-- covers both grant shapes — and the table-only clause above does not, which is how
+		-- a role with no table-level INSERT appended through the real service and then
+		-- DELETEd its own row with no mark to say it happened (root's review of 2026-10-06,
+		-- F1). One column right is enough to insert a row alongside its defaults, so the
+		-- answer is "any column", not "every column"; and no deployment that grants INSERT
+		-- by column can be fenced by a question that only asks about the table.
+		AND NOT EXISTS (
+			SELECT 1 FROM pg_attribute col
+			WHERE col.attrelid = TG_RELID AND col.attnum > 0 AND NOT col.attisdropped
+				AND has_column_privilege(current_user, TG_RELID, col.attnum, 'INSERT')
+		)
 		AND OLD.occurred_at < now() - interval '365 days' THEN
 		RETURN OLD;
 	END IF;
