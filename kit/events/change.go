@@ -149,6 +149,13 @@ func ChangesOf(before, after any, fields ...string) ([]Change, error) {
 // so it is not a column, and hidden:"true" so the REST document never offers a field no
 // response body ever holds: the door sets it immediately before it publishes, and clears
 // it immediately after, so the row a caller reads back is the row and not the diff.
+//
+// The one method cuts both ways, and the door holds both halves. A member the door owns
+// is a member a body can reach for, because hidden:"true" speaks to the document and
+// not to the decoder, and the create door decodes a body straight into the entity. So
+// that door clears whatever arrived for the member, as it clears an id: the diff says
+// what a save replaced, a create replaced nothing, and the only history a create may
+// carry is the one nobody wrote for it. See kit/rest's createRow and reportDiff.
 type Recorder interface {
 	SetChanges([]Change)
 }

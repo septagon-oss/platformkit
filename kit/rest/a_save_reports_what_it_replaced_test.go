@@ -42,8 +42,12 @@ func (Note) TableName() string { return "rest_notes" }
 // SetChanges is events.Recorder.
 func (n *Note) SetChanges(changes []events.Change) { n.Changes = changes }
 
+// Validate is the entity's own check, and it normalises as it refuses: a note trims its
+// title the way a task does, because the point here is what the trail says about the
+// value the write ended up storing and not the one the body asked for.
 func (n *Note) Validate(context.Context) error {
-	if strings.TrimSpace(n.Title) == "" {
+	n.Title = strings.TrimSpace(n.Title)
+	if n.Title == "" {
 		return errors.New("a note needs a title")
 	}
 	return nil
@@ -174,4 +178,67 @@ func payloadOf(t *testing.T, admin *sql.DB, name string) string {
 		t.Fatalf("read the outbox: %v", err)
 	}
 	return payload
+}
+
+// TestACreateCarriesNoHistoryNobodySaved: the changes member is the kernel's to write,
+// and the create door is where a caller can reach for it, because that door decodes the
+// body straight into the entity. hidden:"true" is the REST document's and nothing more,
+// so the door clears the member the way crud.Reset clears an id: a create replaces no
+// row, so a create has no before half to carry, and one that arrived with a before half
+// in its body would be the caller's invention published as the trail's account.
+func TestACreateCarriesNoHistoryNobodySaved(t *testing.T) {
+	router, admin := mountNotes(t)
+	code, body := call(t, router, http.MethodPost, "/api/v1/notes/note",
+		`{"title":"honest","changes":[{"field":"title","before":"a title it never had","after":"honest"}]}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	if payload := payloadOf(t, admin, noteSpec.Event(rest.Created)); strings.Contains(payload, `"changes"`) {
+		t.Errorf("the create published the history its body supplied: %s", payload)
+	}
+}
+
+// TestASaveReportsTheValueTheWriteWrote is the same claim from the other side of the
+// write: the entity normalises inside crud.Update, so a diff computed from the merged
+// body describes "  second  " — a value the table never held — while the payload beside
+// it says "second". The trail and the row it describes are then two answers about one
+// save, and the trail is the one that cannot be corrected afterwards.
+func TestASaveReportsTheValueTheWriteWrote(t *testing.T) {
+	router, admin := mountNotes(t)
+	code, body := call(t, router, http.MethodPost, "/api/v1/notes/note", `{"title":"first"}`)
+	if code != http.StatusCreated {
+		t.Fatalf("POST = %d %s", code, body)
+	}
+	at := "/api/v1/notes/note/" + id(t, body)
+	if code, body := call(t, router, http.MethodPatch, at, `{"title":"  second  "}`); code != http.StatusOK {
+		t.Fatalf(`PATCH {"title":"  second  "} = %d %s`, code, body)
+	}
+	var stored string
+	if err := admin.QueryRowContext(t.Context(), `SELECT title FROM rest_notes WHERE id = $1`, id(t, body)).Scan(&stored); err != nil {
+		t.Fatalf("read the row back: %v", err)
+	}
+	if stored != "second" {
+		t.Fatalf("the table holds %q, want the normalised title", stored)
+	}
+	var out struct {
+		Title   string `json:"title"`
+		Changes []struct {
+			Field  string          `json:"field"`
+			Before json.RawMessage `json:"before"`
+			After  json.RawMessage `json:"after"`
+		} `json:"changes"`
+	}
+	payload := payloadOf(t, admin, noteSpec.Event(rest.Updated))
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatalf("the payload is not json: %v (%s)", err, payload)
+	}
+	if len(out.Changes) != 1 {
+		t.Fatalf("the payload carries %d changes, want the one title: %s", len(out.Changes), payload)
+	}
+	if c := out.Changes[0]; c.Field != "title" || string(c.Before) != `"first"` || string(c.After) != `"second"` {
+		t.Errorf("the trail says title went %s -> %s; the row holds %q", c.Before, c.After, stored)
+	}
+	if out.Title != stored {
+		t.Errorf("the payload says %q and the row holds %q", out.Title, stored)
+	}
 }

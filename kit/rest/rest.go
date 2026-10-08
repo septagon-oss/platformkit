@@ -397,6 +397,16 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
+	// The trail's field is discarded here for the same reason the id is chosen here:
+	// the caller does not get to write it. A create replaces no row, so there is no
+	// before half for anybody to supply, and a body that named one was writing the
+	// history of a save that never happened. The create door decodes straight into
+	// the entity, so hidden:"true" buys it nothing — that tag is the REST document's,
+	// and a document that does not offer a member is not a decoder that refuses one.
+	// The patch needs no such line because merge reads the body as a map of schema
+	// fields, and the diff is no field: it answers `{"changes":[…]}` with "there is no
+	// field \"changes\"", which is the same refusal in the other door's words.
+	discardDiff(e)
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
@@ -440,15 +450,22 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain
-	// the preceding committed values used by validation and the emitted event.
+	// the preceding committed values used for validation and the emitted event.
+	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
+		return e, err
+	}
+	// The diff is computed after that write and before the event, because crud.Update
+	// runs the entity's own Validate, and Validate normalises: a task trims its title,
+	// so the body's "  second  " and the row's "second" are two answers to what the
+	// save moved, and only one of them is in the database. Diffing the merged body
+	// instead — which this did until the review of 2026-10-06 (F3) — records an ordinary
+	// valid save as a change to a value nothing ever held, beside a payload that says
+	// the other half. See reportDiff.
 	done, err := reportDiff(before, e, values)
 	if err != nil {
 		return e, err
 	}
 	defer done()
-	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
-		return e, err
-	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
 }
 
@@ -474,15 +491,30 @@ func rowCopy[T any](e T) any {
 // fields merge accepted, in the spelling the caller used — sorted, so two identical saves
 // publish the same list in the same order.
 //
-// It runs before the UPDATE, and a diff that cannot be computed fails the write: a body
-// that names a field the trail refuses is a request that must write nothing, not one that
-// wrote a row and then complained. A module that fences a field out of the trail with
-// audit:"-" has to refuse it at its own door, because the kernel cannot diff what the
-// trail may not hold and stay honest about the gap.
+// It runs after the UPDATE that wrote the normalised row and before the event that says
+// the save happened, so its after half is the value the database holds. A diff that
+// cannot be computed still fails the request: the handler's error reaches
+// db.Pending.Close(false), the transaction rolls back, and the UPDATE above is undone
+// with everything else in it, including the outbox row this door would have written.
+// Nothing is left half-written, and nothing is left described. A module that fences a
+// field out of the trail with audit:"-" has to refuse it at its own door, because the
+// kernel cannot diff what the trail may not hold and stay honest about the gap.
 //
 // What it returns is the way out: the set is cleared on the way here, so the row a caller
 // reads back is the row and not the diff. The changes member belongs to the event, and no
 // response body holds it.
+// discardDiff is the create door's half of the same rule: the changes member is the
+// kernel's to write, so whatever arrived for it is cleared before the row is written and
+// before the payload is stamped. Clearing and not refusing is crud.Reset's convention
+// for a member the server owns outright — a caller that sent an id was not reaching for
+// a door of its own, and a caller that sent a diff for a create was describing a save
+// that has no before half to describe.
+func discardDiff(e any) {
+	if rec, ok := e.(events.Recorder); ok {
+		rec.SetChanges(nil)
+	}
+}
+
 func reportDiff(before any, e any, values map[string]any) (func(), error) {
 	rec, ok := e.(events.Recorder)
 	if !ok {
