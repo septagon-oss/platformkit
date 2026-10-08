@@ -152,3 +152,37 @@ store walks through and where a two-implementation disagreement stops being an
 argument; `Reconciler` and `Prover` as ports an implementation declines by name
 rather than by silence; and `Deps.Storage`, which is still the composition's choice —
 `file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
+
+## Composition
+
+**Reused** — `kit/crud`'s writes and row locks, `kit/db`'s tenant transaction, this
+module's own `Storage` and `MetaFor`, `http.DetectContentType` (the sniff `Agrees`
+already runs), `kit/richtext`'s `References`, `kit/rest`'s existing richtext seam, and
+the orphan sweep. **Added** — `contracts/image.go` and the use ledger: no existing
+package decides what an image becomes or what a body of somebody else's record
+references, and both had to live in `contracts/` rather than `internal/` so that
+`filetest.Fake` runs the one implementation the SQL service runs instead of imitating
+it. **Made reusable** — `ProcessImage`, `ReadsAsImage`, `RefusesPass`, `CollapseRefs`
+and `DiffUses` as shared, tested decisions; `rest.FileUses` as the seam any module with
+a richtext field can mount and `file.RecordUses` as the shape of wiring it;
+`Upload.Image` as the door a picker or an editor knocks on; and `width`/`height` on the
+row as the server's own account of a frame, which the media library and the editor will
+lay out against instead of decoding a header to learn what an image is.
+
+## Limits
+
+The image pass decodes JPEG, PNG and the first frame of a GIF; a WebP is not an
+image this deployment decodes and is refused at an image door. It stores one
+frame: no variants and no srcset widths exist yet, so a richtext image's srcset
+names the stored frame's own width. The pixel ceiling bounds one frame, not how
+many frames are decoded at once — concurrent decodes are unbounded until the
+upload route carries a `kit/limit`. No release sweep runs, so a file whose last
+use ends keeps its bytes; when one lands, a resource left on `rest.RecordNoUses`
+becomes the mount-time refusal it is promised to be, and `Service.Delete` has to
+consult the ledger before removing a file that is being shown. Until that guard
+exists a file can be deleted under a body still showing it, and the ledger row
+left behind ends with the next rewrite of that field: an edit, or the record's
+own delete through `kit/rest`, which ends its uses and is not refused by a file
+that went first. Nothing else ends a use. The pass's refusals are
+English `error` text, not catalogue keys, so they are untranslated beside the
+`messages/` catalogue the rest of the module answers in.

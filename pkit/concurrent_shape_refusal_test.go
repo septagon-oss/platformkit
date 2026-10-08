@@ -12,6 +12,15 @@ import (
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
+// buildWait is how long one of these boots gets to reach the point the case is asking about. Build
+// migrates the database it was handed before it ever touches a transport, so this is a wall on the
+// Postgres rather than on the code under test: the case refused at 15.53 s — twice, on 2026-10-06,
+// inside `make check`, on a host carrying eight of this program's whole suites at once — with
+// `the first build did not reach its transport`, while the same package passed in 168.435 s when it
+// was asked on its own. The assertion is unchanged: a build that never gets there is still a failure,
+// and a build that gets there late is still the thing this case is about.
+const buildWait = 2 * time.Minute
+
 // A concurrent boot can declare an event while another boot is opening its
 // transport. Whichever composition is refused must leave its database empty.
 func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
@@ -41,7 +50,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 	}()
 	select {
 	case <-firstAtTransport:
-	case <-time.After(15 * time.Second):
+	case <-time.After(buildWait):
 		t.Fatal("the first build did not reach its transport")
 	}
 
@@ -67,7 +76,7 @@ func TestConcurrentShapeRefusalHasNoEffects(t *testing.T) {
 			stopFirst()
 			select {
 			case second = <-secondResult:
-			case <-time.After(15 * time.Second):
+			case <-time.After(buildWait):
 				t.Fatal("the second build did not finish")
 			}
 		}

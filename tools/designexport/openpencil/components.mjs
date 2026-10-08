@@ -258,7 +258,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
       (node, property) => observedPaint(graph, collection, snapshot, observation, node, property))]
   }))
   const alignment = { start: 'LEFT', left: 'LEFT', center: 'CENTER', end: 'RIGHT', right: 'RIGHT' }[style['text-align']]
-  requireComponent(style['white-space'] === 'normal' && alignment && ['overflow-wrap', 'word-break'].every(key => style[key] === 'normal') &&
+  requireComponent(style['white-space'] === 'normal' && alignment && ['normal', 'break-word', 'anywhere'].includes(style['overflow-wrap']) && style['word-break'] === 'normal' &&
     style['line-break'] === 'auto' && style.hyphens === 'manual' && style['text-wrap-style'] === 'auto',
   'text rows require ordinary Unicode line breaking and supported alignment')
   const supplied = validateFonts(faces)
@@ -310,7 +310,7 @@ async function materializeTextRow(graph, parentId, snapshot, observation, faces,
           textDirection: 'LTR', textAlignHorizontal: alignment,
           fontSize, lineHeight, letterSpacing, fontFeatures: numericFeatures(style), textAutoResize: 'WIDTH_AND_HEIGHT', ...underline, ...structuredClone(textPaint),
           pluginData: [{ pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
-            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout', textWrap: 'normal-v1',
+            schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout', textWrap: `${style['overflow-wrap']}-v1`,
           }) }],
         }, pending)
       }
@@ -524,11 +524,11 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
       requireComponent(style['white-space'] === 'normal' && alignment &&
         style['overflow-x'] === 'visible' && style['overflow-y'] === 'visible',
       'text blocks require normal wrapping, supported alignment and visible overflow')
-      requireComponent(['overflow-wrap', 'word-break'].every(key => style[key] === 'normal') &&
+      requireComponent(['normal', 'break-word', 'anywhere'].includes(style['overflow-wrap']) && style['word-break'] === 'normal' &&
         style['line-break'] === 'auto' && style.hyphens === 'manual' && style['text-wrap-style'] === 'auto',
       'text blocks require ordinary Unicode line breaking without automatic hyphenation or balancing')
       const value = text(node.children[0], node, { wrapping: true })
-      value.textWrap = 'normal-v1'
+      value.textWrap = `${style['overflow-wrap']}-v1`
       value.native.textDirection = 'LTR'
       value.native.textAlignHorizontal = alignment
       value.native.width = node.bounds.width - native.paddingLeft - native.paddingRight
@@ -639,12 +639,12 @@ function planComposition(graph, snapshot, observation, faces, collection, exampl
         if (vertical && align !== 'STRETCH' && (child.textBlock || child.blockFlow) && child.observation.sizing.width === 'auto') {
           child.placement = { counterAxisSizing: 'HUG' }
         }
-        const grows = !vertical && !wrapping && childStyle['flex-grow'] === '1' && ['0%', '0px'].includes(childStyle['flex-basis'])
+        const grows = !vertical && childStyle['flex-grow'] === '1' && ['0%', '0px'].includes(childStyle['flex-basis'])
         requireComponent((grows || childStyle['flex-grow'] === '0' && childStyle['flex-basis'] === 'auto') &&
           ['0', '1'].includes(childStyle['flex-shrink']) && childStyle['align-self'] === 'auto', 'composition child flex sizing requires further conversion')
         requireComponent(!wrapping || childStyle.order === '0', 'wrapping rows require source child order')
-        if (grows || vertical && align === 'STRETCH' && ['auto', '100%'].includes(child.observation.sizing.width)) child.placement = {
-          ...(!grows ? { layoutAlignSelf: 'STRETCH' } : {}),
+        if (grows || vertical && (child.observation.sizing.width === '100%' || align === 'STRETCH' && child.observation.sizing.width === 'auto')) child.placement = {
+          ...(!grows ? { layoutAlignSelf: align } : {}),
           [child.textRow || child.native?.layoutMode === 'HORIZONTAL' ? 'primaryAxisSizing' : 'counterAxisSizing']: 'FILL',
         }
       }
@@ -722,7 +722,7 @@ async function materializeComposition(graph, parentId, snapshot, observation, fa
       return node
     }
     // Private paragraphs and inline runs share linked Text's source-owned layout.
-    const pluginData = current.positioned || current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline ||
+    const pluginData = current.positioned || current.blockFlow || current.textBlock || current.wrapping || current.inline || parentPlan?.inline || current.native?.cssBox ||
       ['flex', 'inline-flex'].includes(current.observation?.style?.display) ? [{
       pluginId: 'platformkit', key: 'platformkit.source', value: JSON.stringify({
         schema: snapshot.schema, sha256: snapshot.sha256, scope: 'source-composition-layout',

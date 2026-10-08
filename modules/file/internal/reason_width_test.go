@@ -34,7 +34,7 @@ import (
 func TestAReasonOfFiveHundredCharactersIsFiveHundredInAnyAlphabet(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	store := internal.NewLocal(t.TempDir())
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	// A hold's reason, at the ceiling and one over, spelled in characters a
 	// two-byte letter counts once each.
