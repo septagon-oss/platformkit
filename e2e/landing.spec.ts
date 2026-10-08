@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn, signInAs, signOut, workspace } from './steps/kernel';
 
 // Rule 5's journey on a browser: a person who was invited, given a password by the
 // administrator's own command because the invitation link goes to a mailbox no
@@ -19,11 +20,9 @@ import { expect, test } from '@playwright/test';
 // which is what makes this rule 5 and rule 3 in one journey: the grant that opens
 // the screen has to be one a module declared, not one this fixture invented.
 
-const admin = {
-  email: process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test',
-  password: process.env.PLATFORMKIT_E2E_PASSWORD ?? '',
-};
-
+// The two walks this journey used to write out line by line — the administrator's and the
+// person's — are the kernel's steps now (`e2e/steps/kernel.ts`), published with the version
+// this run drives. What stays here is what this spec decides.
 const person = {
   email: `coordinator-${Date.now()}@e2e.test`,
   password: 'e2e-coordinator-landing-password',
@@ -36,11 +35,7 @@ const desk = '/app/task/tasks';
 test('a person whose role opens one screen is landed on a page that offers it', async ({ page, browser }) => {
   test.setTimeout(90_000);
 
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(admin.email);
-  await page.getByLabel('Password').fill(admin.password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signIn(page);
 
   const invited = await page.request.post('/api/v1/user/invitations', {
     data: { email: person.email, displayName: person.name, roles: ['coordinator'] },
@@ -54,19 +49,14 @@ test('a person whose role opens one screen is landed on a page that offers it', 
 
   // Their own browser, not this one: the landing is what a person sees, and a
   // second context is the only way to see it without the administrator's grants.
-  const context = await browser.newContext();
-  const as = await context.newPage();
-  await as.goto('/app/admin/login');
-  await as.getByLabel('Email').fill(person.email);
-  await as.getByLabel('Password').fill(person.password);
-  await as.getByRole('button', { name: 'Sign in' }).click();
-  await expect(as).toHaveURL(/\/app$/);
+  const as = await signInAs(browser, person);
 
   // The sidebar names the door their role opens. A menu whose only items are the
   // landing page and Health is the walkthrough's zero, and it is a rendered list,
-  // so this is the assertion that says the composition reached the menu.
-  const menu = as.getByRole('navigation', { name: 'Admin navigation' }).first();
-  await expect(menu.getByRole('link', { name: 'Tasks' })).toHaveAttribute('href', desk);
+  // so this is the assertion that says the composition reached the menu. The card
+  // below is what proves the address behind that name is the one their role opens.
+  const entries = await workspace(as);
+  expect(entries, `the desk offers ${entries.join(', ')} to a coordinator`).toContain('Tasks');
 
   // And the page they landed on offers the same door, not an empty grid: the card
   // for what their role may count. Clickable cards are anchors with the screen as
@@ -81,5 +71,10 @@ test('a person whose role opens one screen is landed on a page that offers it', 
   // The desk itself, answered to them: a table, not a refusal page.
   await expect(as.getByRole('table')).toBeVisible();
 
-  await context.close();
+  // The way out, taken by the person who used it: the shell's own control, the door
+  // the person arrives at, and a session that does not outlive either. New coverage
+  // for this journey, and the reason `signOut` is published rather than kept here.
+  await signOut(as);
+
+  await as.context.close();
 });
