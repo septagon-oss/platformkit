@@ -88,25 +88,25 @@ type Meta struct {
 // display name, so the round trip is lossy in one direction and says so: see
 // FoldName for how a write folds the halves together.
 type Name struct {
-	GivenName  string `json:"givenName,omitempty"`
-	FamilyName string `json:"familyName,omitempty"`
-	Formatted  string `json:"formatted,omitempty"`
+	GivenName  string `json:"givenName,omitempty" required:"false"`
+	FamilyName string `json:"familyName,omitempty" required:"false"`
+	Formatted  string `json:"formatted,omitempty" required:"false"`
 }
 
 // Email is one of a person's addresses. SCIM allows many; this platform has one
 // per person, so the list a client sends is read for at most one value.
 type Email struct {
-	Value   string `json:"value,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Primary bool   `json:"primary,omitempty"`
+	Value   string `json:"value,omitempty" required:"false"`
+	Type    string `json:"type,omitempty" required:"false"`
+	Primary bool   `json:"primary,omitempty" required:"false"`
 }
 
 // MemberRef is one entry of a group's membership: who is in it, by id.
 type MemberRef struct {
-	Value   string `json:"value,omitempty"`
-	Display string `json:"display,omitempty"`
-	Type    string `json:"type,omitempty"`
-	Ref     string `json:"$ref,omitempty"`
+	Value   string `json:"value,omitempty" required:"false"`
+	Display string `json:"display,omitempty" required:"false"`
+	Type    string `json:"type,omitempty" required:"false"`
+	Ref     string `json:"$ref,omitempty" required:"false"`
 }
 
 // UserResource is a person as the protocol sees them.
@@ -162,38 +162,46 @@ type GroupMapping struct {
 // UserDraft is what a POST or PUT says about a person. It is the request's
 // shape, not the stored one: the service decides which of these fields reach
 // modules/user and which are refused.
+//
+// Every field is optional to the schema and judged by the service, because the
+// protocol's own requirement is contextual — a create is named by userName or by
+// one email address — and a schema that demanded the union of the spellings would
+// refuse the request that is legal. It is also why the tags name the protocol's
+// keys: without them a marshaller would derive UserName and ExternalID from the
+// Go field names, and every connector on earth would be told its own document was
+// malformed.
 type UserDraft struct {
-	Schemas     []string
-	ExternalID  string
-	UserName    string
-	DisplayName string
-	Name        *Name
-	Emails      []Email
-	Active      *bool
+	Schemas     []string `json:"schemas,omitempty" required:"false"`
+	ExternalID  string   `json:"externalId,omitempty" required:"false"`
+	UserName    string   `json:"userName,omitempty" required:"false"`
+	DisplayName string   `json:"displayName,omitempty" required:"false"`
+	Name        *Name    `json:"name,omitempty" required:"false"`
+	Emails      []Email  `json:"emails,omitempty" required:"false"`
+	Active      *bool    `json:"active,omitempty" required:"false"`
 	// Password is present in the protocol and refused here. It is a field rather
 	// than an omission so that "you sent a password" is a refusal the caller can
 	// read instead of an attribute silently dropped.
-	Password string
+	Password string `json:"password,omitempty" required:"false"`
 	// Groups is read off the wire and ignored: membership moves through Groups.
-	Groups []GroupRef
+	Groups []GroupRef `json:"groups,omitempty" required:"false"`
 }
 
 // GroupDraft is what a POST or PUT says about a group.
 type GroupDraft struct {
-	Schemas     []string
-	ExternalID  string
-	DisplayName string
-	Members     []MemberRef
-	Role        string
+	Schemas     []string    `json:"schemas,omitempty" required:"false"`
+	ExternalID  string      `json:"externalId,omitempty" required:"false"`
+	DisplayName string      `json:"displayName,omitempty" required:"false"`
+	Members     []MemberRef `json:"members,omitempty" required:"false"`
+	Role        string      `json:"role,omitempty" required:"false"`
 }
 
 // Operation is one PATCH operation: add, remove or replace, at a path, with a
 // value whose meaning is the path's. It stays JSON here because the protocol's
 // PATCH body is JSON in a shape no Go type describes honestly.
 type Operation struct {
-	Op    string          `json:"op,omitempty"`
-	Path  string          `json:"path,omitempty"`
-	Value json.RawMessage `json:"value,omitempty"`
+	Op    string          `json:"op,omitempty" required:"false"`
+	Path  string          `json:"path,omitempty" required:"false"`
+	Value json.RawMessage `json:"value,omitempty" required:"false"`
 }
 
 // ListQuery is a list request: the filter, and the two bounds.

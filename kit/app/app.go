@@ -113,6 +113,16 @@ type Options struct {
 	// decision, and a silent one is a surprise during the incident it was for.
 	Installation Installation
 
+	// JSONMediaTypes are the media types this installation reads and writes as
+	// JSON, beside application/json. A protocol that names its own type arrives
+	// with a Content-Type the API has never been told about, and refuses to parse
+	// anything carrying it, so which types are JSON is a fact about what the
+	// installation serves and belongs with the rest of those facts.
+	//
+	// httpx.Options.JSONMediaTypes is where it is spent; see that field for why a
+	// module cannot say it itself.
+	JSONMediaTypes []string
+
 	// WorkspaceCatalog mounts the catalog route the kernel owns the address of,
 	// /api/v1/app/resources: the resources this caller may reach, as a document.
 	// Build it with WorkspaceCatalogRoute; the composition writes one line.
@@ -778,16 +788,17 @@ func useJetStream(mode string, role Role) (bool, error) {
 // could not.
 func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
-		Unwired:      true,
-		Cache:        store,
-		PublicHost:   a.cfg.Server.PublicHost,
-		Docs:         a.cfg.Server.Docs,
-		Tenants:      a.opts.Tenants,
-		Authorize:    a.opts.Authorize,
-		Entitle:      a.opts.Entitle,
-		Authenticate: a.opts.Authenticate,
-		Fault:        a.opts.Fault,
-		Log:          a.log,
+		Unwired:        true,
+		Cache:          store,
+		PublicHost:     a.cfg.Server.PublicHost,
+		Docs:           a.cfg.Server.Docs,
+		Tenants:        a.opts.Tenants,
+		Authorize:      a.opts.Authorize,
+		Entitle:        a.opts.Entitle,
+		Authenticate:   a.opts.Authenticate,
+		JSONMediaTypes: a.opts.JSONMediaTypes,
+		Fault:          a.opts.Fault,
+		Log:            a.log,
 		// The ceiling on the one route that reads its own request. Every other
 		// body is bounded at httpx.MaxBodyBytes, and a schema'd one is bounded
 		// by huma as well.

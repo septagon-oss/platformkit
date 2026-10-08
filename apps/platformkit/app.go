@@ -37,6 +37,7 @@ import (
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
+	scimcontracts "github.com/septagon-oss/platformkit/modules/scim/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
@@ -153,6 +154,9 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			notification.Module,
 			auth.Module,
 			auth.EmailRegistration,
+			// The door a tenant's identity provider provisions through, which needs
+			// people to write and roles to name, and so comes after both.
+			scimProvisioning,
 			file.Module,
 			task.Module,
 			billing.Module,
@@ -297,5 +301,11 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 	// ask whether its failure reads as an outage or as "nobody can grant this" is
 	// to compose one that fails. Every other answer comes from the resolved plan.
 	opts.Access = c.access
+	// SCIM names the media type its JSON is sent and answered in. A protocol's
+	// type is registered here rather than by the module that serves it because the
+	// API's format table is the kernel's, and which protocols an installation
+	// speaks is this file's decision: a module that could register a type could
+	// make every other door on the same API accept a body it never chose to read.
+	opts.JSONMediaTypes = []string{scimcontracts.ProtocolMediaType}
 	return opts
 }
