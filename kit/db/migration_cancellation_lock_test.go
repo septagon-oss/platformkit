@@ -2,7 +2,6 @@ package db_test
 
 import (
 	"context"
-	"strconv"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -60,17 +59,9 @@ func TestACancelledMigrationHoldsNoCompositionLockOnceItReturns(t *testing.T) {
 	// thirty seconds the file's pg_sleep would hold the key if the cancellation
 	// never reached the statement.
 	deadline := time.Now().Add(5 * time.Second)
-	for {
-		var held int
-		scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
-			WHERE l.locktype = 'advisory' AND l.granted
-				AND ((l.classid::bigint << 32) | l.objid::bigint) = `+strconv.FormatInt(compositionLockKey, 10)+`
-				AND a.application_name = current_setting('search_path')`, &held)
-		if held == 0 {
-			return
-		}
+	for holdsCompositionKey(t, admin) {
 		if time.Now().After(deadline) {
-			t.Fatalf("%d session(s) of the cancelled run still hold the composition lock 5s after Migrate returned", held)
+			t.Fatal("a session of the cancelled run still holds the composition lock 5s after Migrate returned")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
