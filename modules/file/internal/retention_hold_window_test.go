@@ -40,7 +40,7 @@ func TestTheRetentionSweepTakesTheExpiredFileBehindAHeldWindow(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	// Older than the file the sweep is after, so the oldest-first read meets the
 	// window of holds first: 201 of them, one more than the batch, because a

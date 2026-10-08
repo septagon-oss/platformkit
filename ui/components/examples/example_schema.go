@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/septagon-oss/platformkit/ui/components"
 )
@@ -19,6 +21,7 @@ type exampleField struct {
 	zero     bool
 	optional bool // A nil anonymous pointer omits its promoted fields.
 	choices  string
+	quoted   bool
 	doc      string
 }
 
@@ -81,10 +84,10 @@ func exampleFields(typ reflect.Type) ([]exampleField, error) {
 			}
 			seen[name] = true
 			flags := strings.Split(options, ",")
-			if slices.Contains(flags, "string") {
+			if slices.Contains(flags, "string") && field.Type.Kind() != reflect.Int64 && !(field.Type.Kind() == reflect.Pointer && field.Type.Elem().Kind() == reflect.Int64) {
 				return fmt.Errorf("JSON string coercion on %q is unsupported", name)
 			}
-			fields = append(fields, exampleField{name, field.Type, index, slices.Contains(flags, "omitempty"), slices.Contains(flags, "omitzero"), optional, field.Tag.Get("enum"), field.Tag.Get("doc")})
+			fields = append(fields, exampleField{name, field.Type, index, slices.Contains(flags, "omitempty"), slices.Contains(flags, "omitzero"), optional, field.Tag.Get("enum"), slices.Contains(flags, "string"), field.Tag.Get("doc")})
 		}
 		return nil
 	}
@@ -129,6 +132,9 @@ func exampleSchema(typ reflect.Type) (map[string]any, error) {
 }
 
 func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[string]any, error) {
+	if typ == reflect.TypeFor[time.Time]() {
+		return map[string]any{"type": "string", "format": "date-time"}, nil
+	}
 	if exampleHasJSONCodec(typ) {
 		return nil, fmt.Errorf("custom JSON codec for %s is unsupported", typ)
 	}
@@ -162,6 +168,12 @@ func (b exampleSchemaBuilder) build(typ reflect.Type, definition bool) (map[stri
 			property, err := b.build(field.typ, false)
 			if err != nil {
 				return nil, fmt.Errorf("property %q: %w", field.name, err)
+			}
+			if field.quoted {
+				property = map[string]any{"type": "string", "pattern": "^-?(0|[1-9][0-9]*)$", "description": "Exact signed 64-bit decimal integer."}
+				if field.typ.Kind() == reflect.Pointer {
+					property = map[string]any{"anyOf": []any{property, map[string]any{"type": "null"}}}
+				}
 			}
 			if field.doc != "" {
 				property["description"] = field.doc
@@ -237,6 +249,10 @@ func portableExampleValue(v reflect.Value, active map[exampleCopyKey]bool) (any,
 	if !v.IsValid() {
 		return nil, nil
 	}
+	if v.Type() == reflect.TypeFor[time.Time]() {
+		text, err := v.Interface().(time.Time).MarshalText()
+		return string(text), err
+	}
 	if v.Type().Implements(exampleNodeType) || exampleHasJSONCodec(v.Type()) {
 		return nil, fmt.Errorf("opaque Props value %s is unsupported", v.Type())
 	}
@@ -273,6 +289,17 @@ func portableExampleValue(v reflect.Value, active map[exampleCopyKey]bool) (any,
 				empty = value.Len() == 0
 			}
 			if (field.omit && empty) || (field.zero && value.IsZero()) {
+				continue
+			}
+			if field.quoted {
+				if value.Kind() == reflect.Pointer {
+					if value.IsNil() {
+						object[field.name] = nil
+						continue
+					}
+					value = value.Elem()
+				}
+				object[field.name] = strconv.FormatInt(value.Int(), 10)
 				continue
 			}
 			object[field.name], err = portableExampleValue(value, active)
@@ -313,4 +340,29 @@ func portableExampleValue(v reflect.Value, active map[exampleCopyKey]bool) (any,
 	default:
 		return v.Interface(), nil
 	}
+}
+
+func (f exampleField) decode(raw []byte) (reflect.Value, error) {
+	if !f.quoted {
+		return decodeExampleValue(raw, f.typ)
+	}
+	out := reflect.New(f.typ).Elem()
+	if f.typ.Kind() == reflect.Pointer && string(raw) == "null" {
+		return out, nil
+	}
+	var text string
+	if err := json.Unmarshal(raw, &text); err != nil {
+		return out, fmt.Errorf("%s requires a decimal string", f.name)
+	}
+	value, err := strconv.ParseInt(text, 10, 64)
+	if err != nil || strconv.FormatInt(value, 10) != text {
+		return out, fmt.Errorf("%s requires a canonical int64 string", f.name)
+	}
+	if out.Kind() == reflect.Pointer {
+		out.Set(reflect.New(out.Type().Elem()))
+		out.Elem().SetInt(value)
+	} else {
+		out.SetInt(value)
+	}
+	return out, nil
 }

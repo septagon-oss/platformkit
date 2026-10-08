@@ -120,9 +120,22 @@ func product(cfg config.Config) *pkit.Module {
 		// composed, and which door of which module answers for a file a visitor may
 		// see. A module that named them would be naming a surface it does not serve,
 		// and a composition that writes one is pinning an address the kernel
-		// composed — which is only safe because a test asks the running server.
+		// composed — which is only safe because a test asks the running server: the
+		// way in by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and the logo's file
+		// by TestThePublicPageLinksOnlyAddressesTheInstallationServes, which uploads
+		// a public file, sets it as the tenant's logo, reads the src back off the
+		// public home page and fetches it.
+		//
+		// The way in is the workspace root, not the sign-in page below it.
+		// pinnedSignIn stays the address the guard turns a refused caller towards,
+		// and the fault chrome keeps linking it; this line is what an anonymous
+		// visitor on a tenant's own host is offered, and a public frame may offer no
+		// address deeper into a workspace than its root. The root asks no permission
+		// of its own — httpx.SignedIn guards it — so the workspace decides whether
+		// the visitor gets a page or the form, and returns them to the root once
+		// they have signed in.
 		pkit.Put[webcontracts.Links](w, webcontracts.Links{
-			SignIn:     pinnedSignIn,
+			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
 		})
 		// The form on the shell's login page posts to the auth module's door, and

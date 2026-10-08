@@ -71,13 +71,22 @@ PLATFORMKIT_VALKEY_PORT ?= 6379
 PLATFORMKIT_TEST_VALKEY_URL ?= $(shell timeout 2 bash -c 'exec 3<>/dev/tcp/localhost/$(PLATFORMKIT_VALKEY_PORT)' 2>/dev/null && echo redis://localhost:$(PLATFORMKIT_VALKEY_PORT))
 export PLATFORMKIT_TEST_VALKEY_URL
 
-# Local feedback uses Go's package/dependency cache. The full check below always
-# runs fresh, independently of these local selectors or an earlier test goal.
+# Local feedback uses Go's package/dependency cache. The full check below runs
+# fresh at TEST_COUNT's default of -count=1, independently of these local
+# selectors or an earlier test goal: only a caller that sets TEST_COUNT itself
+# opts its own runs out of running every test.
 TEST_PACKAGES ?= ./...
 TEST_FLAGS ?=
 # gotestsum options apply only to local feedback; --watch keeps the default
 # all-package scope so Go's cache also checks consumers of an edited package.
 TEST_OPTIONS ?=
+# The count both full-suite goals pass to the go command. Its default is the promise CI
+# depends on: -count=1, so a build cache restored across commits can never answer a test
+# the commit never ran. CI sets nothing, so CI keeps this default. A caller whose own
+# gate re-runs the same tree sets TEST_COUNT= empty and gets Go's test cache for the
+# packages whose inputs did not change; that is the caller opting its own runs into the
+# cache, never CI out of it. Local feedback (make test) still carries no count at all.
+TEST_COUNT ?= -count=1
 # Runner reports: GOTESTSUM_JSONFILE=/tmp/pkit-tests.jsonl and
 # GOTESTSUM_JUNITFILE=/tmp/pkit-tests.xml (overwritten on each run).
 # Inspect timings: go tool gotestsum tool slowest --jsonfile /tmp/pkit-tests.jsonl --num 10
@@ -264,7 +273,7 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
-	go test -race -count=1 $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -318,9 +327,21 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # two kernel Go jobs: which key each one restores under, and what may never be true about it. Both of
 # this change's promises can be undone from somewhere else — the key by anyone who moves the digest
 # into a `hashFiles` expression, which act_runner answers "" for rather than failing, and the brief's
-# "never cache test results across commits" by anyone who folds `-count=1` into `GOFLAGS` — so both
-# halves are pinned where they live: the workflow, and the two goals that run the suite. It starts
-# nothing and reads no database, which is what makes it a `check` line and not a job step.
+# "never cache test results across commits" by anyone who moves the count out of TEST_COUNT's default
+# and into `GOFLAGS` — so both halves are pinned where they live: the workflow, and the one variable
+# the two goals that run the suite read. It starts nothing and reads no database, which is what makes it
+# a `check` line and not a job step.
+#
+# scripts/make_check_count_default_test.sh asks the count's question of the one shape no other case can
+# take: CI's own, where nothing names the variable at all. The arch probe pins `TEST_COUNT=-count=1` on
+# the nested make, and a command-line value overrides whatever the Makefile assigns; ci_go_cache_test.sh
+# reads the `?=` default's line. A later assignment that empties the variable below that default passes
+# both (measured by review 1: the guard answers ok, the probe still prints the fresh line) while CI's own
+# expansion loses the flag and cached test results start travelling across commits. So this case starts a
+# child make with TEST_COUNT, MAKEFLAGS and MAKEOVERRIDES removed from the environment — what a caller
+# that sets nothing inherits — and refuses an expansion that is not today's fresh suite line, the same
+# for the race goal, and any workflow that sets the variable itself. Two dry runs and one grep; nothing
+# is compiled, started or tested.
 #
 # scripts/ci_go_cache_one_saver_per_key_test.sh asks the one question about those steps that no
 # single step can see: whether two jobs that run side by side save under the same exact key. A save
@@ -340,12 +361,48 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # tool step installs a YAML reader beside the database client and the socket probe.
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a decision this
+	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
+	# installation into a schema of their own; the package measured 407s with three database packages
+	# sharing one Postgres, and the run of 2026-10-06 killed it at 600s while it was still working —
+	# six passing cases then reported as `(unknown)` over a goroutine dump of tests parked in
+	# t.Parallel. A whole-suite run of 2026-10-06 on a host carrying six of this program's suites at
+	# once took `modules/tenant/internal` to 18m37s and `kit/rest` — a package that opens no database
+	# at all — to 20m, and the same five packages that failed there passed in 7m30s of wall clock
+	# against 1m of CPU when nothing else was asking. Thirty minutes is the worst observation here plus
+	# room for a machine doing other things as well. It is not a looser standard: the hang a bound
+	# exists to catch still stops. Behind it the CI job that runs `make check` names 75 minutes for
+	# itself, and the forge has three times cut that job off at about an hour over it — 94d387cc at
+	# 3612s = 60m02s, b6f1e93 at 3612s, cc614f57 at 3609s, all three with 75 in their copy of
+	# .gitea/workflows/ci.yml — so the bound that stops a hung package here is this line's, not the
+	# job's, and the budget a step must fit is the runner's.
+	#
+	# The count beside it is TEST_COUNT's (PR #141), and the two are written in this order because
+	# scripts/ci_go_cache_test.sh reads the count variable as it sits directly after the option separator,
+	# so the count goes first and the bound after it. A caller that empties TEST_COUNT for its own cached
+	# runs then loses the count, and the line that comes back carries the bound on its own — two spaces
+	# and all, because make substitutes nothing for an empty variable and leaves the separator on both
+	# sides. The shell folds them; the pin in the arch probe is of the bytes the recipe emits, in the same
+	# shape as the double space that probe already pins in the local goal's line. One caution for whoever
+	# edits this paragraph next: that guard greps this recipe's text, so setting the separator and the
+	# variable side by side anywhere in here would answer it from a comment.
+	#
+	# Three files hold this command, and that is the price of a byte pin. The arch probe
+	# scripts/check_architecture_test.sh dry-runs `make check` and `make test` under local selectors and
+	# compares the fresh goal against a byte copy of it; scripts/make_check_count_default_test.sh asks
+	# for the same bytes in CI's own shape, where nothing names TEST_COUNT; and scripts/ci_go_cache_test.sh
+	# refuses a recipe that stops interpolating the count at all. All three were red on 2026-10-06, the day
+	# -timeout=30m joined -count=1 here and nowhere else. Re-pinning is a decision somebody makes
+	# rather than a fix: those cases refuse a re-pin that drops the count, the package pattern or any
+	# stated bound, so what a re-pin may change is everything around the parts that make the run fresh.
+	# The alternative is a fresh gate that narrows because nobody looked at it.
+	go tool gotestsum --packages='./...' -- $(TEST_COUNT) -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
+	bash scripts/make_check_count_default_test.sh
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
@@ -359,6 +416,47 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
+	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
+	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
+	# starts containers removes the labelled ones older than twice that job's own ceiling, and whether
+	# the `if: always()` step names a handle for every container its job can create. It is here because
+	# the leak it refuses was invisible to every other gate in this file: on 2026-10-06 the three ci
+	# runners held thirteen SeaweedFS containers, some nineteen hours old, all of them from the one
+	# `docker run -d` that carried no `--name`, and a cancelled or timed-out job runs no `if: always()`
+	# step of ours at all, because act_runner is SIGKILLed (`.gitea/workflows/ci.yml`'s own header).
+	# The guard reads every workflow under `.gitea/workflows`, then runs ten mutations of its own text
+	# back through the same pass — the store without its label, its name or its pre-removal; a name no
+	# step's env defines; a sweep bound under twice the job's ceiling, moved off the first step, or
+	# narrowed to running containers; a container the always() step names no handle for; the device
+	# journey's NATS unnamed again — so the acceptance's "the test fails when a step reintroduces the
+	# leak" is a line of `make check`. It starts no container and needs PyYAML, which ci.yml's own apt
+	# step installs.
+	bash scripts/ci_container_leak_test.sh
+	# scripts/ci_container_sweep_age_test.sh runs the sweep instead of reading it. The guard above asks
+	# three things of the sweep step's text — that it lists `docker ps -aq --filter label=pkit.ci.run`,
+	# that it says `docker rm -f`, that its SWEEP_OLDER_THAN is at least twice this job's own ceiling —
+	# and says nothing about the one line that compares a container's age to that bound, because all it
+	# does is read. Turn `[ "$epoch" -le "$cutoff" ] || continue` round, or delete it, and every answer
+	# above stays `ok` (measured at this commit: rc 0 on both mutants) while the step removes the
+	# containers of the live jobs sharing the daemon — another repository's included, since `pkit.ci.run`
+	# is a program-wide namespace and the sweep reaches whatever carries it. Raise the bound to 99999 and
+	# that read is still `ok` while the sweep removes nothing at all. This file executes each job's
+	# committed `run:` under `bash -e` against a stub `docker` that lists one container created four
+	# hours ago and one created five minutes ago, and refuses `removed ['young']`, `removed ['old',
+	# 'young']` and `removed nothing` alike, so the bound is pinned as behaviour and not as text. It
+	# starts no container and needs PyYAML, as its neighbour above does.
+	bash scripts/ci_container_sweep_age_test.sh
+	# scripts/ci_container_sweep_age_guard_test.sh asks whether the file above would notice. It runs the
+	# honest sweep and nothing else, so the one thing that can undo it — the sweep's own age comparison —
+	# is covered by no assertion until somebody mutates it: turn that comparison's `-le` to `-ge`, delete
+	# the line, or widen `SWEEP_OLDER_THAN` to 99999, and a guard that only ever sees correct workflows
+	# stays green while the step removes the young containers of live jobs, or nothing at all. This file
+	# writes those three workflows into a temporary directory and points the guard at the copy, so the pin
+	# is the guard's refusals (`removed ['young']`, `removed ['old', 'young']`, `removed nothing`) and not
+	# prose about them, with the committed text kept as the accepted shape. Substitution is on raw text
+	# and the guard does the parsing, so this line needs no parser of its own.
+	bash scripts/ci_container_sweep_age_guard_test.sh
 	# The one `make check` line that reads an npm lock. It asks that the two packages the design job's
 	# `npm audit --omit=dev --audit-level=high` refused `0bfae63` for (source-map-js, dompurify) are
 	# locked above the ranges that report names, and that the gate that named them is still a step in
@@ -374,6 +472,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# Playwright. This case asks the script itself, in under a second, with no stack.
 	bash scripts/e2e_mail_address_test.sh
 	bash scripts/free_port_test.sh
+	# Which failures of the API gate's one network step are worth another try. The target
+	# itself is the last prerequisite; this case is the bound on its retry, so it runs with
+	# the rest of the script cases and needs no stack, no proxy and no tree but this one.
+	bash scripts/check_public_api_fetch_test.sh
+	# The other half of that bound: a fetch that fails twice and then succeeds must still be
+	# judged on what it exported. These cases drive the gate's own main() with the tool's
+	# subprocess calls answered from memory, so they need no network and no second tree.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
 	./scripts/check_imports.sh
 

@@ -21,9 +21,10 @@
 #
 # The second promise is the brief's: a cache miss is never a failure, and no test result survives a
 # commit. The first is four properties of the steps (cases 2, 4 and 5) and the second is not in this
-# file at all — it is `-count=1` in two Makefile goals, which is precisely why case 3 reads the
-# Makefile: a build cache restored across commits cannot resurrect a test result while those two
-# lines stand, and it can the moment someone "optimises" them into GOFLAGS.
+# file at all — since T-0310 it is the default of one Makefile variable that the two suite goals read,
+# which is precisely why case 3 reads the Makefile: a build cache restored across commits cannot
+# resurrect a test result while that default and those two interpolations stand, and it can the moment
+# someone "optimises" the count into GOFLAGS.
 #
 # The cases read the workflow, the Makefile and that one script, and start no server; case 7 runs the
 # script for real in a temporary directory, which costs one `go env` and three `sha256sum`s.
@@ -415,17 +416,20 @@ else
 	fi
 fi
 
-# 8. Test results are not in the archive, and the only thing keeping them out is -count=1 in the two
-#    goals that run the suite. Pinned where it lives rather than here.
+# 8. Test results are not in the archive. Since T-0310 the count both suite goals pass lives in one
+#    variable, so the promise is that variable's default together with the two goals that read it:
+#    CI sets nothing, so an empty default would put cached test results in the archive it restores.
+grep -qE '^TEST_COUNT \?= -count=1$' "$makefile" ||
+	fail "Makefile lost the TEST_COUNT default of -count=1: CI sets nothing, so an empty default would put cached test results in the archive CI restores across commits"
 race_recipe="$(awk '/^check-race:/ {found = 1} found && /^[a-zA-Z][a-zA-Z0-9_-]*:/ && $0 !~ /^check-race:/ {exit} found {print}' "$makefile")"
-grep -qE 'go test .*-count=1' <<<"$race_recipe" ||
-	fail "make check-race lost -count=1: a restored build cache would then be able to answer a test the commit never ran"
+grep -qE 'go test -race \$\(TEST_COUNT\)' <<<"$race_recipe" ||
+	fail "make check-race no longer interpolates \$(TEST_COUNT): -race stays, but a goal that stops reading the variable stops inheriting the promise its default carries"
 check_recipe="$(awk '/^check:/ {found = 1} found && /^[a-zA-Z][a-zA-Z0-9_-]*:/ && $0 !~ /^check:/ {exit} found {print}' "$makefile")"
-grep -qE -- '-- -count=1' <<<"$check_recipe" ||
-	fail "make check's gotestsum line lost -- -count=1, the same promise for the suite itself"
+grep -qF -- '-- $(TEST_COUNT)' <<<"$check_recipe" ||
+	fail "make check's gotestsum line no longer interpolates \$(TEST_COUNT), the same promise for the suite itself"
 goflags="$(job_text check | grep -E '^[[:space:]]+GOFLAGS:' | head -1 | sed 's/^[[:space:]]*GOFLAGS:[[:space:]]*//')"
 if [ "$goflags" = '-p=4' ]; then
-	echo "ok   -count=1 stands in both goals and check's GOFLAGS is still only -p=4"
+	echo "ok   TEST_COUNT defaults to -count=1 and both suite goals read it, and check's GOFLAGS is still only -p=4"
 else
 	fail "check's job env.GOFLAGS is [$goflags], not -p=4: the parallelism ceiling is not a cache flag, and a GOFLAGS that diluted -count=1 would put test results in the archive"
 fi

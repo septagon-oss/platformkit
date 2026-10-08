@@ -8,7 +8,11 @@
 package filetest
 
 import (
+	"bytes"
 	"errors"
+	goimage "image"
+	"image/color"
+	pngimage "image/png"
 	"io"
 	"strings"
 	"testing"
@@ -92,6 +96,53 @@ func upload(name, contentType, visibility, body string) contracts.Upload {
 		Name: name, ContentType: contentType, Visibility: visibility,
 		Declared: -1, Body: strings.NewReader(body),
 	}
+}
+
+// image is an upload the caller called an image: the same envelope as upload,
+// with the declaration that decides what a refusal is (contracts.Upload.Image).
+// The body is bytes rather than a string because it is a PNG.
+func asImage(t *testing.T, name, contentType string, body []byte) contracts.Upload {
+	t.Helper()
+	return contracts.Upload{
+		Name: name, ContentType: contentType, Visibility: contracts.VisibilityPrivate,
+		Declared: int64(len(body)), Body: bytes.NewReader(body), Image: true,
+	}
+}
+
+// pngFrame is a real PNG of w x h with one transparent pixel in it, which is
+// what decides its container once the pass re-encodes it.
+// pngFrame is an opaque w x h PNG: no alpha, which is what makes the pass
+// choose JPEG and the case able to see that it chose.
+func pngFrame(t *testing.T, w, h int) []byte {
+	t.Helper()
+	frame := goimage.NewRGBA(goimage.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			frame.Set(x, y, color.RGBA{R: uint8(40 + x*30), G: uint8(90 + y*20), B: 200, A: 255})
+		}
+	}
+	out := &bytes.Buffer{}
+	if err := pngimage.Encode(out, frame); err != nil {
+		t.Fatalf("encode the fixture: %v", err)
+	}
+	return out.Bytes()
+}
+
+// pngOf encodes an RGBA frame with one see-through corner.
+func pngOf(t *testing.T, w, h int) []byte {
+	t.Helper()
+	frame := goimage.NewRGBA(goimage.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			frame.Set(x, y, color.RGBA{R: uint8(40 + x*20), G: uint8(90 + y*20), B: 200, A: 255})
+		}
+	}
+	frame.Set(0, 0, color.RGBA{B: 200, A: 128})
+	out := &bytes.Buffer{}
+	if err := pngimage.Encode(out, frame); err != nil {
+		t.Fatalf("encode the fixture: %v", err)
+	}
+	return out.Bytes()
 }
 
 // stored uploads one private text file and returns its row.
@@ -220,6 +271,173 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// that had an opinion about every format would refuse half of them.
 			if _, err := f.Service.Upload(f.Ctx, f.open, upload("x.bin", "application/octet-stream", contracts.VisibilityPrivate, "<html>")); err != nil {
 				t.Errorf("an attachment that is not what it claims = %v, want it stored", err)
+			}
+		},
+
+		// The image pass, in both implementations and from one function
+		// (contracts.ProcessImage): the row carries the frame the server stored,
+		// and the container follows the pixels rather than the file name, so an
+		// opaque frame that arrived as a PNG leaves as a JPEG. That a stored
+		// image carries no metadata block is proved over the pass itself, in
+		// contracts/image_test.go, where a fixture with a real EXIF and GPS
+		// section can be read back; a shared case that re-encodes a PNG writes
+		// the same bytes it was given, which is the encoder being deterministic
+		// and not a bug the suite should pretend to see.
+		"an image is measured and stored as the pixels it re-encodes to": func(t *testing.T, f Fixture) {
+			sent := pngFrame(t, 2, 3)
+			var row *contracts.File
+			f.one(t, "uploading an image", contracts.EventUploaded, func() {
+				out, err := f.Service.Upload(f.Ctx, f.open, asImage(t, "image.png", "image/png", sent))
+				if err != nil {
+					t.Fatalf("Upload: %v", err)
+				}
+				row = out
+			})
+			if row.Width != 2 || row.Height != 3 {
+				t.Errorf("the row carries %d x %d, want 2 x 3: nobody measured the frame", row.Width, row.Height)
+			}
+			if row.SHA256 == "" {
+				t.Error("the digest is empty")
+			}
+
+			// What nobody called an image stays the attachment it arrived as,
+			// even when its header claims a frame: refusing it here would change
+			// what a document door accepts, and 0069 §4 does not ask for that.
+			if row.ContentType != "image/jpeg" {
+				t.Errorf("an opaque frame was stored as %s, want image/jpeg: the container follows the pixels", row.ContentType)
+			}
+			if _, text := read(t, f, row.ID, false); text == string(sent) {
+				t.Error("the stored bytes are the ones that arrived, so nothing was re-encoded")
+			} else if bytes.Contains([]byte(text), []byte("Exif")) {
+				t.Error("the stored bytes carry an Exif block, which is what the pass removes")
+			}
+
+			if doc, err := f.Service.Upload(f.Ctx, f.open, upload("frame.png", "image/png", contracts.VisibilityPrivate, string(pngFrame(t, 2, 2)))); err != nil {
+				t.Fatalf("the same bytes as a document: %v", err)
+			} else if doc.Width != 2 {
+				t.Errorf("an unclaimed image carries %d px, want the pass to have run over it too", doc.Width)
+			}
+		},
+
+		// An SVG with a script in it, offered as an image, never reaches storage.
+		"what no decoder reads is refused at the image door and keeps nothing": func(t *testing.T, f Fixture) {
+			before := len(f.Keys())
+			_, err := f.Service.Upload(f.Ctx, f.open, asImage(t, "diagram.svg", "image/svg+xml",
+				[]byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`)))
+			if !errors.Is(err, contracts.ErrNotImage) {
+				t.Errorf("a vector offered as an image = %v, want ErrNotImage", err)
+			}
+			if err == nil || !strings.Contains(err.Error(), "not an image") {
+				t.Errorf("the refusal does not say the reason: %v", err)
+			}
+			if len(f.Keys()) != before {
+				t.Errorf("the refusal left %d objects behind, want none", len(f.Keys())-before)
+			}
+			if len(f.Published()) != 0 {
+				t.Errorf("the refusal published %v, want nothing", f.Published())
+			}
+		},
+
+		// A use is what a body references, rewritten rather than appended to, and
+		// the answer to "what reads this file" is exactly the set of rows the last
+		// accepted body wrote. Both implementations run the same two decisions
+		// (contracts.CollapseRefs and contracts.DiffUses) over their own storage.
+		"a record's uses are its body's references, rewritten in place": func(t *testing.T, f Fixture) {
+			first, second := stored(t, f, "one"), stored(t, f, "two")
+			record := uuid.New()
+			use := contracts.Use{Module: "content", Entity: "page", Record: record, Field: "body", Locale: "en"}
+			// A repeat collapses: one field showing the same image twice is one
+			// use of it, because the file is kept alive once. And nothing is
+			// published: the record's own write is the auditable fact, and the
+			// file module has no business emitting an event for somebody else's
+			// row, so the suite asks that no event arrived at all.
+			before := len(f.Published())
+			unused, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{first.ID, second.ID, first.ID})
+			if err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			if got := f.Published()[before:]; len(got) != 0 {
+				t.Errorf("recording a use published %v, want nothing", got)
+			}
+			if len(unused) != 0 {
+				t.Errorf("the first write ended %d uses, want none", len(unused))
+			}
+			rows, err := f.Service.Uses(f.Ctx, f.Tx, first.ID)
+			if err != nil {
+				t.Fatalf("Uses: %v", err)
+			}
+			if len(rows) != 1 || rows[0].Use != use {
+				t.Errorf("the file is used by %+v, want the one field that named it", rows)
+			}
+			// The edit that dropped the first image ends its use and names it,
+			// and the row does not linger: a use that outlived the body that
+			// stopped naming the file is the answer "nothing reads this" being
+			// wrong about a file the sweep is about to release.
+			out, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{second.ID})
+			if err != nil {
+				t.Fatalf("SetUses again: %v", err)
+			}
+			if len(out) != 1 || out[0] != first.ID {
+				t.Errorf("the rewrite ended %v, want the file the body dropped", out)
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, first.ID); err != nil || len(rows) != 0 {
+				t.Errorf("the dropped file is still read by %+v (%v), want nobody", rows, err)
+			}
+			// A body with no images at all leaves nothing, and the second image
+			// is still read by the same field.
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, nil); err != nil {
+				t.Fatalf("a body that shows nothing: %v", err)
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, second.ID); err != nil || len(rows) != 0 {
+				t.Errorf("after the body dropped both images it reads %+v (%v), want nobody", rows, err)
+			}
+		},
+
+		"the uses of a file that is not there are refused and nothing is written": func(t *testing.T, f Fixture) {
+			kept := stored(t, f, "kept")
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			_, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID, uuid.New()})
+			if !errors.Is(err, crud.ErrNotFound) {
+				t.Fatalf("a body naming a gone file = %v, want ErrNotFound", err)
+			}
+			if !strings.Contains(err.Error(), "file") {
+				t.Errorf("the refusal does not name the file it refused: %v", err)
+			}
+			// The id that was there is not half-written: a use of the files that
+			// happen to still exist would say a record shows what it does not.
+			rows, uerr := f.Service.Uses(f.Ctx, f.Tx, kept.ID)
+			if uerr != nil || len(rows) != 0 {
+				t.Errorf("the refused write left %+v (%v), want nothing", rows, uerr)
+			}
+		},
+
+		// Ending the use of a file that was removed first is not the refusal
+		// above, and a record has to survive the difference: Delete consults the
+		// ledger no more than it does today, so the row that names a gone file is
+		// ordinary rather than corrupt, and the delete of the record that shows it
+		// must go through. Refusing here would strand that record and leave the
+		// ledger saying a file nobody has is still being shown.
+		"a use ended of a file that is already gone ends": func(t *testing.T, f Fixture) {
+			gone, kept := stored(t, f, "shown then removed"), stored(t, f, "still shown")
+			use := contracts.Use{Module: "content", Entity: "page", Record: uuid.New(), Field: "body", Locale: "en"}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{gone.ID, kept.ID}); err != nil {
+				t.Fatalf("SetUses: %v", err)
+			}
+			if _, err := f.Service.Delete(f.Ctx, f.Tx, gone.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			if _, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID}); err != nil {
+				t.Fatalf("the edit that dropped a removed image = %v, want it accepted", err)
+			}
+			if rows, err := f.Service.Uses(f.Ctx, f.Tx, kept.ID); err != nil || len(rows) != 1 || rows[0].Use != use {
+				t.Errorf("the file still shown reads by %+v (%v), want the one field showing it", rows, err)
+			}
+			// The same rewrite again is the test that the dangling row went with
+			// the first one: were it still there, this call would end it a second
+			// time and name it as newly unused.
+			out, err := f.Service.SetUses(f.Ctx, f.Tx, use, []uuid.UUID{kept.ID})
+			if err != nil || len(out) != 0 {
+				t.Errorf("rewriting the same body again ended %v (%v), want nothing", out, err)
 			}
 		},
 

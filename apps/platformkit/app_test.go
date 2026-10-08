@@ -163,7 +163,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -1098,13 +1098,23 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 // GET /health is what the wait ends on instead: both roles serve it (kit/health
 // and app.work), it runs no check of its own, so 200 says this application is up
 // and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so in a second rather than after thirty of
-// waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string) {
+// holds the port, and the case says so at once rather than after the whole bound
+// of waiting and one request that was never going to be answered here.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // the read above freed the slot, so this cannot block
+				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		res, err := http.Get("http://" + addr + "/health")
 		if err != nil {
 			// Nobody is home, which is what it looks like while the application is
@@ -1114,6 +1124,9 @@ func waitFor(t *testing.T, addr string) {
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+				}
 				return
 			}
 			// /health is liveness: it runs no check, and this process answers it with
@@ -1126,8 +1139,25 @@ func waitFor(t *testing.T, addr string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
+	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
+		time.Since(started).Round(time.Second), last)
 }
+
+// bootWait is how long a fixture waits for an application it started to answer.
+// Run migrates a whole installation before it listens, and the same boot that
+// answers in a couple of seconds when one package runs costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once. A bound sized for the quiet case reports a working machine as
+// a broken application, so it is sized for the loaded one and stated here rather
+// than left as a literal inside the loop; slowBoot is when a green wait starts
+// saying how long it took, which is what the next red run reads.
+const (
+	// Five minutes, the same room as kit/app's bootWait and for the same measured reason: a migration
+	// of the whole installation crossed 120 s on 2026-10-06 with eight of this program's suites
+	// running beside it, and a boot that is only slow on somebody else's machine is not a fault here.
+	bootWait = 5 * time.Minute
+	slowBoot = bootWait / 10
+)
 
 // The band freeAddr picks from. The kernel allocates nothing below
 // ip_local_port_range — an :0 bind and the source port of an outbound
@@ -1657,17 +1687,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 43 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43) and twenty-seven under modules/*/migrations/ (4, 7,
+	// this head prints 45 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43) and twenty-nine under modules/*/migrations/ (4, 7,
 	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
-	// 37, 38, 39, 40, 42), all at distinct versions. The release this fixture is
+	// 37, 38, 39, 40, 42, 44, 45), all at distinct versions. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The ten above it — the kernel's own 34, 41 and 43, modules/audit's
-	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
-	// modules/content's 42 — postdate that release, are not in the old installation's
+	// any owner names. The twelve above it — the kernel's own 34, 41 and 43, modules/audit's
+	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45
+	// and modules/content's 42 — postdate that release, are not in the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
 	// highest number anywhere in the composition, which is the rule this fixture
@@ -1702,11 +1732,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the ten files above the
+	// release ships is in the ledger, which is where the twelve files above the
 	// adopted ceiling of 33 (the kernel's own 34, 41 and 43, modules/audit 35, 36 and
-	// 37, modules/change 38, modules/site 39, modules/file 40 and modules/content 42,
-	// all absent from the old ledger) have to be accounted for: 43 files in the
-	// release, 43 rows.
+	// 37, modules/change 38, modules/site 39, modules/file 40, 44 and 45 and
+	// modules/content 42, all absent from the old ledger) have to be accounted for:
+	// 45 files in the release, 45 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
