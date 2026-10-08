@@ -17,7 +17,14 @@ ci_line() { # <goal> <prefix>: the goal's suite line as CI's environment expands
 }
 
 suite="$(ci_line check 'go tool gotestsum')"
-if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1" ]]; then
+# The bound this line carries is not a count: -timeout=30m is the per-package clock the Makefile's own
+# comment sizes (go test's 10-minute default killed a working apps/platformkit on 2026-10-06). It is
+# written after $(TEST_COUNT), not before, because scripts/ci_go_cache_test.sh reads the count variable as
+# it sits directly after the option separator. What this case is about is the count: with TEST_COUNT absent
+# from
+# the environment the expansion must still carry -count=1, and it must be this line and not one that
+# narrowed it.
+if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m" ]]; then
 	printf 'FAIL: make check without TEST_COUNT is not the fresh suite line CI depends on:\n%s\n' "$suite" >&2
 	exit 1
 fi
