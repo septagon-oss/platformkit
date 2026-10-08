@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -227,5 +229,279 @@ func published(t *testing.T, f Fixture, want ...string) {
 	}
 	if got := f.Published(); !slices.Equal(got, want) {
 		t.Errorf("published %v, want %v", got, want)
+	}
+}
+
+// MailFixture is one case's world for the record of a mail that left with no
+// notice behind it: the implementation under test, a way to run one step, and a
+// way to read back what the implementation holds.
+type MailFixture struct {
+	Ctx    context.Context
+	Ledger contracts.MailLedger
+	// Step runs fn once and returns what it returned. One step is one
+	// transaction: a refusal ends a Postgres transaction, so a suite that asked
+	// for five refusals inside one would see the first and four aborted
+	// statements, and would read the four as passes. The fake runs the step with
+	// no transaction at all, which is the same promise seen from the side a fake
+	// can reach — what it cannot share with the table is commit topology, and the
+	// two cases that ask about it live in modules/notification/internal.
+	Step func(ctx context.Context, fn func(context.Context, db.Tx[db.Tenant]) error) error
+	// Rows is every record the implementation holds, oldest first: the table's
+	// seq order and the fake's slice order, which are the same order.
+	Rows func(t testing.TB) []contracts.MailRecord
+}
+
+// MailHarness builds one MailFixture and calls run with it, for the same reason
+// Harness exists: the real ledger's fixture is a transaction, and a transaction
+// is a scope somebody has to close.
+type MailHarness func(t *testing.T, run func(MailFixture))
+
+// RunMailLedger is the mail ledger's conformance suite: the rules every
+// implementation of contracts.MailLedger applies, which are the CHECK clauses of
+// migrations/000044 and no others. Both the SQL service and
+// notificationtest.FakeMailLedger pass it; a fake that did not would be a
+// quieter opinion about what a delivery record means.
+func RunMailLedger(t *testing.T, h MailHarness) {
+	t.Helper()
+	for name, run := range mailCases() {
+		t.Run(name, func(t *testing.T) {
+			h(t, func(f MailFixture) { run(t, f) })
+		})
+	}
+}
+
+// AdaMail is the address the mail suite writes to — the same person the service
+// suite tells, spelled the way contracts.EmailKey spells it at a call site.
+const AdaMail = "ada@acme.example.com"
+
+// mailRequest makes a request id for one case. Every case writes its own, so a
+// case that ran after another reads its own rows and not the other's.
+func mailRequest() string { return uuid.NewString() }
+
+// record writes r and fails if the ledger refused a record it should take.
+func (f MailFixture) record(t *testing.T, r contracts.MailRecord) {
+	t.Helper()
+	if err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return f.Ledger.RecordMail(ctx, tx, r)
+	}); err != nil {
+		t.Fatalf("RecordMail(%s to %s): %v", r.Outcome, r.Recipient, err)
+	}
+}
+
+// refuse writes r and fails unless the ledger refused it with want.
+func (f MailFixture) refuse(t *testing.T, r contracts.MailRecord, want error) {
+	t.Helper()
+	err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return f.Ledger.RecordMail(ctx, tx, r)
+	})
+	if !errors.Is(err, want) {
+		t.Errorf("RecordMail(kind=%q outcome=%q) = %v, want %v", r.Kind, r.Outcome, err, want)
+	}
+}
+
+// answer is what the ledger says about one request id.
+func (f MailFixture) answer(t *testing.T, request string) (string, bool) {
+	t.Helper()
+	var (
+		outcome string
+		known   bool
+	)
+	err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var err error
+		outcome, known, err = f.Ledger.MailOutcome(ctx, tx, request)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("MailOutcome(%s): %v", request, err)
+	}
+	return outcome, known
+}
+
+// rows reads back everything the ledger holds, and fails a case that cannot say.
+func (f MailFixture) rows(t *testing.T) []contracts.MailRecord {
+	t.Helper()
+	if f.Rows == nil {
+		t.Fatal("a mail ledger harness that cannot list its rows cannot run the cases that count them")
+	}
+	return f.Rows(t)
+}
+
+// sentRecord is a mail the transport took, which has no reason to give.
+func sentRecord(kind, request string) contracts.MailRecord {
+	return contracts.MailRecord{Kind: kind, Recipient: AdaMail, Outcome: contracts.MailSent, RequestID: request}
+}
+
+func mailCases() map[string]func(*testing.T, MailFixture) {
+	return map[string]func(*testing.T, MailFixture){
+		"a sent mail is recorded with nothing to say": func(t *testing.T, f MailFixture) {
+			request := mailRequest()
+			// A mail the transport took has nothing to say about why: the reason
+			// column is empty and the row is still the record of a send.
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: AdaMail,
+				Outcome: contracts.MailSent, Reason: "", RequestID: request,
+			})
+			if got, known := f.answer(t, request); got != contracts.MailSent || !known {
+				t.Errorf("recorded send answered %q known=%t, want sent true", got, known)
+			}
+		},
+
+		"an outcome that is not sent says why": func(t *testing.T, f MailFixture) {
+			f.refuse(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: AdaMail,
+				Outcome: contracts.MailFailed, RequestID: mailRequest(),
+			}, contracts.ErrMailReason)
+			// A request that mailed nothing is not refused and not answered: it is
+			// the ordinary case, and the caller has to be able to tell it from a
+			// record that says failed. The empty id is the same shape of mistake as
+			// a record with no reason, so it is refused rather than answered with
+			// the newest untraced row in the tenant.
+			if got, known := f.answer(t, mailRequest()); got != "" || known {
+				t.Errorf("a request that mailed nothing answered %q known=%t, want the empty answer", got, known)
+			}
+			err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				_, known, err := f.Ledger.MailOutcome(ctx, tx, "")
+				if known {
+					t.Error("the empty request id was answered, which makes it somebody else's call")
+				}
+				return err
+			})
+			if !errors.Is(err, contracts.ErrMailRequest) {
+				t.Errorf("MailOutcome(\"\") = %v, want the caller's mistake refused", err)
+			}
+		},
+
+		"a kind is a name, not a sentence": func(t *testing.T, f MailFixture) {
+			for _, kind := range []string{"", "Set Password", "auth", "auth.Set", "auth.set password"} {
+				f.refuse(t, contracts.MailRecord{
+					Kind: kind, Recipient: AdaMail, Outcome: contracts.MailSent, RequestID: mailRequest(),
+				}, contracts.ErrMailKind)
+			}
+			// The checker is the table's own grammar, so the two names in use today
+			// have to arrive, and the caller's own kind has to be one of them.
+			for _, kind := range []string{"auth.set_password", "auth.verification"} {
+				request := mailRequest()
+				f.record(t, sentRecord(kind, request))
+				if got, known := f.answer(t, request); got != contracts.MailSent || !known {
+					t.Errorf("kind %q: answered %q known=%t, want sent true", kind, got, known)
+				}
+			}
+		},
+
+		"an outcome the table would refuse is refused here": func(t *testing.T, f MailFixture) {
+			for _, outcome := range []string{"requested", "pending", ""} {
+				// `requested` is the one that matters: it is legal in 000027 and
+				// illegal here, because a mail with no notice has no first half to
+				// be requested about. A caller that reached for the delivery
+				// ledger's vocabulary is refused at the port, not by a CHECK.
+				f.refuse(t, contracts.MailRecord{
+					Kind: "auth.set_password", Recipient: AdaMail,
+					Outcome: outcome, Reason: "the relay refused", RequestID: mailRequest(),
+				}, contracts.ErrMailOutcome)
+			}
+		},
+
+		"a reason that quotes the secret is written without it": func(t *testing.T, f MailFixture) {
+			const token = "Zm9vYmFyYmF6AQT3yZ0pQ0d0dGhlIHF1aWNrIGJyb3duIGZveA"
+			request := mailRequest()
+			// The mailer that refuses by quoting its own input back is the reason a
+			// reason has to be scrubbed on its way in (modules/auth/internal/
+			// verification.go says the same thing about its error).
+			said := "transport echoed its input: https://acme.example.com/auth/reset?token=" + token
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: AdaMail, Outcome: contracts.MailFailed,
+				Reason: contracts.RedactMailReason(said, token, "sha256-of-"+token), RequestID: request,
+			})
+			// Over the bound is clipped, not refused: a long sentence that has lost
+			// its secret is still worth recording.
+			long := mailRequest()
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: AdaMail, Outcome: contracts.MailFailed,
+				Reason: strings.Repeat("refused ", contracts.MaxMailReason), RequestID: long,
+			})
+			var reasons []string
+			for _, row := range f.rows(t) {
+				if row.RequestID == request || row.RequestID == long {
+					reasons = append(reasons, row.Reason)
+				}
+			}
+			if len(reasons) != 2 {
+				t.Fatalf("the two refused mails left %d records, want 2", len(reasons))
+			}
+			for _, reason := range reasons {
+				if strings.Contains(reason, token) {
+					t.Errorf("a recorded reason carries the credential: %q", reason)
+				}
+				if len(reason) > contracts.MaxMailReason {
+					t.Errorf("a recorded reason is %d bytes, over the bound of %d", len(reason), contracts.MaxMailReason)
+				}
+				if !utf8.ValidString(reason) {
+					t.Errorf("a recorded reason ends mid-rune: %q", reason)
+				}
+			}
+			if got, known := f.answer(t, request); got != contracts.MailFailed || !known {
+				t.Errorf("a refused mail answered %q known=%t, want failed true", got, known)
+			}
+		},
+
+		"one send is one row, in the order they happened": func(t *testing.T, f MailFixture) {
+			requests := []string{mailRequest(), mailRequest(), mailRequest()}
+			outcomes := []string{contracts.MailSent, contracts.MailFailed, contracts.MailSuppressed}
+			for i, outcome := range outcomes {
+				f.record(t, contracts.MailRecord{
+					Kind: "auth.verification", Recipient: AdaMail, Outcome: outcome,
+					Reason: map[string]string{contracts.MailSent: "", contracts.MailFailed: "the relay refused",
+						contracts.MailSuppressed: "no mailer wired"}[outcome],
+					RequestID: requests[i],
+				})
+			}
+			var got []string
+			for _, row := range f.rows(t) {
+				if i := slices.Index(requests, row.RequestID); i >= 0 {
+					got = append(got, row.Outcome)
+				}
+			}
+			if !slices.Equal(got, outcomes) {
+				t.Errorf("this case's records came back %v in ledger order, want %v", got, outcomes)
+			}
+			// Three sends are three rows: nothing here updates or deletes, so the
+			// second attempt at one address does not overwrite the first.
+			before := len(f.rows(t))
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.verification", Recipient: AdaMail, Outcome: contracts.MailFailed,
+				Reason: "the relay refused again", RequestID: requests[0],
+			})
+			if after := len(f.rows(t)); after != before+1 {
+				t.Errorf("a second send for one request moved the count %d -> %d; a record is appended, never updated",
+					before, after)
+			}
+			// And the answer for a request with two attempts is the last of them.
+			if got, known := f.answer(t, requests[0]); got != contracts.MailFailed || !known {
+				t.Errorf("newest of two=%q known=%t, want failed true", got, known)
+			}
+		},
+
+		"a recipient is an address or nothing": func(t *testing.T, f MailFixture) {
+			f.refuse(t, contracts.MailRecord{
+				Kind: "auth.set_password", Outcome: contracts.MailSent, RequestID: mailRequest(),
+			}, contracts.ErrMailRecipient)
+			f.refuse(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: strings.Repeat("a", 321),
+				Outcome: contracts.MailSent, RequestID: mailRequest(),
+			}, contracts.ErrMailRecipient)
+			// An address is spelled by contracts.EmailKey at the call site and is
+			// not re-normalised here — that would be the same fact normalised twice,
+			// in two ways that could disagree. Only the whitespace around it goes.
+			request := mailRequest()
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: "  Ada@Example.COM  ",
+				Outcome: contracts.MailSent, RequestID: request,
+			})
+			for _, row := range f.rows(t) {
+				if row.RequestID == request && row.Recipient != "Ada@Example.COM" {
+					t.Errorf("the ledger re-spelled the address it was handed as %q", row.Recipient)
+				}
+			}
+		},
 	}
 }
