@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './steps/kernel';
 
 // Gate 10. One spec, and it is the round trip a person makes on their first
 // day: sign in, create a task through the generated form, find it in the
@@ -7,18 +8,11 @@ import { expect, test } from '@playwright/test';
 // The task supplies representative text, select and nullable date fields. The
 // journey checks the generated controls and persisted edits, not its lifecycle.
 
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
-
 const title = `Chiller supply temperature out of band ${Date.now()}`;
 const renamed = `${title} (resolved)`;
 
 test.beforeEach(async ({ page }) => {
-  await page.goto('/app/admin/login');
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  await signIn(page);
 });
 
 test('the admin shell renders and a generated CRUD screen works', async ({ page }) => {
