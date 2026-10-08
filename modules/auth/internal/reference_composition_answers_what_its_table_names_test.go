@@ -43,7 +43,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
@@ -54,29 +53,39 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 )
 
-// appComposition is the reference application's own file: the literal list
-// somebody wrote down, which is the only authority on what the app composes.
-const appComposition = "../../../apps/platformkit/modules.go"
+// appComposition is the reference application's own file: the list somebody
+// wrote down, which is the only authority on what the app composes. It used to
+// be a composition file that built every Deps literal; the modules wire
+// themselves now, so what this file reads out of the syntax tree is which
+// registration door the app names in Use, and whether the module that answers
+// the per-tenant provider port is composed at all.
+const appComposition = "../../../apps/platformkit/app.go"
 
 func TestTheReferenceApplicationCompositionAnswersWhatItsTableNames(t *testing.T) {
-	fields, values := authDepsFields(t)
-	for _, want := range []string{"EmailRegistration", "OIDCProviders"} {
-		if !fields[want] {
-			t.Fatalf("apps/platformkit/modules.go composes auth without %s, and this case mounts a "+
-				"composition the reference application no longer runs: read the list again and re-record "+
+	names := authDepsFields(t)
+	for _, want := range []string{"EmailRegistration"} {
+		if !names[want] {
+			t.Fatalf("apps/platformkit/app.go composes auth without %s in its Use list, and this case mounts "+
+				"a composition the reference application no longer runs: read the list again and re-record "+
 				"the expected set in surface_test.go beside it", want)
 		}
 	}
 	for _, absent := range []string{"Registration", "ApprovalRegistration"} {
-		if fields[absent] {
-			t.Fatalf("apps/platformkit/modules.go now names %s beside EmailRegistration: two registration "+
+		if names[absent] {
+			t.Fatalf("apps/platformkit/app.go now names %s beside EmailRegistration: two registration "+
 				"policies answer at once, and neither this case nor surface_test.go's table describes that", absent)
 		}
 	}
-	if values["OIDCProviders"] == "nil" {
-		t.Fatal("apps/platformkit/modules.go names OIDCProviders but hands the module nil: no tenant can " +
-			"reach a provider and the two OIDC legs are not mounted, so this case is reading a composition " +
-			"with a field on it rather than the one the application runs")
+	// The per-tenant provider port used to be one line of the app's Deps
+	// literal, and the case below refuses it when the literal hands nil. The
+	// app names no Deps literal any more: auth asks for the contract
+	// authcontracts.OIDCProviders and tenant.Module is the composed answer to
+	// it. An app that composed no tenant would mount neither OIDC leg, which is
+	// the same emptiness `OIDCProviders: nil` was, so that is what this reads.
+	if !names["tenant"] {
+		t.Fatal("apps/platformkit/app.go composes no tenant.Module, which is the only module that puts the " +
+			"authcontracts.OIDCProviders port the two OIDC legs are mounted on: this case would be reading a " +
+			"composition with a need on it rather than the one the application runs")
 	}
 
 	// The application's shape: an email-confirmation policy, no installation-wide
@@ -101,10 +110,11 @@ func TestTheReferenceApplicationCompositionAnswersWhatItsTableNames(t *testing.T
 	}
 }
 
-// authDepsFields is the set of field names the application's auth.Deps literal
-// sets, and the text of each value, read out of its syntax tree rather than
-// counted out of its text.
-func authDepsFields(t *testing.T) (map[string]bool, map[string]string) {
+// authDepsFields is the set of names the application's own file selects out of
+// the auth package — which registration door it hands `Use`, and which doors it
+// does not — and the set of modules it composes, both read out of its syntax
+// tree rather than counted out of its text.
+func authDepsFields(t *testing.T) map[string]bool {
 	t.Helper()
 	path, err := filepath.Abs(appComposition)
 	if err != nil {
@@ -118,48 +128,42 @@ func authDepsFields(t *testing.T) (map[string]bool, map[string]string) {
 	if err != nil {
 		t.Fatalf("parse %s: %v", path, err)
 	}
-	fields := map[string]bool{}
-	values := map[string]string{}
+	names := map[string]bool{}
 	ast.Inspect(file, func(n ast.Node) bool {
-		lit, ok := n.(*ast.CompositeLit)
+		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
 		}
-		if !authDepsType(lit.Type) {
+		fn, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || fn.Sel.Name != "Use" {
 			return true
 		}
-		for _, elt := range lit.Elts {
-			kv, ok := elt.(*ast.KeyValueExpr)
+		// Everything named inside the sentence, however the list is spelled: the
+		// app hands Use a slice it can be asked to leave one module out of, so a
+		// module is an element of a literal on the way to the call rather than an
+		// argument of it.
+		ast.Inspect(call, func(m ast.Node) bool {
+			sel, ok := m.(*ast.SelectorExpr)
 			if !ok {
-				continue
+				return true
 			}
-			key, ok := kv.Key.(*ast.Ident)
+			pkg, ok := sel.X.(*ast.Ident)
 			if !ok {
-				continue
+				return true
 			}
-			fields[key.Name] = true
-			values[key.Name] = exprText(fset, kv.Value)
-		}
+			if pkg.Name == "auth" {
+				names[sel.Sel.Name] = true
+			}
+			if pkg.Name == "tenant" {
+				names["tenant"] = true
+			}
+			return true
+		})
 		return true
 	})
-	if len(fields) == 0 {
-		t.Fatal("no auth.Deps literal in apps/platformkit/modules.go: the composition moved, and this case " +
-			"belongs beside wherever it went")
+	if len(names) == 0 {
+		t.Fatal("apps/platformkit/app.go's Use list names nothing of the auth package: the composition moved, " +
+			"and this case belongs beside wherever it went")
 	}
-	return fields, values
-}
-
-// exprText is the expression as it was written, so a field handed nil reads as
-// nil here rather than as whatever the file's own name for it is.
-func exprText(_ *token.FileSet, expr ast.Expr) string { return types.ExprString(expr) }
-
-// authDepsType recognises auth.Deps and authmodule.Deps alike: the application
-// gives the module package whatever alias reads best in that file.
-func authDepsType(expr ast.Expr) bool {
-	sel, ok := expr.(*ast.SelectorExpr)
-	if !ok || sel.Sel.Name != "Deps" {
-		return false
-	}
-	id, ok := sel.X.(*ast.Ident)
-	return ok && (id.Name == "auth" || id.Name == "authmodule")
+	return names
 }

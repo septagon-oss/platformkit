@@ -42,22 +42,10 @@ func TestReferenceCompositionNamesWebsSiteDependency(t *testing.T) {
 func TestReferenceCompositionRefusesWebWithoutSiteModule(t *testing.T) {
 	cfg := referenceDependencyConfig(t)
 	c := compose(cfg)
-	kept := c.modules[:0:0]
-	removed := false
-	webPresent := false
-	for _, m := range c.modules {
-		if m.Name == "site" {
-			removed = true
-			continue
-		}
-		webPresent = webPresent || m.Name == "web"
-		kept = append(kept, m)
+	if !namesAModule(c.modules, "site") || !namesAModule(c.modules, "web") {
+		t.Fatal("the composition must contain site and web before this dependency is tested")
 	}
-	if !removed || !webPresent {
-		t.Fatalf("the composition must contain site and web before this dependency is tested")
-	}
-	c.modules = kept
-	_, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
+	_, err := sentencesOf(cfg, "site").Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
 	if err == nil || !strings.Contains(err.Error(), "sitecontracts.Service") || !strings.Contains(err.Error(), "web") {
 		t.Errorf("web needs sitecontracts.Service from the removed site module; Plan returned %v", err)
 	}

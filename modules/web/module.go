@@ -31,13 +31,16 @@ type Deps struct {
 	Files   richtext.Files
 	Theme   design.Pair
 
-	// SignInPath is where a visitor who wants to sign in is sent. The site has
-	// no sign-in of its own — the auth module mints the session and the shell
-	// owns the form — so the address belongs to whoever composed the two, and
-	// this is the line that says where the workspace ended up. A literal here
-	// would be this module naming a surface it does not serve, which is why the
-	// composition writes it and app_test.go asks the running server that the
-	// address it wrote is the address that answers.
+	// SignInPath is where a visitor who wants to sign in is sent: an entry point
+	// into the workspace, which answers with the form itself or turns the visitor
+	// towards it. The site has no sign-in of its own — the auth module mints the
+	// session and the shell owns the form — so the address belongs to whoever
+	// composed the two, and this is the line that says where the workspace ended
+	// up. Which door of which module that is, and how deep into the workspace a
+	// public page may link, are the composition's facts, not this module's. A
+	// literal here would be this module naming a surface it does not serve, which
+	// is why the composition writes it and its own test asks the running server
+	// that the address it wrote is the address that answers.
 	SignInPath string
 
 	// PublicFileURL answers the address of a file a visitor may see, which is
@@ -57,7 +60,7 @@ type Deps struct {
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	if deps.Site == nil || deps.Content == nil {
 		panic("web: Deps.Site and Deps.Content are required; the site renders what they publish")
 	}

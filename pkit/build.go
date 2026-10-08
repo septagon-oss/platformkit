@@ -196,7 +196,8 @@ func (a *App) Plan(d Deployment) (*Planned, error) {
 	authorizer, _ := Value[httpx.Authorizer](dry)
 	entitler, _ := Value[httpx.Entitler](dry)
 	authenticator, _ := Value[Authenticator](dry)
-	dry.skin = Skin{Theme: a.theme, Home: a.frontDoor(), Copy: a.copy, mods: built}
+	dry.skin = a.recordedSkin()
+	dry.skin.mods = built
 	dry.options = app.Options{
 		Tenants:   loader,
 		Authorize: authorizer,

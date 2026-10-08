@@ -68,7 +68,7 @@ const retentionDays = 365
 var permissions = []module.Permission{{Key: contracts.PermissionAuditRead, Label: "read the audit trail"}}
 
 // Module is the manifest, and the service it is built on.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	svc := internal.NewService()
 	days := deps.RetentionDays
 	if days <= 0 {

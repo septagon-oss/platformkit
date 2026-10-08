@@ -58,6 +58,11 @@ establish management screens, deployed connections or migration of downstream cl
 
 ## Independently usable parts
 
+[Wire](kit/wire/README.md) checks a composition's OpenAPI or AsyncAPI contract
+against its published golden using B1–B6. It links only the standard library;
+the reference composition delegates both document gates to it. Products supply
+their renderer, golden path and explicit reviewed authorization allowances.
+
 Import the owner of the capability you need: [entity](kit/entity/README.md) for
 field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
 without REST, [locale](kit/locale/README.md) for worker or page translations, and
@@ -294,7 +299,7 @@ no SQL runs twice. `db.Adoption` is that declaration; a fresh database has
 nothing to adopt and reads the same ledger either way. An adopted file is an
 applied file, so changing one still refuses.
 
-The runner validates the selected source files, obtains a database advisory
+The runner validates the selected source files, obtains its namespace's advisory
 lock, checks applied histories, and executes each pending file with its history
 row in one transaction — which is the mode a file declares in its header, and two
 modes say otherwise: an `autocommit` file's one statement runs outside the
@@ -730,17 +735,13 @@ and a generated CRUD journey in a browser.
 [loc-budget.json](loc-budget.json) and
 [packages-budget.json](packages-budget.json) hold current ceilings. Do not copy
 their numbers into prose; run `make check-loc` and `make check-packages`.
-[The verification workflow](.gitea/workflows/ci.yml) is the one that runs, as four
-jobs the two kernel runners take at once: `go-checks` (`make check`, and the budget
-ratchet last), `race-and-vuln` (`make check-race`, then `govulncheck`),
-`design-editor` (the native editor and browser checks) and `e2e` (`make e2e`). Each
-is bounded at twice a measured span: the job's own completed run where it has one,
-or main's step spans where it has none. One job that ran them all in sequence was
-cut off at its deadline eight times on main, every test that had run already
-passed. It is Gitea's because GitHub Actions is disabled here; [the retained GitHub
-workflows](.github/workflows/ci.yml) are retained and never run here — their guard
-names GitHub's server URL — and they carry one `check` job rather than the four above:
-splitting them is deferred by name. An absent GitHub check establishes nothing. A
+[The verification workflow](.gitea/workflows/ci.yml) is the one that runs: `make
+check`, then `make check-race`, `govulncheck`, the native editor and browser
+checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
+Actions is disabled for this repository; [the retained GitHub
+workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
+merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
+release workflow beside them. An absent GitHub check establishes nothing. A
 publisher for the image, SBOM and release notes is not yet approved, so no tag
 publishes anything until [RELEASE.md](RELEASE.md#publish-an-approved-version)
 agrees one with the owner. The weekly

@@ -165,7 +165,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, cfg)
+	waitFor(t, cfg.Server.Addr, stopped)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -835,7 +835,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
-	mods := []module.Module{task.Module(task.Deps{
+	mods := []module.Module{task.New(task.Deps{
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
@@ -967,7 +967,14 @@ func deliveryClaimed(t *testing.T, cfg config.Config, subscriber, event string) 
 		t.Fatalf("open: %v", err)
 	}
 	defer conn.Close()
-	durable := appname.Durable(appSlug(cfg), subscriber, event)
+	// The composition's own slug comes from its configuration (kit/config's
+	// NATS.AppName), which is where the kernel reads it now that the modules wire
+	// themselves: kit/app/migrations.go forms the same name for the same ledger.
+	slug, err := cfg.NATS.AppName()
+	if err != nil {
+		t.Fatalf("the composition's slug: %v", err)
+	}
+	durable := appname.Durable(slug, subscriber, event)
 	var n int64
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		return tx.DB().Table("platformkit_handled").Where("durable = ?", durable).Count(&n).Error
@@ -1128,64 +1135,8 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 	return client
 }
 
-// The two windows a boot is given, because they fail in opposite ways and one bound
-// over both reads the first as the second. Run migrates before it listens
-// (kit/app/app.go), and the composition key is one for the whole database
-// (kit/db/migrate.go) while every package's suite shares that database, so the boot a
-// case starts can join a queue another package put there. The bound this file used to
-// have covered both windows, and read the queue as a dead application:
-// `TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted` said `the
-// application at 127.0.0.1:24034 never answered GET /health: connection refused` at
-// 30.79s, twice with no load on the host at all, while its own boot sat alive in the
-// queue for the key. apps/platformkit/boot_waits_for_its_composition_key_test.py holds
-// the key against a run of that case for 45 s, which is longer than any guess at the
-// first window and short beside the second one's.
-const (
-	// bootAnswers is how long a boot with nothing in front of it takes to migrate its
-	// own schema and answer its liveness probe.
-	bootAnswers = 30 * time.Second
-	// bootQueue is what the queue in front of it may cost, and it is kit/db's
-	// migrationQueueBudget: a key that never comes back fails the case, in five
-	// minutes rather than never.
-	bootQueue = 5 * time.Minute
-)
-
-// compositionKey is kit/db/migrate.go's compositionLockKey, spelled out because that
-// constant is unexported and this file is not in that package — kit/db's own cases name
-// it the same way (kit/db/composition_lock_rehold_test.go).
-const compositionKey = 7240101
-
-// queuedForCompositionKey returns a read of the server that says whether a session of
-// this test's own schema is waiting for the composition key right now.
-//
-// dbtest gives each test its own schema and makes application_name that schema
-// (kit/db/dbtest), so the read is of this test's backends and nobody else's: another
-// package waiting out the same queue must not spend this case's patience, and this
-// case's own queue must not be read as an application that is not coming.
-func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
-	t.Helper()
-	admin := dbtest.Open(t, migrateURL)
-	return func() bool {
-		var waiting bool
-		err := admin.QueryRowContext(t.Context(), `SELECT EXISTS (SELECT 1 FROM pg_locks l
-			JOIN pg_stat_activity a ON a.pid = l.pid
-			WHERE l.locktype = 'advisory' AND NOT l.granted
-				AND ((l.classid::bigint << 32) | l.objid::bigint) = `+
-			strconv.Itoa(compositionKey)+`
-				AND a.application_name = current_setting('search_path'))`).Scan(&waiting)
-		if err != nil {
-			// The read is the wait's witness, not its subject: a database that cannot
-			// answer it is the database the health probe is already failing against, and
-			// the case says so with the probe's own error rather than with this one.
-			t.Logf("waitFor: could not read the composition key's queue: %v", err)
-			return false
-		}
-		return waiting
-	}
-}
-
-// waitFor returns once the application this test started answers its own liveness
-// probe at the address its configuration serves at.
+// waitFor returns once the application this test started answers its own
+// liveness probe at addr.
 //
 // It asks a question rather than dialling, because a dial is answered by whoever
 // holds the port and not by this test's application. The address comes from
@@ -1200,42 +1151,35 @@ func queuedForCompositionKey(t *testing.T, migrateURL string) func() bool {
 // GET /health is what the wait ends on instead: both roles serve it (kit/health
 // and app.work), it runs no check of its own, so 200 says this application is up
 // and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so in a second rather than after thirty of
-// waiting and one request that was never going to be answered here.
-//
-// While nobody answers, it asks the server whether a session of this test's own schema
-// is waiting for the composition key, and gives the boot the queue's bound (bootQueue)
-// for as long as that is true — see the two windows above. A boot that queued and then
-// never listened is named as that, because the queue is the fact a reader needs.
-func waitFor(t *testing.T, cfg config.Config) {
+// holds the port, and the case says so at once rather than after the whole bound
+// of waiting and one request that was never going to be answered here.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	addr := cfg.Server.Addr
-	queued := queuedForCompositionKey(t, cfg.Database.MigrateURL)
-	deadline := time.Now().Add(bootAnswers)
-	var queuedSince, nextQueueRead time.Time
+	started := time.Now()
+	deadline := started.Add(bootWait)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // the read above freed the slot, so this cannot block
+				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		res, err := http.Get("http://" + addr + "/health")
 		if err != nil {
 			// Nobody is home, which is what it looks like while the application is
-			// still migrating — or while it is waiting its turn to migrate. Ask the
-			// server which of the two this is before spending the boot's own bound.
+			// still migrating. Keep waiting.
 			last = err.Error()
-			if now := time.Now(); now.After(nextQueueRead) {
-				nextQueueRead = now.Add(250 * time.Millisecond)
-				if queued() {
-					if queuedSince.IsZero() {
-						queuedSince = now
-					}
-					if until := queuedSince.Add(bootQueue); until.After(deadline) {
-						deadline = until
-					}
-				}
-			}
 		} else {
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+				}
 				return
 			}
 			// /health is liveness: it runs no check, and this process answers it with
@@ -1248,13 +1192,25 @@ func waitFor(t *testing.T, cfg config.Config) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if !queuedSince.IsZero() {
-		t.Fatalf("the application at %s queued for the composition key at %s and never "+
-			"answered GET /health within %v of that: %s", addr,
-			queuedSince.Format(time.RFC3339), bootQueue, last)
-	}
-	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
+	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
+		time.Since(started).Round(time.Second), last)
 }
+
+// bootWait is how long a fixture waits for an application it started to answer.
+// Run migrates a whole installation before it listens, and the same boot that
+// answers in a couple of seconds when one package runs costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once. A bound sized for the quiet case reports a working machine as
+// a broken application, so it is sized for the loaded one and stated here rather
+// than left as a literal inside the loop; slowBoot is when a green wait starts
+// saying how long it took, which is what the next red run reads.
+const (
+	// Five minutes, the same room as kit/app's bootWait and for the same measured reason: a migration
+	// of the whole installation crossed 120 s on 2026-10-06 with eight of this program's suites
+	// running beside it, and a boot that is only slow on somebody else's machine is not a fault here.
+	bootWait = 5 * time.Minute
+	slowBoot = bootWait / 10
+)
 
 // The band freeAddr picks from. The kernel allocates nothing below
 // ip_local_port_range — an :0 bind and the source port of an outbound
@@ -1784,17 +1740,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 43 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43) and twenty-seven under modules/*/migrations/ (4, 7,
+	// this head prints 45 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43) and twenty-nine under modules/*/migrations/ (4, 7,
 	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
-	// 37, 38, 39, 40, 42), all at distinct versions. The release this fixture is
+	// 37, 38, 39, 40, 42, 44, 45), all at distinct versions. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The ten above it — the kernel's own 34, 41 and 43, modules/audit's
-	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
-	// modules/content's 42 — postdate that release, are not in the old installation's
+	// any owner names. The twelve above it — the kernel's own 34, 41 and 43, modules/audit's
+	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45
+	// and modules/content's 42 — postdate that release, are not in the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
 	// highest number anywhere in the composition, which is the rule this fixture
@@ -1829,11 +1785,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the ten files above the
+	// release ships is in the ledger, which is where the twelve files above the
 	// adopted ceiling of 33 (the kernel's own 34, 41 and 43, modules/audit 35, 36 and
-	// 37, modules/change 38, modules/site 39, modules/file 40 and modules/content 42,
-	// all absent from the old ledger) have to be accounted for: 43 files in the
-	// release, 43 rows.
+	// 37, modules/change 38, modules/site 39, modules/file 40, 44 and 45 and
+	// modules/content 42, all absent from the old ledger) have to be accounted for:
+	// 45 files in the release, 45 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

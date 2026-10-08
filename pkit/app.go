@@ -3,6 +3,7 @@ package pkit
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -108,6 +109,7 @@ type Wiring struct {
 	plan   *plan
 	values map[*Module]map[any][]any
 	built  []module.Module
+	skin   Skin
 	errs   []error
 }
 
@@ -181,6 +183,43 @@ func Composition(w *Wiring) []module.Module {
 // Implementation is the name of the implementation the deployment picked for
 // this module, or "" when it declares no FromDeployment.
 func (w *Wiring) Implementation() string { return w.plan.impl[w.at] }
+
+// Config reads one section of the deployment's configuration, for the module
+// that cannot decide one of its own settings. The module names the section by a
+// function it writes, so which section it reads is visible at the call site, in
+// this module's source and in Explain, and the whole configuration is never
+// handed round: a module that took config.Config would be coupled to every
+// setting the kernel has, and nothing could say who read what.
+//
+// A deployment is where a setting lives (0074 rule 4), and a module build has no
+// other route to one: FromDeployment picks the *name* of an implementation from
+// the inputs it requires, it never hands over a value. The zero T is what a
+// section the deployment says nothing about answers, which is why a module keeps
+// its own default rather than inheriting a test's. Naming no section at all is a
+// defect in that module, and Build is where a module's own defects are answered.
+func Config[T any](w *Wiring, section func(config.Config) T) T {
+	var zero T
+	if section == nil {
+		w.errs = append(w.errs, fmt.Errorf("%s reads a configuration section without naming which", w.at.name))
+		return zero
+	}
+	t := reflect.TypeFor[T]()
+	w.plan.reads[w.at] = append(w.plan.reads[w.at], t)
+	return section(w.plan.cfg)
+}
+
+// Skin is what the application recorded about how it looks and reads: the pair
+// of palettes it named with Theme, the front door it named with Home, the copy
+// it named with Languages. A module that draws with them takes them from here
+// rather than from a value the composition holds, so there stays one statement
+// of a client's colours.
+//
+// Skin.Label answers "" during a build: the words a permission is given belong
+// to the module that defines it, and no other module's manifest is a built thing
+// while one is being built. Only the module that runs after everything sees them
+// — it has Composition for that — and Planned.Skin carries them for the app's
+// own renderers.
+func (w *Wiring) Skin() Skin { return w.skin }
 
 func (w *Wiring) declared(forms ...Declaration) (Declaration, bool) {
 	for _, d := range w.at.decls {
@@ -269,7 +308,7 @@ func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any
 	if len(errs) > 0 {
 		return p, nil, nil, errors.Join(errs...)
 	}
-	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}}
+	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}, skin: a.recordedSkin()}
 	for _, m := range p.order {
 		w.at, w.errs = m, nil
 		manifest, err := m.build(w)
@@ -371,6 +410,12 @@ func (a *App) Explain(d Deployment) (string, error) {
 			case (dl.kind == needs || dl.kind == optional) && dl.many:
 				fmt.Fprintf(&b, "pkit: %s.Module takes every %s from %s.\n", m.name, contract(dl.key), whoOrNobody(moduleNames(p.contributors[dl.key])))
 			}
+		}
+		// A module that reads a setting says so in the composition file, the same
+		// way it says which module it needs: nothing a build reads stays hidden
+		// (0074 rule 4). One line per section, in the order they were asked for.
+		for _, t := range p.reads[m] {
+			fmt.Fprintf(&b, "pkit: %s.Module reads %s.\n", m.name, contract(t))
 		}
 		for _, dl := range m.decls {
 			switch {

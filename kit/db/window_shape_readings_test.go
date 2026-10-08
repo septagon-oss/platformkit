@@ -398,11 +398,29 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// The bound is reached, so the case costs a tick's worth of windows — 10000 of them, committed
-// one transaction at a time — and its own context is the deadline that turns a regression to no
-// bound at all into a failure rather than a hang. That deadline is priced by `drainWatchdog`
-// below, from what the machine running the case drains, because a deadline guessed at one
-// machine's rate is a case that fails on load rather than on its cause.
+// tickDeadline is that case's own deadline, sized by measurement. The drain the bound stops — 10000
+// batches of 5 — measured 48.6 s for that case alone against a Postgres nobody else was migrating
+// into, and the same case ran past the 120 s it used to carry during a whole-suite run on 2026-10-06.
+// A whole-suite run is the condition the deadline has to survive rather than the quiet one: every
+// package in the repository is then writing into the same server through the advisory lock this drain
+// holds. The failure this number reports is the same one it always reported: a tick with no bound of
+// its own. What the quiet measurement does not carry is the multiplier: three times 48.6 s is 145.8 s,
+// the number below is 300 s, and on 2026-10-06 this case needed 304.34 s at load average 38-43 on 32
+// cores with six other rounds' whole-suite runs asking the same Postgres, and 301.35 s again with its
+// commits not waiting for a WAL flush (`options=-c synchronous_commit=off` carried in the fixture's own
+// URLs, read back off the server as `off`). What one window costs on a machine like that is the server
+// being scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`,
+// `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times, because the
+// bound under test is the production one. The number is left where it is: it exists to turn a tick that
+// would never end into a failure rather than a hang, and re-sizing it to the most loaded machine this
+// program runs on would bound nothing. The base this branch was replayed onto measured the same bound
+// its own way (2823dd0): the drain alone cost that machine 117 s, which made the old 120 s a reading
+// of the disk rather than of the tick — the conclusion this paragraph reaches at load, from a
+// different box.
+const tickDeadline = 5 * time.Minute
+
+// The bound is reached, so the case costs a tick's worth of windows; its own context is the
+// deadline that turns a regression to no bound at all into a failure rather than a hang.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -419,11 +437,12 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), drainWatchdog(t, migrateURL, files))
+	ctx, cancel := context.WithTimeout(t.Context(), tickDeadline)
 	defer cancel()
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
 	if errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("the worker's tick did not end on its own: this drain has no bound, and every tick rewrites work while holding the job's advisory lock")
+		t.Fatalf("the worker's tick did not end on its own within %s: this drain has no bound, "+
+			"and every tick rewrites work while holding the job's advisory lock", tickDeadline)
 	}
 	if !errors.Is(err, db.ErrBackfillBudget) {
 		t.Fatalf("the bound a tick gives itself reported %v, not ErrBackfillBudget; a run that may not be open forever has to say so", err)

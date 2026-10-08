@@ -67,8 +67,19 @@ import (
 
 // reholdCompositionLock is kit/db's composition key (kit/db/migrate.go:
 // compositionLockKey), spelled out here rather than borrowed from another file's
-// declaration so this case stands on its own.
+// declaration so this case stands on its own. The key has a second half — the namespace
+// the run resolves to, whose history the run writes — so every reach below asks for it
+// through this session's own current_schema(), which is the schema dbtest opened for this
+// case and so the schema the run under test is migrating: the same lock, from a second
+// session.
 const reholdCompositionLock = 7240101
+
+// reholdCompositionLockSQL is kit/db's own reach for its namespace's composition lock
+// (kit/db/migrate.go, holdCompositionLock), as a session that is not the run's.
+const reholdCompositionLockSQL = "SELECT pg_advisory_lock($1::int, to_regnamespace(current_schema())::oid::int)"
+
+// reholdCompositionUnlockSQL is giving it back.
+const reholdCompositionUnlockSQL = "SELECT pg_advisory_unlock($1::int, to_regnamespace(current_schema())::oid::int)"
 
 // reholdColumns is how many indexed columns the table carries: the one REINDEX statement
 // of the autocommit file rebuilds the table and every one of them, and the count after the
@@ -93,9 +104,10 @@ const (
 	reholdHoldCeiling = 4 * reholdLockBudget
 
 	// reholdStatementSee is how long the case will wait to see its own rebuild start: the
-	// run has to get the composition key before any of this happens, and under a `make
-	// check` in which every package boots a schema at once, waiting a minute for that turn
-	// is normal rather than a sign that nothing is happening.
+	// run has to get the composition key before any of this happens, and the key is the
+	// namespace's own, so what it can wait behind is another migration of this case's
+	// schema — a schema that is dropped and recreated between runs of this file, and a
+	// turn of a minute for it stays normal weather rather than a sign of nothing happening.
 	reholdStatementSee = 3 * time.Minute
 )
 
@@ -152,7 +164,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 	t.Cleanup(func() {
 		if holding {
 			_, _ = holderConn.ExecContext(context.WithoutCancel(t.Context()),
-				"SELECT pg_advisory_unlock($1)", reholdCompositionLock)
+				reholdCompositionUnlockSQL, reholdCompositionLock)
 		}
 	})
 
@@ -180,7 +192,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 		t.Fatal("the run was never seen inside its concurrent rebuild, so this case measured nothing")
 	}
 	if _, err := holderConn.ExecContext(t.Context(),
-		"SELECT pg_advisory_lock($1)", reholdCompositionLock); err != nil {
+		reholdCompositionLockSQL, reholdCompositionLock); err != nil {
 		t.Fatalf("take the composition key the run put down: %v", err)
 	}
 	holding = true
@@ -190,7 +202,7 @@ func TestTheCompositionLockIsWaitedForWithoutTheFileBudgetAfterAnAutocommitFile(
 
 	heldFor, overlapped, refused := holdTheKey(t, watch, schema, func() error {
 		_, err := holderConn.ExecContext(context.WithoutCancel(t.Context()),
-			"SELECT pg_advisory_unlock($1)", reholdCompositionLock)
+			reholdCompositionUnlockSQL, reholdCompositionLock)
 		return err
 	}, applied)
 	holding = false
