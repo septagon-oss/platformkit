@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
@@ -113,8 +114,14 @@ func New(deps Deps) (httpx.Entitler, module.Module) {
 	}
 	svc := internal.NewService()
 	return svc, module.Module{
-		Name:        "billing",
-		Migrations:  Migrations.Files,
+		Name:       "billing",
+		Migrations: Migrations.Files,
+		// The plan list and a tenant's subscription to one: the only uuid below the
+		// row's own names a plan, and a price is not a person.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "billing_subscriptions",
+			NotPerson: []string{"plan_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

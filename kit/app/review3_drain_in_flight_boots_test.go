@@ -32,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
 func TestADrainAlreadyInFlightIsFinishedByTheWorkerThatBoots(t *testing.T) {
@@ -49,7 +50,8 @@ func TestADrainAlreadyInFlightIsFinishedByTheWorkerThatBoots(t *testing.T) {
 	// a fresh installation drains its own data file during the migration and
 	// stops at the bound the runner gives itself, which leaves the owner with
 	// history, a progress row, and more work than fifty single-row batches.
-	mod := module.Module{Name: "drainmod", Migrations: files}
+	mod := module.Module{Name: "drainmod", Migrations: files,
+		PersonalData: personaldata.None("no uuid column at all: drain_rows is keyed by a bigint")}
 	if err := db.Migrate(t.Context(), cfg.Database.MigrateURL, MigrationSources([]module.Module{mod})...); err == nil {
 		t.Fatal("the inline drain ran unbounded; this case needs the state where it stops at its bound")
 	}

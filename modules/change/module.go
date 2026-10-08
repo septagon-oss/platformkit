@@ -20,6 +20,7 @@ package change
 import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/change/contracts"
 	"github.com/septagon-oss/platformkit/modules/change/internal"
 )
@@ -58,8 +59,15 @@ func New(deps Deps) module.Module {
 		panic("change: bind the subjects on the shared service or supply them to Module, not both")
 	}
 	return module.Module{
-		Name:        "change",
-		Migrations:  Migrations.Files,
+		Name:       "change",
+		Migrations: Migrations.Files,
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:      "change_proposals",
+			Person:    "proposer",
+			About:     []string{"reviewer"},
+			Text:      []string{"summary", "comment", "diff"},
+			NotPerson: []string{"subject_id"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

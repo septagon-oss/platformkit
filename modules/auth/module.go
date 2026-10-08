@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth/internal"
@@ -174,10 +175,22 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	})
 	cookies := internal.NewCookies(secure)
 	manifest := module.Module{
-		Name:        "auth",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "auth",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// Everything that proves a person acted. `first_factor_proofs.user_id` is a
+		// primary key with no foreign key, which is why it is declared rather than
+		// inferred from a referential edge that was never written.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "sessions", Person: "user_id", Text: []string{"user_agent", "ip"}},
+			personaldata.Table{Name: "password_tokens", Person: "user_id"},
+			personaldata.Table{Name: "verification_tokens", Person: "user_id", Text: []string{"email"}},
+			personaldata.Table{Name: "totp_factors", Person: "user_id"},
+			personaldata.Table{Name: "recovery_codes", Person: "user_id"},
+			personaldata.Table{Name: "api_tokens", Person: "user_id", About: []string{"created_by"}, Text: []string{"name"}},
+			personaldata.Table{Name: "first_factor_proofs", Person: "user_id"},
+		),
 		Permissions: permissions,
 		Declared:    contracts.Events,
 		// The one entry, and the shell serves it: a role is keyed by its name

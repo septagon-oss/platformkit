@@ -78,7 +78,7 @@ func check(t *testing.T, d Declaration, files fs.FS) []string {
 	t.Helper()
 	out := d.Check("thing", files)
 	for _, problem := range out {
-		if !strings.HasPrefix(problem, "module thing: ") {
+		if !strings.HasPrefix(problem, `module "thing": `) {
 			t.Errorf("refusal %q does not name the module it refuses", problem)
 		}
 	}
@@ -255,24 +255,36 @@ func TestATableDeclaredTwiceIsRefused(t *testing.T) {
 	}
 }
 
-// TestAStatementThisReaderCannotPlaceIsRefusedRoughly names the shapes outside it — a
-// table whose columns are all on one line, a column whose ALTER never arrives — and
-// pins which way each fails. Each is a refusal: a reader that could not read the file
-// says so, and Check turns that into a module that cannot boot.
-func TestAStatementThisReaderCannotPlaceIsRefusedRoughly(t *testing.T) {
-	oneLine := fstest.MapFS{"000001_t.up.sql": {Data: []byte(`
-CREATE TABLE t (id uuid, tenant_id uuid, person_id uuid);
-`)}}
+// TestWhatTheReaderReachesAndRefusesToGuess names what it reads and what it refuses
+// rather than guessing: a table on one line and a table across thirty are one
+// statement to it; a paren that never closes is an error, and not an empty answer.
+func TestWhatTheReaderReachesAndRefusesToGuess(t *testing.T) {
+	oneLine := fstest.MapFS{"000001_t.up.sql": {Data: []byte("CREATE TABLE t (id uuid, tenant_id uuid, person_id uuid);\n")}}
+	schema, err := ReadMigrations(oneLine)
+	if err != nil {
+		t.Fatalf("a table written on one line is a table this reader reads: %v", err)
+	}
+	if got, want := schema["t"]["person_id"].Type, "uuid"; got != want {
+		t.Errorf("t.person_id type = %q, want %q", got, want)
+	}
 	bad := check(t, None("a row and a tenant are the only uuids here"), oneLine)
-	if len(bad) != 1 || !strings.Contains(bad[0], "000001_t.up.sql") ||
-		!strings.Contains(bad[0], "CREATE TABLE") {
-		t.Fatalf("a one-line CREATE TABLE the reader cannot read must name itself: %v", bad)
+	if len(bad) != 1 || !strings.Contains(bad[0], "t.person_id") {
+		t.Fatalf("a one-line table still answers for its person column: %v", bad)
+	}
+	if bad := check(t, Implements(Table{Name: "t", Person: "person_id"}), oneLine); len(bad) != 0 {
+		t.Fatalf("declaring it is the whole of what is asked: %v", bad)
+	}
+
+	unclosed := fstest.MapFS{"000001_t.up.sql": {Data: []byte("CREATE TABLE t (\n\tid uuid,\n\tperson_id uuid\n")}}
+	if bad := check(t, None("no table names a natural person"), unclosed); len(bad) != 1 ||
+		!strings.Contains(bad[0], "never closes it") {
+		t.Fatalf("a CREATE TABLE whose paren never closes must say so: %v", bad)
 	}
 
 	// A comment that names a column is not a column, and a schema-qualified table
 	// arrives under the name its owner will declare it by. The house's migration files
 	// are mostly comment: reading the prose would refuse tables that hold nothing.
-	schema, err := ReadMigrations(houseSQL)
+	schema, err = ReadMigrations(houseSQL)
 	if err != nil {
 		t.Fatalf("reading the house's own spellings: %v", err)
 	}

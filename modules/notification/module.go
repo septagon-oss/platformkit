@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/notification/internal"
 )
@@ -71,8 +72,14 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	}
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
-		Name:        "notification",
-		Migrations:  Migrations.Files,
+		Name:       "notification",
+		Migrations: Migrations.Files,
+		// What a person was told is their own record; the delivery ledger reaches
+		// them only through the notification it delivered.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "notifications", Person: "recipient_id", Text: []string{"title", "body", "link"}},
+			personaldata.Table{Name: "notification_deliveries", Text: []string{"reason"}, NotPerson: []string{"notification_id"}},
+		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

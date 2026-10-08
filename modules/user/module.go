@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/user/internal"
@@ -148,10 +149,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	// request's transaction, so a refusal rolls the delete back.
 	mounted.AfterDelete = svc.RefuseLastAdministrator
 	return svc, module.Module{
-		Name:        "user",
-		Migrations:  Migrations.Files,
-		Adopts:      Migrations.Adopts,
-		RulesFrom:   Migrations.RulesFrom,
+		Name:       "user",
+		Migrations: Migrations.Files,
+		Adopts:     Migrations.Adopts,
+		RulesFrom:  Migrations.RulesFrom,
+		// The person is the row itself: the id stays and the values go, which is
+		// what an erasure that keeps the audit trail has to mean (ADR 0020).
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "users",
+			Person: "id",
+			Text:   []string{"email", "display_name", "handle"},
+		}),
 		Permissions: permissions,
 		Declared: []events.Declared{
 			// The three kit/rest publishes carry the entity itself, which is

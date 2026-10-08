@@ -95,18 +95,24 @@ func (s Schema) Tables() []string { return sortedKeys(map[string]map[string]Colu
 // shapes outside the reach are each a case in personaldata_test.go.
 func readSQL(schema Schema, text, file string) error {
 	body := stripComments(text)
+
 	read := 0
-	for _, m := range createTable.FindAllStringSubmatch(body, -1) {
-		table := unquote(m[1])
-		if schema[table] == nil {
-			schema[table] = map[string]Column{}
+	for _, m := range createTable.FindAllStringSubmatchIndex(body, -1) {
+		name := unquote(body[m[2]:m[3]])
+		open := strings.IndexByte(body[m[0]:], '(') + m[0]
+		inner, closed := matchingParen(body, open)
+		if !closed {
+			return fmt.Errorf("%s opens a CREATE TABLE for %q and never closes it", file, name)
 		}
-		for _, line := range strings.Split(m[2], "\n") {
-			name, typ, ok := columnLine(line)
+		if schema[name] == nil {
+			schema[name] = map[string]Column{}
+		}
+		for _, definition := range splitDefinitions(inner) {
+			columnName, typ, ok := columnDefinition(definition)
 			if !ok {
 				continue
 			}
-			schema[table][name] = Column{Type: typ, File: file}
+			schema[name][columnName] = Column{Type: typ, File: file}
 		}
 		read++
 	}
@@ -154,35 +160,88 @@ func stripComments(text string) string {
 	return strings.Join(lines, "\n")
 }
 
+var whitespace = regexp.MustCompile(`[\s]+`)
+
 var (
-	// `CREATE TABLE [IF NOT EXISTS] <name> ( … )`, up to the paren that closes it on
-	// its own line. Every table in this repository closes on its own line; a value
-	// that held `)` mid-line would end the block early, and the only such values are
-	// CHECK constraints, which columnLine skips as constraints rather than columns.
-	createTable = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(["\w.]+)\s*\((.*?)\n\)`)
-	// The two halves of one statement, in the order a file writes them: `ALTER TABLE
+	// `CREATE TABLE [IF NOT EXISTS] <name> (` — the body is read by matching the
+	// parentheses after the name rather than by the regex, so that a table written
+	// across thirty lines and a table written on one are the same statement to this
+	// reader, and a CHECK constraint's own parentheses are depth and not the end.
+	createTable = regexp.MustCompile(`(?is)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(["\w.]+)\s*\(`)
+	// The two halves of one ALTER, in the order a file writes them: `ALTER TABLE
 	// <name>` on its own, or `ADD COLUMN [IF NOT EXISTS] <column> <type>` with the type
 	// run to the end of the line, because a following CONSTRAINT clause is not a type.
 	statement = regexp.MustCompile(`(?is)(ALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(["\w.]+))|ADD\s+COLUMN\s+(?:IF\s+NOT\s+EXISTS\s+)?(["\w]+)\s+([^\n,]+)`)
 	// What the file wrote, whether or not this reader could read it.
 	createTableKeyword = regexp.MustCompile(`(?is)CREATE\s+TABLE`)
 	addColumnKeyword   = regexp.MustCompile(`(?is)ADD\s+COLUMN`)
-	// A column line is a name, a type word, and whatever follows it.
-	columnLineRe = regexp.MustCompile(`^([A-Za-z_][\w]*)\s+([A-Za-z_][\w]*(\s*\([^)]*\))?[^,\n]*)?$`)
+	// A column definition is a name and a type, however much whitespace, and
+	// possibly nothing else at all — a constraint clause is the latter.
+	columnDefinitionRe = regexp.MustCompile(`(?i)^([A-Za-z_][\w]*)(?:\s+([^\s].*))?$`)
 )
 
-// columnLine reads one line inside a CREATE TABLE. A line opening on a constraint
-// keyword names no column, and neither does a bare word with no type after it.
-func columnLine(line string) (name, typ string, ok bool) {
-	s := strings.TrimSpace(line)
+// matchingParen returns what sits between the paren at `open` and its match.
+func matchingParen(body string, open int) (string, bool) {
+	if open < 0 || open >= len(body) || body[open] != '(' {
+		return "", false
+	}
+	depth := 0
+	for i := open; i < len(body); i++ {
+		switch body[i] {
+		case '(':
+			depth++
+		case ')':
+			depth--
+			if depth == 0 {
+				return body[open+1 : i], true
+			}
+		}
+	}
+	return "", false
+}
+
+// splitDefinitions cuts a CREATE TABLE body where its columns are cut: at a comma
+// that is not inside a nested paren or a quoted default. It is the comma a parser
+// would cut at, which is why the same reader takes the house's one-column-per-line
+// files and a table written on one line without either being a special case.
+func splitDefinitions(body string) []string {
+	var out []string
+	depth, start := 0, 0
+	quoted := false
+	for i := 0; i < len(body); i++ {
+		switch c := body[i]; c {
+		case '\'':
+			quoted = !quoted
+		case '(':
+			if !quoted {
+				depth++
+			}
+		case ')':
+			if !quoted {
+				depth--
+			}
+		case ',':
+			if !quoted && depth == 0 {
+				out = append(out, body[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(out, body[start:])
+}
+
+// columnDefinition reads one definition with its line breaks collapsed. A line
+// opening on a constraint keyword names no column.
+func columnDefinition(definition string) (name, typ string, ok bool) {
+	s := strings.TrimSpace(whitespace.ReplaceAllString(definition, " "))
 	if s == "" {
 		return "", "", false
 	}
 	switch strings.ToUpper(strings.Split(s, " ")[0]) {
-	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "LIKE", "INHERITS", "PARTITION", "WITH", "WITHOUT":
+	case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "LIKE", "INHERITS", "PARTITION", "PERIOD":
 		return "", "", false
 	}
-	m := columnLineRe.FindStringSubmatch(strings.TrimSuffix(s, ","))
+	m := columnDefinitionRe.FindStringSubmatch(s)
 	if m == nil {
 		return "", "", false
 	}

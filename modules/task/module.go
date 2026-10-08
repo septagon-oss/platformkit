@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
@@ -132,8 +133,15 @@ func New(deps Deps) module.Module {
 	mounted := spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
-		Name:        "task",
-		Migrations:  Migrations.Files,
+		Name:       "task",
+		Migrations: Migrations.Files,
+		// The desk's free text is somebody else's note *about* a person, which is
+		// why description and resolution are filed as text and not left alone.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "tasks",
+			Person: "assignee_id",
+			Text:   []string{"title", "description", "resolution"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Roles:       roles,
