@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 )
 
 // Module is one business capability, described to the kernel.
@@ -135,6 +136,20 @@ type Module struct {
 	// of them, because a rule cannot be refused on bytes that are immutable. The
 	// number is the module's fact and the module states it. See db.MigrationSource.
 	RulesFrom int64
+
+	// PersonalData is this module's claim about the person columns in the SQL it
+	// owns: which table holds a person's own id, which other columns name a person,
+	// which text columns an identifier may have been copied into, and which uuid
+	// columns name a row and not a person — or, for a module whose tables carry no
+	// such column at all, the reason that is so.
+	//
+	// The kernel reads it three ways, which is what makes it a declaration and not
+	// a comment: Validate refuses it against this module's own migration files
+	// (kit/personaldata.Check, on the bytes and with no database), it is the list
+	// the per-person erasure re-reads to prove it worked, and it is what the export
+	// manifest says it asked. A module that adds a person column and files nothing
+	// is refused at boot rather than discovered by a person's request. See ADR 0020.
+	PersonalData personaldata.Declaration
 
 	// Routes registers this module's operations, each with its authorization,
 	// on the surface the kernel built for it. The module chooses a router —
@@ -363,6 +378,19 @@ func Validate(mods []Module) error {
 		for _, j := range m.Jobs {
 			if err := jobs.Valid(j); err != nil {
 				add("module %q: %s", m.Name, err)
+			}
+		}
+
+		// A person's rows can only be in a table this module's own SQL creates, so the
+		// claim is asked of a module that has SQL and of nobody else: one with no
+		// tables of its own holds no person column by construction, and asking it for a
+		// sentence would teach that the field is a formality. Every refusal here reads
+		// the module's migration bytes, so it lands before a database is opened — and
+		// the module that added a uuid column and filed nothing is refused now instead
+		// of being discovered by a person asking for their data. See ADR 0020.
+		if m.Migrations != nil {
+			for _, problem := range m.PersonalData.Check(m.Name, m.Migrations) {
+				add("%s", problem)
 			}
 		}
 

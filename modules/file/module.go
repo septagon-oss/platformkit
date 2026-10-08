@@ -30,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/modules/file/contracts"
 	"github.com/septagon-oss/platformkit/modules/file/internal"
 )
@@ -167,8 +168,14 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Retention: deps.Retention, Tenants: deps.Tenants, Every: deps.RetainEvery,
 	})
 	return svc, module.Module{
-		Name:        "file",
-		Migrations:  Migrations.Files,
+		Name:       "file",
+		Migrations: Migrations.Files,
+		// Bytes go, rows stay, and the certificate names both a subject and an actor.
+		PersonalData: personaldata.Implements(
+			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name"}},
+			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,

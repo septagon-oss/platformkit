@@ -187,11 +187,11 @@ func (t Table) Declares(column string) bool {
 func (d Declaration) Check(module string, files fs.FS) []string {
 	var bad []string
 	add := func(format string, args ...any) {
-		bad = append(bad, "module "+module+": "+fmt.Sprintf(format, args...))
+		bad = append(bad, fmt.Sprintf("module %q: %s", module, fmt.Sprintf(format, args...)))
 	}
 	schema, err := ReadMigrations(files)
 	if err != nil {
-		return []string{"module " + module + ": its migrations cannot be read: " + err.Error()}
+		return []string{fmt.Sprintf("module %q: its migrations cannot be read: %s", module, err)}
 	}
 
 	if d.None != "" && len(d.Tables) > 0 {
@@ -325,11 +325,11 @@ func claims(t Table) []claim {
 }
 
 func isTextType(columnType string) bool {
-	base := columnType
-	if i := strings.IndexAny(base, "( "); i >= 0 {
-		base = base[:i]
+	end := 0
+	for end < len(columnType) && columnType[end] >= 'a' && columnType[end] <= 'z' {
+		end++
 	}
-	return contains(textTypes, strings.TrimSpace(base))
+	return contains(textTypes, columnType[:end])
 }
 
 func contains(hay []string, needle string) bool {

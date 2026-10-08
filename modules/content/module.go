@@ -19,6 +19,7 @@ package content
 import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
@@ -71,8 +72,15 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource.RichTextFiles = files
 	svc := internal.NewService()
 	return svc, module.Module{
-		Name:        "content",
-		Migrations:  Migrations.Files,
+		Name:       "content",
+		Migrations: Migrations.Files,
+		// `author_id` carries no foreign key on purpose, so the claim that it names a
+		// person is the module's to make.
+		PersonalData: personaldata.Implements(personaldata.Table{
+			Name:   "contents",
+			Person: "author_id",
+			Text:   []string{"title", "body"},
+		}),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
 		Declared:    contracts.Events,
