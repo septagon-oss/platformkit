@@ -182,6 +182,15 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			personaldata.Table{Name: "files", Person: "uploader_id", Text: []string{"name"}},
 			personaldata.Table{Name: "file_holds", Person: "placed_by", Text: []string{"reason"}, NotPerson: []string{"file_id"}},
 			personaldata.Table{Name: "file_erasures", Person: "subject_id", About: []string{"actor"}, Text: []string{"reason"}, NotPerson: []string{"file_id"}},
+			// file_uses (000045) says which record's field displays which file. `record`
+			// is a polymorphic reference — `module` and `entity` say whose row it is — so
+			// it is filed as about rather than not-person: a richtext field of a user's
+			// own record names this person's row in it, and the module that writes the
+			// row is not the module that decides what it points at. `module`, `entity`,
+			// `field` and `locale` name no identifier: the first three are CHECKed
+			// vocabulary (000045_file_uses.up.sql:33-39) and the last is a language tag,
+			// so none of them is a column an address was ever copied into.
+			personaldata.Table{Name: "file_uses", About: []string{"record"}, NotPerson: []string{"file_id"}},
 		),
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
