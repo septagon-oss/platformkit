@@ -57,7 +57,9 @@ That is now true of the database and not only of this module's code.
 role), and installs three triggers: `audit_events_never_rewritten` refuses every
 `UPDATE`, from every role including the table's owner and a superuser;
 `audit_events_expire_only_after` admits a `DELETE` only when the role holding it may
-delete and may **not** insert, and the row is past 365 days; and
+delete, may **not** insert — asked of every column as well as of the table, because
+`INSERT (col, …)` is a grant an application really holds and `has_table_privilege` alone
+answers "no" about a role that appends through one — and the row is past 365 days; and
 `audit_events_never_emptied` refuses `TRUNCATE` outright. The last is the reason the
 revoke alone is not the fence. `TRUNCATE` ignores row-level security, so it is the one
 write that reaches every tenant's history out of one tenant's transaction, and an
@@ -77,10 +79,11 @@ three statements as that role inside an ordinary tenant transaction, and
 `GRANT ALL` and asks whether both tenants' rows are still there.
 
 The residual, in one sentence: the application role still *holds* `DELETE` on
-`audit_events` — `has_table_privilege` answers true — and cannot use it, because
-revoking it would leave the retention job, which is the application role, with no
-door, and the door that admits an expiry must not be a setting the fenced role can
-write. `TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer.
+`audit_events` — `has_table_privilege` answers true — and cannot use it, because the door
+that admits an expiry must be a capability and not a setting the fenced role can write.
+`TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer, and
+`TestColumnAppenderCannotExpireHistory` is the same answer for the role whose `INSERT`
+arrives by column rather than by table.
 
 Retention runs as a third role, `database.retain_url`: the job opens it for the length
 of one run, deletes a batch per transaction, and writes one row per batch into
@@ -154,7 +157,7 @@ table/RLS/policy shape, `kit/jobs/backfill.go`'s ignore-the-scheduler's-connecti
 shape, `jobs.PerTenantConcurrent` and `jobs.TenantLister`, `kit/db`'s `Open`
 role check, and the `Service` interface and hand-written `httpx.Register` shape
 `internal/handler.go` already carries. **Added** — `000041_audit_history_append_only.up.sql`
-(the revoke and the two triggers) and `000042_audit_retention_marks.up.sql`, because
+(the revoke and the three triggers) and `000042_audit_retention_marks.up.sql`, because
 nothing in the repository had ever revoked a privilege from a module table or written
 a trigger, and a trigger is the only thing that refuses the table's own owner;
 `Deps.RetainURL` and `database.retain_url`, because the expiry door must be a role the
@@ -170,12 +173,11 @@ append-only table this kernel takes over.
 Four things this delivery leaves open, named where the reviewer will look.
 
 * **The application role still holds `DELETE`** on `audit_events`, and
-  `has_table_privilege` answers true. Revoking it would leave the retention job — the
-  application's own role — with no expiry door at all, and the door the trigger admits
-  is a *shape* (may delete, may not append, past the floor) precisely so that no
-  setting the fenced role can write opens it. What the privilege cannot buy is the
-  delete: `TestExpiryRoleIsTheOnlyDoor` is the behaviour, and a role that can
-  `DROP TRIGGER` is the DDL role, outside this boundary by definition.
+  `has_table_privilege` answers true. What it cannot do is use it: the door the trigger
+  admits is a *shape* (may delete, may not append by table or by column, past the floor)
+  precisely so that no setting the fenced role can write opens it. What the privilege
+  cannot buy is the delete: `TestExpiryRoleIsTheOnlyDoor` is the behaviour, and a role
+  that can `DROP TRIGGER` is the DDL role, outside this boundary by definition.
 * **No hash chain.** Decision 0013's per-tenant `seq` with a `prev_hash`/`hash` pair,
   an advisory lock over the append and a checkpoint row are still owed. What is
   delivered proves that nothing inside the application's reach rewrote or expired a
