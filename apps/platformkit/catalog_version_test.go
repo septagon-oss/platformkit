@@ -8,6 +8,14 @@ package main
 // shell that has not read it, so the moment a shipped resource hides a verb, a
 // build in a pocket would draw a New button against an address that refuses it.
 // This file refuses that moment rather than remembering it.
+//
+// The moment ends where the document says it ends. A shell reads
+// `catalogVersion` and the version that makes `operations` required reading is
+// the change that moves this rule's ground, so the rule is stated with that
+// number in it: refusing a verb-hiding entry below it, and refusing a *raise*
+// that changed nothing. What keeps the raise honest is not this file: it is
+// scripts/check_public_api.py, which refuses a moved CatalogVersion until the
+// reviewed baseline is rewritten by hand in its own build(api) commit.
 
 import (
 	"encoding/json"
@@ -17,6 +25,22 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
+
+// operationsRequiredFrom is the document version from which an entry may name
+// fewer than the five operations: the version whose parser reads `operations`
+// rather than deriving the five, and so the version at which hiding one stops
+// being a surprise to a build that has not read the key. ui/screens/catalog.go
+// states the same number in words beside CatalogVersion; this is the house's
+// "the same number, read twice". It is not this file's to choose — see the
+// apidiff gate above, which is what makes moving the other half an act somebody
+// reviewed rather than a memory.
+const operationsRequiredFrom = 3
+
+// promisesFive reports whether a document at this version still promises the five
+// CRUD routes to a shell that derives them. That is the whole condition the rule
+// below turns on, written as a function so the case can ask it of the document it
+// is reading and of the two versions either side of the line.
+func promisesFive(version int) bool { return version < operationsRequiredFrom }
 
 // TestTheCatalogVersionNamesEveryResourceThatHidAVerb holds the version at the
 // document it describes: the reference composition may publish an entry that
@@ -37,6 +61,19 @@ func TestTheCatalogVersionNamesEveryResourceThatHidAVerb(t *testing.T) {
 	if !hidesAVerb(screens.Entry{Operations: []string{"list", "read"}}) {
 		t.Error("an entry that hides create, update and delete did not refuse a version that still promises all five")
 	}
+	// Both directions of the version, the two above being both directions of the
+	// predicate. A rule no raise can satisfy is not a rule — it is a ban on the
+	// shape, and the shape is rest.Spec's own documented answer to a resource
+	// whose writes are commands. A rule that fires on no version is a check that
+	// has stopped checking.
+	if !promisesFive(operationsRequiredFrom - 1) {
+		t.Errorf("a version %d document admitted an entry that hides a verb, which a shell written against five derived buttons would draw a door for",
+			operationsRequiredFrom-1)
+	}
+	if promisesFive(operationsRequiredFrom) {
+		t.Errorf("raising the version to %d answered nothing: the rule refused an entry that hides a verb whatever the document says",
+			operationsRequiredFrom)
+	}
 
 	cfg, mods, fixture := deviceComposition(t)
 	install(t, fixture.path)
@@ -55,7 +92,7 @@ func TestTheCatalogVersionNamesEveryResourceThatHidAVerb(t *testing.T) {
 			catalog.Version, screens.CatalogVersion)
 	}
 	for _, e := range catalog.Resources {
-		if hidesAVerb(e) {
+		if hidesAVerb(e) && promisesFive(catalog.Version) {
 			t.Errorf("%s/%s publishes operations %v while CatalogVersion is %d, which promises five routes to a build that has not been told otherwise: raise the version in this change, and the shell's parser with it",
 				e.Module, e.Entity, e.Operations, screens.CatalogVersion)
 		}

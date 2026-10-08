@@ -39,7 +39,14 @@ func TestContentBodyIsRichTextInTheServedCatalog(t *testing.T) {
 		if err := json.Unmarshal([]byte(body), &catalog); err != nil {
 			t.Fatal(err)
 		}
-		if catalog.Version != 2 {
+		// The literal, read a second time: this case is about the widget on a
+		// content body, and it asks the served document which version it is so a
+		// caller reading this test knows what the shell in front of it was told.
+		// 3 is the document in which a resource may name fewer than the five
+		// operations (webhook/endpoint and webhook/delivery do); ui/screens carries
+		// the number beside the constant and TestTheRouteStampsTheCatalogVersion
+		// prints it here too. scripts/check_public_api.py is what refuses the move.
+		if catalog.Version != 3 {
 			t.Errorf("catalog version = %d", catalog.Version)
 		}
 		found := false
