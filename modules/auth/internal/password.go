@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -133,6 +135,29 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // these mails still has one that works. recent() is the other half of that —
 // one link per person per ResetInterval, so an address somebody types
 // repeatedly is one mail and not twenty.
+//
+// # Why the row is committed before the message leaves
+//
+// The credential is written in a transaction that ends here and the mail is
+// handed over afterwards, because a link mailed from inside an open transaction
+// has two answers a person can get from it, and neither is theirs to receive.
+// Open the link while the delivery still holds that transaction open and the
+// token is not yet a row anybody can read: the invitation arrives at an inbox
+// whose link "does not work". Or have that transaction roll back after the send:
+// the mailbox now holds a dead link, and the retry that follows it puts a live
+// one underneath, so the first mail a person reads is the one that leads
+// nowhere. Both were seen on a loaded runner, where a delivery twenty seconds
+// from its commit is ordinary — and the shape is modules/auth/000050's, taken
+// from the confirmation link this module mails the same way for the same reason.
+//
+// passwordOfferLock is held across the commit and the send, so nothing else
+// rotates or spends this person's credential in between, and sent_at is what
+// makes the ordering survivable in both directions: it records the delivery the
+// transport took, in a write of its own, so a retry of a delivery that failed
+// afterwards does not mail a second link over the one already in a mailbox, and
+// a row whose mail never reached the transport — this function retracts it, or
+// the process died before the send — holds nobody's cooldown down and is offered
+// again.
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if !contracts.MailDeliverable(s.mail.Mailer) {
 		// A composition with no mailer writes no token either: a link nobody is
@@ -140,44 +165,186 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)
 		return nil
 	}
+	if err := passwordOfferLock(tx, user.ID); err != nil {
+		return err
+	}
 	recent, err := s.recent(tx, user.ID)
 	if err != nil || recent {
 		return err
 	}
-	token := secret()
-	at := db.Now()
-	err = tx.DB().Exec(
-		"INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?, ?)"+
-			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash,"+
-			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at",
-		contracts.Hash(token), db.TenantOf(tx).ID, user.ID, at, at.Add(contracts.TokenLifetime)).Error
+	// Read before anything is written: a tenant served at no host of record mails
+	// nothing, and that has to be known while the offer is still nothing.
+	base, err := s.baseURL(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("auth: issue a password token: %w", err)
+		return err
 	}
 	if s.notify != nil {
 		// A path, and one with no query on it: the notification module refuses
-		// an absolute link, and this one is not a credential at all.
-		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
+		// an absolute link, and this one is not a credential at all. It stays in
+		// the delivery's transaction: it carries no secret, and a notice raised by
+		// an offer whose mail the transport refused must not outlive that offer.
+		if _, err := s.notify.Notify(ctx, tx, notificationcontracts.Notice{
 			Recipient: user.ID, Title: title,
 			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
 			Link: ResetPath,
-		})
-		if err != nil {
+		}); err != nil {
 			return err
 		}
 	}
-	return s.send(ctx, tx, user, title, body, token)
+	token, at := secret(), db.Now()
+	ahead, err := s.postOffer(ctx, tx, user.ID, token, at)
+	if err != nil {
+		return err
+	}
+	if err := s.send(ctx, user, title, body, base, token); err != nil {
+		// A transport may quote its input in an error, and the outbox retains
+		// handler errors, so never carry the mailer's potentially
+		// credential-bearing text. The credential goes with the failure: it is a
+		// link nobody holds. When the row is the caller's own, its rollback —
+		// which this error causes — takes the row already.
+		if ahead {
+			s.retractOffer(ctx, user.ID, token)
+		}
+		return errors.New("auth: set-password email delivery failed")
+	}
+	if !ahead {
+		// The row was written with its sent_at beside it, because that shape
+		// cannot put the send between two commits: row and delivery stand
+		// together or roll back together.
+		return nil
+	}
+	// The transport took the message, so the row stops being an offer and becomes
+	// a delivery. Its own write, not the delivery's: the fact the cooldown reads
+	// has to outlive an event transaction that rolls back afterwards, or the retry
+	// mails a second link and the first one — the one already in the mailbox —
+	// leads nowhere.
+	return s.markOfferSent(ctx, user.ID, token)
+}
+
+// passwordOfferLock holds one person's set-password offer across the commit of
+// the credential and the send that carries it, so that two offers of one address
+// — an invitation and a forgotten-password request arriving together — cannot
+// each mail a link of which the table keeps only the last.
+func passwordOfferLock(tx db.Tx[db.Tenant], userID uuid.UUID) error {
+	key := "auth/password-offer/" + db.TenantOf(tx).ID.String() + "/" + userID.String()
+	if err := tx.DB().Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", key).Error; err != nil {
+		return fmt.Errorf("auth: lock the set-password offer: %w", err)
+	}
+	return nil
+}
+
+// offerStatement is the single-pending write, spelled once for the transaction of
+// its own and for the caller's. Its %s is what each leaves sent_at: NULL for the
+// row that is about to be mailed — it becomes a delivery in the write that follows
+// the transport — and the clock for the row that is mailed beside it, which cannot
+// outlive that send. EXCLUDED carries the same value into the update branch, so a
+// rotated link is as (un)delivered as a fresh one.
+const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user_id, created_at, expires_at, sent_at)" +
+	" VALUES (?, ?, ?, ?, ?, %s) ON CONFLICT (tenant_id, user_id) DO UPDATE SET" +
+	" token_hash = EXCLUDED.token_hash, created_at = EXCLUDED.created_at," +
+	" expires_at = EXCLUDED.expires_at, sent_at = EXCLUDED.sent_at"
+
+// postOffer puts one set-password credential where the person reading the mail
+// will look for it, and says whether it got a commit of its own.
+//
+// That commit is the rule, and the database is what decides whether it is
+// possible: password_tokens.user_id is a foreign key, so the write itself answers
+// whether the person the link names is a fact outside this transaction. A worker
+// always finds that fact — the event that asked for the link is relayed from
+// committed rows, so the invitation committed before the mail was ever offered —
+// and a credential committed by a delivery that then fails is a live link in
+// nobody's mail, which is the half-journey this ordering exists to end.
+//
+// One caller is refused that answer: the registration subscriber that invites an
+// address and mails its link in the same breath (see RegistrationSubscription).
+// There the row goes inside the caller's own transaction, where it and the send
+// can only stand or fall together, which is what sent_at beside the insert says:
+// a row that survives is a row whose mail went.
+func (s *Service) postOffer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID,
+	token string, at time.Time) (bool, error) {
+	expiry := at.Add(contracts.TokenLifetime)
+	if _, pooled := httpx.ConnFrom(ctx); pooled {
+		err := s.writeCredential(ctx, "commit", "set-password", func(ahead db.Tx[db.Tenant]) error {
+			// Asked of the person before the row is written, because the read of a
+			// row another transaction is still writing waits, while its absence
+			// reads in one hop: an offer that cannot commit ahead must say so now
+			// rather than wait two seconds to be told by the foreign key.
+			var seen bool
+			if err := ahead.DB().Raw("SELECT EXISTS (SELECT 1 FROM users WHERE id = ?)", userID).Row().Scan(&seen); err != nil {
+				return err
+			}
+			if !seen {
+				return errPersonNotCommitted
+			}
+			return ahead.DB().Exec(fmt.Sprintf(offerStatement, "NULL"),
+				contracts.Hash(token), db.TenantOf(ahead).ID, userID, at, expiry).Error
+		})
+		if err == nil {
+			return true, nil
+		}
+		if !errors.Is(err, errPersonNotCommitted) && !isUncommittedPerson(err) {
+			return false, err
+		}
+	}
+	return false, s.writeOfferIn(tx, userID, token, at)
+}
+
+// writeOfferIn is the credential as a write of the caller's transaction.
+func (s *Service) writeOfferIn(tx db.Tx[db.Tenant], userID uuid.UUID, token string, at time.Time) error {
+	err := tx.DB().Exec(fmt.Sprintf(offerStatement, "clock_timestamp()"),
+		contracts.Hash(token), db.TenantOf(tx).ID, userID, at, at.Add(contracts.TokenLifetime)).Error
+	if err != nil {
+		return fmt.Errorf("auth: issue a password token: %w", err)
+	}
+	return nil
+}
+
+// errPersonNotCommitted is the ahead-commit's own read saying that the person this
+// credential names is a row only the caller's transaction can see. It names an
+// ordering rather than a database failure, which is why it is a fact of this
+// module's and not an error string from the driver.
+var errPersonNotCommitted = errors.New("auth: the person this credential names is not committed yet")
+
+// isUncommittedPerson is Postgres saying the same thing the read above looks for,
+// one instant later: the foreign key refusing a credential that names a person who
+// stopped existing, or whose transaction committed between the read and the write.
+func isUncommittedPerson(err error) bool {
+	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
+	return isPostgres && pg.Code == "23503"
+}
+
+// retractOffer withdraws a credential whose email the transport refused, in a
+// write of its own that commits while the failed delivery rolls back. Without it
+// the row would sit for an hour as a credential nobody holds, with nothing in the
+// table to say it was never mailed; the retry rotates what it finds and sends a
+// fresh link either way.
+func (s *Service) retractOffer(ctx context.Context, userID uuid.UUID, token string) {
+	err := s.writeCredential(ctx, "withdraw", "set-password", func(tx db.Tx[db.Tenant]) error {
+		return tx.DB().Exec("DELETE FROM password_tokens WHERE user_id = ? AND token_hash = ?",
+			userID, contracts.Hash(token)).Error
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: could not withdraw a set-password credential its email could not reach",
+			"user", userID, "error", err)
+	}
+}
+
+// markOfferSent records, in a write that commits by itself, that the transport
+// took this link. See offer: the cooldown must survive the event that carried the
+// offer, rather than commit and roll back with it.
+func (s *Service) markOfferSent(ctx context.Context, userID uuid.UUID, token string) error {
+	return s.writeCredential(ctx, "record", "set-password", func(tx db.Tx[db.Tenant]) error {
+		return tx.DB().Exec("UPDATE password_tokens SET sent_at = clock_timestamp()"+
+			" WHERE user_id = ? AND token_hash = ?", userID, contracts.Hash(token)).Error
+	})
 }
 
 // send renders the one message this module writes and hands it to the mail
 // server. The link is absolute and on the recipient's own tenant's host,
 // because a mail client has no base to resolve a path against and one
-// customer's people must not be sent to another's front door.
-func (s *Service) send(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body, token string) error {
-	base, err := s.baseURL(ctx, tx)
-	if err != nil {
-		return err
-	}
+// customer's people must not be sent to another's front door. The base is read
+// by the caller, ahead of the commit: see offer.
+func (s *Service) send(ctx context.Context, user *usercontracts.User, title, body, base, token string) error {
 	return s.mail.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: title,
 		Body: body + "\n\n" + base + ResetPath + "?token=" + token +
@@ -217,15 +384,19 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 // recent reports whether this person was sent a link inside ResetInterval.
 //
 // It is the cap on outstanding notices per recipient, and it is read off the
-// token row rather than counted anywhere else because the token table is
-// already one row per person: asking again replaces the link, so the only thing
-// left to bound is how many mails and how many notices that produces. Without
-// it, a public route plus a known address is somebody else's inbox filled by a
+// token table rather than counted anywhere else because that table is already
+// one row per person: asking again replaces the link, so the only thing left to
+// bound is how many mails and how many notices that produces. Without it, a
+// public route plus a known address is somebody else's inbox filled by a
 // stranger, one mail per request.
+//
+// It counts sent_at — the links that went out — and not created_at, the rows
+// that were written: an offer whose mail never reached the transport is not a
+// recent delivery, and must not hold the cooldown down while nobody holds a link.
 func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 	var n int64
 	err := tx.DB().Table("password_tokens").
-		Where("user_id = ? AND created_at > now() - ?::interval", userID, resetInterval).
+		Where("user_id = ? AND sent_at IS NOT NULL AND sent_at > now() - ?::interval", userID, resetInterval).
 		Count(&n).Error
 	if err != nil {
 		return false, fmt.Errorf("auth: read the pending password token of %s: %w", userID, err)

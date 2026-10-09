@@ -1694,7 +1694,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the eighteen above the ceiling, because the
+	// 33 stays 33 for those files and for the nineteen above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1703,11 +1703,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 51 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-four under modules/*/migrations/
+	// this head prints 52 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-five under modules/*/migrations/
 	// (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33,
-	// 35 twice, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 50), at fifty distinct
-	// versions: modules/auth's 000035_passkeys and modules/audit's
+	// 35 twice, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 50, 51), at fifty-one
+	// distinct versions: modules/auth's 000035_passkeys and modules/audit's
 	// 000035_audit_context are the first two files of this composition to name one
 	// version under two owners, and the upgrade below reads them as the two ledger
 	// rows their PRIMARY KEY says they are. The release this fixture is applied from
@@ -1734,7 +1734,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// This delivery's verification column is that event one number further along:
 	// 000050_verification_sent_at carried 000048 while this branch was open, and main
 	// took 48 and 49 for the trail underneath it, so the file continues past main's
-	// highest rather than onto it.
+	// highest rather than onto it. modules/auth/000051_password_reset_sent_at is the
+	// same column on password_tokens, and it takes the number past that 50 for the
+	// same reason: 50 is the highest file anywhere in the composition the moment it is
+	// written.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded four times: this
@@ -1766,11 +1769,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	}
 	// Each file now reads under the owner that ships it — and every file this
 	// release ships is in the ledger under the owner that ships it, which is where the
-	// eighteen files above the adopted ceiling of 33 (the kernel's own 34, 41, 43 and
+	// nineteen files above the adopted ceiling of 33 (the kernel's own 34, 41, 43 and
 	// 46, modules/audit 35, 36
 	// and 37, 48 and 49, modules/change 38, modules/site 39, modules/file 40, 44 and 45,
-	// modules/content 42 and modules/auth 35, 47 and 50, all absent from the old ledger)
-	// have to be accounted for: 51 files in the release, 51 rows.
+	// modules/content 42 and modules/auth 35, 47, 50 and 51, all absent from the old
+	// ledger) have to be accounted for: 52 files in the release, 52 rows.
 	want := map[string]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

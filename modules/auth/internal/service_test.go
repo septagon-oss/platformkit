@@ -567,7 +567,11 @@ func TestOnePendingLinkPerPerson(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Reissue: %v", err)
 		}
-		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes'`)
+		// The cooldown counts the links that went out, so this is the write
+		// that moves an offer outside the five minutes: sent_at is the column
+		// modules/auth/000051 added for exactly this question.
+		exec(t, admin, `UPDATE password_tokens SET created_at = created_at - interval '10 minutes',`+
+			` sent_at = sent_at - interval '10 minutes'`)
 	}
 	sent := box.Sent()
 	if len(sent) != 3 {
