@@ -182,6 +182,252 @@ func TestExplicitAllowances(t *testing.T) {
 	}
 }
 
+// featureDeclaration is the value httpx.Permission("item:read").Needing("pro") marshals
+// to: the permission that gates the operation, and the plan feature beside it.
+func featureDeclaration() map[string]any {
+	return map[string]any{"kind": "permission", "permission": "item:read", "feature": "pro"}
+}
+
+// featureBaseline is baseline(kind) with that declaration on the operation every
+// authorization case changes. It is derived rather than hand-written, so every other
+// expectation in this file keeps its bytes.
+func featureBaseline(t *testing.T, kind string) []byte {
+	t.Helper()
+	return mutated(t, baseline(kind), func(doc map[string]any) {
+		operation(doc, kind)["x-platformkit-auth"] = featureDeclaration()
+	})
+}
+
+// spellDeclaration rewrites one declaration's bytes in another textual order.
+// encoding/json sorts object keys on the way out, so writing the bytes is the only way
+// to hold two documents whose authorization maps differ in order and nothing else.
+func spellDeclaration(t *testing.T, body []byte, as, order string) []byte {
+	t.Helper()
+	if n := bytes.Count(body, []byte(as)); n != 1 {
+		t.Fatalf("%s appears %d times in the document, want exactly once", as, n)
+	}
+	return []byte(strings.ReplaceAll(string(body), as, order))
+}
+
+// featureCase is one pair of documents, and either the break the rules must name or the
+// word that they are the same door.
+type featureCase struct {
+	name, path, message string
+	// features counts how many times the diagnostic spells `feature=`: once when one
+	// side named a plan feature and the other did not, twice for a rename. A mutation
+	// that left the changed member out of what a reviewer reads fails here.
+	features int
+	// stale says the pair is one door written two ways: the rules accept it, and the
+	// golden gate refuses it as staleness rather than as a break.
+	stale   bool
+	golden  func(t *testing.T) []byte
+	current func(t *testing.T, golden []byte) []byte
+}
+
+// featureCases is the mutation table over the plan feature, beside ruleCases rather than
+// in it: TestExplicitAllowances indexes that table, so its order is a pin.
+func featureCases(kind string) []featureCase {
+	path, id := "GET /items", "list"
+	if kind != "openapi" {
+		path, id = "SEND item.changed", "publish"
+	}
+	featured := func(t *testing.T) []byte { return featureBaseline(t, kind) }
+	declares := func(value map[string]any) func(t *testing.T, golden []byte) []byte {
+		return func(t *testing.T, golden []byte) []byte {
+			return mutated(t, golden, func(doc map[string]any) {
+				operation(doc, kind)["x-platformkit-auth"] = value
+			})
+		}
+	}
+	drops := func(key string) func(t *testing.T, golden []byte) []byte {
+		return func(t *testing.T, golden []byte) []byte {
+			return mutated(t, golden, func(doc map[string]any) {
+				delete(at(operation(doc, kind), "x-platformkit-auth"), key)
+			})
+		}
+	}
+	return []featureCase{
+		{"feature removed", path, fmt.Sprintf("B6 (breaking): %s (%s) is authorized kind=permission permission=item:read where it was kind=permission permission=item:read feature=pro", path, id), 1, false, featured, drops("feature")},
+		{"feature added", path, fmt.Sprintf("B6 (breaking): %s (%s) is authorized kind=signed_in feature=pro where it was kind=signed_in", path, id), 1, false, func(t *testing.T) []byte { return baseline(kind) },
+			declares(map[string]any{"kind": "signed_in", "feature": "pro"})},
+		{"feature renamed", path, fmt.Sprintf("B6 (breaking): %s (%s) is authorized kind=permission permission=item:read feature=enterprise where it was kind=permission permission=item:read feature=pro", path, id), 2, false, featured,
+			declares(map[string]any{"kind": "permission", "permission": "item:read", "feature": "enterprise"})},
+		{"nothing changed", path, "", 0, false, featured, func(_ *testing.T, golden []byte) []byte { return golden }},
+		{"re-rendered with the trailing newline a writer adds, bytes differing and the door not", path, "", 0, true, featured,
+			func(t *testing.T, golden []byte) []byte {
+				return append(mutated(t, golden, func(map[string]any) {}), '\n')
+			}},
+		{"the same declaration with its keys written in another order", path, "", 0, true, featured,
+			func(t *testing.T, golden []byte) []byte {
+				return spellDeclaration(t, golden, `{"feature":"pro","kind":"permission","permission":"item:read"}`, `{"permission":"item:read","feature":"pro","kind":"permission"}`)
+			}},
+	}
+}
+
+// TestFeatureDeclarationIsCompared runs the feature mutations through Compare. Each names
+// the operation and both spellings of what changed. The comparator refuses a document:
+// whether a tenant's plan admits the feature is kit/httpx's decision at request time,
+// asked and refused there, and no case here boots anything to claim it.
+func TestFeatureDeclarationIsCompared(t *testing.T) {
+	for _, kind := range []string{"openapi", "asyncapi"} {
+		for _, tc := range featureCases(kind) {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				t.Parallel()
+				old := tc.golden(t)
+				breaks := wire.Compare(old, tc.current(t, old))
+				if tc.message == "" {
+					if len(breaks) != 0 {
+						t.Fatalf("one declaration written two ways broke: %#v", breaks)
+					}
+					return
+				}
+				want := wire.Break{Rule: "B6", Path: tc.path, Member: "x-platformkit-auth", Message: tc.message}
+				if !slices.Contains(breaks, want) {
+					t.Fatalf("got %#v; want %#v", breaks, want)
+				}
+				if got := strings.Count(want.Message, "feature="); got != tc.features {
+					t.Errorf("the diagnostic spells feature= %d times, want %d: %s", got, tc.features, want.Message)
+				}
+			})
+		}
+	}
+}
+
+// TestGoldenRefusesFeatureMutationsBeforeWriting runs that same table through the public
+// golden path. A refused mutation is handed UPDATE_GOLDEN=1 and must leave the file
+// byte-for-byte the file a reviewer approved. The pairs the rules accept are the other
+// half: one written twice is the same door, and the flag is for rewriting it.
+func TestGoldenRefusesFeatureMutationsBeforeWriting(t *testing.T) {
+	const left = "is left as it was: the rules above stand, and UPDATE_GOLDEN=1 regenerates a document that is stale, never one that is broken"
+	for _, kind := range []string{"openapi", "asyncapi"} {
+		for _, tc := range featureCases(kind) {
+			t.Run(kind+"/"+tc.name, func(t *testing.T) {
+				update := "1"
+				if tc.message == "" {
+					update = ""
+				}
+				old := tc.golden(t)
+				output, onDisk, err := runGolden(t, old, tc.current(t, old), update, "")
+				unchanged := bytes.Equal(onDisk, old)
+				switch {
+				case tc.message != "":
+					if err == nil || !strings.Contains(output, tc.message) || !strings.Contains(output, left) || !unchanged {
+						t.Fatalf("err=%v; unchanged=%v\n%s", err, unchanged, output)
+					}
+				case tc.stale:
+					if err == nil || !strings.Contains(output, "is stale; run with UPDATE_GOLDEN=1") || strings.Contains(output, "B6") || !unchanged {
+						t.Fatalf("err=%v; unchanged=%v\n%s", err, unchanged, output)
+					}
+				default:
+					if err != nil || !unchanged {
+						t.Fatalf("err=%v; unchanged=%v\n%s", err, unchanged, output)
+					}
+				}
+			})
+		}
+	}
+}
+
+// featureAllowance is what a reviewer who approved moving one operation to a higher plan
+// writes down: both whole declarations, permission and feature spelled on each side.
+func featureAllowance() []wire.AuthorizationAllowance {
+	return []wire.AuthorizationAllowance{{
+		From: "kind=permission permission=item:read feature=pro", To: "kind=permission permission=item:read feature=enterprise",
+		ReviewedOn: "2026-10-09", Reason: "The same permission, one plan tier up",
+	}}
+}
+
+// TestAllowancesCoverOnlyWhatTheyName is both halves of one decision. A reviewed kind
+// widening names two feature-free declarations, so it covers no feature change beside it,
+// whichever way the pair is read. A reviewed feature pair covers no permission change
+// that came along in the same diff: an allowance is exact, so it is never half an excuse.
+func TestAllowancesCoverOnlyWhatTheyName(t *testing.T) {
+	for _, kind := range []string{"openapi", "asyncapi"} {
+		t.Run(kind, func(t *testing.T) {
+			signedIn := mutated(t, baseline(kind), func(doc map[string]any) {
+				operation(doc, kind)["x-platformkit-auth"] = map[string]any{"kind": "signed_in", "feature": "pro"}
+			})
+			anyCredential := mutated(t, signedIn, func(doc map[string]any) {
+				operation(doc, kind)["x-platformkit-auth"] = map[string]any{"kind": "any_credential"}
+			})
+			for _, pair := range [][2][]byte{{signedIn, anyCredential}, {anyCredential, signedIn}} {
+				if got := wire.CompareWithAllowances(pair[0], pair[1], allowance()); len(got) != 1 || got[0].Rule != "B6" {
+					t.Fatalf("the reviewed pair covered a feature it never named: %#v", got)
+				}
+			}
+			featured := featureBaseline(t, kind)
+			upgraded := mutated(t, featured, func(doc map[string]any) {
+				at(operation(doc, kind), "x-platformkit-auth")["feature"] = "enterprise"
+			})
+			if got := wire.CompareWithAllowances(featured, upgraded, featureAllowance()); len(got) != 0 {
+				t.Fatalf("the reviewed feature pair did not apply: %#v", got)
+			}
+			if got := wire.CompareWithAllowances(featured, upgraded, nil); len(got) != 1 || got[0].Rule != "B6" {
+				t.Fatalf("a feature moved with nothing reviewed: %#v", got)
+			}
+			if got := wire.CompareWithAllowances(upgraded, featured, featureAllowance()); len(got) != 1 || got[0].Rule != "B6" {
+				t.Fatalf("the reverse pair read as the reviewed one: %#v", got)
+			}
+			renamed := mutated(t, upgraded, func(doc map[string]any) {
+				at(operation(doc, kind), "x-platformkit-auth")["permission"] = "item:write"
+			})
+			if got := wire.CompareWithAllowances(featured, renamed, slices.Concat(featureAllowance(), allowance())); len(got) != 1 || got[0].Rule != "B6" {
+				t.Fatalf("an allowance for half the diff covered all of it: %#v", got)
+			}
+		})
+	}
+}
+
+// TestAuthorizationIdentitySpellings pins the canonical spelling of a declaration as
+// literal diagnostics, so the order members are named in and the way a value is quoted
+// are written down rather than read back off whatever the comparator emitted. The rows
+// without a feature are the regression guard: they spell exactly what they spelled before
+// the plan feature joined the identity, which is why a pair anyone wrote against them,
+// and the composition's own reviewed pair, keep matching.
+func TestAuthorizationIdentitySpellings(t *testing.T) {
+	// declaring is a one-operation document whose authorization extension holds body;
+	// an empty body is an operation that declares nothing.
+	declaring := func(body string) []byte {
+		declared := ""
+		if body != "" {
+			declared = `"x-platformkit-auth":` + body + ","
+		}
+		return []byte(`{"openapi":"3.1.0","paths":{"/items":{"get":{"operationId":"list",` + declared + `"responses":{}}}}}`)
+	}
+	for _, tc := range []struct {
+		name            string
+		golden, current string
+		message         string
+	}{
+		{"a feature-free pair spells what it always spelled", `{"kind":"permission","permission":"a:b"}`, `{"kind":"permission","permission":"b:c"}`, "B6 (breaking): GET /items (list) is authorized kind=permission permission=b:c where it was kind=permission permission=a:b"},
+		{"a kind-only pair spells what it always spelled", `{"kind":"signed_in"}`, `{"kind":"any_credential"}`, "B6 (breaking): GET /items (list) is authorized kind=any_credential where it was kind=signed_in"},
+		{"a member only a hand-written document carries follows the three the server emits", `{"kind":"permission","permission":"a:b","operator_permission":"c:d"}`, `{"kind":"permission","permission":"a:b"}`, "B6 (breaking): GET /items (list) is authorized kind=permission permission=a:b where it was kind=permission permission=a:b operator_permission=c:d"},
+		{"a feature is named after the permission", `{"kind":"permission","permission":"a:b"}`, `{"feature":"pro","kind":"permission","permission":"a:b"}`, "B6 (breaking): GET /items (list) is authorized kind=permission permission=a:b feature=pro where it was kind=permission permission=a:b"},
+		{"the order the document writes is not the order the identity names", `{"feature":"pro","permission":"a:b","kind":"permission"}`, `{"kind":"permission","permission":"a:b","feature":"pro"}`, ""},
+		{"a null feature is the omission the server marshals", `{"feature":null,"kind":"permission","permission":"a:b"}`, `{"kind":"permission","permission":"a:b"}`, ""},
+		{"an empty feature is the same omission", `{"feature":"","kind":"permission","permission":"a:b"}`, `{"kind":"permission","permission":"a:b"}`, ""},
+		{"an operation that declares nothing, written two ways", ``, `null`, ""},
+		{"a feature that is not a string still says something", `{"feature":true,"kind":"permission","permission":"a:b"}`, `{"kind":"permission","permission":"a:b"}`, "B6 (breaking): GET /items (list) is authorized kind=permission permission=a:b where it was kind=permission permission=a:b feature=true"},
+		{"a value that holds a space is quoted", `{"feature":"pro","kind":"permission","permission":"a:b"}`, `{"feature":"pro plan","kind":"permission","permission":"a:b"}`, `B6 (breaking): GET /items (list) is authorized kind=permission permission=a:b feature="pro plan" where it was kind=permission permission=a:b feature=pro`},
+		{"one member cannot carry another member's text", `{"kind":"x permission=y"}`, `{"kind":"x","permission":"y"}`, `B6 (breaking): GET /items (list) is authorized kind=x permission=y where it was kind="x permission=y"`},
+		{"a declaration that is not an object keeps its value", `{"kind":"public"}`, `"public"`, `B6 (breaking): GET /items (list) is authorized value="public" where it was kind=public`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			breaks := wire.Compare(declaring(tc.golden), declaring(tc.current))
+			if tc.message == "" {
+				if len(breaks) != 0 {
+					t.Fatalf("%s over %s broke: %#v", tc.golden, tc.current, breaks)
+				}
+				return
+			}
+			want := wire.Break{Rule: "B6", Path: "GET /items", Member: "x-platformkit-auth", Message: tc.message}
+			if !slices.Contains(breaks, want) {
+				t.Fatalf("got %#v; want %#v", breaks, want)
+			}
+		})
+	}
+}
+
 func TestAdditionsAndConservativeEnums(t *testing.T) {
 	for _, kind := range []string{"openapi", "asyncapi"} {
 		for _, addition := range []string{"optional", "description", "operation", "enum growth", "enum shrink"} {
