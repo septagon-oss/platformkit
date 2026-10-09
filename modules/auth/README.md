@@ -155,7 +155,11 @@ the refusal costs less than the work it refuses — and one office behind one NA
 counter, which is the cost the kernel already accepts for the same reason. And the hour
 a document fetched from a metadata URL is trusted for is both the cure and the
 residual: a rotated-in certificate is followed within the hour, and a certificate its
-owner has taken out of service stays trusted here for the same hour.
+owner has taken out of service stays trusted here for the same hour. And the
+tracking cookie is `SameSite=None`, which a browser only sends over TLS: local
+development needs a terminator in front of the callback, because no cookie
+attribute makes the IdP's cross-site POST carry one over plain http — `Lax` is the
+other half of the same refusal, which is why the attribute is not a knob to turn.
 
 ## A second factor
 
