@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "0e7e5f6feb9456817f0c0440d7e19f1d1c575405"
+    "candidate": "224f0da4d3aa35b09c0ba0f5e79956809476417b"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -41,6 +41,7 @@
     "./modules/billing.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/kit/httpx.Entitler, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/billing/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/content.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/content/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
+    "./modules/content/contracts.Content: old is comparable, new is not",
     "./modules/content/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/file.Deps: old is comparable, new is not",
     "./modules/file.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/file/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
@@ -63,8 +64,10 @@
     "./modules/notification/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/site.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/site/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/site/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
+    "./modules/site/contracts.SettingsUpdated: old is comparable, new is not",
     "./modules/task.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/task/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
+    "./modules/task/contracts.Task: old is comparable, new is not",
     "./modules/tenant.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/tenant/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/tenant/contracts.Service.ClearOIDC: added",
     "./modules/tenant/contracts.Service.ClearSAML: added",
