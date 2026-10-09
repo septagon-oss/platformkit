@@ -28,8 +28,9 @@ const (
 	// ChannelEmail is go-mail over the composed SMTP relay, signed as the
 	// tenant's own sender.
 	ChannelEmail Channel = "email"
-	// ChannelPush is a mobile device token (the token table is this module's,
-	// the FCM/APNs adapter is T-0120's).
+	// ChannelPush is a mobile device token. The token store and the FCM/APNs
+	// adapter are both outside this repository today (README's Limits); the
+	// channel is named here because a deployment can wire somebody for it.
 	ChannelPush Channel = "push"
 	// ChannelWebPush is a browser subscription, sent over VAPID.
 	ChannelWebPush Channel = "web_push"
@@ -201,3 +202,26 @@ type Providers map[Channel]Provider
 
 // Get is the provider for a channel, or nil.
 func (p Providers) Get(c Channel) Provider { return p[c] }
+
+// Active is the channels this deployment sends — every key with a provider
+// behind it, in Channels' order — and it is the one reading both halves of the
+// wiring have to share.
+//
+// A key whose value is nil is not a channel: the composition that wrote
+// `{ChannelPush: nil}` said "no push", in the same sentence a missing key says
+// it. The subscriptions (module.subscriptions) and the decision
+// (internal.Service.decide) are built from one Deps value and used to ask the
+// question two ways — a nil skipped in one, a key counted in the other — which
+// is how a channel could be "sent by this deployment" to the ledger and have
+// nobody listening for it: a requested row no worker would ever close, and
+// delivery_ledger_coverage would report the notice as unfinished forever. Ask
+// this, and the two halves cannot disagree.
+func (p Providers) Active() []Channel {
+	out := make([]Channel, 0, len(p))
+	for _, c := range Channels {
+		if p[c] != nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}

@@ -89,15 +89,13 @@ var permissions = []module.Permission{{Key: contracts.PermissionSenderManage}}
 // work: the mail this module sends itself, and one carrier per provider the
 // deployment wired, in contracts.Channels' order so the list a reader sees does
 // not depend on Go's map iteration. A provider is a channel this deployment
-// sends, and a channel it sends has to have somebody listening, so the two
-// halves are built from the same Deps value and cannot disagree.
+// sends, and a channel it sends has to have somebody listening, so both halves
+// — this list and the decision that opens a ledger row — come from
+// contracts.Providers.Active over the same Deps value and cannot disagree.
 func subscriptions(deps Deps) []events.Subscription {
 	subs := []events.Subscription{internal.SendMail(deps.Mailer, deps.Recipients, deps.Hosts, deps.Senders, deps.Secure)}
-	for _, c := range contracts.Channels {
+	for _, c := range deps.Providers.Active() {
 		p := deps.Providers.Get(c)
-		if p == nil {
-			continue
-		}
 		if c == contracts.ChannelInApp || c == contracts.ChannelEmail {
 			// in-app is the row itself and mail is internal.SendMail above, which
 			// Module already refuses to compose without. A second carrier for either

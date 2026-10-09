@@ -69,11 +69,23 @@ func (s *Senders) For(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Send
 //
 // Status is never taken from the caller: an address somebody typed is not a
 // domain that consents to being signed for, and a tenant that could post
-// "verified" needs no DNS. What the caller may change freely is the display
+// "verified" needs no DNS. Neither is Token: the challenge is minted here and
+// nowhere else, because a TXT record is public and a caller who could hand in a
+// value another tenant published would be handed that tenant's verification for
+// the price of a POST. What the caller may change freely is the display
 // name, the address and the reply-to of a sender that is already believed — the
 // proof is about the (domain, selector) pair it was made for, so the pair
 // changing takes the row back to pending with a fresh token, and the pair
 // staying the same keeps the verification it already earned.
+//
+// Revision is the third thing the caller may not invent but has to answer for:
+// a copy that names one (any entity read from this module does) is refused
+// ErrConflict when the row has moved since it was read, so an editor who changed
+// a reply-to cannot overwrite the display name somebody else saved while their
+// form was open. A value that names none — Revision 0, what a caller that read
+// nothing arrives with — is a statement of what this tenant's sender is rather
+// than an edit of a row the caller saw, and it writes; every write advances the
+// counter, Verify's included.
 func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sender) (*contracts.Sender, error) {
 	actor, err := s.administered(ctx, tx)
 	if err != nil {
@@ -81,12 +93,19 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 	}
 	in.Status = contracts.SenderPending // whatever the caller asked for is refused here
 	in.Key = nil
+	in.Token = "" // and the challenge is minted below, never handed in
 	existing, err := s.locked(tx)
 	if err != nil {
 		return nil, err
 	}
-	if existing != nil {
-		in.ID, in.TenantID = existing.ID, existing.TenantID
+	if existing == nil {
+		in.Revision = 1
+	} else {
+		if in.Revision != 0 && in.Revision != existing.Revision {
+			return nil, fmt.Errorf("%w: %s changed after this copy was read (it is at revision %d and this copy is %d): read it again or save without a revision",
+				crud.ErrConflict, existing.Header(), existing.Revision, in.Revision)
+		}
+		in.ID, in.TenantID, in.Revision = existing.ID, existing.TenantID, existing.Revision+1
 		if existing.Status == contracts.SenderVerified && existing.Domain == in.Domain && existing.Selector == in.Selector {
 			in.Status, in.Token, in.Proof, in.VerifiedAt = existing.Status, existing.Token, existing.Proof, existing.VerifiedAt
 		}
@@ -104,7 +123,7 @@ func (s *Senders) Put(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Sen
 			return nil, err
 		}
 	} else if err := crud.Update(ctx, tx, &in,
-		"domain", "selector", "from_name", "from_address", "reply_to", "status", "token", "proof", "verified_at", "updated_at"); err != nil {
+		"domain", "selector", "from_name", "from_address", "reply_to", "status", "token", "proof", "verified_at", "updated_at", "revision"); err != nil {
 		return nil, err
 	}
 	return &in, events.Publish(ctx, tx, contracts.EventSenderSet, contracts.SenderSet{
@@ -165,7 +184,11 @@ func (s *Senders) administered(ctx context.Context, tx db.Tx[db.Tenant]) (uuid.U
 //
 // The row is read under its own lock first: two people clicking "verify" at the
 // same moment must not both see pending, and the second must find the row
-// already believed rather than run a second check into a second proof.
+// already believed rather than run a second check into a second proof. The
+// challenge the check is answered against is the one this row minted
+// (Put mints it), so a TXT record somebody else published is nobody's proof
+// here, and the row's revision advances with the verification, which is what
+// makes a copy read before it stale rather than merely older.
 func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Sender, error) {
 	actor, err := s.administered(ctx, tx)
 	if err != nil {
@@ -189,8 +212,8 @@ func (s *Senders) Verify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 		return nil, fmt.Errorf("notification: the sender check returned no proof, and a verification nobody can explain is not one")
 	}
 	at := db.Now()
-	row.Status, row.Proof, row.VerifiedAt = contracts.SenderVerified, proof, &at
-	if err := crud.Update(ctx, tx, row, "status", "proof", "verified_at", "updated_at"); err != nil {
+	row.Status, row.Proof, row.VerifiedAt, row.Revision = contracts.SenderVerified, proof, &at, row.Revision+1
+	if err := crud.Update(ctx, tx, row, "status", "proof", "verified_at", "updated_at", "revision"); err != nil {
 		return nil, err
 	}
 	return row, events.Publish(ctx, tx, contracts.EventSenderVerified, contracts.Verified{
@@ -236,11 +259,11 @@ func (s *Senders) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 // Put reads the row it replaces under its own lock because what it writes is
 // decided by what it read: the status, token and proof of a sender on the same
 // (domain, selector) pair survive the write, and a read with no lock can be
-// answered from a moment that has already gone. A Verify that commits between
-// that read and this write is then undone — status back to pending, proof and
-// verified_at cleared — with no error to anybody and a sender_set row that says
-// "pending", which is the trail of a write nobody asked for. Verify and Delete
-// take the same lock on the same row, so the three commands cannot interleave.
+// answered from a moment that has already gone. The lock is what makes the
+// revision check above answerable — it is taken over the row the caller's copy
+// claims to be, so "this copy is older" is decided about the version that is
+// stored now and not about one that left after the read. Verify and Delete take
+// the same lock on the same row, so the three commands cannot interleave.
 func (s *Senders) locked(tx db.Tx[db.Tenant]) (*contracts.Sender, error) {
 	var row contracts.Sender
 	err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).

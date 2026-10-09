@@ -3,8 +3,9 @@
 `modules/notification` tells somebody something, in the application and
 optionally by mail. Rows are addressed to a person, so the two routes under
 `/api/v1/notification/notifications` are scoped by the principal rather than by
-a permission, and the manifest declares neither permissions nor a navigation
-entry; a subscription delivers the mail-marked rows through the composed
+a permission, and the manifest declares one permission — `sender:manage`, which
+guards the tenant's sender commands and no page — and no navigation entry; a
+subscription delivers the mail-marked rows through the composed
 `Mailer`. Without a mail host the rows are still recorded and the mails are
 logged, which is what a development machine wants.
 
@@ -33,7 +34,9 @@ the tenant's sending address, one row per tenant; neither is reached by a route 
 A provider in `Providers` is a channel this deployment sends, and a channel it sends has
 somebody listening: `subscriptions(deps)` composes one carrier subscription per provider
 (`internal.Carrier`), named by the same `contracts.RequestedEvent` table `Notify` asks that
-channel by, so the two halves come from one `Deps` value and cannot disagree. The carrier
+channel by, so the two halves come from one `Deps` value and one reading of it —
+`contracts.Providers.Active`, which counts a key wired to nil as the absent channel it
+names — and cannot disagree. The carrier
 answers into a ledger row this module writes — nil is `sent`, `contracts.ErrPermanent` is
 `failed` with its sentence, anything else rolls back and retries — and a provider wired for
 `in_app` or `email`, which the module carries itself, panics at composition.
@@ -164,12 +167,14 @@ What this module does not do, stated here rather than only in the branch that le
   `contracts.Provider` is the shape, but nothing in this repository implements it: a wired
   push carrier gets `Delivery.Target` empty, because device tokens, browser subscriptions
   and tenant endpoint URLs live outside this module.
-- **No expected revision.** No command in this module takes one, as none in the reference
-  module does; the three sender commands read the row under `FOR UPDATE`, which is where a
-  lost update would matter. `Put`'s lock is asserted by no test here, and none can be
-  written in this package: the window it closes lies between that command's own read and
-  its write, and an ask from another transaction can only reach the row after the write,
-  where the row is locked whichever way the read went.
+- **One expected revision, on one row.** `Put` refuses a copy that names a `Revision` the
+  row has gone past — `crud.ErrConflict`, nothing written, published or returned; migration
+  000031 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
+  value built rather than read) states what the tenant's sender is and writes. That guard
+  reaches the command and no further: `kit/entity`'s `Base` carries no version and
+  `rest` takes no `If-Match` (docs/adr/0016), so a screen over `Senders()` has to carry the
+  number in its form, and a token a caller hands in is discarded rather than checked: `Put`
+  mints the verification challenge and no command accepts one.
 - **Not measured as an evidence indicator.** `internal.Coverage` computes
   `delivery_ledger_coverage` as requested channels with a terminal row over all requested
   ones; the repository has no `tools/pillars.py` to report it through, so the ratio is a
@@ -197,7 +202,11 @@ their own list against another recipient's principal
 (`TestPreferenceCommandsRefuseAnotherRecipientsChoices`, `TestMineAnswersOnlyTheCallersOwnChoices`),
 every answer the sender commands can get from the composition's `GrantChecker`
 (`TestSenderCommandsFollowTheGrantCheckersAnswer`), and two first answers for one
-channel leaving one row (`TestTwoFirstAnswersForOneChannelLeaveOneRow`).
+channel leaving one row (`TestTwoFirstAnswersForOneChannelLeaveOneRow`), a stale copy of a
+sender against the identity a newer one committed
+(`TestAStaleSenderEditPreservesTheCommittedIdentity`), another tenant's copy of a published
+DNS challenge (`TestAnotherTenantCannotReuseAPublishedDomainProof`) and a carrier wired to
+nil (`TestAnAbsentProviderClosesItsChannelAsSuppressed`).
 `providers/gomail` runs against an in-process relay in its own package, including
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and

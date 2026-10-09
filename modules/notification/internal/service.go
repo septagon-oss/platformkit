@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -50,7 +49,10 @@ func WithSenders(s contracts.Senders) Option { return func(s2 *Service) { s2.sen
 
 // WithProviders wires the carriers beyond mail. A channel with no carrier is not
 // broken: Decide suppresses it with a reason and names the deployment as the one
-// that could change it, which is why the ledger still accounts for it.
+// that could change it, which is why the ledger still accounts for it. A key
+// wired to nil is that case rather than a third one: the deployment does not
+// send the channel, and no subscription is composed for it
+// (contracts.Providers.Active).
 func WithProviders(p contracts.Providers) Option {
 	return func(s *Service) {
 		for c, pr := range p {
@@ -151,12 +153,9 @@ func (s *Service) decide(ctx context.Context, tx db.Tx[db.Tenant], n contracts.N
 	// Mail is carried by this module's own worker (internal.SendMail), which
 	// module.go refuses to compose without a Mailer, so mail is always a channel
 	// this deployment sends; every other channel is here because somebody wired a
-	// provider for it.
-	available := []contracts.Channel{contracts.ChannelEmail}
-	for c := range s.providers {
-		available = append(available, c)
-	}
-	slices.Sort(available)
+	// provider for it. Active is the same question module.subscriptions asks, so a
+	// channel cannot be openable here and unstaffed there.
+	available := append([]contracts.Channel{contracts.ChannelEmail}, s.providers.Active()...)
 	return contracts.Decide(n.Wants, n.Class, n.Intent, prefs, quiet, sender, contracts.Scope{
 		Now: s.clock(), Available: available,
 		SenderOptional: s.senders == nil,

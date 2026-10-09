@@ -70,11 +70,19 @@ type Sender struct {
 	// command that saved this row. A caller may not post it: a tenant that
 	// could declare itself verified is a tenant that needs no DNS.
 	Status string `json:"status" gorm:"type:text;not null;default:'pending'" doc:"Whether this sender is believed" enum:"pending,verified" readOnly:"true"`
+	// Revision counts the writes this row has had, and it is what makes an edit
+	// answerable: a copy that names one is refused (crud.ErrConflict) when the row
+	// has moved since the copy was read, so two editors of one sender cannot
+	// silently overwrite each other. A caller that read nothing names none —
+	// Revision 0 is "save this as the tenant's sender whichever way the row is".
+	Revision int64 `json:"revision" gorm:"not null;default:1" readOnly:"true" doc:"How many times this row has been written" example:"1"`
 	// Token is the random value the domain must publish, at
 	// _platformkit-verify.<domain>, for the check to match. It is minted when
 	// the row is saved and changes when the domain does, and it is what makes
 	// "verify this domain" an instruction a customer can carry to their DNS
-	// rather than a favour the installation does them.
+	// rather than a favour the installation does them. The command mints it and a
+	// caller does not supply it: a TXT record is public, so a value somebody pasted
+	// in proves only that somebody read one.
 	Token string `json:"token,omitempty" gorm:"type:text;not null;default:''" maxLength:"64" readOnly:"true" doc:"The value to publish for the domain to be verified"`
 	// Proof is what the check saw, in one line, so an audit question about a
 	// sender verified two years ago has an answer that is not a guess.
@@ -201,11 +209,19 @@ type DKIMKeys interface {
 // asked twice on purpose — the second time inside the authoritative transaction,
 // where a request that was authorized a moment ago cannot answer for it.
 type SenderAdmin interface {
+	// The verification challenge is minted by Put and never taken from the
+	// caller, because a DNS TXT record is public and a value copied out of
+	// another tenant's is not this tenant's consent (Put).
+	//
 	// Put saves the tenant's sender, creating it or replacing what is there.
 	// Status is never taken from the caller: a row whose domain or selector
 	// differs from the verified one goes back to pending, because the proof is
 	// about the pair it was made for, and a row that changes only the display
-	// name keeps being believed. It publishes notification.sender_set.
+	// name keeps being believed. A copy that names a Revision the row has gone
+	// past is refused ErrConflict and changes nothing, so an edit made from an
+	// old read cannot overwrite a committed one; a copy that names none writes,
+	// because it is a statement rather than an edit. It publishes
+	// notification.sender_set.
 	Put(ctx context.Context, tx db.Tx[db.Tenant], s Sender) (*Sender, error)
 
 	// Verify consults the composition's SenderVerifier and, when it is
