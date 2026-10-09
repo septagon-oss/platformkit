@@ -109,6 +109,15 @@ type Deps struct {
 	// process, each answering for its own host.
 	OIDC OIDC
 
+	// SAMLProviders answers "which SAML 2.0 identity provider does the tenant this
+	// request resolved to sign in against?", per request, from the transaction the
+	// Host header chose. Unlike OIDC there is no installation-level default to fall
+	// back to — no `kit/config.SAML` block exists, because SAML ships tenant-only
+	// and a single-IdP deployment configures its one tenant's row — so this port
+	// being nil is the whole of "nobody here signs in with SAML", and the three SAML
+	// legs are then not mounted at all.
+	SAMLProviders contracts.SAMLProviders
+
 	// OIDCProviders answers "which provider does the tenant this request
 	// resolved to sign in against?", per request, from the transaction the Host
 	// header chose. A composition wires it over the tenant module's OIDCOf; a
@@ -292,6 +301,15 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			if deps.OIDC.Issuer != "" || deps.OIDCProviders != nil {
 				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
 					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
+			}
+			// The gate is the same shape as OIDC's and has one clause less: there is
+			// no installation-level SAML default to ask about, so "can any tenant here
+			// reach an IdP" is answered by the port alone. A composition with no
+			// tenant module — and so no provider to resolve — mounts no /saml/ route,
+			// rather than three doors that would answer 404 for everybody.
+			if deps.SAMLProviders != nil {
+				internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
 			}
 		},
 	}

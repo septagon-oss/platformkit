@@ -334,7 +334,7 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		if user, err = users.ConfirmAddress(ctx, tx, user.ID, email); err != nil {
 			return nil, refusedAtTheDoor(err)
 		}
-		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r))
+		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r), contracts.ViaOIDC)
 		if err != nil {
 			return nil, refusedAtTheDoor(err)
 		}

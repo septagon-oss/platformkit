@@ -447,8 +447,12 @@ func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password s
 	return f.open(ctx, tx, user, from)
 }
 
-// Open mirrors internal.Service.Open.
-func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+// Open mirrors internal.Service.Open. It takes the sign-in method and does not
+// record it: this double publishes event names and no payloads, so the field that
+// carries the method in the real trail has nothing to be wrong about here. What it
+// does mirror is the door in front of the session — a user who is not active is
+// refused, whichever provider verified them.
+func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, _ contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := f.Users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err

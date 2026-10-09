@@ -109,10 +109,12 @@ type LoggedIn struct {
 	UserID uuid.UUID `json:"userId"`
 	// SessionRef(id), never the id: the id is the cookie credential (review 2026-09-29).
 	SessionRef string `json:"sessionRef"`
-	// Method names how the door was opened: "password", "oidc", or "passkey".
-	// It is the field an owner reads when they want to know whether a sign-in
-	// came through the tenant's provider, from a password, or from a device the
-	// person owns and nothing else.
+	// Method says how the door was opened: a contracts.SignInMethod — "password",
+	// "oidc" or "saml" — for the three that arrive through Service.Open, "passkey"
+	// for a session this module opened from a device assertion, the factor's kind
+	// ("totp" or "recovery") for a sign-in a second factor finished, and "reset" for
+	// one a reset link finished. It is the only field in this payload that says how
+	// somebody got in, which is the first thing anybody reads after an incident.
 	Method string    `json:"method"`
 	IP     string    `json:"ip,omitempty"`
 	At     time.Time `json:"at"`

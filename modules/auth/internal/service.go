@@ -193,7 +193,7 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 // and reading a permission nobody wrote would be inventing it. The declaration
 // the brief's "where the tenant allows" asks for is named as unbuilt in the
 // module's README; until somebody writes it, the account decides at both doors.
-func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, via contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := s.users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err
@@ -214,7 +214,7 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 		s.markFirstFactorProved(ctx, user.ID)
 		return nil, nil, contracts.ErrFactorRequired
 	}
-	return s.open(ctx, tx, user, from, "oidc")
+	return s.open(ctx, tx, user, from, string(via))
 }
 
 // open writes the session row and its event in the caller's transaction.
@@ -405,6 +405,16 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 			"SELECT id FROM recovery_codes WHERE used_at IS NOT NULL LIMIT ?)", purgeBatch)
 	if codes.Error != nil {
 		return 0, fmt.Errorf("auth: purge the spent recovery codes: %w", codes.Error)
+	}
+	// A spent assertion id protects nothing past the moment the library would refuse
+	// the assertion anyway — NotOnOrAfter plus its clock skew, which is what the
+	// claim wrote into expires_at. Deleting by expiry, bounded by the same batch, with
+	// the index migrations/000047 put on that column for exactly this statement.
+	replays := tx.DB().Exec(
+		"DELETE FROM saml_assertion_replays WHERE assertion_id IN ("+
+			"SELECT assertion_id FROM saml_assertion_replays WHERE expires_at < now() LIMIT ?)", purgeBatch)
+	if replays.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent assertions: %w", replays.Error)
 	}
 	// A key that has been dead for a month is no longer a fact anybody reads: the
 	// revocation is on the trail with its name, its scope and its last use, which
