@@ -70,24 +70,28 @@ func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string)
 // of those is a failure the outbox should retry four times and dead-letter, and
 // none of them is anything a stranger gets to measure.
 //
-// Every path leaves one record too. The neutral answer at the route is one
-// request either way; the public delivery door then answers that request from the
-// record its own call caused, which it can only do if the branch that sent no link
-// still handed one message to the transport — see noLink. The person who mistyped
-// their address is still told nothing by the route; they are now also told nothing
-// by their mailbox beyond "no link was sent", which is the same fact the route
-// already leaves them to work out.
+// The no-account branches send no mail and leave no record. The public delivery door
+// is pinned to what one link is the whole of — a known and an unknown forgotten-
+// password request cause one message between them (review 1's case), so an unknown
+// address causes none, and the door that answered "that mail was refused" about one
+// caller and "that call caused no mail at all" about the other would be saying which
+// address has an account in the shape of its silence. This flow therefore mails to
+// accounts it found and nothing otherwise, and the door keeps its refusals to itself
+// (internal/mailDeliveryKinds, contracts.MailReport). The record of a refused link is
+// still written for the operator, which is what the ledger is for; what is withheld
+// is the public read of it, and the neutral acknowledgment is the whole of what a
+// stranger is told either way.
 func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	user, err := s.users.ByEmail(ctx, tx, email)
 	switch {
 	case errors.Is(err, crud.ErrNotFound):
-		return s.noResetLink(ctx, tx, email)
+		return nil
 	case err != nil:
 		return err
 	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
 		// Recovery cannot bypass a required approval or restore a deactivated account.
-		// The message is the one an address nobody has gets, for the reason above.
-		return s.noResetLink(ctx, tx, email)
+		// The address is answered exactly as an address nobody has is.
+		return nil
 	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)
 }

@@ -42,19 +42,37 @@ func (l *FakeMailLedger) RecordMail(_ context.Context, _ db.Tx[db.Tenant], r con
 
 // MailOutcome mirrors internal.Service.MailOutcome: the newest record for one
 // request id, and known=false for a request that left none — including the empty
-// id, which is refused rather than answered with somebody else's row.
-func (l *FakeMailLedger) MailOutcome(_ context.Context, _ db.Tx[db.Tenant], requestID string) (string, bool, error) {
+// id, which is refused rather than answered with somebody else's row. The kinds it
+// is handed are the kinds it may answer from; with none it answers about every kind.
+func (l *FakeMailLedger) MailOutcome(_ context.Context, _ db.Tx[db.Tenant], requestID string, kinds ...string) (string, bool, error) {
 	if requestID == "" {
 		return "", false, contracts.ErrMailRequest
 	}
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for i := len(l.rows) - 1; i >= 0; i-- {
-		if row := l.rows[i]; row.RequestID == requestID {
-			return row.Outcome, true, nil
+		row := l.rows[i]
+		if row.RequestID != requestID || !among(kinds, row.Kind) {
+			continue
 		}
+		return row.Outcome, true, nil
 	}
 	return "", false, nil
+}
+
+// among is the kind filter with the same empty-means-everything rule as the SQL
+// read, so a fake that answered a narrowed read from a kind the caller never named
+// would fail the conformance case rather than pass a door that trusts it.
+func among(kinds []string, kind string) bool {
+	if len(kinds) == 0 {
+		return true
+	}
+	for _, k := range kinds {
+		if k == kind {
+			return true
+		}
+	}
+	return false
 }
 
 // Rows is every record, in the order they were appended — what a consumer's own

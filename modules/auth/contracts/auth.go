@@ -272,19 +272,21 @@ type (
 // shared ledger: a CHECK or a constant in modules/notification listing them would
 // make the next module that mails a schema change.
 //
-// The two `*_no_link` kinds are the messages this module sends when a request for
-// a link could not be answered with one — nobody has the address, the account
-// cannot be sent a link, the link this call found is still outstanding. They are
-// separate kinds rather than the link's own kind because a record of a mail that
-// is not a link must not read as a record of a link: an operator counting reset
-// links would count messages that carry no credential. And they are mailed and
-// recorded rather than skipped, because the public delivery door answers a caller
-// only from the record its own call caused (contracts.MailReport), so a call that
-// handed nothing to the transport could only be answered from somebody else's row.
+// The `*_no_link` kind is the message this module sends when a request for a link
+// could not be answered with one — nobody has the address, the account cannot be
+// sent a link, the link this call found is still outstanding. It is a separate kind
+// rather than the link's own kind because a record of a mail that is not a link must
+// not read as a record of a link: an operator counting reset links would count
+// messages that carry no credential. And it is mailed and recorded rather than
+// skipped, because the public delivery door answers a caller only from the record its
+// own call caused (contracts.MailReport), so a call that handed nothing to the
+// transport could only be answered from somebody else's row — which is why only the
+// flow that pays for a message per call has its refusals read back to the person
+// standing at it, and the forgotten-password route, pinned to one link and nothing
+// else between a known and an unknown request, does not.
 const (
 	MailSetPassword        = "auth.set_password"
 	MailVerification       = "auth.verification"
-	MailResetNoLink        = "auth.reset_no_link"
 	MailVerificationNoLink = "auth.verification_no_link"
 )
 
