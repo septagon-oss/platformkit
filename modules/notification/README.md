@@ -63,16 +63,12 @@ means. Ask the two tables two questions.
   people owes that answer. The two reads are used by one public door in
   `modules/auth`; `Coverage` ignores the table.
 * **One read, by the id of the call that asked.** `MailOutcome` answers one request
-  id, newest-first, and nothing else: no listing, no range over dates, no
-  per-address history, and no method that answers "what is the transport doing" out
-  of the tenant's newest row. That last one existed until review 3 and is gone
-  because it could not be bounded: the public door in `modules/auth` answered a
-  caller whose own call had left no record with whatever refusal the tenant held
-  most recently, and an attacker who can register one mailbox its relay rejects —
-  sign-up is public — can refresh that refusal in front of every probe, which makes
-  the tenant's newest outcome an oracle for "does this address have an account".
-  A door that listed a tenant's recorded mails would be the same list by other
-  means: it would be a list of who asked for an account.
+  id, newest-first, and nothing else: no listing, no range, no per-address
+  history, and no method answering "what is the transport doing" from the tenant's
+  newest row. That last one existed until review 3 and is gone because it could not
+  be bounded: the door answered a caller whose own call left no record with whatever
+  refusal the tenant held most recently, and sign-up is public, so an attacker can
+  register a mailbox its relay rejects and refresh that refusal before every probe.
 
 ## Authorization
 
@@ -86,7 +82,7 @@ The `SendMail` event subscription (`modules/notification/internal/mail.go`) is r
 
 None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
-`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read two ways — by the request id of the caller's own call, and as the newest record of the caller's own tenant — both of them bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
+`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read one way — by the request id of the caller's own call — bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
 
 ### Duties the module enforces itself
 
