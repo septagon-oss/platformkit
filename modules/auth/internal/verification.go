@@ -31,6 +31,20 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
 		},
 	}, {
+		Module: "auth", Name: contracts.EventNoLinkRequested,
+		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], event events.Event) error {
+			var asked contracts.NoLinkRequested
+			if err := json.Unmarshal(event.Payload, &asked); err != nil {
+				return fmt.Errorf("auth: read no-link request: %w", err)
+			}
+			ctx = WithServed(ctx, asked.Served)
+			ctx = WithOrigin(ctx, event)
+			// Nobody is looked up here, because the sign-up route already decided what
+			// this address is: an account was already here, and the one message this
+			// call is answered with is the sentence that says no link was sent.
+			return svc.noVerificationLink(ctx, tx, asked.Email)
+		},
+	}, {
 		Module: "auth", Name: contracts.EventVerificationRequested,
 		Handler: func(ctx context.Context, tx db.Tx[db.Tenant], event events.Event) error {
 			var asked contracts.VerificationRequested
@@ -76,13 +90,24 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	// or send a bearer to the address from a stale account snapshot.
 	current, err := s.users.Get(ctx, tx, id)
 	if errors.Is(err, crud.ErrNotFound) {
-		return nil
+		// The account went away between the request and this send. The person who
+		// asked is still owed the one message their call causes on every branch of
+		// this flow, and this is the branch with least to say about it.
+		return s.noVerificationLink(ctx, tx, email)
 	}
 	if err != nil {
 		return err
 	}
 	if current.Status != user.StatusUnverified || current.PasswordHash == "" || current.Email != contracts.EmailKey(email) {
-		return nil
+		// An account that cannot be sent a confirmation link — already verified, no
+		// password to confirm it against, or an address that has since moved — is
+		// answered with the same message an address nobody has gets, and it is
+		// answered to the address that asked rather than to the one on the account.
+		// The door behind this line reads its answer out of this row: whichever
+		// branch a call takes, one message of its own is what it is answered from
+		// (no_link.go), and a branch that sent nothing would leave that caller to be
+		// answered out of somebody else's record.
+		return s.noVerificationLink(ctx, tx, email)
 	}
 	if s.mail.Mailer == nil {
 		// Nothing to send it through, which is the deployment's fault and the
@@ -99,8 +124,16 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	var recent bool
 	err = tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM verification_tokens WHERE user_id = ? AND email = ? AND created_at > clock_timestamp() - ?::interval)",
 		id, current.Email, verificationInterval).Row().Scan(&recent)
-	if err != nil || recent {
+	if err != nil {
 		return err
+	}
+	if recent {
+		// A link this person was sent a moment ago still stands, so no second one
+		// leaves — and this call still hands one message to the transport, for the
+		// reason the branch above gives. The sentence it carries is the one the flow
+		// says on every branch: about this request, no link was sent, which is true
+		// even while an earlier one is on its way.
+		return s.noVerificationLink(ctx, tx, email)
 	}
 	base, err := s.baseURL(ctx, tx)
 	if err != nil {

@@ -60,7 +60,7 @@ means. Ask the two tables two questions.
   schema deletes or updates them, and the table holds a recipient address, so
   "what happens to these rows when a person is forgotten" is unanswered here —
   the platform has no cross-table erasure, and the product that promises to forget
-  people owes that answer. The two reads are used by one public door in
+  people owes that answer. Its one read is used by one public door in
   `modules/auth`; `Coverage` ignores the table.
 * **One read, by the id of the call that asked.** `MailOutcome` answers one request
   id, newest-first, and nothing else: no listing, no range, no per-address
@@ -69,6 +69,14 @@ means. Ask the two tables two questions.
   be bounded: the door answered a caller whose own call left no record with whatever
   refusal the tenant held most recently, and sign-up is public, so an attacker can
   register a mailbox its relay rejects and refresh that refusal before every probe.
+* **The read takes the kinds to answer among, and holds no list of them.** `MailOutcome(id, kinds...)`
+  answers as if no row of any other kind existed, and answers about every mail of
+  that call when given none; a kind the caller does not name is answered exactly as
+  a call that mailed nothing is. Which kinds a caller names is the caller's business
+  — modules/notification has no list of mail kinds and a CHECK over one module's
+  names would be a schema change every time a module mailed something new — and the
+  reason a caller narrows the read at all is privacy rather than convenience: see
+  `contracts.MailReport` and `modules/auth/internal/email_registration.go`.
 
 ## Authorization
 

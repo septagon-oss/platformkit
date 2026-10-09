@@ -23,7 +23,7 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		Description: "Accepts a password, matching confirmation and terms consent. New accounts await mailbox verification; existing accounts remain unchanged. Check your email after the neutral acknowledgment.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusAccepted,
 		Errors:     []int{http.StatusForbidden, http.StatusTooManyRequests, http.StatusServiceUnavailable},
-		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventRegistrationUnverified}},
+		Extensions: map[string]any{httpx.EventsExtension: []string{user.EventRegistrationUnverified, contracts.EventNoLinkRequested}},
 	}, httpx.Public(), func(ctx context.Context, in *passwordRegistrationInput) (*doneOutput, error) {
 		if err := emailRequest(ctx, svc); err != nil {
 			return nil, err
@@ -41,6 +41,25 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		})
 		if err != nil && !errors.Is(err, user.ErrRegistrationExists) {
 			return nil, rest.Fault(err)
+		}
+		if errors.Is(err, user.ErrRegistrationExists) {
+			// The account was already here, so no link follows this call and the
+			// acknowledgment says the same thing it says about a call that made an
+			// account. What this call owes the delivery door is the one thing a call
+			// that named an address with somebody behind it gets: a message of its own,
+			// carried by an event of its own, so the door answers the two callers from
+			// their own rows and the sign-up form stays as neutral as its description
+			// says (no_link.go, contracts.MailReport). The send is not done here: a mail
+			// handed to a transport inside a transaction that can still roll it back is
+			// a record that would lie, and verificationSignup pins that a sign-up sends
+			// nothing inside its request.
+			askedAt, _ := httpx.RequestFrom(ctx)
+			err = events.Publish(ctx, tx, contracts.EventNoLinkRequested, contracts.NoLinkRequested{
+				Email: contracts.EmailKey(in.Body.Email), At: db.Now(), Served: httpx.ServedAuthority(askedAt),
+			})
+			if err != nil {
+				return nil, rest.Fault(err)
+			}
 		}
 		return done(), nil
 	})
@@ -119,10 +138,23 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// and since sign-up is public, an attacker can register a mailbox its relay
 	// rejects, refill that battery before each probe, and classify every address
 	// that has no account as one that does. The door therefore answers about its
-	// caller's record or says nothing — which is only a fair rule because every
-	// branch of a call that names an address now hands one message to the transport
-	// and records it (internal/no_link.go), so a caller is never left without a
-	// record of its own for the answer to come from.
+	// caller's own record or says nothing — and even that rule holds only of a flow
+	// that leaves a record behind on every branch, which is the decision below.
+	//
+	// Which records it may answer about is the second half of that rule, and it is
+	// decided by the flows rather than by the door: the kinds named below are the
+	// mails of the sign-up and resend routes, and every branch of those two routes
+	// hands exactly one message to the transport — the link when there is an account
+	// awaiting it, the sentence that says no link was sent when there is not
+	// (internal/no_link.go). A transport that refuses everybody therefore refuses both
+	// callers alike, which is the only case this door is allowed to speak of. The
+	// forgotten-password route is deliberately not among these kinds: review 1 pinned
+	// that one link is the only mail a known and an unknown forgot request cause
+	// between them, so an unknown address causes no mail at all, and "that mail was
+	// refused" beside "that call caused no mail" is the account written twice. The
+	// door is silent about the reset flow's refusals — the row is still written, and
+	// an operator still reads it — and a person standing at the forgot form is
+	// answered what that form's description already says.
 	//
 	// The residue, stated because it cannot be designed away: a transport that
 	// refuses one mailbox and takes another tells a fact about the address it
@@ -138,7 +170,7 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
 		Summary:     "Ask whether the mail this call asked for was refused",
-		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused that mail, pending otherwise — and names no address, no kind and no reason. Only this call's own delivery record is read: an id whose mail went out, an id that left no record and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record or an account.",
+		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused that mail, pending otherwise — and names no address, no kind and no reason. Only this call's own delivery record is read, and only of the mails a call like this one always causes: an id whose mail went out, an id that left no record, an id whose flow sends no mail to an address nobody has, and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record or an account.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusOK,
 		Errors: []int{http.StatusForbidden, http.StatusTooManyRequests},
 	}, httpx.Public(), func(ctx context.Context, in *mailDeliveryInput) (*mailDeliveryOutput, error) {
@@ -160,17 +192,18 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if err != nil {
 			return nil, err
 		}
-		outcome, known, err := svc.mail.Mails.MailOutcome(ctx, tx, in.Body.RequestID)
+		outcome, known, err := svc.mail.Mails.MailOutcome(ctx, tx, in.Body.RequestID, mailDeliveryKinds...)
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
-		// The caller's own record, and nothing else: including when it says `sent`,
-		// which no aggregate gets to overrule, and including the record of the
-		// message that says no link was sent (internal/no_link.go), which is what a
-		// call naming an address with nobody behind it leaves behind. known=false
-		// therefore means a call this door has nothing to say about — an id nobody
-		// mailed for, an id from another tenant, an id from before the record — and
-		// it is answered with the one word every such caller gets.
+		// The caller's own record, among the kinds this door may speak of, and
+		// nothing else: including when it says `sent`, which no aggregate gets to
+		// overrule, and including the record of the message that says no link was sent
+		// (internal/no_link.go), which is what a call naming an address with nobody
+		// behind it leaves behind. known=false therefore means a call this door has
+		// nothing to say about — an id nobody mailed for, an id whose mail belongs to a
+		// flow this door is silent about, an id from another tenant — and it is answered
+		// with the one word every such caller gets.
 		out.Body.State = notificationcontracts.MailReport(outcome, known)
 		return out, nil
 	})
@@ -191,6 +224,13 @@ func emailRequest(ctx context.Context, svc *Service) error {
 	}
 	return nil
 }
+
+// mailDeliveryKinds are the mails this door answers about: the two the sign-up and
+// resend routes cause, one of which every branch of those routes hands to the
+// transport. A kind absent from this list is a flow whose mails do not follow their
+// call either way, and whose refusals are therefore facts about the address rather
+// than about the transport — see the route above and contracts.MailReport.
+var mailDeliveryKinds = []string{contracts.MailVerification, contracts.MailVerificationNoLink}
 
 type resendVerificationInput struct {
 	Body struct {
@@ -221,10 +261,10 @@ type mailDeliveryOutput struct {
 	// recipient, no kind, no reason, no timestamp and no count — and no `sent`,
 	// which is contracts.MailReport's refusal and the reason the reason there is
 	// no 404: every answer has the same shape, so the door cannot be walked for
-	// the addresses that have a record. A `failed` says a transport refused a
-	// mail — this call's, or, when this call left no record of its own, the newest
-	// one this tenant holds, which is the same answer for every caller at that
-	// own.
+	// the addresses that have a record. A `failed` says a transport refused a mail
+	// this call itself caused, of the kinds above; every other case — the mail that
+	// went, the call that left no record, a call of a flow this door keeps silent
+	// about — is the one word every such caller is answered with.
 	Body struct {
 		State string `json:"state" enum:"pending,failed" doc:"Whether the mail that call asked for was refused"`
 	}

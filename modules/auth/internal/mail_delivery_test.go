@@ -353,10 +353,16 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	// The one answer this door does give: a transport refused the mail this call
 	// asked for, which is the fact the person can act on and the acknowledgment
 	// cannot carry. It costs a reason in the row and says none of it out loud.
+	//
+	// The row is of the kind this door answers about — a mail of the sign-up and
+	// resend flow — because a door that answered refusals of every flow alike is a
+	// door that answered "refused" about the address that has an account and
+	// "nothing to say" about the one that does not (see internal/mailDeliveryKinds).
+	// The case below asks about the other kind and pins what the door now says there.
 	const refusedID = "44444444-4444-4444-8444-444444444444"
 	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		return mailLedger().RecordMail(ctx, tx, notification.MailRecord{
-			Kind: contracts.MailSetPassword, Recipient: "refused@example.com",
+			Kind: contracts.MailVerification, Recipient: "refused@example.com",
 			Outcome: notification.MailFailed, Reason: "the smtp server refused the message",
 			RequestID: refusedID,
 		})
@@ -366,6 +372,28 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	}
 	if code, state := ask(refusedID); code != http.StatusOK || state != notification.MailFailed {
 		t.Errorf("the request whose mail was refused=%d %q, want 200 failed", code, state)
+	}
+	// And the flow whose mails do not follow their call either way is answered with
+	// the one word every such caller gets, refusal recorded or not: a forgotten-
+	// password request that found an account leaves a failed row of this kind and a
+	// request that found nobody leaves no row at all, so the door that read that row
+	// back would say which address has an account, one call after the neutral
+	// acknowledgment took the trouble not to.
+	const refusedResetID = "66666666-6666-4666-8666-666666666666"
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return mailLedger().RecordMail(ctx, tx, notification.MailRecord{
+			Kind: contracts.MailSetPassword, Recipient: "forgotten@example.com",
+			Outcome: notification.MailFailed, Reason: "the smtp server refused the message",
+			RequestID: refusedResetID,
+		})
+	})
+	if err != nil {
+		t.Fatalf("record a refused set-password mail: %v", err)
+	}
+	if code, state := ask(refusedResetID); code != http.StatusOK || state != notification.MailStatePending {
+		t.Errorf("the request whose set-password mail was refused=%d %q, want 200 pending:"+
+			" the reset flow mails only the addresses it found accounts at, so its refusals"+
+			" say who has one", code, state)
 	}
 	// A page on another site asking is the one caller this door refuses outright.
 	// A caller with no Sec-Fetch-Site at all is not refused: kit/httpx/csrf.go
@@ -391,12 +419,13 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record in globex: %v", err)
 	}
-	// The answer is the same word an id nobody ever minted gets — which, at this
-	// point in the tenant's own record, is `failed`, because the newest mail this
-	// tenant sent was refused. It is not `pending`, and that is the cure rather
-	// than the leak: a call that left no record is answered from what the
-	// transport is doing to this tenant's mail, never from the absence in front of
-	// it, because the absence is the shape of "nobody has this address" here and
+	// The answer is the same word an id nobody ever minted gets — `pending`, which
+	// is also the word for a mail that went, for a call that left no row, for a row
+	// of a flow this door keeps silent about and for a row in another tenant. That
+	// sameness is the cure: a call is answered from its own record among the kinds
+	// the door may speak of, and never from what the transport is doing to this
+	// tenant's mail in general, because "what the transport is doing" beside "this
+	// call caused no mail at all" is the shape of "nobody has this address" here and
 	// of "not in this tenant" across tenants alike (contracts.MailReport).
 	elsewhereAnswer, foreignState := ask(elsewhere)
 	mintedAnswer, mintedState := ask("55555555-5555-4555-8555-555555555555")

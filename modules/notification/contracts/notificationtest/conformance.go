@@ -299,8 +299,9 @@ func (f MailFixture) refuse(t *testing.T, r contracts.MailRecord, want error) {
 	}
 }
 
-// answer is what the ledger says about one request id.
-func (f MailFixture) answer(t *testing.T, request string) (string, bool) {
+// answer is what the ledger says about one request id, among the kinds it is given
+// and among every kind when it is given none.
+func (f MailFixture) answer(t *testing.T, request string, kinds ...string) (string, bool) {
 	t.Helper()
 	var (
 		outcome string
@@ -308,7 +309,7 @@ func (f MailFixture) answer(t *testing.T, request string) (string, bool) {
 	)
 	err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
-		outcome, known, err = f.Ledger.MailOutcome(ctx, tx, request)
+		outcome, known, err = f.Ledger.MailOutcome(ctx, tx, request, kinds...)
 		return err
 	})
 	if err != nil {
@@ -385,6 +386,34 @@ func mailCases() map[string]func(*testing.T, MailFixture) {
 				if got, known := f.answer(t, request); got != contracts.MailSent || !known {
 					t.Errorf("kind %q: answered %q known=%t, want sent true", kind, got, known)
 				}
+			}
+		},
+
+		"the read answers among the kinds it was given": func(t *testing.T, f MailFixture) {
+			// One call, two mails: a door that speaks about one of them has to be
+			// able to ask about it alone, and a read that answered it from whichever
+			// row happened to be newest would answer about a mail the caller cannot
+			// name (contracts.MailReport). The two rows share a request id on purpose:
+			// it is the shape of one call that caused two sends somewhere else.
+			request := mailRequest()
+			f.record(t, sentRecord("auth.verification", request))
+			f.record(t, contracts.MailRecord{
+				Kind: "auth.set_password", Recipient: AdaMail, Outcome: contracts.MailFailed,
+				Reason: "the relay refused", RequestID: request,
+			})
+			if got, known := f.answer(t, request); got != contracts.MailFailed || !known {
+				t.Errorf("asked among every kind: %q known=%t, want the newest row, failed true", got, known)
+			}
+			if got, known := f.answer(t, request, "auth.verification"); got != contracts.MailSent || !known {
+				t.Errorf("asked among auth.verification: %q known=%t, want sent true across the refused row", got, known)
+			}
+			if got, known := f.answer(t, request, "auth.set_password"); got != contracts.MailFailed || !known {
+				t.Errorf("asked among auth.set_password: %q known=%t, want failed true", got, known)
+			}
+			// A kind the caller does not name is a row this read cannot see, and it
+			// is answered exactly as a call that mailed nothing at all is.
+			if got, known := f.answer(t, request, "auth.something_else"); got != "" || known {
+				t.Errorf("asked among a kind with no row: %q known=%t, want the empty answer", got, known)
 			}
 		},
 

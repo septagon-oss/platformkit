@@ -49,14 +49,20 @@ func (s *Service) RecordMail(_ context.Context, tx db.Tx[db.Tenant], r contracts
 // This lookup is by request id alone. An empty requestID is refused rather than
 // answered with somebody else's row. RLS is what makes another tenant's id
 // answer known=false rather than refuse differently.
-func (s *Service) MailOutcome(_ context.Context, tx db.Tx[db.Tenant], requestID string) (string, bool, error) {
+//
+// The kinds it is handed narrow the rows it may answer from, and nothing else:
+// they are bound as parameters, the order and the LIMIT are the same, and a kind
+// the caller does not name is a kind this read cannot see. Answering "no row of
+// those kinds" and "no row at all" with the same known=false is the whole point —
+// a caller that asks among some kinds is a caller that has nothing to say about
+// the others, and it must not be able to tell them apart (contracts.MailReport).
+func (s *Service) MailOutcome(_ context.Context, tx db.Tx[db.Tenant], requestID string, kinds ...string) (string, bool, error) {
 	if requestID == "" {
 		return "", false, contracts.ErrMailRequest
 	}
+	query, args := mailOutcomeQuery(requestID, kinds)
 	var outcome string
-	err := tx.DB().Raw(
-		`SELECT outcome FROM direct_mail_deliveries WHERE request_id = ? ORDER BY seq DESC LIMIT 1`,
-		requestID).Row().Scan(&outcome)
+	err := tx.DB().Raw(query, args...).Row().Scan(&outcome)
 	switch {
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
 		return "", false, nil
@@ -64,6 +70,20 @@ func (s *Service) MailOutcome(_ context.Context, tx db.Tx[db.Tenant], requestID 
 		return "", false, fmt.Errorf("notification: read the mail delivery of request %s: %w", requestID, err)
 	}
 	return outcome, true, nil
+}
+
+// mailOutcomeQuery is the read with its parameters in one list: the request id and,
+// when the caller named kinds, the list as one `IN ?` argument the way the rest of
+// this codebase asks for a set (kit/events/relay.go, modules/file). No id, address
+// or kind is ever written into the SQL.
+func mailOutcomeQuery(requestID string, kinds []string) (string, []any) {
+	query := "SELECT outcome FROM direct_mail_deliveries WHERE request_id = ?"
+	args := []any{requestID}
+	if len(kinds) > 0 {
+		query += " AND kind IN ?"
+		args = append(args, kinds)
+	}
+	return query + " ORDER BY seq DESC LIMIT 1", args
 }
 
 // nullIfEmpty stores an absent trace attribute as NULL, the way
