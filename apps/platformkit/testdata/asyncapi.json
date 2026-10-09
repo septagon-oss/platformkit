@@ -2814,6 +2814,99 @@
       "summary": "Every tenant's delivery of tenant.renamed.",
       "title": "tenant.renamed"
     },
+    "tenant.saml_cleared": {
+      "address": "platformkit.*.tenant.saml_cleared",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_cleared; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "tenant.saml_cleared": {
+          "contentType": "application/json",
+          "name": "tenant.saml_cleared",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "entityId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "tenant — tenant.saml_cleared",
+          "title": "tenant.saml_cleared"
+        }
+      },
+      "summary": "Every tenant's delivery of tenant.saml_cleared.",
+      "title": "tenant.saml_cleared"
+    },
+    "tenant.saml_set": {
+      "address": "platformkit.*.tenant.saml_set",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "tenant.saml_set": {
+          "contentType": "application/json",
+          "name": "tenant.saml_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "emailAttribute": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "metadataUrl": {
+                "type": "string"
+              },
+              "registration": {
+                "type": "string"
+              },
+              "replaced": {
+                "type": "boolean"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "wasEntityId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "entityId",
+              "emailAttribute",
+              "registration",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "tenant — tenant.saml_set",
+          "title": "tenant.saml_set"
+        }
+      },
+      "summary": "Every tenant's delivery of tenant.saml_set.",
+      "title": "tenant.saml_set"
+    },
     "tenant.suspended": {
       "address": "platformkit.*.tenant.suspended",
       "description": "Published at platformkit.{tenantId}.tenant.suspended; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4370,6 +4463,40 @@
         }
       ],
       "summary": "The tenant module publishes tenant.renamed.",
+      "tags": [
+        {
+          "name": "tenant"
+        }
+      ]
+    },
+    "tenant.saml_cleared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/tenant.saml_cleared"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/tenant.saml_cleared/messages/tenant.saml_cleared"
+        }
+      ],
+      "summary": "The tenant module publishes tenant.saml_cleared.",
+      "tags": [
+        {
+          "name": "tenant"
+        }
+      ]
+    },
+    "tenant.saml_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/tenant.saml_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/tenant.saml_set/messages/tenant.saml_set"
+        }
+      ],
+      "summary": "The tenant module publishes tenant.saml_set.",
       "tags": [
         {
           "name": "tenant"

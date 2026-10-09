@@ -48,6 +48,9 @@ var Module = pkit.NewModule("tenant", wire,
 	pkit.Provides[jobs.TenantLister](),
 	pkit.Provides[notificationcontracts.HostLookup](),
 	pkit.Provides[authcontracts.OIDCProviders](),
+	// Which SAML 2.0 identity provider the tenant this request's Host resolved
+	// federates with, answered the same way and in the same transaction.
+	pkit.Provides[authcontracts.SAMLProviders](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -77,6 +80,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	hosts := tenantHosts{tenants: svc, published: publishedPort(server.PublicHost)}
 	pkit.Put[notificationcontracts.HostLookup](w, hosts)
 	pkit.Put[authcontracts.OIDCProviders](w, tenantProviders{tenants: svc})
+	pkit.Put[authcontracts.SAMLProviders](w, samlProviders{tenants: svc})
 	return manifest, nil
 }
 
@@ -163,5 +167,26 @@ func (p tenantProviders) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*
 	return &authcontracts.OIDCProvider{
 		Issuer: settings.Issuer, ClientID: settings.ClientID, SecretRef: settings.SecretRef,
 		RedirectPath: settings.RedirectPath, Registration: settings.Registration, Roles: settings.Roles,
+	}, true, nil
+}
+
+// samlProviders answers modules/auth's SAMLProviders port from the tenant this
+// request's Host resolved — the same read, in the same transaction, as the OIDC
+// adapter beside it, which is what makes one process verify two customers'
+// assertions against two IdPs at two ACS URLs.
+//
+// It is here rather than in the composition for tenantProviders' reason: the read is
+// this module's own — SAMLSettingsOf is a method on its Service — and auth names only
+// the port it declares.
+type samlProviders struct{ tenants tenantcontracts.Service }
+
+func (p samlProviders) ProviderOf(ctx context.Context, tx db.Tx[db.Tenant]) (*authcontracts.SAMLProvider, bool, error) {
+	settings, ok, err := p.tenants.SAMLSettingsOf(ctx, tx)
+	if err != nil || !ok {
+		return nil, false, err
+	}
+	return &authcontracts.SAMLProvider{
+		EntityID: settings.EntityID, MetadataURL: settings.MetadataURL, MetadataXML: settings.MetadataXML,
+		EmailAttribute: settings.EmailAttribute, Registration: settings.Registration, Roles: settings.Roles,
 	}, true, nil
 }

@@ -56,7 +56,7 @@ func TestAPasswordChangeEndsOnlyTheRowsItsOwnStatementRemoved(t *testing.T) {
 		_, bhavna = sessionOfPerson(t, ctx, tx, svc, users, "bhavna@acme.example.com")
 		ada, kept = adaID, adaSession.ID
 		for _, agent := range []string{"Firefox", "Safari"} {
-			if _, _, err := svc.Open(ctx, tx, ada, contracts.Client{UserAgent: agent}); err != nil {
+			if _, _, err := svc.Open(ctx, tx, ada, contracts.Client{UserAgent: agent}, contracts.ViaOIDC); err != nil {
 				return err
 			}
 		}

@@ -41,7 +41,7 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 		t.Fatalf("pending login = %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}); !errors.Is(err, contracts.ErrCredentials) {
+		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}, contracts.ViaOIDC); !errors.Is(err, contracts.ErrCredentials) {
 			t.Fatalf("pending OIDC session = %v", err)
 		}
 		if err := auths.Forget(ctx, tx, pending.Email); err != nil {

@@ -142,3 +142,28 @@ never in a row — the column holds an environment variable's *name*, because
 `modules/audit` copies every payload it is handed — and a control-plane fact a
 lower module reads through its own port, so `modules/auth` resolves an issuer per
 request without importing this module.
+
+The SAML provider beside it is the same delivery a third time. **Reused:**
+`SetSAML` is `SetOIDC`'s command shape — validate, `Get`, compare, one `UPDATE`
+of the whole family, `events.PublishFor` — down to "equal values write nothing
+and publish nothing", and `SAMLSettingsOf` is `OIDCOf`'s read, answering *false,
+not an error* for a tenant with no SAML, in the tenant's own transaction under
+the policy `000006` already puts over `tenants`. **Added:** the six `saml_*`
+columns and the two CHECKs of `migrations/000046_tenant_saml.up.sql` (a known
+mode; all of a provider or none, `provision` ⇒ roles), `SetSAML` / `ClearSAML` /
+`SAMLSettingsOf`, the `set-saml` and `clear-saml` control-plane routes, and
+`tenant.saml_set` / `tenant.saml_cleared` — whose payload names the entity ID and
+never carries the metadata document, because `modules/audit` copies every payload
+it is handed and an IdP's descriptor is kilobytes. **Made reusable:** a second
+column family on a row whose first family already refused half a provider, which
+is what makes the "all of it or none" CHECK a pattern rather than one provider's
+quirk — the two families never fire for each other's sake, and
+`TestSAMLAndOIDCAreIndependent` says so in SQL — and `validSAML`'s rule that an
+input document is *parsed* at the write, so a metadata XML that could never
+verify an assertion is refused where somebody can still fix it rather than at the
+first person who tries to sign in with it.
+
+What stays the installation's and not this module's: a tenant writing its own SSO
+settings would need a settings table with write row-level security — today the
+control plane writes both providers and a tenant only reads its own row — and a
+service-provider signing key has no column here because nothing would read it.

@@ -88,6 +88,8 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
 			events.Declare[contracts.OIDCSet](contracts.EventOIDCSet),
 			events.Declare[contracts.OIDCCleared](contracts.EventOIDCCleared),
+			events.Declare[contracts.SAMLSet](contracts.EventSAMLSet),
+			events.Declare[contracts.SAMLCleared](contracts.EventSAMLCleared),
 		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above
