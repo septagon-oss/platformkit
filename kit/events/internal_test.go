@@ -6,6 +6,7 @@ package events
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
@@ -552,6 +553,39 @@ func TestADriftedStreamIsReconciled(t *testing.T) {
 	deliver(t, transport, seen, name)
 }
 
+// childCommitBound is how long the case below gives the child row to be in the outbox.
+// It bounds the one thing this process cannot order, and it is not a budget the case
+// spends. In the restart=false shape the handler was still running when Relay gave up:
+// close(release) lets it return on the worker's own schedule, and the transaction that
+// carries the child event is *that* delivery's, not the pass's — so the commit lands
+// whenever the session that has been waiting on a channel gets to finish, and a single
+// read of the table races it. Measured on 2026-10-09 at 13:35:01Z, `make check` with 33
+// packages booting schemas beside this one answered `committed child events=0, want 1:
+// <nil>` — no error from the read, and no dead-letter row, because the handler never
+// failed, it was simply not finished — while the same case with the package to itself
+// answered 1 in 0.53 s, 0.69 s and 0.82 s. Ten seconds is the host's share; a delivery
+// whose transaction never commits still fails the case, and the message below says which
+// of the three states it found.
+const childCommitBound = 10 * time.Second
+
+// awaitCommittedChildEvents counts the child rows in the outbox, leaving as soon as one
+// is there and giving up at the bound. Every turn asks the table, so the wait costs only
+// what the commit costs, and "never" is still an answer this case refuses.
+func awaitCommittedChildEvents(t *testing.T, admin *sql.DB, bound time.Duration) int {
+	t.Helper()
+	deadline := time.Now().Add(bound)
+	var completed int
+	for {
+		if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil {
+			t.Fatalf("reading the committed child events: %v", err)
+		}
+		if completed > 0 || time.Now().After(deadline) {
+			return completed
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
 // A relay deadline does not acknowledge a handler that is still running. Its
 // transaction can finish after the pass ends, or roll back when the worker dies.
 func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
@@ -617,9 +651,21 @@ func TestMemoryKeepsUnfinishedDeliveryInTheOutbox(t *testing.T) {
 			if err := Relay(finish, conn, transport); err != nil {
 				t.Fatal(err)
 			}
-			var completed int
-			if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_outbox WHERE name='effect.completed'").Scan(&completed); err != nil || completed != 1 {
-				t.Fatalf("committed child events=%d, want 1: %v", completed, err)
+			if completed := awaitCommittedChildEvents(t, admin, childCommitBound); completed != 1 {
+				var pending bool
+				var dead int
+				if err := admin.QueryRowContext(t.Context(), "SELECT published_at IS NULL FROM platformkit_outbox WHERE name=$1", name).Scan(&pending); err != nil {
+					t.Fatalf("reading the parent row after the child failed to arrive: %v", err)
+				}
+				if err := admin.QueryRowContext(t.Context(), "SELECT count(*) FROM platformkit_dead_letters").Scan(&dead); err != nil {
+					t.Fatalf("reading the dead letters after the child failed to arrive: %v", err)
+				}
+				// Three states, three meanings, and the old message could not tell them
+				// apart: still pending with no dead letter is the handler's transaction
+				// never finishing, stamped with no dead letter is a child publish that
+				// vanished between the handler and the INSERT, and a dead letter is the
+				// handler refusing — a refusal, not a slow commit.
+				t.Fatalf("committed child events=%d, want 1 within %v: parent still pending=%t, %d dead letter(s)", completed, childCommitBound, pending, dead)
 			}
 		})
 	}
