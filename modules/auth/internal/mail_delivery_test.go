@@ -116,6 +116,26 @@ func trail(t *testing.T, conn *db.Conn) {
 	}
 }
 
+// linksMailed is the mail that carries a credential — a verification or
+// set-password link, read by authtest.TokenIn rather than by subject, because the
+// property every case below counts is that no credential left for an address that
+// should not receive one.
+//
+// It is not the same question as "how many messages left". Since every request for
+// a link hands the transport one message whichever branch it takes
+// (internal/no_link.go), a request that sends no link still sends the sentence
+// saying so, and a case that counted messages as though each were a credential
+// would fail on a message that carries nothing.
+func linksMailed() []notification.Message {
+	var out []notification.Message
+	for _, letter := range mailbox.Sent() {
+		if authtest.TokenIn(letter.Body) != "" {
+			out = append(out, letter)
+		}
+	}
+	return out
+}
+
 // outcomeOf is what the module recorded for one kind of mail, as one row.
 func outcomeOf(t *testing.T, conn *db.Conn, kind string) (outcome, reason string, rows int) {
 	t.Helper()
