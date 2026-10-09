@@ -52,6 +52,13 @@ database:
   # Migrations connect as the owner, which holds the DDL rights.
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
+  # The role that may expire the audit trail and may not write it: SELECT and DELETE
+  # on audit_events, SELECT and INSERT on audit_retention_marks, and never SUPERUSER
+  # or BYPASSRLS, or kit/db refuses the connection. Empty means the trail never
+  # expires, and the audit-retention job says so at its first tick rather than
+  # deleting nothing. audit.retention_days below 365 is refused at boot.
+  retain_url: ""
+
   # Per-process pool limits; omitted values retain 16 open, 4 idle, 30m.
   # Account for every replica. All app roles require at least two connections:
   # HTTP detached transactions and job advisory locks need a second connection.

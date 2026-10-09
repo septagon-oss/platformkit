@@ -273,10 +273,10 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 
 // migrationQueueBudget is how long a migration run may wait for the composition key
 // before this file calls the key stuck. Advisory locks are per-database
-// (kit/db/lock.go) and the key is one for the whole composition
-// (kit/db/migrate.go:571), while dbtest gives a test its own *schema* — so another
-// package's migration, or a second suite sharing the cluster, can be holding the key
-// when a case here starts. Five seconds read as a defect when this file's cases
+// (kit/db/lock.go) and the key names one namespace
+// (kit/db/migrate.go, holdCompositionLock), while dbtest gives a test its own *schema*
+// — so a sibling case of this package's, or a second suite sharing the cluster and
+// resolving to the same namespace, can be holding the key when a case here starts. Five seconds read as a defect when this file's cases
 // shared their Postgres with a concurrent `make check` on 2026-10-01 (`retry after
 // cancellation: db: migrate: lock: timeout: context deadline exceeded`, while 20 runs
 // of the same case with the cluster to itself passed in 3.8s). It is a bound on a lock
@@ -286,7 +286,18 @@ func TestConcurrentMigrationsApplyEachFileOnce(t *testing.T) {
 // the same key.
 const migrationQueueBudget = 5 * time.Minute
 
-// holdsCompositionKey says whether a session of *this* test's own schema holds the
+// migrationKeyGiveBack is how long the cancelled run's session is given to be seen out
+// of the key; see awaitKeyReleased. It is the time the server takes to end a session
+// whose socket has gone, which is the release path when the run's own
+// `pg_advisory_unlock` did not land (kit/db/migrate.go, the defer that says so), and
+// migration_cancellation_lock_test.go measures that path at 3-4 ms.
+const migrationKeyGiveBack = 5 * time.Second
+
+// migrationPoll is how often these probes ask the server, and the smallest unit of
+// queue time they can count.
+const migrationPoll = 10 * time.Millisecond
+
+// compositionKeyHolds counts the sessions of *this* test's own schema that hold the
 // composition key right now. The key is the pair the run takes it under —
 // (compositionLockKey, the OID of the namespace its own session resolves to), which is
 // what kit/db/migrate.go's holdCompositionLock passes to
@@ -300,7 +311,7 @@ const migrationQueueBudget = 5 * time.Minute
 // (kit/db/dbtest/dbtest.go), so the read is of this run's session and of nothing else:
 // waiting behind another namespace's queue is then something the case can see, which is
 // what stops that queue from being read as a broken cancellation.
-func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
+func compositionKeyHolds(t *testing.T, admin sqlDB) int {
 	t.Helper()
 	var held int
 	scan(t, admin, `SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a ON a.pid = l.pid
@@ -308,7 +319,34 @@ func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
 			AND l.classid = `+strconv.FormatInt(compositionLockKey, 10)+`::oid
 			AND l.objid = coalesce(to_regnamespace(a.application_name), 0)::oid
 			AND a.application_name = current_setting('search_path')`, &held)
-	return held > 0
+	return held
+}
+
+// holdsCompositionKey says whether that count is anything: this schema's own sessions,
+// and no other namespace's queue.
+func holdsCompositionKey(t *testing.T, admin sqlDB) bool {
+	t.Helper()
+	return compositionKeyHolds(t, admin) > 0
+}
+
+// awaitKeyReleased answers with how many sessions of this test still hold the
+// composition key, giving up at migrationKeyGiveBack. This is the claim the case's name
+// makes — that a cancelled run releases the lock — read off pg_locks rather than
+// inferred from how quickly the retry below happens to get its turn: a session still
+// holding the key past the give-back window is the leak this case is for. It is the
+// reading origin/main's `awaitKeyReleased` reached for, at the key the merged runner
+// actually takes: the `l.objid = 7240101` it asked was the single-key form, whose half
+// this namespace is now, and which answers nothing at all since T-0314.
+func awaitKeyReleased(t *testing.T, admin sqlDB) int {
+	t.Helper()
+	deadline := time.Now().Add(migrationKeyGiveBack)
+	for {
+		held := compositionKeyHolds(t, admin)
+		if held == 0 || time.Now().After(deadline) {
+			return held
+		}
+		time.Sleep(migrationPoll)
+	}
 }
 
 // runIsInsideItsFile says the run reached the SQL of its file, on the server's own
@@ -368,7 +406,12 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	// a case that held the composition key against this case for fifteen seconds
 	// (kit/db/cancellation_case_waits_for_its_lock_test.py, retired 2026-10-08: it drove
 	// the single-key lock T-0314's per-namespace lock replaced). The two windows and the
-	// two bounds are what that measurement left behind, and they still stand.
+	// two bounds are what that measurement left behind, and they still stand. origin/main
+	// reached the same conclusion from the other side (017eb1c, "a migration probe that
+	// bounds the clock bounds the lock queue": it stopped charging queue time to the
+	// stillness window), and its release assertion — the case's own name — is kept below;
+	// what the merged tree does not need is a second probe beside this one, which reads
+	// the key itself rather than a state inferred from wait events.
 	if why := waitUntil(t, migrationQueueBudget, done, "the run held the composition key", func() bool {
 		return holdsCompositionKey(t, admin)
 	}); why != "" {
@@ -385,9 +428,12 @@ func TestMigrationCancellationRollsBackAndReleasesTheLock(t *testing.T) {
 	if err := <-done; err == nil {
 		t.Fatal("migration ignored cancellation")
 	}
+	if held := awaitKeyReleased(t, admin); held != 0 {
+		t.Fatalf("%d sessions of this test still hold the composition key after the run returned: the cancelled session took it and never gave it back", held)
+	}
 	files["1_slow.up.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE slow (value int); INSERT INTO slow VALUES (1)")}
-	// The retry queues for the same key the way every other migration run in this
-	// database does, so it gets the queue's bound rather than a taste of its own — and
+	// The retry queues for the same namespace's key the way every other migration run
+	// here does, so it gets the queue's bound rather than a taste of its own — and
 	// it arrives after a cancellation, which is the moment a lingering session of this
 	// database may still be handing the key back.
 	retry, stop := context.WithTimeout(t.Context(), migrationQueueBudget)

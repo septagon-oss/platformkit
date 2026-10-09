@@ -61,6 +61,7 @@ pkit: audit.Module is built after product.Module and tenant.Module.
 pkit: audit.Module needs jobs.TenantLister from tenant.Module.
 pkit: audit.Module uses auditcontracts.Plan from product.Module.
 pkit: audit.Module reads config.Audit.
+pkit: audit.Module reads config.Database.
 pkit: audit.Module defines the permission audit:read.
 pkit: audit.Module handles every event this application emits.
 pkit: auth.Module is built after product.Module, user.Module, tenant.Module, notification.Module and emailregistration.Module.

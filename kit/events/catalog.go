@@ -117,6 +117,11 @@ type catalogue struct {
 	// which is every event a module emits as a hand-built document. The set is what
 	// lets those reach their INSERT without the read.
 	typed map[string]struct{}
+	// declared is every name each app named in its manifest, typed or not — the
+	// set byApp cannot carry, because byApp holds only what there is to check a
+	// payload against and a name with no payload type has nothing to check. It is
+	// what checkDeclared asks whether anybody declared the name at all.
+	declared map[string]map[string]struct{}
 }
 
 // DeclareApp installs one app's declared events, so that every Publish of that
@@ -134,26 +139,37 @@ func DeclareApp(app appname.Name, list []Declared) {
 	slug := app.String()
 	catalogInstall.Lock()
 	defer catalogInstall.Unlock()
-	next := catalogue{byApp: map[string]map[string]*Schema{}}
+	next := catalogue{byApp: map[string]map[string]*Schema{}, declared: map[string]map[string]struct{}{}}
 	if prev := catalog.Load(); prev != nil {
 		for held, m := range prev.byApp {
 			if held != slug {
 				next.byApp[held] = m
 			}
 		}
+		for held, names := range prev.declared {
+			if held != slug {
+				next.declared[held] = names
+			}
+		}
 	}
 	own := make(map[string]*Schema, len(list))
+	names := make(map[string]struct{}, len(list))
 	for _, d := range list {
+		names[d.Name] = struct{}{}
 		// A declaration with no payload type describes nothing to check, and the
 		// name is absent from the map rather than present and nil: the only reader
 		// of the map asks "is there a schema here?", and a nil it has to unwrap is
-		// a member it would have to remember to skip.
+		// a member it would have to remember to skip. It is still declared, and it
+		// is `names` that says so.
 		if s := d.Schema(); s != nil {
 			own[d.Name] = s
 		}
 	}
 	if len(own) > 0 {
 		next.byApp[slug] = own
+	}
+	if len(names) > 0 {
+		next.declared[slug] = names
 	}
 	next.typed = make(map[string]struct{})
 	for _, held := range next.byApp {
@@ -210,19 +226,30 @@ func ClaimApp(app appname.Name, list []Declared) (func(), error) {
 		held = map[string]int{}
 		grips[slug] = held
 	}
-	names := make([]string, 0, len(want))
+	claim := make([]string, 0, len(want))
+	declared := maps.Clone(next.declared[slug])
+	if declared == nil {
+		declared = map[string]struct{}{}
+	}
 	for name, s := range want {
+		// Every declared name is gripped, typed or not: the release hands back the
+		// declaration, and a declaration of a name with no payload type is a
+		// declaration — it is what keeps that name published rather than refused.
+		held[name]++
+		declared[name] = struct{}{}
+		claim = append(claim, name)
 		if s == nil {
-			// Nothing to check and nothing to hand back: an event this app declares
-			// without a payload type stays unchecked whichever way it got here.
+			// Nothing to check: an event this app declares without a payload type
+			// stays unchecked whichever way it got here.
 			continue
 		}
 		entry[name] = s
-		held[name]++
-		names = append(names, name)
 	}
 	if len(entry) > 0 {
 		next.byApp[slug] = entry
+	}
+	if len(declared) > 0 {
+		next.declared[slug] = declared
 	}
 	retype(&next)
 	catalog.Store(&next)
@@ -233,8 +260,9 @@ func ClaimApp(app appname.Name, list []Declared) (func(), error) {
 			defer catalogInstall.Unlock()
 			left := standing()
 			entry := maps.Clone(left.byApp[slug])
+			heldNames := maps.Clone(left.declared[slug])
 			counts := grips[slug]
-			for _, name := range names {
+			for _, name := range claim {
 				if counts != nil && counts[name] > 0 {
 					counts[name]--
 					if counts[name] > 0 {
@@ -243,11 +271,17 @@ func ClaimApp(app appname.Name, list []Declared) (func(), error) {
 					delete(counts, name)
 				}
 				delete(entry, name)
+				delete(heldNames, name)
 			}
 			if len(entry) == 0 {
 				delete(left.byApp, slug)
 			} else {
 				left.byApp[slug] = entry
+			}
+			if len(heldNames) == 0 {
+				delete(left.declared, slug)
+			} else {
+				left.declared[slug] = heldNames
 			}
 			retype(&left)
 			catalog.Store(&left)
@@ -351,10 +385,13 @@ func OneShapePerName(list []Declared) []string {
 // standing is a copy of what is installed, for the caller about to change it.
 // Every stored catalogue is read without a lock, so no change is ever made in place.
 func standing() catalogue {
-	out := catalogue{byApp: map[string]map[string]*Schema{}}
+	out := catalogue{byApp: map[string]map[string]*Schema{}, declared: map[string]map[string]struct{}{}}
 	if c := catalog.Load(); c != nil {
 		for slug, m := range c.byApp {
 			out.byApp[slug] = maps.Clone(m)
+		}
+		for slug, names := range c.declared {
+			out.declared[slug] = maps.Clone(names)
 		}
 	}
 	retype(&out)
@@ -461,8 +498,7 @@ func appOfTenant(gdb *gorm.DB, tenantID uuid.UUID) (string, error) {
 
 // checkPayload refuses a payload that is not what the app that holds this tenant
 // declared for the event. An event name that app did not declare is not refused
-// here: the manifest gate in kit/app is what refuses a route that would publish
-// it, and refusing twice here would only make the error harder to find.
+// here — that question is asked beside this one, by checkDeclared.
 func checkPayload(app, name string, body []byte) error {
 	c := catalog.Load()
 	if c == nil {
@@ -480,4 +516,59 @@ func checkPayload(app, name string, body []byte) error {
 		return fmt.Errorf("events: %s: the payload is not what %s declared: %w", name, owner, err)
 	}
 	return nil
+}
+
+// checkDeclared refuses a publication no manifest declares, at the one door every
+// publication goes through.
+//
+// The manifest gate in kit/app covers routes, which is narrower than the process:
+// a name published from a job, a command or a handler is not a route, and it used
+// to be accepted, written, stamped published and received by nobody — the core
+// review of 2026-09-29 (P2) measured two publications accepted and one audit row,
+// and the loss was silent. SubscribeAll expands into one subscription per declared
+// name, so an undeclared name has no subscriber by construction: the event is not
+// lost later, it is never delivered at all. Refusing here says the same fact at the
+// moment it becomes known, inside the caller's own transaction, so the state change
+// that would have caused it rolls back, nothing is stamped and nothing is emitted.
+// It is correctable in one line — the emitting module names the event in its own
+// Declared list — and a retry without that line changes nothing, which is what makes
+// it a refusal rather than a failure.
+//
+// Whose declaration it asks for is the same answer checkPayload gives, at the same
+// price. For a name some app gave a payload type, the write has already read which
+// app holds the tenant, so the name is asked of that app alone: a name only another
+// app declares has no handler in this one either. For a name no app typed there is
+// no read to ride on, and the check stops at the cheaper question the process can
+// answer without one — did any app in this process declare it — so the app that
+// declared it untyped still publishes it unchecked, which is the shape main's
+// typed set already protects. "Declared by another app, and this app never named
+// it" is therefore the one hole that costs nothing to leave open; a delivery of an
+// event no handler of its own app subscribes to is silent, and naming it would cost
+// every unchecked publish a read of the tenant table.
+//
+// The check is exactly as wide as the process's own knowledge: no catalog installed
+// (DeclareApp never ran), and a composition that declared nothing, are one state
+// with no names to consult, and both mean no check rather than a refusal of every
+// hand-named event in a process with no composition.
+func checkDeclared(app, name string) error {
+	c := catalog.Load()
+	if c == nil || len(c.declared) == 0 {
+		return nil
+	}
+	if _, typed := c.typed[name]; typed {
+		if _, ok := c.declared[app][name]; ok {
+			return nil
+		}
+	} else {
+		for _, names := range c.declared {
+			if _, ok := names[name]; ok {
+				return nil
+			}
+		}
+	}
+	owner := "any module"
+	if app != "" {
+		owner = "app " + strconv.Quote(app)
+	}
+	return fmt.Errorf("events: %s is declared by no module of %s: no subscriber can receive it", name, owner)
 }
