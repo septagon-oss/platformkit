@@ -10,11 +10,24 @@ import (
 	h "maragu.dev/gomponents/html"
 )
 
+// DetailListSlots is the trusted Go composition seam for a value that is more
+// than a string — an instant that travels with its machine form, for one. It
+// mirrors TableSlots one-for-one: the data stays in DetailListProps, and a
+// caller opts into a callback only when the value needs real markup.
+type DetailListSlots struct {
+	// Value returns the markup for one item's value. Nil, or nil for one item,
+	// falls back to the item's own text, exactly as DetailList renders it.
+	Value func(DetailItem) g.Node
+}
+
 // DetailList renders a governed group of label/value facts as a native
 // description list. SemanticRole is intentionally projected only as a data
 // attribute: it is an adaptive-surface machine key, not an HTML/ARIA role or
 // translated label.
-func DetailList(p DetailListProps) g.Node {
+func DetailList(p DetailListProps) g.Node { return DetailListWithSlots(p, DetailListSlots{}) }
+
+// DetailListWithSlots renders DetailListProps with one value door open.
+func DetailListWithSlots(p DetailListProps, slots DetailListSlots) g.Node {
 	rootProps := p.ComponentProps
 	rootProps.Class = ""
 	rootProps.Disabled = false
@@ -87,14 +100,20 @@ func DetailList(p DetailListProps) g.Node {
 				g.Text(item.Description),
 			))
 		}
+		value := h.Dd(
+			h.Class(clDetailValue.Merge(clDetailValueTone[tone]).Compile()),
+			g.Text(item.Value),
+		)
+		if slots.Value != nil {
+			if custom := slots.Value(item); custom != nil {
+				value = h.Dd(h.Class(clDetailValue.Merge(clDetailValueTone[tone]).Compile()), custom)
+			}
+		}
 		items = append(items, h.Div(
 			h.Class(rowClass.Compile()),
 			g.Attr("data-detail-item", ""),
 			h.Dt(term...),
-			h.Dd(
-				h.Class(clDetailValue.Merge(clDetailValueTone[tone]).Compile()),
-				g.Text(item.Value),
-			),
+			value,
 		))
 		validItems++
 	}
