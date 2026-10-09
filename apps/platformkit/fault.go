@@ -21,6 +21,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"sync"
 
 	g "maragu.dev/gomponents"
 
@@ -28,6 +30,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -164,22 +167,58 @@ func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 // carried on the call, so the OpenAPI document names the fields a shell parses
 // rather than an empty object — see app.WorkspaceCatalogRoute.
 func workspaceCatalog() func(api *httpx.API) {
+	// The catalogues this composition answers in. The document is read by a shell
+	// that is not a browser, and every word in it is one a person will read, so it
+	// is negotiated the same way the page beside it is — the request's own
+	// Accept-Language, restricted to the languages the tenant it resolved to is
+	// served in, that tenant's default behind them. A handler that negotiated less
+	// would answer a pt-only tenant in English from this address while the screen
+	// one click away spoke Portuguese.
+	messages := catalogues()
 	mount := app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
-		document := screens.Describe(ctx, resources)
+		// A reading hint that names a module this installation did not compose is
+		// a composition mistake rather than a module's, and the document is the
+		// thing the promise is made in, so the check is made once, here, against
+		// the list this process actually registered. A Spec's own mount check
+		// cannot see a registration made after it, and a mount-time check cannot
+		// see one made after the mount: a worker process registers only the
+		// resources its jobs read, so the list standing at boot is not the list a
+		// shell would be served — which is why this rides the first build of the
+		// document rather than the mount.
+		checked.Do(func() {
+			if bad := rest.CheckReferences(resources); bad != "" {
+				referenceFault = errors.New("apps/platformkit: " + bad)
+			}
+		})
+		if referenceFault != nil {
+			return nil, referenceFault
+		}
+		var preferences []string
+		if r, ok := httpx.RequestFrom(ctx); ok {
+			preferences = append(preferences, r.Header.Get("Accept-Language"))
+		}
+		if tenant, ok := tenancy.FromContext(ctx); ok {
+			preferences = page.TenantPreferences(page.Request{Tenant: tenant}, preferences...)
+		}
+		selected := page.SelectLocale(messages, preferences...)
+		// One formatter, no arguments: no hint in this contract takes a verb, so the
+		// document asks for a key and its fallback and nothing else.
+		var text screens.Text = func(key, fallback string) string {
+			return selected.Formatter.Text(key, fallback)
+		}
+		document := screens.DescribeLanguage(ctx, resources, text)
 		return &document, nil
 	})
-	return func(api *httpx.API) {
-		// A reading hint that names a module this installation did not compose is
-		// a composition mistake rather than a module's, and this is the first
-		// moment the whole resource list exists: a Spec's own mount check cannot
-		// see a registration made after it. The catalogue is where the lie would
-		// be served, so the check rides where the catalogue is mounted.
-		if bad := rest.CheckReferences(api.Resources()); bad != "" {
-			panic("apps/platformkit: " + bad)
-		}
-		mount(api)
-	}
+	return mount
 }
+
+// checked and err are the reference gate's once-and-its-result: the question is
+// about the composition, which does not change after boot, and asking it per
+// request would be a walk of every schema on somebody's page load.
+var (
+	checked        sync.Once
+	referenceFault error
+)
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once

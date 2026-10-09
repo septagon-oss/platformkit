@@ -20,6 +20,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -87,6 +88,18 @@ var spec = rest.Spec[*contracts.Plan]{
 	Write:         contracts.PermissionBillingCatalog,
 	OperatorWrite: true,
 	SoftDelete:    true,
+	// Present is how a price reads. There is no `statusField`: a plan holds no
+	// status enum, and `active` is a bool, which no tone vocabulary colours —
+	// inferring a status from "the first enum" is what decision 0085 refuses.
+	Present: entity.EntryHints{
+		Singular:      "plan",
+		Plural:        "plans",
+		Icon:          "plan",
+		Group:         &entity.ResourceGroup{Key: "billing", Label: "Billing"},
+		PrimaryField:  "name",
+		SummaryFields: []string{"priceCents", "active"},
+		Sortable:      []string{"name", "priceCents"},
+	},
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
