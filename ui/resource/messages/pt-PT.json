@@ -36,8 +36,8 @@
   },
   "screens.empty": {
     "references": ["ui/resource/resource.go"],
-    "translation": "Ainda sem %ss.",
-    "plural": { "": "Ainda sem %ss." }
+    "translation": "Ainda sem %s.",
+    "plural": { "": "Ainda sem %s." }
   },
   "screens.pagination": {
     "references": ["ui/resource/resource.go"],

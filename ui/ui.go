@@ -72,7 +72,7 @@ var scripts embed.FS
 //
 // htmx is first because the others configure it. The remaining scripts enhance
 // themes, requests, confirmation, sign-in, passkey ceremonies, component
-// interaction and gallery controls.
+// interaction (including the reader's own time) and gallery controls.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
