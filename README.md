@@ -60,7 +60,7 @@ Email delivery likewise requires an SMTP configuration, and refuses registration
 by email without one. From a checkout, `make up` starts a Mailpit sink beside
 Postgres and NATS and `make run` points the application at it through
 `PLATFORMKIT_MAIL_HOST`, `_PORT` and `_FROM`, so a development instance can sign
-people up and read its own inbox (`PLATFORMKIT_MAIL_UI_PORT`).
+people up and read its own inbox (`PLATFORMKIT_MAILPIT_PORT`).
 
 [Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
 authorization and migrations in more detail.
