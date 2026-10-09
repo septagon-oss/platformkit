@@ -80,6 +80,23 @@ func (d peopleDouble) Person(context.Context, uuid.UUID) (Person, error) {
 	return d.person, d.err
 }
 
+// chromeTestFrame is the frame with these doubles, so a case can render it against
+// any page.Request rather than the one this file cares about.
+func chromeTestFrame(t *testing.T, people People) page.Frame {
+	t.Helper()
+	shellAddresses := addresses{
+		workspace: route{"/", "/app"},
+		dashboard: route{"/", "/app"},
+		assets:    route{"/assets", "/app/app/admin/assets"},
+		health:    route{"/health", "/app/app/admin/health"},
+		gallery:   route{"/_gallery", "/app/app/admin/_gallery"},
+	}
+	storybook := func(context.Context) (export.Storybook, error) {
+		return export.Storybook{}, problem.New(http.StatusForbidden, "no storybook")
+	}
+	return frame(shellAddresses, page.NewNavigation(nil, nil, nil), allow(true), storybook, people)
+}
+
 func chromeFrameWith(t *testing.T, signedIn bool, people People) string {
 	t.Helper()
 	shellAddresses := addresses{
