@@ -30,16 +30,16 @@ and it exists only where an application wires the capability. For the
 administrator, and the price list cannot be read. What is left there is SQL.
 
 All three now answer 422 naming the person and the role.
-`contracts.CheckedAdministration` is the rule, so the service and the
-[fake](contracts/usertest/) refuse identically and the conformance suite holds
-both to it at all three doors. It asks two different questions with two
-different predicates: `User.Administers` is wide, so removing somebody who has
-not accepted their invitation is still a write the floor looks at, and
-`User.CanAdminister` is narrow, so somebody who has not accepted theirs cannot
-hold the floor up for everybody else — measured, in this repository's own
-default configuration, where an invited heir could not in fact take over. What
-is refused is the write after which nobody who can sign in would hold such a
-role; a grant is never refused, so the refusal always has a way out and the
+`contracts.CheckedAdministration` is the rule — and it is the rule for
+`modules/auth` too, which is what changed here. It answers one question with two
+sets of people: the ones who could sign in and administer this tenant before the
+write, and the ones it would leave. `contracts.Reach` carries each state, and
+both sides are decided by `User.CanAdminister` — `User.Administers` is the wider
+predicate and stays the door's own cheap gate, so removing somebody who has not
+accepted their invitation is still a write the floor looks at, while somebody who
+has not accepted theirs cannot hold the floor up. What is refused is the write
+after which nobody who can sign in would hold a role that still grants the
+permission; a grant is never refused, so the refusal always has a way out and the
 message names it. `internal.Service.floor` takes `pg_advisory_xact_lock` on the tenant
 so two administrators standing down at once cannot both pass.
 
@@ -52,21 +52,40 @@ which is the only one that can watch a write in one module queue behind a write 
 the other. Both halves matter — the same string through `hashtext` is a different
 lock and nothing reports it.
 
-**The shared lock does not make the two floors compose, and this file used to
-say it did.** `modules/auth` counts roles; a role nobody holds satisfies it.
-Reproduced with both floors in one binary and no concurrency at all —
-`TestTheTwoFloorsStillDoNotComposeIntoOneInvariant` runs it and asserts the hole:
-create a role granting `role:manage`, give it to nobody, empty the role everybody
-holds — two 200s, and the tenant answers 403 to its own roles screen. This rule is the
-join **for the writes it sees**, because it reads what the roles grant and
-counts the reachable people holding them — it is never consulted about an
-auth-module write, so it holds the property for user-module writes and for no
-others, which is why the mirror is needed. `modules/auth` needs the mirror of
-the dependency this module accepts before a write there is checked against the
-same property.
+**The two floors are now one rule, and this file used to say they were not.**
+`modules/auth` used to count roles, and a role nobody holds satisfies a count of
+roles: create a role granting `role:manage`, give it to nobody, empty the role
+everybody holds, and two 200s left the tenant answering 403 to its own roles
+screen. `apps/platformkit/administration_lock_test.go` asserted that hole and now
+asserts the opposite (`TestTheTwoFloorsComposeIntoOneInvariant`), with the racing
+pairs beside it — two administrators standing down at once, two administering
+roles emptied at once, and one of each across the module boundary — and
+`TestTheComposedCheckJudgesOneTenant` is the case that fails if the people the
+rule counts ever stop belonging to one tenant. The join is `contracts.UserReach`
+and the holder read is `Service.Holders`; the auth side reaches them through the
+`contracts.Users` port it already had, widened by `Holders`, so neither module
+reads the other's rows and each asks the other the half it does not own.
 
 What the rule does **not** cover is written out on `CheckedAdministration`
 itself.
+
+**A refused write leaves a record of the attempt.** The write itself is rolled
+back — that is what the 422 means — so nothing about it would survive anywhere,
+and "somebody tried to lock this tenant out" is the line an administrator most
+wants to have kept. Each door therefore publishes one event outside the
+transaction it was refused in: `user.administration_refused` from
+`internal.Service.recordRefusal` (`SetRoles`, `Deactivate` and the delete hook
+name which door in the payload's `attempt`), and `auth.administration_refused`
+from the same shape at `modules/auth/internal/roles.go` when `SetRole` is
+refused. Both copy this repository's one precedent for an event that has to
+outlive a rolled-back request — `modules/auth`'s `recordFailure` for a failed
+login: `db.Detached` over the request's context, the connection `kit/httpx` put
+on the request, a two-second budget, the refusal logged and never returned.
+With no request connection to write on — a job, a harness, a system transaction
+— there is nowhere to write and the write is still refused: the rule was never
+contingent on its paperwork. `modules/audit` needs no code of its own, because
+`SubscribeAll: true` means a module is audited by having emitted an event, and
+the row carries actor, tenant, request id and trace context like any other.
 
 `Deps.Administration` answers which of a tenant's roles grant the permission
 that can grant every other one back. It is required, and a composition that
@@ -121,7 +140,7 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/user`. Access is deci
 
 ### Duties the module enforces itself
 
-- The last-administrator rule. `Service.floor` in `modules/user/internal/administration.go` refuses a write that would leave the tenant with nobody who can sign in and administer it. It is called from `SetRoles` and `Deactivate` in `service.go`, and from `RefuseLastAdministrator`, which is `spec.AfterDelete` for the delete route. It takes a per-tenant advisory lock (`administrationLock`) and uses `contracts.CheckedAdministration` and `otherAdministrators`. A refusal rolls back the transaction.
+- The last-administrator rule. `Service.floor` in `modules/user/internal/administration.go` refuses a write that would leave the tenant with nobody who can sign in and administer it. It is called from `SetRoles` and `Deactivate` in `service.go`, and from `RefuseLastAdministrator`, which is `spec.AfterDelete` for the delete route. It takes a per-tenant advisory lock (`administrationLock`) and uses `contracts.CheckedAdministration` and `otherAdministrators`. A refusal rolls back the transaction, and `recordRefusal` publishes `user.administration_refused` in a detached transaction of its own so the attempt is still on the trail (see the section above).
 - `refuseLifecycleOnCreate` (`modules/user/module.go`) is the create hook that keeps roles and password registrations behind their own commands. `spec.Immutable` refuses `status`, `roles` and `handle` on PATCH.
 - `ApproveRegistration` (`modules/user/internal/registration.go`) requires a non-nil acting principal, takes the row lock, and only approves a pending registration that has a password. The acting user id is recorded in the event.
 
@@ -156,3 +175,30 @@ them, run against the fake and the Postgres service), so the next delivery that
 touches who holds a role runs them whether it means to or not; and
 `contracts.GrantingFunc`, the same four-line adapter shape as
 `AdministrationFunc`, for any other module that must ask "may this caller grant".
+
+## Composition (T-0136)
+
+**Reused** — `contracts.User.CanAdminister` and `Service.Holders` (the predicate
+and the read this delivery needed and both already existed for a different
+caller), `contracts.Administration`/`auth.AdministeringRoles` for the names, the
+tenant's `pg_advisory_xact_lock` key, and the `contracts.Users` port
+`modules/auth` already took from this one — widened by one method rather than
+replaced, as `ConfirmAddress` was.
+**Added** — `contracts.Reach`, `CheckedAdministration`'s before/after shape, and
+`UserReach`/`LeavingAdministration`: the composed question had no home, because
+two half-rules existed and neither could be asked by the other's module — a rule
+in `modules/auth` would not build from `modules/user`, which imports it. And
+`EventAdministrationRefused` with `internal.Service.recordRefusal`: the refused
+write is rolled back, so without a record of its own the attempt leaves no trace
+at all.
+**Made reusable** — one decision function every write path calls through its own
+door, with the door's clause passed in as a sentence rather than baked in, and
+`authcontracts.CheckedAdministration` as the shape of a door onto the rule for
+any module that changes what a grant means. The refusal record is reusable the
+same way: it is `recordFailure`'s detached-publish shape applied a second time,
+so a module that has to record a write it refused has a precedent in the tree
+rather than a pattern to invent. The composition cases in
+`apps/platformkit/administration_lock_test.go` are *not* reusable in that sense:
+they are unexported functions in `package main` test files, importable by nobody,
+and `appoint` writes a `users` row in a system transaction, which is a state the
+operator's route reaches and a command's route does not.

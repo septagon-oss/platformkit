@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -34,6 +36,12 @@ type roleStore struct {
 	// fail is what the read answers with, for the one case the page cannot
 	// render around.
 	fail error
+	// holders is who could sign in and administer this tenant, named by the role
+	// they hold. It is the half of the composed floor the real store asks the user
+	// module for — which names grant, and which people hold them, are different
+	// modules' rows — and a screen test has no user table to ask, so the case
+	// names the people instead.
+	holders map[string][]uuid.UUID
 }
 
 func (s *roleStore) Roles(context.Context, db.Tx[db.Tenant]) ([]*authcontracts.Role, error) {
@@ -56,7 +64,18 @@ func (s *roleStore) SetRole(_ context.Context, _ db.Tx[db.Tenant], name string,
 		was = s.roles[i].Grants
 	}
 	err = authcontracts.CheckedAdministration(name, was, granted,
-		func() ([]*authcontracts.Role, error) { return s.roles, nil })
+		func() ([]*authcontracts.Role, error) { return s.roles, nil },
+		func(names []string) ([]uuid.UUID, error) {
+			var out []uuid.UUID
+			for _, role := range names {
+				for _, id := range s.holders[role] {
+					if !slices.Contains(out, id) {
+						out = append(out, id)
+					}
+				}
+			}
+			return out, nil
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -78,10 +97,14 @@ func withRoles(store *roleStore) func(*admin.Deps) {
 }
 
 func seeded() *roleStore {
+	// adaID is the one active person the store's tenant has: whoever holds admin
+	// could sign in and administer it, which is the state every case below starts
+	// from and the thing the refusal is protecting.
+	adaID := uuid.MustParse("00000000-0000-4000-8000-000000000ada")
 	return &roleStore{roles: []*authcontracts.Role{
 		{Name: authcontracts.RoleAdmin, Grants: authcontracts.Permissions{authcontracts.Wildcard}},
 		{Name: authcontracts.RoleMember, Grants: nil},
-	}}
+	}, holders: map[string][]uuid.UUID{authcontracts.RoleAdmin: {adaID}}}
 }
 
 // TestTheRolesScreenServesWhatTheAuthModulesNavEntryNames is the defect this
