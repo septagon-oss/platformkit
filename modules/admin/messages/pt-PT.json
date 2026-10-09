@@ -286,5 +286,23 @@
     "plural": {
       "": "Voltar ao início de sessão"
     }
+  },
+  "admin.login.or": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "ou",
+    "plural": {
+      "": "ou"
+    }
+  },
+  "admin.login.passkey": {
+    "references": [
+      "modules/admin/internal/pages.go"
+    ],
+    "translation": "Continuar com uma passkey",
+    "plural": {
+      "": "Continuar com uma passkey"
+    }
   }
 }
