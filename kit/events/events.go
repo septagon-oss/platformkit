@@ -103,22 +103,30 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
-	// The promise the emitting module made in its manifest is checked here, at
-	// the one door, before anything is written. Whose promise it is, is which app
-	// holds the tenant this row belongs to: one process may hold two compositions,
-	// and the check academy's boot declared must not be the one acme's event is
-	// measured against, nor acme's be missing when academy's own event is written.
-	// The read is asked only when some app typed this event — an event no app
-	// described has no contract to consult in any app — so an unchecked publish
-	// still costs exactly the INSERT it always cost. See catalog.go.
+	// The two promises the emitting module made in its manifest, checked here at
+	// the one door before anything is written: that the name is one somebody
+	// declared, and that the payload is the shape declared for it. Whose promise
+	// it is, is which app holds the tenant this row belongs to: one process may
+	// hold two compositions, and the check academy's boot declared must not be the
+	// one acme's event is measured against, nor acme's be missing when academy's
+	// own event is written. The read is asked only when some app typed this event —
+	// an event no app described has no contract to consult in any app, and no app
+	// to ask about it either, so for one of those the write asks the cheaper
+	// question the process answers without a read. An unchecked publish still costs
+	// exactly the INSERT it always cost. See catalog.go.
 	if payloadTyped(name) {
 		app, err := appOfTenant(gdb, tenantID)
 		if err != nil {
 			return fmt.Errorf("events: %s: %w", name, err)
 		}
+		if err := checkDeclared(app, name); err != nil {
+			return err
+		}
 		if err := checkPayload(app, name, body); err != nil {
 			return err
 		}
+	} else if err := checkDeclared("", name); err != nil {
+		return err
 	}
 	var actor any
 	if id, ok := tenancy.ActorFrom(ctx); ok {
