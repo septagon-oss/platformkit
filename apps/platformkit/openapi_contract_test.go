@@ -305,6 +305,56 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		})
 	}
 
+	// The plan feature a declaration names with .Needing is part of what the door is:
+	// kit/httpx marshals it beside the permission and asks the tenant's plan for it at
+	// request time. So dropping, adding or renaming it changes the declaration the
+	// reviewer read in /openapi.json, and B6 refuses it while the permission stayed put —
+	// naming the operation and both spellings, so the person who sees the refusal knows
+	// which door and which plan moved. What these cases refuse is a changed document: that
+	// a tenant whose plan lacks the feature is answered 402 is kit/httpx's decision at
+	// request time, tested there, and nothing here boots a process to claim it.
+	for _, tc := range []struct {
+		name          string
+		before, after func(t *testing.T, doc map[string]any)
+		want          string
+	}{
+		{"a plan feature leaves an audited read", nil, func(t *testing.T, doc map[string]any) {
+			delete(wireAt(t, doc, "paths:/api/v1/audit/events:get:x-platformkit-auth"), "feature")
+		}, "B6 (breaking): GET /api/v1/audit/events (audit-event-list) is authorized kind=permission permission=audit:read where it was kind=permission permission=audit:read feature=audit-trail"},
+		{"an audited read moves to another plan feature", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/audit/events:get:x-platformkit-auth")["feature"] = "enterprise"
+		}, "B6 (breaking): GET /api/v1/audit/events (audit-event-list) is authorized kind=permission permission=audit:read feature=enterprise where it was kind=permission permission=audit:read feature=audit-trail"},
+		{"a write starts demanding a plan feature it never named", nil, func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/task/tasks:post:x-platformkit-auth")["feature"] = "pro"
+		}, "B6 (breaking): POST /api/v1/task/tasks (task-task-create) is authorized kind=permission permission=task:update feature=pro where it was kind=permission permission=task:update"},
+		// The composition's one reviewed pair is `kind=signed_in` to `kind=any_credential`.
+		// Read against a door that also carries a plan feature, it names neither side: the
+		// widening stands, the feature is unreviewed, and the pair covers none of it.
+		{"a reviewed widening cannot carry a feature it never named", func(t *testing.T, doc map[string]any) {
+			wireAt(t, doc, "paths:/api/v1/auth/me:get:x-platformkit-auth")["feature"] = "audit-trail"
+		}, func(t *testing.T, doc map[string]any) {
+			// The door as the reviewed pair describes it: the wider kind, and no feature,
+			// which is what a delivery that only meant to widen would publish. Read the way
+			// this gate read a declaration before the fix — kind and permission only — this is
+			// the reviewed pair, and the feature disappears into a widening about nothing.
+			wireAt(t, doc, "paths:/api/v1/auth/me:get")["x-platformkit-auth"] = map[string]any{"kind": "any_credential"}
+		}, "B6 (breaking): GET /api/v1/auth/me (auth-me) is authorized kind=any_credential where it was kind=signed_in feature=audit-trail"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reference := golden
+			if tc.before != nil {
+				reference = wireMutated(t, golden, tc.before)
+			}
+			problems := breakingWireChanges(t, reference, wireMutated(t, reference, tc.after))
+			if len(problems) != 1 {
+				t.Fatalf("the gate said %q, want the one refusal below", problems)
+			}
+			if !strings.Contains(problems[0], tc.want) {
+				t.Errorf("the gate said %q, which is not %q", problems[0], tc.want)
+			}
+		})
+	}
+
 	// The changes a delivery is allowed to make on its own: a new address, a new
 	// optional field on a document a shell already reads, and a door that admits
 	// every credential it admitted and one more. The first two are what
@@ -330,6 +380,12 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "signed_in"
 		}, func(t *testing.T, doc map[string]any) {
 			wireAt(t, doc, "paths:/api/v1/app/resources:get:x-platformkit-auth")["kind"] = "any_credential"
+		}},
+		{"the whole document re-rendered with its keys in another order", nil, func(t *testing.T, doc map[string]any) {
+			// Nothing is done to it: rendering the parsed golden again writes every object's
+			// keys in sorted order, so the bytes move and no declaration does. The 114 doors
+			// this document publishes are the 114 the golden publishes, and the identity that
+			// now reads a plan feature out of them reads it from both sides the same way.
 		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -807,7 +807,9 @@ and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Cata
 half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
 `:161`), pinned by the golden files in `apps/platformkit/testdata/`.
 `apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
-that `kit/wire` owns and lists (`kit/wire/README.md:28-35`), and
+that `kit/wire` owns and lists (`kit/wire/README.md:28-35`) over the whole
+authorization declaration an operation emits, kind, permission and plan feature
+(`kit/httpx/auth.go:136-142`), and
 `e2e/maestro/flows.json` is the device journey behind
 `mobile-e2e` (`Makefile:141`) and `.gitea/workflows/mobile.yml:1`.
 
@@ -836,7 +838,8 @@ breaking change ships as a new
 address plus an alias row (`kit/httpx/aliases.go:87`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
-strands a reader, a narrowed authorisation — and additive change is always allowed.
+strands a reader, a narrowed authorisation, a plan feature added, dropped or renamed —
+and additive change is always allowed.
 `apps/platformkit/catalog_version_test.go` is the companion proof that
 the version number moves when it must.
 

@@ -20,8 +20,11 @@ type Break struct {
 
 func (b Break) String() string { return b.Message }
 
-// AuthorizationAllowance is a reviewed, exact pair of normalized declarations.
-// ReviewedOn is a YYYY-MM-DD review date, not an expiry or a wall-clock check.
+// AuthorizationAllowance is a reviewed, exact pair of normalized declarations. A
+// declaration is the whole declaration the server emitted — kind, permission, feature
+// and any other member — so a pair names every member on both sides and covers no
+// change it does not spell out. ReviewedOn is a YYYY-MM-DD review date, not an expiry
+// or a wall-clock check.
 type AuthorizationAllowance struct {
 	From       string
 	To         string
