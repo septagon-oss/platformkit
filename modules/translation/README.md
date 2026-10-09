@@ -172,8 +172,9 @@ written and nothing published:
 `GET …?lang=pt-PT` on a Spec with a translatable field: the locale's rows, every
 fallback named in `_i18n`, `Content-Language` the tag asked for. Withheld from a
 public reader: anything a machine wrote that no person has reviewed — the source
-and a `withheld` status answer instead. No page, no screen, no admin surface:
-the translator's own screens are the next slice and are not this module's.
+and a `withheld` status answer instead. The site's public page answers the same
+question through `rest.ServeTranslated` and names its alternates; the generated
+record screen shows each language's completeness and nothing beyond it.
 
 ### The operator boundary
 
@@ -230,40 +231,24 @@ feature (compare, diff, chunk for search) now has one owner for.
 
 ## Limits
 
-- Nothing serves the translator's screens yet: the switcher, the side-by-side
-  view and the overview are the next slice, and `Overview` exists for them.
-- `?lang=` is honoured only when it is asked for. There is no negotiation: no
-  cookie, no `Accept-Language`, no `Vary`, and no preference stored — the tenant's
-  declared list decides whether a tag is answered at all, and a read in the
-  tenant's default language asks nothing of this table.
-- Still missing: the public `lang`/`hreflang`/`x-default` set, the translator's
-  UI (switcher, side-by-side, overview), the machine adapter behind
-  `locale.Translator` — no provider's URL, model or price lives in this
-  repository, so nothing here pretends to be one — the Playwright+axe journeys
-  and the second demo language in `config.example.yaml`. Above all, **nothing
-  composes this module yet**: `grep -rl modules/translation apps` answers
-  nothing, so no tenant is served a translated record today and every door above
-  is a door no installation mounts until somebody writes the two lines in
-  `apps/platformkit/modules.go`. Naming that here is the point: a README that
-  described doors as present while nothing wired them is the finding this module
-  was reviewed for.
-- Composing it is a slice of its own rather than two lines, because three
-  published facts move with it and none of them moves here. A Spec whose entity
-  declares a translatable field answers `GET` as `TranslatedPageContentBody`
-  where the reference application's pinned document publishes `PageContentBody`
-  — the wrapper exists to carry `Content-Language`, and
-  `TestTheOpenAPIDocumentIsTheCompositionServed` refuses a renamed response
-  schema as a breaking change whatever `UPDATE_GOLDEN` says, so the door's body
-  has to keep the page's name before any entity is tagged. `translation.updated`
-  has to reach `testdata/asyncapi.json` as a channel, which
-  `TestEveryDeclaredEventIsInTheDocumentAndCovered` counts. And this file gains
-  what the section above already answers, read by
-  `TestEveryComposedModuleREADMEAnswersTheSixAuthorizationQuestions` for every
-  module the application names. Tagging content's `title` and `body` and wiring
-  both lines at `9d09d98` failed those three cases, in that order, while
-  `modules/content`'s own suite stayed green beside them once its `Deps` is
-  handed the fake port — which is why the tagging, the wiring and the three
-  documents belong in one later commit and not in a hurried one.
+- The translator's own screens are not delivered, with one number excepted: the
+  record screen of a translatable entity shows how much of the record exists in
+  each language besides the tenant's own (`rest.LocaleStates`, drawn by
+  `ui/resource`). The switcher, the side-by-side editor, the stale-field
+  highlight and the overview are still the next slice, and `Overview` exists for
+  them with nothing rendering it.
+- A tag that is asked for is honoured, and a reader who named none is negotiated
+  for: `kit/rest`'s `negotiateLang` reads the workspace's `lang` cookie and the
+  caller's own `Accept-Language`, `ui/page` hands the site's pages the result and
+  says so with `Vary`. The generated JSON read doors answer `Content-Language`
+  and set no `Vary`, which is the behaviour the follow-up list still names.
+- Still missing: the machine adapter behind `locale.Translator` — no provider's
+  URL, model or price lives in this repository, so nothing here pretends to be
+  one — and the Playwright+axe journeys, which need the screens above to exist
+  before anybody can walk them. This module is composed: `apps/platformkit/modules.go`
+  names it, content's `title` and `body` are tagged, and the reference
+  application's own tests publish a page, translate it and read it in both
+  languages. What is absent here is the translator's side of it, not the wiring.
 - The tenant's declared languages are a parameter of the caller, never stored
   here: which languages a tenant speaks is `modules/tenant`'s answer, reached by
   `SetLocale`.
