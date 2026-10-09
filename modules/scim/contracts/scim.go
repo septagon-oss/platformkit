@@ -318,8 +318,12 @@ type SchemaAttribute struct {
 // is no method here that can ask about another tenant's groups, because there is
 // no transaction that would answer it.
 //
-// Concurrency: a SCIM connector sends no If-Match, so there is no revision to
-// check against. The service does not invent one. Every write it performs is a
+// Concurrency: this service issues no resource version it can compare a write
+// against, so it accepts no conditional write: the protocol door refuses a request
+// that carries If-Match before it reaches any of the commands below (see
+// Service.ProviderConfig, which says `supportETag: false`, and the note at
+// Meta.Version, which is an answer and not a demand). What a command does check is
+// the state it is about to change. Every write it performs is a
 // command on modules/user that rechecks its own state inside its own transaction
 // (SetRoles locks the row, ConfirmAddress refuses a status it cannot activate),
 // and every write of a group takes that group's row lock before it reads who is
@@ -339,9 +343,11 @@ type SchemaAttribute struct {
 //
 // Authority: no group command writes the tenant's role mapping. The protocol
 // carries no such field (see GroupDraft.Role), and the binding is written by
-// MapGroup alone, which rechecks the caller's own scope inside its transaction
+// MapGroup alone, which rechecks the caller's authority inside its transaction
 // before it writes: the guard on the door is not the whole rule, because MapGroup
-// is exported and any module may call it.
+// is exported and any module may call it. The recheck asks Authority, which the
+// composition answers from the two tables that decide it, so no caller is refused
+// by a list this module keeps and none is admitted by the absence of one.
 type Service interface {
 	// ProviderConfig, ResourceTypes, ResourceType, Schemas and Schema are the
 	// discovery documents. They take no transaction because they read no rows:
@@ -388,8 +394,9 @@ type Service interface {
 	// of it. Mapping is the workspace's door (user:read, user:manage) rather than
 	// the protocol's: it is a role assignment decided in advance by an
 	// administrator at a screen, not an act of provisioning. MapGroup rechecks
-	// the caller's scope itself, so a caller whose credential carries its own
-	// authority cannot reach this table by naming the command instead of the door.
+	// the caller's authority itself, through Authority, so no caller reaches this
+	// table by naming the command instead of the door — not a credential carrying
+	// its own narrower scope, and not a session whose roles do not grant it.
 	GroupMappings(ctx context.Context, tx db.Tx[db.Tenant]) (MappingList, error)
 	MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group string, role string) (*GroupMapping, error)
 }
@@ -405,6 +412,32 @@ type RoleDirectory interface {
 	// HasRole reports whether this tenant has a role of that name. An error is
 	// an outage and refuses the write: "I cannot tell" must not read as "no".
 	HasRole(ctx context.Context, tx db.Tx[db.Tenant], name string) (bool, error)
+}
+
+// Authority answers the one authority question this module cannot answer from its
+// own rows: whether the caller of this transaction holds a permission.
+//
+// It is a port for the same reason RoleDirectory is, and the split is the same
+// one. Which roles a person holds is modules/user's column and what those roles
+// grant is the auth module's table; a provisioning module that joined them would
+// own a rule about authority that two other modules spent their rows deciding —
+// and the rule would be wrong the day either of them changed it. So the module
+// asks the question, the composition answers it over both tables, and the answer
+// is never weaker than the one the same composition's HTTP guard gives the same
+// caller: the route a request already passed is not a second, weaker rule about
+// who may bind a mapping, and the command reached by naming it instead of the
+// route must not be either.
+//
+// The caller is read from ctx, in the tenant of tx, and out of the person's row
+// rather than out of what the context claims: a caller the door built carries the
+// roles its session was recognised with, and one built by naming the command
+// carries whatever its author wrote. Only one of those is a fact about a grant.
+type Authority interface {
+	// Holds reports whether the caller on ctx holds permission in this tenant.
+	// An error is a decision that could not be made, and the write is refused:
+	// "I cannot tell" must not read as "yes", which is the same rule HasRole
+	// states from the other side of the same table.
+	Holds(ctx context.Context, tx db.Tx[db.Tenant], permission string) (bool, error)
 }
 
 // The wire's own name, on every document this service answers with.

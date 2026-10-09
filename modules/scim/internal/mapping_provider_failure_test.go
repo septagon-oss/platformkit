@@ -26,11 +26,17 @@ func TestRoleDirectoryFailureDoesNotCommitAMapping(t *testing.T) {
 		return err
 	})
 	unavailable := errors.New("role directory unavailable")
-	service, _ := scim.New(scim.Deps{Users: w.users, Roles: unavailableRoleDirectory{err: unavailable}})
+	service, _ := scim.New(scim.Deps{
+		Users: w.users, Roles: unavailableRoleDirectory{err: unavailable},
+		// The same authority the harness composes: this case is about the role
+		// directory being unreachable, and a caller the mapping door would refuse
+		// anyway would prove nothing about where the write stopped.
+		Authority: w.authority,
+	})
 	var got *contracts.GroupMapping
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), w.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
-		got, err = service.MapGroup(ctx, tx, "People", "finance")
+		got, err = service.MapGroup(mayMap(ctx), tx, "People", "finance")
 		return err
 	})
 	if !errors.Is(err, unavailable) || got != nil {

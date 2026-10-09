@@ -28,7 +28,7 @@ func TestConcurrentGroupRemovalsRevokeBothRoles(t *testing.T) {
 				return err
 			}
 			groups = append(groups, g.ID)
-			if _, err := w.svc.MapGroup(ctx, tx, role, role); err != nil {
+			if _, err := w.svc.MapGroup(mayMap(ctx), tx, role, role); err != nil {
 				return err
 			}
 		}

@@ -28,7 +28,7 @@ func TestWithdrawingAMappingRevokesTheRoleItGranted(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				_, err = w.svc.MapGroup(ctx, tx, "Finance", "finance")
+				_, err = w.svc.MapGroup(mayMap(ctx), tx, "Finance", "finance")
 				return err
 			})
 			w.inTenant(t, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -39,7 +39,7 @@ func TestWithdrawingAMappingRevokesTheRoleItGranted(t *testing.T) {
 				if !slices.Contains(u.Roles, "finance") {
 					t.Fatal("setup did not grant finance")
 				}
-				_, err = w.svc.MapGroup(ctx, tx, "Finance", replacement)
+				_, err = w.svc.MapGroup(mayMap(ctx), tx, "Finance", replacement)
 				return err
 			})
 			w.inTenant(t, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

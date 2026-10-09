@@ -41,12 +41,76 @@ func (r roleBook) HasRole(_ context.Context, _ db.Tx[db.Tenant], name string) (b
 	return slices.Contains(r.known, name), nil
 }
 
+// grantBook is this harness's answer to "does the caller of this write hold that
+// permission", which is the other question the module may not answer from another
+// module's rows. The reference composition resolves the person's roles out of
+// modules/user's row and those roles' grants out of auth's table
+// (apps/platformkit/scim.go); this harness composes no auth module, so it keeps the
+// one-row role table its cases need: the role it hands an administrator is the one
+// whose grants name the permission the mapping door asks for. Everything that is not
+// that lookup is answered the way the composition answers it — a credential's own
+// ceiling decides a bearer, a session is decided by its person's live row, nobody is
+// refused, and an unreadable row is an error rather than a "no".
+type grantBook struct {
+	users  usercontracts.Service
+	grants map[string][]string
+}
+
+func (g grantBook) Holds(ctx context.Context, tx db.Tx[db.Tenant], permission string) (bool, error) {
+	p, ok := tenancy.PrincipalFrom(ctx)
+	if !ok || p.UserID == uuid.Nil {
+		return false, nil
+	}
+	if p.Permissions != nil {
+		return slices.Contains(p.Permissions, permission), nil
+	}
+	u, err := g.users.Get(ctx, tx, p.UserID)
+	if errors.Is(err, crud.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if u.Status != usercontracts.StatusActive {
+		return false, nil
+	}
+	for _, role := range u.Roles {
+		if slices.Contains(g.grants[role], permission) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// administered is the role this harness's role table knows: the one whose grants
+// include the permission the mapping door names. It is the harness's own name for
+// what a real tenant's seed calls `admin`.
+const administered = "administrator"
+
+// mayMap returns ctx carrying a caller the mapping door admits: a recognised
+// credential whose own scope names the permission that binds a group to a role.
+//
+// Every case that binds a mapping needs one, because the command asks who is asking
+// rather than trusting the door it was called through (contracts.Authority). The two
+// shapes of caller a mapping write arrives with each have their own case in
+// mapping_authority_test.go; what the rest of these cases are about is the binding,
+// so they name an admitted caller and get on with it.
+func mayMap(ctx context.Context) context.Context {
+	return tenancy.WithPrincipal(ctx, tenancy.Principal{
+		UserID: uuid.New(), Permissions: []string{usercontracts.PermissionUserManage},
+	})
+}
+
 // wiring is one composed module: the user module's service, this module's service
 // over it, and the connection they both run on.
 type wiring struct {
 	svc   contracts.Service
 	users usercontracts.Service
-	conn  *db.Conn
+	// authority is what compose wired into scim.Deps.Authority. A case that builds
+	// a second service over one failing collaborator composes this same answer to
+	// "who is asking" and varies only the thing it means to break.
+	authority contracts.Authority
+	conn      *db.Conn
 }
 
 func compose(t *testing.T, known ...string) wiring {
@@ -64,8 +128,15 @@ func compose(t *testing.T, known ...string) wiring {
 			Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil },
 		},
 	})
-	svc, _ := scim.New(scim.Deps{Users: users, Roles: roleBook{known: known}})
-	return wiring{svc: svc, users: users, conn: conn}
+	authority := grantBook{users: users, grants: map[string][]string{
+		administered: {usercontracts.PermissionUserManage},
+	}}
+	svc, _ := scim.New(scim.Deps{
+		Users:     users,
+		Roles:     roleBook{known: known},
+		Authority: authority,
+	})
+	return wiring{svc: svc, users: users, authority: authority, conn: conn}
 }
 
 // inTenant runs fn in one transaction of one tenant, and fails the test if it
@@ -196,7 +267,7 @@ func TestAGroupCarriesItsRoleOntoItsMembersAndTakesItBackOff(t *testing.T) {
 		}
 		// The binding is made at the tenant's own door, which is the only writer of
 		// the table there is: the group reads back the same role however it arrived.
-		if _, err := w.svc.MapGroup(ctx, tx, group.DisplayName, "finance"); err != nil {
+		if _, err := w.svc.MapGroup(mayMap(ctx), tx, group.DisplayName, "finance"); err != nil {
 			return err
 		}
 		if group, err = w.svc.GetGroup(ctx, tx, group.ID); err != nil {
@@ -264,7 +335,7 @@ func TestAMappingToARoleNobodyDeclaredIsRefusedAndWritesNothing(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		_, err = w.svc.MapGroup(ctx, tx, group.DisplayName, "ghost")
+		_, err = w.svc.MapGroup(mayMap(ctx), tx, group.DisplayName, "ghost")
 		return err
 	})
 	if !strings.Contains(got.Error(), "ghost") {
@@ -400,7 +471,7 @@ func TestAnotherTenantCannotReachThisTenantSCIMRows(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if _, err := w.svc.MapGroup(ctx, tx, g.DisplayName, "finance"); err != nil {
+		if _, err := w.svc.MapGroup(mayMap(ctx), tx, g.DisplayName, "finance"); err != nil {
 			return err
 		}
 		group = g.ID

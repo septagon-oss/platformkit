@@ -20,7 +20,7 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
-// Deps is what this module cannot make for itself, and it is two things, both of
+// Deps is what this module cannot make for itself, and it is three things, all of
 // which are somebody else's rows.
 type Deps struct {
 	// Users is the only writer of people this module knows. Provisioning is
@@ -35,6 +35,17 @@ type Deps struct {
 	// the auth module's table and this module reads no other module's rows, so the
 	// composition answers it — see contracts.RoleDirectory.
 	Roles contracts.RoleDirectory
+
+	// Authority answers whether the caller of a mapping write holds the permission
+	// that decides what a membership grants. Which roles a person holds is
+	// modules/user's column and what those roles grant is the auth module's table;
+	// this module reads neither, so the composition answers the joined question —
+	// see contracts.Authority.
+	//
+	// It is required for the reason the other two are: a composition that supplies
+	// none gets a panic at boot rather than a mapping door whose command-level
+	// recheck silently answers "yes" for whoever reaches it by name.
+	Authority contracts.Authority
 }
 
 // permissions is what the manifest declares: the one grant the provider's
@@ -48,10 +59,11 @@ var permissions = []module.Permission{
 
 // New returns the service and the manifest built on it.
 //
-// Both dependencies are required, and refused here rather than at first use: a
+// Every dependency is required, and refused here rather than at first use: a
 // composition that gets a nil and boots anyway has a provisioning door that
-// either cannot write a person or binds groups to roles nobody declared, and both
-// answers look like success until a customer's directory is half-imported.
+// either cannot write a person, binds groups to roles nobody declared, or writes
+// a role grant it never asked anybody about, and all three answers look like
+// success until a customer's directory is half-imported.
 func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Users == nil {
 		panic("scim.Module: Deps.Users is required; the people this module provisions are modules/user's rows and only its commands may write them")
@@ -59,7 +71,10 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Roles == nil {
 		panic("scim.Module: Deps.Roles is required; wire contracts.RoleDirectory over whatever owns the tenant's role names, or a group can be bound to a role that does not exist")
 	}
-	svc := internal.NewService(deps.Users, deps.Roles)
+	if deps.Authority == nil {
+		panic("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or MapGroup's command-level recheck has nothing to ask")
+	}
+	svc := internal.NewService(deps.Users, deps.Roles, deps.Authority)
 	return svc, module.Module{
 		Name:        "scim",
 		Migrations:  Migrations.Files,

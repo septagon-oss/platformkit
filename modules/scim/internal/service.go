@@ -26,19 +26,22 @@ import (
 
 // Service is the SCIM surface over this tenant's people and groups.
 //
-// It holds two collaborators and no state of its own beyond them, which is what
-// lets one value serve a request, a job and an event handler at once. Neither is
-// a thing this module may do for itself: the person is modules/user's row, and
-// what a role name grants is the auth module's table. Both arrive at composition.
+// It holds three collaborators and no state of its own beyond them, which is what
+// lets one value serve a request, a job and an event handler at once. None of the
+// three is a thing this module may do for itself: the person is modules/user's
+// row, what a role name grants is the auth module's table, and whether the caller
+// of a write holds a permission is decided by both of those rows at once. All three
+// arrive at composition.
 type Service struct {
-	users usercontracts.Service
-	roles contracts.RoleDirectory
+	users     usercontracts.Service
+	roles     contracts.RoleDirectory
+	authority contracts.Authority
 }
 
 // NewService returns the service. module.go builds it and refuses a composition
 // that named neither collaborator.
-func NewService(users usercontracts.Service, roles contracts.RoleDirectory) *Service {
-	return &Service{users: users, roles: roles}
+func NewService(users usercontracts.Service, roles contracts.RoleDirectory, authority contracts.Authority) *Service {
+	return &Service{users: users, roles: roles, authority: authority}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -871,7 +874,7 @@ func (s *Service) GroupMappings(_ context.Context, tx db.Tx[db.Tenant]) (contrac
 // to hold a role, and a credential a tenant hands to somebody else's identity
 // provider must not be able to say what a collection it mirrors grants.
 func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role string) (*contracts.GroupMapping, error) {
-	if err := mayBindMapping(ctx); err != nil {
+	if err := mayBindMapping(ctx, tx, s.authority); err != nil {
 		return nil, err
 	}
 	g, err := s.groupByName(ctx, tx, group)
@@ -917,31 +920,49 @@ func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role
 // that holds only for whoever happens to enter through the HTTP door is that rule
 // with a hole in the shape of every other caller.
 //
-// What a module can decide for itself is the caller's own ceiling.
+// Two shapes of caller arrive, and this module decides one of them for itself.
 // tenancy.Principal.Permissions is the authority a credential carries, and a
-// non-nil list is a ceiling and never an addition — so a caller whose credential
+// non-nil list is a ceiling and never an addition — a caller whose credential
 // carries one is held to it here, by exact name, whoever it is and however it
 // reached this function. A refusal reads nothing, writes nothing, publishes
 // nothing and returns no row, and it arrives as the kernel's own 403 for a caller
 // that reached it through a request.
 //
-// What stays with the door is the question the module cannot answer: which
-// permissions a signed-in caller's roles carry is the auth module's table, and
-// reading it would be two modules' rows in one query (the same split as
-// RoleDirectory, answered at composition rather than reached across). So a caller
-// that carries no scope of its own is refused only by the guard its route
-// declared, and that limit is stated in the module's README and asked about by
-// TestMappingCommandRefusesAProvisionOnlyActor instead of being argued away.
-func mayBindMapping(ctx context.Context) error {
+// The other shape is a session, which carries no list of its own: what its roles
+// grant is two other modules' rows, and reading them from here would be the same
+// mistake as reading the role definitions for HasRole. So the question goes to the
+// composition's Authority, which answers it over those rows and answers it the same
+// way the guard on the module's own route does — which is the point of the port
+// rather than a comment on it: a caller who walked past the guard is refused by the
+// same rule the guard applied, not by a weaker copy of it written here.
+//
+// A caller with no principal at all is refused with the rest. It is the shape a
+// background job wears, and a job has no authority of its own to spend on which
+// role a person's membership means; admitting it would leave the bypass one
+// forgotten context value deep, which is exactly the hole this function exists to
+// close.
+func mayBindMapping(ctx context.Context, tx db.Tx[db.Tenant], authority contracts.Authority) error {
 	p, ok := tenancy.PrincipalFrom(ctx)
-	if !ok || p.Permissions == nil {
-		return nil
+	if !ok || p.UserID == uuid.Nil {
+		return fmt.Errorf("%w: binding a group to a role is %s work, and this write names no caller who holds it",
+			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
 	}
-	if slices.Contains(p.Permissions, usercontracts.PermissionUserManage) {
-		return nil
+	if p.Permissions != nil {
+		if slices.Contains(p.Permissions, usercontracts.PermissionUserManage) {
+			return nil
+		}
+		return fmt.Errorf("%w: binding a group to a role is %s work, and this credential carries its own scope without it",
+			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
 	}
-	return fmt.Errorf("%w: binding a group to a role is %s work, and this credential carries its own scope without it",
-		tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
+	held, err := authority.Holds(ctx, tx, usercontracts.PermissionUserManage)
+	if err != nil {
+		return fmt.Errorf("scim: cannot tell whether this caller holds %s: %w", usercontracts.PermissionUserManage, err)
+	}
+	if !held {
+		return fmt.Errorf("%w: binding a group to a role is %s work, and the roles this caller signs with do not grant it",
+			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
+	}
+	return nil
 }
 
 // mapGroup is the one write of the mapping table, from whichever door asked. It

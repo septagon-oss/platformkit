@@ -18,7 +18,7 @@ func TestReplacingAGroupPreservesTheTenantRoleMapping(t *testing.T) {
 			return err
 		}
 		id = g.ID
-		_, err = w.svc.MapGroup(ctx, tx, "Finance", "finance")
+		_, err = w.svc.MapGroup(mayMap(ctx), tx, "Finance", "finance")
 		return err
 	})
 	w.inTenant(t, acme, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

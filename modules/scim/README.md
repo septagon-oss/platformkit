@@ -35,10 +35,16 @@ named below.
 `contracts.Service` is the module's own port over the protocol: discovery, the user
 collection, the group collection, and the tenant's group→role mappings. Its
 implementation lives in `internal/` and takes `modules/user/contracts.Service` as a
-collaborator, along with a `contracts.RoleDirectory` the composition implements over
-wherever role definitions actually live — this module may read neither auth's role
-table nor user's role column, so the question "is this a role this tenant knows"
-arrives as a port rather than an import.
+collaborator, along with two ports the composition implements.
+`contracts.RoleDirectory` answers the question over wherever role definitions
+actually live — this module may read neither auth's role table nor user's role
+column, so "is this a role this tenant knows" arrives as a port rather than an
+import. `contracts.Authority` answers the other question those same two rows
+decide: whether the caller of a write holds a permission. Which roles a person
+signs with is user's column and what those roles grant is auth's table, so the
+joined question arrives as a port too, and the answer the composition gives it is
+the answer the guard on this module's own route gives the same caller.
+`apps/platformkit/scim.go` answers both, over the two auth methods it already holds.
 
 ### Interface
 
@@ -130,11 +136,17 @@ automatically at all.
 - Every mutation re-checks the tenant scope and the state it is about to change
   inside its own authoritative transaction, and holds the group's row lock while it
   decides, so a concurrent delete cannot commit underneath a membership write. A
-  refused write changes nothing and emits nothing. There is no *caller's expected
-  revision* to re-check: `contracts.Service` says why — a connector sends no
-  `If-Match`, the documents carry `meta.version` as an answer and not as a demand,
-  and this service issues no ETag. Anyone who wants compare-and-set has to add it to
-  the protocol door first, and the product's share of that is its own.
+  refused write changes nothing and emits nothing. What this service cannot hold is
+  the *caller's expected revision*: it issues no ETag and keeps no version to compare
+  one to, so the protocol door refuses any write that arrives carrying `If-Match` —
+  with 412, before it opens a transaction — instead of performing, unconditionally,
+  the write the caller asked to have refused. `TestConditionalUserWritesCannotOverwriteANewerPerson`
+  is that refusal, over `PUT`, `PATCH` and `DELETE` on a person the caller's copy no
+  longer speaks for. The reads and the tenant's own `group-mappings` route take no
+  such header, for the reason `internal/routes.go` states: a read loses nothing, and
+  no connector sends a condition to an address this platform named. Anyone who wants
+  compare-and-set has to give the door a resource version first, and the product's
+  share of that is its own.
 - A group's lock is not enough for what a membership write leaves behind, so each
   person it affects is locked too — ascending by id, and *before* their roles are
   worked out. Two collections, two writers, one person: each holds a lock the other
@@ -144,16 +156,20 @@ automatically at all.
   outlives its revocation; `TestConcurrentGroupRemovalsRevokeBothRoles` holds an
   unrelated transaction on the person's row to keep the two writers genuinely
   simultaneous and asks what the person is left holding.
-- `MapGroup` re-checks the caller's own credential inside its transaction, and not
-  only at the guard on its route. `Principal.Permissions` is the authority a
-  credential carries, and a non-nil list is a ceiling: a caller whose credential
+- `MapGroup` re-checks who is asking inside the transaction the binding is written
+  in, and not only at the guard on its route — for both shapes of caller. One shape
+  this module decides for itself: `Principal.Permissions` is the authority a
+  credential carries, and a non-nil list is a ceiling, so a caller whose credential
   carries one and does not name `user:manage` is refused here whoever it is and
-  however it reached the function, so a provisioning key cannot bind a group to a
-  role by naming the command instead of the door. **The limit, plainly:** which
-  permissions a signed-in caller's *roles* carry is auth's table, which this module
-  may not read, so such a caller is refused only by the guard its route declares —
-  closing that half needs a port answered at composition, and it is written as a
-  follow-up rather than pretended about.
+  however it reached the function, and a provisioning key cannot bind a group to a
+  role by naming the command instead of the door. The other shape is a session, which
+  carries no list of its own: its authority is two other modules' rows, so the
+  command asks `contracts.Authority`, which the composition resolves over user's role
+  column and auth's grant table, never more weakly than its route guard answers. A
+  person with no roles, one whose roles do not grant it, one this tenant holds no
+  active row for, and a write that names no caller at all are all refused — with no
+  row, no write and no event. `TestMappingCommandRefusesAProvisionOnlyActor` holds
+  the first shape and `TestMappingCommandRefusesASessionWithoutRoles` the second.
 - No group write binds a group to a role. `role` is this platform's extension, not
   part of the core Group schema, and a credential handed to somebody else's identity
   provider that could state what a mirrored organisational unit grants could grant
@@ -222,7 +238,7 @@ What this door refuses, and what a caller has to do instead.
 | a PATCH operation with no path whose value is not an object of attributes | guessing which attribute a bare value means | name the attributes, as `{"active":false}` does |
 | `userName`, a `password`, an unknown schema urn, any group `filter` | one address per person, chosen by nobody but the person; a subset handed over as the whole directory | read the notes above |
 | a `DELETE /Groups/{id}` that still has members | membership has one door | remove the members through it first |
-| an `If-Match`, or a revision the caller expected | the protocol sends none, so there is nothing to check | `contracts.Service`'s note on concurrency |
+| an `If-Match`, on any write, a create included | this service issues no resource version, so it has nothing to evaluate one against, and will not perform a conditional write as an unconditional one | send the write with no condition; `contracts.Service`'s note on concurrency |
 | any of the above, once refused | nothing of it is kept | — |
 
 The protocol's own conformance door (`contracts/scimtest`) is not here: the module is
@@ -243,8 +259,8 @@ naming is the claim, so the list is the acceptance trace rather than a summary.
 | every attribute write is auditable in the transaction that wrote it, and a restatement writes nothing | `TestEveryUserAttributeWriteLeavesATransactionalAuditEvent`, `TestAPersonWriteThatChangedNothingLeavesNoAuditLine` |
 | `PUT` and `PATCH` both honour `active`, in both directions | `TestReplacingAnInvitedUserHonoursTheActiveAttribute`, `TestConnectorDeactivationShapesStopThePerson` |
 | the collection carries its role onto its members and takes it back off, through one member, one leaver and a concurrent delete | `TestAGroupCarriesItsRoleOntoItsMembersAndTakesItBackOff`, `TestFilteredMemberRemovalPreservesOtherMembers`, `TestMembershipCannotCommitBehindAConcurrentGroupDeletion`, `TestConcurrentGroupRemovalsRevokeBothRoles` |
-| no group write, from no door, writes the tenant's binding — and the binding's own command refuses a caller whose credential does not carry it | `TestNoGroupCommandWritesTheTenantsRoleMapping`, `TestProvisioningCannotChooseTheTenantRoleMapping`, `TestMappingCommandRefusesAProvisionOnlyActor`, `TestAMappingWrittenByACredentialThatCarriesUserManage` |
-| a refused write changes nothing, emits nothing and returns no row, including when the role directory is unreachable | `TestWithdrawingAMappingRevokesTheRoleItGranted`, `TestAMappingToARoleNobodyDeclaredIsRefusedAndWritesNothing`, `TestRoleDirectoryFailureDoesNotCommitAMapping` |
+| no group write, from no door, writes the tenant's binding — and the binding's own command refuses a caller whose credential or whose roles do not carry it | `TestNoGroupCommandWritesTheTenantsRoleMapping`, `TestProvisioningCannotChooseTheTenantRoleMapping`, `TestMappingCommandRefusesAProvisionOnlyActor`, `TestMappingCommandRefusesASessionWithoutRoles`, `TestAMappingWrittenByACredentialThatCarriesUserManage` |
+| a refused write changes nothing, emits nothing and returns no row, including when the role directory is unreachable and when the caller's own condition names an older version | `TestWithdrawingAMappingRevokesTheRoleItGranted`, `TestAMappingToARoleNobodyDeclaredIsRefusedAndWritesNothing`, `TestRoleDirectoryFailureDoesNotCommitAMapping`, `TestConditionalUserWritesCannotOverwriteANewerPerson` |
 | a tenant cannot see, change or be affected by another tenant's provisioning | `TestForeignTenantCannotMutateOrReadProvisionedState` |
 | the last administrator survives every SCIM write, and the connector's deactivation is the one that stops them signing in | `TestSCIMRefusesTheLastAdministratorWithoutChangingState`, `TestConnectorDeactivationShapesStopThePerson` |
 | the discovery documents describe the door that answered them, at addresses that answer, in the envelope a client decodes | `TestTheDiscoveryDocumentsAnswerForThemselves`, `TestEveryAdvertisedSchemaCanBeReadByItsIdentifier`, `TestDiscoveryCollectionsUseTheSCIMListEnvelope`, `TestTheSCIMDoorAnswersAtTheAddressTheProtocolNames` (in `apps/platformkit`) |
@@ -252,7 +268,10 @@ naming is the claim, so the list is the acceptance trace rather than a summary.
 
 Not verified by anything here, and not claimed: a live Entra or Okta tenant, the
 browser and device journeys of a tenant that configured one, the localisation of a
-refusal sentence into the tenant's language, and compare-and-set on an `If-Match` this
-service does not implement. `If-Match` is refused for the reason in `Limits` above —
-there is no revision to check against — and a stale-etag request is therefore not a
-case this module can pass or fail until the door carries an ETag.
+refusal sentence into the tenant's language, and compare-and-set, which this service
+does not implement and therefore refuses. What *is* verified is the refusal: a write
+carrying a stale `If-Match` is answered 412 and changes nothing, which
+`TestConditionalUserWritesCannotOverwriteANewerPerson` asks of `PUT`, `PATCH` and
+`DELETE` on a person who has moved on since the caller read them. Whether a real
+connector sends that header at all, and what it does with a 412, is a question for a
+live tenant and is not answered here.
