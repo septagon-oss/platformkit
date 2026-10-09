@@ -10,17 +10,17 @@ package httpx
 // this server paid for and threw away.
 //
 // The one rule here is that every number on these fields came from the counter that
-// decided the answer. `kit/limit` publishes two readings: `Allow`, which says yes or
-// no and what is left of the window, and `Count`, which says how many events the open
-// window holds and records nothing. The policy line therefore costs no statement — a
-// name, a quota and a window the guard was built with — and the rate line needs a
-// reading of its own, so it is taken where a statement is worth it: on the refusal,
-// after the counter refused. The alternative is one `Reserve` method reporting the
-// decision, the quota left and the window left together, and it is not taken here:
-// adding a method to an interface published at v1.1.0 breaks whoever implements it,
-// and the review of that is the diff of scripts/baselines, not a middleware's
-// decision in passing. The second reading costs one SELECT against a row the first
-// one already wrote, on a request that has already been refused.
+// decided the answer. `kit/limit` decides and reads in one statement: `Reserve` records
+// the event and returns, from that one statement, the decision, the quota left and the
+// window left, so the policy line costs no statement at all — a name, a quota and a
+// window the guard was built with — and the rate line is the reading that decided. The
+// shape before it was `Allow` and a second `Count` taken after the refusal: one SELECT
+// against a row the first had already written, stating a quota taken from a row another
+// request had moved since the attempt being answered. `Count` stays for the read that
+// has to come before an attempt — modules/auth's lockout asks how full a window is and
+// must not fill it — and is not how a response states itself. Adding `Reserve` to an
+// interface published at v1.1.0 broke whoever implemented it, and that is a decision the
+// diff of scripts/baselines records, not one a middleware makes in passing.
 
 import (
 	"strconv"
