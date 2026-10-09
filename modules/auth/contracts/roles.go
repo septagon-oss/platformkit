@@ -6,11 +6,14 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	// The refusals come from kit/fault rather than kit/crud: this package names no
 	// transaction, and kit/crud re-exports the same values, so a caller that already
 	// wrote crud.ErrInvalid still matches what is returned here.
 	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
 var roleName = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
@@ -35,114 +38,83 @@ func ValidRoleName(name string) (string, error) {
 	return name, nil
 }
 
-// CheckedAdministration refuses one write a tenant cannot undo from inside the
-// product: the one that takes PermissionRoleManage away from the last role that
-// grants it.
+// CheckedAdministration is this module's door onto the one rule, which lives in
+// the user module as usercontracts.CheckedAdministration: the write that would
+// leave this tenant with nobody who can sign in and administer it.
 //
-// After that write nobody in the tenant can change a role again — not through
-// an admin screen and not through PUT /api/v1/auth/roles/{name}. Signing in as
-// the operator does not undo it either — an ordinary session does not cross
-// tenants; the separately authorized cross-tenant invite route below does.
+// What it adds to that rule is this module's own share. The rule counts people;
+// this door works out who the people would be on both sides of a change to what
+// a role grants, and answers for the sentence the refusal finishes with.
 //
-// One supported way back in survives, and it is worth being exact about what it
-// recovers. POST /api/v1/tenant/tenants/{id}/invite runs in a system
-// transaction and provisions somebody holding a role the application names —
-// "admin" in this repository's composition, and the route exists at all only
-// where an application wires that capability. So it recovers a tenant whose
-// people lost their grants. It does not recover a tenant where the named role
-// is itself the one that was emptied, because the role it hands out is that
-// role. And it recovers nothing in the operator's own tenant, because it
-// declares tenant:manage as an operator permission, held through that tenant's
-// own roles. There, what is left is SQL.
+// The gate in front of it is about this row alone and stays cheap: a write that
+// does not remove PermissionRoleManage from the role it writes can only grow the
+// set of roles that grant it, so it is never the one that takes it away, and it
+// pays for neither of the two reads below.
 //
-// It is the last grant leaving, and not a demand that one exist: a write in a
-// tenant whose roles already grant it to nobody passes, because refusing there
-// would take away the repair as well as the damage. others is read only on the
-// path that can refuse, so an ordinary write does not pay for that read — it
-// does pay for the caller holding its reads and its write together, which is
-// one statement whatever it is writing. See internal.SetRole, which takes an
-// advisory lock on the tenant before its first read; without it two
-// administrators standing down at once both pass this and the tenant ends with
-// neither.
+// Behind the gate the question is the composed one, which is what this door did
+// not ask until now. It used to ask how many of the tenant's roles would still
+// grant role:manage — a number that a role held by nobody satisfies, and did:
+// create a role granting it, give it to nobody, then empty the role every
+// administrator actually holds, and both writes were allowed and the tenant was
+// locked. Now the roles that grant are turned into the people who hold them, by
+// asking holders for each side's names, and the answer is the same answer the
+// user module's three doors get, because both come out of one rule and one
+// predicate (User.CanAdminister, which is what Service.Holders applies).
 //
-// # What this does not close
+// roles and holders are read under the caller's lock — internal.SetRole takes the
+// tenant's advisory key before its first read — and both are asked about the
+// state this write would leave, not the one it found: name's grants are replaced
+// by want before either side is decided. A role name nobody holds is legal and is
+// exactly the state this door now sees.
 //
-// It counts roles. It does not count the people holding them, because who holds
-// a role is the user module's table and this module does not read it.
-//
-// The user module has a floor of its own over the same property, and the two do
-// not compose into it. This one asks whether a role still grants role:manage;
-// that one asks whether a person still holds a role that does. Somebody who can
-// sign in holds a role that grants role:manage — the property both are for — is
-// asked by neither. Two sequences reach a locked-out tenant with every
-// individual write permitted and no concurrency at all. Only the first is a case
-// in this repository; the second is described here and has no test behind it:
-//
-//   - One write, and the tested one. apps.platformkit's
-//     TestTheTwoFloorsStillDoNotComposeIntoOneInvariant asserts it and fails the
-//     day the hole closes. Create a role granting role:manage and give it to
-//     nobody: nothing is taken away, so both floors allow it. Then empty the role
-//     everybody actually holds. This check sees the new role still granting and
-//     allows. Everybody now holds a role that grants nothing.
-//   - Two writes, in either order, and no case. Each of two people holds a
-//     different administering role. Stripping the first one's roles passes the
-//     user module's floor because the second is still there; emptying that second
-//     role passes this one because the first role still grants. Nobody can
-//     administer.
-//
-// Serializing the two does not help and was never meant to. The advisory lock
-// both modules take — see internal.administrationLock — stops two concurrent
-// writes each verifying what the other is falsifying, which is a real defect
-// and a different one. Writes that are each individually correct are still each
-// individually correct in a queue.
-//
-// # The shape of the fix, which is not in this change
-//
-// Ask the composed question on this side too, the way the user module already
-// asks it on theirs: it takes the roles that grant role:manage from this module
-// and counts the people who can still sign in holding one. This module changes
-// what a role grants and counts only roles, which is the asymmetry. The
-// symmetric answer is a narrow capability the application supplies — does any
-// person who can still sign in hold one of these roles — asked here against the
-// state this write would leave, exactly as the permission catalogue is handed
-// to SetRole rather than looked up. Then one property is checked once instead
-// of two halves of it checked separately. That crosses two modules and a
-// composition and deserves its own review.
-//
-// # Where a lockout leaves you
-//
-// A customer's tenant is recoverable: the operator can still invite an
-// administrator into it through the control plane, which is the qualified
-// statement above. The operator's own tenant is not, because the control plane
-// is guarded by operator permissions held through that tenant's own roles, so
-// tenant administration and the price list go with it.
-//
-// The roles path is not the only way there, and this comment would be
-// overstating its own importance if it implied otherwise:
-// POST /api/v1/tenant/tenants/{id}/suspend against the operator's own tenant is
-// one request, after which every operator host answers as though no site were
-// served, and modules/tenant has no route that reverses it. Neither floor
-// touches that one.
-//
-// So this is one door of several, closed. A tenant is only as reachable as the
-// person who can still sign in and administer it, and nothing in this
-// repository yet checks that such a person exists.
-func CheckedAdministration(name string, was, want Permissions, others func() ([]*Role, error)) error {
+// It refuses the last grant leaving, and not a demand that one exist: a write in
+// a tenant whose people have already lost every grant passes, because refusing
+// there would refuse the repair with the damage. The exception is the write that
+// leaves no role granting role:manage at all (len(after) == 0 below), which is
+// refused even then: while a granting role exists, an unaccepted invitation is
+// still a thread somebody can pull, and emptying the last granting role cuts it.
+// usercontracts.CheckedAdministration carries the whole argument, including who
+// can still repair a tenant from outside it and which tenant cannot be repaired
+// at all.
+func CheckedAdministration(name string, was, want Permissions,
+	roles func() ([]*Role, error), holders func([]string) ([]uuid.UUID, error)) error {
 	manage := tenancy.Grant{Permission: PermissionRoleManage}
 	if !Grants(was, manage) || Grants(want, manage) {
 		return nil
 	}
-	rest, err := others()
+	every, err := roles()
 	if err != nil {
 		return err
 	}
-	for _, other := range rest {
-		if other.Name != name && Grants(other.Grants, manage) {
-			return nil
+	var before, after []string
+	for _, role := range every {
+		grants := role.Grants
+		if role.Name == name {
+			grants = want
+		}
+		if Grants(role.Grants, manage) {
+			before = append(before, role.Name)
+		}
+		if Grants(grants, manage) {
+			after = append(after, role.Name)
 		}
 	}
-	return fmt.Errorf("%w: %q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
-		fault.ErrInvalid, name, PermissionRoleManage)
+	reached, err := holders(before)
+	if err != nil {
+		return err
+	}
+	left, err := holders(after)
+	if err != nil {
+		return err
+	}
+	leaving := fmt.Sprintf("role %q is the last role that grants %s", name, PermissionRoleManage)
+	if len(after) > 0 {
+		leaving += " that any active person holds"
+	}
+	return usercontracts.CheckedAdministration(
+		usercontracts.Reach{CanAdminister: reached},
+		usercontracts.Reach{CanAdminister: left},
+		len(after) == 0, leaving)
 }
 
 // CheckedPermissions normalises a permission list and refuses the two ways one can be

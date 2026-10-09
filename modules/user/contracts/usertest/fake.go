@@ -2,6 +2,7 @@ package usertest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -331,19 +332,33 @@ func addedAdministering(was, want, administering []string) []string {
 	return added
 }
 
-// floor is internal.Service.floor without a database: the same decision, from
-// the same function, so the fake and the service cannot disagree about who the
-// last administrator is. The caller holds the lock the closure reads under.
+// floor is internal.Service.floor without a database: the same gate, the same
+// reach, the same decision from the same function, so the fake and the service
+// cannot disagree about who the last administrator is. The caller holds the lock
+// the loop below reads under.
 func (f *Fake) floor(before, after *contracts.User) error {
-	return contracts.CheckedAdministration(before, after, f.administering, func() ([]*contracts.User, error) {
-		others := make([]*contracts.User, 0, len(f.users))
-		for id, stored := range f.users {
-			if id != before.ID && stored.DeletedAt == nil {
-				others = append(others, &stored)
-			}
+	if !before.Administers(f.administering) || after.Administers(f.administering) {
+		return nil
+	}
+	others := make([]*contracts.User, 0, len(f.users))
+	for id, stored := range f.users {
+		if id != before.ID && stored.DeletedAt == nil {
+			others = append(others, &stored)
 		}
-		return others, nil
-	})
+	}
+	err := contracts.CheckedAdministration(
+		contracts.UserReach(before, f.administering, others),
+		contracts.UserReach(after, f.administering, others),
+		!after.Administers(f.administering),
+		contracts.LeavingAdministration(before, f.administering))
+	if errors.Is(err, crud.ErrInvalid) {
+		// The fake records the name the service writes a row for (internal's
+		// recordRefusal), so a consumer testing against this map sees the refused
+		// attempt in the same place it sees every other event. The name is all
+		// Published keeps, so the attempt and the roles are not here.
+		f.published = append(f.published, contracts.EventAdministrationRefused)
+	}
+	return err
 }
 
 // get is a copy of the stored user, so a caller that mutates what it was handed
