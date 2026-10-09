@@ -434,6 +434,61 @@ func waitFor(t *testing.T, addr string, stopped ...chan error) {
 		addr, time.Since(started).Round(time.Second), last)
 }
 
+// waitServed is waitFor for a test that goes on to stop the boot it waited for,
+// and the difference matters. freeAddr releases the port it reserves and Run binds
+// it later, so another process can bind it in between and a dial then reports that
+// stranger as this composition having come up. Cancelling on that word stops a boot
+// still queued for the migration advisory lock — a wait bounded only by its own
+// context, by design (kit/db's holdCompositionLock) — and the test reads back
+// `Run: db: migrate: lock: context canceled` from a composition that never got to
+// serve. So wait for an answer only this composition can give: one of its own
+// routes at one of the hosts it resolves. A 404 is a stranger that never mounted
+// it, a refused connection is a boot that has not arrived, and both keep waiting
+// for the 20s the dial is given. Which answer arrives is not this test's question —
+// today the route refuses the anonymous caller this file configures with a 403, and
+// asserting that is the route's own tests' business, not the boot gate's. Like
+// waitFor it takes the caller's Run channel, and for the same reason: a boot that
+// has already stopped is not a boot that is still about to answer, and it is the
+// caller's cleanup that reads what Run said.
+func waitServed(t *testing.T, addr, host, path string, stopped ...chan error) {
+	t.Helper()
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "no answer yet"
+	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it served %s at %s (%s): %v",
+					path, addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
+		req, err := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Host = host
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			last = err.Error()
+		} else {
+			_ = res.Body.Close()
+			if res.StatusCode != http.StatusNotFound {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("serving after %s: this machine was busy", took.Round(time.Millisecond))
+				}
+				return
+			}
+			last = fmt.Sprintf("%d", res.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("nothing served %s at %s within %s (last answer: %s)",
+		path, host, time.Since(started).Round(time.Second), last)
+}
+
 func get(t *testing.T, addr, host, path string) (int, string) {
 	t.Helper()
 	req, err := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)
@@ -492,7 +547,9 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 		}
 	}
 
-	// Declaring them is all it takes, and then the composition boots.
+	// Declaring them is all it takes, and then the composition boots — and what
+	// says it booted is this composition answering one of its own routes, not a
+	// socket at its address opening (see waitServed).
 	cfg, opts = compose(t)
 	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
@@ -502,7 +559,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -522,7 +579,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)
