@@ -133,7 +133,7 @@ func TestTheSidebarOffersTheGalleryOnlyToACallerWhoMayOpenIt(t *testing.T) {
 		{"anonymous", allow(true), book, page.Request{Path: "/app/app/admin/login"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			body := render(t, frame(shellAddresses, nav, tc.authorize, tc.storybook)(context.Background(), tc.r, nil))
+			body := render(t, frame(shellAddresses, nav, tc.authorize, tc.storybook, nil)(context.Background(), tc.r, nil))
 			if got := strings.Contains(body, `href="/app/app/admin/_gallery"`); got != tc.offered {
 				t.Fatalf("gallery link offered = %v, want %v:\n%s", got, tc.offered, body)
 			}

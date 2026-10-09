@@ -59,10 +59,28 @@ func chromeParagraphs(t *testing.T, markup string) []string {
 	return out
 }
 
-// chromeFrame renders the frame with the doubles the package already uses: an
-// authorizer that answers one way, a storybook that may or may not be there,
-// and no database at all.
+// chromeFrame renders the frame with the doubles the package already owns: an
+// authorizer that answers one way, a storybook that may or may not be there, a
+// person the port answers with, and no database at all.
 func chromeFrame(t *testing.T, signedIn bool) string {
+	t.Helper()
+	return chromeFrameWith(t, signedIn, peopleDouble{person: Person{
+		DisplayName: "Ada Lovelace", Email: "ada@acme.example",
+	}})
+}
+
+// peopleDouble is the whole port — one read, one answer — so each case below is a
+// line of markup rather than a mock framework. The user module answers this one.
+type peopleDouble struct {
+	person Person
+	err    error
+}
+
+func (d peopleDouble) Person(context.Context, uuid.UUID) (Person, error) {
+	return d.person, d.err
+}
+
+func chromeFrameWith(t *testing.T, signedIn bool, people People) string {
 	t.Helper()
 	shellAddresses := addresses{
 		workspace: route{"/", "/app"},
@@ -74,13 +92,13 @@ func chromeFrame(t *testing.T, signedIn bool) string {
 	storybook := func(context.Context) (export.Storybook, error) {
 		return export.Storybook{}, problem.New(http.StatusForbidden, "no storybook")
 	}
-	r := page.Request{Tenant: tenancy.Tenant{Name: "End to end"}, Path: "/app"}
+	r := page.Request{Tenant: tenancy.Tenant{Name: "End to end"}, Path: "/app", Host: "app.acme.test"}
 	if signedIn {
 		r.SignedIn = true
-		r.Principal = tenancy.Principal{UserID: uuid.New(), Roles: []string{"admin"}}
+		r.Principal = tenancy.Principal{UserID: uuid.MustParse("8258e4cc-0000-4000-8000-000000000000"), Roles: []string{"admin"}}
 	}
 	return render(t, frame(shellAddresses, page.NewNavigation(nil, nil, nil),
-		allow(true), storybook)(context.Background(), r, nil))
+		allow(true), storybook, people)(context.Background(), r, nil))
 }
 
 // TestTheFramesChromeIsOneBodyStep. Before the constant, the same render drew
@@ -100,9 +118,9 @@ func TestTheFramesChromeIsOneBodyStep(t *testing.T) {
 	// Each of the three lines by name, so a red says which one fell back to a
 	// step of its own rather than "some paragraph was wrong".
 	for _, want := range []struct{ size, text string }{
-		{chromeTextSize, "End to end"}, // the tenant
-		{chromeTextSize, " · admin"},   // the caller: short(id) then roles
-		{chromeTextSize, brand},        // the build stamp
+		{chromeTextSize, "End to end"},   // the workspace, named in the header below the sidebar's breakpoint
+		{chromeTextSize, "Ada Lovelace"}, // the caller, by the name they chose
+		{chromeTextSize, brand},          // the build stamp
 	} {
 		found := false
 		for _, line := range signedIn {

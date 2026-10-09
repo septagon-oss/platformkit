@@ -1,10 +1,18 @@
 package admin
 
 import (
+	"context"
+	"errors"
+
+	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
+	"github.com/septagon-oss/platformkit/modules/admin/internal"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 )
 
@@ -24,6 +32,9 @@ import (
 var Module = pkit.NewModule("admin", wire,
 	pkit.Needs[authcontracts.Auth](),
 	pkit.Needs[tenantcontracts.Service](),
+	// Optional, not Needs: a composition with no user module has no names to show,
+	// and the header says "Signed in" rather than the application refusing to boot.
+	pkit.Optional[usercontracts.Service](),
 	pkit.Optional[admincontracts.Signin](),
 	pkit.Optional[admincontracts.Locale](),
 	pkit.Optional[admincontracts.Storybook](),
@@ -41,8 +52,13 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// The three questions the shell asks are the same value seen through the
 		// three interfaces it uses: what may this caller do, which roles exist,
 		// which sessions are live.
-		Roles:     auths,
-		Sessions:  auths,
+		Roles:    auths,
+		Sessions: auths,
+		// The fourth question is who this is, and unlike the three above it needs an
+		// adapter: the shell asks about the caller by id and gets back the two words
+		// a header can say, not a row. Eight lines, and they are the whole of what
+		// this module knows about the user module.
+		People:    callerOf(pkit.Get[usercontracts.Service](w)),
 		Theme:     skin.Theme,
 		Messages:  skin.Copy,
 		Locale:    pkit.Get[admincontracts.Locale](w),
@@ -53,6 +69,34 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// other did not mount.
 		Registration: registration(signin.Registration),
 	}), nil
+}
+
+// callerOf is the header's read of the caller's own account row, or nothing at all
+// when this application composes no user module — which is what leaves the frame to
+// say "Signed in" rather than to fail.
+func callerOf(users usercontracts.Service) People {
+	if users == nil {
+		return nil
+	}
+	return people{users: users}
+}
+
+type people struct{ users usercontracts.Service }
+
+// Person reads one row: this caller's, in the transaction their request already
+// holds. The tenant is not an argument, because the transaction is the tenant and
+// row-level security has already said which rows are in it; an account of another
+// tenant answers "not here", which the frame says as "Signed in".
+func (p people) Person(ctx context.Context, userID uuid.UUID) (internal.Person, error) {
+	tx, live := httpx.TxFrom(ctx)
+	if !live {
+		return internal.Person{}, errors.New("admin: this request carries no transaction to read the caller in")
+	}
+	user, err := p.users.Get(ctx, tx, userID)
+	if err != nil {
+		return internal.Person{}, err
+	}
+	return internal.Person{DisplayName: user.DisplayName, Email: user.Email}, nil
 }
 
 // registration is the port's form choice read through the two lifecycles this
