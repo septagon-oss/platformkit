@@ -625,18 +625,20 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 
 // reasksAfterDeadlock is how many times a statement is re-issued after PostgreSQL picks
 // this session out of a deadlock, for the statements a run is allowed to send twice: the
-// ask for the composition lock, and each half of a concurrent index repair
-// (kit/db/certify.go), which are `DROP INDEX CONCURRENTLY IF EXISTS` and a statement the
-// rule table already requires to carry `IF NOT EXISTS`. It bounds the retry rather than
-// aiming at a schedule: the cancellation breaks one cycle, and a database whose next wait
-// joins another is a state a boot should name rather than sit in — with no wait between
-// the re-asks, this many are all the retry costs.
+// ask for the composition lock, and the drop half of a concurrent index repair
+// (kit/db/certify.go), which is `DROP INDEX CONCURRENTLY IF EXISTS`. It bounds the retry
+// rather than aiming at a schedule: the cancellation breaks one cycle, and a database
+// whose next wait joins another is a state a boot should name rather than sit in — with
+// no wait between the re-asks, this many are all the retry costs. The other half of that
+// repair, the rebuild, is not one of these statements and does not go through this one:
+// a cancelled concurrent build leaves its invalid index behind, so its retry is a whole
+// cycle rather than a re-send, bounded beside this constant by repairAttempts.
 const reasksAfterDeadlock = 4
 
 // execReaskable sends one of the statements named above and re-sends it while the server
 // keeps choosing this session out of somebody else's cycle. A cancelled one of these left
 // nothing behind and undid nothing: the ask holds no lock and is the session's first
-// statement, and each half of the repair is written to be sent twice. Anything else the
+// statement, and the drop is written to answer the same way twice. Anything else the
 // server answers — a budget that ran out, a statement that is simply wrong — comes back to
 // the caller unchanged, on the first answer it gives.
 func (r *runner) execReaskable(ctx context.Context, statement string, args ...any) error {
@@ -699,22 +701,28 @@ func (r *runner) apply(ctx context.Context, migration migration) (drainReport, e
 		// is what a concurrent build gets, and a build that runs out of it is cancelled
 		// with its half-built index left behind under the name it was building. That is
 		// why success is not the end of this branch: certifyConcurrentIndex reads the
-		// object back and refuses to record a file whose object does not hold. What two
-		// replicas may reach besides all this is a statement the rule table already
+		// object back and refuses to record a file whose object does not hold, and the lock
+		// goes down for that read-back and its repair for this paragraph's own reason. What
+		// two replicas may reach besides all this is a statement the rule table already
 		// demands be re-runnable, and recordRerunnableHistory turns a lost race into a
 		// file that applied rather than a boot that failed.
 		if err := r.releaseCompositionLock(ctx); err != nil {
 			return drainReport{}, err
 		}
-		_, execErr := r.conn.ExecContext(ctx, migration.sql)
+		_, applyErr := r.conn.ExecContext(ctx, migration.sql)
+		if applyErr == nil {
+			// The repair waits for the same transactions this statement was released to
+			// wait for, so the lock goes down for it too and comes back afterwards. Measured
+			// with the lock held across the repair: `make check` picked this session out of
+			// that cycle five times running in one file, which is every cycle
+			// repairAttempts holds and still no index. ADR 0011 carries the deadlock DETAIL.
+			applyErr = r.certifyConcurrentIndex(ctx, migration)
+		}
 		if lockErr := r.holdCompositionLock(ctx); lockErr != nil {
-			return drainReport{}, errors.Join(execErr, lockErr)
+			return drainReport{}, errors.Join(applyErr, lockErr)
 		}
-		if execErr != nil {
-			return drainReport{}, execErr
-		}
-		if err := r.certifyConcurrentIndex(ctx, migration); err != nil {
-			return drainReport{}, err
+		if applyErr != nil {
+			return drainReport{}, applyErr
 		}
 		return drainReport{}, recordRerunnableHistory(ctx, r.conn, migration)
 	}
