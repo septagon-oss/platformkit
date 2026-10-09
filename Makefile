@@ -520,6 +520,24 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
+	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
+	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
+	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
+	# `go tool gotestsum --packages='./...'` sees no Python file and no `.spec.ts`, so a `check-pillars`
+	# that dropped out would let ARCHITECTURE.md's citations land on blank lines, and a
+	# `check-step-library` that dropped out would let a published journey step vanish while gate 10 went
+	# on transpiling a file nobody owns. scripts/journey_and_pillar_check_wiring_test.sh dry-runs this
+	# goal and refuses a recipe that has lost either command — a nested `make -n`, the shape
+	# scripts/check_architecture_test.sh already runs from inside this same recipe, measured at 5 ms for
+	# the whole dry run here. scripts/journey_and_pillar_check_refusal_test.sh asks whether that pin
+	# would notice: it deletes one prerequisite at a time from a temporary copy of this Makefile and
+	# refuses each acceptance. Both read text and start nothing, which is the argument
+	# check-step-library makes for itself above, and here it holds twice over — unlike its two subjects
+	# these need no node and no browser either, so nothing argues for a job later than this one. Review 5
+	# found the first wired to nothing: correct at `0012ae0`, run by nobody, and a gate nobody runs is
+	# prose. Wiring it is these two lines.
+	bash scripts/journey_and_pillar_check_wiring_test.sh
+	bash scripts/journey_and_pillar_check_refusal_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
