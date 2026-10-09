@@ -191,22 +191,27 @@
   // the server's sentence rather than a blank cell.
   const MINUTE = 60000, HOUR = 3600000, DAY = 86400000, WEEK = 7 * DAY;
   // lang is the language the document already declares — the one the locale path picked
-  // for this request — so the same page in pt-PT is formatted in pt-PT.
+  // for this request — so the same page in pt-PT is formatted in pt-PT. A lang no runtime
+  // parses is answered as none, the reader's own browser locale: the one throw these formatters
+  // have, answered here rather than under a catch that would hide our own defects along with it.
   function language() {
     const host = document.documentElement.closest('[lang]');
-    return (host && host.lang) || undefined;
+    const lang = (host && host.lang) || undefined;
+    if (lang === undefined || typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') return lang;
+    try { new Intl.DateTimeFormat(lang); } catch { return undefined; }
+    return lang;
   }
-  function said(at, style, language) {
+  function said(at, style, lang) {
     if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') return null;
-    return new Intl.DateTimeFormat(language, style).format(at);
+    return new Intl.DateTimeFormat(lang, style).format(at);
   }
   // relative is the largest unit that is at least one of itself, long style, because that
   // reads as a sentence ("5 minutes ago"), is correct in every language Intl speaks, and
   // needs no English-only table of short forms. Nothing on the page knows which field is a
   // deadline, so an instant that has not happened is never counted down.
-  function relative(at, now, language) {
+  function relative(at, now, lang) {
     if (typeof Intl === 'undefined' || typeof Intl.RelativeTimeFormat !== 'function' || at.getTime() > now) return null;
-    const say = new Intl.RelativeTimeFormat(language, { numeric: 'auto', style: 'long' });
+    const say = new Intl.RelativeTimeFormat(lang, { numeric: 'auto', style: 'long' });
     if (now - at >= DAY) return say.format(-Math.round((now - at) / DAY), 'day');
     if (now - at >= HOUR) return say.format(-Math.round((now - at) / HOUR), 'hour');
     return say.format(-Math.round((now - at) / MINUTE), 'minute');
@@ -216,14 +221,14 @@
     if (!raw) return;
     const at = new Date(raw);
     if (isNaN(at.getTime())) return; // The server's words stand for a value that is no instant.
-    const now = Date.now(), language = language();
+    const now = Date.now(), lang = language();
     // The title is the exact moment read where the person is: date, time and zone name.
-    const precise = said(at, { dateStyle: 'full', timeStyle: 'long' }, language);
+    const precise = said(at, { dateStyle: 'full', timeStyle: 'long' }, lang);
     if (precise !== null) el.title = precise;
     // Under a week says when it happened in the words a person uses; a week or more, and
     // anything still to come, is read as a date.
-    const words = now - at < WEEK ? relative(at, now, language) : null;
-    const text = words || said(at, { dateStyle: 'medium', timeStyle: 'short' }, language);
+    const words = now - at < WEEK ? relative(at, now, lang) : null;
+    const text = words || said(at, { dateStyle: 'medium', timeStyle: 'short' }, lang);
     if (text !== null) el.textContent = text;
   }
 
@@ -233,7 +238,9 @@
       // every interval rewriting a sentence the person is in the middle of reading.
       if (told.has(el)) continue;
       told.add(el);
-      try { tellTime(el); } catch (error) { /* The server's sentence is already on the page. */ }
+      // No catch on purpose: `language` answers an unparseable lang as none, and nothing else
+      // here throws. A guard is what let a broken formatter read as a browser without Intl.
+      tellTime(el);
     }
     for (const close of document.querySelectorAll('[data-alert-close]')) close.hidden = false;
     initSelections();
