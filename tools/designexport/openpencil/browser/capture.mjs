@@ -93,7 +93,7 @@ export async function captureExample(browser, snapshot, exampleId, {
     await page.setContent(`<!doctype html><html><head><meta charset="utf-8">
       <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; base-uri 'none'; form-action 'none'">
       <meta name="viewport" content="width=device-width, initial-scale=1"></head><body></body></html>`)
-    await page.evaluate(async ({ css, html, mode, fonts }) => {
+    await page.evaluate(async ({ css, exampleId, html, mode, fonts }) => {
       const violations = []
       document.addEventListener('securitypolicyviolation', event => violations.push(event.effectiveDirective))
       document.documentElement.lang = 'en'
@@ -142,29 +142,67 @@ export async function captureExample(browser, snapshot, exampleId, {
           }),
         ])
       } finally { clearTimeout(decodingTimer) }
-      // Inherited transitions can start only when descendant styles are read.
-      // Flush those styles and await actual completion, not a fixed frame count.
+      // What this wait is waiting on, in the refusal's own words.
+      //
+      // Two clocks run inside the bound below and the bound cannot tell them apart:
+      // reading every computed style is work the *runner* owes, and finishing an
+      // animation is a fact about the *source*. The line an unreadable refusal leaves
+      // is why this exists. Run 56095 job 56717 refused `pk-ui.component.detail-sheet/pending-pt-PT`
+      // with `Capture source animation settling timed out`, and the same step of the
+      // same workflow on another task's head (run 56095's predecessor, job 56693)
+      // refused `pk-ui.component.product-card/loading-en` with the same five words.
+      // Two examples, one file, two branches: the refusal named its own timeout and
+      // nothing else, so neither reader could tell a source that never settles from a
+      // runner that never painted a frame — and those demand opposite fixes.
+      //
+      // The account below is the answer to that question, and it reports the two
+      // facts that separate them. `startTime === null` with the document's own
+      // timeline still at its first frame is the host's: no animation frame was ever
+      // produced for this page, so nothing about the source has been observed yet.
+      // A `startTime` the timeline has moved past, with `currentTime` short of a
+      // finite `endTime`, is the source's: its own animation is still running. Probed
+      // on a page held so no frame can be produced, both read null and 0 while wall
+      // clock ran on, so the pair does distinguish them. Nothing here changes what is
+      // waited for or how long it is allowed: the same single second, the same two
+      // refusals, the same settled answer.
+      const settleStart = performance.now()
+      const settleAccount = { flushMs: 0, waiting: [] }
+      const describeAnimations = animations => animations.slice(0, 3).map(animation => {
+        const target = animation.effect?.target
+        const timing = animation.effect?.getComputedTiming()
+        return `${animation.animationName || animation.constructor.name} on ` +
+          `${target ? `${target.tagName.toLowerCase()}${typeof target.className === 'string' && target.className ? `.${target.className.split(/\s+/)[0]}` : ''}` : 'a detached effect'}` +
+          ` (playState=${animation.playState} startTime=${animation.startTime} currentTime=${animation.currentTime} endTime=${timing?.endTime ?? 'unknown'})`
+      }).join(', ') + (animations.length > 3 ? `, and ${animations.length - 3} more` : '')
       let settlingTimer
       try {
         await Promise.race([
           (async () => {
             while (true) {
+              const flushStarted = performance.now()
               for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+              settleAccount.flushMs += performance.now() - flushStarted
               // A closed disclosure can retain a running, display-locked
               // animation whose timeline never advances. It cannot paint.
               const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
                 animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
+              settleAccount.waiting = active
               if (active.length === 0) return
               if (active.some(animation => animation.playState === 'paused' ||
                 !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
-                throw new Error('Capture requires finite, running source animations to settle')
+                throw new Error(`Capture requires finite, running source animations to settle: ${describeAnimations(active)}`)
               }
               // A cancelled transition can start a replacement; inspect again.
               await Promise.all(active.map(animation => animation.finished.catch(() => {})))
             }
           })(),
           new Promise((_, reject) => {
-            settlingTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 1000)
+            settlingTimer = setTimeout(() => reject(new Error(
+              `Capture source animation settling timed out on ${exampleId}: styles read across ` +
+              `${Math.round(settleAccount.flushMs)}ms of the ${Math.round(performance.now() - settleStart)}ms of wall clock elapsed, ` +
+              `the document's own timeline is at ${Math.round(document.timeline.currentTime)}ms, ` +
+              `${settleAccount.waiting.length} animation(s) still running — ${describeAnimations(settleAccount.waiting)}`)),
+              1000)
           }),
         ])
       } finally { clearTimeout(settlingTimer) }
@@ -177,7 +215,7 @@ export async function captureExample(browser, snapshot, exampleId, {
       }
       if (violations.length) throw new Error(`Capture refused resources blocked by CSP: ${violations.join(', ')}`)
     }, {
-      css: snapshot.css, html: prepared.html, mode,
+      css: snapshot.css, exampleId, html: prepared.html, mode,
       fonts: faces.map(face => ({ family: face.family, weight: face.weight, style: face.style, bytes: [...face.bytes] })),
     })
     const sourceOccurrences = await page.evaluate(indexCaptureSources, { occurrences: prepared.occurrences, html: example.html })
