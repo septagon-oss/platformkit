@@ -33,6 +33,9 @@ const person = {
 // /app/task/tasks. Sorting must not decide whether a journey can start.
 const role = `r3_nothing_${Date.now()}`;
 const refusedScreen = '/app/task/tasks';
+// The ask form's own address, spelled once: the form on the refusal page, the response
+// this case waits for and the redirect it lands on all belong to the one route.
+const askPath = '/app/access-request';
 
 type Probe = {
   width: number;
@@ -151,7 +154,9 @@ async function expectFloor(page: import('@playwright/test').Page, label: string,
 }
 
 test('the refusal page a signed-in person is shown holds the design floor at 390 and at 1440', async ({ page, browser }) => {
-  test.setTimeout(90_000);
+  // Two widths, each with a context, a sign-in, the refusal, an ask bounded at 30 s
+  // below and two probes, over 16 s of fixture calls measured at CI run 503.
+  test.setTimeout(120_000);
 
   await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(admin.email);
@@ -186,8 +191,33 @@ test('the refusal page a signed-in person is shown holds the design floor at 390
     expect(refusal?.status(), 'the member was not refused, so this page has no start').toBe(403);
     await expectFloor(p, 'the refusal page', width);
 
-    // The confirmation page at the width the other spec does not probe.
-    await p.locator('form[action="/app/access-request"] button[type="submit"]').click();
+    // The confirmation page at the width the other spec does not probe — and the
+    // ask's answer is waited for as the verdict the route promises, not as a URL.
+    //
+    // CI run 503 (job 57114, 2026-10-09) refused this case and its sister in
+    // `refusal-sentence-measure.spec.ts` on `expect(page).toHaveURL(...)` alone: the
+    // refusal page's own probe line printed at 15:44:38Z, the assertion gave up at
+    // 15:44:48Z with the browser still on `/app/access-request` after 22 polls, and
+    // the `design` job — another container on the same runner host, whose browser
+    // suite had a capture of its own exceed its wall-clock bound in that same minute
+    // (its `Native browser observations` step reports the failure at 15:44:48Z) — was
+    // still running. A form submit whose redirect has not arrived yet is not a design
+    // refusal, and a red that says "the URL was still the form's" cannot be told apart
+    // from one. So the case now waits for the POST's own response and names the status
+    // `ui/page/access.go` promises on the way in (303, and `kit/httpx/access.go`'s 422,
+    // 429 and 503 are the refusals it can answer instead, each with a sentence worth
+    // reading in the failure). The URL assertion stays exactly as it was, behind that:
+    // what 30 s buys is that a response the server is still writing is reported as the
+    // status it eventually carried, and not as a race the harness won.
+    const asked = p.waitForResponse((r) => r.url().endsWith(askPath), { timeout: 30_000 });
+    await p.locator(`form[action="${askPath}"] button[type="submit"]`).click();
+    const answer = await asked;
+    // The body of a redirect is not readable — Playwright says so — so the sentence a
+    // red prints carries the Location for the answer that works and the problem
+    // document for the 422, 429 and 503 kit/httpx/access.go can answer instead.
+    const detail = answer.status() >= 400 ? (await answer.text()).slice(0, 300)
+      : `Location=${answer.headers()['location'] ?? 'none'}`;
+    expect(answer.status(), `the ask answered ${answer.status()}: ${detail}`).toBe(303);
     await expect(p).toHaveURL(/\/app\/access-request\/sent$/);
     await expectFloor(p, 'the ask confirmation', width);
 

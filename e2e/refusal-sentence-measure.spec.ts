@@ -50,7 +50,10 @@ test('the page that says an access request was sent keeps its sentences to a rea
   page,
   browser,
 }) => {
-  test.setTimeout(60_000);
+  // The journey's own budget, named: 16 s of admin sign-in, invitation and password
+  // at CI run 503, a second sign-in in a fresh context, the refusal, and this case's
+  // 30 s bound on the ask's response — see `e2e/refusal-floor.spec.ts`.
+  test.setTimeout(90_000);
 
   await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(admin.email);
@@ -82,7 +85,18 @@ test('the page that says an access request was sent keeps its sentences to a rea
   const refusal = await person.goto('/app/task/tasks');
   expect(refusal?.status(), 'the member was not refused, so this journey has no start').toBe(403);
 
+  // The ask is waited for as the 303 `ui/page/access.go` answers with, for the reason
+  // and the measured numbers written out in `e2e/refusal-floor.spec.ts` — this case
+  // was the second one CI run 503 refused, at 15:45:26Z, on the URL alone.
+  const asked = person.waitForResponse((r) => r.url().endsWith('/app/access-request'), { timeout: 30_000 });
   await person.locator('form[action="/app/access-request"] button[type="submit"]').click();
+  const answer = await asked;
+  // The body of a redirect is not readable — Playwright says so — so the sentence a
+  // red prints carries the Location for the answer that works and the problem
+  // document for the 422, 429 and 503 kit/httpx/access.go can answer instead.
+  const detail = answer.status() >= 400 ? (await answer.text()).slice(0, 300)
+    : `Location=${answer.headers()['location'] ?? 'none'}`;
+  expect(answer.status(), `the ask answered ${answer.status()}: ${detail}`).toBe(303);
   await expect(person).toHaveURL(/\/app\/access-request\/sent$/);
 
   const wide = await wideLines(person);

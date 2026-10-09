@@ -225,7 +225,19 @@ test('the refusal page speaks Portuguese without leaving the design floor at 390
     await expectFloor(p, 'the refusal page (pt-PT)', width);
 
     // The confirmation the ask lands on, in the same language, at the same width.
+    // The ask is waited for as the 303 the route promises rather than as a URL, for
+    // the reason written out in full over the same journey in
+    // `e2e/refusal-floor.spec.ts` — this case crossed the same 10 s bound 17 seconds
+    // before that one refused, and passed only because its response arrived in time.
+    const asked = p.waitForResponse((r) => r.url().endsWith('/app/access-request'), { timeout: 30_000 });
     await p.locator('form[action="/app/access-request"] button[type="submit"]').click();
+    const answer = await asked;
+    // The body of a redirect is not readable — Playwright says so — so the sentence a
+    // red prints carries the Location for the answer that works and the problem
+    // document for the 422, 429 and 503 kit/httpx/access.go can answer instead.
+    const detail = answer.status() >= 400 ? (await answer.text()).slice(0, 300)
+      : `Location=${answer.headers()['location'] ?? 'none'}`;
+    expect(answer.status(), `the ask answered ${answer.status()}: ${detail}`).toBe(303);
     await expect(p).toHaveURL(/\/app\/access-request\/sent$/);
     await expect(p.locator('html')).toHaveAttribute('lang', 'pt-PT');
     await expectFloor(p, 'the ask confirmation (pt-PT)', width);

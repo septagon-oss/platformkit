@@ -34,6 +34,11 @@ const refusedScreen = '/app/task/tasks';
 const role = `readers_${Date.now()}`;
 
 test('a refused person asks from the page that refused them and is granted', async ({ page, browser }) => {
+  // Measured 1.6s at CI run 503 and 1.2s on a laptop; the budget is this case's own
+  // 30 s wait for the ask's response (a bound on a response this application writes,
+  // see `e2e/refusal-floor.spec.ts`) beside its two sign-ins and the bell read.
+  test.setTimeout(90_000);
+
   await page.goto('/app/admin/login');
   await page.getByLabel('Email').fill(admin.email);
   await page.getByLabel('Password').fill(admin.password);
@@ -86,7 +91,18 @@ test('a refused person asks from the page that refused them and is granted', asy
 
   // One ask, submitted the way the page submits it.
   await person.goto(refusedScreen);
+  // The ask's answer is the 303 the route promises, so it is waited for as that
+  // response and not as a URL: the reason and the numbers are in
+  // `e2e/refusal-floor.spec.ts`.
+  const asked = person.waitForResponse((r) => r.url().endsWith('/app/access-request'), { timeout: 30_000 });
   await form.locator('button[type="submit"]').click();
+  const answer = await asked;
+  // The body of a redirect is not readable — Playwright says so — so the sentence a
+  // red prints carries the Location for the answer that works and the problem
+  // document for the 422, 429 and 503 kit/httpx/access.go can answer instead.
+  const detail = answer.status() >= 400 ? (await answer.text()).slice(0, 300)
+    : `Location=${answer.headers()['location'] ?? 'none'}`;
+  expect(answer.status(), `the ask answered ${answer.status()}: ${detail}`).toBe(303);
   await expect(person).toHaveURL(/\/app\/access-request\/sent$/);
   // A success alert is role=status: ui/components/alert.go gives role=alert to
   // the tones that interrupt a reader and status to the ones that inform them.
