@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/health"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -538,9 +539,26 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant) page.View {
 			continue
 		}
 		count := strconv.FormatInt(total, 10)
+		// What a resource holds, in the words the catalogue already gave it, and not
+		// where it is stored: "In billing" told a person which module owns the table,
+		// which is not a thing they came to the dashboard to read. The card is a link,
+		// so the noun is the sentence.
+		//
+		// A count of none is the one case a number cannot say: "0 Plans" reads as a
+		// fact about a plan the tenant has, and "No plans yet" is the same fact about
+		// the one thing a person can do about it. The singular asks no plural, because
+		// Plural("Plan") is "Plans"; a mass noun keeps its own shape at one, which
+		// reads oddly ("1 Settings") and is what the rule says — the catalogue names
+		// the entity `settings` and the kernel has no singular for it.
+		title := count + " " + display.Plural(display.Humanize(r.Entity))
+		switch total {
+		case 0:
+			title = "No " + display.Plural(strings.ToLower(r.Entity)) + " yet"
+		case 1:
+			title = "1 " + display.Humanize(r.Entity)
+		}
 		cards = append(cards, components.Card(components.CardProps{
-			Title: count + " " + rest.Humanize(r.Entity) + "s", Description: "In " + r.Module,
-			Clickable: true, Href: r.Screen,
+			Title: title, Clickable: true, Href: r.Screen,
 		}))
 	}
 	var failed []string
@@ -564,7 +582,7 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant) page.View {
 	// line goes with it.
 	return page.View{Title: "Dashboard", Language: writtenHere, Body: []g.Node{
 		components.Toolbar(components.ToolbarProps{
-			Title: "Dashboard", Subtitle: "What this tenant has, and whether the instance is well."}),
+			Title: "Dashboard", Subtitle: "Your workspace at a glance."}),
 		components.Alert(components.AlertProps{Tone: tone, Message: message, Bordered: true}),
 		p.contents(ctx, t, cards),
 	}}
