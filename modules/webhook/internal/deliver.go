@@ -97,7 +97,7 @@ func Deliver(svc *Service, tenants jobs.TenantLister, every time.Duration, batch
 		Transport: svc.Policy().transport(timeout),
 		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return svc.Policy().refuseHop(req.URL, via)
+			return svc.Policy().refuseHop(req, via)
 		},
 	}
 	return jobs.Job{
@@ -172,10 +172,10 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 		for _, row := range rows {
 			endpoint, err := crud.Get[*contracts.Endpoint](tx, row.EndpointID)
 			if err != nil {
-				// The endpoint is gone, or was soft-deleted, between the fan-out
+				// The endpoint was deleted, or hidden, between the fan-out
 				// and now. The row gets its terminal state with the reason; the
 				// history stays.
-				if dropErr := s.dropRow(tx, row.ID, contracts.StateDropped, 0, "the endpoint is gone"); dropErr != nil {
+				if dropErr := s.dropRow(tx, row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDeleted); dropErr != nil {
 					return dropErr
 				}
 				continue
@@ -262,7 +262,7 @@ func (s *Service) stillWanted(ctx context.Context, conn *db.Conn, a attempt) (bo
 				return err
 			}
 			wanted = false
-			return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, "the endpoint is gone")
+			return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDeleted)
 		}
 		if endpoint.IsEnabled() {
 			return nil
@@ -341,6 +341,15 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 		return fmt.Errorf("webhook: take the outcome lock: %w", err)
 	}
 	endpoint, err := crud.GetForUpdate[*contracts.Endpoint](tx, a.row.EndpointID)
+	if errors.Is(err, crud.ErrNotFound) {
+		// The endpoint was deleted while this request was on the wire. What
+		// follows is not a repair of that row's absence: the socket opened, the
+		// receiver answered, and the answer is a fact the log keeps whatever the
+		// endpoint row says now. Losing it would tell an administrator that a
+		// request which reached its receiver was dropped, which is the one thing
+		// an attempt log exists to never say.
+		return s.recordAfterDelete(tx, a, status, state, reason)
+	}
 	if err != nil {
 		return err
 	}
@@ -398,6 +407,25 @@ func (s *Service) record(ctx context.Context, tx db.Tx[db.Tenant], a attempt, st
 	// answers 500, and its administrator deserves to be told either way.
 	_, err = s.DisableIfFailed(ctx, tx, endpoint.ID, at)
 	return err
+}
+
+// recordAfterDelete is the outcome of an attempt whose endpoint is gone. The row
+// keeps the answer the receiver actually gave, and nothing else happens: there is
+// no fault clock to start and no endpoint to disable, and no retry row to queue,
+// because a claim would read it, find no endpoint behind it and end it — a second
+// row saying less than the one already written. What the log lacks it says out
+// loud instead: this attempt was the endpoint's last, because the endpoint was
+// deleted around it.
+func (s *Service) recordAfterDelete(tx db.Tx[db.Tenant], a attempt, status int, state, reason string) error {
+	if err := s.dropRowColumns(tx, a.row.ID, state, status, reason, s.now()); err != nil {
+		return err
+	}
+	if state == contracts.StateSent {
+		return nil
+	}
+	// The row already says what the receiver did; this says what happened to the
+	// endpoint behind it, which is the reason no retry row follows a failed answer.
+	return s.note(tx, a.row.ID, contracts.ReasonEndpointDeleted)
 }
 
 // ladderStop is the sentence the last attempt of an event carries when no retry

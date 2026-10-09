@@ -267,13 +267,25 @@ Stated because each one is a promise someone could otherwise read into the modul
   ladder's 12 rungs span about 4 days 20 hours, so an endpoint that fails one event
   while succeeding others (which resets `failing_since`) can retry that event for
   roughly 4.9 days. Closing the gap means carrying `MIN(attempted_at)` for the pair.
-* **A redirect is followed, up to three, and never off TLS.** `AddressPolicy`
-  reads the address of every hop, so a receiver that answers 3xx to another host
-  moves where the signed body goes — but a hop that steps down to plain HTTP is
-  refused before the socket opens, the attempt is `dropped` with the address in
-  its reason, and the signed body goes nowhere. `AllowLocalEndpoints` does not
-  open that: the flag says this deployment dials a local *destination*, not that
-  it carries a signature in the clear.
+* **A redirect is followed only when it can still carry the event, and never off
+  TLS.** `AddressPolicy` reads every hop, and two refusals live in that one call.
+  A hop that steps down to plain HTTP is refused before the socket opens. So is a
+  hop answering `301`, `302` or `303` to a `POST`: those three tell a client to ask
+  the new address with a `GET` and **no body**, so following them posts an empty
+  request that carries no CloudEvent and no signature over one, and the
+  destination's `204` would be logged as `sent` for an event that never arrived.
+  A `307` or `308` — which keep the method and replay the signed bytes — is
+  followed to any host the dial gate will open, up to three hops. Either refusal
+  ends the attempt `dropped`, with the address in its reason, and the signed body
+  goes nowhere. `AllowLocalEndpoints` opens neither: the flag says this deployment
+  dials a local *destination*, not that it carries a signature in the clear.
+* **A delete cannot undo a request that reached its receiver.** The delete ends
+  every `queued` row and hides the endpoint, but an attempt already on the wire
+  gets its outcome written from the socket's own answer — `sent` and the status
+  the receiver gave — in the same transaction that would otherwise have updated
+  the endpoint's fault clock. An endpoint row that has gone is no reason to call a
+  completed exchange `dropped` with status 0; the log says what happened and, for
+  a non-success, that the endpoint was deleted, which is why no retry follows.
 * **The SSRF gate refuses what a laptop and a cloud metadata endpoint look like,
   not every reserved block.** Loopback, link-local, private, unique-local and
   `0.0.0.0` are refused, resolved rather than textual; the metadata addresses stay

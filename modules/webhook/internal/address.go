@@ -30,9 +30,25 @@ var errAddressRefused = errors.New("webhook: the address is not a public endpoin
 // find the payload on the wire in the clear.
 var errSchemeDowngrade = errors.New("webhook: the endpoint redirects to a plain HTTP address")
 
-// RedirectRefused reports whether a send failure is that refusal, which the
-// outcome transaction reads as an attempt that must never be sent again.
-func RedirectRefused(err error) bool { return errors.Is(err, errSchemeDowngrade) }
+// errRedirectLosesTheBody is the redirect refusal a signed POST meets at a
+// receiver that answers 301, 302 or 303. Those three tell the client to ask the
+// new address with a GET and no body — 303 says so in the specification, and
+// twenty years of clients made 301 and 302 mean the same thing — so the hop that
+// looks like a forward is the hop that drops the event: an empty GET carries no
+// CloudEvent and no signature over one. Following it and then reading the
+// destination's 204 as "sent" would write a delivery that never happened, so the
+// hop is refused instead. A 307 or a 308 keeps the method and replays the body,
+// and is followed as far as the hop limit and the TLS rule allow.
+var errRedirectLosesTheBody = errors.New("webhook: the redirect would ask the new address with a GET and no signed body")
+
+// RedirectRefused reports whether a send failure is one of the two redirect
+// refusals, which the outcome transaction reads as an attempt that must never be
+// sent again: a receiver that hands a signed POST to a plain address, or to an
+// empty GET, will keep doing it, and the ladder would spend three days learning
+// nothing.
+func RedirectRefused(err error) bool {
+	return errors.Is(err, errSchemeDowngrade) || errors.Is(err, errRedirectLosesTheBody)
+}
 
 // AddressPolicy is the SSRF gate, one value read by both checks so they cannot
 // disagree: the write that stores an address and the dial that opens a socket to
@@ -156,22 +172,29 @@ func (p AddressPolicy) transport(timeout time.Duration) *http.Transport {
 // the same policy value that decides the dial decides the redirect, so the two
 // cannot disagree about what this deployment will carry a signed event over.
 //
-// The rule is one sentence — an event asked for of an HTTPS address is not
-// carried to a plain-HTTP one. AllowLocal does not weaken it: the flag says
-// "this deployment dials a local receiver", and the test's own loopback HTTP
-// server is exactly the address the flag permits *as a destination* and still
-// refuses *as a downgrade*. A redirect that stays on TLS, to any host the dial
-// gate will open, is followed up to maxRedirects hops; past that the caller
-// sees the last redirect answer, which is a status like any other.
-func (p AddressPolicy) refuseHop(to *url.URL, via []*http.Request) error {
+// The rule is two sentences, both of them about what arrives at the next
+// address, and the client hands both answers to this one call because it has
+// already rewritten the request it is about to send: the signed event is not
+// carried to a plain-HTTP address, and it is not carried as a request with no
+// body. AllowLocal weakens neither: the flag says "this deployment dials a local
+// receiver", and the test's own loopback HTTP server is exactly the address the
+// flag permits *as a destination* and still refuses *as a downgrade*. A redirect
+// that stays on TLS and keeps the signed POST — what a 307 or a 308 is — is
+// followed to any host the dial gate will open, up to maxRedirects hops; past
+// that the caller sees the last redirect answer, which is a status like any
+// other.
+func (p AddressPolicy) refuseHop(next *http.Request, via []*http.Request) error {
 	if len(via) >= maxRedirects {
 		return http.ErrUseLastResponse
 	}
-	if to == nil || len(via) == 0 {
+	if next == nil || next.URL == nil || len(via) == 0 {
 		return nil
 	}
-	if via[0].URL.Scheme == "https" && to.Scheme != "https" {
-		return fmt.Errorf("%w: %s", errSchemeDowngrade, to)
+	if via[0].URL.Scheme == "https" && next.URL.Scheme != "https" {
+		return fmt.Errorf("%w: %s", errSchemeDowngrade, next.URL)
+	}
+	if next.Method != http.MethodPost || next.Body == nil || next.Body == http.NoBody {
+		return fmt.Errorf("%w: %s", errRedirectLosesTheBody, next.URL)
 	}
 	return nil
 }
