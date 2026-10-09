@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+**The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
+`rest.CommandOptions` now carry an optional declaration of how a resource is
+presented — the words a person is shown, which field names a row, which block a
+field belongs to, which columns a header may order by, what a command's button
+says and what a person reads before it runs — and `GET /api/v1/app/resources`
+publishes it as a `presentation` object on the entry, on each field and on each
+command. The four vocabularies it is declared in are frozen in `kit/entity`
+(`Icons`, `Tones`, `Formats`, `Visibilities`) and bound to what draws them by
+tests inside `ui/`, because a kernel below the presentation layer cannot import
+the renderer it must check against. Anything the gate can name refuses at boot —
+a field, section, icon, tone, reference or sortable field that does not exist, a
+money format on a column that holds no minor units, a command that is both the
+primary action and the destructive one — with a message naming the offender and
+the list that refused (`kit/rest/hints.go`). The change is additive on the wire:
+a key is printed only for a hint somebody declared, so an entry nobody hinted
+serialises byte for byte as it did before, `catalogVersion` stays 2, and the
+committed catalogue golden is unchanged by this release. Adopting a hint on a
+real resource, and translating one, are not part of it.
+
 **A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
 routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
 composition that can resolve a tenant's identity provider, and `modules/tenant` carries

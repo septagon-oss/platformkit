@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
@@ -163,10 +164,21 @@ func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 // carried on the call, so the OpenAPI document names the fields a shell parses
 // rather than an empty object — see app.WorkspaceCatalogRoute.
 func workspaceCatalog() func(api *httpx.API) {
-	return app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+	mount := app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
 		document := screens.Describe(ctx, resources)
 		return &document, nil
 	})
+	return func(api *httpx.API) {
+		// A reading hint that names a module this installation did not compose is
+		// a composition mistake rather than a module's, and this is the first
+		// moment the whole resource list exists: a Spec's own mount check cannot
+		// see a registration made after it. The catalogue is where the lie would
+		// be served, so the check rides where the catalogue is mounted.
+		if bad := rest.CheckReferences(api.Resources()); bad != "" {
+			panic("apps/platformkit: " + bad)
+		}
+		mount(api)
+	}
 }
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the

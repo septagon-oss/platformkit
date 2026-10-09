@@ -139,10 +139,18 @@ func TestTheCatalogOperationDescribesWhatAShellParses(t *testing.T) {
 	if entry == nil {
 		t.Fatal("the catalog document's resources are not an array of objects")
 	}
-	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton", "operations"} {
+	for _, name := range []string{"module", "entity", "path", "writable", "immutable", "screen", "write_path", "commands", "singleton", "operations", "presentation"} {
 		if _, ok := wireMap(entry["properties"])[name]; !ok {
 			t.Errorf("a catalog entry in the published document has no %q: a generated screen would read a field the contract never mentions", name)
 		}
+	}
+	// `presentation` is the one key of these an entry may omit, and the document
+	// has to say so: a shell that required it would refuse every resource whose
+	// author said nothing about how it reads, which is every resource written
+	// before the key existed. TestThePresentationKeysAreNeverRequired reads the
+	// same artefact for the other half — that no hint is required anywhere.
+	if required := wireStringList(entry["required"]); slices.Contains(required, "presentation") {
+		t.Errorf("a catalog entry requires %v; an entry nobody hinted prints no presentation block at all", required)
 	}
 }
 

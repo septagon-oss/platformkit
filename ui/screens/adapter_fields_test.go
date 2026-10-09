@@ -113,6 +113,15 @@ func shapesFor(name string) (a, b httpx.Resource, render func(httpx.Resource) st
 		return a, b, func(r httpx.Resource) string {
 			return renderView(screens.Detail(r, opts, row, true))
 		}, true
+	case "Present":
+		// Which columns a header may be clicked on is the entry's own answer once
+		// it declares one: a shelf that names one sortable field offers one arrow
+		// and not one per column.
+		a, b := base(), base()
+		b.Present = entity.EntryHints{Sortable: []string{"title"}}
+		return a, b, func(r httpx.Resource) string {
+			return renderView(screens.List(r, opts, rows, 1, 1, "", true))
+		}, true
 	case "Operations":
 		// Which verbs the resource mounted decides which doors exist, and the
 		// adapter has to carry the answer: a shelf that offers no create renders

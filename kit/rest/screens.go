@@ -62,7 +62,7 @@ func (s Spec[T]) resource() httpx.Resource {
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		ReadBy: s.ReadAuth, WriteBy: s.WriteAuth, Operations: s.Operations,
-		Immutable: s.Immutable, Schema: schema, RichTextFiles: s.RichTextFiles,
+		Immutable: s.Immutable, Present: s.Present, Schema: schema, RichTextFiles: s.RichTextFiles,
 
 		Count: func(ctx context.Context) (int64, error) {
 			tx, err := transaction(ctx)
