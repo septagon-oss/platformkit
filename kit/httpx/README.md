@@ -165,8 +165,12 @@ them lives in [../idempotency](../idempotency), and the counter behind the other
 
 **The header.** A write that carries `Idempotency-Key` is answered from a
 [record](../idempotency/idempotency.go) rather than run again: the same key, the same
-body and the same caller get the first attempt's status, `Content-Type` and body, and
-the handler does not run. "The same write" is digested over the method, the mounted
+body and the same caller get the first attempt's status, `Content-Type`, the
+navigation it sent the caller to (`Location`, or `HX-Redirect` for the request htmx
+made — html.go's `Redirect` picks between them) and body, and the handler does not
+run. A 303 replayed without its `Location` is a status with nothing to act on, so the
+destination is part of the answer and not a header beside it. "The same write" is
+digested over the method, the mounted
 pattern, the path *as it arrived* — chi routes on `RawPath`, so `/records/a%2Fb/c` and
 `/records/a/b%2Fc` are two resources and one decoded path is not one resource — the
 query, the content type and the body. The same key with a different body is a 422 —
@@ -220,10 +224,13 @@ beside the window and the quota it describes — which were two literals in
 [public_writes.go](public_writes.go) and are now one record with a name. The name, the
 `q` and the `w` a client reads have to be the numbers the counter was keyed with, and
 one sentence that quotes `60` three times is the only place they could ever have agreed.
-What this delivery does *not* do is let a module name a policy of its own per route: a
-route has no way to say so today, so the kernel applies the one anonymous-write policy
-it has always applied and calls it by name — a second policy is a change to
-`WriteLimiter`, not a second string. The port is one method wide, `Reserve`, which
+What this delivery does *not* do is let a module invent a policy per route: a policy
+name belongs to a counter, and a route that spends one states *that* counter's numbers
+through `SayCounted` — which is how [modules/auth](../../modules/auth)'s own caps
+(password reminders, link redemption) come to state the limit that decides them rather
+than leaving the kernel's anonymous-write policy to speak for a counter it never
+consulted. Two counters on one reply is two items in one list, in the order they were
+consulted; one is one. The port is one method wide, `Reserve`, which
 answers the decision, the quota left and the window left from a single statement; it
 replaced `Allow`+`Count` rather than sitting beside them, because two calls are two
 readings of a row that had other writers between them. That widens `kit/limit`'s
