@@ -695,8 +695,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -777,8 +777,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -859,8 +859,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -1304,8 +1304,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -1383,8 +1383,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -1462,8 +1462,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -2114,8 +2114,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -2285,8 +2285,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -2381,8 +2381,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -2477,8 +2477,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -3442,8 +3442,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -3515,8 +3515,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
@@ -3588,8 +3588,8 @@
               "changes": {
                 "items": {
                   "properties": {
-                    "after": true,
-                    "before": true,
+                    "after": {},
+                    "before": {},
                     "field": {
                       "type": "string"
                     }
