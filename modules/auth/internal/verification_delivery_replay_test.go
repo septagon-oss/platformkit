@@ -60,7 +60,7 @@ func TestInterruptedVerificationDeliverySendsLinkOnReplay(t *testing.T) {
 		t.Fatal("the registration event has no verification subscriber")
 	}
 	deliver := func() error {
-		return db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return db.Run(deliveryContext(t.Context(), conn, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			return handle(ctx, tx, event)
 		})
 	}

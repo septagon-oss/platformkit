@@ -192,23 +192,17 @@ auth:
 #
 # The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
 #
-# `sink` is the one way to name a transport that is not a server, and the only
-# value it takes is "mailbox": keep every message in this process's memory and
-# send none. It exists for a case or a screen that has to *read* a message —
-# `make run` needs no sink, because the catcher above is a real server it can
-# point at — and it is never implied by an empty host: an installation that names
-# neither sends nothing, the command that would promise a mailed link refuses with
-# a reason, and a notice that asks for mail is recorded as suppressed. That is the
-# difference between "this machine has no relay today" and "this installation
-# accepted a sign-up whose confirmation nobody will ever receive".
+# An empty host is not a sink and implies no stand-in for one. What a message
+# with no server behind it becomes is the notification module's choice, made once
+# per environment: a development deployment gets its in-process mailbox, so a
+# sign-up is accepted and its confirmation link waits in that process to be read;
+# anywhere else the installation composes the sender that refuses every send, the
+# command that would promise a mailed link refuses with a reason, and a notice
+# that asks for mail is recorded as suppressed. That is the difference between
+# "this machine has no relay today" and "this installation accepted a sign-up
+# whose confirmation nobody will ever receive".
 mail:
   host: ""
-  # sink picks where a deployment with no mail server puts what it is asked to
-  # send: "" or mailbox keeps it in this process, and none composes no transport
-  # at all, which is what makes a sign-up answer 503 rather than file a message
-  # nobody will ever read. Nothing else is a sink: an empty host never picks the
-  # in-process mailbox, which is why the key exists.
-  sink: ""
   # Submission with STARTTLS, which is what a modern relay listens on.
   port: 587
   username: ""

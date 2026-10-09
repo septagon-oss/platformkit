@@ -37,7 +37,7 @@ pkit: notification.Module needs notificationcontracts.RecipientLookup from user.
 pkit: notification.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: notification.Module reads config.Mail.
 pkit: notification.Module reads config.Server.
-pkit: notification.Module runs on none, which the deployment picked.
+pkit: notification.Module runs on mailbox, which the deployment picked.
 pkit: notification.Module emits notification.created, notification.email_requested and notification.read.
 pkit: notification.Module handles notification.email_requested.
 pkit: file.Module is built after product.Module and tenant.Module.

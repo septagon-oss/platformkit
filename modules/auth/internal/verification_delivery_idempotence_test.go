@@ -43,7 +43,7 @@ func TestAcceptedVerificationDeliveryIsNotMailedAgainOnReplay(t *testing.T) {
 		t.Fatal("the registration event has no verification subscriber")
 	}
 	for range 2 {
-		if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		if err := db.Run(deliveryContext(t.Context(), conn, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			return handle(ctx, tx, event)
 		}); err != nil {
 			t.Fatalf("deliver registration event %s: %v", event.ID, err)

@@ -247,11 +247,6 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			// module is being wired. The hourly sweep reads it back to say which
 			// roles name a permission nothing defines any more.
 			svc.Declare(s.Permissions())
-			// The pool, taken at the same moment and for the same reason: the
-			// one write in this module that must commit before the message that
-			// announces it — the emailed verification credential — opens its own
-			// short transaction on it. See internal.offerVerification.
-			svc.UseConn(s.Conn())
 			internal.RegisterRoutes(s, svc, cookies)
 			// A person's own keys, mounted always: unlike the factor routes
 			// there is no secret this needs from the deployment — the token is

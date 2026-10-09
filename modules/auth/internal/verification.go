@@ -13,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notification "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	user "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -172,17 +173,26 @@ func (s *Service) retractVerification(ctx context.Context, id uuid.UUID, token s
 // that commits by itself, which is the only shape that puts a row in front of a
 // reader before the message that names it is sent.
 //
+// The pool is the one on the context — the same door every detached write in
+// this module asks (see forget), and the reason it is asked rather than carried:
+// the wiring path composes routes before the deployment opens its database, so
+// the connection a module captured there would be no connection at all. A
+// request carries it on the middleware's context and a delivery on the one
+// kit/app hands the subscription, so both callers of this function are in the
+// position the sentence describes; one with neither writes no credential.
+//
 // db.Detached because the caller's transaction is open on the context and db.Run
 // would join it rather than end before the send; context.WithoutCancel because a
 // delivery whose deadline has passed must not abandon a row halfway through
 // writing it — the statement is bounded by its own budget instead.
 func (s *Service) writeVerification(ctx context.Context, what string, stmt func(db.Tx[db.Tenant]) error) error {
-	if s.conn == nil {
-		return fmt.Errorf("auth: no pool to commit an emailed credential on")
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return fmt.Errorf("auth: %s the emailed verification credential: this caller carries no application pool", what)
 	}
 	run, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), credentialWriteBudget)
 	defer cancel()
-	if err := db.Run(run, s.conn, func(_ context.Context, tx db.Tx[db.Tenant]) error { return stmt(tx) }); err != nil {
+	if err := db.Run(run, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error { return stmt(tx) }); err != nil {
 		return fmt.Errorf("auth: %s the emailed verification credential: %w", what, err)
 	}
 	return nil

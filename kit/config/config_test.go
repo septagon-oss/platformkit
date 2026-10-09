@@ -297,7 +297,7 @@ func TestTheMailHostAndPortArriveFromTheEnvironment(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if !got.Mail.Enabled() || got.Mail.Port != 1025 {
-		t.Errorf("mail came through as %+v; the environment is where a development machine says where its mail sink is", got.Mail)
+		t.Errorf("mail came through as %+v; the environment is where a development machine says where its mail goes", got.Mail)
 	}
 
 	t.Setenv("PLATFORMKIT_MAIL_FROM", "platformkit@localhost")
