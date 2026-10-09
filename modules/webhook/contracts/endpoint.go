@@ -235,19 +235,30 @@ func NormalizeURL(raw string) (string, error) {
 	// https://example.com:443 are one destination and must be one string in the
 	// table, or two rows that mean the same thing would compare unequal. Anything
 	// else is kept — a receiver behind a port is a receiver.
+	//
+	// The bracket goes on before the port, never around a string that already
+	// carries one: an IPv6 literal is a host that contains colons, and the colon
+	// that separates a port is not part of the address. `JoinHostPort` is the
+	// standard library's own answer to which is which — it brackets a host holding
+	// a colon and leaves a hostname alone — and an address kept as `[::1:32943]`
+	// instead of `[::1]:32943` is not an address at all, so a receiver on an IPv6
+	// port would have been refused at the write, on a URL its caller never sent.
 	if port != "" && port != "443" {
-		host = host + ":" + port
-	}
-	// A bracket is what makes an IPv6 literal a host rather than a series of
-	// colons, and the address alone needs it back once it is lower-cased. A port
-	// on the end is the case that must not be bracketed: 127.0.0.1:8443 is a host
-	// and a port, and [127.0.0.1:8443] is nothing at all.
-	if strings.Count(host, ":") > 1 && !strings.HasPrefix(host, "[") {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
-	// A path is kept, because /hooks/v2 is a destination; a bare "/" is not worth
-	// storing, since every receiver sees the same thing without it.
-	u.Scheme, u.Host, u.Path = "https", host, strings.TrimSuffix(u.Path, "/")
+	// A path is kept exactly as it was sent, including a trailing slash: /hooks/ is
+	// one receiver's 204 and /hooks another's 404, and a normalisation that trimmed
+	// the difference away would register a destination the caller did not name and
+	// then drop every event the receiver refused for it. Only a lone "/" is dropped,
+	// which is not a different destination: an HTTP/1.1 request for the empty path
+	// is sent as "GET /", so https://host and https://host/ are one address on the
+	// wire and must be one string in the table.
+	if u.Path == "/" {
+		u.Path = ""
+	}
+	u.Scheme, u.Host = "https", host
 	return u.String(), nil
 }
 

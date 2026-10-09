@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -207,7 +208,28 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 // next row of the same tenant. What it cannot do is lose the row — every path
 // ends in an outcome transaction, and the failure to write one is logged by the
 // caller's own error.
+//
+// The endpoint is asked again before the socket opens, and the answer comes from
+// the row rather than from the copy this batch's claim read. A claim takes a
+// batch of rows in one short transaction and the sends happen after it commits,
+// so an administrator's disable that lands between the two — while the first
+// attempt of the batch is on the wire — has already ended every row that was
+// still `queued`, and the rows this tick claimed are the work that disable was
+// about. Sending them anyway would be a destination an administrator just stopped
+// trusting receiving payloads it was never asked for; "disable stops delivery
+// now" is about the attempts that had not started as much as about the ones that
+// were never queued.
 func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *http.Client) {
+	wanted, err := s.stillWanted(ctx, conn, a)
+	if err != nil {
+		if ctx.Err() == nil {
+			s.logSendFailure(a, err)
+		}
+		return
+	}
+	if !wanted {
+		return
+	}
 	status, err := s.post(ctx, client, a)
 	state, reason, fault := classify(status, err)
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -218,6 +240,37 @@ func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *ht
 		// and the other rows of this tenant are still this tick's work.
 		s.logSendFailure(a, err)
 	}
+}
+
+// stillWanted is that second ask, and it ends the row in the same short
+// transaction it read the endpoint in, so an attempt that never opened a socket
+// still carries its terminal state and the reason — the same end the claim gives
+// a row it finds addressed to a disabled endpoint, and the same one the
+// disablement's own statement gives the rows it was able to see.
+//
+// It reads without locking: this is not a command deciding a state change, it is
+// the sender declining to act on a fact that is already committed. A disable
+// committing one instant after this read sends one request the administrator
+// would not have wanted, which is the window every "stops now" promise has; a
+// disable that committed before it stops this attempt and the rest of its batch.
+func (s *Service) stillWanted(ctx context.Context, conn *db.Conn, a attempt) (bool, error) {
+	wanted := true
+	err := db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		endpoint, err := crud.Get[*contracts.Endpoint](tx, a.row.EndpointID)
+		if err != nil {
+			if !errors.Is(err, crud.ErrNotFound) {
+				return err
+			}
+			wanted = false
+			return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, "the endpoint is gone")
+		}
+		if endpoint.IsEnabled() {
+			return nil
+		}
+		wanted = false
+		return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDisabled)
+	})
+	return wanted, err
 }
 
 // post is the socket. The body is the stored payload's bytes and nothing else:

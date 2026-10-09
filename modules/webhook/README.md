@@ -253,6 +253,13 @@ Stated because each one is a promise someone could otherwise read into the modul
 * **At-least-once, never exactly-once.** A crash between the send and the outcome
   transaction loses the record of an attempt that physically happened; the lease
   expires and the row goes out again. `webhook-id` is what a receiver deduplicates on.
+* **"Disable stops delivery now" is a re-ask, not a socket pulled back.** A tick
+  claims its batch in one short transaction and sends the rows after it commits, so
+  the sender asks the endpoint's own row again before each `POST`: a disable that
+  lands while the first attempt of a batch is on the wire ends every row of that
+  batch that had not started, `dropped` with `the endpoint is disabled`, and the one
+  already open is answered as it was going. A disable that commits a microsecond
+  after the re-check is one request; there is no protocol that promises less.
 * **One waiting replay per pair, and no more.** The command is idempotent while an
   attempt is `queued` or `in_flight`; a pair whose replay has been answered can be
   replayed again, and that second replay is a new row with the next attempt number.
