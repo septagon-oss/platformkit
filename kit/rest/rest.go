@@ -422,7 +422,7 @@ var ErrStaleTag = errors.New("rest: the row moved since this write's tag was rea
 
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
-	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	crud.Reset(e)                        // IDs, tenancy and timestamps belong to the server at both doors.
 	s.clearRevision(crud.Fields[T](), e) // and so does the count of this row's writes
 	// The record has to be itself before its own body can be filed. What a body
 	// shows is recorded in prepareRichText below, and a use names the record that
@@ -1020,6 +1020,9 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = conditionFault(crud.Fields[T]())
 	}
 	if bad != "" {
 		panic("rest: Spec for " + s.Module + "." + s.Entity + ": " + bad)
