@@ -17,8 +17,8 @@ import (
 // page, and the file still declares it, so the run that reads the older mapping
 // must forget nothing and delete nothing. A prune that judged only key text would
 // report the page UNCHANGED through one mapping and delete the row through the
-// other — the same destructive shape review 9's third finding had, arrived at from
-// the data instead of from the file.
+// other — the same destructive shape as a prune that judged the file alone,
+// arrived at from the data instead.
 func TestPruneKeepsARowItsOlderMappingSpellsDifferently(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
