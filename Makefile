@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards fmt-check check fmt image up trace down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -205,6 +205,16 @@ check-fixtures: ## Compile the Go program every design test embeds
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
 
+# The pillar section of ARCHITECTURE.md is prose a contributor is meant to trust, and
+# it carries line citations into other people's files, so it drifts the way code does:
+# a file grows, a citation that named a symbol names a blank line, and nothing fails.
+# Its pin is a Python file, and `go tool gotestsum --packages='./...'` cannot see a
+# Python file, which would leave the one gate that reads those citations to be run by
+# whoever remembered it. python3 is already a `check` prerequisite through
+# check-apidiff, so this costs a second and no new dependency.
+check-pillars: ## Fail when the pillar section drifts or one of its citations lands outside its file
+	python3 -B scripts/architecture_pillars_test.py
+
 # The rehearsal and the public-API comparison, both of which existed as steps
 # nobody was forced to run: `make rehearse` needed an operator who remembered it,
 # and the apidiff workflow said "deliberately not a required check" and ran on a
@@ -359,7 +369,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
