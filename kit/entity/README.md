@@ -52,3 +52,33 @@ mean the control, on a string holding an instant as much as on a `time.Time`. Ru
 `go test ./ui/forms ./kit/rest` to see the vocabulary, the drawing and the refusal
 together. Neither proves a control is right for the field: `entity-picker` draws
 the identifier text box and says there is no picker yet.
+
+## The presentation vocabulary
+
+`Icons`, `Tones`, `Formats` and `Visibilities` are the four closed lists a
+resource's reading is declared in, and `ValidIcon`, `ValidTone`, `ValidFormat` and
+`ValidVisibility` are their checks — the same shape as `Widgets` above, for the
+same reason: the layer that draws an icon or colours a tone is `ui/`, which a
+kernel package below the presentation layer may not import, so the kernel names
+the words and a test inside `ui/` binds each name to a drawing
+(`ui/icon/kernel_binding_test.go`, `ui/components/kernel_tone_test.go`).
+
+The three levels that use them are `EntryHints` (a resource), `FieldHints` (a
+field, declared by `ui:` directives and the `enumLabels`/`enumTones` tags in
+`derive`'s existing grammar) and `CommandHints` (a lifecycle route). All three are
+optional and all three are refused whole: `kit/rest/hints.go` names what does not
+exist and `Spec.Mount`, `Singleton.Mount` and `rest.Command` panic at boot, so a
+hint nobody honours never reaches a document. An entity that declares nothing
+serialises exactly as it did before these types existed — `Field.Presentation` is
+`omitzero`, and `ui/screens` prints a `presentation` key only for a hint somebody
+wrote.
+
+**Reused** — `Widgets`/`Presentations` and their `Valid…` predicates, `derive`'s
+tag loop, `kit/entity/display`'s `FieldLabel`/`FieldHelp`, `ui/icon`'s `aliases`
+seam and `ui/components`' `clBadgeTone`. **Added** — the four vocabularies and the
+three hint structs, because no kernel list existed for an icon or a tone and a
+refusal has to be against one, and the entry- and command-level wire objects,
+because `httpx.{Resource,Command}` carried nothing a hint could ride. **Made
+reusable** — the mount gate (`kit/rest/hints.go`), the declared-or-absent
+predicate (`ui/screens/hints.go`) and `CheckReferences`, which answers the
+reference question at boot where the whole resource list exists.

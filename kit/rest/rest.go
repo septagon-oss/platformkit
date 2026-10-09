@@ -164,6 +164,15 @@ type Spec[T crud.Entity] struct {
 	// guarding nothing.
 	Immutable []string
 
+	// Present is how this resource reads: the words a person is shown, which field
+	// names a row, which block a field belongs to, which fields a column may be
+	// ordered by. Every part is optional and the zero value is every resource
+	// written before it existed — the served catalogue prints no `presentation`
+	// key for an entry nobody hinted, so no shell already installed reads a
+	// different document. kit/rest refuses the declaration at mount, not the
+	// request: a hint that names no field is a wiring mistake.
+	Present entity.EntryHints
+
 	// HookEvents names the events the hooks below publish. They are appended
 	// to the create, update and delete operations' x-platformkit-events, so
 	// the OpenAPI document says what a write can emit and kit/app's boot gate
@@ -582,6 +591,13 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// Present is this command as its author describes it: the word on the button,
+	// whether it is the one action a view should offer, whether it costs
+	// something, what a person reads before it runs and what they are told after.
+	// A command no person is offered says `System: true`, and ui/screens mounts no
+	// browser route for it — the JSON route keeps its guard unchanged.
+	Present entity.CommandHints
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -605,6 +621,13 @@ type CommandOptions struct {
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	// A command's hints are checked here rather than in Spec.check because this is
+	// the one site with the verb, the options, the entity's schema and the
+	// argument's fields all in hand at once — and before any route is mounted, so
+	// a refused declaration leaves no half-described resource behind it.
+	if bad := commandFault(verb, opts.Present, crud.FieldsOf(reflect.TypeFor[I]())); bad != "" {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
+	}
 	path := spec.item() + "/" + verb
 	if opts.Collection {
 		path = strings.TrimSuffix(spec.Path, "/") + "/" + verb
@@ -647,7 +670,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields,
+		Fields:   fields, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -874,6 +897,12 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.entryHintFault()
+	}
+	if bad == "" {
+		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())

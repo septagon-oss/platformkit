@@ -38,6 +38,13 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// Present is how this resource's author said it reads. The renderer consults
+	// three parts of it and no others: `visibility`, which keeps a field off the
+	// list and off the record; `section`, which groups the record; and
+	// `sortable`, which names the columns a header may be clicked on. The words,
+	// the icon and the tones are the document's, and the web screen keeps drawing
+	// what it drew until the design decides how they are read.
+	Present entity.EntryHints
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
 	// link a renderer writes is built from it, which is the whole reason the
@@ -290,7 +297,10 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	primary := known(r.Schema.Fields)
 	shown := []entity.Field{primary}
 	for _, f := range r.Schema.Fields {
-		if f.HideList || f.Name == primary.Name || f.Name == "id" {
+		// `hidden` is off every screen and `detail` is off this one; both keep
+		// their value in the schema, the PATCH and the JSON, because what a person
+		// is shown and what a caller may read are two questions.
+		if f.HideList || f.Presentation.OffList() || f.Name == primary.Name || f.Name == "id" {
 			continue
 		}
 		shown = append(shown, f)
@@ -298,7 +308,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	columns := make([]components.TableColumn, 0, len(shown))
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: display.FieldLabel(f), Sortable: f.Type != entity.TypeList, Primary: i == 0,
+			Key: f.Name, Label: display.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
 		})
 	}
 	out := make([]components.DataRow, 0, len(rows))
@@ -381,9 +391,18 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 // not about a field being secret, and a field a caller may not see is a field
 // the entity's JSON does not carry.
 func details(r Resource, row map[string]any, rendered map[string]string) g.Node {
-	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
+	// One pass, in schema order: richtext becomes a prose section as it always
+	// did, and every other readable field becomes a term beside its value.
 	var prose []g.Node
+	type read struct {
+		field entity.Field
+		item  components.DetailItem
+	}
+	var reads []read
 	for _, f := range r.Schema.Fields {
+		if f.Presentation.Hidden() {
+			continue
+		}
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
 				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
@@ -392,9 +411,45 @@ func details(r Resource, row map[string]any, rendered map[string]string) g.Node 
 			}
 			continue
 		}
-		items = append(items, components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])})
+		reads = append(reads, read{field: f,
+			item: components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])}})
 	}
-	return g.Group{components.DetailList(components.DetailListProps{Items: items}), g.Group(prose)}
+	list := func(items []components.DetailItem) g.Node {
+		return components.DetailList(components.DetailListProps{Items: items})
+	}
+	if len(r.Present.Sections) == 0 {
+		all := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			all = append(all, r.item)
+		}
+		return g.Group{list(all), g.Group(prose)}
+	}
+	// Declared sections are the blocks of the record screen, in the order the
+	// author named them. A field naming none is drawn after every one of them, in
+	// schema order: an undeclared field that drifted between two blocks somebody
+	// placed would be the section list losing an argument it never entered.
+	out := make([]g.Node, 0, len(r.Present.Sections)+1)
+	taken := map[string]bool{}
+	for _, sec := range r.Present.Sections {
+		items := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			if r.field.Presentation.Section == sec.Key {
+				items = append(items, r.item)
+				taken[r.field.Name] = true
+			}
+		}
+		out = append(out, h.Section(h.H2(g.Text(sec.Label)), list(items)))
+	}
+	rest := make([]components.DetailItem, 0, len(reads))
+	for _, r := range reads {
+		if !taken[r.field.Name] {
+			rest = append(rest, r.item)
+		}
+	}
+	if len(rest) > 0 {
+		out = append(out, list(rest))
+	}
+	return g.Group{g.Group(out), g.Group(prose)}
 }
 
 // deleteForm is the destructive action: a real form, so it works without
@@ -441,6 +496,25 @@ func direction(sort string) string {
 		return "desc"
 	}
 	return "asc"
+}
+
+// sortable reports whether this column's header offers an order. When the entry
+// names its sortable fields, that list is the answer and nothing outside it is
+// clickable; when it names none, every field that is not a list is, which is what
+// every resource drawn before the declaration existed gets.
+func (r Resource) sortable(f entity.Field) bool {
+	if f.Type == entity.TypeList {
+		return false
+	}
+	if len(r.Present.Sortable) == 0 {
+		return true
+	}
+	for _, name := range r.Present.Sortable {
+		if name == f.Name {
+			return true
+		}
+	}
+	return false
 }
 
 // known is the field a row is recognised by, for the whole table at once: the field the entity marked
