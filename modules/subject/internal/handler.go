@@ -88,6 +88,31 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 			return &rest.Item[*contracts.Request]{Body: row}, fault(err)
 		})
 
+	// The person's own question, asked again later: where is my export. One route answers
+	// it, and the notice the walk sends links to this address — which is why the route
+	// exists the moment the notice names it, rather than after somebody asks for a page.
+	httpx.Register(r.App, huma.Operation{
+		OperationID: "subject-export-read-mine",
+		Method:      http.MethodGet,
+		Path:        "/exports/{id}",
+		Summary:     "Read one of your own export requests",
+		Description: "The request's state, its bundle's digest, and when a link to it would die. Somebody " +
+			"else's request is not found, which is the answer that does not confirm the row exists.",
+		Tags:   []string{"subject"},
+		Errors: faults,
+	}, httpx.SignedIn(), func(ctx context.Context, in *idInput) (*rest.Item[*contracts.Request], error) {
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return nil, unavailable
+		}
+		actor, ok := tenancy.ActorFrom(ctx)
+		if !ok {
+			return nil, problem.New(http.StatusUnauthorized, "this request carries no identity")
+		}
+		row, err := svc.Request(ctx, tx, in.ID, actor, false)
+		return &rest.Item[*contracts.Request]{Body: row}, fault(err)
+	})
+
 	httpx.Register(r.App, huma.Operation{
 		OperationID: "subject-export-link-mine",
 		Method:      http.MethodPost,

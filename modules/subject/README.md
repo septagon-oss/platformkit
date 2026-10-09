@@ -71,7 +71,7 @@ can ask for from a browser. The sequence is the ADR's, and every step of it is a
 
 | step | what happens | where |
 | --- | --- | --- |
-| ask | one `subject_requests` row in `requested`, and `subject.export_requested`, in one transaction | `POST /api/v1/subject/exports`, no permission (the person's own), or `…/exports/for` with `subject:export` |
+| ask, and ask again | one `subject_requests` row in `requested`, and `subject.export_requested`, in one transaction; the row read back by whoever filed it, which is the address the notice links to | `POST /api/v1/subject/exports` with no permission (the person's own), or `…/exports/for` with `subject:export`; `GET /api/v1/subject/exports/{id}` |
 | work | the `subject-export` job walks each tenant's open requests through `jobs.PerTenant`, calls `Export`, stores the zip private through `file.Service`, holds it, files the row `ready` and notifies the requester | `internal/requests.go`, one transaction per request; a failure files `failed` with the reason in `detail` and publishes nothing |
 | open | the requester mints a token — `POST /api/v1/subject/exports/{id}/link` — seven days, single use, stored as a sha256 in `subject_grants`, and the hold on the bytes moves out to the link's own expiry | `Mint`; `contracts.Link.Token` is the only place the token exists outside that response |
 | download | `GET /api/v1/public/subject/bundles/{token}` streams the bundle out of the file module and spends the token in the same statement that reads it | `Redeem`; used, forged and expired answer the same 404 |
