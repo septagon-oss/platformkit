@@ -535,6 +535,10 @@
       ],
       "uses": [
         {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
           "contract": "admincontracts.Signin",
           "from": "product"
         },
@@ -549,6 +553,7 @@
       ],
       "after": [
         "product",
+        "user",
         "tenant",
         "auth"
       ],
