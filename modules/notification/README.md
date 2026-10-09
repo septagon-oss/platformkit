@@ -60,11 +60,16 @@ means. Ask the two tables two questions.
   schema deletes or updates them, and the table holds a recipient address, so
   "what happens to these rows when a person is forgotten" is unanswered here —
   the platform has no cross-table erasure, and the product that promises to forget
-  people owes that answer. `MailOutcome` is read by one public door in
+  people owes that answer. The two reads are used by one public door in
   `modules/auth`; `Coverage` ignores the table.
-* **`MailOutcome` answers one request id and nothing else**, newest-first: no
-  listing, no date range, no per-address history. A door that listed a tenant's
-  recorded mails would be a list of who asked for an account.
+* **Two reads, and neither of them a listing.** `MailOutcome` answers one request
+  id, newest-first, and nothing else. `NewestMailOutcome` answers the newest record
+  the caller's own tenant holds, whichever call caused it, and exists because the
+  public door must be able to answer a call that left no record of its own without
+  saying "nothing to tell you" — which, for a route that mails only addresses where
+  somebody has an account, is the answer "no account". Neither read lists, ranges
+  over dates or reports per-address history: a door that listed a tenant's recorded
+  mails would be a list of who asked for an account.
 
 ## Authorization
 
@@ -78,7 +83,7 @@ The `SendMail` event subscription (`modules/notification/internal/mail.go`) is r
 
 None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
-`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read only by the request id of the caller's own call; `direct_mail_deliveries` has no route and no permission of its own.
+`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read two ways — by the request id of the caller's own call, and as the newest record of the caller's own tenant — both of them bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
 
 ### Duties the module enforces itself
 

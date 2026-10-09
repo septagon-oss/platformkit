@@ -40,11 +40,13 @@ func (s *Service) RecordMail(_ context.Context, tx db.Tx[db.Tenant], r contracts
 // MailOutcome is the newest outcome recorded for one request id, and known=false
 // when that request left no record. Every request that asked for no mail gets that
 // answer, which is why "no row" is not news to a caller and why the caller's
-// answer to it is the same word the neutral acknowledgment already uses.
+// answer to it is the same word the neutral acknowledgment already uses — and why
+// a stranger must not be answered with it alone: "no row for that id" is the shape
+// of "nobody has this address", which is what NewestMailOutcome answers past
+// (contracts.MailReport).
 //
-// The lookup is by request id alone and never by "the newest row in the tenant":
-// an empty requestID is refused rather than answered, because the newest untraced
-// row belongs to somebody else's call. RLS is what makes another tenant's id
+// This lookup is by request id alone. An empty requestID is refused rather than
+// answered with somebody else's row. RLS is what makes another tenant's id
 // answer known=false rather than refuse differently.
 func (s *Service) MailOutcome(_ context.Context, tx db.Tx[db.Tenant], requestID string) (string, bool, error) {
 	if requestID == "" {
@@ -59,6 +61,24 @@ func (s *Service) MailOutcome(_ context.Context, tx db.Tx[db.Tenant], requestID 
 		return "", false, nil
 	case err != nil:
 		return "", false, fmt.Errorf("notification: read the mail delivery of request %s: %w", requestID, err)
+	}
+	return outcome, true, nil
+}
+
+// NewestMailOutcome is the newest record this tenant holds, whatever call caused
+// it, and known=false when it holds none: the one read that says what the mail
+// transport is doing to the mails this installation sends. It takes no request id,
+// because the answer a caller whose call left no record needs is not about its own
+// call — and RLS bounds it to that caller's own tenant, so nobody can ask another
+// installation what its mails did.
+func (s *Service) NewestMailOutcome(_ context.Context, tx db.Tx[db.Tenant]) (string, bool, error) {
+	var outcome string
+	err := tx.DB().Raw(`SELECT outcome FROM direct_mail_deliveries ORDER BY seq DESC LIMIT 1`).Row().Scan(&outcome)
+	switch {
+	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
+		return "", false, nil
+	case err != nil:
+		return "", false, fmt.Errorf("notification: read the newest mail delivery: %w", err)
 	}
 	return outcome, true, nil
 }

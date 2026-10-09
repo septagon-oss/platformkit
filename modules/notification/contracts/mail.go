@@ -94,6 +94,14 @@ type MailLedger interface {
 	// go". An empty requestID is a caller's mistake and is refused as one: it
 	// must not read the newest untraced row in the tenant.
 	MailOutcome(ctx context.Context, tx db.Tx[db.Tenant], requestID string) (outcome string, known bool, err error)
+
+	// NewestMailOutcome is the outcome of the newest record the caller's own
+	// tenant holds, and known=false when it holds none. It answers the question a
+	// request id cannot: what is the mail transport doing to the mails this
+	// installation sends, including the one this caller asked for, whose record
+	// may not exist because nobody has the address. That is why it exists, and
+	// why it is the tenant's newest row rather than the caller's: see MailReport.
+	NewestMailOutcome(ctx context.Context, tx db.Tx[db.Tenant]) (outcome string, known bool, err error)
 }
 
 // RedactMailReason turns what a transport said into what a record may say. It
@@ -179,10 +187,9 @@ var (
 // door that answers it and the shell that reads it need the same one word.
 const MailStatePending = "pending"
 
-// MailReport is the one word a stranger may be told about the mail its own call
-// asked for: MailFailed when the record says a transport refused that mail,
-// MailStatePending for every other case, including a record that says the mail
-// went.
+// MailReport is the one word a stranger may be told about one record: MailFailed
+// when it says a transport refused that mail, MailStatePending for every other
+// case, including a record that says the mail went.
 //
 // Why only the refusal is answerable. A public call that names an address mails
 // only when somebody has an account there, and the routes that take the address
@@ -194,12 +201,21 @@ const MailStatePending = "pending"
 // for the ones that are not. This function is where that is refused — not by
 // hiding the record, which the operator reads, and not by answering `sent` about
 // a mail that did not leave, which would be the lie the record exists to
-// prevent. The refusal is answerable because it is the one outcome the caller
-// needs acted on and cannot produce for an address that has no account: a
-// request that answers MailFailed necessarily had a transport refuse it, so the
-// door leaks existence with exactly the probability that a transport refuses —
-// the bound the route's own comment claims, and this function is the one place
-// that bound is kept.
+// prevent.
+//
+// Which record is a second decision, and it belongs to the door rather than
+// here: a caller whose own call left a record is answered from it, and one whose
+// call left none is answered from the tenant's newest record
+// (MailLedger.NewestMailOutcome), because "no record" is itself the answer to
+// "does this address have an account?". A refusal is therefore sayable about the
+// transport the caller's mail went through, which is one fact for everybody
+// asking at that moment, and never about a mail the caller did not cause.
+//
+// What that still cannot be closed: a transport that refuses one address and
+// takes another is a fact only about the address it refused, and any word about
+// it identifies the address. That residue is the reason the shell's sentence on
+// `failed` is about the mail server and not about the person's account, and it
+// is why the door is bounded (contracts.MailDeliveryAsks) and same-site.
 //
 // What the caller cannot learn here is any of: that a mail went, that nobody has
 // the address, which kind of mail it was, which address it named, or why it
