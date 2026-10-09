@@ -124,7 +124,7 @@ func timelineActor(item TimelineItem) g.Node {
 }
 
 func timelineTime(value TimeText) g.Node {
-	return h.Time(h.Class(clDataCount.Compile()), g.Attr("datetime", value.AtUTC.Format(time.RFC3339Nano)), g.Text(value.Text))
+	return Time(TimeProps{ComponentProps: ComponentProps{Class: clDataCount.Compile()}, Instant: value})
 }
 
 func timelineContent(p TimelineProps, item TimelineItem) g.Node {

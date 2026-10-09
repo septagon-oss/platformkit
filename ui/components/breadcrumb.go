@@ -52,10 +52,10 @@ func Breadcrumb(p BreadcrumbProps) g.Node {
 		if it.Icon != "" {
 			adornment = []g.Node{glyph(it.Icon)}
 		}
-		items = append(items, h.Li(linkWithSlots(
-			LinkProps{Label: it.Label, Href: it.Href},
-			adornment,
-		)))
+		items = append(items, h.Li(
+			h.Class(clBreadcrumbItem.Compile()),
+			linkWithSlots(LinkProps{Label: it.Label, Href: it.Href}, adornment),
+		))
 	}
 	nav := baseAttrs(p.ComponentProps)
 	if p.Class != "" {

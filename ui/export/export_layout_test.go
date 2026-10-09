@@ -198,7 +198,20 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
-	if legacy.SHA256 != "6f102a89a2217b98e60e68a1d89a9c74138b8645a1bfbe08f1e917de89d020b0" {
+	// The workspace loses its rough edges: every breadcrumb crumb takes a class of its
+	// own (the links truncate, the separators stop shrinking, the current entry breaks by
+	// words), the sidebar's inner column takes w-full so it fills the aside that carries its
+	// width, and the timeline's <time> is emitted by one exported renderer, which puts
+	// `datetime` before `class` rather than after it. Measured leaf by leaf against the
+	// export of this tree before the change: 99,892 leaves stay 99,892, and 29 change —
+	// /sha256 and 28 examples' html. Of those 28, one is breadcrumb/default (its items and
+	// separators classed), one is pagination/default (it borrows the same separator list, so
+	// its two ellipsis gaps gain flex-shrink-0 too) and 26 are the timeline's examples, each
+	// with the same attributes on its <time> in the other order. No token, theme, notice,
+	// icon, schema or CSS leaf moves: every class these three changes emit was already in the
+	// compiled sheet. The digest below is that measurement of this tree, printed by the
+	// refusal above the re-measure and copied from it.
+	if legacy.SHA256 != "061dde64fad4cd26778f1c6d17d97786f750ffb1840efda9948d8e08e1024ebe" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

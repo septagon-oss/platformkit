@@ -704,12 +704,15 @@ var (
 	// Breadcrumb.
 	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
 	// hyphenate: without a break rule the entry measured 1352px wide inside a 390px viewport and the page
-	// scrolled sideways. The rule that stops it is the frame's — clShellMain, inherited by every crumb and
-	// its separator — and not one on this list, which the design tool projects as text.
+	// scrolled sideways. The frame sets that rule for everything it shows (clShellMain), and here it is
+	// refused the way the table refuses it (clTable): a crumb that broke mid-word read "Dashboa / rd".
+	// The links behind the current entry are what give way, so they truncate with an ellipsis; the entry
+	// the person is reading keeps its whole name and wraps by words.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
 			ListStyle("none").Margin(style.S0).Padding(style.S0)
-	clBreadcrumbSep = style.New().TextColor(style.FgTertiary)
-	clBreadcrumbCur = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium)
+	clBreadcrumbItem = style.New().BreakNormal().Truncate().MinWidth(style.S0)
+	clBreadcrumbSep  = style.New().TextColor(style.FgTertiary).FlexShrink0()
+	clBreadcrumbCur  = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium).BreakNormal().MinWidth(style.S0)
 
 	// Sidebar.
 	clSidebarRootAdmin = style.New().Display(style.DisplayHidden).
@@ -725,7 +728,12 @@ var (
 		return c.Width(style.S64)
 	})
 	clSidebarDisabled = style.New().Opacity(style.Opacity50)
-	clSidebarInner    = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull)
+	// clSidebarInner fills the aside it sits in. The aside is the one that carries the width
+	// (lg:w-64 expanded, lg:w-16 collapsed) and paints nothing; this div is a flex item in a flex row,
+	// so without a width it sized to its content and the leftover of the aside showed the page's own
+	// background — the blank band between the sidebar and the content at desktop width. The painted
+	// column below it is a flex-1 child of this column, so it fills the box this rule now gives it.
+	clSidebarInner = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Height(style.SFull).Width(style.SFull)
 	// The column paints an inverse surface, so it names the text colour that reads on it. Without this,
 	// every descendant that chooses no colour of its own — the nav `<li>` around each link, a plain
 	// <span> — inherits the page's foreground token, and both this package's floor probe and the
@@ -942,7 +950,8 @@ func ShellClassLists() []style.ClassList {
 		clCardHeader, clCardFooter, clCardImageVertical, clCardImageHorizontal,
 		clImageCover, clImageContain,
 		clCardHorizontal, clCardVertical,
-		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur,
+		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur, clBreadcrumbItem,
+		clChromeContext,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,
 		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
