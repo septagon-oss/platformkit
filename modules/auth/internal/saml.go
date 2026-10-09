@@ -325,7 +325,11 @@ func (p *SAML) remember(key string, idp *saml.EntityDescriptor, expiresAt time.T
 // back, and this tenant's own metadata for an IdP administrator to configure
 // against. They are registered only when a composition can resolve a tenant's
 // provider at all.
-func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc contracts.Service, users contracts.Users, provisioner contracts.Provisioner, p *SAML) {
+//
+// The service is this module's own and not the contract, for the reason
+// `RegisterRegistrationRoutes` gives: the leg needs the counters behind it, which are
+// what the assertion POST in front of a parser and an RSA verification is bounded by.
+func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc *Service, users contracts.Users, provisioner contracts.Provisioner, p *SAML) {
 	app := surfaces.App
 	p.acsPath = app.Path("/saml/callback")
 	p.metadataPath = app.Path("/saml/metadata")
@@ -388,7 +392,7 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		Summary:     "Finish SAML single sign-on",
 		Description: "Verifies the assertion the IdP posted — its signature, its audience, its recipient, its window and the request it answers — spends its id so it cannot be presented twice, and opens the same session any other door opens. An unsigned assertion, one addressed to another tenant, and one already spent are each refused, and a refusal writes nothing at all: an assertion stays presentable until a session for it commits.",
 		Tags:        []string{"auth"},
-		Errors:      []int{http.StatusNotFound, http.StatusForbidden, http.StatusUnauthorized, http.StatusServiceUnavailable},
+		Errors:      []int{http.StatusNotFound, http.StatusForbidden, http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventLoggedIn}},
 	}, httpx.Public(), func(ctx context.Context, in *struct{}) (*redirectOutput, error) {
 		tx, err := transaction(ctx)
@@ -399,6 +403,15 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		cfg, err := p.tenantProvider(ctx, tx)
 		if err != nil {
 			return nil, err
+		}
+		// Ahead of the base64, the XML tree and the signature: what this bound buys
+		// is the right not to do that work, and a limit that ran afterwards would
+		// count the cost without refusing it. The tenant is resolved first because
+		// the counter is the tenant's — one address spent against acme does not draw
+		// down globex's — and the address is the peer's, never a header's.
+		if !svc.limiter.AssertionPresented(ctx, ClientOf(r).IP) {
+			return nil, problem.New(http.StatusTooManyRequests,
+				"too many assertions from this address; wait a minute and try again")
 		}
 		encoded := r.PostFormValue("SAMLResponse")
 		if encoded == "" {
