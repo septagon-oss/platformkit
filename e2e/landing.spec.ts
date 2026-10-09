@@ -53,10 +53,13 @@ test('a person whose role opens one screen is landed on a page that offers it', 
 
   // The sidebar names the door their role opens. A menu whose only items are the
   // landing page and Health is the walkthrough's zero, and it is a rendered list,
-  // so this is the assertion that says the composition reached the menu. The card
-  // below is what proves the address behind that name is the one their role opens.
+  // so this is the assertion that says the composition reached the menu — and the name
+  // must open the right door, so the sidebar link's own href is checked beside it: a menu
+  // that lists Tasks and points it at Health is the same zero, and only the href says so.
   const entries = await workspace(as);
   expect(entries, `the desk offers ${entries.join(', ')} to a coordinator`).toContain('Tasks');
+  const menu = as.getByRole('navigation', { name: 'Admin navigation' }).first();
+  await expect(menu.getByRole('link', { name: 'Tasks' })).toHaveAttribute('href', desk);
 
   // And the page they landed on offers the same door, not an empty grid: the card
   // for what their role may count. Clickable cards are anchors with the screen as
