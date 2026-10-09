@@ -616,6 +616,12 @@ func written(raw any) string {
 // in modules/change/messages answers the key in another language (decision 0012 rule 2 —
 // the same shape ui/page/fault.go uses for a guard's verdict).
 //
+// A translated line is the sentence the service writes, without the number or the state
+// it interpolates: x/text formats a catalogue line with the arguments a caller passes,
+// and a line nobody passed any to cannot carry a placeholder. Nothing is lost on the
+// page that shows it — the row's own state and the revision it is on now are drawn above
+// the controls, which is where a person reads them from in either language.
+//
 // A refusal the catalogue has no line for stays in the language it was written in, and a
 // page whose shell ships no catalogue is English throughout: a page that declared
 // Portuguese over English copy would be declaring a thing the page does not do.
@@ -631,9 +637,12 @@ func refusal(err error, loc *page.Locale) string {
 	return line
 }
 
-// refusalKey names the copy one of this module's own refusals answers from. Only the
-// sentinels the service declares are matched: a refusal this module did not name is not
-// this module's to re-word, and the English the caller was given is the honest answer.
+// refusalKey names the copy one of this module's own refusals answers from. Only
+// a sentinel the service declares is matched: the commands the page offers raise
+// one on every refusal they make — each of the nine is a thing a decider can act
+// on, and the page that refuses them is the screen they were acting from — and a
+// refusal this module did not name (crud's own, kit/rest's, a subject's) is not
+// this module's to re-word, so the caller keeps the English they were given.
 func refusalKey(err error) (string, bool) {
 	switch {
 	case errors.Is(err, contracts.ErrSelfReview):
@@ -642,6 +651,18 @@ func refusalKey(err error) (string, bool) {
 		return "change.refusal.stale_base", true
 	case errors.Is(err, contracts.ErrUnsupportedSubject):
 		return "change.refusal.unsupported_subject", true
+	case errors.Is(err, contracts.ErrStaleProposal):
+		return "change.refusal.stale_proposal", true
+	case errors.Is(err, contracts.ErrAlreadyDecided):
+		return "change.refusal.already_decided", true
+	case errors.Is(err, contracts.ErrNotApproved):
+		return "change.refusal.not_approved", true
+	case errors.Is(err, contracts.ErrNotProposer):
+		return "change.refusal.not_proposer", true
+	case errors.Is(err, contracts.ErrProposalOver):
+		return "change.refusal.proposal_over", true
+	case errors.Is(err, contracts.ErrVerdict):
+		return "change.refusal.verdict", true
 	}
 	return "", false
 }
