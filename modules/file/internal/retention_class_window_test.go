@@ -44,7 +44,7 @@ func TestTheRetentionSweepDoesNotSpendItsBatchOnAClassItWasNotGiven(t *testing.T
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	const photos = 201
 	var expired uuid.UUID

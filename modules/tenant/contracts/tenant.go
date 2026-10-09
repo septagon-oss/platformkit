@@ -58,6 +58,17 @@ type Tenant struct {
 	// the one `platformkit bootstrap` created, and no route writes it — see
 	// NewTenant.
 	Operator bool `json:"operator"`
+	// App is the composition this tenant belongs to, in the slug kit/appname forms
+	// every shared name from. It is a column and it is written once, at the create,
+	// from the app the composition boots as — never from a request, and never
+	// rewritten, because a tenant that moved between apps would leave its rows under
+	// an app that never issued them.
+	//
+	// It is not in the API document. The app is a fact about the deployment, and
+	// every read that returns this row is already scoped to one app, so the label
+	// would say the same thing on every row of a response and name the deployment to
+	// whoever asked.
+	App string `json:"-"`
 	// Hosts are the names this tenant is served at, the primary one first. They
 	// live in their own table and are loaded with the tenant, because a tenant
 	// without its hosts is a row nobody can reach and an admin screen that
@@ -128,7 +139,9 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 // hostPattern is a hostname: labels of letters, digits and hyphens, separated
 // by dots. It is deliberately narrower than the DNS allows — no underscores, no
 // trailing dot, no port — because kit/httpx has already normalised the incoming
-// Host header to exactly this shape before it asks the loader.
+// Host header to exactly this shape before it asks the loader. A port is not the
+// key a tenant is resolved by, so a published installation declares its public
+// port in server.public_host, the key a mailed link reads a port from.
 var hostPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 // ValidSlug normalises and checks a slug.
@@ -451,4 +464,20 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 		}
 	}
 	return out, nil
+}
+
+// Languages is the set a tenant's locale may be set to: what this installation's
+// copy is written in, read off the catalogues the composition installed.
+//
+// It is a contract and not a Deps field because the composition is the thing
+// that read the files, and the module that refuses a locale has to be told what
+// exists — this module names no tag of its own. A composition that installs no
+// catalogues composes no provider, and then nothing is checked against anything.
+//
+// It is a struct around the tags rather than the slice itself because a slice is
+// the resolver's own spelling of "take every contribution of the element"
+// (pkit.Needs[[]E]): a named []string would be read as a demand for every
+// contributed string, and this is one value holding a list.
+type Languages struct {
+	Tags []string
 }

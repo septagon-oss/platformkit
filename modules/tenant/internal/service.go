@@ -11,9 +11,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -49,12 +51,21 @@ type Service struct {
 	// speak. Empty means the composition named none, and then nothing is checked
 	// against it. See module.Deps.
 	langs []string
+	// app is the composition this control plane serves, and every read below is
+	// scoped to it. A server hosts many apps over one database (decision 0074 §6),
+	// so tenants of two compositions sit in one table and the tenant id says nothing
+	// about which is whose — lookup by host, the active-tenant list and a get by id
+	// all have to answer "which app is this happening in" first, or one app's
+	// operator lists another's customers. The empty Name is the deployment of one
+	// app, whose tenants the migration placed under the empty slug.
+	app appname.Name
 }
 
 // NewService returns the control plane. module.go constructs it, passing the
-// languages the composition's catalogues answer in.
-func NewService(hooks []contracts.Hook, langs []string) *Service {
-	return &Service{hooks: hooks, langs: langs}
+// languages the composition's catalogues answer in and the slug the composition
+// boots as.
+func NewService(hooks []contracts.Hook, langs []string, app appname.Name) *Service {
+	return &Service{hooks: hooks, langs: langs, app: app}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -88,6 +99,11 @@ func (s *Service) Create(ctx context.Context, tx db.Tx[db.System], in contracts.
 	at := db.Now()
 	t := &contracts.Tenant{
 		ID: uuid.New(), Slug: slug, Name: in.Name, Status: contracts.StatusActive,
+		// This composition, and no other: the row is written under the app that
+		// created it and never rewritten, which is what makes every read below a
+		// boundary rather than a filter. A tenant whose host the boot does not
+		// declare is somebody else's tenant, and this create cannot make it ours.
+		App: s.app.String(),
 		// Never from a request body: NewTenant.Operator is json:"-", so the
 		// only caller that can set it is Bootstrap.
 		Operator:  in.Operator,
@@ -434,10 +450,18 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.System], id uuid.UUID,
 // command, so the control plane states its own FOR UPDATE. The order does not
 // change: tenants first, tenant_hosts after, which is the order attach and
 // promote already take them in.
+//
+// The app joins the WHERE for the same reason it joins Get's: a lock is a read, and
+// a control plane reads inside its own app. Without it this is the one door that
+// ignores tenants.app — a verb of another app would find the row, take the lock, and
+// write, while every read the same service makes calls that tenant absent. The row
+// lock is also where the boundary has to be stated: the verbs that compare a state
+// before writing take this read rather than Get, so filtering above it or below it
+// would leave the locked read itself app-blind.
 func (s *Service) lock(tx db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	var t contracts.Tenant
 	err := tx.DB().Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error
+		Where("id = ? AND app = ? AND deleted_at IS NULL", id, s.app.String()).Take(&t).Error
 	if err != nil {
 		return nil, crud.Classify(err)
 	}
@@ -499,20 +523,32 @@ func (s *Service) audience(tx db.Tx[db.System], subject *contracts.Tenant) (uuid
 	return s.installation(tx)
 }
 
-// installation is the operator tenant's id and slug — the scope every lifecycle
-// verb mirrors its row into. The predicate is the one the partial unique index
+// installation is this app's operator tenant — the scope every lifecycle verb of
+// this app mirrors its row into. The predicate is the one the partial unique index
 // tenants_operator serves, and the read is inside the writing transaction rather
 // than cached at boot, because which tenant is the installation's is a row and not
 // a build flag.
 //
+// It is scoped to the app like every other read here, and that is the whole of the
+// read's shape: migrations/000043 made tenants_operator unique on (app) rather than
+// on the constant true, so a database of many compositions holds one operator each,
+// and an unscoped `LIMIT 1` answers with whichever operator the table happens to
+// return first. The row an app mirrors into is the one whose audit its own operator
+// reads and whose app its own relay claims (kit/events' RelayApp claims an outbox
+// row by the tenant's app), so mirroring into another app's installation puts the
+// verb in a trail its own installation will never read — and names a customer that
+// trail has never seen.
+//
 // Answering none is a refusal, not an empty scope: a verb that cannot write both
-// audit rows writes neither. Every request that could reach one of these commands
-// was authorized at the operator tenant's own host, so the state this names is an
-// installation that is not installed — unreachable, and worth one query to say so
-// rather than to audit from one side.
+// audit rows writes neither, and another app's operator is not this app's
+// installation. Every request that could reach one of these commands was authorized
+// at the operator tenant's own host, so the state this names is an installation that
+// is not installed — unreachable, and worth one query to say so rather than to audit
+// from one side.
 func (s *Service) installation(tx db.Tx[db.System]) (uuid.UUID, error) {
 	var ids []uuid.UUID
-	err := tx.DB().Table("tenants").Where("operator AND deleted_at IS NULL").Limit(1).Pluck("id", &ids).Error
+	err := tx.DB().Table("tenants").
+		Where("operator AND app = ? AND deleted_at IS NULL", s.app.String()).Limit(1).Pluck("id", &ids).Error
 	if err != nil {
 		return uuid.Nil, crud.Classify(err)
 	}
@@ -602,19 +638,20 @@ func (s *Service) validLocales(in contracts.SetLocale) ([]string, error) {
 // Get is one tenant with its hosts.
 func (s *Service) Get(_ context.Context, tx db.Tx[db.System], id uuid.UUID) (*contracts.Tenant, error) {
 	var t contracts.Tenant
-	if err := tx.DB().Where("id = ? AND deleted_at IS NULL", id).Take(&t).Error; err != nil {
+	if err := tx.DB().Where("id = ? AND app = ? AND deleted_at IS NULL", id, s.app.String()).Take(&t).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	return s.loaded(tx, &t)
 }
 
-// List is every tenant that is not deleted, with its hosts. The hosts come back
+// List is every tenant of this app that is not deleted, with its hosts. The hosts
+// come back
 // in one query rather than one per tenant, because the control plane's list is
 // read by a screen and a screen that costs a query per row is a screen nobody
 // keeps.
 func (s *Service) List(_ context.Context, tx db.Tx[db.System]) ([]*contracts.Tenant, error) {
 	var out []*contracts.Tenant
-	if err := tx.DB().Where("deleted_at IS NULL").Order("created_at, id").Find(&out).Error; err != nil {
+	if err := tx.DB().Where("deleted_at IS NULL AND app = ?", s.app.String()).Order("created_at, id").Find(&out).Error; err != nil {
 		return nil, crud.Classify(err)
 	}
 	if len(out) == 0 {
@@ -657,8 +694,8 @@ func (s *Service) ByHost(_ context.Context, tx db.Tx[db.System], host string) (t
 	var t contracts.Tenant
 	err := tx.DB().Table("tenants").Select("tenants.*").
 		Joins("JOIN tenant_hosts ON tenant_hosts.tenant_id = tenants.id").
-		Where("tenant_hosts.host = ? AND tenants.status = ? AND tenants.deleted_at IS NULL",
-			httpx.HostOnly(host), contracts.StatusActive).
+		Where("tenant_hosts.host = ? AND tenants.status = ? AND tenants.app = ? AND tenants.deleted_at IS NULL",
+			httpx.HostOnly(host), contracts.StatusActive, s.app.String()).
 		Take(&t).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return tenancy.Tenant{}, tenancy.ErrNoSuchHost

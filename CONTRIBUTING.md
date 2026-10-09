@@ -67,7 +67,8 @@ line is the version this repository is verified with. Make selects that exact
 toolchain for its commands and child scripts, including the formatter; a different
 installed Go does not change the verification version. The Go command downloads the
 selected toolchain if it is not already available.
-From the repository root, start the development PostgreSQL, NATS and Valkey services:
+From the repository root, start the development PostgreSQL, NATS, Valkey, object
+store and mail catcher services:
 
 ```sh
 docker compose ps
@@ -75,11 +76,13 @@ make up
 make check
 ```
 
-Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT` and `PLATFORMKIT_VALKEY_PORT` if
-the default ports are in use, retaining those values for every command. Never use
-production test credentials: tests create and remove database schemas. `make down`
-deletes the Compose volumes as well as stopping services; it is not a test step.
-The Valkey service is optional in a way the other two are not: `kit/cache` boots
+Set `PLATFORMKIT_PG_PORT`, `PLATFORMKIT_NATS_PORT`, `PLATFORMKIT_VALKEY_PORT`,
+`PLATFORMKIT_S3_PORT` and `PLATFORMKIT_MAILPIT_SMTP_PORT` /
+`PLATFORMKIT_MAILPIT_PORT` if the default ports are in use, retaining those values
+for every command. Never use production test credentials: tests create and remove
+database schemas. `make down` deletes the Compose volumes as well as stopping
+services; it is not a test step.
+The Valkey service is optional in a way the others are not: `kit/cache` boots
 without a store, so its adapter's conformance suite skips when nothing answers the
 Valkey port and names the skip, and every other case in `make check` runs either way.
 Exporting `PLATFORMKIT_TEST_VALKEY_URL` yourself runs those cases against what you
@@ -105,9 +108,9 @@ reports, use the gotestsum options documented beside `TEST_OPTIONS` in [Makefile
 The cache cannot observe database or NATS state; after external-input changes,
 run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openpencil/README.md).
 
-`make check` always runs fresh tests across all packages, regardless of local
-filters, plus build, vet, formatting, budgets, imports, declared-version and
-tenant-setting checks.
+`make check` runs fresh tests across all packages regardless of local filters,
+unless its caller empties `TEST_COUNT` (CI sets nothing, so CI always runs fresh),
+plus build, vet, formatting, budgets, imports, version and tenant-setting checks.
 `make check-race` runs the outbox, the request transaction, the advisory locks,
 the limit counters and the router under the race detector. CI runs `check` and
 `check-race`, so the detector is not something a contributor has to remember; it
@@ -115,8 +118,16 @@ is a separate goal because -race roughly doubles the suite.
 `make e2e` adds browser journeys. Both pass before pushing; `make check`
 passes before committing.
 
-Browser checks also require Node, npm, `psql`, `curl` and Playwright Chromium.
-Install the browser dependencies once, then run with the same service ports:
+Browser checks also require Node, npm, `psql`, `curl`, Playwright Chromium and `ss` or `lsof`.
+The journeys that open a link the application mails read it from compose.yaml's
+mailpit catcher, so [scripts/e2e.sh](scripts/e2e.sh) refuses a run with nothing
+answering that address rather than letting the journey time out on a mail nobody
+received; `make up` starts it. The two catcher ports name everything else:
+[scripts/e2e.sh](scripts/e2e.sh) derives the address the application dials and the
+address its journeys read from `PLATFORMKIT_MAILPIT_SMTP_PORT` and
+`PLATFORMKIT_MAILPIT_PORT`, so a caller that runs one spec directly reaches the
+catcher its own stack publishes rather than the default port. Install the browser
+dependencies once, then run with the same service ports:
 
 ```sh
 npm --prefix e2e ci
@@ -124,11 +135,11 @@ npm --prefix e2e run install:browsers
 make e2e
 ```
 
-Browser installation may require permission to install system packages.
-The [test script](scripts/e2e.sh) removes its database and uploads, retaining failed
-Playwright results at the printed temporary path. Concurrent runs need distinct
-`PLATFORMKIT_E2E_PORT` values. [Makefile](Makefile) owns the command definitions;
-[RELEASE.md](RELEASE.md) describes the separate publication procedure.
+Browser installation may require permission to install system packages. The [test
+script](scripts/e2e.sh) removes its database and uploads, keeping failed Playwright
+results at the printed path. A run picks a free loopback port, `PLATFORMKIT_E2E_PORT`
+pins one; a taken pin and a port whose listener the run did not start are both refused.
+[Makefile](Makefile) owns the commands; [RELEASE.md](RELEASE.md) the publication procedure.
 
 For a behavior change, demonstrate the failing case and its correction.
 For a refactor, retain the independent behavior tests and explain what

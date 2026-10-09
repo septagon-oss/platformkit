@@ -3,6 +3,7 @@ package entity
 import (
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,6 +59,8 @@ type Field struct {
 	// name refuses to mount, because a name no renderer knows used to draw a
 	// plain text input in silence.
 	Widget string `json:"widget,omitempty"`
+	// MaxLength is the declared character ceiling a generated control shows.
+	MaxLength int `json:"maxLength,omitempty"`
 	// Present is how a *read* renders the value: `ui:"present:person"`. It must be
 	// a name Presentations admits, and a Spec whose entity names anything else
 	// refuses to mount for the same reason Widget does — a name no renderer knows
@@ -84,6 +87,12 @@ type Field struct {
 	ReadOnly bool `json:"readOnly,omitempty"`
 	// HideList keeps a field off the list screen, from `ui:"hide:list"`.
 	HideList bool `json:"hideList,omitempty"`
+	// Display marks the field a row is named by: `ui:"display"`. Not "is displayed" — every field is.
+	// A schema had no way to say which of its fields is the row's name, and a screen that cannot ask
+	// renders an id: ui/resource takes the heading of a record, the text of the row's only link and the
+	// tab title from this field when the entity declares one, and from its own fallback order when it
+	// does not. A schema names one row one field: kit/rest refuses a second mark at mount.
+	Display bool `json:"display,omitempty"`
 	// Default is the value the entity declares for a field a caller may leave
 	// out, from `default:"open"` — the same tag huma reads, so the form and the
 	// API document agree about what happens when nothing is sent. A form
@@ -120,7 +129,7 @@ type Field struct {
 var Widgets = []string{
 	"checkbox", "color", "date", "datetime", "email", "entity-picker", "file",
 	"hidden", "month", "number", "password", "search", "select", "tel", "text",
-	"textarea", "time", "url", "week",
+	"textarea", "richtext", "time", "url", "week",
 }
 
 // Presentations is every name `ui:"present:…"` may carry, and it is the read-axis
@@ -244,6 +253,7 @@ func derive(t reflect.Type) []Field {
 			Doc:      sf.Tag.Get("doc"),
 			Index:    sf.Index,
 		}
+		f.MaxLength, _ = strconv.Atoi(sf.Tag.Get("maxLength"))
 		if enum := sf.Tag.Get("enum"); enum != "" {
 			f.Enum = strings.Split(enum, ",")
 		}
@@ -260,6 +270,10 @@ func derive(t reflect.Type) []Field {
 				f.Present = value
 			case "hide":
 				f.HideList = f.HideList || value == "list"
+			case "display":
+				// No value is read: `ui:"display:yes"` sets the same flag as `ui:"display"`, and a value
+				// would be a second shape nothing renders.
+				f.Display = true
 			}
 		}
 		out = append(out, f)

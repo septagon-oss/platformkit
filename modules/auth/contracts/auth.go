@@ -404,14 +404,29 @@ type Service interface {
 	// message, not in the mechanism.
 	Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error
 
-	// Reset consumes a token, sets the password and ends every session that
-	// user has — including the one asking, because whoever is resetting a
-	// password is not relying on a session and whoever else held one may be the
-	// reason it is being reset. It publishes auth.password_reset.
+	// Reset consumes a token, sets the password, ends every session that user has
+	// — including the one asking, because whoever is resetting a password is not
+	// relying on a session and whoever else held one may be the reason it is being
+	// reset — and opens a new session for the browser that spent the link. It
+	// publishes auth.password_reset and, when a session opened, auth.logged_in.
+	//
+	// The session is the point of the link. An invitation that set a password and
+	// then asked for one was half a door: the person who proved their mailbox and
+	// chose the credential was standing outside it, so this returns the session to
+	// put in a cookie. `from` is the client the link was spent by — address and
+	// user agent — because the session row records the machine that opened it.
+	//
+	// nil session and nil error is the one account left signed out: a person who
+	// enrolled a second factor. Their password changed and their other sessions
+	// ended, and the first half of a sign-in still opens nothing on an account that
+	// answers with two. Every implementation is expected to keep those three facts
+	// in that order — sweep, then open — so that the session it hands back cannot be
+	// one the sweep removed.
 	//
 	// A token that is unknown, spent or expired is ErrCredentials, and the
 	// three are one answer for the reason Login's three are.
-	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error
+	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+		from Client) (*Session, error)
 
 	// Roles is every role in this tenant, by name.
 	Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*Role, error)

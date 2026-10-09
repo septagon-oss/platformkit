@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -176,6 +177,76 @@ func Migrate(ctx context.Context, migrateURL string, sources ...MigrationSource)
 // Migrate is this function with the documented defaults, which is why every caller
 // that does not name a budget still gets the lock budget.
 func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget, sources ...MigrationSource) error {
+	return MigrateDeclaring(ctx, migrateURL, budget, Declaration{}, sources...)
+}
+
+// Declaration is what the composition running a migration says about itself, so
+// that a file which has to place a row belonging to somebody can prove whose it
+// is instead of guessing. It is the one door a migration has for a fact the
+// database does not hold: a schema half runs before any request, so the boot is
+// the only party that knows which app it is and which hosts it serves.
+//
+// The three settings arrive as session state on the migration's own connection,
+// which is opened for this run and closed when it ends. They are placeholder
+// GUCs, the same mechanism 000001 uses for platformkit.tenant_id, and a file
+// reads them with current_setting(name, true) — where the answer is NULL when the
+// boot said nothing, which is a different fact from saying something empty. That
+// distinction is the whole of App's pointer: a composition that names no slug is
+// the deployment of one app and declares it as such, and a composition that
+// declares nothing may only be migrating a database with nothing to place.
+type Declaration struct {
+	// App is the composition's own slug, or nil when its configuration names
+	// none. An empty string is the single-app deployment named on purpose; nil
+	// is a boot that said nothing.
+	App *string
+	// Hosts are the hosts this composition serves its tenants at. A back-fill
+	// places an existing tenant under App only when every host the tenant holds
+	// is one of these — which is what "proves its input" means when the input is
+	// a set of tenants the database already has.
+	Hosts []string
+	// Tenants is the operator's explicit mapping, tenant slug to app slug, for
+	// the tenant the hosts cannot place. A file that reads it checks that it
+	// covers every row and refuses the ones it does not.
+	Tenants map[string]string
+}
+
+// declare puts the declaration on the session. Values travel as parameters, so a
+// slug or host that holds a quote is a value and never a statement.
+func (d Declaration) declare(ctx context.Context, conn *sql.Conn) error {
+	// Every one of these scans its row into a value it throws away. A Row that is
+	// never read is never closed, the connection keeps the delivery open, and the
+	// deferred conn.Close() at the end of the run waits for it: measured, a
+	// declaration that used Row.Err() hung the migration's own teardown and the
+	// session died holding the composition's advisory lock, so the next run in the
+	// same database never came back.
+	var declared string
+	if d.App != nil {
+		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app', $1, false)`, *d.App).Scan(&declared); err != nil {
+			return fmt.Errorf("db: migrate: declaring the app: %w", err)
+		}
+	}
+	if len(d.Hosts) > 0 {
+		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app_hosts', $1, false)`, strings.Join(d.Hosts, ",")).Scan(&declared); err != nil {
+			return fmt.Errorf("db: migrate: declaring the hosts: %w", err)
+		}
+	}
+	if len(d.Tenants) > 0 {
+		pairs := make([]string, 0, len(d.Tenants))
+		for tenant, app := range d.Tenants {
+			pairs = append(pairs, tenant+"="+app)
+		}
+		slices.Sort(pairs)
+		if err := conn.QueryRowContext(ctx, `SELECT set_config('platformkit.app_tenants', $1, false)`, strings.Join(pairs, ",")).Scan(&declared); err != nil {
+			return fmt.Errorf("db: migrate: declaring the tenant mapping: %w", err)
+		}
+	}
+	return nil
+}
+
+// MigrateDeclaring is MigrateWith plus what the boot declares about itself. An
+// empty Declaration declares nothing, which is what every caller that predates
+// the tenant app column already meant.
+func MigrateDeclaring(ctx context.Context, migrateURL string, budget MigrationBudget, decl Declaration, sources ...MigrationSource) error {
 	if err := budget.validate(); err != nil {
 		return fmt.Errorf("db: migrate: %w", err)
 	}
@@ -193,6 +264,10 @@ func MigrateWith(ctx context.Context, migrateURL string, budget MigrationBudget,
 		return fmt.Errorf("db: migrate: connect: %w", err)
 	}
 	defer conn.Close()
+
+	if err := decl.declare(ctx, conn); err != nil {
+		return err
+	}
 
 	run := &runner{conn: conn, budget: budget}
 	if err := run.holdCompositionLock(ctx); err != nil {
@@ -566,8 +641,10 @@ func partnerFile(files []migration, version int64) string {
 	return fmt.Sprintf("version %d", version)
 }
 
-// compositionLockKey is the advisory lock one migration run holds for its whole
-// composition, so that two replicas do not apply the same file at once.
+// compositionLockKey is the first half of the advisory lock one migration run holds for
+// its whole composition, so that two replicas do not apply the same file at once. The
+// second half is the namespace the run resolves to: see holdCompositionLock, which says
+// why the key is one namespace's and not one database's.
 const compositionLockKey = 7240101
 
 // runner is one pinned connection and the budgets in force for one run. Every file and
@@ -579,7 +656,8 @@ const compositionLockKey = 7240101
 type runner struct {
 	conn   *sql.Conn
 	budget MigrationBudget
-	locked bool // whether this session holds compositionLockKey right now
+	locked bool  // whether this session holds the composition lock right now
+	schema int64 // the namespace the lock was taken under, read once: see compositionSchema
 }
 
 // holdCompositionLock takes the composition's advisory lock for this session.
@@ -602,16 +680,65 @@ type runner struct {
 // that second call the lock budget has already come off for the statement above it, so
 // what that call still takes off is the statement budget, which bounds a wait for a
 // lock as surely as it bounds the work done inside one.
+//
+// Which lock, and why it is the namespace's. The key is (compositionLockKey, the OID of
+// current_schema()) — the namespace this run's `schema_migrations` lands in and the one
+// every table its files create lands in. That is the smallest scope that still holds the
+// promise ADR 0005 makes: two sessions can apply one file twice only if they write one
+// ledger, and one ledger belongs to one namespace. Two replicas of one installation reach
+// the same namespace through the same URL, so they still queue; two installations that
+// share a database but not a namespace own nothing in common to queue about — each has
+// its own ledger, its own history and its own rows, and Declaration is how a run says
+// which app it is beside saying which hosts it serves.
+//
+// Sharing one database is a normal shape for a deployment of several apps, and it is the
+// shape a test suite of many packages finds itself in: dbtest gives each test its own
+// schema of one database. A key with no namespace in it put every migration of every one
+// of those schemas behind every other one's — measured during a `make check`, 32 of the 33
+// live backends of this worktree's database parked in `Lock:advisory` at once, an average
+// of 29 of them across the run and a single wait of 55 s, which is how a package whose
+// suite costs 140 s on its own spent ten minutes of Go's package watchdog in a queue that
+// had nothing in it to protect. A session whose path resolves to no namespace
+// (`to_regnamespace` answers NULL) is refused below rather than locked around: it has
+// nowhere to write its history, and `pg_advisory_lock(NULL, …)` answers NULL without
+// taking anything, which would be a run that set out believing it was alone.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
 	}
-	_, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
+	schema, err := r.compositionSchema(ctx)
 	if err != nil {
+		return err
+	}
+	if _, err := r.conn.ExecContext(ctx,
+		"SELECT pg_advisory_lock($1::int, $2::oid::int)", compositionLockKey, schema); err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
 	return nil
+}
+
+// compositionSchema is the namespace the run's own session resolves to, as the OID the
+// lock's second half takes. An OID is unsigned 32-bit, so a namespace created after the
+// cluster's counter passed 2^31 has an OID no int holds: the value is carried as a bigint
+// and the two lock statements wrap it with `::oid::int`, which is how Postgres itself
+// narrows an OID into an int and is the key the suite's own lock lines contend. Read once
+// and kept on the runner: the lock has to be given back under the key it was taken under,
+// whatever the session's path holds by the time it is given back — and a file may set one.
+func (r *runner) compositionSchema(ctx context.Context) (int64, error) {
+	if r.schema != 0 {
+		return r.schema, nil
+	}
+	var schema int64
+	if err := r.conn.QueryRowContext(ctx,
+		"SELECT coalesce(to_regnamespace(current_schema()), 0)::oid::bigint").Scan(&schema); err != nil {
+		return 0, fmt.Errorf("db: migrate: reading the composition's namespace: %w", err)
+	}
+	if schema == 0 {
+		return 0, fmt.Errorf("db: migrate: this session resolves to no schema — current_schema() is NULL — so its history table has nowhere to land and its composition lock has no namespace to name")
+	}
+	r.schema = schema
+	return schema, nil
 }
 
 // releaseCompositionLock gives the lock back, and is quiet about a session that
@@ -620,7 +747,8 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 	if !r.locked {
 		return nil
 	}
-	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", compositionLockKey); err != nil {
+	if _, err := r.conn.ExecContext(ctx,
+		"SELECT pg_advisory_unlock($1::int, $2::oid::int)", compositionLockKey, r.schema); err != nil {
 		return fmt.Errorf("db: migrate: unlock: %w", err)
 	}
 	r.locked = false

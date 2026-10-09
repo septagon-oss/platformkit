@@ -1,0 +1,176 @@
+{
+  "richtext.invalid-utf8.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "codificação de texto inválida"
+  },
+  "richtext.invalid-utf8.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use texto em UTF-8."
+  },
+  "richtext.raw-html.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "HTML em bruto"
+  },
+  "richtext.raw-html.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Escreva Markdown em vez de HTML."
+  },
+  "richtext.heading-level.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "nível de título"
+  },
+  "richtext.heading-level.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use títulos de ## a ####; o título da página é o título principal."
+  },
+  "richtext.link-destination.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "destino de ligação"
+  },
+  "richtext.link-destination.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use https:, http:, mailto:, tel:, um caminho do site ou uma âncora."
+  },
+  "richtext.image-source.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "fonte de imagem"
+  },
+  "richtext.image-source.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Carregue a imagem para que fique guardada com este site."
+  },
+  "richtext.inline-image.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "imagem no meio do texto"
+  },
+  "richtext.inline-image.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Coloque a imagem isolada numa linha."
+  },
+  "richtext.image-in-table.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "imagem dentro de uma tabela"
+  },
+  "richtext.image-in-table.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Coloque a imagem fora da tabela."
+  },
+  "richtext.list-nesting.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "aninhamento de listas"
+  },
+  "richtext.list-nesting.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use no máximo três níveis de lista."
+  },
+  "richtext.footnote.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "nota de rodapé"
+  },
+  "richtext.footnote.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.definition-list.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "lista de definições"
+  },
+  "richtext.definition-list.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.math.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "matemática"
+  },
+  "richtext.math.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.emoji-shortcode.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "código curto de emoji"
+  },
+  "richtext.emoji-shortcode.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Use as construções Markdown suportadas."
+  },
+  "richtext.missing-image.construct": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "imagem em falta"
+  },
+  "richtext.missing-image.remedy": {
+    "references": [
+      "kit/richtext/render.go"
+    ],
+    "translation": "Carregue a imagem para que fique guardada com este site."
+  },
+  "richtext.line": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "linha"
+  },
+  "richtext.unstorable-text.construct": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "texto que não fica como foi escrito"
+  },
+  "richtext.unstorable-text.remedy": {
+    "references": [
+      "kit/richtext/format.go"
+    ],
+    "translation": "Reescreva a passagem para que fique igual depois de guardada."
+  }
+}

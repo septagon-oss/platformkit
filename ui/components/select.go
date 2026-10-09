@@ -111,7 +111,7 @@ func Select(p SelectProps) g.Node {
 
 	fieldClass := clFieldWrap
 	if p.FullWidth {
-		fieldClass = fieldClass.Merge(clFieldWrapFull)
+		fieldClass = clFieldWrapFull
 	}
 	field := []g.Node{
 		h.Class(fieldClass.Compile()),

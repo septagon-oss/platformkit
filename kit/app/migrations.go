@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -20,7 +22,45 @@ import (
 // the door for the file that was contended — a process that migrates and exits,
 // for somebody who is not deploying.
 func Migrate(ctx context.Context, cfg config.Config, mods []module.Module) error {
-	return db.MigrateWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...)
+	decl, err := migrationDeclaration(cfg)
+	if err != nil {
+		return err
+	}
+	return db.MigrateDeclaring(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), decl, MigrationSources(mods)...)
+}
+
+// migrationDeclaration is what this boot tells the migration about itself, checked
+// before a connection is opened. The slug is the one every shared name is formed
+// from, so it goes through the same door as the transport's (config.NATS.AppName)
+// and a broken one is refused here rather than at the file that reads it — where
+// the refusal would arrive after the composition lock and look like a bad
+// migration rather than a bad setting.
+//
+// The app pointer is nil when the configuration names no slug, which is a
+// different statement from declaring the empty slug: the migration reads nil as "a
+// boot that said nothing", and it places nothing on that. A deployment of one app
+// migrating a database that already holds tenants names itself (nats.app set to its
+// slug, or app.tenant_apps naming where each tenant goes) and is placed; a
+// deployment that says nothing gets the list of tenants it cannot name.
+func migrationDeclaration(cfg config.Config) (db.Declaration, error) {
+	decl := db.Declaration{Hosts: cfg.App.Hosts, Tenants: cfg.App.TenantApps}
+	slug, err := cfg.NATS.AppName()
+	if err != nil {
+		return db.Declaration{}, err
+	}
+	// Always declared: this is the composition's own boot, so it knows what it is
+	// even when what it is has no slug. The empty string says "the deployment of one
+	// app", which migrations/000043 reads as an app and places against; the nil
+	// that db.MigrateDeclaring's default carries says "a boot that named itself
+	// nothing", which is what a caller that is not a composition's boot declares.
+	own := slug.String()
+	decl.App = &own
+	for tenant, app := range cfg.App.TenantApps {
+		if _, err := appname.Parse(app); err != nil {
+			return db.Declaration{}, fmt.Errorf("app.tenant_apps[%s]: %w", tenant, err)
+		}
+	}
+	return decl, nil
 }
 
 // Drain finishes the data migrations a release left half-drained, which is the

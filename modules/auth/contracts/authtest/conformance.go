@@ -338,7 +338,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		"the link sets a password once, and ends every session": func(t *testing.T, f Fixture) {
+		"the link sets a password once, ends every session it found and signs this browser in": func(t *testing.T, f Fixture) {
 			id := f.User("ada@acme.example.com", Password)
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", Password, nobody); err != nil {
 				t.Fatalf("Login: %v", err)
@@ -352,20 +352,31 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			token := TokenIn(sent[0].Body)
 
-			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase"); err != nil {
+			session, err := f.Service.Reset(f.Ctx, f.Tx, token, "a different passphrase", nobody)
+			if err != nil {
 				t.Fatalf("Reset: %v", err)
 			}
-			if got := sessions(f, id); got != 0 {
-				t.Errorf("%d sessions survived a reset; a reset ends every one", got)
+			if session == nil {
+				t.Fatal("Reset opened no session: the person who spent the link is back at the sign-in form")
+			}
+			// One, and it is this one. The session the Login above opened is gone —
+			// the internal service's own case refuses that row by asking it (/me with
+			// the session that was live before the reset) — and what remains is the one
+			// the link itself opened. A reset that signed this browser in without ending
+			// the others would answer the same count, which is why the count is not the
+			// whole of the promise and the contract's sentence says both halves.
+			if got := sessions(f, id); got != 1 {
+				t.Errorf("%d sessions after a reset, want the one it opened", got)
 			}
 			// Once. The row is deleted rather than flagged, so the second
 			// attempt is refused by the same answer an invented token gets.
 			for _, second := range []string{token, "not a token at all", ""} {
-				if err := f.Service.Reset(f.Ctx, f.Tx, second, "another passphrase"); !errors.Is(err, contracts.ErrCredentials) {
+				if _, err := f.Service.Reset(f.Ctx, f.Tx, second, "another passphrase", nobody); !errors.Is(err, contracts.ErrCredentials) {
 					t.Errorf("Reset(%q) = %v, want ErrCredentials", second, err)
 				}
 			}
-			published(t, f, contracts.EventLoggedIn, contracts.EventSessionRevoked, contracts.EventPasswordReset)
+			published(t, f, contracts.EventLoggedIn, contracts.EventSessionRevoked,
+				contracts.EventPasswordReset, contracts.EventLoggedIn)
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "ada@acme.example.com", "a different passphrase", nobody); err != nil {
 				t.Errorf("the reset password does not work: %v", err)
 			}
@@ -384,7 +395,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			// And the link works: an invitation and a reset are one mechanism.
 			token := TokenIn(mailed(f)[0].Body)
-			if err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase"); err != nil {
+			if _, err := f.Service.Reset(f.Ctx, f.Tx, token, "a chosen passphrase", nobody); err != nil {
 				t.Fatalf("Reset with an invitation's token: %v", err)
 			}
 			if _, _, err := f.Service.Login(f.Ctx, f.Tx, "invited@acme.example.com", "a chosen passphrase", nobody); err != nil {

@@ -18,6 +18,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"time"
 
 	"github.com/google/uuid"
@@ -94,7 +95,18 @@ type Connections func(context.Context) (*db.Conn, bool)
 // Postgres returns the limiter every replica shares.
 func Postgres(conns Connections) Limiter { return postgres{conns: conns} }
 
-type postgres struct{ conns Connections }
+// PostgresOf is Postgres for a deployment that names its app: every bucket key
+// begins with the slug, so two apps that count the same-named bucket of the same
+// tenant id spend one another's allowance. With no slug set the key is the one the
+// counters in the field already hold.
+func PostgresOf(app appname.Name, conns Connections) Limiter {
+	return postgres{conns: conns, app: app}
+}
+
+type postgres struct {
+	conns Connections
+	app   appname.Name
+}
 
 func (p postgres) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, time.Duration, error) {
 	// One statement: the row is inserted, or the open window's count is raised,
@@ -106,7 +118,7 @@ func (p postgres) Allow(ctx context.Context, key string, limit int, window time.
 			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.count + 1 ELSE 1 END,
 			window_start = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.window_start ELSE now() END
 		RETURNING count, extract(epoch FROM (window_start + ?::interval - now()))`
-	n, left, err := p.scan(ctx, q, scoped(ctx, key), interval(window), interval(window), interval(window))
+	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
 	if err != nil {
 		return false, 0, err
 	}
@@ -119,12 +131,12 @@ func (p postgres) Allow(ctx context.Context, key string, limit int, window time.
 func (p postgres) Count(ctx context.Context, key string, window time.Duration) (int, time.Duration, error) {
 	const q = `SELECT count, extract(epoch FROM (window_start + ?::interval - now())) FROM ` + table +
 		` WHERE key = ? AND window_start > now() - ?::interval`
-	return p.scan(ctx, q, interval(window), scoped(ctx, key), interval(window))
+	return p.scan(ctx, q, interval(window), p.scoped(ctx, key), interval(window))
 }
 
 func (p postgres) Forget(ctx context.Context, key string) error {
 	return p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
-		return tx.DB().Exec("DELETE FROM "+table+" WHERE key = ?", scoped(ctx, key)).Error
+		return tx.DB().Exec("DELETE FROM "+table+" WHERE key = ?", p.scoped(ctx, key)).Error
 	})
 }
 
@@ -194,12 +206,25 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 // caller's key can forge another tenant's prefix, and a context with no tenant
 // counts under the nil UUID — one bucket for the whole installation, rather
 // than a bucket shared with whichever customer happened to resolve.
+// scoped is the key with no app in it: the deployment of one app, and the memory
+// limiter, which counts in one process and so counts one app's buckets.
 func scoped(ctx context.Context, key string) string {
 	var id uuid.UUID
 	if t, ok := tenancy.FromContext(ctx); ok {
 		id = t.ID
 	}
-	return id.String() + "/" + key
+	return appname.RateLimitKey(appname.Name(""), id, key)
+}
+
+// scoped is the key as it is stored: the app, then the tenant of the context, then
+// the caller's own key. Both fixed-length identifiers come before the caller's
+// text, so no caller's key can forge another app's or tenant's prefix.
+func (p postgres) scoped(ctx context.Context, key string) string {
+	var id uuid.UUID
+	if t, ok := tenancy.FromContext(ctx); ok {
+		id = t.ID
+	}
+	return appname.RateLimitKey(p.app, id, key)
 }
 
 // interval is a window as Postgres reads one. Milliseconds, so a test may use a

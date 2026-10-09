@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 )
 
 // Field presents an existing entity definition. Label and Options supply display
@@ -45,6 +46,7 @@ type Options struct {
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
+	Text                                   func(key, fallback string) string
 }
 
 // ErrNamespace reports an unusable instance scope before any example is returned.
@@ -144,6 +146,18 @@ func example(id string, model Model, options Options) examples.Example {
 		body = append(body, examples.ExampleWithSlots(examples.ExampleInfo{ID: "error", ComponentID: "pk-ui.component.alert"},
 			components.AlertProps{Tone: "danger", Title: cmp.Or(options.FailureTitle, "That could not be saved"), Message: model.Detail, Bordered: true},
 			components.AlertSlots{}, components.AlertWithSlots).Node)
+		var links []g.Node
+		richtextError := false
+		for _, field := range model.Fields {
+			if message := model.Errors[field.Definition.Name]; message != "" {
+				richtextError = richtextError || field.Definition.Widget == "richtext"
+				id := options.Namespace + "-field-" + hex.EncodeToString([]byte(field.Definition.Name))
+				links = append(links, h.Li(h.A(h.Href("#"+id), g.Text(cmp.Or(field.Label, field.Definition.Name)+": "+message))))
+			}
+		}
+		if len(links) > 0 && richtextError {
+			body = append(body, h.Nav(g.Attr("aria-label", "Fields to correct"), h.Ul(links...)))
+		}
 	}
 	for _, field := range model.Fields {
 		f := field.Definition
@@ -159,7 +173,7 @@ func example(id string, model Model, options Options) examples.Example {
 			// Hex preserves arbitrary JSON names without collisions with control
 			// error/help suffixes, while reordering leaves field identity intact.
 			ID:    options.Namespace + "-field-" + hex.EncodeToString([]byte(f.Name)),
-			Value: value, Error: model.Errors[f.Name], Immutable: immutable}))
+			Value: value, Error: model.Errors[f.Name], Immutable: immutable, Text: options.Text}))
 	}
 	body = append(body, examples.ExampleWithChildren(
 		examples.ExampleInfo{ID: "actions", ComponentID: "pk-ui.component.formactions"}, components.FormActionsProps{}, []g.Node{

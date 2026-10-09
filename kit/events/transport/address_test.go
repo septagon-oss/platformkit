@@ -16,8 +16,15 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/events/transport"
 )
+
+// oneApp is the deployment these cases were written against: a composition that
+// sets no slug, which reads the addresses this kernel formed before decision
+// 0074. Every expectation below is unchanged by the app argument; the app-scoped
+// deployment has its own file (app_address_test.go).
+var oneApp = appname.Name("")
 
 func TestADeliveryIsCheckedAgainstTheAddressItArrivedAt(t *testing.T) {
 	tenant := uuid.New()
@@ -33,7 +40,7 @@ func TestADeliveryIsCheckedAgainstTheAddressItArrivedAt(t *testing.T) {
 		{transport.Subject(tenant, name), "the address this build publishes at"},
 		{"platformkit." + name, "the previous build's address, which names no tenant"},
 	} {
-		if err := transport.AddressMismatch(want.subject, ev); err != nil {
+		if err := transport.AddressMismatch(oneApp, want.subject, ev); err != nil {
 			t.Errorf("AddressMismatch(%q, %s in tenant %s) = %v, want nil: %s",
 				want.subject, name, tenant, err, want.claim)
 		}
@@ -50,7 +57,7 @@ func TestADeliveryIsCheckedAgainstTheAddressItArrivedAt(t *testing.T) {
 		{"acme." + other.String() + "." + name, "another program's namespace, which is not this event's address either"},
 		{"", "no address at all"},
 	} {
-		err := transport.AddressMismatch(bad.subject, ev)
+		err := transport.AddressMismatch(oneApp, bad.subject, ev)
 		if err == nil {
 			t.Errorf("AddressMismatch(%q, %s in tenant %s) = nil, want a refusal: %s",
 				bad.subject, name, tenant, bad.claim)
@@ -81,7 +88,7 @@ func TestEveryAddressASubscriptionAnswersIsOneADeliveryMayArriveAt(t *testing.T)
 				for _, tenantID := range tenants {
 					arrived := strings.Replace(filter, "*", tenantID.String(), 1)
 					ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenantID}
-					if err := transport.AddressMismatch(arrived, ev); err != nil {
+					if err := transport.AddressMismatch(oneApp, arrived, ev); err != nil {
 						t.Errorf("a message that arrived at %q, matched by the filter %q, was refused: %v", arrived, filter, err)
 					}
 				}
@@ -90,7 +97,7 @@ func TestEveryAddressASubscriptionAnswersIsOneADeliveryMayArriveAt(t *testing.T)
 			// The address with no tenant in it: any tenant's event may arrive there.
 			for _, tenantID := range tenants {
 				ev := transport.Event{ID: uuid.New(), Name: name, TenantID: tenantID}
-				if err := transport.AddressMismatch(filter, ev); err != nil {
+				if err := transport.AddressMismatch(oneApp, filter, ev); err != nil {
 					t.Errorf("the previous build's address %q refused %s in tenant %s: %v", filter, name, tenantID, err)
 				}
 			}

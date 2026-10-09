@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { test } from 'node:test'
 import { SkiaRenderer } from '@open-pencil/core/canvas'
@@ -9,10 +8,9 @@ import { exportFigFile, parseFigFile } from '@open-pencil/core/io/formats/fig'
 import { initCanvasKit } from '@open-pencil/core/io/formats/raster'
 import { parseFigBuffer } from '@open-pencil/fig'
 import { buildFoundation, prepareIcon } from './foundation.mjs'
+import { exportCore } from './browser/fixtures.test.mjs'
 
-const snapshot = JSON.parse(execFileSync('go', ['run', './tools/designexport'], {
-  cwd: new URL('../../../', import.meta.url), encoding: 'utf8',
-}))
+const snapshot = exportCore()
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">' +
   '<circle cx="5.5" cy="11.25" r="3.25" fill="#fedcba"/>' +
   '<path d="M12.25 5.5C18 4 15 16 20.5 18.25" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/>' +

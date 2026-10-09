@@ -6,7 +6,12 @@ server:
   # Address the HTTP server listens on.
   addr: ":8080"
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
-  # derived from it, and tenant subdomains are resolved against it.
+  # derived from it, and tenant subdomains are resolved against it. Its port, if
+  # it names one, is the port a person types — so an installation published on a
+  # port that is not the one addr listens on (docker run -p 38591:8080, a compose
+  # ports: entry) names its public port here, and every emailed link carries it;
+  # leave it off and a link falls back to the port a request arrived on, which is
+  # the port behind the mapping, and nobody outside it can reach that.
   public_host: "platformkit.localhost:8080"
   # The host the installation itself is reached at: the only address that
   # serves the control plane (/ops and /api/v1/ops/…). It is a host and not a
@@ -171,17 +176,19 @@ auth:
 
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
-# email are logged rather than sent, which is what a development machine wants
+# email are logged rather than sent, which is what a machine with no relay wants
 # and what a production one has to notice at boot. There is one sender and no
 # provider abstraction; SMTP is what every service worth naming speaks.
 #
-# A development machine does want mail: `make up` starts Mailpit beside Postgres
-# and NATS, and `make run` points this installation at it through
-# PLATFORMKIT_MAIL_HOST and PLATFORMKIT_MAIL_PORT (a mail host is a fact about the
-# machine, which is why it arrives that way rather than in the file every
-# production install copies). Its inbox is on PLATFORMKIT_MAIL_UI_PORT, and
-# `make e2e` reads it to follow a verification link. The host stays empty here so
-# that a deployment which sets nothing sends nothing.
+# `make up` composes a catcher for a development machine to point this at: compose.yaml's
+# mailpit service accepts on 1025 with no TLS and no credentials, and shows what it
+# caught at http://localhost:8025 — which is where scripts/e2e.sh and the journeys that
+# open a mailed link look. Put these three lines in config.yaml and a `make run` boot
+# sends its mail where you can read it:
+#
+#   host: "localhost"
+#   port: 1025
+#   from: "PlatformKit <platformkit@localhost>"
 #
 # The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
 mail:
@@ -220,6 +227,11 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # The largest frame an uploaded image is decoded into: a file whose header
+  # claims more pixels is refused with the reason rather than allocated, which
+  # is the decompression bomb. It bounds a decode and not an upload — max_bytes
+  # is that — and zero means the module's own forty megapixels.
+  max_image_pixels: 40000000
   # How long each retention class lives, keyed by the `kind` an upload carried.
   # A kind this table does not name is never deleted, only logged, so the empty
   # table below keeps everything and is the safe default for an example. A
@@ -229,6 +241,26 @@ files:
   # lives. An entry with no class name, or one that is not a positive duration,
   # fails the load rather than quietly deleting nothing.
   retention: {}
+
+# What this composition declares about itself, read at the migrating boot and put
+# on that session for migrations/000042_tenant_app to place tenants with. The slug
+# itself is nats.app, where kit/appname's grammar guards it and every shared name
+# is already formed from it; what is here is the two facts a migration needs and
+# the database cannot supply. Nothing at run time consults them.
+#
+# A fresh installation has nothing to place and needs neither key. An installation
+# that already holds tenants and declares nothing gets a refusal listing every
+# tenant by slug, which is the point: the alternative is one process's
+# configuration deciding that every tenant in the database was its own.
+app:
+  # Every host this app serves its tenants at. An existing tenant joins this app
+  # only when all of the hosts it holds are listed here; one host outside the list
+  # is evidence the tenant belongs to another composition sharing the database.
+  hosts: []
+  # The operator's explicit placement, tenant slug to app slug, for the tenants no
+  # host can place. Every value goes through the slug's grammar, and the mapping
+  # has to cover every tenant left over or the migration refuses the run.
+  tenant_apps: {}
 
 # Feature flags, under `values:` because the block is a pointer to the map and an
 # installation with no flags writes no `flags:` section at all. One boolean per

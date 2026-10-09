@@ -95,7 +95,9 @@ func (f *Fake) ApproveRegistration(_ context.Context, _ db.Tx[db.Tenant], id, ac
 		return u, nil
 	}
 	if u.Status != contracts.StatusPending || u.PasswordHash == "" {
-		return nil, fmt.Errorf("%w: only a pending registration with a password can be approved", crud.ErrConflict)
+		// The same sentence the SQL service answers with, from the same function:
+		// the fake's cases are the service's cases, and so is its copy.
+		return nil, contracts.ApproveConflict(u)
 	}
 	u.Status, u.UpdatedAt = contracts.StatusActive, db.Now()
 	f.users[id] = *u

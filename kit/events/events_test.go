@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -322,7 +323,7 @@ func TestJetStreamCarriesAnEventBetweenProcesses(t *testing.T) {
 	// The stream is shared with every other run, so the event name and the
 	// consumer are this run's alone.
 	name := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "") + ".happened"
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream(%s): %v", url, err)
 	}

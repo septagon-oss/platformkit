@@ -14,13 +14,15 @@ import (
 	"fmt"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/appname"
 )
 
 // SubjectPrefix is the one namespace every PlatformKit event is published
 // under. A deployment that wants its own prefix on the broker gets it by
 // renaming the stream, not by editing this: the envelope says which program
 // produced it, and every consumer's filter is derived from here.
-const SubjectPrefix = "platformkit"
+const SubjectPrefix = appname.Prefix
 
 // Subject is the address of one event:
 //
@@ -32,7 +34,21 @@ const SubjectPrefix = "platformkit"
 // rather than by opening the payload. The module and event halves are the
 // event's Name, which is why Subject takes a name and not a second grammar.
 func Subject(tenantID uuid.UUID, name string) string {
-	return SubjectPrefix + "." + tenantID.String() + "." + name
+	return appname.PreviousSubject(tenantID, name)
+}
+
+// AppSubject is the address of one event of one app:
+//
+//	platformkit.<app>.<tenant>.<module>.<event>
+//
+// It is the address a process that names its app publishes at, and the reason the
+// app token sits before the tenant is the two wildcards: a subscription filters
+// its own app exactly and every tenant of it loosely, and no NATS filter can say
+// "this tenant, any app" — which is right, because a subscription always belongs
+// to one app. A process with no slug set publishes Subject instead, the address
+// this kernel formed before decision 0074, which Filters keeps reading.
+func AppSubject(app appname.Name, tenantID uuid.UUID, name string) string {
+	return appname.Subject(app, tenantID, name)
 }
 
 // Filter is the wildcard a subscription to one event name uses: every tenant's
@@ -46,7 +62,13 @@ func Subject(tenantID uuid.UUID, name string) string {
 // than this wildcard, and the address space has held the tenant since this
 // function landed.
 func Filter(name string) string {
-	return SubjectPrefix + ".*." + name
+	return appname.PreviousFilter(name)
+}
+
+// AppFilter is one app's wildcard for one event name: that event, in every tenant
+// of that app, and no other app's. With no slug set it is Filter.
+func AppFilter(app appname.Name, name string) string {
+	return appname.Filter(app, name)
 }
 
 // Filters is every address a subscription to one event name has to answer, in
@@ -70,7 +92,16 @@ func Filter(name string) string {
 // stamped published while nothing consumed it is the loss this whole change set
 // exists to prevent, in a new place.
 func Filters(name string) []string {
-	return []string{Filter(name), legacyAddress(name)}
+	return appname.Filters(appname.Name(""), name)
+}
+
+// AppFilters is Filters for a process that names its app: its own scoped address
+// first, then both older shapes, so a rolling upgrade reads what a previous build
+// published and no app reads another's scoped traffic — the scoped address carries
+// the app token and the older filters carry one more or one fewer token than it,
+// so no previous-shape filter matches a scoped subject.
+func AppFilters(app appname.Name, name string) []string {
+	return appname.Filters(app, name)
 }
 
 // legacyAddress is the address the build before the tenant segment published
@@ -81,11 +112,12 @@ func Filters(name string) []string {
 // What matters about it is what it does not carry: it names no tenant. That is
 // why it is a second address an event can legitimately arrive at rather than a
 // forgery of the first — there is no tenant in it to disagree with the document.
-func legacyAddress(name string) string { return SubjectPrefix + "." + name }
+func legacyAddress(name string) string { return appname.OldestSubject(name) }
 
-// AddressMismatch compares the address a message arrived on with the event the
-// document inside it claims to be, and names the disagreement when the two are
-// not the same event in the same tenant. It returns nil when a delivery may run.
+// AddressMismatch compares the address a message arrived on with the app that
+// reads it and the event the document inside it claims to be, and names the
+// disagreement when the three are not one delivery. It returns nil when a
+// delivery may run.
 //
 // Why a delivery needs this at all: a consumer's filter fixes the module and
 // event halves of the subject, because it spells them out and a NATS `*` matches
@@ -100,15 +132,38 @@ func legacyAddress(name string) string { return SubjectPrefix + "." + name }
 // broker actually routed by is a fact the delivery reads, and the two tenants
 // have to be one tenant.
 //
-// Both of Filters' addresses pass. The one that names a tenant has to name this
-// event's; the previous build's names none, so it contradicts nothing — refusing
-// it would terminate the rollout window's events, which is the loss this file's
-// own second filter exists to prevent.
-func AddressMismatch(subject string, ev Event) error {
-	switch subject {
-	case Subject(ev.TenantID, ev.Name), legacyAddress(ev.Name):
+// Which of Filters' addresses pass depends on whether the reading app names
+// itself, and the two cases are the same rule read twice.
+//
+// An app that names itself passes only its own scoped address. The older two
+// name no app, and an address that names no app cannot be shown to be this
+// app's: it is the address every other app's previous build published at too.
+// That is decision 0074 rule 7's "delivery's app check applied to both" — the
+// filter stays wide for the length of a rollout precisely so that the boundary,
+// and not the filter, is what decides. It costs a real deployment something,
+// and the cost is named in kit/appname's Limits: a process must not start
+// naming an app until no process still publishing at the older addresses is
+// alive, because from that moment its own older traffic is unreadable to it.
+//
+// An app that names nothing (the deployment of one app, which is every
+// composition that sets no slug) passes both addresses it could have been
+// published at before decision 0074, as it always has, and refuses any address
+// carrying an app token: it has no app to agree with, so scoped traffic is
+// somebody else's.
+func AddressMismatch(app appname.Name, subject string, ev Event) error {
+	// A Name that was set but is not a slug has no token: the address built from
+	// it holds an empty segment, and both sides of a comparison built the same way
+	// would agree. Refuse on the name instead — a process that names itself with
+	// something a subject token cannot hold receives nothing.
+	if app.Named() && !app.Valid() {
+		return fmt.Errorf("events: app %q is not an app name, so no address can be shown to be its %s in tenant %s", string(app), ev.Name, ev.TenantID)
+	}
+	if subject == appname.Subject(app, ev.TenantID, ev.Name) {
 		return nil
 	}
-	return fmt.Errorf("events: message stored at %q is not %s in tenant %s, whose address is %q",
-		subject, ev.Name, ev.TenantID, Subject(ev.TenantID, ev.Name))
+	if !app.Named() && subject == legacyAddress(ev.Name) {
+		return nil
+	}
+	return fmt.Errorf("events: message stored at %q is not app %s's %s in tenant %s, whose address is %q",
+		subject, app, ev.Name, ev.TenantID, appname.Subject(app, ev.TenantID, ev.Name))
 }

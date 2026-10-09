@@ -2,6 +2,77 @@
 
 ## Unreleased
 
+**A kernel module names itself, and the app names it.** Every module of the kernel
+now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
+`admin.Module` — declaring the contracts it needs and provides, the contributions it
+takes, the phase it runs in and the configuration section it reads, and building
+itself from the wiring. An application's composition is one list:
+`pkit.NewApp("acme").Use(user.Module, audit.Module, admin.Module)`. The constructors
+keep their behaviour under the one name free in every package, `New`, which is a
+**breaking rename** for any caller that wrote `user.Module(deps)`: the field list is
+unchanged, only the name it is called by. Two configuration sections are read by the
+kernel now: `deployment.mail.method` (`smtp` or `mailbox`) and
+`deployment.payments.method` (`manual`), each refused before any module builds when
+the deployment leaves it ambiguous.
+
+**A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
+the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
+key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
+apps over one database and one broker (decision 0074 §6), and inside one app the tenant is the boundary — between
+two apps a tenant id is only a label, because both sides name their modules with the same vocabulary. The name is
+a validated slug rather than a string, and a census test scans the tree for any shared name spelled inline, so the
+door cannot be bypassed by a caller who found it slower than writing the string. Every site the census named is now
+behind a constructor: the transport, the relay's address, the scheduler's lock, the cookie, the limiter, the local
+file store and the AsyncAPI document each take the app rather than forming a name. The slug arrives as one
+configuration key, `nats.app`, and an unset one is the single-app deployment, which keeps every name it already
+has. The delivery boundary reads the app back twice. `transport.AddressMismatch` takes the app, and an app that
+names itself now answers only at its own scoped address — a message routed at the previous build's address names
+no app, so it cannot be shown to be this app's, and is terminated rather than opened — and `events.Consume` then
+reads `tenants.app` for the tenant the document names and refuses a delivery whose tenant another app holds,
+before the handler's transaction opens: an address says only what its publisher claimed, and past that
+transaction row-level security is the other app's. A refusal runs no handler and writes no claim, so the event
+stays replayable for the app that does hold the tenant. The composition names every consumer it starts:
+`kit/app` stamps `Subscription.App` with the composition's own app — `Options.App`, or the `nats.app` slug
+when it names itself no other way, and the one value `kit/app.New` resolves is written back to the
+configuration its transport constructor and its migration read, so whichever key spoke, the subjects, the
+placement of this boot's tenants, the payload contract, the relay's claim, the durables and the job lock all
+name that app — so two compositions of one module do not bind one JetStream consumer, one queue group and one
+handled-ledger key. And a stored file sits under the tenant whose
+request wrote it — `modules/file`'s local store writes `<app>/<tenant>/<key>` and refuses a write whose call
+names no tenant, because the key is a UUID and the path is the only thing that says whose bytes they are. The
+rollout filter stays wide on purpose and the check is what decides. An unset slug keeps both older addresses, as
+it always did.
+**A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
+non-null `app` column (`migrations/000043_tenant_app`), stamped when the composition creates a tenant and
+never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
+all filter on it, the installation a verb audits into included, and `tenants_operator` is unique per app rather than per database. The back-fill proves
+its input or refuses. A tenant already in the table joins this app when every host it holds is one the
+boot declares in `app.hosts`, or when an operator named it in `app.tenant_apps`; anything else is listed
+by slug and the migration writes nothing. `db.MigrateDeclaring` is the one door a boot has for a fact the
+database does not hold, checked before a connection opens. A deployment that says nothing about itself
+may still migrate a database with nothing to place — which is every fresh installation — and may not
+migrate one with something to place and nothing to say about it.
+**A durable is shaped so that its own rename is expressible.** A durable is half of the
+primary key of `platformkit_handled` and `platformkit_dead_letters`, so a deployment that
+starts naming its app leaves every row it wrote under a key its own subscription will never
+ask for again: `DeliverAll` redelivers what the transport holds, the claim misses, and a
+handler that already ran runs again — and a targeted replay deletes by the exact durable, so
+the dead letters go invisible to the one command that reads them. `Durable` now forms
+`<app>+<module>-<event>`: the app joins with `+`, which is in no app slug, module name or
+event name, so `acme` + `billing` + `billing.plan.created` and `acme-billing` + `billing` +
+`plan.created` are two consumers rather than one — and the join behind the app stays the dash
+it always carried, so the scoped name is the unscoped one with a prefix, which is the only
+move a ledger row allows (the table holds a durable and nothing else to rebuild it from).
+Moving the rows is still owed, and the reason it is owed rather than done is now measured: a
+`.up.sql` that writes across tenants writes nothing at the migrate role a real deployment
+names, because the policies on `tenants` and both ledgers answer a schema file with an empty
+set; the kernel's door for a migration write is a `phase=data` drain, which `tenants` can
+have and neither ledger can, because a drain windows over the table's single-column primary
+key and both are keyed by `(event_id, durable)`; and `scripts/check_gucs.sh` refuses the
+shortcut a reader might reach for — the file raising the runner's own system-access marker.
+T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
+reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
+
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
 `POST …/delete` — until them a suspended customer had no way back, a wrong name could not be corrected,
@@ -9,7 +80,7 @@ a name a tenant answers at could not be taken away, and ending a customer was no
 plane offered. Each publishes its own event (`tenant.renamed`, `tenant.reactivated`,
 `tenant.host_removed`, `tenant.deleted`), and each of the seven verbs that move a lifecycle now writes
 *two* audit rows in the transaction that wrote the column: one in the customer's own trail and one
-`tenant.lifecycle_recorded` mirror in the installation's, so "who suspended Acme, and when" is answered
+`tenant.lifecycle_recorded` mirror in the writing app's own installation, so "who suspended Acme, and when" is answered
 without reading a tenant's rows. `audit_events.traceparent` carries the request's W3C trace into both
 (`modules/audit`'s `000035_audit_context.up.sql` — expand-only, nullable, no backfill),
 which is what makes them one act rather than two rows that happen to share a second. A refusal writes
@@ -390,6 +461,18 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**The migration lock belongs to one application's namespace, not to one database.**
+`db.Migrate` holds its advisory lock for the namespace it is about to write: the key
+carries the OID of `current_schema()` beside its own constant, because the ledger it
+protects — `schema_migrations`, and every table an applied file creates — lands wherever
+that run's `search_path` resolves. Two applications that share one Postgres database in
+separate namespaces therefore apply their own files while one another migrates; two
+replicas of one application still reach one namespace through one URL and still queue,
+so ADR 0005's boot where one process migrates and the rest wait and find nothing to do
+is the same guarantee it was. A run whose path resolves to no namespace at all is refused
+rather than locked around, because `pg_advisory_lock(key, NULL)` answers NULL without
+taking the lock, and that would be a run that set out believing it was alone.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
@@ -693,6 +776,31 @@ module, which the compiler and `./scripts/check_imports.sh` both refuse. So
 nothing here is a gate that now passes. What moves is adoption: the
 alias has a value package wrapping the owner rather than only a name, and a
 downstream consumer's value package does the same when its pin moves.
+
+**The development stack runs a mail catcher, and the browser journeys read the link they
+were sent.** An empty `mail.host` — the default, and what an installation without a relay
+has — records every notification and sends none of the ones marked for email. That is safe,
+and it leaves a development machine unable to finish the one journey that needs a link: an
+invitation nobody can open is the walkthrough the front door was written against. So
+[compose.yaml](compose.yaml) composes `mailpit` (SMTP on 1025, its API on 8025, both
+overridable the way the stack's other ports are), [scripts/e2e.sh](scripts/e2e.sh) writes the
+`mail:` block of the configuration it generates and refuses a run whose catcher is not
+answering before it builds anything, and every job that runs `make e2e` (both check
+jobs, and the release job) starts the same image, by container name where it can. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
+catcher by recipient for each of the four account links this application mails — an
+invitation, a sign-up confirmation, a resent confirmation and a forgotten-password reset —
+and assert what the delivered message says: that its link carries the address and port the
+tenant is served at, and that the person it was addressed to can open it and be signed in by
+choosing a password there. Two defects came out of writing it. The sign-up's event carried
+no served address, so its confirmation link was built from the tenant's name alone and
+opened port 80 rather than the port the sign-up was answered on — `user.registration_unverified`
+now carries `served`, the way `user.invited` and the two password events already did. And the
+forgot page, the confirmation page and the reset page are mounted on two different surfaces,
+because that is where auth mounts the three doors: asking the workspace router for a public
+door names an alias row that answers 307, which `ui/assets/js/session.js` refuses to follow
+by design, so the button told the person the outcome was unknown and sent nothing —
+`TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
+the running application what it says.
 
 ## [1.1.1] - 2026-09-18
 

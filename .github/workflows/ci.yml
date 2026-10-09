@@ -86,6 +86,26 @@ jobs:
           done
           echo "the object store did not become available" >&2; docker logs s3; exit 1
 
+      # The development mail catcher, on the host ports the Makefile and the
+      # journeys dial by default. compose.yaml's mailpit service is the same image
+      # at the same ports: the journeys that open a mailed link read the message
+      # from here, so the path they exercise - SMTP out of the application, the
+      # link back into a browser - is the one `make up` gives a workstation, not a
+      # stand-in this job invented. It is a step for the same reason as NATS: this
+      # job stands up its own services rather than the compose stack whose localhost
+      # defaults belong to a laptop. scripts/e2e.sh refuses to boot the application
+      # at all when nothing answers the API, so a missing catcher is named by the
+      # gate that needs it rather than by a journey that times out.
+      - name: Start the mail catcher
+        run: |
+          docker run -d --name mailpit -p 1025:1025 -p 8025:8025 \
+            axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8025/api/v1/info >/dev/null; then echo "mailpit is up"; exit 0; fi
+            sleep 1
+          done
+          echo "the mail catcher did not become available" >&2; docker logs mailpit; exit 1
+
       - name: make check
         run: make check
 

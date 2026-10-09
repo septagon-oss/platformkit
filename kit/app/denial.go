@@ -40,8 +40,20 @@ type Denied struct {
 // of the refused tenant's own that commits whatever the refused request does. A failure to record is logged and does not change the
 // answer, which the caller already has; it is an error, because an unaudited denial is
 // the thing this hook exists to prevent.
-func recordDenial(conn *db.Conn, log *slog.Logger) func(context.Context, httpx.Denial) {
+//
+// It asks the held connection on the request that was refused rather than carrying one
+// captured at composition time, because the router that holds this hook is built before
+// the pool is opened (see heldConn). A refusal that arrives while the composition holds
+// no connection writes nothing and says so in the log: the record is the point of the
+// hook, and an unaudited denial is exactly what it exists to prevent.
+func recordDenial(held *heldConn, log *slog.Logger) func(context.Context, httpx.Denial) {
 	return func(ctx context.Context, d httpx.Denial) {
+		conn, ok := held.read(ctx)
+		if !ok {
+			log.ErrorContext(ctx, "app: a denial could not be recorded", "code", d.Code, "path", d.Path,
+				"request", d.RequestID, "tenant", d.Tenant.Slug, "error", "this composition holds no database connection")
+			return
+		}
 		// Detached: the refused request's own transaction is rolled back by the refusal, and a
 		// db.Run nested in it would roll the record back with it — the first version of this
 		// did exactly that. A denial is a write meant to be kept, the case db.Detached names.

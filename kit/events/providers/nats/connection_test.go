@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"net"
 	"net/url"
 	"strings"
@@ -24,7 +25,7 @@ func TestJetStreamConnectionErrorsDoNotExposeCredentials(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			cause := errors.New("fixture refused with fixture-credential-canary")
-			transport, err := provider.JetStream(test.endpoint, nats.SetCustomDialer(refusedNATSDial{cause}))
+			transport, err := provider.JetStream(appname.Name(""), test.endpoint, nats.SetCustomDialer(refusedNATSDial{cause}))
 			if transport != nil || err == nil {
 				t.Fatal("a refused connection must return only an error")
 			}
@@ -39,7 +40,7 @@ func TestJetStreamConnectionErrorsDoNotExposeCredentials(t *testing.T) {
 }
 
 func TestJetStreamMalformedEndpointKeepsItsCausePrivate(t *testing.T) {
-	_, err := provider.JetStream("nats://fixture-user:fixture-credential-canary@[invalid")
+	_, err := provider.JetStream(appname.Name(""), "nats://fixture-user:fixture-credential-canary@[invalid")
 	if err == nil {
 		t.Fatal("malformed endpoint was accepted")
 	}
@@ -56,7 +57,7 @@ func TestJetStreamAcceptsOfficialTLSAndAuthenticationOptions(t *testing.T) {
 	roots := x509.NewCertPool()
 	cause := errors.New("fixture option failure: fixture-credential-canary")
 	configured := false
-	_, err := provider.JetStream("tls://broker.invalid:4222",
+	_, err := provider.JetStream(appname.Name(""), "tls://broker.invalid:4222",
 		nats.Secure(&tls.Config{MinVersion: tls.VersionTLS12, RootCAs: roots}),
 		nats.UserInfo("fixture-user", "fixture-credential-canary"),
 		func(options *nats.Options) error {

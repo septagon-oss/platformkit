@@ -87,7 +87,12 @@ type User struct {
 	Email string `json:"email" gorm:"type:text;not null" validate:"required" format:"email" maxLength:"320" doc:"Address this person signs in with, unique within the tenant" example:"ada@acme.example.com"`
 	// DisplayName is what a screen shows. It is optional: an invitation has an
 	// address and nothing else.
-	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
+	//
+	// It is also the field a row is called by — `ui:"display"` — so the generated list, the record's
+	// heading and the browser tab all say a person's name rather than their uuid, and a person who has
+	// set no name is still called by their address (ui/resource falls to the next candidate it declares,
+	// never to the id, while one exists). One mark per entity is kit/rest's mount gate.
+	DisplayName string `json:"displayName,omitempty" gorm:"type:text;not null;default:''" ui:"display" maxLength:"200" doc:"Name to show" example:"Ada Lovelace"`
 
 	// Handle is what a person is *called* in this tenant: the thing they type,
 	// say out loud, and see in a URL. It is not the key — users.id is, and every

@@ -102,8 +102,13 @@ func TestASourceCannotDeclareAFloorPastItsOwnHead(t *testing.T) {
 	})
 }
 
-// compositionLockKey is kit/db's own, unexported, constant (kit/db/migrate.go):
-// the one lock every migration run of this composition holds for its whole run.
+// compositionLockKey is the first half of kit/db's own, unexported, constant
+// (kit/db/migrate.go): the lock every migration run of this composition holds for its
+// whole run. The second half is the OID of the namespace that run resolves to — the
+// namespace whose history table it writes — which is why the reach below asks for
+// `to_regnamespace(current_schema())` rather than a bare number: this session is
+// connected to the schema dbtest opened for this test, which is the schema the run
+// under test migrates, so the two of them want one and the same lock.
 const compositionLockKey = 7240101
 
 // TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget pins the README's
@@ -121,20 +126,22 @@ func TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Somebody else's migration is running. Take the same lock it would take. This
-	// database is shared with every other package's tests, whose migrations queue
-	// on the lock with a blocking pg_advisory_lock, so this case queues too:
-	// polling pg_try_advisory_lock never wins while that queue is non-empty, and
-	// under CI's parallel packages it starved for 60s (runs 136, 221, 227 and 229).
-	// The bound is generous because losing a fair race here says nothing about
-	// the behaviour under test.
+	// Somebody else's migration is running. Take the same lock it would take. The
+	// key is this namespace's own (kit/db/migrate.go, holdCompositionLock), so what
+	// this case can be queued behind is the migrations of a schema that resolves to
+	// the same namespace and nothing else — dbtest gives every case its own, so the
+	// queue here is this package's own. The bound stays generous because losing a
+	// fair race says nothing about the behaviour under test, and because a schema is
+	// dropped and recreated between runs of this file.
 	acquire, cancelAcquire := context.WithTimeout(t.Context(), 5*time.Minute)
 	defer cancelAcquire()
-	if _, err := conn.ExecContext(acquire, "SELECT pg_advisory_lock($1)", compositionLockKey); err != nil {
+	if _, err := conn.ExecContext(acquire,
+		"SELECT pg_advisory_lock($1::int, to_regnamespace(current_schema())::oid::int)", compositionLockKey); err != nil {
 		t.Fatalf("the composition advisory lock was not granted within 5 minutes: %v", err)
 	}
 	defer func() {
-		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()), "SELECT pg_advisory_unlock($1)", compositionLockKey)
+		_, _ = conn.ExecContext(context.WithoutCancel(t.Context()),
+			"SELECT pg_advisory_unlock($1::int, to_regnamespace(current_schema())::oid::int)", compositionLockKey)
 	}()
 
 	lock := 100 * time.Millisecond

@@ -3,6 +3,7 @@ package usertest
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -68,6 +69,30 @@ func registrationCases() map[string]func(*testing.T, Fixture) {
 				t.Fatalf("approved deactivated account = %v", err)
 			}
 			published(t, f, contracts.EventInvited, contracts.EventRegistrationPending, contracts.EventDeactivated)
+		},
+		"approving an invitation names the invitation, never a password": func(t *testing.T, f Fixture) {
+			invited, err := f.Service.Invite(f.Ctx, f.Tx, "invited@example.com", "Invited Person")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = f.Service.ApproveRegistration(f.Ctx, f.Tx, invited.ID, uuid.New())
+			if !errors.Is(err, crud.ErrConflict) {
+				t.Fatalf("approving an invitation = %v, want a conflict", err)
+			}
+			// The words are the finding, not an illustration of it. "Only a pending
+			// registration with a password can be approved" told the administrator the
+			// account was missing a password, and they set one by hand; a refusal has
+			// to name the state and the door that opens it.
+			if msg := err.Error(); !strings.Contains(msg, "invitation") || strings.Contains(msg, "with a password") {
+				t.Errorf("approving an invitation said %q; it names the invitation and never reads as an instruction to set a password", msg)
+			}
+			current, err := f.Service.Get(f.Ctx, f.Tx, invited.ID)
+			if err != nil || current.Status != contracts.StatusInvited {
+				t.Fatalf("a refused approval left the account %q (%v)", current.Status, err)
+			}
+			// Nothing was written and nothing was published: the invitation event is
+			// the only one this fixture has caused.
+			published(t, f, contracts.EventInvited)
 		},
 		"pending review pages exclude approved accounts and retain order": func(t *testing.T, f Fixture) {
 			var ids []uuid.UUID

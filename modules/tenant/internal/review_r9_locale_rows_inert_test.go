@@ -79,7 +79,7 @@ func readInTx(ctx context.Context, tx db.Tx[db.System], svc *internal.Service,
 
 func TestATenantLeftWithNoLanguageRowIsServedInTheLanguageItsColumnHolds(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, []string{"en", "pt-PT"})
+	svc := internal.NewService(nil, []string{"en", "pt-PT"}, "")
 	installed(t, conn, svc)
 	ctx := t.Context()
 

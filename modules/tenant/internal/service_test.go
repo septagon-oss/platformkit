@@ -38,7 +38,7 @@ func TestServiceConforms(t *testing.T) {
 		// Built with the dependency the reference application passes, not with nil:
 		// a suite run against a service missing it tests a service nobody composes,
 		// and the cases below that read the installation's languages would be silent.
-		svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+		svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 
 		// The installation's own tenant first, by the one write that makes it. Every
 		// lifecycle command mirrors its audit row into that tenant's trail and refuses
@@ -81,11 +81,25 @@ func TestServiceConforms(t *testing.T) {
 // and refuses: the rule lives in the service, and this is where it costs a fixture
 // one line. No assertion of any test that calls it changed; the world gained a
 // tenant.
+//
+// The service it is given is the app the installation belongs to: tenants_operator
+// is unique on (app) (migrations/000043_tenant_app), so an installation is one app's
+// and an app whose own installation is absent is refused rather than served by
+// another's. A case of two apps therefore installs one each - `installedAs`, because
+// tenants_slug names one installation per slug.
 func installed(t *testing.T, conn *db.Conn, svc contracts.Service) {
+	t.Helper()
+	installedAs(t, conn, svc, "installation", "ops.example.com")
+}
+
+// installedAs is `installed` under the slug and host a case needs, which is what a
+// world of several apps needs: the installation is per app, and tenants_slug is
+// unique across the schema, so two of them cannot share the one spelling.
+func installedAs(t *testing.T, conn *db.Conn, svc contracts.Service, slug, host string) {
 	t.Helper()
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
-			Slug: "installation", Name: "This installation", Host: "ops.example.com",
+			Slug: slug, Name: "This installation", Host: host,
 		})
 		return err
 	})
@@ -139,7 +153,7 @@ func (r outboxRow) TraceParent() string {
 func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	boom := errors.New("the hook refused")
-	installed(t, conn, internal.NewService(nil, nil))
+	installed(t, conn, internal.NewService(nil, nil, ""))
 	var seen uuid.UUID
 
 	svc := internal.NewService([]contracts.Hook{
@@ -150,7 +164,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 			return tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, '{}')",
 				created.ID, "seeded").Error
 		},
-	}, nil)
+	}, nil, "")
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := svc.Create(ctx, tx, contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"})
 		return err
@@ -170,7 +184,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 	// A hook that fails leaves no tenant behind.
 	failing := internal.NewService([]contracts.Hook{
 		func(context.Context, db.Tx[db.System], *contracts.Tenant) error { return boom },
-	}, nil)
+	}, nil, "")
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := failing.Create(ctx, tx, contracts.NewTenant{Slug: "globex", Name: "Globex", Host: "globex.example.com"})
 		return err
@@ -194,7 +208,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 // instead of a column on it.
 func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	installed(t, conn, svc)
 
 	var acme, globex *contracts.Tenant
@@ -298,7 +312,7 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 // authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesASecondInstallation(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	first := contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"}
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {

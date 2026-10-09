@@ -75,6 +75,14 @@ var Events = []events.Declared{
 type ResetRequested struct {
 	Email string    `json:"email"`
 	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, port and
+	// all, and empty when it named no port. It is here because the mail is
+	// rendered in the worker, where no call is left to ask: the link has to reach
+	// the same address the person typed, and a development installation serves a
+	// tenant at its name and a port. See httpx.ServedAuthority. Not a credential
+	// and no more personal than an audit line: a name this tenant already
+	// answers at and a port this installation is listening on.
+	Served string `json:"served,omitempty"`
 }
 
 // PasswordReset is the payload of EventPasswordReset. It carries no password,

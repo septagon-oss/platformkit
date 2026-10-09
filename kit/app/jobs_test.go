@@ -31,7 +31,7 @@ import (
 // hour whom it has already refused.
 func TestTheRunnerPurgesTheCounterTableItWrites(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
-	purge := kernelJob(t, kernelJobs(memory.New()), "limit-purge")
+	purge := kernelJob(t, kernelJobs(memory.New(), ""), "limit-purge")
 
 	// One spent window and one open one, both written the way a request writes one:
 	// on the request's own connection, under a tenant's context, through the limiter

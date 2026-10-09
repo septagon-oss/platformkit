@@ -9,6 +9,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	g "maragu.dev/gomponents"
+	h "maragu.dev/gomponents/html"
 )
 
 // ControlProps describes one field's presentation. ID is the trusted DOM identity;
@@ -18,6 +19,7 @@ type ControlProps struct {
 	Field            Field
 	ID, Value, Error string
 	Immutable        bool
+	Text             func(key, fallback string) string
 }
 
 // widgetInputType names the <input> type each widget that draws an input asks
@@ -49,6 +51,12 @@ var widgetInputType = map[string]string{
 // Its capture retains "field/" plus the schema name and Core's Props contract.
 func Control(p ControlProps) g.Node {
 	f := p.Field.Definition
+	word := func(key, fallback string) string {
+		if p.Text == nil {
+			return fallback
+		}
+		return p.Text(key, fallback)
+	}
 	label, name := cmp.Or(p.Field.Label, f.Name), f.Name
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
@@ -73,7 +81,7 @@ func Control(p ControlProps) g.Node {
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
 			Name:           name, Label: label, Value: p.Value, Error: p.Error,
 			Required: f.Required, Options: options, Placeholder: placeholder,
-			HelpText: base.HelpText,
+			HelpText: base.HelpText, FullWidth: true,
 		}, components.Select).Node
 	case f.Widget == "textarea":
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
@@ -81,6 +89,27 @@ func Control(p ControlProps) g.Node {
 			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
 			Required: f.Required, Rows: 5, FullWidth: true, HelperText: base.HelpText,
 		}, components.Textarea).Node
+	case f.Widget == "richtext":
+		area := examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.textarea", Name: label}, components.TextareaProps{
+			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},
+			Name:           name, Label: label, Value: p.Value, ErrorMessage: p.Error,
+			Required: f.Required, Rows: 12, FullWidth: true, HelperText: base.HelpText,
+			MaxLength: f.MaxLength, CharacterLimitOnly: true,
+		}, components.Textarea).Node
+		// TODO(T-0181): replace this native disclosure when the shared disclosure lands.
+		return h.Div(area, h.Details(
+			h.Summary(g.Text(word("forms.richtext.help", "Formatting help"))),
+			h.Ul(
+				h.Li(g.Text(word("forms.richtext.paragraphs", "Paragraphs: leave a blank line; a hard break ends with \\."))),
+				h.Li(g.Text(word("forms.richtext.headings", "Headings: ## through ####."))),
+				h.Li(g.Text(word("forms.richtext.marks", "Bold **text**, italic *text*, strike ~~text~~, inline `code`."))),
+				h.Li(g.Text(word("forms.richtext.links", "Links: [label](https://example.com) or [label](/page)."))),
+				h.Li(g.Text(word("forms.richtext.lists", "Lists: - item, 1. item or - [ ] task; up to three levels."))),
+				h.Li(g.Text(word("forms.richtext.blocks", "Quote: > text; code: ```language; rule: ---."))),
+				h.Li(g.Text(word("forms.richtext.tables", "Tables: | heading | with a | --- | separator."))),
+				h.Li(g.Text(word("forms.richtext.images", "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."))),
+			),
+		))
 	case f.Widget == "checkbox" || f.Type == entity.TypeBool:
 		return examples.ExampleOf(examples.ExampleInfo{ID: "field/" + name, ComponentID: "pk-ui.component.checkbox", Name: label}, components.CheckboxProps{
 			ComponentProps: components.ComponentProps{ID: p.ID, Disabled: p.Immutable},

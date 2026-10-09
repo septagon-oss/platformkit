@@ -7,13 +7,26 @@ having emitted it, wherever it sits in the composition. `audit:read` guards
 `/api/v1/audit/events` and the admin entry at `/app/audit/events`; the
 retention job removes expired rows tenant by tenant.
 
-Compose it in [apps/platformkit/modules.go](../../apps/platformkit/modules.go)
-with `audit.Deps{Tenants, RetentionDays}`; `config.example.yaml`'s
-`audit.retention_days` supplies the period, zero means a year, and `Feature`
-optionally puts the trail behind a plan feature. Consumers import
+Compose it with `Use(audit.Module)`: the provider value in
+[provider.go](provider.go) declares its needs and builds this same `New`, so the
+module wires itself and `apps/platformkit/app.go` only names it.
+`config.example.yaml`'s `audit.retention_days` supplies the period (the build
+reads that one section, and `pkit.Server.Explain` prints that it did), zero means
+a year, and the trail sits behind a plan feature when a composition provides an
+`auditcontracts.Plan` and in front of everybody when it does not — which features
+a product sells is never this module's decision. `audit.Deps{}` stays for a
+client that hands the three values over by hand. Consumers import
 [contracts/](contracts/) for the record, events and permission, never
 `internal/`. `make test TEST_PACKAGES=./modules/audit/...` needs the
 development database.
+
+**Reused:** `jobs.TenantLister`, which the tenant module has always handed the
+retention sweep, and `pkit.Config`, which reads `config.Audit` the way every other
+deployment setting is read. **Added:** `contracts.Plan`, because a bare `string`
+need has no type to key a provider by and the feature name is the composition's
+decision, not this module's. **Made reusable:** the pattern of naming a product's
+own decision as a one-method port in the consuming module's `contracts/`, which
+any module that used to take a string from `Deps` can copy.
 
 ## Authorization
 

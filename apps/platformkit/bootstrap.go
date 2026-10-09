@@ -16,6 +16,8 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // bootstrap creates the first tenant of an empty installation and the
@@ -40,6 +42,7 @@ func bootstrap(args []string) error {
 	var spoken languagesFlag
 	fs.Var(&spoken, "language", "A language this tenant's people are served in, repeatable; "+
 		"the language the installation's copy is written in is always one of them")
+	env := fs.String("environment", string(pkit.Production), "development, staging, or production")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -69,8 +72,8 @@ func bootstrap(args []string) error {
 	}
 
 	ctx := context.Background()
-	c := compose(cfg)
-	err = app.Bootstrap(ctx, cfg, c.modules, func(ctx context.Context, tx db.Tx[db.System]) error {
+	c := composeReference(cfg, environment(*env))
+	err = app.Bootstrap(ctx, cfg, c.plan().Modules(), func(ctx context.Context, tx db.Tx[db.System]) error {
 		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
 			Slug: *slug, Name: *name, Host: *host,
 		})

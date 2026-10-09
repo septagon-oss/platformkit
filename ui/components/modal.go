@@ -50,6 +50,9 @@ func ModalWithSlots(p ModalProps, slots ModalSlots) g.Node {
 	if !centered {
 		rootClass = clModalRoot.Merge(clModalBottomSheet)
 	}
+	if placement, ok := clDetailPlacement[p.Placement]; ok {
+		rootClass = placement
+	}
 	rootProps := p.ComponentProps
 	rootProps.Class = ""
 	rootProps.Disabled = false
@@ -162,8 +165,14 @@ func modalPanel(p ModalProps, slots ModalSlots, standalone bool, size string) g.
 		footer = []g.Node{g.Text(p.Footer)}
 	}
 
+	frameClass, bodyClass := clModalPanel, clModalBody
+	if _, detail := p.Attrs["data-detail-item"]; detail {
+		// A minimum readable body leaves excessive header/actions in normal
+		// scroll flow rather than covering the final field at large text sizes.
+		frameClass, bodyClass = clDetailFrame, clDetailBody
+	}
 	panel := []g.Node{
-		h.Class(clModalPanel.Merge(clModalPanelSize[size]).Compile()),
+		h.Class(frameClass.Merge(clModalPanelSize[size]).Compile()),
 		g.Attr("data-modal-panel", ""),
 		g.Attr("data-action", "click->htmx-modal#stopPropagation"),
 		g.Attr("tabindex", "-1"),
@@ -181,7 +190,7 @@ func modalPanel(p ModalProps, slots ModalSlots, standalone bool, size string) g.
 		panel = append(panel, modalSeparator("header"))
 	}
 	panel = append(panel, h.Div(
-		h.Class(clModalBody.Compile()),
+		h.Class(bodyClass.Compile()),
 		g.Attr("data-modal-body", ""),
 		g.Group(body),
 	))

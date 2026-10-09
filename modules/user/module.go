@@ -106,7 +106,7 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Administration == nil {
 		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}
@@ -124,12 +124,19 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Granting == nil {
 		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
 	}
-	// An adapter with nothing behind it answers "nobody may promote anybody",
-	// which reads as a working door and locks every promotion in every tenant
-	// this composition serves.
-	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
-		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
-	}
+	// An empty GrantingFunc is the one adapter this module accepts unwired, and
+	// the reason is the shape of the answer. Who may hand out an administering
+	// role is the authentication service's, and the authentication service is
+	// built after this module — it looks people up here — so the holder arrives
+	// empty and the auth module fills its Ask in its own build. Refusing an empty
+	// holder at this line would refuse the only wiring that is not a cycle.
+	//
+	// What is not refused is what stays refused: an adapter with no Ask answers
+	// the error contracts.GrantingFunc.May carries, so a composition whose auth
+	// module never ran fails the roles write — no row, no event, no stale read —
+	// rather than answering "nobody may promote anybody" and reading as a door
+	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
+	// case, not by this line.
 	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
@@ -182,9 +189,31 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 // so returning an error rolls the whole create back and the caller gets a 422.
 // The PATCH route is guarded by spec.Immutable instead; a create cannot be,
 // because there is no row yet to refuse a change to.
-func refuseLifecycleOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
+//
+// The second half of its job is the brief's first rule: a person created through
+// the collection is invited. The create route used to write the row, publish
+// user.user.created and stop — and nothing subscribes to that name, so an
+// administrator who used it made somebody who exists, cannot sign in and was
+// never told, which is the defect the walkthrough of record counted as an empty
+// directory. Inviting is what the collection means by "create a person": the row
+// lands in `invited`, user.invited is published in the same transaction, and the
+// auth module mails the link that lets that person choose a password nobody else
+// chose for them. A create that left somebody unable to sign in and mailed to
+// nobody is refused, which is why `pending` and `unverified` have their own door
+// and why no status other than invited is a row the collection can make.
+func refuseLifecycleOnCreate(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
 	if u.Status == contracts.StatusPending || u.Status == contracts.StatusUnverified {
 		return fmt.Errorf("%w: password registrations must be created by the registration service", crud.ErrInvalid)
+	}
+	if u.Status != contracts.StatusInvited {
+		return fmt.Errorf("%w: the collection creates the person it invites; %s is a state some other door brings somebody to",
+			crud.ErrInvalid, u.Status)
+	}
+	if err := events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
+		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedFrom(ctx),
+	}); err != nil {
+		return err
 	}
 	if len(u.Roles) == 0 {
 		return nil

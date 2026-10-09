@@ -21,6 +21,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 func main() {
@@ -59,6 +60,7 @@ func run(args []string) error {
 	fs := flag.NewFlagSet("run", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
 	role := fs.String("role", string(app.All), "web, worker, or all")
+	env := fs.String("environment", string(pkit.Production), "development, staging, or production: which deployment this is, which decides which implementation an app that names one runs")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -74,7 +76,7 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	c := compose(cfg)
+	c := composeReference(cfg, environment(*env))
 	switch {
 	case cfg.Mail.Enabled():
 	case cfg.Mail.Mailbox():
@@ -86,11 +88,20 @@ func run(args []string) error {
 		// suppressed in the delivery ledger.
 		slog.WarnContext(ctx, "app: mail is not configured, so an emailed verification link cannot be sent: sign-up by email is refused and notifications marked for email are recorded as suppressed; set mail.host, or mail.sink: mailbox to keep messages in this process")
 	}
-	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.Role(*role)))
-	if err != nil {
-		return err
+	return c.app.Run(ctx, c.once, app.Role(*role))
+}
+
+// environment reads the flag into pkit's name for it. An environment nobody named
+// is refused by pkit rather than defaulted: the same composition runs a
+// different implementation in development than in production, and a process that
+// guessed which it was would be guessing about money.
+func environment(name string) pkit.Environment {
+	switch e := pkit.Environment(name); e {
+	case pkit.Development, pkit.Staging, pkit.Production:
+		return e
+	default:
+		return ""
 	}
-	return a.Run(ctx)
 }
 
 // logger sets the process's default logger: JSON on stderr, at the configured

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { makePublisher, publishAs } from './steps/content';
 
 // The public site: what an operator publishes through the admin's generated
 // screens is what an anonymous visitor reads at the root of the host. The
@@ -8,27 +9,38 @@ import { expect, test } from '@playwright/test';
 
 const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
 const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
+const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-test('a fresh site says nothing is published, and the home page appears once one is', async ({ page }) => {
+test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
+  // The frame enters the workspace at its root: the address the public page is
+  // allowed to offer is /app, and the root is what turns a visitor who has no
+  // session towards the form. The link is therefore followed rather than the form
+  // navigated to directly — the journey goes through the only door a public page
+  // may name and still arrives at the same form and the same landing.
+  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app');
 
-  await page.goto('/app/admin/login');
+  await page.getByRole('link', { name: 'Sign in to the admin' }).click();
+  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/app$/);
 
   const created = await page.request.post('/api/v1/content/contents', {
-    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `# Hello\n\nThis is **home** number ${stamp}.` },
+    data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `## Hello\n\nThis is **home** number ${stamp}.` },
   });
   expect(created.status(), await created.text()).toBe(201);
   const { id } = await created.json();
-  const published = await page.request.post(`/api/v1/content/contents/${id}/publish`);
-  expect(published.ok(), await published.text()).toBeTruthy();
+  // Writing the home page and putting it in front of the host are two people's
+  // decisions: the content module refuses the author as publisher, so the journey
+  // invites the one who publishes. See e2e/steps/content.ts.
+  const publisher = `publisher-${stamp}@e2e.test`;
+  await makePublisher(page, publisher, publisherPass);
+  await publishAs(browser, publisher, publisherPass, id);
   const settings = await page.request.put('/api/v1/site/settings', {
     data: { title: `Acme ${stamp}`, tagline: 'From the workshop', homeSlug: slug, theme: 'light', primaryColor: '#2563eb',
       nav: [{ label: 'Welcome', path: `/${slug}` }] },

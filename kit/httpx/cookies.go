@@ -4,6 +4,7 @@ package httpx
 // names an earlier release used are still read so a signed-in person stays so.
 
 import (
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"net/http"
 	"strings"
 )
@@ -39,11 +40,15 @@ var legacySessionCookies = []string{"platformkit_session"}
 // other customer's. It is dropped when the cookie is not Secure, because a
 // browser refuses one of those over http://localhost; both names are recognised
 // on the way in, and a deployment only ever presents one.
-func CookieName(base string, secure bool) string {
-	if secure {
-		return "__Host-" + base
-	}
-	return base
+func CookieName(base string, secure bool) string { return CookieNameOf(appname.Name(""), base, secure) }
+
+// CookieNameOf is CookieName for a deployment that names its app: the slug sits
+// between the host-only prefix and the base, so two apps served from two hosts of
+// one deployment with the same cookie base stop signing each other out, and two
+// apps on one localhost port stop sharing one jar. With no slug set it is the name
+// every jar in the field already carries.
+func CookieNameOf(app appname.Name, base string, secure bool) string {
+	return appname.Cookie(app, base, secure)
 }
 
 // SessionCookieOf is the session cookie the request presents, under either
@@ -73,7 +78,7 @@ func LegacySessionCookies() []string { return legacyNames() }
 func legacyNames() []string {
 	var out []string
 	for _, base := range legacySessionCookies {
-		out = append(out, CookieName(base, true), base)
+		out = append(out, CookieNameOf(appname.Name(""), base, true), base)
 	}
 	return out
 }

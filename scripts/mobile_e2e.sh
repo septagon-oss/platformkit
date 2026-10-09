@@ -40,16 +40,17 @@ if [[ ! "$digest" =~ ^[0-9a-fA-F]{64}$ ]]; then
 	exit 1
 fi
 
-# The Android tools are installed by the SDK and not always put on PATH: the host the
-# pkit-ci label runs on has adb and the emulator under ~/Android/Sdk with no
-# ANDROID_HOME exported at all. Found there is found; only a tool nowhere to be found
-# is missing. Maestro is searched for the same reason and not with `command -v` alone:
-# it is a Gradle start-up script plus a lib directory, so the host that has it keeps it
-# under a tools prefix of its own — $MAESTRO_HOME where one is exported, and
+# The Android tools are installed by the SDK and not always put on PATH: the job image of
+# the pkit-ci-android label exports ANDROID_HOME=/opt/android-sdk, while a developer's
+# machine has adb and the emulator under ~/Android/Sdk with no ANDROID_HOME exported at
+# all. Found there is found; only a tool nowhere to be found is missing. Maestro is
+# searched for the same reason and not with `command -v` alone: it is a Gradle start-up
+# script plus a lib directory, so the host that has it keeps it under a tools prefix of
+# its own — $MAESTRO_HOME where one is exported, and
 # ~/.local/share/platformkit-tools/maestro/bin where this loop's tooling installs it —
-# and none of those prefixes is on a CI shell's PATH. A tool that exists and is not
-# looked for is a journey that reports itself impossible, which is the wrong answer to
-# give twice.
+# and a CI shell does not always have those prefixes on its PATH. A tool that exists and
+# is not looked for is a journey that reports itself impossible, which is the wrong answer
+# to give twice.
 for dir in "${ANDROID_HOME:-}" "${ANDROID_SDK_ROOT:-}" "$HOME/Android/Sdk"; do
 	[ -n "$dir" ] || continue
 	for part in platform-tools emulator; do
@@ -62,10 +63,14 @@ for dir in "${MAESTRO_HOME:-}" "${MAESTRO_HOME:+$MAESTRO_HOME/bin}" "${XDG_DATA_
 done
 export PATH
 
-# Fail fast, naming the missing piece. The host the pkit-ci label runs on was measured
-# to have /dev/kvm world-readable, an x86_64 system image and two AVDs; a runner that
-# turns out not to have them is a runner-label decision (or the hosted-device fallback
-# the specify note names), not a reason to skip a flow.
+# Fail fast, naming the missing piece. The journey runs on the pkit-ci-android label:
+# its image keeps adb and the emulator under $ANDROID_HOME (/opt/android-sdk) and
+# Maestro under $MAESTRO_HOME/bin (/opt/maestro) — all three already on its PATH — and
+# carries one x86_64 Google APIs system image and the one AVD beside it, which the
+# repository names through PK_MOBILE_AVD; the job container is started with the host's
+# /dev/kvm passed through. A runner that turns out not to have them is a runner-label
+# decision (or the hosted-device fallback the specify note names), not a reason to skip
+# a flow.
 missing=()
 for tool in adb emulator maestro; do
 	command -v "$tool" >/dev/null || missing+=("$tool")
@@ -104,6 +109,55 @@ sys.stdout.write(head[:cut] + "/" + name + (("?" + query) if query else ""))
 SWAP
 }
 psql_admin() { psql "$(swap "$admin_url" postgres)" -v ON_ERROR_STOP=1 -q "$@"; }
+
+# wait_healthy is scripts/e2e.sh's, with this script's prefix on its two answers:
+# the application either answers /health within the bound, dies while waiting, or
+# stays alive and never answers, and the last two are refused here with its log
+# rather than falling through to a device farm that cannot reach anything.
+wait_healthy() {
+	local bound="$1" attempt owner listener pids hop
+	for attempt in $(seq 1 "$bound"); do
+		# The process first, and the probe second: the port is not this run's, and
+		# a /health answered there by another worktree's server, or by anything
+		# else, is not evidence that the application this run started is serving.
+		if ! kill -0 "$app_pid" 2>/dev/null; then
+			echo "mobile-e2e: the application stopped before it served:" >&2
+			cat "$work/app.log" >&2
+			return 1
+		fi
+		if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then
+			# A live process and a healthy answer are still two facts about two
+			# different things: an application blocked before its listen — in a
+			# contended lock's queue, or behind a slow migration — answers nothing
+			# while another listener on the same port answers for it. So the answer
+			# counts when the process that owns the listening socket is this one,
+			# found by walking each listener on the port up its parents (an
+			# application started through a wrapper is a child of the pid recorded).
+			pids="$(ss -ltnpH "sport = :$port" 2>/dev/null | sed -n 's/.*pid=\([0-9]*\).*/\1/p' | sort -u)"
+			if [ -z "$pids" ]; then
+				pids="$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)"
+			fi
+			for listener in $pids; do
+				owner="$listener"
+				for hop in 1 2 3 4 5 6 7 8 9 10 11 12; do
+					[ "$owner" = "$app_pid" ] && break
+					owner="$(cut -s -d')' -f2- "/proc/$owner/stat" 2>/dev/null | awk '{ print $2 }')"
+					[ -n "$owner" ] || break
+					[ "$owner" != 1 ] || break
+				done
+				if [ "$owner" = "$app_pid" ]; then return 0; fi
+			done
+			echo "mobile-e2e: something other than this run's application listens on port $port, and /health there is not ours:" >&2
+			ss -ltnp "sport = :$port" >&2 2>/dev/null
+			cat "$work/app.log" >&2
+			return 1
+		fi
+		sleep 1
+	done
+	echo "mobile-e2e: the application stayed alive for $bound seconds and never answered /health on port $port:" >&2
+	cat "$work/app.log" >&2
+	return 1
+}
 
 work="$(mktemp -d)"
 app_pid=""
@@ -182,15 +236,7 @@ fi
 echo "mobile-e2e: serving on $port"
 run_app run --config "$work/config.yaml" >"$work/app.log" 2>&1 &
 app_pid=$!
-for _ in $(seq 1 60); do
-	if curl -fsS "http://localhost:$port/health" >/dev/null 2>&1; then break; fi
-	if ! kill -0 "$app_pid" 2>/dev/null; then
-		echo "mobile-e2e: the application stopped before it served:" >&2
-		cat "$work/app.log" >&2
-		exit 1
-	fi
-	sleep 1
-done
+wait_healthy 60 || exit 1
 
 echo "mobile-e2e: the pinned shell build"
 cached="$work/shell.apk"

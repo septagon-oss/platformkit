@@ -31,6 +31,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -257,19 +258,34 @@ func failures(ctx context.Context, log *slog.Logger, checks []Check) []string {
 // readiness belongs to no tenant; the probe request has opened none of its own,
 // so there is no tenant transaction for this one to be nested in.
 func DatabaseCheck(conn *db.Conn) Check {
-	return database{conn: conn, token: syscap.NewSystemToken("readiness")}
+	return DatabaseCheckThrough(func(context.Context) (*db.Conn, bool) { return conn, conn != nil })
+}
+
+// DatabaseCheckThrough is DatabaseCheck for a composition that built its routes
+// before it opened its connection: the probe asks its source when a probe arrives
+// rather than when the router was built, which is the difference between a readiness
+// route that answers "no" while the pool is still closed and one that dereferences
+// a connection nobody handed it. kit/app builds its API — this check included —
+// before it dials anything, because the routes are the last thing a composition can
+// get wrong for free.
+func DatabaseCheckThrough(source func(context.Context) (*db.Conn, bool)) Check {
+	return database{source: source, token: syscap.NewSystemToken("readiness")}
 }
 
 // database is the one Check this application has.
 type database struct {
-	conn  *db.Conn
-	token tenancy.SystemToken
+	source func(context.Context) (*db.Conn, bool)
+	token  tenancy.SystemToken
 }
 
 func (database) Name() string { return "database" }
 
 func (d database) Check(ctx context.Context) error {
-	return db.RunSystem(ctx, d.conn, d.token, func(_ context.Context, tx db.Tx[db.System]) error {
+	conn, ok := d.source(ctx)
+	if !ok {
+		return errors.New("no connection has been opened for this process yet")
+	}
+	return db.RunSystem(ctx, conn, d.token, func(_ context.Context, tx db.Tx[db.System]) error {
 		var one int
 		return tx.DB().Raw("SELECT 1").Scan(&one).Error
 	})

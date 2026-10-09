@@ -32,7 +32,7 @@ import (
 // reads the trail back would still be green. The last assertion is the one that fails.
 func TestALifecycleCommandWritesTwoRowsWithOneTraceAndTwoScopes(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	var operator, customer uuid.UUID
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		installed, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
@@ -152,7 +152,7 @@ func TestALifecycleCommandWritesTwoRowsWithOneTraceAndTwoScopes(t *testing.T) {
 // pass the count by accident rather than by locking.
 func TestTwoLifecycleCommandsOnOneRowSettleOnce(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	var customer uuid.UUID
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		if _, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
@@ -244,7 +244,7 @@ func TestTwoLifecycleCommandsOnOneRowSettleOnce(t *testing.T) {
 // broken installation, and the honest answer to that is that nothing happened.
 func TestAnInstallationWithNoOperatorTenantWritesNothing(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := svc.Create(ctx, tx, contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"})
@@ -300,7 +300,7 @@ func TestAnInstallationWithNoOperatorTenantWritesNothing(t *testing.T) {
 // the name the resolution carries is the one a page will show.
 func TestARenamedTenantStillAnswersAtItsOwnHost(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	var customer uuid.UUID
 	err := dbtest.System(trace.With(t.Context(), trace.New()), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		if _, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
@@ -348,7 +348,7 @@ func TestARenamedTenantStillAnswersAtItsOwnHost(t *testing.T) {
 // tenant still resolves, and the refusal is a conflict that names the verb instead.
 func TestTheLastHostAndThePrimaryHostAreRefusedInsideTheTransaction(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		if _, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
 			Slug: "installation", Name: "This installation", Host: "ops.example.com",

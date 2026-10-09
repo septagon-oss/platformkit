@@ -26,6 +26,9 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err := json.Unmarshal(event.Payload, &registered); err != nil {
 				return fmt.Errorf("auth: read unverified registration: %w", err)
 			}
+			// The confirmation link is built here, in the worker, and the sign-up request
+			// that asked for it is gone: the port it was answered at rides the event.
+			ctx = WithServed(ctx, registered.Served)
 			return svc.offerVerification(ctx, tx, registered.UserID, registered.Email)
 		},
 	}, {
@@ -35,6 +38,7 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			if err := json.Unmarshal(event.Payload, &asked); err != nil {
 				return fmt.Errorf("auth: read verification request: %w", err)
 			}
+			ctx = WithServed(ctx, asked.Served)
 			found, err := svc.users.ByEmail(ctx, tx, asked.Email)
 			if errors.Is(err, crud.ErrNotFound) {
 				return nil
@@ -104,7 +108,7 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	if err := s.mail.Mailer.Send(ctx, notification.Message{
 		To: current.Email, Subject: "Verify your email address",
 		Body: "Confirm your email address to finish creating your account. Your password will stay the same.\n\n" +
-			base + contracts.VerifyEmailPath + "?token=" + token +
+			base + VerifyEmailPath + "?token=" + token +
 			"\n\nThe link works once and expires in 24 hours. If you did not request this account, ignore this message.",
 	}); err != nil {
 		// A transport may quote its input in an error. The outbox retains handler

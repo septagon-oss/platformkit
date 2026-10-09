@@ -68,6 +68,24 @@ type Registrations interface {
 	ApproveRegistration(context.Context, db.Tx[db.Tenant], uuid.UUID, uuid.UUID) (*User, error)
 }
 
+// ApproveConflict is what a status answers an approval with when it cannot be
+// approved, written once here because two implementations refuse — the SQL
+// service and the conformance fake — and a sentence that differs between them is
+// a rule neither can be tested against.
+//
+// The invited person is the case that cost somebody their afternoon. The one
+// sentence every unapprovable status used, "only a pending registration with a
+// password can be approved", read to an administrator as an instruction, and they
+// typed a stranger's password by hand. An invitation is completed by the person it
+// was sent to and by nobody else, so that status now says so, and no door here can
+// set a password for anybody.
+func ApproveConflict(u *User) error {
+	if u.Status == StatusInvited {
+		return fmt.Errorf("%w: this person is invited, and an invitation is completed by the person it was sent to, who chooses their own password from the link; approving cannot do it for them", crud.ErrConflict)
+	}
+	return fmt.Errorf("%w: only a pending registration with a password can be approved", crud.ErrConflict)
+}
+
 const (
 	EventRegistrationPending    = "user.registration_pending"
 	EventRegistrationApproved   = "user.registration_approved"
@@ -79,6 +97,13 @@ type RegistrationUnverified struct {
 	UserID uuid.UUID `json:"userId"`
 	Email  string    `json:"email"`
 	At     time.Time `json:"at"`
+	// Served is the address the sign-up was answered at, port included, and "" when no
+	// request registered this account. The subscriber that mails the confirmation link
+	// builds it from this, for the reason Invited.Served gives: a link built from the
+	// tenant's name alone opens port 80 on an installation that serves its tenants behind
+	// a port, and only the call knew the port it arrived on. Not a credential, and the
+	// name in it is one tenancy already resolved to this tenant.
+	Served string `json:"served,omitempty"`
 }
 
 type EmailVerified struct {

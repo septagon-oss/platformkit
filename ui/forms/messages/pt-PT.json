@@ -1,0 +1,38 @@
+{
+  "forms.richtext.help": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Ajuda de formatação"
+  },
+  "forms.richtext.paragraphs": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Parágrafos: deixe uma linha em branco; uma quebra de linha forçada termina com \\."
+  },
+  "forms.richtext.headings": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Títulos: de ## a ####."
+  },
+  "forms.richtext.marks": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Negrito **texto**, itálico *texto*, riscado ~~texto~~, código em linha `código`."
+  },
+  "forms.richtext.links": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Ligações: [rótulo](https://example.com) ou [rótulo](/pagina)."
+  },
+  "forms.richtext.lists": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Listas: - item, 1. item ou - [ ] tarefa; até três níveis."
+  },
+  "forms.richtext.blocks": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Citação: > texto; código: ```linguagem; separador: ---."
+  },
+  "forms.richtext.tables": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Tabelas: | título | com uma linha | --- | de separação."
+  },
+  "forms.richtext.images": {
+    "references": ["ui/forms/control.go"],
+    "translation": "Imagens: ![texto alternativo](pk-file:uuid \"legenda\") isolada numa linha. Carregue primeiro o ficheiro."
+  }
+}

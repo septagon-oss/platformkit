@@ -111,7 +111,14 @@ A module's manifest declares each event with the Go type of its payload
 a payload that is not a projection of that type ([`schema.go`](schema.go)) inside
 the publisher's own transaction — a member the projection cannot describe
 constrains nothing, the same honest unknown the rendered schema answers with
-`true` — and `kit/app.AsyncAPI` renders the composition's
+`true`. The declaration belongs to the app that composed the module:
+`events.DeclareApp(slug, list)` keeps one contract per app, and a publish is
+checked against the declaration of the app that holds the tenant its row belongs
+to (`tenants.app`, the same column `RelayApp` claims rows by and `Consume`
+routes deliveries by). A second app composed into the same process adds its own
+list and removes nobody else's — otherwise booting academy would take acme's
+contract out of the door acme's events pass through
+([`catalog.go`](catalog.go)) — and `kit/app.AsyncAPI` renders the composition's
 catalogue from the same declaration
 (`apps/platformkit/testdata/asyncapi.json`) — as the message's `payload`, which
 is where AsyncAPI says a reader will look, and not wrapped in a member of its
@@ -138,6 +145,17 @@ Memory has no restart persistence and does not coordinate duplicate
 durables across processes. When using the SQL outbox, handling and terminal
 claims commit atomically, and unfinished memory deliveries leave rows pending.
 External effects still require provider idempotency.
+
+A payload contract reaches as far as the app that declared it. An event written
+for a tenant some other app holds is checked against that other app's
+declaration, which in a process that never composed it is no declaration at all:
+nothing here invents a contract for an app that is not running, and such a write
+is refused at the other end anyway — `Consume` will not run a handler for a
+tenant its app does not hold, and the row belongs to that app's relay
+([`catalog.go`](catalog.go)). Checking an event some app gave a payload type to
+costs one read of `tenants` by primary key, on the publisher's own handle and
+therefore inside its own transaction; an event no app typed costs the INSERT it
+always cost.
 
 Run `go test -race ./kit/events/transport ./kit/events/providers/...` for portable
 envelope, memory delivery and local NATS TLS/credential checks. The SQL/broker
