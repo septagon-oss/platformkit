@@ -29,7 +29,7 @@ pkit: tenant.Module uses tenantcontracts.Languages from product.Module.
 pkit: tenant.Module reads config.NATS.
 pkit: tenant.Module reads config.Server.
 pkit: tenant.Module defines the permission tenant:manage.
-pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set and tenant.oidc_cleared.
+pkit: tenant.Module emits tenant.created, tenant.suspended, tenant.host_added, tenant.locale_set, tenant.renamed, tenant.host_removed, tenant.reactivated, tenant.deleted, tenant.lifecycle_recorded, tenant.oidc_set, tenant.oidc_cleared, tenant.saml_set and tenant.saml_cleared.
 pkit: emailregistration.Module is built after user.Module.
 pkit: emailregistration.Module needs usercontracts.Service from user.Module.
 pkit: notification.Module is built after user.Module and tenant.Module.
@@ -72,6 +72,7 @@ pkit: auth.Module needs notificationcontracts.HostLookup from tenant.Module.
 pkit: auth.Module needs authcontracts.OIDCProviders from tenant.Module.
 pkit: auth.Module needs jobs.TenantLister from tenant.Module.
 pkit: auth.Module needs usercontracts.Granting from product.Module.
+pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
 pkit: auth.Module uses authcontracts.ConfirmationChrome from product.Module.
 pkit: auth.Module reads config.Auth.

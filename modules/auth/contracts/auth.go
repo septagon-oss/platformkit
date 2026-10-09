@@ -273,6 +273,23 @@ func MailDeliverable(m Mailer) bool {
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //
+// SignInMethod names the door a session was opened through, and is the value
+// contracts.LoggedIn.Method carries. Two of the three are this module's own doing —
+// a password it checked itself — and the third is a provider's, which is why Open
+// asks for it instead of deciding it: a session opened at a SAML door that the trail
+// called "oidc" is a trail that sends whoever is reading it to the wrong log, at the
+// wrong provider, about the person it is asking about.
+type SignInMethod string
+
+const (
+	// ViaPassword is a session this module opened from credentials it checked itself.
+	ViaPassword SignInMethod = "password"
+	// ViaOIDC is a session opened for an address an OpenID Connect provider verified.
+	ViaOIDC SignInMethod = "oidc"
+	// ViaSAML is a session opened for an address a SAML 2.0 assertion verified.
+	ViaSAML SignInMethod = "saml"
+)
+
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
@@ -330,10 +347,17 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the provider did the verifying,
-	// and what is left is the session this module issues for a password — asked
-	// of the account first, second factor and all, whichever half came through.
-	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
+	// other way. The OIDC and SAML callbacks are its callers: the provider did the
+	// verifying, and what is left is the session this module issues for a password —
+	// asked of the account first, second factor and all, whichever half came through.
+	//
+	// `via` names which provider did the verifying, and it is asked for rather than
+	// assumed because the trail this writes says how somebody got in: a session
+	// opened through a SAML assertion that the log called "oidc" would be a log that
+	// blames the wrong door — and the question "did anyone sign in with a password
+	// after we turned single sign-on on" is answered out of that one field. See
+	// contracts.LoggedIn.
+	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client, via SignInMethod) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role

@@ -53,6 +53,18 @@ const (
 	// EventOIDCCleared says a tenant has no provider now: its people sign in with
 	// a password or not at all, and its /oidc/start answers 404.
 	EventOIDCCleared = "tenant.oidc_cleared"
+
+	// EventSAMLSet says a tenant's SAML 2.0 provider changed, or that there is one
+	// now. It is the sibling of EventOIDCSet and carries what that one does not:
+	// no secret reference, because an IdP's metadata contains no secret, and no
+	// metadata document either — an outbox payload is copied into audit_events, and
+	// the question the trail answers is which provider was replaced, which the
+	// entity ID answers in one line rather than sixty.
+	EventSAMLSet = "tenant.saml_set"
+	// EventSAMLCleared says a tenant has no SAML provider now: its /saml/start
+	// answers 404 and its people sign in the way they did before this provider —
+	// with a password, or at an OIDC issuer, or not at all.
+	EventSAMLCleared = "tenant.saml_cleared"
 )
 
 // Created is the payload of EventCreated: there is a new customer.
@@ -110,6 +122,32 @@ type OIDCCleared struct {
 	TenantID uuid.UUID `json:"tenantId"`
 	Issuer   string    `json:"issuer"`
 	ClientID string    `json:"clientId,omitempty"`
+	At       time.Time `json:"at"`
+}
+
+// SAMLSet is the payload of EventSAMLSet.
+type SAMLSet struct {
+	TenantID       uuid.UUID `json:"tenantId"`
+	EntityID       string    `json:"entityId"`
+	MetadataURL    string    `json:"metadataUrl,omitempty"`
+	EmailAttribute string    `json:"emailAttribute"`
+	Registration   string    `json:"registration"`
+	Roles          []string  `json:"roles,omitempty"`
+	// WasEntityID names the provider this one replaced, and Replaced says whether
+	// there was one: "were we moved onto a new IdP, or onto an IdP for the first
+	// time" is the question a person reading this trail at 3 a.m. asks, and it is
+	// not recoverable afterwards.
+	WasEntityID string    `json:"wasEntityId,omitempty"`
+	Replaced    bool      `json:"replaced,omitempty"`
+	At          time.Time `json:"at"`
+}
+
+// SAMLCleared is the payload of EventSAMLCleared: the provider it names is gone.
+// It names which one, because "who took our sign-in away and from when" is the
+// question this event exists to answer.
+type SAMLCleared struct {
+	TenantID uuid.UUID `json:"tenantId"`
+	EntityID string    `json:"entityId"`
 	At       time.Time `json:"at"`
 }
 
