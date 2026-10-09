@@ -10,12 +10,11 @@ under `/api/v1/auth`, and the doors an anonymous caller may use — the ones
 the public surface serves — under `/api/v1/public/auth`; `role:manage` guards
 both the two roles routes and the screen the shell serves for them at
 `/app/auth/roles`. A write is refused when
-it would leave the tenant with no *role* granting `role:manage`; it counts roles
-and not the people holding them, so it is a floor and not a guarantee. The user
-module has a floor over the people, and the two do not compose: a sequence in
-which every write is permitted still reaches a tenant nobody can administer. See
-`contracts.CheckedAdministration` for the sequences, for what the fix would look
-like, and for which lockouts the control plane's invitation can still repair.
+it would leave the tenant with nobody who can sign in and administer it: the
+rule is `user/contracts.CheckedAdministration`, and
+`contracts.CheckedAdministration` is this module's door onto it, asking
+`contracts.Users.Holders` for the people behind the names. It is one rule with
+the user module's floor, not two halves of one.
 `SeedRoles` runs inside tenant creation, so roles exist before the service does.
 
 Compose it after tenants and notification with `auth.Deps`, naming the user
@@ -45,7 +44,7 @@ None. The code searched shows no use of `tenancy.Policy` in this module. Role wr
 
 ### Duties the module enforces itself
 
-`SetRole` refuses a write that removes `role:manage` from the last role that grants it (`contracts.CheckedAdministration` in `modules/auth/contracts/roles.go`). It takes a per-tenant advisory lock first, so two concurrent writes cannot both pass. `contracts.CheckedPermissions` refuses a permission no module defines and refuses an operator permission in a non-operator tenant. `SeedRoles` (`modules/auth/internal/seed.go`) refuses reserved, duplicated or empty default roles and any operator grant in them. The floor counts roles, not people, and the code says it is not a guarantee (see `CheckedAdministration`).
+`SetRole` refuses a write that removes `role:manage` from the last role that grants it (`contracts.CheckedAdministration` in `modules/auth/contracts/roles.go`) and publishes `auth.administration_refused` for the attempt, in a detached transaction of its own, because the write it describes was rolled back and the request's transaction with it — the same shape `recordFailure` uses for a failed login, and logged rather than returned if the record cannot be written. It takes a per-tenant advisory lock first, so two concurrent writes cannot both pass. `contracts.CheckedPermissions` refuses a permission no module defines and refuses an operator permission in a non-operator tenant. `SeedRoles` (`modules/auth/internal/seed.go`) refuses reserved, duplicated or empty default roles and any operator grant in them. The rule counts the people who would still hold a role that grants it, so a role held by nobody answers for nothing (see `CheckedAdministration`).
 
 ### Public faces
 

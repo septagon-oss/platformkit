@@ -17,7 +17,7 @@ pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
-pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.administration_refused, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
 pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
 pkit: site.Module defines the permission site:manage.
@@ -78,7 +78,7 @@ pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Mod
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.
 pkit: auth.Module defines the permission role:manage.
-pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested and auth.verification_requested.
+pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested, auth.verification_requested and auth.administration_refused.
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified and auth.verification_requested.
 pkit: access.Module is built after product.Module, user.Module, notification.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.
