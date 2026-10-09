@@ -64,14 +64,31 @@ const MaxSummary = 200
 //	                     on now, which is what the refusal says it was.
 //	ErrUnsupportedSubject correctable by whoever composes the application, who is the
 //	                     only person who can put the subject's binding back.
+//	ErrStaleProposal     correctable by reading the row again: somebody decided it,
+//	                     or applied it, between the form being drawn and the verdict.
+//	ErrAlreadyDecided    the first opinion is on the record, which is what the row is
+//	                     for; the cure is a new proposal, never a second verdict.
+//	ErrNotApproved       correctable by the person who still holds the decision.
+//	ErrNotProposer       immutable for the person holding the request, and cured by
+//	                     the proposer's own hand or by a declined verdict.
+//	ErrProposalOver      the row reached a state with no commands left in it.
+//	ErrVerdict           correctable by the caller: one of the two named verdicts.
 //
 // They are values rather than statuses because the mapping to a status happens
 // once, in kit/rest's Fault, and a module that invents its own status is a module
-// whose refusal a client cannot predict.
+// whose refusal a client cannot predict. Every one of them is also the key a page
+// answers its own copy of the refusal from — see internal.refusalKey — because a
+// refusal a screen cannot name is a refusal a screen can only repeat in English.
 var (
 	ErrSelfReview         = fmt.Errorf("change: the person who proposed a change cannot be the one who decides it")
 	ErrStaleBase          = fmt.Errorf("change: the subject has moved since this diff was made")
 	ErrUnsupportedSubject = fmt.Errorf("change: this composition applies no proposals for that subject")
+	ErrStaleProposal      = fmt.Errorf("change: this proposal moved on since this form was drawn")
+	ErrAlreadyDecided     = fmt.Errorf("change: this proposal has already been decided")
+	ErrNotApproved        = fmt.Errorf("change: only an approved proposal can be applied")
+	ErrNotProposer        = fmt.Errorf("change: only the person who proposed a change can take it back")
+	ErrProposalOver       = fmt.Errorf("change: this proposal is over and takes no further command")
+	ErrVerdict            = fmt.Errorf("change: a verdict is approved or declined")
 )
 
 // Proposal is one change put forward for somebody else to look at.

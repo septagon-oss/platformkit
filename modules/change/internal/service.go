@@ -236,7 +236,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	}
 	verdict := in.Verdict
 	if verdict != contracts.VerdictApproved && verdict != contracts.VerdictDeclined {
-		return nil, fmt.Errorf("%w: a verdict is approved or declined, not %q", crud.ErrInvalid, verdict)
+		return nil, fmt.Errorf("%w: %w, not %q", crud.ErrInvalid, contracts.ErrVerdict, verdict)
 	}
 	if reviewer == row.Proposer {
 		// Asked before the row's state, so the author cannot read a decided proposal
@@ -254,7 +254,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 		if row.Verdict == verdict && row.Reviewer != nil && *row.Reviewer == reviewer {
 			return row, nil
 		}
-		return nil, fmt.Errorf("%w: this proposal was already %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrAlreadyDecided, row.State)
 	}
 	at := db.Now()
 	row.State = contracts.StateDeclined
@@ -296,7 +296,7 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 		return row, nil
 	}
 	if row.State != contracts.StateApproved {
-		return nil, fmt.Errorf("%w: only an approved proposal may be applied, and this one is %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: this one is %s", crud.ErrConflict, contracts.ErrNotApproved, row.State)
 	}
 	binding, ok := s.binding(row.SubjectModule, row.SubjectEntity)
 	if !ok {
@@ -359,13 +359,13 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		// row's state, so a second account retrying an author's withdraw is refused the
 		// withdrawn row rather than handed it: the idempotent answer belongs to whoever
 		// the command would have accepted the first time.
-		return nil, fmt.Errorf("%w: only the proposer may withdraw a proposal", crud.ErrConflict)
+		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrNotProposer)
 	}
 	if row.State == contracts.StateWithdrawn {
 		return row, nil
 	}
 	if !row.Open() {
-		return nil, fmt.Errorf("%w: a %s proposal is over", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrProposalOver, row.State)
 	}
 	at := db.Now()
 	from := row.State
@@ -410,7 +410,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, e
 	if expectedRevision != row.Revision {
 		// The caller decided about a revision it had read. Anything else is two
 		// deciders who both clicked, and only one of them can be right.
-		return nil, fmt.Errorf("%w: this proposal is at revision %d", crud.ErrConflict, row.Revision)
+		return nil, fmt.Errorf("%w: %w: it is at revision %d", crud.ErrConflict, contracts.ErrStaleProposal, row.Revision)
 	}
 	return row, nil
 }
