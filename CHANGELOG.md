@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+**The kernel publishes its journey steps.** `e2e/steps/kernel.ts` and `e2e/steps/public.ts` ship
+in this module, so the version a consumer pins that resolves `kit/rest` and `ui/page` carries the
+steps of the kernel's own acts — the sign-in door, the way out, the workspace, the generated
+screen and the public frame — beside the code they drive. A caller that kept its own copy of that
+walk re-exports these instead; the addresses in `endpoints` are the reference application's
+(`apps/platformkit/fault.go` pins them), and a composition reaches them by its own specifier.
+`scripts/e2e_step_library_test.sh` refuses a published name that vanished, an import a module zip
+cannot carry, an address this application does not serve, and a step whose evidence path, host or
+inbox the file guessed instead of asking the run that started it.
+
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
 `admin.Module` — declaring the contracts it needs and provides, the contributions it
