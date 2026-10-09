@@ -2,13 +2,13 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "f68d0ddd266eaf6d713b1535a85563d025a44b93"
+    "candidate": "a38c07215bb7dfc14ed63c264b7ad7113b45e5d2"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
     "./kit/config.Files: old is comparable, new is not",
     "./kit/events/providers/nats.JetStream: changed from func(string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error) to func(github.com/septagon-oss/platformkit/kit/appname.Name, string, ...github.com/nats-io/nats.go.Option) (github.com/septagon-oss/platformkit/kit/events/transport.Transport, error)",
-    "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, []Check, ...Report) net/http.Handler",
+    "./kit/health.Mux: changed from func(*log/slog.Logger, ...Check) net/http.Handler to func(*log/slog.Logger, Faults, []Check, ...Report) net/http.Handler",
     "./kit/health.Register: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, ...Check) to func(*github.com/septagon-oss/platformkit/kit/httpx.API, []Check, ...Report)",
     "./kit/httpx.(*API).InvalidateHost: changed from func(string) to func(...string) error",
     "./kit/httpx.(*API).Static: removed",
@@ -35,7 +35,6 @@
     "./modules/auth/contracts.Service.RevokeSession: added",
     "./modules/auth/contracts.Service.Sessions: added",
     "./modules/auth/contracts.Users.ConfirmAddress: added",
-    "./modules/auth/contracts.VerifyEmailPath: removed",
     "./modules/auth/contracts/authtest.(*Fake).Reset: changed from func(context.Context, github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.Tenant], string, string) error to func(context.Context, github.com/septagon-oss/platformkit/kit/db.Tx[github.com/septagon-oss/platformkit/kit/db.Tenant], string, string, github.com/septagon-oss/platformkit/modules/auth/contracts.Client) (*github.com/septagon-oss/platformkit/modules/auth/contracts.Session, error)",
     "./modules/billing.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/kit/httpx.Entitler, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
     "./modules/billing/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
@@ -80,6 +79,7 @@
     "./modules/user/contracts.Service.SetHandle: added",
     "./modules/web.Deps: old is comparable, new is not",
     "./modules/web.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
+    "./ui/document.Fault: changed from func(int, string, string, string, string) View to func(FaultProps) View",
     "./ui/forms.Options: old is comparable, new is not",
     "./ui/page.Serve: changed from func(*github.com/septagon-oss/platformkit/kit/httpx.API, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I]) to func(*github.com/septagon-oss/platformkit/kit/httpx.Router, Shell, Route, github.com/septagon-oss/platformkit/kit/httpx.Auth, Handler[I])",
     "./ui/resource.Options.Root: removed",
