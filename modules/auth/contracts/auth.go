@@ -259,6 +259,17 @@ type (
 	Hosts  = notificationcontracts.HostLookup
 )
 
+// MailDeliverable reports whether the sender a deployment composed can put a
+// message in somebody's mailbox at all. Nothing composed is one answer, and
+// notification.NoTransport is the other: a deployment that has neither a mail
+// server nor an in-process mailbox wires that value on purpose, and the commands
+// that would promise a link in a mailbox refuse on it before they write anything.
+// A row no mail will ever carry is a person left waiting for nothing, and the
+// acknowledgment that promised the post would already be out.
+func MailDeliverable(m Mailer) bool {
+	return m != nil && !notificationcontracts.IsNoTransport(m)
+}
+
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //

@@ -11,6 +11,7 @@ package contracts
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -126,6 +127,33 @@ type Message struct {
 // notifications.link, which is what it used to be.
 type Mailer interface {
 	Send(ctx context.Context, m Message) error
+}
+
+// ErrNoTransport is what the sender a mail-less deployment composes answers, and
+// the one send error that is never worth a retry: no attempt reaches a server this
+// installation does not have.
+var ErrNoTransport = errors.New("notification: this installation has no mail transport")
+
+// noTransport is ErrNoTransport behind the Mailer shape.
+type noTransport struct{}
+
+func (noTransport) Send(context.Context, Message) error { return ErrNoTransport }
+
+// NoTransport is the sender a deployment composes when it has neither a mail
+// server nor an in-process mailbox. It is a value rather than nothing because the
+// composition answers a module's Provided port with what that module put, and
+// apps/platformkit's composition test refuses a port that answers with nothing: an
+// installation that means "send nothing" says so by wiring this, not by leaving a
+// nil somebody else has to remember to check.
+var NoTransport Mailer = noTransport{}
+
+// IsNoTransport reports whether the sender in hand is that sender. A command that
+// would promise a mailed link asks it before it writes anything, because the
+// refusal is the command's own to make and a caller must not be told a link is on
+// its way when nothing will send it.
+func IsNoTransport(m Mailer) bool {
+	_, ok := m.(noTransport)
+	return ok
 }
 
 // Service is what a caller does with notifications. Every command takes the

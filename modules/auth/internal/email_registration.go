@@ -112,7 +112,7 @@ func emailRequest(ctx context.Context, svc *Service) error {
 	if !httpx.SameSite(r) {
 		return problem.New(http.StatusForbidden, "request an account email from this site itself")
 	}
-	if svc.mail.Mailer == nil || svc.mail.Hosts == nil {
+	if !contracts.MailDeliverable(svc.mail.Mailer) || svc.mail.Hosts == nil {
 		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 	}
 	if !svc.MayAsk(ctx, ClientOf(r).IP) {

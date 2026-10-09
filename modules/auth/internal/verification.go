@@ -62,7 +62,7 @@ func verificationLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 }
 
 func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) error {
-	if s.mail.Mailer == nil || s.mail.Hosts == nil {
+	if !contracts.MailDeliverable(s.mail.Mailer) || s.mail.Hosts == nil {
 		return fmt.Errorf("auth: verification delivery is unavailable")
 	}
 	if err := verificationLock(tx, id); err != nil {
