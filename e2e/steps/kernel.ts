@@ -62,24 +62,40 @@ function doorTo(next: string) {
 }
 
 // Where the browser stands once a step's own act is done. Compared without the origin,
-// because the origin is the run's (a port scripts/e2e.sh chose). The guarded address may
-// carry its query — a filtered or paginated page is exactly what the person asked for, and
-// the door carries `next` through whole, which `e2e/session-forms.spec.ts` and the auth
-// handler's own tests prove — so a destination that names a query is landed on that query
-// too, and one that names none leaves any query or fragment to the page's own business.
-// The destination is split by hand rather than resolved with `new URL`, because the only
+// because the origin is the run's (a port scripts/e2e.sh chose). A guarded address is a
+// whole address: it may carry a query — a filtered or paginated page is exactly what the
+// person asked for — and it may carry the fragment of the anchor it opens at, the frame's own
+// `#content` being the one every page answers to (the target `ui/components/shell.go:38-58`
+// writes, which `structure` below follows). The door carries both through whole:
+// `httpx.LocalPath` asks only whether the address is a path on this site, and
+// `ui/assets/js/session.js:107` navigates to the whole href, which is what
+// `e2e/sign-in-return-fragment.spec.ts` and `e2e/sign-in-return-address.spec.ts` hold it to.
+// So a destination naming a query or a fragment is landed on that query or fragment too,
+// and one naming neither leaves either to the page's own business.
+//
+// The address is taken apart by hand rather than resolved with `new URL`, because the only
 // origin it could be resolved against is a guess and the origin is exactly what this
-// comparison must not look at. A regular expression is not enough either: `toHaveURL`
-// matches it against the whole address, so a pattern that begins with the path can only
-// ever fail — which is how the first version of this helper took gate 10 red on every
-// sign-in, and why the comparison is a path.
+// comparison must not look at. Splitting it in URL order is what makes the parts mean what
+// they say: the fragment begins at the first `#`, and the query at the first `?` *before
+// that*, because a `?` inside a fragment belongs to the fragment. Each earlier version of
+// this helper missed it the other way round — the first compared the whole destination to a
+// pathname, the second split at a `?` searched in the whole address — and so read a
+// destination's `#content` as part of the path or the query and refused a sign-in that had
+// arrived. A regular expression is not enough either: `toHaveURL` matches it against the
+// whole address, so a pattern that begins with the path can only ever fail — which is how
+// an earlier version took gate 10 red on every sign-in, and why the comparison is per part.
 function atEnd(destination: string) {
-  const query = destination.indexOf('?');
-  const wanted = query < 0 ? { path: destination, search: '' }
-    : { path: destination.slice(0, query), search: destination.slice(query) };
-  return (url: URL) => wanted.search === ''
-    ? url.pathname === wanted.path
-    : url.pathname + url.search === wanted.path + wanted.search;
+  const mark = destination.indexOf('#');
+  const asked = mark < 0 ? destination : destination.slice(0, mark);
+  const query = asked.indexOf('?');
+  const path = query < 0 ? asked : asked.slice(0, query);
+  // URL.pathname and URL.search hold no fragment; URL.hash keeps its leading `#`, as the
+  // destination spells it. Each part the destination did not name stays the page's own.
+  const search = query < 0 ? '' : asked.slice(query);
+  const fragment = mark < 0 ? '' : destination.slice(mark);
+  return (url: URL) => url.pathname === path &&
+    (search === '' || url.search === search) &&
+    (fragment === '' || url.hash === fragment);
 }
 
 // The run's own address, refused rather than guessed. A step that defaulted it would be a
@@ -423,17 +439,46 @@ export async function save(page: Page, name = 'Save') {
   await keyboardSubmit(page, name);
 }
 
+// storesNothing is the kernel's own test for the one answer a page under a session may give
+// about being kept: does the value carry `no-store` as a directive of its own. Written again
+// here as `kit/httpx/headers.go:229-235` writes it — a comma-separated list, each directive
+// trimmed and compared case-insensitively — because the step has to ask the same question of
+// a header the response already carries, and asking it any other way asks a different
+// question: `private, no-store` is what a translated workspace page answers
+// (`ui/page/serve.go:155-159`) and a page that knows its own bytes may phrase it wider still,
+// so equality against one spelling refuses a response that satisfies the kernel.
+function storesNothing(value: string) {
+  return value.split(',').some(directive => directive.trim().toLowerCase() === 'no-store');
+}
+
 // securityHeaders is the response floor every page of this application arrives under, asserted
 // where the journey already stands rather than in a request of its own. The clauses are the
-// kernel's, written at kit/httpx/headers.go: DENY (`:32`, set at :111), nosniff (:35,:113),
-// the referrer policy (:33,:112), the policy's own clauses (:58 — base-uri and form-action are
-// the two that make the rest hold), no-store under a session and noindex on every non-public
-// surface (:97,:119-121). `desk` is the difference the kernel itself makes: a desk page carries
-// one tenant's unpublished draft, so it is answered `no-store` and `no-referrer`
-// (`ui/page/serve.go:159,175-179`), while an anonymous page keeps a cache's permission to be
-// cached at all.
+// kernel's, written at kit/httpx/headers.go: DENY (`:33`, set at :111), nosniff (:35,:113),
+// the referrer policy (:34,:112) and the policy's own clauses (:58 — base-uri and form-action
+// are the two that make the rest hold).
 //
-// No Strict-Transport-Security is asserted, and none is sent here: headers.go:113-115 withholds
+// `surface` names the difference the kernel itself makes, and it decides exactly three clauses.
+// On every non-public surface the policy forbids embedding (:168-174 adds `object-src 'none'`
+// to what a public page is served under), the crawler is refused (`:97`, set at `:120`), and
+// nothing may be stored: the kernel states the directive and lets the page phrase it — a
+// translated workspace page answers `private, no-store` (`ui/page/serve.go:155-159`) — so the
+// step asks for the directive the way the kernel asks for it (`storesNothing` above). The
+// public face keeps a cache's permission to cache at all (`:217`, `publicMaxAge`) and says
+// nothing about indexing, because a tenant's public pages exist to be found; that half of the
+// indexing claim is pinned where the surfaces are built (`kit/httpx/surfaces_test.go:482,:672`
+// both refuse a public response that carries the header) rather than here, since a page of a
+// public site that hides itself from search is that page's decision and not a floor every
+// public response shares.
+//
+// The referrer policy is deliberately *not* one of the surface's clauses, which is the one
+// thing the first version of this step got wrong. Every response answers with the default at
+// `kit/httpx/headers.go:34`; the stronger `no-referrer` belongs to a page flagged `Sensitive`
+// because it carries a private URL credential (`ui/document/document.go:89-93`, applied at
+// `ui/page/serve.go:175-179`) — a property of the page, not of the surface, and no page of the
+// reference application sets it. So the step accepts either of the two values the kernel can
+// write and refuses everything else, an absent header included.
+//
+// No Strict-Transport-Security is asserted, and none is sent here: headers.go:114-115 withholds
 // it from a deployment reached at a local name, because a browser told to use https for
 // localhost is a laptop that cannot reach its own application. The gallery is asked for none of
 // this either — `modules/admin/gallery_access_test.go:147` asserts SAMEORIGIN and a sandboxed
@@ -442,16 +487,31 @@ export async function save(page: Page, name = 'Save') {
 export function securityHeaders(response: Response | null, surface: 'desk' | 'public') {
   expect(response, 'the page the journey was already asked to read did not answer').not.toBeNull();
   const sent = response!.headers();
+  const where = response!.url();
   expect(sent['content-type']).toContain('text/html');
   expect(sent['x-content-type-options']).toBe('nosniff');
   expect(sent['x-frame-options']).toBe('DENY');
-  expect(sent['referrer-policy'], `${surface} surfaces answer with the policy kit/httpx/headers.go writes`)
-    .toBe(surface === 'desk' ? 'no-referrer' : 'strict-origin-when-cross-origin');
+  const referrer = sent['referrer-policy'] ?? '';
+  expect(referrer === 'strict-origin-when-cross-origin' || referrer === 'no-referrer',
+    `${where} answers with Referrer-Policy: ${referrer || 'nothing'}, which is neither the policy every response is `
+    + 'given (kit/httpx/headers.go:34) nor the no-referrer a page carrying a private URL credential replaces it with '
+    + '(ui/page/serve.go:175-179)')
+    .toBe(true);
   const policy = sent['content-security-policy'] ?? '';
-  for (const clause of ["default-src 'self'", "frame-ancestors 'none'", "base-uri 'none'",
-    "form-action 'self'", "script-src 'self' 'nonce-"]) {
-    expect(policy, `${response!.url()} answers without ${clause}`).toContain(clause);
+  const clauses = ["default-src 'self'", "frame-ancestors 'none'", "base-uri 'none'",
+    "form-action 'self'", "script-src 'self' 'nonce-"];
+  if (surface === 'desk') clauses.push("object-src 'none'");
+  for (const clause of clauses) {
+    expect(policy, `${where} answers without ${clause}`).toContain(clause);
   }
-  if (surface === 'desk') expect(sent['cache-control']).toBe('no-store');
+  if (surface === 'desk') {
+    const cache = sent['cache-control'] ?? '';
+    expect(storesNothing(cache), `${where} is answered under a session and says ${cache || 'nothing'} about being ` +
+      'stored: a no-store directive is what keeps one tenant out of the next person\'s cache '
+      + '(kit/httpx/headers.go:79,203-227)').toBe(true);
+    expect(sent['x-robots-tag'], `${where} says nothing about indexing while the kernel refuses the crawler on `
+      + 'every non-public surface (kit/httpx/headers.go:97,120)')
+      .toContain('noindex');
+  }
   expect(sent['strict-transport-security']).toBeUndefined();
 }
