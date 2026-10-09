@@ -29,6 +29,7 @@ Follow the consumer as well as its schema; these paths share the existing Go own
 | Entity and command fields | [`entity.Fields`/`FieldsOf`](kit/entity/schema.go) → [CRUD aliases](kit/crud/schema.go) → [`rest.Spec`/`Command`](kit/rest/rest.go) → authorized [`httpx.Resource`](kit/httpx/schemas.go). |
 | Web forms and pages | [`forms`](ui/forms/forms.go) composes shared [components](ui/components/); [`resource`](ui/resource/resource.go) renders screens from a schema and rows, [`screens`](ui/screens/render.go) adapts authorized resources to it, and [`page.Serve`](ui/page/serve.go) supplies the caller's shell and request context around a [`document`](ui/document/document.go). A refusal the kernel makes before a handler exists — the cross-site guard, a panic — is the same problem value, shaped by whoever asked ([ADR 0015](docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md)): `httpx.Options.Fault`, and the application supplies `page.FaultHandler(shell)` so a browser gets a page and a client gets the JSON. |
 | Native discovery | [`screens.Describe`](ui/screens/catalog.go) exposes `/api/v1/app/resources`, stamped with `catalogVersion`; the native consumer owns its renderer. |
+| Rich text field | A string with `ui:"widget:richtext"` enters [`richtext.Prepare`](kit/richtext/render.go) through `rest.Spec` inside the tenant transaction; the same package renders sanitized HTML for [`components.Prose`](ui/components/prose.go) in generated details and public content. [`richtext.Files`](kit/richtext/render.go) resolves images per tenant and audience, with [`modules/file.RichTextFiles`](modules/file/richtext.go) wired at composition. The schema publishes `contentMediaType: text/markdown`, and the no-JavaScript form uses a textarea with formatting help. |
 | Component properties | [`Example.Describe`](ui/components/examples/example.go) derives Props JSON Schema, named slots and observed HTML from actual Go constructor inputs. |
 | Design consumers | [`export.Export`](ui/export/export.go) and [`ProjectProps`](ui/export/proposal.go) produce snapshots and proposals; [source persistence](ui/source/source.go) has its own explicit API. |
 
@@ -56,6 +57,11 @@ and generated screens enforce the same declarations. These adapters alone do not
 establish management screens, deployed connections or migration of downstream clients.
 
 ## Independently usable parts
+
+[Wire](kit/wire/README.md) checks a composition's OpenAPI or AsyncAPI contract
+against its published golden using B1–B6. It links only the standard library;
+the reference composition delegates both document gates to it. Products supply
+their renderer, golden path and explicit reviewed authorization allowances.
 
 Import the owner of the capability you need: [entity](kit/entity/README.md) for
 field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
@@ -101,6 +107,14 @@ and claims no deployment, and a product reaches a tier with its own evidence.
 of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
+
+[apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
+as one sentence — the modules it uses, the ports the kernel asks the application
+for, and the roles it says a tenant begins as — and what it resolves to is
+committed beside it as
+[COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md), which
+`TestCompositionFile` compares on every `make check` and refuses when the
+composition moves and the file does not.
 
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
@@ -285,7 +299,7 @@ no SQL runs twice. `db.Adoption` is that declaration; a fresh database has
 nothing to adopt and reads the same ledger either way. An adopted file is an
 applied file, so changing one still refuses.
 
-The runner validates the selected source files, obtains a database advisory
+The runner validates the selected source files, obtains its namespace's advisory
 lock, checks applied histories, and executes each pending file with its history
 row in one transaction — which is the mode a file declares in its header, and two
 modes say otherwise: an `autocommit` file's one statement runs outside the
@@ -725,7 +739,7 @@ their numbers into prose; run `make check-loc` and `make check-packages`.
 check`, then `make check-race`, `govulncheck`, the native editor and browser
 checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
-workflows](.github/workflows/ci.yml) are kept in step with it and do not run
+workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
 release workflow beside them. An absent GitHub check establishes nothing. A
 publisher for the image, SBOM and release notes is not yet approved, so no tag

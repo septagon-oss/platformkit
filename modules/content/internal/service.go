@@ -14,6 +14,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
 
@@ -29,8 +30,15 @@ var _ contracts.Service = (*Service)(nil)
 
 // Publish serves it to anybody, and records when. See contracts.Service.
 func (s *Service) Publish(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.Content, error) {
-	c, err := crud.Get[*contracts.Content](tx, id)
+	c, err := crud.GetForUpdate[*contracts.Content](tx, id)
 	if err != nil {
+		return nil, err
+	}
+	// The duty is asked before the row's status is read, because it is about who
+	// is asking: a refusal this command has no row to return, no state to move and
+	// nothing to say about it afterwards.
+	actor, _ := tenancy.ActorFrom(ctx)
+	if err := c.PublishBy(actor); err != nil {
 		return nil, err
 	}
 	switch c.Status {
@@ -60,7 +68,7 @@ func (s *Service) Archive(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 // commands that use it clear the publication time, because "published means
 // published at a time" is one fact and this is the half that puts it away.
 func (s *Service) to(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, status, event string) (*contracts.Content, error) {
-	c, err := crud.Get[*contracts.Content](tx, id)
+	c, err := crud.GetForUpdate[*contracts.Content](tx, id)
 	if err != nil {
 		return nil, err
 	}

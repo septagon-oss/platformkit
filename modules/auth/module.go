@@ -163,7 +163,7 @@ type Deps struct {
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
-func Module(deps Deps) (contracts.Auth, module.Module) {
+func New(deps Deps) (contracts.Auth, module.Module) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
 			panic("auth: choose only one registration lifecycle")
@@ -230,7 +230,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &invited); err != nil {
 					return fmt.Errorf("auth: read the invitation: %w", err)
 				}
-				return svc.Offer(ctx, tx, invited.UserID)
+				return svc.Offer(internal.WithServed(ctx, invited.Served), tx, invited.UserID)
 			},
 		}, {
 			Module: "auth", Name: contracts.EventResetRequested,
@@ -239,7 +239,7 @@ func Module(deps Deps) (contracts.Auth, module.Module) {
 				if err := json.Unmarshal(ev.Payload, &asked); err != nil {
 					return fmt.Errorf("auth: read the reset request: %w", err)
 				}
-				return svc.Reissue(ctx, tx, asked.Email)
+				return svc.Reissue(internal.WithServed(ctx, asked.Served), tx, asked.Email)
 			},
 		}},
 		Routes: func(s httpx.Surfaces) {

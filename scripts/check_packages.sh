@@ -42,11 +42,11 @@ done
 # was asked about, and check() refuses an assertion it cannot measure as
 # "missing dependency metadata". Measuring a core through whatever reaches it
 # would leave the assertion resting on a caller that may stop calling tomorrow.
-parts=(kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request modules/task/domain design ui/forms
+parts=(kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/appname kit/request modules/task/domain design ui/forms
     ui/document ui/resource ui/page ui/screens
     kit/cache kit/cache/providers/valkey kit/app kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats
     kit/tenancy/providers/topaz kit/flags/providers/openfeature
-    kit/flags/providers/ofrep kit/locale/providers/xtext)
+    kit/flags/providers/ofrep kit/locale/providers/xtext pkit)
 metadata="$(cd "$root" && go list -deps -f '{{.ImportPath}}|{{.Standard}}|{{join .Deps " "}}|{{if .Module}}{{.Module.Path}}{{end}}' "${parts[@]/#/./}")"
 printf '%s\n' "$metadata" | awk -F '|' '
     function contains(set, value) { return index(" " set " ", " " value " ") != 0 }
@@ -83,7 +83,14 @@ printf '%s\n' "$metadata" | awk -F '|' '
         p = "github.com/septagon-oss/platformkit/"
         uuid = "github.com/google/uuid"
         identity = p "kit/tenancy " p "kit/internal/syscap"
-        delivery = p "kit/events/transport " p "kit/events/internal/delivery"
+        # kit/appname is a value package beside kit/trace: its closure is the
+        # standard library and the UUID type a tenant id already is. It is in the
+        # delivery group because that is where an address is formed — subject,
+        # filter, durable — and every other name two apps could share (cookie,
+        # job lock, limit bucket, stored path) is formed by the same grammar. A
+        # package that reaches it reaches only values; nothing reaches back.
+        appname = p "kit/appname"
+        delivery = p "kit/events/transport " p "kit/events/internal/delivery " appname
         sql = uuid " github.com/jackc/pgpassfile github.com/jackc/pgservicefile github.com/jackc/pgx/v5 github.com/jackc/puddle/v2 github.com/jinzhu/inflection github.com/jinzhu/now golang.org/x/sync golang.org/x/text gorm.io/driver/postgres gorm.io/gorm"
         # kit/trace is in the outbox bound and the kernel one because the trace
         # context of a request is stored with the event the request caused, and
@@ -99,6 +106,11 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/fault sits beside kit/crud because the adapter names the three refusals
         # through it: whatever reaches the adapter reaches the values it re-exports, and
         # the bound that matters is the other direction, refused by check("kit/fault", "").
+        # A typed rich-text field reaches its parser and sanitizer through
+        # kit/httpx. Keep this list explicit so a new renderer dependency is
+        # visible at the page, screen and runner boundaries.
+        richtextDeps = p "kit/richtext github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
+        richtext = p "kit/richtext github.com/yuin/goldmark github.com/yuin/goldmark/ast github.com/yuin/goldmark/extension github.com/yuin/goldmark/extension/ast github.com/yuin/goldmark/parser github.com/yuin/goldmark/renderer github.com/yuin/goldmark/renderer/html github.com/yuin/goldmark/text github.com/yuin/goldmark/util github.com/microcosm-cc/bluemonday github.com/microcosm-cc/bluemonday/css github.com/aymerick/douceur/css github.com/aymerick/douceur/parser github.com/gorilla/css/scanner golang.org/x/net/html golang.org/x/net/html/atom"
         # The OpenTelemetry API, and nothing above it: the API is what a package
         # makes a span or records a number with, and it drags no exporter, no
         # provider and no transport with it. The exporters, the SDK and gRPC belong
@@ -109,10 +121,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # kit/trace and kit/telemetry both sit in the kernel list: the first carries
         # the W3C trace context a caller sent as a value, the second names the
         # vocabulary of a span and a number. Neither owns an exporter or a provider.
-        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry"
+        kernel = p "kit/config " p "kit/cache " identity " " p "kit/trace " p "kit/db " p "kit/entity " p "kit/crud " p "kit/fault " p "kit/problem " p "kit/httpx " p "kit/locale " p "kit/locale/providers/xtext " outbox " " p "kit/events " p "kit/jobs " p "kit/module " p "kit/telemetry " richtextDeps
         presentation = p "design " p "ui/css " p "ui/icon " p "ui/style " p "ui/components " p "ui/components/examples " p "ui " p "ui/document"
         markup = "maragu.dev/gomponents maragu.dev/gomponents/html"
-        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel
+        web = sql " github.com/danielgtaylor/huma/v2 github.com/go-chi/chi/v5 gopkg.in/yaml.v3 maragu.dev/gomponents github.com/robfig/cron/v3 " otel " " richtext
         # The provider edge for measurement: kit/app is the only package whose
         # closure may hold an exporter, an SDK or a collector transport. A span
         # anywhere else in the kernel reaches the collector through the global, so
@@ -126,11 +138,15 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # Its closure is the standard library and itself, or wrapping a refusal
         # would link the storage adapter to a package that takes no transaction.
         check("kit/fault", "")
+        check("kit/wire", "")
         check("kit/flags", uuid)
         check("kit/tenancy", uuid " " p "kit/internal/syscap")
         # The W3C trace context is a value: the standard library and nothing
         # else. It is a carrier, not a tracer, and its closure is the proof.
         check("kit/trace", "")
+        # The one door for shared names: stdlib and UUID, or the package that is
+        # supposed to name nothing but a slug would be holding a runner.
+        check("kit/appname", uuid)
         # Which call, from where, on which trace: a value the request leaves
         # behind, so the standard library and kit/trace and nothing else. Reading
         # net/http here would put a server in the closure of every worker.
@@ -141,8 +157,10 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # The one store kit/cache speaks to: the port package and one client, and
         # the four commands the adapter issues are asserted in its own test rather
         # than here — this line is what the provider may link, which is the only
-        # direction the compiler cannot refuse.
-        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config",
+        # direction the compiler cannot refuse. kit/appname rides in with kit/config:
+        # the config decodes its own app slug through the door, so a provider that
+        # reads configuration reaches the slug values and nothing else.
+        check("kit/cache/providers/valkey", p "kit/cache " p "kit/config " appname,
             uuid " github.com/redis/go-redis/v9 github.com/cespare/xxhash/v2 go.uber.org/atomic golang.org/x/sync golang.org/x/sys gopkg.in/yaml.v3", "provider")
         check("modules/task/domain", "")
         check("design", "")
@@ -162,7 +180,23 @@ printf '%s\n' "$metadata" | awk -F '|' '
         # presentation packages do not inherit the dependency, which is why the
         # interface is declared by the consumer instead of imported here.
         check("kit/app", kernel " " p "kit/health " p "kit/limit " p "kit/telemetry " p "migrations", web " " measurement, "web")
-        check("kit/events/transport", uuid)
+        # pkit is the composition vocabulary and the builder, so it is allowed the
+        # runner it drives and the design tokens it hands a composition, and
+        # nothing else. The falsifiable part is what is absent: no module package
+        # and no ui package appears in this closure. That is rule 6 of 0074, "core
+        # stays core", read off the link map instead of argued from a reading of
+        # the sources. pkit may not reach modules/, because a composition that
+        # imported the internals of a module could read a type the resolver never
+        # asked for, and may not reach ui/, because kit may not import ui at all,
+        # which is why AskForAccess and WorkspaceCatalog are mounts a composition
+        # hands in (pkit/skin.go). A bound a person can check with one command
+        # outlives a comment that asks for trust. Because pkit drives kit/app it
+        # links the measurement provider edge kit/app owns — the exporter, the SDK
+        # and the collector transport — which is why measurement is in this list
+        # beside web; what stays refused is a *second* package that could install a
+        # provider, and pkit installs none.
+        check("pkit", kernel " " p "kit/app " p "kit/health " p "kit/limit " p "migrations " p "design " p "pkit", web " " measurement, "web")
+        check("kit/events/transport", uuid " " appname)
         check("kit/events/providers/memory", uuid " " delivery)
         check("kit/events", outbox " " p "kit/telemetry", sql " " otel, "trace")
         check("kit/events/providers/nats", p "kit/config " delivery,

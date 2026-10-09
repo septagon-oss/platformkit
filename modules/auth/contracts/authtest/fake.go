@@ -12,12 +12,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// resetPage is the set-password screen internal.ResetPath points its link at.
+// Asked of the kernel rather than written out, because the workspace prefix is
+// the kernel's to own.
+var resetPage = httpx.Workspace("/auth/reset")
 
 // Fake is contracts.Service over two maps: the same rules, no database, no
 // transaction. A consumer that wants to test what it does for a signed-in
@@ -262,7 +268,10 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 		// The path and no query: the notice is what a person sees in the
 		// application and it is not a credential.
 		_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: "Set your password", Link: "/auth/reset",
+			// The workspace address the real service links — httpx.Workspace of the
+			// same screen the auth module mails — so a consumer that reads a link
+			// out of this fake reads the address its pages answer at.
+			Recipient: user.ID, Title: "Set your password", Link: resetPage,
 		})
 		if err != nil {
 			return err
@@ -270,27 +279,35 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 	}
 	return f.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: "Set your password",
-		Body: "Follow the link\n\nhttps://acme.example.com/auth/reset?token=" + token,
+		Body: "Follow the link\n\nhttps://acme.example.com" + resetPage + "?token=" + token,
 	})
 }
 
-// Reset mirrors internal.Service.Reset: one use, every session ended, one event.
-func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Reset mirrors internal.Service.Reset: one use, every session that existed ended,
+// one opened for the browser that spent the link, two events. The fake keeps no
+// second factors, so the account that would be left signed out has no shape here.
+func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	f.mu.Lock()
 	userID, ok := f.tokens[token]
 	delete(f.tokens, token)
 	f.mu.Unlock()
 	if !ok {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	if err := f.Users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
 	f.record(contracts.EventPasswordReset)
-	return nil
+	user, err := f.Users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := f.open(ctx, tx, user, from)
+	return session, err
 }
 
 // Roles mirrors internal.Service.Roles.

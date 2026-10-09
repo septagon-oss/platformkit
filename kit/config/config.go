@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"io/fs"
 	"maps"
 	"net"
@@ -46,6 +47,11 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// App is what this composition declares about itself to the things that run
+	// before a request does. The slug lives in nats.app, where kit/appname's
+	// grammar guards it and every name is already formed from it; what is here is
+	// the two facts a migration needs and the database cannot supply.
+	App App `yaml:"app"`
 	// Flags are this installation's feature flags, by key. They are configuration
 	// rather than a flag service because that is the honest size of what the
 	// reference application needs: one boolean somebody can throw without a
@@ -63,6 +69,23 @@ type Config struct {
 	// break it is (`old is comparable, new is not`). An installation that says
 	// nothing about flags has none, which is a nil pointer and not an empty map.
 	Flags *Flags `yaml:"flags"`
+}
+
+// App is the composition's own declaration, read at the migrating boot and put on
+// that session by kit/db (db.MigrateDeclaring) for migrations/000043_tenant_app
+// to place tenants with. It is a declaration and not a request: nothing at run
+// time consults it, and a deployment that names no slug and no hosts is the
+// single-app deployment migrating a database that has no tenants to place.
+type App struct {
+	// Hosts are the hosts this app serves its tenants at. An existing tenant
+	// joins this app only when every host it holds is one of these; a tenant with
+	// a host outside the list belongs to another composition sharing the database.
+	Hosts []string `yaml:"hosts"`
+	// TenantApps is the operator's explicit placement, tenant slug to app slug,
+	// for the tenants no host can place. Its values go through the same grammar as
+	// nats.app, and a mapping that does not cover every tenant is refused by the
+	// migration rather than completed by a guess.
+	TenantApps map[string]string `yaml:"tenant_apps"`
 }
 
 // Flags is the flags block: one boolean per key. See Config.Flags for why the
@@ -179,15 +202,41 @@ type Database struct {
 // stream and durable consumer names are shared within an account.
 type NATS struct {
 	Transport string `yaml:"transport"`
-	URL       string `yaml:"url"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	CACert    string `yaml:"ca_cert"`
+	// App is this deployment's own app slug — the name every shared name it forms
+	// carries, and the reason two apps on one broker and one database cannot read
+	// one another's work. Empty is the deployment of one app: it keeps the names
+	// this kernel formed before the app segment existed. kit/appname owns the
+	// grammar; Validate is what refuses a slug that could not be a subject token.
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	CACert   string `yaml:"ca_cert"`
+}
+
+// AppName is the slug this process serves, as the type every name two apps could
+// share is formed from. The empty setting is the deployment of one app and answers
+// the zero Name, which is what every constructor of kit/appname reads as "keep the
+// name this kernel formed before the app segment existed"; a setting that is
+// present and broken is refused. One door, so that a reader of `nats.app` and the
+// transport that builds itself from it cannot disagree about what empty means.
+func (n NATS) AppName() (appname.Name, error) {
+	if n.App == "" {
+		return "", nil
+	}
+	app, err := appname.Parse(n.App)
+	if err != nil {
+		return "", fmt.Errorf("nats.app: %w", err)
+	}
+	return app, nil
 }
 
 // Validate checks settings without opening files or connecting to the broker.
 // Diagnostics name keys without echoing endpoints or credentials.
 func (n NATS) Validate() error {
+	if _, err := n.AppName(); err != nil {
+		return err
+	}
 	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
 		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
 	}
@@ -371,6 +420,12 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// MaxImagePixels is the largest frame an uploaded image is decoded into: a
+	// file claiming more pixels is refused with the reason rather than
+	// allocated, which is the decompression bomb. Zero means the module's own
+	// default of forty megapixels; it bounds a decode and not an upload, so it
+	// says nothing about how large a file may be (max_bytes does that).
+	MaxImagePixels int `yaml:"max_image_pixels"`
 	// Retention is how long each class of file lives, keyed by the `kind` an
 	// upload carried. It is a table and not a column because a class is the
 	// product's word and a duration is the deployment's: this package parses the

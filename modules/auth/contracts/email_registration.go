@@ -38,8 +38,24 @@ func (r EmailRegistration) Checked() (EmailRegistration, error) {
 const (
 	VerificationLifetime       = 24 * time.Hour
 	VerificationResendInterval = time.Minute
-	VerifyEmailPath            = "/auth/verify-email"
 	EventVerificationRequested = "auth.verification_requested"
+
+	// VerifyEmailPath is the address a sign-up mail carries and the page that
+	// answers it: the confirmation screen, on the tenant's own public face.
+	//
+	// It is a contract and not an internal fact because two packages have to
+	// agree on it: the delivery that writes the link and the page that mounts
+	// under the address it mounted itself at, whose guard reads this name and
+	// panics at boot if the two ever part ways. internal.VerifyEmailPath is this
+	// constant, so the mail and the page cannot be moved apart by an edit that
+	// reaches one of them.
+	//
+	// It is on the public face, and not under the workspace prefix like
+	// ResetPath is, because of who opens it: a person who has just chosen a
+	// password has no session, and the workspace turns a caller with no session
+	// towards the sign-in form. A confirmation link that answers with a request
+	// to sign in is a door that closes on the person it was mailed to.
+	VerifyEmailPath = "/auth/verify-email"
 )
 
 // VerificationRequested queues a lookup without putting an account identity or
@@ -47,4 +63,9 @@ const (
 type VerificationRequested struct {
 	Email string    `json:"email"`
 	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, port and all,
+	// and empty when it named no port. The confirmation link is rendered in the
+	// worker, and the person has to come back to the address they signed up at.
+	// See ResetRequested.Served and httpx.ServedAuthority.
+	Served string `json:"served,omitempty"`
 }

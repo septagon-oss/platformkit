@@ -91,7 +91,7 @@ All are `httpx.Permission(...)` declarations in `modules/file/internal/handler.g
 None. A search of the module finds no call to `tenancy.Policy` and no `Resource.Kind`.
 Scope is the tenant, through row-level security, and it is carried in the type before it is carried in the SQL: `contracts.Scope` names one tenant, `Scope.ObjectName` is the only place a prefix and a key are joined, and both new tables (`file_holds`, `file_erasures`) are `ENABLE`+`FORCE ROW LEVEL SECURITY` under `platformkit_tenant_match(tenant_id)` (migrations/000040). The per-object rule is visibility, described under Public faces below.
 
-The one read that is not a tenant's own is the orphan sweep: a blob no row names cannot be found from the rows, so `internal/reconcile.go` lists the store under `db.Tx[System]` and asks which keys no tenant's rows claim. It is a job with the ops surface's system token (`sweep.Use(s.Ops.SystemToken())` in `module.go`), reached from no route, and its delete is the one place this module removes bytes by tenant id rather than by a `Scope` a request brought.
+The one read that is not a tenant's own is the orphan sweep: a blob no row names cannot be found from the rows, so `internal/reconcile.go` lists the store under `db.Tx[System]` and asks which keys no tenant's rows claim. It is a job with the ops surface's system token (`sweep.Use(s.Ops.SystemToken())` in `module.go`), reached from no route, and its delete is the one place this module removes bytes by tenant id rather than by a `Scope` a request brought. What the listing may name is narrower than what the adapter may read, and it is answered twice: `Local.tenantOf` answers only for bytes under this app's own segment (and for the flat directory), and `internal.foreignTenants` then drops every listed blob whose tenant's row names a different app — the directory says which store listed a byte, only `tenants.app` says whose tenant it is. A tenant whose row is gone names no app and stays its own store's to clean, which is `kit/events`' `holdsTenant` and the relay's answer for the same case. So on a volume two apps share, one app's sweep never reaches the other's, and a named app's bytes that still sit at the un-prefixed position before its `mv` are left by the deployment that names no app: they cost disk until the move, which is the way to be wrong about a directory two apps share.
 
 ### Duties the module enforces itself
 
@@ -152,3 +152,37 @@ store walks through and where a two-implementation disagreement stops being an
 argument; `Reconciler` and `Prover` as ports an implementation declines by name
 rather than by silence; and `Deps.Storage`, which is still the composition's choice —
 `file.Local(dir)` and `file.S3(cfg)` are the same call written in the same place.
+
+## Composition
+
+**Reused** — `kit/crud`'s writes and row locks, `kit/db`'s tenant transaction, this
+module's own `Storage` and `MetaFor`, `http.DetectContentType` (the sniff `Agrees`
+already runs), `kit/richtext`'s `References`, `kit/rest`'s existing richtext seam, and
+the orphan sweep. **Added** — `contracts/image.go` and the use ledger: no existing
+package decides what an image becomes or what a body of somebody else's record
+references, and both had to live in `contracts/` rather than `internal/` so that
+`filetest.Fake` runs the one implementation the SQL service runs instead of imitating
+it. **Made reusable** — `ProcessImage`, `ReadsAsImage`, `RefusesPass`, `CollapseRefs`
+and `DiffUses` as shared, tested decisions; `rest.FileUses` as the seam any module with
+a richtext field can mount and `file.RecordUses` as the shape of wiring it;
+`Upload.Image` as the door a picker or an editor knocks on; and `width`/`height` on the
+row as the server's own account of a frame, which the media library and the editor will
+lay out against instead of decoding a header to learn what an image is.
+
+## Limits
+
+The image pass decodes JPEG, PNG and the first frame of a GIF; a WebP is not an
+image this deployment decodes and is refused at an image door. It stores one
+frame: no variants and no srcset widths exist yet, so a richtext image's srcset
+names the stored frame's own width. The pixel ceiling bounds one frame, not how
+many frames are decoded at once — concurrent decodes are unbounded until the
+upload route carries a `kit/limit`. No release sweep runs, so a file whose last
+use ends keeps its bytes; when one lands, a resource left on `rest.RecordNoUses`
+becomes the mount-time refusal it is promised to be, and `Service.Delete` has to
+consult the ledger before removing a file that is being shown. Until that guard
+exists a file can be deleted under a body still showing it, and the ledger row
+left behind ends with the next rewrite of that field: an edit, or the record's
+own delete through `kit/rest`, which ends its uses and is not refused by a file
+that went first. Nothing else ends a use. The pass's refusals are
+English `error` text, not catalogue keys, so they are untranslated beside the
+`messages/` catalogue the rest of the module answers in.

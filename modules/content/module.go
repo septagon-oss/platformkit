@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 	"github.com/septagon-oss/platformkit/modules/content/internal"
 )
@@ -29,7 +30,14 @@ import (
 // and the author comes off the request's own context. It is a struct rather
 // than no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
-type Deps struct{}
+type Deps struct {
+	Files richtext.Files
+	// Uses records which file a body of this resource references, in the
+	// transaction that writes the body. Unwired, nothing is recorded and mount
+	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
+	// for as long as no sweep releases a file nobody reads.
+	Uses rest.FileUses
+}
 
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
@@ -61,7 +69,18 @@ var permissions = []module.Permission{
 
 // Module is the manifest. The implementation is constructed here, in one line,
 // and handed to the one place that uses it.
-func Module(_ Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
+	files := deps.Files
+	if files == nil {
+		files = richtext.RejectImages{}
+	}
+	uses := deps.Uses
+	if uses == nil {
+		uses = rest.RecordNoUses{}
+	}
+	resource := spec
+	resource.RichTextFiles = files
+	resource.FileUses = uses
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",
@@ -78,8 +97,8 @@ func Module(_ Deps) (contracts.Service, module.Module) {
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(s httpx.Surfaces) {
-			spec.Mount(s)
-			internal.RegisterRoutes(s, spec, svc)
+			resource.Mount(s)
+			internal.RegisterRoutes(s, resource, svc)
 		},
 	}
 }

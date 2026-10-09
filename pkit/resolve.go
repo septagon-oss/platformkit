@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
 
@@ -53,6 +54,8 @@ type plan struct {
 	manifest     map[*Module]module.Module  // what each built module describes to the kernel
 	choices      []choice                   // what Choose settled
 	last         *Module                    // the module that runs after everything
+	cfg          config.Config              // the deployment's configuration, read by Config
+	reads        map[*Module][]reflect.Type // which section each built module asked Config for
 }
 
 type choice struct {
@@ -94,6 +97,8 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 		takers:       map[reflect.Type][]*Module{},
 		impl:         map[*Module]string{},
 		manifest:     map[*Module]module.Module{},
+		cfg:          d.Config,
+		reads:        map[*Module][]reflect.Type{},
 	}
 
 	// The environment is the deployment's, not each module's: it is checked

@@ -50,7 +50,7 @@ import (
 // customer's row.
 func TestATenantCannotWriteWhichTenantIsTheInstallation(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	installed(t, conn, svc)
 
 	var operator, customer uuid.UUID
@@ -119,7 +119,7 @@ func TestATenantCannotWriteWhichTenantIsTheInstallation(t *testing.T) {
 // two different customers wrote all name that one row.
 func TestTheInstallationNamesOneOperatorTenantToAuditFrom(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	installed(t, conn, svc)
 
 	var operator uuid.UUID

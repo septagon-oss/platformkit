@@ -398,23 +398,25 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// tickDeadline is that case's own deadline. The number is main's, carried here with it (2823dd0 raised
-// it from 120 s, e21457b and 0bbf0aa are its record): the drain the bound stops — 10000 batches of 5,
-// workerBackfillBatches, each window its own transaction of about seven server round trips
-// (`runner.budgets`, `BeginTx`, `crossTenants`, `window`, the body, the progress row, the commit:
-// drainWindow) — cost that machine 117 s, and the same case measured 48.6 s alone against a Postgres
-// nobody else was migrating into, then 304.34 s at load average 38-43 on 32 cores with six other
-// rounds' whole-suite runs asking the same server, 301.35 s of that with the WAL flush taken out
-// (0bbf0aa). A whole-suite run is the condition the deadline has to survive rather than the quiet one:
-// every package in the repository is then writing into the same server through the advisory lock this
-// drain holds, and what one window costs when that happens is the server being scheduled at all, paid
-// ten thousand times. Three times the quiet 48.6 s is 145.8 s; the number below is 300 s, because the
-// failure this number reports has always been one thing — a tick with no bound of its own. This branch
-// sits on the merge base of 2026-10-03 (9666ab6), which predates all of it, and met the same death
-// here: `make check` on 2026-10-08 at 2fd7842 reported this case at 121.52 s — the deadline it had, and
-// no assertion of its own. The number is left where main left it: it exists to turn a tick that would
-// never end into a failure rather than a hang, and re-sizing it to the most loaded machine this program
-// runs on would bound nothing.
+// tickDeadline is that case's own deadline, sized by measurement. The drain the bound stops — 10000
+// batches of 5 — measured 48.6 s for that case alone against a Postgres nobody else was migrating
+// into, and the same case ran past the 120 s it used to carry during a whole-suite run on 2026-10-06.
+// A whole-suite run is the condition the deadline has to survive rather than the quiet one: every
+// package in the repository is then writing into the same server through the advisory lock this drain
+// holds. The failure this number reports is the same one it always reported: a tick with no bound of
+// its own. What the quiet measurement does not carry is the multiplier: three times 48.6 s is 145.8 s,
+// the number below is 300 s, and on 2026-10-06 this case needed 304.34 s at load average 38-43 on 32
+// cores with six other rounds' whole-suite runs asking the same Postgres, and 301.35 s again with its
+// commits not waiting for a WAL flush (`options=-c synchronous_commit=off` carried in the fixture's own
+// URLs, read back off the server as `off`). What one window costs on a machine like that is the server
+// being scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`,
+// `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times, because the
+// bound under test is the production one. The number is left where it is: it exists to turn a tick that
+// would never end into a failure rather than a hang, and re-sizing it to the most loaded machine this
+// program runs on would bound nothing. The base this branch was replayed onto measured the same bound
+// its own way (2823dd0): the drain alone cost that machine 117 s, which made the old 120 s a reading
+// of the disk rather than of the tick — the conclusion this paragraph reaches at load, from a
+// different box.
 const tickDeadline = 5 * time.Minute
 
 // The bound is reached, so the case costs a tick's worth of windows; its own context is the

@@ -43,7 +43,9 @@ func Gallery() []Example {
 		componentID, _, _ := strings.Cut(id, "/")
 		return ExampleInfo{ID: id, ComponentID: componentID, Group: group, Name: name}
 	}
-	return []Example{
+
+	entries := []Example{
+		ExampleOf(info("pk-ui.component.prose/default", "Type", "Prose / headings, lists, quote, code, table and figure"), components.ProseProps{HTML: `<h2 id="pk-opening">Opening</h2><p>Formatted <strong>body</strong> text.</p><ul><li>First<ul><li>Second<ul><li>Third</li></ul></li></ul></li></ul><blockquote><p>A quoted note.</p></blockquote><pre><code>fmt.Println(1)</code></pre><table><thead><tr><th>Day</th></tr></thead><tbody><tr><td>Monday</td></tr></tbody></table><figure data-missing-image="true"><figcaption>Image unavailable</figcaption></figure>`}, components.Prose),
 		ExampleOf(info("pk-ui.component.heading/display", "Sections", "Heading / independent size"), components.HeadingProps{Text: "A section with presence", Level: 2, Size: 1}, components.Heading),
 		ExampleOf(info("pk-ui.component.section-header/default", "Sections", "Section header"), components.SectionHeaderProps{Eyebrow: "Your workspace", Title: "Everything in its place", Description: "A shared introduction for composed pages.", Level: 2}, components.SectionHeader),
 		ExampleWithSlots(info("pk-ui.component.section/default", "Sections", "Section"), components.SectionProps{MaxWidth: "lg"}, components.SectionSlots{Header: []g.Node{components.Heading(components.HeadingProps{Text: "Latest activity", Level: 2})}, Body: []g.Node{components.Text(components.TextProps{Content: "Compose your own content inside a shared section."})}}, components.Section),
@@ -378,6 +380,17 @@ func Gallery() []Example {
 		// which renders every real screen and checks each class against the
 		// stylesheet.
 	}
+	entries = append(entries, richStateExamples()...)
+	entries = append(entries, dataListExamples()...)
+	entries = append(entries, detailPanelExamples()...)
+	entries = append(entries, timelineExamples()...)
+	entries = append(entries, workflowExamples()...)
+	entries = append(entries, commerceExamples()...)
+	entries = append(entries, planExamples()...)
+	entries = append(entries, calendarExamples()...)
+	entries = append(entries, mapExamples()...)
+	entries = append(entries, mediaExamples()...)
+	return append(entries, chartExamples()...)
 }
 
 // GalleryGroups is the groups the examples fall into, in order, so a page a

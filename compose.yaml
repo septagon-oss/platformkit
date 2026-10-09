@@ -1,9 +1,9 @@
 # Local dependencies for `make run`, `make test` and `make check`. Every published
-# port is overridable so this stack can run beside another worker's Postgres, NATS,
-# Valkey, object store or mail sink: PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT,
-# PLATFORMKIT_VALKEY_PORT, PLATFORMKIT_S3_PORT and the two mail ports,
-# PLATFORMKIT_MAIL_PORT and PLATFORMKIT_MAIL_UI_PORT. `make test` and `make check`
-# read the same variables, so overriding them once is enough.
+# port is overridable so this stack can run beside another Postgres, NATS, Valkey,
+# object store or mail catcher: PLATFORMKIT_PG_PORT, PLATFORMKIT_NATS_PORT,
+# PLATFORMKIT_VALKEY_PORT, PLATFORMKIT_S3_PORT, PLATFORMKIT_MAILPIT_SMTP_PORT and
+# PLATFORMKIT_MAILPIT_PORT. `make test` and `make check` read the same variables, so
+# overriding them once is enough.
 #
 # One further service sits behind the `telemetry` profile and so takes no part in
 # `make up`: see `make trace`.
@@ -119,30 +119,25 @@ services:
       retries: 10
 
   mailpit:
-    # The development mail sink, and only that. It accepts every message
-    # addressed to it, keeps it in the container, and answers an HTTP API about
-    # what arrived — which is what e2e/steps/inbox.ts reads to follow a
-    # verification link a real registration sent. MIT licensed, and not a relay:
-    # nothing here is meant to leave this machine.
-    #
-    # It is why `make run` can sign anybody up at all. Email registration refuses
-    # without a mail server (modules/auth answers 503 "account email delivery is
-    # unavailable"), so every local run and every walkthrough used to meet
-    # "sign-up is temporarily unavailable". A production deployment brings no
-    # mailpit: it has PLATFORMKIT_MAIL_HOST, a password and a sender, and an
-    # empty mail.host still means no mail and no email sign-up, as it always did.
-    #
-    # The patch release is pinned for the reason postgres:16 and nats:2 are:
-    # `latest` would let a day's upstream change move a gate nobody re-ran.
-    image: axllent/mailpit:v1.31.3
+    # The development mail catcher. This application mails over SMTP, and with no
+    # host configured the reference app keeps every notice and sends none of the
+    # ones marked for email (apps/platformkit/modules.go's `mailer`, and the line
+    # main logs at boot). That is a safe default for a deployment and a dead end
+    # for a development machine: an invitation link nobody can open is the failure
+    # this repository's front door work was written against, so the dev stack runs
+    # a server. Mailpit accepts on 1025 and advertises neither TLS nor
+    # authentication, which is exactly the conversation modules/notification's
+    # SMTP sender holds with a server that offers neither, and it answers over
+    # HTTP on 8025, which is where scripts/e2e.sh points the browser journeys that
+    # read a mailed link. It relays to nothing: it accepts, holds and shows.
+    image: axllent/mailpit:v1.31.3@sha256:ed9b00c609e77e99c79b93f1178255ebc271868920f2c69a8d166bd5634ed10d
     ports:
-      # SMTP for the application, and the UI/API for a person and the steps.
-      - "${PLATFORMKIT_MAIL_PORT:-1025}:1025"
-      - "${PLATFORMKIT_MAIL_UI_PORT:-8025}:8025"
+      - "${PLATFORMKIT_MAILPIT_SMTP_PORT:-1025}:1025"
+      - "${PLATFORMKIT_MAILPIT_PORT:-8025}:8025"
     healthcheck:
-      # The image's own probe subcommand, so the check is the binary and not a
-      # shell — the reason nats needed the alpine variant to probe itself.
-      test: ["CMD", "/mailpit", "readyz"]
+      # /api/v1/info is the endpoint the journeys themselves call, so the probe
+      # and the reader agree about what "the catcher is up" means.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8025/api/v1/info"]
       interval: 5s
       timeout: 5s
       retries: 10

@@ -20,11 +20,9 @@ import (
 // main converts one to the other in a line.
 type Mail = internal.Mail
 
-// SMTP is the production Mailer for a configured server. main wires it when the
-// configuration names a server, or the in-memory Mailbox when the configuration
-// asks for that sink by name, so the choice is visible in the file that composes
-// the application. Wiring neither — a nil Mailer — is a third answer, and the
-// honest one for an installation with no mail: see Deps.Mailer.
+// SMTP is the production Mailer for a configured server. main wires it, or
+// the in-memory Mailbox when there is none, so the choice is visible in the
+// file that composes the application.
 var SMTP = internal.NewSMTP
 
 // Deps is what this module cannot make for itself.
@@ -36,17 +34,6 @@ type Deps struct {
 	Recipients contracts.RecipientLookup
 
 	// Mailer sends the rendered message, in the worker.
-	//
-	// nil means this installation has no mail transport at all — the composition
-	// was given no server and did not ask for the in-memory sink either. It is a
-	// value rather than a panic because "no mail server here" is a state a real
-	// deployment is in, and the module's job in that state is to say so on the
-	// record: every notice is still written and still read in the application, and
-	// the mail each one asks for is recorded as suppressed with the reason, which
-	// is the delivery ledger's own vocabulary rather than a log line somebody has
-	// to notice. What refuses outright is a command whose promise is the message
-	// itself (modules/auth's emailed verification link): that one answers 503 and
-	// writes nothing, because there is no ledger a stranger can read.
 	Mailer contracts.Mailer
 
 	// Hosts turns the tenant an event belongs to into the host its people reach
@@ -76,7 +63,12 @@ type Deps struct {
 // must hold is a permission that decides nothing.
 var permissions []module.Permission
 
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
+	// A wiring mistake fails where it is written rather than as a nil
+	// dereference in the worker an hour later.
+	if deps.Mailer == nil {
+		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
+	}
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
 		Name:        "notification",
