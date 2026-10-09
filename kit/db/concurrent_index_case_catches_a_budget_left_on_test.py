@@ -4,8 +4,15 @@ TestTheRuleTablesAllowLegAppliesItsConcurrentIndexWhileTheDatabaseHasAReader
 says it still carries run 189's regression as the statement's own error: a
 session that keeps its lock_timeout for the autocommit statement answers
 SQLSTATE 55P03 and the leg fails. This copies the tracked tree, puts that
-regression back (stepAwayFromTheCompositionLock no longer takes the budgets
-off), and requires the case to fail on the copy.
+regression back (stepAwayFromTheCompositionLock no longer puts the lock budget
+down), and requires the case to fail on the copy.
+
+The window put *both* budgets off until b4b68ee (2026-10-08) — "a
+nontransactional file waits its own wait; the lock budget does not reach it"
+— and now puts the lock budget off while leaving the statement budget exactly
+as the deployment configured it. The regression this case reproduces is the
+lock half, which is the half that cancels a build waiting to be outlived, so
+the mutation is the same one and only its anchor moved with that commit.
 
 Supply the same PLATFORMKIT_TEST_* database URLs as for the Go package.
 """
@@ -18,7 +25,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 CASE = "TestTheRuleTablesAllowLegAppliesItsConcurrentIndexWhileTheDatabaseHasAReader"
-BUDGETS_OFF = """	if err := r.setBudgets(ctx, unbudgeted); err != nil {
+LOCK_BUDGET_OFF = """	if err := r.setBudgets(ctx, noLockBudget); err != nil {
 		return err
 	}
 	return r.releaseCompositionLock(ctx)"""
@@ -36,11 +43,11 @@ class ConcurrentIndexCaseCatchesABudgetLeftOn(unittest.TestCase):
             subprocess.run(["tar", "-x"], cwd=copy, input=pack, check=True)
             migrate = copy / "kit" / "db" / "migrate.go"
             source = migrate.read_text()
-            self.assertIn(BUDGETS_OFF, source,
-                          "the window no longer takes its budgets off where "
-                          "this case expects; re-anchor the regression")
+            self.assertIn(LOCK_BUDGET_OFF, source,
+                          "the window no longer puts its lock budget down "
+                          "where this case expects; re-anchor the regression")
             migrate.write_text(source.replace(
-                BUDGETS_OFF, "	return r.releaseCompositionLock(ctx)"))
+                LOCK_BUDGET_OFF, "	return r.releaseCompositionLock(ctx)"))
             result = subprocess.run(
                 ["go", "test", "./kit/db", "-run", "^" + CASE + "$",
                  "-count=1", "-v", "-timeout=4m"],
