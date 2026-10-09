@@ -978,6 +978,7 @@ func ShellClassLists() []style.ClassList {
 		clImageCover, clImageContain,
 		clCardHorizontal, clCardVertical,
 		clBreadcrumb, clBreadcrumbSep, clBreadcrumbCur, clBreadcrumbItem,
+		clChromeContext,
 		clSidebarRootAdmin, clSidebarRootContent, clSidebarWidthCollapsed,
 		clSidebarDisclosure, clSidebarDisclosureSummary, clSidebarDisclosurePanel,
 		clSidebarWidthExpanded, clSidebarDisabled, clSidebarInner,
