@@ -23,6 +23,7 @@ package httpx
 // diff of scripts/baselines records, not one a middleware makes in passing.
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -136,6 +137,69 @@ func sayAnswer(ctx huma.Context, got ...measured) {
 // Retry-After exists to prevent.
 func sayRetryAfter(ctx huma.Context, left time.Duration) {
 	ctx.SetHeader(RetryAfterHeader, secondsUp(left, 1))
+}
+
+// Counted is one counter's decision on the answer a handler is writing, with the
+// numbers the statement that decided it reported. It is the same three facts
+// publicWrites and the access door already put on the wire — a named quota, what is
+// left under it, what is left of the window — for the limits kit/httpx cannot see,
+// which are the ones a module counts for itself (modules/auth's caps on mailed
+// links and their redemption).
+//
+// Every field comes from the counter that decided, and that is the rule rather than a
+// formality: a policy name and quota a handler copied from its own source is a limit
+// the caller has no reason to believe, and a `RateLimit` read out of the row after
+// another request has moved it is the same guess. A handler that could not reach its
+// counter states nothing: it passes no Counted at all.
+type Counted struct {
+	// Name is how `RateLimit-Policy` names this counter, and is the counter's own,
+	// not the route's: the same cap spent by three routes is one policy on the wire.
+	Name      string
+	Quota     int
+	Window    time.Duration
+	Remaining int
+	Left      time.Duration
+	// Refused says the counter ended this answer. It decides only whether a
+	// `Retry-After` goes on: the two rate fields go on either way, because a client
+	// that hears the number only when it is refused has already spent the traffic the
+	// fields exist to save.
+	Refused bool
+}
+
+// SayCounted puts the counter that decided this answer on the answer itself.
+//
+// It is a request-scoped thing, so it says nothing at all to a caller standing outside
+// a request — a worker, a test driving a service directly — because there is no answer
+// here to state a limit on, and an allowance is the same verdict either way. A handler
+// that spends a counter before it is in a request gets the decision and no fields.
+//
+// Both fields are lists, and both are appended to rather than replaced: a public route
+// in an application that runs the anonymous-write limit is answered under two counters,
+// the kernel's and the module's, and a caller told one of them has been told a limit it
+// is not under. The order is the order they were consulted, which is the order
+// `RateLimit-Policy` asks for.
+func SayCounted(ctx context.Context, c Counted) {
+	b, held := bufferFrom(ctx)
+	if !held || c.Name == "" {
+		return
+	}
+	p := limitPolicy{name: c.Name, quota: c.Quota, window: c.Window}
+	h := b.Header()
+	h.Set(RateLimitPolicyHeader, appendItem(h.Get(RateLimitPolicyHeader), p.item()))
+	h.Set(RateLimitHeader, appendItem(h.Get(RateLimitHeader), p.answer(c.Remaining, c.Left)))
+	if c.Refused {
+		h.Set(RetryAfterHeader, secondsUp(c.Left, 1))
+	}
+}
+
+// appendItem adds one item to a Structured Fields list already on the response, and
+// is the whole of the difference between naming a second counter and overwriting the
+// first.
+func appendItem(list, item string) string {
+	if list == "" {
+		return item
+	}
+	return joinList([]string{list, item})
 }
 
 // secondsUp is a span in whole seconds, rounded up and not below the floor. A zero is

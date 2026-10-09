@@ -88,8 +88,8 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "confirm the email from the verification page itself")
 		}
-		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests, "too many account link attempts; wait and try again")
+		if err := asked(ctx, svc.MayRedeem(ctx, ClientOf(r).IP), "too many account link attempts; wait and try again"); err != nil {
+			return nil, err
 		}
 		tx, err := transaction(ctx)
 		if err != nil {
@@ -115,8 +115,8 @@ func emailRequest(ctx context.Context, svc *Service) error {
 	if svc.mail.Mailer == nil || svc.mail.Hosts == nil {
 		return problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 	}
-	if !svc.MayAsk(ctx, ClientOf(r).IP) {
-		return problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")
+	if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP), "too many account requests from this address; wait and try again"); err != nil {
+		return err
 	}
 	return nil
 }

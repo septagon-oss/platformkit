@@ -230,12 +230,12 @@ func (l *Limiter) Succeeded(ctx context.Context, email string) {
 	}
 }
 
-// Requested counts one forgotten-password request from an address and reports
-// whether it is within ResetRequests for this window. The address is the one
-// asking; the address being asked about is never counted, because a cap that
-// depended on it would answer the question the route exists not to answer.
-func (l *Limiter) Requested(ctx context.Context, ip string) bool {
-	return l.within(ctx, forgotKey(ip), ResetRequests)
+// Requested counts one forgotten-password request from an address and reports the
+// cap that decided it, with its numbers. The address is the one asking; the address
+// being asked about is never counted, because a cap that depended on it would answer
+// the question the route exists not to answer.
+func (l *Limiter) Requested(ctx context.Context, ip string) Decision {
+	return l.reserve(ctx, AccountRequestsPolicyName, forgotKey(ip), ResetRequests)
 }
 
 // VerificationMail reserves one resend per tenant/mailbox before any lookup.
@@ -247,13 +247,12 @@ func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, err
 	return allowed, err
 }
 
-// Redeemed counts one reset-token redemption from an address and reports
-// whether it is within ResetRedemptions for this window. It counts the address
-// presenting the token and never the token, for the reason Requested counts the
-// address asking: a cap that depended on what was presented would answer a
-// question about it.
-func (l *Limiter) Redeemed(ctx context.Context, ip string) bool {
-	return l.within(ctx, redeemKey(ip), ResetRedemptions)
+// Redeemed counts one reset-token redemption from an address and reports the cap
+// that decided it, with its numbers. It counts the address presenting the token and
+// never the token, for the reason Requested counts the address asking: a cap that
+// depended on what was presented would answer a question about it.
+func (l *Limiter) Redeemed(ctx context.Context, ip string) Decision {
+	return l.reserve(ctx, ResetRedemptionsPolicyName, redeemKey(ip), ResetRedemptions)
 }
 
 // Noted reports whether a refusal for this account from this address is worth
@@ -281,8 +280,10 @@ func (l *Limiter) count(ctx context.Context, key string) int {
 }
 
 // within records one event and reports whether the key is still inside max. The
-// quota the statement also reports is dropped here: this module states no limit on
-// the wire, and a number nothing reads is a number nothing keeps honest.
+// quota the statement also reports is dropped here: the caps that answer on the wire
+// keep their own reading (Requested, Redeemed), and this is the lockout's, whose
+// verdict Check reads out of a count taken separately — a number nothing reads is a
+// number nothing keeps honest.
 func (l *Limiter) within(ctx context.Context, key string, max int) bool {
 	ok, _, _, err := l.store.Reserve(ctx, key, max, AttemptWindow)
 	if err != nil {
@@ -291,6 +292,55 @@ func (l *Limiter) within(ctx context.Context, key string, max int) bool {
 	}
 	return ok
 }
+
+// reserve is within with the numbers kept: the decision, the quota left and the
+// window left, all three out of the one statement that recorded the event. They are
+// kept because a route that refuses on a counter has to say which counter it refused
+// on and for how long, and a limit stated from a reading taken after the decision is a
+// guess — which is kit/limit's reason to answer in one call rather than two.
+//
+// A store that cannot be reached gives the zero Decision, not a refusal: that is
+// Limiter's stated failure mode, and the zero value cannot be "not allowed" without
+// turning an unreachable counter table into an installation nobody can use. A handler
+// reads Decided before it states anything.
+func (l *Limiter) reserve(ctx context.Context, name, key string, max int) Decision {
+	allowed, remaining, left, err := l.store.Reserve(ctx, key, max, AttemptWindow)
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: the limiter could not be written; the attempt is allowed", "key", key, "error", err)
+		return Decision{}
+	}
+	return Decision{
+		Policy:    Policy{Name: name, Quota: max, Window: AttemptWindow},
+		Allowed:   allowed,
+		Remaining: remaining,
+		Left:      left,
+	}
+}
+
+// Policy is one cap as the response names it: a name, a quota, and the window the
+// quota is measured over.
+type Policy struct {
+	Name   string
+	Quota  int
+	Window time.Duration
+}
+
+// Decision is one cap's answer with the numbers that came out of the statement that
+// decided it. It is a type of this module rather than four return values because the
+// three numbers belong to one another — a quota stated beside a window nobody counted
+// is the mistake the port exists to prevent — and because the zero value has to mean
+// "the counter never answered", which one bool cannot say.
+type Decision struct {
+	Policy    Policy
+	Allowed   bool
+	Remaining int
+	Left      time.Duration
+}
+
+// Decided reports whether a counter answered at all. False is the store that could not
+// be reached: the attempt is allowed and the answer states no limit, because the only
+// numbers on offer are ones nobody read.
+func (d Decision) Decided() bool { return d.Policy.Name != "" }
 
 // record counts an event whose verdict is read separately, because the lockout
 // has three answers rather than two: what a failure is worth is Check's to say,
@@ -302,3 +352,15 @@ func (l *Limiter) record(ctx context.Context, key string, max int) { _ = l.withi
 // account in an audit trail. It is exported because the event that records a
 // failure has to spell the address the same way the limiter counted it.
 func EmailKey(email string) string { return strings.ToLower(strings.TrimSpace(email)) }
+
+// The two caps whose answer goes on the wire, under the names the wire gives them.
+//
+// A policy name belongs to a counter and not to a route, because `RateLimit-Policy`
+// promises to stay the same across a sequence of responses: the cap behind Requested
+// is spent by the forgotten-password route, the account-request route and the
+// verification resend alike, and a client told three names for one window has been
+// told three limits it is not under.
+const (
+	AccountRequestsPolicyName  = "auth-account-requests"
+	ResetRedemptionsPolicyName = "auth-reset-redemptions"
+)

@@ -34,8 +34,8 @@ func RegisterRegistrationRoutes(surfaces httpx.Surfaces, svc *Service) {
 			return nil, problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 		}
 		r, _ := httpx.RequestFrom(ctx)
-		if !svc.MayAsk(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests, "too many account requests from this address; wait and try again")
+		if err := asked(ctx, svc.MayAsk(ctx, ClientOf(r).IP), "too many account requests from this address; wait and try again"); err != nil {
+			return nil, err
 		}
 		candidate := user.User{Email: in.Body.Email, DisplayName: in.Body.DisplayName, Status: user.StatusInvited}
 		if err := candidate.Validate(ctx); err != nil {

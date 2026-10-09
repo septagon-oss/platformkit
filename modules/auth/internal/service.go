@@ -91,11 +91,13 @@ func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verd
 
 // MayAsk counts one forgotten-password request from an address. See
 // contracts.Service.
-func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter.Requested(ctx, ip) }
+func (s *Service) MayAsk(ctx context.Context, ip string) contracts.Decision {
+	return s.limiter.Requested(ctx, ip)
+}
 
 // MayRedeem counts one reset-token redemption from an address. See
 // contracts.Service.
-func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
+func (s *Service) MayRedeem(ctx context.Context, ip string) contracts.Decision {
 	return s.limiter.Redeemed(ctx, ip)
 }
 

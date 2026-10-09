@@ -279,18 +279,22 @@ type Service interface {
 	// delay, which is a slowdown and not a gate.
 	Precheck(ctx context.Context, email, ip string) Verdict
 
-	// MayAsk counts one forgotten-password request from an address and reports
-	// whether it is within ResetRequests for the window. It is the public
+	// MayAsk counts one forgotten-password request from an address and reports the
+	// cap that decided it: whether the attempt is within ResetRequests for the
+	// window, and the quota and window the same statement read. It is the public
 	// route's own limit, and it counts the address asking rather than the
-	// address asked about.
-	MayAsk(ctx context.Context, ip string) bool
+	// address asked about. The decision comes back with its numbers because the
+	// route answers with them — a refusal that named no counter and no wait left
+	// the caller guessing — and a caller that cannot reach its counter reports the
+	// zero Decision, which allows the attempt and states nothing.
+	MayAsk(ctx context.Context, ip string) Decision
 
 	// MayRedeem counts one reset-token redemption from an address and reports
 	// whether it is within ResetRedemptions for the window. Asking for a link
 	// was capped and spending one was not, so the token was guessable at the
 	// speed of the network — which 256 bits makes hopeless and a cap makes
 	// pointless.
-	MayRedeem(ctx context.Context, ip string) bool
+	MayRedeem(ctx context.Context, ip string) Decision
 
 	// Login verifies a password and opens a session. It answers ErrCredentials
 	// for a wrong password, an unknown address, a user who is not active and a
