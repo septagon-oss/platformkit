@@ -585,16 +585,20 @@ func TestTheDashboardCountsOnlyWhatTheCallerMayRead(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("the dashboard = %d %s", code, body)
 	}
-	// "In note" is the card's own description, which nothing else on the page
-	// renders — the sidebar's own filter is a separate claim, tested above.
-	if strings.Contains(body, "In note") {
+	// "No notes yet" is the count card's own title, which nothing else on the page
+	// renders — the sidebar's own filter is a separate claim, tested above. It is
+	// what the card says when the count is nil or zero; the sentence used to be
+	// "0 Notes" with a description naming the module, and the description went
+	// because a card that named which module stores the entity said less about the
+	// entity than a card that says how much of it there is.
+	if strings.Contains(body, "No notes yet") {
 		t.Error("the dashboard shows a card for an entity the caller may not read")
 	}
 
 	// The same page for a caller who may: the card is there, with the count its
 	// own list route would report.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "In note") || !strings.Contains(body, "0 Notes") {
+	if !strings.Contains(body, "No notes yet") {
 		t.Errorf("the dashboard hides a card the caller may read: %s", body)
 	}
 }
@@ -1075,7 +1079,7 @@ func callAnon(t *testing.T, r http.Handler, method, path, body string) (int, str
 func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// Counted nothing, opens one screen: the hand-written one, named and linked.
 	_, body, _ := call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
-	if strings.Contains(body, "In note") {
+	if strings.Contains(body, "No notes yet") {
 		t.Error("the dashboard drew a count for a caller who may not read it")
 	}
 	if !strings.Contains(body, "What your role opens") {
@@ -1100,7 +1104,7 @@ func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
 	// And the page that has counts keeps drawing them: this page's first answer
 	// is still the tenant's contents, not a panel about the caller's role.
 	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
-	if !strings.Contains(body, "0 Notes") {
+	if !strings.Contains(body, "No notes yet") {
 		t.Error("the dashboard lost its counts for a caller who may read them")
 	}
 	if strings.Contains(body, "What your role opens") || strings.Contains(body, "No screens open yet") {
