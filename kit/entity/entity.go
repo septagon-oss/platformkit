@@ -34,6 +34,37 @@ type Fallback struct {
 	Status string `json:"status"`
 }
 
+// LocaleState is one language's standing on one record: how many of its
+// translatable fields the record is reviewed in, out of how many it has.
+//
+// It carries the two numbers rather than a percentage because they answer
+// different questions: "8 of 9" names the field a translator still owes, and any
+// rounding of it names nothing. A record is authored in the tenant's own language,
+// so that language is never behind and is never answered here at all — a badge
+// saying the source is 100% translated is a badge that can never be wrong, which is
+// the same thing as a badge that says nothing.
+type LocaleState struct {
+	// Locale is the tag as this tenant declared it.
+	Locale string `json:"locale"`
+	// Reviewed counts the translatable fields with a translation a reader would
+	// be served in this language: reviewed, and measured against a source that
+	// still matches. A machine draft nobody signed off is not one.
+	Reviewed int `json:"reviewed"`
+	// Fields is how many translatable fields the record has at all.
+	Fields int `json:"fields"`
+}
+
+// Percent is the reviewed share of this record in this language — the number a
+// completeness badge wears. A record with no translatable field is complete in
+// every language by there being nothing to translate, which is the one case where
+// that answer is not a lie.
+func (l LocaleState) Percent() int {
+	if l.Fields == 0 {
+		return 100
+	}
+	return l.Reviewed * 100 / l.Fields
+}
+
 type Base struct {
 	ID        uuid.UUID  `gorm:"type:uuid;primaryKey;default:gen_random_uuid()" json:"id" required:"false" readOnly:"true"`
 	TenantID  uuid.UUID  `gorm:"type:uuid;not null" json:"-"`

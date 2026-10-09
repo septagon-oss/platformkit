@@ -26,6 +26,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -122,6 +123,21 @@ func (s Spec[T]) resource() httpx.Resource {
 			})
 			return err
 		},
+	}
+	if s.Translations != nil {
+		// The record screen of an entity whose fields a translator owes an answer
+		// to shows what is translated in each language this tenant speaks. It is the
+		// same read the public page makes — same rows, same withholding of an
+		// unreviewed draft, same staleness rule — because a screen that reported a
+		// translation no reader would be given is a screen a translator would trust
+		// and a translator who trusts it marks the wrong thing reviewed.
+		res.Locales = func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			return LocaleStates(ctx, tx, TranslationSourceOf(s), s.Translations, id)
+		}
 	}
 	if !s.offers(httpx.CRUDList) {
 		// Count goes with the list, not with the read. Its one caller outside this
