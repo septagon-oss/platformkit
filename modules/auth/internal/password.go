@@ -69,16 +69,25 @@ func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string)
 // composition with no mailer, a person who was sent a link a moment ago: none
 // of those is a failure the outbox should retry four times and dead-letter, and
 // none of them is anything a stranger gets to measure.
+//
+// Every path leaves one record too. The neutral answer at the route is one
+// request either way; the public delivery door then answers that request from the
+// record its own call caused, which it can only do if the branch that sent no link
+// still handed one message to the transport — see noLink. The person who mistyped
+// their address is still told nothing by the route; they are now also told nothing
+// by their mailbox beyond "no link was sent", which is the same fact the route
+// already leaves them to work out.
 func (s *Service) Reissue(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
 	user, err := s.users.ByEmail(ctx, tx, email)
 	switch {
 	case errors.Is(err, crud.ErrNotFound):
-		return nil
+		return s.noResetLink(ctx, tx, email)
 	case err != nil:
 		return err
 	case user.Status != usercontracts.StatusInvited && user.Status != usercontracts.StatusActive:
 		// Recovery cannot bypass a required approval or restore a deactivated account.
-		return nil
+		// The message is the one an address nobody has gets, for the reason above.
+		return s.noResetLink(ctx, tx, email)
 	}
 	return s.offer(ctx, tx, user, resetSubject, resetBody)
 }
