@@ -154,8 +154,9 @@ type Preferences interface {
 }
 
 // PreferenceService is what the person does with their own settings. Every
-// command takes the caller's transaction, and the routes that reach it are
-// scoped to the principal: there is no route in this module that sets another
+// command takes the caller's transaction, and every method — the reads as much as
+// the writes — refuses a caller whose credential names somebody other than the
+// person the call names. There is no route in this module that reaches another
 // person's preferences, which is the same fact as ListFor scoping by the caller.
 //
 // It is a separate interface rather than more methods on Service because a
@@ -175,7 +176,9 @@ type PreferenceService interface {
 	// error, and nothing is published when there was nothing to clear.
 	ClearQuietHours(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) error
 
-	// Mine is the person's own rows, blanket first, then by channel.
+	// Mine is the person's own rows, blanket first, then by channel. The recipient
+	// is the person the caller's credential names: a principal that is not them is
+	// refused rather than answered.
 	Mine(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID, q crud.Query) ([]*Preference, int64, error)
 }
 

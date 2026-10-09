@@ -60,8 +60,8 @@ func (Prefs) Quiet(_ context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) 
 	}
 }
 
-// choosing is the caller one of these three commands has to be: the person whose
-// answer it writes.
+// choosing is the caller every method of contracts.PreferenceService has to be: the
+// person whose answer it is, whether the method writes it or reads it back.
 //
 // Row-level security answers "whose tenant", which is not the question a channel
 // switch asks: two people in one tenant are two people, and one of them turning
@@ -75,12 +75,15 @@ func (Prefs) Quiet(_ context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID) 
 // before anything is read: nothing is written, nothing is published, no row comes
 // back.
 //
-// The reads (Settings, Quiet, Mine) are asked this by whoever holds them: Mine sets
-// the recipient itself, and Settings and Quiet run in the notice's own transaction,
-// where the person being asked is the person being told.
+// A page is the reason the read is asked too. Settings and Quiet belong to
+// contracts.Preferences, the notice path: the worker asks them inside the transaction
+// of the notice it is delivering, for the person it is telling, and the id is never
+// caller-supplied there. Mine belongs to the person, and its recipient is an argument,
+// so a page that lists another member's choices needs no defect but the argument —
+// which is why the answer it gives is the one the commands give.
 func choosing(ctx context.Context, recipient uuid.UUID) error {
 	if principal, ok := tenancy.PrincipalFrom(ctx); ok && principal.UserID != recipient {
-		return fmt.Errorf("%w: notification: a person's channel switches and quiet window are their own to change, and this caller is somebody else",
+		return fmt.Errorf("%w: notification: a person's channel switches, quiet window and the list of both are their own, and this caller is somebody else",
 			tenancy.ErrPolicyDenied)
 	}
 	return nil
@@ -219,9 +222,16 @@ func (Prefs) lockedQuiet(tx db.Tx[db.Tenant], recipient uuid.UUID) (*contracts.Q
 
 // Mine is the person's own rows: the blanket answers first, then intent and
 // channel, so a settings page renders the general switch above the exceptions
-// to it. The recipient is set here and not taken from the query, which is what
-// makes there be no query that lists another person's choices.
-func (Prefs) Mine(_ context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID, q crud.Query) ([]*contracts.Preference, int64, error) {
+// to it. Two things make there be no query that lists another person's choices:
+// the recipient is set here and not taken from the query, and the recipient the
+// caller names is checked against the credential the request carries, so a member
+// who hands this page somebody else's id is refused the same way they are refused a
+// switch written for that id. Row-level security cannot do it, for the reason
+// choosing gives: both people are in one tenant.
+func (Prefs) Mine(ctx context.Context, tx db.Tx[db.Tenant], recipient uuid.UUID, q crud.Query) ([]*contracts.Preference, int64, error) {
+	if err := choosing(ctx, recipient); err != nil {
+		return nil, 0, err
+	}
 	q.Filter = map[string]any{"recipientId": recipient}
 	if q.Sort == "" {
 		q.Sort = "intent"

@@ -147,9 +147,10 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 // caller's transaction under the tenant that transaction names.
 //
 // The screens and routes that reach it are the product's share of this brief:
-// every command compares the person whose id it is handed against the credential
-// the request carries (internal.choosing), so the page is a form over one's own rows
-// and there is no shape of it that reaches another person's choices.
+// every method — Mine's read as much as the three writes — compares the person
+// whose id it is handed against the credential the request carries
+// (internal.choosing), so the page is a form over one's own rows and there is no
+// shape of it that reaches another person's choices.
 func Settings() contracts.PreferenceService { return internal.Prefs{} }
 
 // Senders is the tenant's own sending address as a contracts.Senders and a

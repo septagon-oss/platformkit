@@ -254,9 +254,10 @@ func (s *Senders) locked(tx db.Tx[db.Tenant]) (*contracts.Sender, error) {
 	return &row, nil
 }
 
-// mintToken is the 32 random bytes the domain has to publish. A value an
-// attacker could guess is not a proof that the domain asked for this, so it
-// comes from crypto/rand; a failure there is the platform's, not the caller's.
+// mintToken is the 16 random bytes — 32 hex characters — the domain has to
+// publish. A value an attacker could guess is not a proof that the domain asked
+// for this, so it comes from crypto/rand; a failure there is the platform's, not
+// the caller's.
 func mintToken() (string, error) {
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {

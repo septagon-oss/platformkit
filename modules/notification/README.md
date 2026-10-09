@@ -124,7 +124,7 @@ Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.Princ
 
 `Service.MarkRead` in `modules/notification/internal/service.go` answers `crud.ErrNotFound` when the row's `RecipientID` is not the caller, so nobody learns whether another person's notification exists.
 `caller` in `handler.go` answers 403 when there is no principal or the user id is nil.
-`SetChannel`, `SetQuietHours` and `ClearQuietHours` in `internal/preferences.go` answer `tenancy.ErrPolicyDenied` when the context carries a principal who is not the recipient they name: one person's opt-out and quiet window are theirs to change, and row-level security cannot say so because both people are in one tenant.
+`SetChannel`, `SetQuietHours`, `ClearQuietHours` and `Mine` in `internal/preferences.go` answer `tenancy.ErrPolicyDenied` when the context carries a principal who is not the recipient they name: one person's opt-out, quiet window and the list of both are their own, and row-level security cannot say so because both people are in one tenant.
 The mail subscription re-reads the tenant's sender before it sends (`internal/mail.go`): a sender that went back to pending after the notice was queued is a suppressed row, not a message signed as a domain that stopped vouching for itself.
 This is a recipient check, not a separation-of-duties rule.
 
@@ -192,8 +192,12 @@ caller that names nobody (`TestTheSenderCommandsRefuseACallerWhoIsNobody`), a me
 roles do not grant `sender:manage` (`TestSenderCommandsRefuseAMemberWithoutTheManageGrant`),
 a sender deletion's audit event (`TestDeletingAPendingSenderPublishesItsAuditEvent`), a
 queued mail whose sender is no longer verified
-(`TestQueuedMailRechecksSenderVerificationBeforeDelivery`), and one recipient's choices
-against another recipient's principal (`TestPreferenceCommandsRefuseAnotherRecipientsChoices`).
+(`TestQueuedMailRechecksSenderVerificationBeforeDelivery`), one recipient's choices and
+their own list against another recipient's principal
+(`TestPreferenceCommandsRefuseAnotherRecipientsChoices`, `TestMineAnswersOnlyTheCallersOwnChoices`),
+every answer the sender commands can get from the composition's `GrantChecker`
+(`TestSenderCommandsFollowTheGrantCheckersAnswer`), and two first answers for one
+channel leaving one row (`TestTwoFirstAnswersForOneChannelLeaveOneRow`).
 `providers/gomail` runs against an in-process relay in its own package, including
 `TestConfiguredCredentialsAuthenticateBeforeMail`, which refuses a relay the credentials
 never authenticated to. What a real relay answers — DKIM as the far end verifies it, and
