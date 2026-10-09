@@ -62,14 +62,17 @@ means. Ask the two tables two questions.
   the platform has no cross-table erasure, and the product that promises to forget
   people owes that answer. The two reads are used by one public door in
   `modules/auth`; `Coverage` ignores the table.
-* **Two reads, and neither of them a listing.** `MailOutcome` answers one request
-  id, newest-first, and nothing else. `NewestMailOutcome` answers the newest record
-  the caller's own tenant holds, whichever call caused it, and exists because the
-  public door must be able to answer a call that left no record of its own without
-  saying "nothing to tell you" — which, for a route that mails only addresses where
-  somebody has an account, is the answer "no account". Neither read lists, ranges
-  over dates or reports per-address history: a door that listed a tenant's recorded
-  mails would be a list of who asked for an account.
+* **One read, by the id of the call that asked.** `MailOutcome` answers one request
+  id, newest-first, and nothing else: no listing, no range over dates, no
+  per-address history, and no method that answers "what is the transport doing" out
+  of the tenant's newest row. That last one existed until review 3 and is gone
+  because it could not be bounded: the public door in `modules/auth` answered a
+  caller whose own call had left no record with whatever refusal the tenant held
+  most recently, and an attacker who can register one mailbox its relay rejects —
+  sign-up is public — can refresh that refusal in front of every probe, which makes
+  the tenant's newest outcome an oracle for "does this address have an account".
+  A door that listed a tenant's recorded mails would be the same list by other
+  means: it would be a list of who asked for an account.
 
 ## Authorization
 

@@ -108,35 +108,37 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// The read of the delivery record, for the one question the acknowledgment
 	// cannot answer: "did the mail actually leave?" See contracts.MailLedger.
 	//
-	// Two words, not four, and neither of them about the address. An id whose
-	// mail went out is `pending`, and so is an id that left no record while the
-	// transport is taking mail — what a caller with no record of its own is
-	// answered is the newest record this tenant holds, not the absence of its
-	// own, because "no record for that id" is the shape of "nobody has this
-	// address" and this door is open to strangers. Only a refusal is `failed`:
-	// the caller's own record when its own call left one, the tenant's newest
-	// when it left none. The reason is contracts.MailReport's: a route that mails
-	// only accounts it found answers "a mail left" about exactly the addresses
-	// that have an account, so a door that said `sent`, or that answered "nothing
-	// to tell you" only to the addresses with nobody behind them, would undo the
-	// neutral acknowledgment one call later and be a list of who has an account.
+	// Two words, not four, and neither of them about the address. Only a refusal is
+	// `failed`, and only about the mail this call caused: the door reads the one
+	// record whose request_id the caller holds and nothing else. `sent` is not
+	// sayable, because a route that mails only accounts it found would otherwise
+	// answer "a mail left" about exactly the addresses that have an account
+	// (contracts.MailReport). And the tenant's newest record is not sayable either,
+	// which is what this door got wrong twice: a caller whose own call left no
+	// record was answered with whatever refusal the tenant happened to hold last,
+	// and since sign-up is public, an attacker can register a mailbox its relay
+	// rejects, refill that battery before each probe, and classify every address
+	// that has no account as one that does. The door therefore answers about its
+	// caller's record or says nothing — which is only a fair rule because every
+	// branch of a call that names an address now hands one message to the transport
+	// and records it (internal/no_link.go), so a caller is never left without a
+	// record of its own for the answer to come from.
 	//
 	// The residue, stated because it cannot be designed away: a transport that
 	// refuses one mailbox and takes another tells a fact about the address it
 	// refused, and any word about it names it. That is the bound — an outright
 	// transport failure, which is the failure this door exists to speak of, is the
-	// same answer to every caller at that moment, and a refusal aimed at one
-	// address is not. It is why the sentence the shell says is about the mail
-	// server rather than the person's account, why the bounds are in these lines
-	// (an unguessable handle the caller already holds about its own call, one
-	// indexed lookup of the same shape either way, a budget of its own in front of
-	// it — contracts.MailDeliveryAsks, not the redemption budget, which the person
-	// needs for the link they are waiting for), RLS behind it, and a response that
-	// names no address, no kind and no reason.
+	// same answer to every caller at that moment. It is why the sentence the shell
+	// says is about the mail server rather than the person's account, why the
+	// bounds are in these lines (an unguessable handle the caller already holds
+	// about its own call, one indexed primary-key-shaped lookup, a budget of its
+	// own in front of it — contracts.MailDeliveryAsks, not the redemption budget,
+	// which the person needs for the link they are waiting for), RLS behind it, and
+	// a response that names no address, no kind and no reason.
 	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
 		Summary:     "Ask whether the mail this call asked for was refused",
-		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused it, pending otherwise — and names no address, no kind and no reason. A call that left no delivery record of its own is answered from the newest record this tenant holds, because the absence of a record is itself a fact about the address: an id whose mail went out, an id nobody mailed for while mail is going out, and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record.",
+		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused that mail, pending otherwise — and names no address, no kind and no reason. Only this call's own delivery record is read: an id whose mail went out, an id that left no record and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record or an account.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusOK,
 		Errors: []int{http.StatusForbidden, http.StatusTooManyRequests},
 	}, httpx.Public(), func(ctx context.Context, in *mailDeliveryInput) (*mailDeliveryOutput, error) {
@@ -162,17 +164,13 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
-		// The caller's own record answers about its own call — including when it
-		// says `sent`, which no aggregate gets to overrule. When it left no record,
-		// the door says what the transport is doing rather than what the missing
-		// row would imply: the newest record this tenant holds, which is one fact
-		// for everybody asking at this moment, bounded to this tenant by RLS and to
-		// a page holding an id of its own call by the budget above.
-		if !known {
-			if outcome, known, err = svc.mail.Mails.NewestMailOutcome(ctx, tx); err != nil {
-				return nil, rest.Fault(err)
-			}
-		}
+		// The caller's own record, and nothing else: including when it says `sent`,
+		// which no aggregate gets to overrule, and including the record of the
+		// message that says no link was sent (internal/no_link.go), which is what a
+		// call naming an address with nobody behind it leaves behind. known=false
+		// therefore means a call this door has nothing to say about — an id nobody
+		// mailed for, an id from another tenant, an id from before the record — and
+		// it is answered with the one word every such caller gets.
 		out.Body.State = notificationcontracts.MailReport(outcome, known)
 		return out, nil
 	})
@@ -226,7 +224,7 @@ type mailDeliveryOutput struct {
 	// the addresses that have a record. A `failed` says a transport refused a
 	// mail — this call's, or, when this call left no record of its own, the newest
 	// one this tenant holds, which is the same answer for every caller at that
-	// moment.
+	// own.
 	Body struct {
 		State string `json:"state" enum:"pending,failed" doc:"Whether the mail that call asked for was refused"`
 	}

@@ -87,21 +87,16 @@ type MailLedger interface {
 	// own delivery record has not sent anything worth committing.
 	RecordMail(ctx context.Context, tx db.Tx[db.Tenant], r MailRecord) error
 
-	// MailOutcome is the newest outcome recorded for one request id, and
-	// known=false when that request left no record — which is the ordinary
-	// answer, the one every request that asked for no mail gets, and the reason
-	// a caller reads "no record" as pending rather than as "the mail did not
-	// go". An empty requestID is a caller's mistake and is refused as one: it
-	// must not read the newest untraced row in the tenant.
+	// MailOutcome is the outcome recorded for one request id, and known=false when
+	// that request left no record. It is the ledger's only read, and it takes an
+	// id: a caller learns what became of the mail its own call caused and nothing
+	// about anybody else's. An empty requestID is a caller's mistake and is refused
+	// as one — the newest untraced row in the tenant is not an answer to a question
+	// about one call, and review 3 showed why when this port also carried a
+	// newest-record read: an anonymous door that answered a caller with the tenant's
+	// latest refusal let whoever could plant one refusal classify every address that
+	// had caused no mail. See MailReport.
 	MailOutcome(ctx context.Context, tx db.Tx[db.Tenant], requestID string) (outcome string, known bool, err error)
-
-	// NewestMailOutcome is the outcome of the newest record the caller's own
-	// tenant holds, and known=false when it holds none. It answers the question a
-	// request id cannot: what is the mail transport doing to the mails this
-	// installation sends, including the one this caller asked for, whose record
-	// may not exist because nobody has the address. That is why it exists, and
-	// why it is the tenant's newest row rather than the caller's: see MailReport.
-	NewestMailOutcome(ctx context.Context, tx db.Tx[db.Tenant]) (outcome string, known bool, err error)
 }
 
 // RedactMailReason turns what a transport said into what a record may say. It
@@ -203,13 +198,15 @@ const MailStatePending = "pending"
 // a mail that did not leave, which would be the lie the record exists to
 // prevent.
 //
-// Which record is a second decision, and it belongs to the door rather than
-// here: a caller whose own call left a record is answered from it, and one whose
-// call left none is answered from the tenant's newest record
-// (MailLedger.NewestMailOutcome), because "no record" is itself the answer to
-// "does this address have an account?". A refusal is therefore sayable about the
-// transport the caller's mail went through, which is one fact for everybody
-// asking at that moment, and never about a mail the caller did not cause.
+// Which record is a second decision, and it belongs to the door rather than here:
+// the answer comes from the record the caller's own call caused, and a caller
+// whose call caused none is answered as one whose mail went — never from another
+// caller's row. That rule costs the caller something, and the routes pay it rather
+// than the door: a call that names an address and sends no link still hands one
+// message to the transport and records it under its own request id, so there is
+// always a record of the caller's own behind the answer (modules/auth/internal
+// /no_link.go). A refusal is therefore sayable about the transport the caller's own
+// mail went through, and never about a mail the caller did not cause.
 //
 // What that still cannot be closed: a transport that refuses one address and
 // takes another is a fact only about the address it refused, and any word about
