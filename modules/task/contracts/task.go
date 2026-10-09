@@ -74,31 +74,43 @@ type Task struct {
 	// struct field with no omitempty as a required request property, so without
 	// it a create would have to send the three fields the server sets itself —
 	// which is the same reasoning as crud.Base's, one level out.
-	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select" doc:"Lifecycle state" default:"open" required:"false"`
-	Priority string `json:"priority" gorm:"type:varchar(20);not null;default:'normal'" enum:"low,normal,high,critical" ui:"widget:select" doc:"Task priority" default:"normal" required:"false"`
+	Status   string `json:"status" gorm:"type:varchar(20);not null;default:'open'" enum:"open,acknowledged,in_progress,resolved,closed" ui:"widget:select" enumTones:"open=info,acknowledged=info,in_progress=warning,resolved=success,closed=neutral" doc:"Lifecycle state" default:"open" required:"false"`
+	Priority string `json:"priority" gorm:"type:varchar(20);not null;default:'normal'" enum:"low,normal,high,critical" ui:"widget:select" enumTones:"low=neutral,normal=neutral,high=warning,critical=danger" doc:"Task priority" default:"normal" required:"false"`
 
 	// Source and SourceRef link a task back to whatever raised it — a sensor, a
 	// form — without a foreign key into another module's table. That is what
 	// "cross-module dependencies are Go interfaces" costs at the database, and
 	// it is cheaper than the alternative.
-	Source    string `json:"source,omitempty" gorm:"type:varchar(40)" ui:"hide:list" doc:"Origin of the task" example:"sensor"`
-	SourceRef string `json:"sourceRef,omitempty" gorm:"type:varchar(120)" ui:"hide:list" doc:"Reference into the source system" example:"asset:chiller-2"`
+	Source    string `json:"source,omitempty" gorm:"type:varchar(40)" ui:"visibility:hidden" doc:"Origin of the task" example:"sensor"`
+	SourceRef string `json:"sourceRef,omitempty" gorm:"type:varchar(120)" ui:"visibility:hidden" doc:"Reference into the source system" example:"asset:chiller-2"`
 
 	// AssigneeID is who is responsible, nil while nobody is. Service.Assign
 	// sets it, not a PATCH: assignment moves the status and publishes.
-	AssigneeID *uuid.UUID `json:"assigneeId,omitempty" gorm:"type:uuid" ui:"widget:entity-picker" doc:"User responsible for the task" format:"uuid"`
+	//
+	// It reads "Assignee" and not "Assignee id", and it is `detail` rather than
+	// `shown`: a row of tasks that each printed a uuid would be unreadable, and the
+	// record answers who. The reference is spelled the way a resource address is
+	// spelled — `module/entity` — which is what the boot gate checks it against.
+	AssigneeID *uuid.UUID `json:"assigneeId,omitempty" gorm:"type:uuid" ui:"widget:entity-picker;label:Assignee;visibility:detail;reference:user/user" doc:"User responsible for the task" format:"uuid"`
 
 	// DueAt is the soft target and SLADeadline the contractual one: two fields,
 	// because "due soon" and "the promise is broken" are different things to
 	// show, and only the second is what SLABreached is measured against.
-	DueAt       *time.Time `json:"dueAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime" doc:"Soft target completion time"`
-	SLADeadline *time.Time `json:"slaDeadline,omitempty" gorm:"type:timestamptz" ui:"widget:datetime" doc:"Hard SLA deadline; a breach is measured against this"`
+	//
+	// "Due" and "Response due", because "Due at" and "Sla deadline" are what a
+	// schema says and not what a person asks. Both stay writable: the ordinary
+	// update is what carries a task's SLA terms, and a deadline nobody can move
+	// strands a task whose terms changed.
+	DueAt       *time.Time `json:"dueAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Due" doc:"Soft target completion time"`
+	SLADeadline *time.Time `json:"slaDeadline,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Response due" doc:"Hard SLA deadline; a breach is measured against this"`
 	// SLABreached is stored rather than derived, so that a breach stays a fact
-	// after the task is resolved and the deadline stops being in the future.
-	SLABreached bool `json:"slaBreached" gorm:"not null;default:false" ui:"widget:checkbox" doc:"True once the deadline elapsed with the task unresolved" default:"false" required:"false"`
+	// after the task is resolved and the deadline stops being in the future. It is
+	// read-only already — spec.Immutable names it — which is the editability axis,
+	// kept separate from visibility.
+	SLABreached bool `json:"slaBreached" gorm:"not null;default:false" ui:"widget:checkbox;label:Response overdue" doc:"True once the deadline elapsed with the task unresolved" default:"false" required:"false"`
 
 	// ResolvedAt and Resolution close the loop. Both are set by Service.Resolve.
-	ResolvedAt *time.Time `json:"resolvedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;hide:list" doc:"When the task was resolved" readOnly:"true"`
+	ResolvedAt *time.Time `json:"resolvedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;hide:list;label:Resolved" doc:"When the task was resolved" readOnly:"true"`
 	Resolution string     `json:"resolution,omitempty" gorm:"type:text" ui:"widget:textarea;hide:list" doc:"How the task was resolved"`
 	// Changes is what the save that published this payload moved. It is the trail's
 	// field and not the entity's: see events.Change and events.Recorder. The kernel's

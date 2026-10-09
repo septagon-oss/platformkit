@@ -70,13 +70,13 @@ func (c Command) Action(item string) string {
 // commandForms is one form per command that belongs on this screen: the ones that
 // act on a whole list are not offered beside a single row, and a command that acts
 // on a row has no meaning above a table of many.
-func commandForms(o Options, commands []Command, item string, collection bool) []g.Node {
+func commandForms(o Options, words Words, commands []Command, item string, collection bool) []g.Node {
 	out := make([]g.Node, 0, len(commands))
 	for _, c := range commands {
 		if c.Collection != collection {
 			continue
 		}
-		out = append(out, commandForm(o, c, item))
+		out = append(out, commandForm(o, words, c, item))
 	}
 	return out
 }
@@ -85,16 +85,21 @@ func commandForms(o Options, commands []Command, item string, collection bool) [
 // edit form uses, so a command that takes an assignee gets the same picker a field of
 // that type gets, and a command that takes none is a button and not a guess about what
 // it might want.
-func commandForm(o Options, c Command, item string) g.Node {
+func commandForm(o Options, words Words, c Command, item string) g.Node {
 	// The form's accessible name is the sentence the module wrote for the API, and
 	// the button is the short verb phrase: a page with three command forms on it has
 	// to tell a reader what each one is for, and three buttons reading "Assign",
 	// "Resolve", "Archive" with no prose is a guess about consequence.
-	label := c.Label
+	label := words.CommandLabel(c.Verb, c.Present)
+	if label == "" {
+		// Nothing was declared, so there is nothing to translate: the screen came
+		// to this renderer already wearing the route's Summary as its name.
+		label = c.Label
+	}
 	if c.Description != "" {
 		label = c.Description
 	}
-	warning := c.Present.Confirmation
+	warning := words.Command(c.Verb, c.Present).Confirmation
 	if warning != nil && warning.Title != "" {
 		// The author wrote the consequence, so the form asks in those words and
 		// says what it costs underneath. Without them nothing is invented here —
@@ -102,6 +107,9 @@ func commandForm(o Options, c Command, item string) g.Node {
 		label = warning.Title
 	}
 	button := c.Label
+	if declared := words.CommandLabel(c.Verb, c.Present); declared != "" {
+		button = declared
+	}
 	if warning != nil && warning.ConfirmLabel != "" {
 		button = warning.ConfirmLabel
 	}
@@ -109,8 +117,9 @@ func commandForm(o Options, c Command, item string) g.Node {
 	if warning != nil && warning.Body != "" {
 		controls = append(controls, h.P(g.Text(warning.Body)))
 	}
+	arguments := words.forCommand(c.Verb)
 	for _, f := range c.Fields {
-		controls = append(controls, Control(f, "", "", false))
+		controls = append(controls, controlWords(arguments, f, "", "", false))
 	}
 	controls = append(controls, components.Button(components.ButtonProps{
 		Label: button, Type: "submit", Size: "md",

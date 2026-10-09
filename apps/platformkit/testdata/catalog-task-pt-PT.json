@@ -1,0 +1,227 @@
+{
+  "module": "task",
+  "entity": "task",
+  "path": "/api/v1/task/tasks",
+  "fields": [
+    {
+      "name": "id",
+      "type": "uuid",
+      "readOnly": true
+    },
+    {
+      "name": "createdAt",
+      "type": "time",
+      "readOnly": true
+    },
+    {
+      "name": "updatedAt",
+      "type": "time",
+      "readOnly": true
+    },
+    {
+      "name": "title",
+      "type": "string",
+      "maxLength": 200,
+      "required": true,
+      "doc": "Short summary of the task"
+    },
+    {
+      "name": "description",
+      "type": "text",
+      "widget": "textarea",
+      "hideList": true,
+      "doc": "Detailed description of the task"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "widget": "select",
+      "enum": [
+        "open",
+        "acknowledged",
+        "in_progress",
+        "resolved",
+        "closed"
+      ],
+      "default": "open",
+      "doc": "Lifecycle state",
+      "presentation": {
+        "enumTones": {
+          "acknowledged": "info",
+          "closed": "neutral",
+          "in_progress": "warning",
+          "open": "info",
+          "resolved": "success"
+        }
+      }
+    },
+    {
+      "name": "priority",
+      "type": "string",
+      "widget": "select",
+      "enum": [
+        "low",
+        "normal",
+        "high",
+        "critical"
+      ],
+      "default": "normal",
+      "doc": "Task priority",
+      "presentation": {
+        "enumTones": {
+          "critical": "danger",
+          "high": "warning",
+          "low": "neutral",
+          "normal": "neutral"
+        }
+      }
+    },
+    {
+      "name": "source",
+      "type": "string",
+      "doc": "Origin of the task",
+      "presentation": {
+        "visibility": "hidden"
+      }
+    },
+    {
+      "name": "sourceRef",
+      "type": "string",
+      "doc": "Reference into the source system",
+      "presentation": {
+        "visibility": "hidden"
+      }
+    },
+    {
+      "name": "assigneeId",
+      "type": "uuid",
+      "widget": "entity-picker",
+      "doc": "User responsible for the task",
+      "presentation": {
+        "label": "Responsável",
+        "visibility": "detail",
+        "reference": {
+          "resource": "user/user"
+        }
+      }
+    },
+    {
+      "name": "dueAt",
+      "type": "time",
+      "widget": "datetime",
+      "doc": "Soft target completion time",
+      "presentation": {
+        "label": "Prazo"
+      }
+    },
+    {
+      "name": "slaDeadline",
+      "type": "time",
+      "widget": "datetime",
+      "doc": "Hard SLA deadline; a breach is measured against this",
+      "presentation": {
+        "label": "Resposta devida"
+      }
+    },
+    {
+      "name": "slaBreached",
+      "type": "bool",
+      "widget": "checkbox",
+      "default": "false",
+      "doc": "True once the deadline elapsed with the task unresolved",
+      "presentation": {
+        "label": "Resposta atrasada"
+      }
+    },
+    {
+      "name": "resolvedAt",
+      "type": "time",
+      "widget": "datetime",
+      "hideList": true,
+      "doc": "When the task was resolved",
+      "presentation": {
+        "label": "Resolvida"
+      }
+    },
+    {
+      "name": "resolution",
+      "type": "text",
+      "widget": "textarea",
+      "hideList": true,
+      "doc": "How the task was resolved"
+    }
+  ],
+  "presentation": {
+    "singular": "tarefa",
+    "plural": "tarefas",
+    "icon": "task",
+    "group": {
+      "key": "work",
+      "label": "Trabalho"
+    },
+    "primaryField": "title",
+    "previewField": "description",
+    "summaryFields": [
+      "priority",
+      "dueAt"
+    ],
+    "statusField": "status",
+    "sortable": [
+      "title",
+      "dueAt",
+      "updatedAt"
+    ]
+  },
+  "screen": "/app/task/tasks",
+  "immutable": [
+    "assigneeId",
+    "slaBreached",
+    "resolvedAt",
+    "resolution"
+  ],
+  "writable": true,
+  "commands": [
+    {
+      "verb": "assign",
+      "summary": "Assign a task",
+      "description": "Makes somebody responsible, and acknowledges an open task. Assigning the same person again changes nothing.",
+      "fields": [
+        {
+          "name": "assigneeId",
+          "type": "uuid",
+          "doc": "The user who becomes responsible",
+          "presentation": {
+            "label": "Responsável"
+          }
+        }
+      ],
+      "presentation": {
+        "label": "Atribuir"
+      }
+    },
+    {
+      "verb": "resolve",
+      "summary": "Resolve a task",
+      "description": "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
+      "fields": [
+        {
+          "name": "resolution",
+          "type": "string",
+          "maxLength": 4000,
+          "doc": "How the task was resolved"
+        }
+      ],
+      "presentation": {
+        "label": "Resolver"
+      }
+    },
+    {
+      "verb": "check-sla",
+      "summary": "Check a task's SLA",
+      "description": "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
+      "presentation": {
+        "system": true
+      }
+    }
+  ]
+}

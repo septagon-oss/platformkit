@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+**The reference resources read well, in the person's language.** The five
+resources the reference application shows — tasks, content, people, plans and
+site settings — now declare how they read: the words a person is shown
+(`task`/`tarefa`, `Assignee`, `Due`, `Response due`, `Response overdue`,
+`Billing period`, `Username`, `Includes`), which field names a row and which two
+say what it costs to wait, which integration columns are kept off every screen
+(`source`, `sourceRef`) and which are answered on the record and not the row
+(`assigneeId`, `author`, `roles`, `currency`, `code`), the tone of every status
+and priority, and the short verb on a command's button (`Assign`, `Resolve`,
+`Archive`, `Deactivate`) with the consequence a person reads before an archive or
+a deactivation runs. `check-sla` is declared `system`, so no screen offers a
+sweep's work while its JSON route keeps its guard unchanged. Every declared word
+is served in the request's language: `GET /api/v1/app/resources` negotiates
+`Accept-Language` through the tenant's own declared set, answers `Vary:
+Accept-Language`, and falls back to the English the code author wrote — which is
+why no layer ships an `en.json`. The key is derived from the declaration's own
+address (`hints.<module>/<entity>.<aspect>`), so no author keeps a second list of
+keys, and the resolver is one file (`ui/resource/hints.go`) read by the catalogue
+document and the generated screens alike. Two readings become honest: a declared
+`enumLabels` map is now drawn (`display.EnumWord`), and a field declared `hidden`
+is no longer offered by a generated form.
+`apps/platformkit/reference_reading_test.go` holds the golden entry in `en` and
+`pt-PT` and the rule that no hint string is ever served empty.
+
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
 presented — the words a person is shown, which field names a row, which block a
