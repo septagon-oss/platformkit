@@ -49,6 +49,8 @@
     "./modules/file/contracts.Service.Grant: added",
     "./modules/file/contracts.Service.Release: added",
     "./modules/file/contracts.Service.Retain: added",
+    "./modules/file/contracts.Service.SetUses: added",
+    "./modules/file/contracts.Service.Uses: added",
     "./modules/file/contracts.Storage.Delete: changed from func(context.Context, string) error to func(context.Context, Scope, Key) error",
     "./modules/file/contracts.Storage.Get: changed from func(context.Context, string) (io.ReadCloser, error) to func(context.Context, Scope, Key) (io.ReadCloser, error)",
     "./modules/file/contracts.Storage.Put: changed from func(context.Context, string, io.Reader, int64) error to func(context.Context, Scope, Key, io.Reader, int64, Meta) error",

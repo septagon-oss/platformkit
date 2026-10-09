@@ -425,10 +425,18 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 //
 // The context carries no deadline: the guard above needs none, because it reads the drain's
 // position rather than the clock. What a clock could not tell apart here is a tick that is slow
-// and a tick that is stuck — ten thousand windows cost this case four times as much when the gate
-// runs every other package beside it as when it runs alone — so the watch also notices the one
-// failure that leaves no position to read: a cursor that stops moving for two minutes is a run
-// open and getting nowhere, which is what the bound exists to make impossible.
+// and a tick that is stuck, and the difference between those two is a factor of six on the machine
+// this gate runs on. The same ten thousand windows measured 48.6 s for this case alone against a
+// Postgres nobody else was migrating into, and 304.34 s at load average 38-43 on 32 cores with six
+// other whole-suite runs asking the same server; the loaded reading barely moved to 301.35 s once
+// the drain's commits stopped waiting for a WAL flush, so what one window costs there is the server
+// being scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`,
+// `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times. A fixed
+// deadline sits between those two readings and bounds nothing either of them: sized for the quiet
+// one it refuses a healthy tick on a busy evening, sized for the loaded one it lets a tick that is
+// stuck stay stuck for five minutes first. So the case reads the drain's position, and the clock
+// notices only the one failure that leaves no position to read: a cursor that stops moving for two
+// minutes is a run open and getting nowhere, which is what the bound exists to make impossible.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the

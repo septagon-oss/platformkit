@@ -40,7 +40,7 @@ func TestAnErasureRecordsTheReasonItWasAskedFor(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	const reason = "data protection request 2026-0412"
 	subject, officer := uuid.New(), uuid.New()
