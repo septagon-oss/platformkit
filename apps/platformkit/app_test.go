@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -112,6 +113,18 @@ func configure(t *testing.T) (string, config.Config) {
 
 // install runs the bootstrap subcommand exactly as the README's third command
 // does: an empty database in, a tenant and an administrator out.
+//
+// A run the database declined for contention is run again, because that is what db.ErrContended
+// says instead of failing: it may be run again, with the files it applied already there to be read.
+// The decline is ordinary in this package's own database, which holds nothing but the compositions
+// this suite installs, each of them taking the composition's advisory lock and every catalog write
+// that comes with it; under -race the queue behind that lock passes the five seconds a deployment
+// chose for itself, and CI job 57346 reported one case's bootstrap as a failing test over exactly
+// that sentence. Running it again is the operator's door (apps/platformkit/migrate.go) standing in
+// the place the operator occupies here, and the production budget stays the five seconds it is, which
+// is why the configuration above names no longer patience. A migration refused for any other reason
+// ends the case as it always did, and the waiting is bounded: a decline that outlasts it is reported
+// with the count of runs it took.
 func install(t *testing.T, path string) {
 	t.Helper()
 	t.Setenv("PLATFORMKIT_BOOTSTRAP_PASSWORD", adminPass)
@@ -121,15 +134,35 @@ func install(t *testing.T, path string) {
 	// and a bootstrap that says nothing leaves the tenant in the one language its
 	// copy is written in — which is what apps/platformkit/locale_test.go and
 	// e2e/localization.spec.ts then check the other language against.
-	err := bootstrap([]string{
+	args := []string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
 		"--name", "Acme Corporation", "--admin-email", adminEmail,
 		"--language", "pt-PT",
-	})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
+	}
+	until := time.Now().Add(installContentionWait)
+	for runs := 1; ; runs++ {
+		err := bootstrap(args)
+		if err == nil {
+			return
+		}
+		if !errors.Is(err, db.ErrContended) {
+			t.Fatalf("bootstrap: %v", err)
+		}
+		if time.Now().Add(installContentionPause).After(until) {
+			t.Fatalf("bootstrap: %v (after %d runs the database declined for contention)", err, runs)
+		}
+		t.Logf("bootstrap run %d was declined for contention, so it is run again: %v", runs, err)
+		time.Sleep(installContentionPause)
 	}
 }
+
+// The two waits install's retry keeps. A declined run left what it applied behind, so the pause only
+// waits for the queue in front of it to move; the bound is what stops a suite waiting on a database
+// that has stopped answering.
+const (
+	installContentionPause = 250 * time.Millisecond
+	installContentionWait  = 2 * time.Minute
+)
 
 // start runs the application in the background and returns when it is listening.
 //
