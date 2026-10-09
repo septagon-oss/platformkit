@@ -84,8 +84,14 @@ func (b bundles) Put(ctx context.Context, tx subjectcontracts.Tx, name string, b
 	}
 	f, err := b.files.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return open, nil },
 		filecontracts.Upload{
+			// Private, a zip, and no retention class: the class is the product's token to
+			// invent (modules/file matches it against the deployment's own table and deletes
+			// nothing it does not find there), and a bundle's life is its hold, which the
+			// line below places and Mint moves. Naming a class from here would be the
+			// module naming a deployment's retention policy, and the reference application
+			// answers it with `"subject.export" is not a retention class`.
 			Name: name, ContentType: "application/zip", Visibility: filecontracts.VisibilityPrivate,
-			Kind: "subject.export", Declared: int64(len(body)), Body: bytes.NewReader(body),
+			Declared: int64(len(body)), Body: bytes.NewReader(body),
 		})
 	if err != nil {
 		return uuid.Nil, err
