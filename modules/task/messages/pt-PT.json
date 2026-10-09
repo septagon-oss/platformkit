@@ -1,4 +1,103 @@
 {
+  "hints.task/task.command.assign.field.assigneeId.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Responsável",
+    "plural": {
+      "": "Responsável"
+    }
+  },
+  "hints.task/task.command.assign.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Atribuir",
+    "plural": {
+      "": "Atribuir"
+    }
+  },
+  "hints.task/task.command.resolve.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Resolver",
+    "plural": {
+      "": "Resolver"
+    }
+  },
+  "hints.task/task.field.assigneeId.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Responsável",
+    "plural": {
+      "": "Responsável"
+    }
+  },
+  "hints.task/task.field.dueAt.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Prazo",
+    "plural": {
+      "": "Prazo"
+    }
+  },
+  "hints.task/task.field.resolvedAt.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Resolvida",
+    "plural": {
+      "": "Resolvida"
+    }
+  },
+  "hints.task/task.field.slaBreached.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Resposta atrasada",
+    "plural": {
+      "": "Resposta atrasada"
+    }
+  },
+  "hints.task/task.field.slaDeadline.label": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Resposta devida",
+    "plural": {
+      "": "Resposta devida"
+    }
+  },
+  "hints.task/task.group.work": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "Trabalho",
+    "plural": {
+      "": "Trabalho"
+    }
+  },
+  "hints.task/task.plural": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "tarefas",
+    "plural": {
+      "": "tarefas"
+    }
+  },
+  "hints.task/task.singular": {
+    "references": [
+      "modules/task/module.go"
+    ],
+    "translation": "tarefa",
+    "plural": {
+      "": "tarefa"
+    }
+  },
   "permission.task:read": {
     "references": [
       "modules/task/module.go"

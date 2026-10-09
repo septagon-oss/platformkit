@@ -1063,6 +1063,13 @@ func WorkspaceCatalogRoute[T any](describe func(ctx context.Context, resources [
 // response struct whose fields are not inside a Body is read by huma as a set of
 // headers — the document would have left the OpenAPI description and then the wire.
 type workspaceDocument[T any] struct {
+	// Vary is the header the body was negotiated with: two callers of one address
+	// holding two `Accept-Language` lines get two bodies, so a cache that stores one
+	// must key it by the other. Nothing in this build caches the response —
+	// kit/httpx answers `no-store` on every non-public surface — which is why the
+	// field is written for the next consumer rather than the last, and why it names
+	// only the header that actually changes the bytes.
+	Vary string `header:"Vary"`
 	Body *T
 }
 
@@ -1088,7 +1095,7 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 		if err != nil {
 			return nil, err
 		}
-		return &workspaceDocument[T]{Body: body}, nil
+		return &workspaceDocument[T]{Vary: "Accept-Language", Body: body}, nil
 	})
 }
 

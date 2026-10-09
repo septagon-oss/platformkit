@@ -63,3 +63,24 @@ None. No permission in `permissions` sets `Operator: true`, and `spec` sets no `
 ### Provisioning
 
 The module does not create roles. A composition grants `task:read` and `task:update` through the tenant's roles, using the auth module's roles API (see `modules/auth/README.md`). The administrator role holds the wildcard `*`, which satisfies these two keys (`docs/adr/0006-system-access-is-a-token.md`). The code does not name any other persona. To use resource decisions, pass a `tenancy.Policy` in `task.Deps.Policy`. `modules/auth/policies` has a Topaz adapter.
+
+## Composition
+
+**Reused** — the reading vocabulary `kit/entity` froze (`EntryHints`,
+`FieldHints`, `CommandHints`, `Icons`, `Tones`) declared at the three sites
+`kit/rest` already exposes (`Spec.Present`, the `ui:`/`enumLabels`/`enumTones`
+tags in `derive`'s grammar, `rest.CommandOptions.Present`), the copy machinery
+`kit/locale/providers/xtext` and `ui/page`'s `TenantPreferences`/`SelectLocale`
+for the negotiation, and `ui/resource`'s own `readable` filter for what a form
+offers. **Added** — the words themselves (this module's `Present:` literal, its
+field tags and its two command labels, with their Portuguese beside them in
+`messages/pt-PT.json`), because nothing existing could carry a fact only this
+module's author knows; and one resolution point, the derived-key resolver
+`ui/resource/hints.go`, because every other way words reached a catalogue was a
+key spelled at a call site beside a string already written. **Made reusable** —
+that resolver, the `screens.Text` seam and `screens.Localise`, the
+`display.EnumWord`/`DisplayWord` readers, a form that honours `visibility:hidden`,
+and the `hints.<module>/<entity>.<aspect>` grammar itself: any module that
+declares a reading word gets it served in the request's language with no new
+plumbing, and `apps/platformkit/reference_reading_test.go` is the pattern its
+next delivery copies.

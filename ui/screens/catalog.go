@@ -2,10 +2,19 @@ package screens
 
 import (
 	"context"
+	"slices"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/ui/resource"
 )
+
+// Text is the seam a declared reading string is resolved through — one resource's
+// words in one request's language. It is ui/resource's own seam, named here so a
+// caller of the document and the renderer of the screens hand over the same thing:
+// a page and the JSON a native shell reads must not answer one person's request in
+// two languages. See ui/resource/hints.go for the key grammar it is asked with.
+type Text = resource.Text
 
 // CatalogVersion is the shape of the document at /api/v1/app/resources — the
 // contract a shipped native shell renders from — and it is the one number in
@@ -117,11 +126,33 @@ type Command struct {
 	Presentation *CommandPresentation `json:"presentation,omitempty"`
 }
 
-// Describe is the catalog for this caller: the readable resources, in the
-// order given, each saying whether this caller may write it. The two questions
-// are the ones the closures on the resource ask — the same Authorizer, the same
-// operator rule — so the document cannot promise a screen the API would refuse.
+// Describe is the catalog for this caller in the language its author wrote it
+// in: the readable resources, in the order given, each saying whether this
+// caller may write it. The two questions are the ones the closures on the
+// resource ask — the same Authorizer, the same operator rule — so the document
+// cannot promise a screen the API would refuse.
+//
+// It is the exported entry point the signature has always carried, and it is
+// `DescribeLanguage` with no language: an installation that composes no copy
+// catalogue, and a caller that has no request to negotiate one from, are served
+// the declaration as written. A route that answers a person's request asks
+// `DescribeLanguage` — the same document, read in the caller's language.
 func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
+	return DescribeLanguage(ctx, resources, nil)
+}
+
+// DescribeLanguage is the same document read in one language: every *word* a
+// person reads — an entry's singular, a field's label, a command's
+// confirmation — is resolved through `text`, with the declared literal as the
+// fallback, which is what decision 0085's catalogue contract means by "resolved
+// server-side for the request's language". The vocabulary names (an icon, a
+// tone, a visibility, a field name) are not words and are never resolved: see
+// ui/resource/hints.go. A nil `text` is Describe.
+//
+// Each resource is copied before it is translated: the schema and the hints ride
+// on the registration, which every request reads, so writing a translated word
+// into them would let one request's Accept-Language decide the next one's screen.
+func DescribeLanguage(ctx context.Context, resources []httpx.Resource, text Text) Catalog {
 	out := Catalog{Version: CatalogVersion, Resources: []Entry{}}
 	for _, r := range resources {
 		if !r.Readable(ctx) {
@@ -130,9 +161,34 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 		// r is this loop's copy, so narrowing its commands to the ones this
 		// caller may call leaves Describe1 the pure function it is.
 		r.Commands = r.CommandsFor(ctx)
+		r = Localise(r, text)
 		out.Resources = append(out.Resources, Describe1(r, r.Writable(ctx)))
 	}
 	return out
+}
+
+// Localise is a resource with every declared word read through the seam, and the
+// same resource untouched when there is no seam to read it through. Describe
+// applies it; a caller that has a resource and no request — a golden file, a
+// shell rendering one entry — asks for it directly.
+//
+// Everything it writes is a copy. A resource is a registration, shared by every
+// request the process serves, and a translated word written into it would be one
+// request's Accept-Language deciding the next one's screen.
+func Localise(r httpx.Resource, text Text) httpx.Resource {
+	if text == nil {
+		return r
+	}
+	words := resource.WordsFor(r.Schema, text)
+	r.Present = words.Entry(r.Present)
+	r.Schema.Fields = words.Fields(r.Schema.Fields)
+	commands := slices.Clone(r.Commands)
+	for i, c := range commands {
+		commands[i].Present = words.Command(c.Verb, c.Present)
+		commands[i].Fields = words.CommandFields(c.Verb, c.Fields)
+	}
+	r.Commands = commands
+	return r
 }
 
 // Describe1 is one entry, from a resource and the answer to "may this caller
