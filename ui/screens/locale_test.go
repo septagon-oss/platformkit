@@ -45,7 +45,7 @@ func TestScreensReadTheirLabelsThroughTheRequestLocale(t *testing.T) {
 	pt := opts
 	pt.Locale = &page.Locale{Language: "pt-PT", Formatter: translations{
 		"screens.count": "%d %s registados", "screens.new": "Nova %s", "screens.edit": "Editar",
-		"screens.delete": "Eliminar", "screens.delete_this": "Eliminar esta %s", "screens.empty": "Ainda sem %ss.",
+		"screens.delete": "Eliminar", "screens.delete_this": "Eliminar esta %s", "screens.empty": "Ainda sem %s.",
 		"screens.pagination": "Paginação", "screens.breadcrumb": "Caminho",
 	}}
 	list := render(t, screens.List(resource(), pt, rows, 3*perPage, 1, "", true).Body)

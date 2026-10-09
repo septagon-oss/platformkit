@@ -1,6 +1,7 @@
 // Enhance source-rendered contracts, including fragments inserted by HTMX.
 (function () {
   const ready = new WeakSet();
+  const told = new WeakSet();
   const triggers = new WeakMap();
   const openings = new WeakMap();
   const modalRequests = new WeakMap();
@@ -183,7 +184,57 @@
     if (next !== undefined) showPhoto(gallery, next);
   }
 
+  // Times are said in the reader's own time. The server writes UTC into the datetime
+  // attribute and its own words inside the element; only the reader's machine knows the
+  // zone to read them in. Intl is in every browser this repository serves and speaks the
+  // page's own language for free, so no library is fetched, and a browser without it keeps
+  // the server's sentence rather than a blank cell.
+  const MINUTE = 60000, HOUR = 3600000, DAY = 86400000, WEEK = 7 * DAY;
+  // lang is the language the document already declares — the one the locale path picked
+  // for this request — so the same page in pt-PT is formatted in pt-PT.
+  function language() {
+    const host = document.documentElement.closest('[lang]');
+    return (host && host.lang) || undefined;
+  }
+  function said(at, style, language) {
+    if (typeof Intl === 'undefined' || typeof Intl.DateTimeFormat !== 'function') return null;
+    return new Intl.DateTimeFormat(language, style).format(at);
+  }
+  // relative is the largest unit that is at least one of itself, long style, because that
+  // reads as a sentence ("5 minutes ago"), is correct in every language Intl speaks, and
+  // needs no English-only table of short forms. Nothing on the page knows which field is a
+  // deadline, so an instant that has not happened is never counted down.
+  function relative(at, now, language) {
+    if (typeof Intl === 'undefined' || typeof Intl.RelativeTimeFormat !== 'function' || at.getTime() > now) return null;
+    const say = new Intl.RelativeTimeFormat(language, { numeric: 'auto', style: 'long' });
+    if (now - at >= DAY) return say.format(-Math.round((now - at) / DAY), 'day');
+    if (now - at >= HOUR) return say.format(-Math.round((now - at) / HOUR), 'hour');
+    return say.format(-Math.round((now - at) / MINUTE), 'minute');
+  }
+  function tellTime(el) {
+    const raw = el.getAttribute('datetime');
+    if (!raw) return;
+    const at = new Date(raw);
+    if (isNaN(at.getTime())) return; // The server's words stand for a value that is no instant.
+    const now = Date.now(), language = language();
+    // The title is the exact moment read where the person is: date, time and zone name.
+    const precise = said(at, { dateStyle: 'full', timeStyle: 'long' }, language);
+    if (precise !== null) el.title = precise;
+    // Under a week says when it happened in the words a person uses; a week or more, and
+    // anything still to come, is read as a date.
+    const words = now - at < WEEK ? relative(at, now, language) : null;
+    const text = words || said(at, { dateStyle: 'medium', timeStyle: 'short' }, language);
+    if (text !== null) el.textContent = text;
+  }
+
   function init() {
+    for (const el of document.querySelectorAll('time[datetime]')) {
+      // One pass per element: a page left open keeps the now it was read at, rather than
+      // every interval rewriting a sentence the person is in the middle of reading.
+      if (told.has(el)) continue;
+      told.add(el);
+      try { tellTime(el); } catch (error) { /* The server's sentence is already on the page. */ }
+    }
     for (const close of document.querySelectorAll('[data-alert-close]')) close.hidden = false;
     initSelections();
     for (const root of document.querySelectorAll('[data-component="quantity-input"]')) updateQuantity(root);
