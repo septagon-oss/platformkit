@@ -134,7 +134,7 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // one link per person per ResetInterval, so an address somebody types
 // repeatedly is one mail and not twenty.
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
-	if s.mail.Mailer == nil {
+	if !contracts.MailDeliverable(s.mail.Mailer) {
 		// A composition with no mailer writes no token either: a link nobody is
 		// sent is a live credential in a table for an hour, for nothing.
 		slog.WarnContext(ctx, "auth: no mailer is wired, so no set-password link was sent", "user", user.ID)

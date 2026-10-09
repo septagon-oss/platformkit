@@ -30,7 +30,7 @@ func RegisterRegistrationRoutes(surfaces httpx.Surfaces, svc *Service) {
 		Errors:     []int{http.StatusTooManyRequests, http.StatusServiceUnavailable},
 		Extensions: map[string]any{httpx.EventsExtension: []string{contracts.EventRegistrationRequested}},
 	}, httpx.Public(), func(ctx context.Context, in *registrationInput) (*doneOutput, error) {
-		if svc.mail.Mailer == nil || svc.mail.Hosts == nil {
+		if !contracts.MailDeliverable(svc.mail.Mailer) || svc.mail.Hosts == nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "account email delivery is unavailable")
 		}
 		r, _ := httpx.RequestFrom(ctx)

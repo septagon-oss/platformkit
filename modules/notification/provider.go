@@ -69,6 +69,15 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		})
 	case "mailbox":
 		mailer = NewMailbox()
+	default:
+		// The implementation named "none": this deployment sends no mail. It is a
+		// value rather than a nil so the port the module Provides always answers
+		// (apps/platformkit/composition_wiring_test.go refuses a Provided port
+		// that answers with nothing), and the value says what it is: every send
+		// answers ErrNoTransport, the delivery ledger records the notice as
+		// suppressed, and the command that would promise a link in a mailbox
+		// refuses on authcontracts.MailDeliverable before it writes anything.
+		mailer = contracts.NoTransport
 	}
 	svc, manifest := New(Deps{
 		Recipients: pkit.Get[contracts.RecipientLookup](w),

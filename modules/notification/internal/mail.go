@@ -79,7 +79,7 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			if err != nil {
 				return err
 			}
-			if mailer == nil {
+			if mailer == nil || contracts.IsNoTransport(mailer) {
 				// No transport in this installation, said on the delivery ledger
 				// rather than in a log line somebody has to notice: the notice stays
 				// and stays readable in the application, and the mail it asked for is
