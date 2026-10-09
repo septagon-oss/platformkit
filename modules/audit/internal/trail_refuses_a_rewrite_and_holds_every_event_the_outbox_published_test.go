@@ -6,8 +6,8 @@ package internal_test
 // refs/reviews/pkit-core-2026-09-29/audit_review_test.go and green. They are kept
 // recognisable — same names, same assertions, same reported failures — and the file
 // says in a comment wherever the delivery changed the world the case was written
-// against. Case 2 of the three is a settings save and so lives with the settings:
-// modules/site/internal/review_tagline_test.go.
+// against. Case 2 of the three is a settings save and so lives with the settings, in
+// modules/site/internal/a_settings_save_publishes_the_tagline_it_replaced_test.go.
 //
 // They run as the real application role through dbtest.Schema, in disposable schemas,
 // the way reproductions.log ran them.

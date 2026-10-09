@@ -14,7 +14,7 @@
 --   * The REVOKE below is what refuses the application today, in PostgreSQL's own
 --     vocabulary (SQLSTATE 42501) before any PL/pgSQL runs. It discovers its grantees
 --     from the catalog rather than naming a role, because a module may not name a role
---     (migrations/review_round2_module_schema_grants_test.go) and because the point is
+--     (migrations/module_schema_grants_test.go) and because the point is
 --     "whatever the deployment handed out, take it back", not "take it back from the
 --     one login I guessed". kit/db/migrate.go's own ledger sweep is the shape, for the
 --     same reason: an installation pins its own privileges and this file cannot know them.
