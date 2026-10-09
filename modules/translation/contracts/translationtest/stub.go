@@ -3,6 +3,7 @@ package translationtest
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"time"
@@ -28,10 +29,19 @@ type StubSource struct {
 	Entity_   string
 	FieldList []string
 	Rich      map[string]bool
+	// Rules_ is each field's own ceiling and closed set — the same two facts a
+	// mounted Spec derives from its schema tags, and the reason a machine draft
+	// can be refused over them here exactly as it is refused over them there.
+	Rules_ map[string]rest.FieldRule
 	// Rows_ is the entity's live rows, keyed by id. A row absent from it is a
 	// row that does not exist, which is how a deleted source says so.
 	Rows_ map[uuid.UUID]rest.SourceRow
 }
+
+// The title length the stub entity declares, spelled once: long enough that
+// every case but the one about the ceiling fits under it, short enough that a
+// provider's over-long answer does not.
+const stubTitleChars = 40
 
 // NewStubSource is the entity the suite runs against unless a case says
 // otherwise: a page with a plain title and a richtext body.
@@ -40,7 +50,11 @@ func NewStubSource() *StubSource {
 		Module_: "pages", Entity_: "page",
 		FieldList: []string{"body", "title"},
 		Rich:      map[string]bool{"body": true, "title": false},
-		Rows_:     map[uuid.UUID]rest.SourceRow{},
+		Rules_: map[string]rest.FieldRule{
+			"body":  {Name: "body"},
+			"title": {Name: "title", MaxChars: stubTitleChars},
+		},
+		Rows_: map[uuid.UUID]rest.SourceRow{},
 	}
 }
 
@@ -48,6 +62,9 @@ func (s *StubSource) Module() string            { return s.Module_ }
 func (s *StubSource) Entity() string            { return s.Entity_ }
 func (s *StubSource) Fields() []string          { return slices.Clone(s.FieldList) }
 func (s *StubSource) RichText() map[string]bool { return s.Rich }
+func (s *StubSource) Rules() map[string]rest.FieldRule {
+	return maps.Clone(s.Rules_)
+}
 
 // Put records one live row of the entity with the source text it now holds.
 func (s *StubSource) Put(id uuid.UUID, updatedAt time.Time, values map[string]string) {

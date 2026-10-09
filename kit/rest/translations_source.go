@@ -54,6 +54,24 @@ func (s *specSource[T]) RichText() map[string]bool {
 	return out
 }
 
+// Rules is the entity's own ceiling and closed set for each translatable field,
+// read off the same schema tags the generated form shows and the generic write
+// door enforces. Derived once per call from the schema, which is derived once
+// per type: nothing caches a copy that could go stale against a redeploy.
+func (s *specSource[T]) Rules() map[string]FieldRule {
+	out := map[string]FieldRule{}
+	for _, f := range translatableFields[T]() {
+		out[f.Name] = fieldRule(f)
+	}
+	return out
+}
+
+// fieldRule is the pair of schema facts a door that binds no body into the entity
+// has to enforce itself.
+func fieldRule(f crud.Field) FieldRule {
+	return FieldRule{Name: f.Name, MaxChars: f.MaxLength, Enum: f.Enum}
+}
+
 func (s *specSource[T]) Rows(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) ([]SourceRow, error) {
 	if len(ids) == 0 {
 		return nil, nil

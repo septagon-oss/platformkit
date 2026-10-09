@@ -334,10 +334,18 @@ func (f *Fake) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.SuggestQ
 		// nobody has read is checked against the format it will be stored in,
 		// and the fake that skipped it would pass a consumer the real service
 		// refuses. See internal.Service.Suggest.
-		if rich := f.rich(q.Module, q.Entity); rich[field] || q.RichText[field] {
-			if _, err := contracts.Hash(out, true); err != nil {
-				return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
-					crud.ErrInvalid, q.Locale, field, err)
+		rich := f.rich(q.Module, q.Entity)
+		isRich := rich[field] || q.RichText[field]
+		canonical, err := contracts.Canonical(out, isRich)
+		if err != nil {
+			return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
+				crud.ErrInvalid, q.Locale, field, err)
+		}
+		// The field's own ceiling and closed set, from the entity's rules, on the
+		// canonical text — the same rule and the same measurement as the service.
+		if rule, ok := f.rules(q.Module, q.Entity)[field]; ok {
+			if err := rule.Check(canonical); err != nil {
+				return err
 			}
 		}
 		values[field] = out
@@ -556,6 +564,16 @@ func (f *Fake) MarkOutdated(_ context.Context, tx db.Tx[db.Tenant], module, enti
 func (f *Fake) rich(module, entity string) map[string]bool {
 	if src, ok := f.sources[module+"\x00"+entity]; ok {
 		return src.RichText()
+	}
+	return nil
+}
+
+// rules is the entity's own ceiling and closed set per translatable field, which
+// is what lets the fake refuse a machine draft the real service would refuse
+// rather than saving it and letting the consumer's test pass for nothing.
+func (f *Fake) rules(module, entity string) map[string]rest.FieldRule {
+	if src, ok := f.sources[module+"\x00"+entity]; ok {
+		return src.Rules()
 	}
 	return nil
 }

@@ -468,6 +468,7 @@ func (s *Service) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.Sugge
 		return err
 	}
 	rich := src.RichText()
+	rules := src.Rules()
 	values := map[string]string{}
 	for _, field := range q.Fields {
 		text := strings.TrimSpace(q.Source[field])
@@ -499,10 +500,21 @@ func (s *Service) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.Sugge
 		// parse both the write and the read agree on, and a richtext field whose
 		// canonical form cannot be computed is a field whose staleness nothing
 		// could ever decide.
-		if rich[field] || q.RichText[field] {
-			if _, err := contracts.Hash(out, true); err != nil {
-				return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
-					crud.ErrInvalid, q.Locale, field, err)
+		isRich := rich[field] || q.RichText[field]
+		canonical, err := contracts.Canonical(out, isRich)
+		if err != nil {
+			return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
+				crud.ErrInvalid, q.Locale, field, err)
+		}
+		// The field's own ceiling and closed set, on the same canonical text the
+		// digest above is taken of: a Portuguese title runs longer than the
+		// English it came from, and a draft over the limit is a draft that cannot
+		// be published — so the machine's answer is refused under the rule the
+		// person's text is refused under, here, writing nothing. The rule is the
+		// kernel's one spelling (rest.FieldRule.Check), not a second one here.
+		if rule, ok := rules[field]; ok {
+			if err := rule.Check(canonical); err != nil {
+				return err
 			}
 		}
 		values[field] = out

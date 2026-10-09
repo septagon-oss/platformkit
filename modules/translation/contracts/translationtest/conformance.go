@@ -157,6 +157,21 @@ func (f Fixture) suggestAt(t *testing.T, id uuid.UUID, revision int64) error {
 	})
 }
 
+// suggestTitle asks the machine for the title, which is the stub entity's one
+// capped field and so the one field a provider's answer can be too long for.
+func (f Fixture) suggestTitle(t *testing.T, id uuid.UUID) error {
+	t.Helper()
+	return f.Service.Suggest(f.Ctx, f.Tx, rest.SuggestQuery{
+		Module: TestModule, Entity: TestEntity, Locale: PT, RecordID: id, Fields: []string{FieldTitle},
+		Expected: expected(0, 0), Source: f.Source.Rows_[id].Values, From: EN,
+	})
+}
+
+// overLong is a machine's answer longer than the stub entity's title ceiling and
+// shorter than any other field's — which is the whole shape of the case below:
+// the same text is too long for one field and a good draft for another.
+const overLong = "Este título é demasiado longo para um título de página"
+
 const (
 	firstParagraph  = "We build software."
 	secondParagraph = "Our office is in Lisbon."
@@ -499,6 +514,29 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			if got := f.read(t, id, false)[FieldBody].Status; got != rest.FallbackMachine {
 				t.Errorf("the second draft reports %q; a draft is unreviewed until somebody says otherwise", got)
+			}
+		},
+
+		// A machine's answer is text nobody read, and the field it would be filed
+		// under is the only thing that says how long it may be. Portuguese runs
+		// longer than the English it came from, so the ordinary case for a capped
+		// field is a draft that does not fit. It is refused under the rule the
+		// person's own text is refused under, and the same text under a field with
+		// no ceiling still saves — which is what says the ceiling refused it and
+		// not the machine.
+		"a machine draft longer than its field allows is refused and saves nothing": func(t *testing.T, f Fixture) {
+			id, _ := f.page("About us", firstParagraph, secondParagraph)
+			f.WithMachine(func(text, from, to string) (string, error) { return overLong, nil })
+			f.silent(t, "the over-long draft", func() {
+				if err := f.suggestTitle(t, id); !errors.Is(err, crud.ErrInvalid) {
+					t.Fatalf("a draft over the field's ceiling = %v, want the field's own rule to refuse it", err)
+				}
+			})
+			if rows := f.Rows(); len(rows) != 0 {
+				t.Fatalf("a draft over the field's ceiling committed %d rows; a refused write leaves none to review", len(rows))
+			}
+			if err := f.suggest(t, id); err != nil {
+				t.Fatalf("the same text under a field with no ceiling = %v, want a saved draft", err)
 			}
 		},
 

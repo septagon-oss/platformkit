@@ -46,11 +46,26 @@ var ErrNoMachine = fmt.Errorf("%w: this installation serves no machine translati
 // through goldmark would rewrite it into a list item. That is why this is not
 // simply "richtext with the extensions off".
 func Hash(text string, rich bool) (string, error) {
-	if rich {
-		return richtext.SourceHash(text)
+	canonical, err := Canonical(text, rich)
+	if err != nil {
+		return "", err
 	}
-	sum := sha256.Sum256([]byte(NormalisePlain(text)))
+	sum := sha256.Sum256([]byte(canonical))
 	return hex.EncodeToString(sum[:]), nil
+}
+
+// Canonical is the form a field's text is kept in, and the form every measure of
+// it counts: the richtext document's canonical serialisation for a richtext
+// field, the plain normalisation for everything else. It is what Hash digests,
+// and it is exported for the other measure a text is put through — is this
+// longer than the field can hold — because a ceiling counted on the text as it
+// arrived and a digest taken of the text as it is stored are two rules about two
+// different strings, which is how a draft slips past the one the other refuses.
+func Canonical(text string, rich bool) (string, error) {
+	if rich {
+		return richtext.Normalise(text)
+	}
+	return NormalisePlain(text), nil
 }
 
 // NormalisePlain is the plain-text normalisation: LF newlines, no trailing

@@ -36,6 +36,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -75,6 +76,38 @@ const (
 	OriginHuman   = "human"
 	OriginMachine = "machine"
 )
+
+// FieldRule is what one translatable field demands of any text filed under it,
+// as its own schema declares: a character ceiling (0 for a field the schema
+// caps nowhere) and, for a field with a closed set, the values it accepts (empty
+// for a field open to any text). It is the pair the generic write door enforces
+// by binding the body into the entity, spelled as a value so the two doors that
+// bind nothing — a translation body and a machine's answer — can enforce it too.
+type FieldRule struct {
+	// Name is the field's JSON name, so a refusal names what it refused.
+	Name     string
+	MaxChars int
+	Enum     []string
+}
+
+// Check is the two rules a field's schema can state on its own — its character
+// ceiling and its closed set — measured on text already in the form the field
+// stores it in, so no request, no transaction and no file port is needed to ask
+// them. The generic write doors enforce them by binding a body into the entity;
+// the two doors that bind nothing, a translation body and a machine's answer,
+// enforce them by calling this. It is exported for that second caller: the
+// translation module holds a machine's draft and has to refuse it under the
+// field's own ceiling, and a rule it spelled for itself is the rule that drifts
+// from the door's the first time either changes.
+func (r FieldRule) Check(text string) error {
+	if r.MaxChars > 0 && utf8.RuneCountInString(text) > r.MaxChars {
+		return fmt.Errorf("%w: %s is longer than its %d characters", crud.ErrInvalid, r.Name, r.MaxChars)
+	}
+	if len(r.Enum) > 0 && !slices.Contains(r.Enum, strings.TrimSpace(text)) {
+		return fmt.Errorf("%w: %s is not one of %s", crud.ErrInvalid, r.Name, strings.Join(r.Enum, ", "))
+	}
+	return nil
+}
 
 // TranslatedField is one field of one record as one locale has it.
 type TranslatedField struct {
@@ -327,6 +360,14 @@ type TranslationSource interface {
 	// hashing and splitting a paragraph belong to that format and to nothing
 	// else.
 	RichText() map[string]bool
+	// Rules answers each translatable field's own declared rules. The generic
+	// write doors get these from the schema the request body is bound into; a
+	// translation body is a map of free strings and a machine's draft is text
+	// that passed no editor at all, so whoever saves either is the only place
+	// the field's ceiling is ever consulted again. Portuguese runs longer than
+	// English: a provider that answers a 230-character title for a field capped
+	// at 200 is the ordinary case, not a contrived one.
+	Rules() map[string]FieldRule
 	// Rows answers the named records through crud under the caller's
 	// transaction, under row-level security. A record with no row is absent,
 	// which is how a deleted source says so.

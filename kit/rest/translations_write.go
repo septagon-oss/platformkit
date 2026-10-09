@@ -33,7 +33,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -300,11 +299,8 @@ func (s Spec[T]) localePatch(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 // has to refuse it.
 func (s Spec[T]) prepareTranslated(ctx context.Context, tx db.Tx[db.Tenant], f crud.Field, isRichText bool, typed string) (string, error) {
 	if !isRichText {
-		if f.MaxLength > 0 && utf8.RuneCountInString(typed) > f.MaxLength {
-			return "", fmt.Errorf("%w: %s is longer than its %d characters", crud.ErrInvalid, f.Name, f.MaxLength)
-		}
-		if len(f.Enum) > 0 && !slices.Contains(f.Enum, typed) {
-			return "", fmt.Errorf("%w: %s is not one of %s", crud.ErrInvalid, f.Name, strings.Join(f.Enum, ", "))
+		if err := fieldRule(f).Check(typed); err != nil {
+			return "", err
 		}
 		return typed, nil
 	}
