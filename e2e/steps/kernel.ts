@@ -61,10 +61,13 @@ function doorTo(next: string) {
   return `${endpoints.signInPage}?next=${encodeURIComponent(next)}`;
 }
 
-// A path compared as a path: a journey asserts where the browser stands, and a query or a
-// fragment is the page's own business, not the address's.
+// Where the browser stands once a step's own act is done. Compared as a path, because the
+// origin is the run's (a port scripts/e2e.sh chose) and a query or a fragment is the page's own
+// business. A regular expression is not enough here: `toHaveURL` matches it against the whole
+// address, so a pattern that begins with the path can only ever fail — which is how the first
+// version of this helper took gate 10 red on every sign-in, and why the comparison is a path.
 function atEnd(path: string) {
-  return new RegExp(`^${path.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\?[^#]*)?(#.*)?$`);
+  return (url: URL) => url.pathname === path;
 }
 
 // The run's own address, refused rather than guessed. A step that defaulted it would be a
@@ -149,7 +152,7 @@ export async function signIn(page: Page, next: string = endpoints.workspace) {
   await page.getByLabel('Email').fill(person.email);
   await page.getByLabel('Password').fill(person.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(atEnd(next));
+  await expect(page, `the form did not hand the person to ${next}`).toHaveURL(atEnd(next));
 }
 
 // personContext is one browser context belonging to nobody but the person who will use it,
@@ -181,7 +184,7 @@ export async function signInAs(browser: Browser, person: Person, next: string = 
   await page.getByLabel('Email').fill(person.email);
   await page.getByLabel('Password').fill(person.password);
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
-  await expect(page).toHaveURL(atEnd(next));
+  await expect(page, `the person was not landed on ${next}`).toHaveURL(atEnd(next));
   return page;
 }
 
