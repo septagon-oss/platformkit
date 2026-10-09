@@ -41,7 +41,11 @@ func VerificationSubscriptions(svc *Service) []events.Subscription {
 			ctx = WithOrigin(ctx, event)
 			found, err := svc.users.ByEmail(ctx, tx, asked.Email)
 			if errors.Is(err, crud.ErrNotFound) {
-				return nil
+				// Nobody has this address. The route said the same thing it says about
+				// an address that does, and this is the record that lets the delivery
+				// door answer the two callers identically: the message the no-account
+				// branch hands the transport is what its own answer is read from (noLink).
+				return svc.noVerificationLink(ctx, tx, asked.Email)
 			}
 			if err != nil {
 				return err
