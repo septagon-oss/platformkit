@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**A limiter whose counter is queued is not a limiter whose store is down.**
+`kit/limit` gave one two-second wall to a connection, `BEGIN`, the wait behind the
+row's own lock and `COMMIT`, and answered any of them with an error — which every
+caller of a limiter is told to fail open on. A same-key burst is one queue behind
+one row, so on a loaded runner the tail of it spent its budget waiting and was
+admitted: 75 anonymous submissions at an allowance of 60, none refused. The
+counter's transaction now names its own lock budget (`lock_timeout`, one second,
+transaction-local), so the server stops that wait and says it did, and an attempt
+that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
+whole window, and **no error**, because a refusal that travels as an error is a
+refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
+refuse with, answer `ErrBusy` rather than a number nobody read. A store that
+cannot be reached fails open exactly as ADR 0010 said, unchanged: `kit/limit/README.md`
+ow states the four outcomes and the two budgets for every composer of them.
+
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
 `admin.Module` — declaring the contracts it needs and provides, the contributions it
