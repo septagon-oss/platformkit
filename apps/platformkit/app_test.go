@@ -493,10 +493,8 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	}
 	// No password crossed the control plane: the operator chose none, and this
 	// is where one is chosen.
-	if code, body = do(t, cfg, nil, http.MethodPost, initechHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`); code != http.StatusOK {
-		t.Fatalf("the first administrator's reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, initechHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, first)+`","new":"a chosen passphrase for initech"}`)
 	boss := signIn(t, cfg, initechHost, "root@initech.localhost", "a chosen passphrase for initech")
 	// They administer their own tenant: listing its people needs user:read,
 	// which needs the admin role the invitation granted.
@@ -539,11 +537,11 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	token := tokenIn(t, link)
 
 	// The link works, once, and it is what turns an invitation into somebody
-	// who can sign in.
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	// who can sign in — asked again until the row behind it is there to be spent,
+	// because the mailbox has held the message since before the transaction that
+	// minted the credential committed.
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+token+`","new":"a chosen passphrase for grace"}`)
 	signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
 	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
 		`{"token":"`+token+`","new":"another passphrase entirely"}`); code != http.StatusUnauthorized {
@@ -982,6 +980,44 @@ func eventually(t *testing.T, what string, done func() bool) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// confirmMailboxLink redeems a confirmation link the composed mailbox is already
+// holding, and is how every case here spends a mailed credential.
+//
+// Waiting for the message is not waiting for the link. The in-memory mailbox has
+// it from the moment the transport takes the message, and the credential row
+// commits only when the delivery transaction does — a real SMTP server answers
+// first, and so does a test double. On a loaded machine that gap is wide enough to
+// read "that verification link is invalid or has expired" about a link mailed an
+// instant earlier, which is a refusal about the reader's timing rather than the
+// account. A 401 consumes nothing — the row is not there to spend — so the answer
+// is to ask again until the row is there or the tries are spent, and to fail with
+// the last answer when they are.
+func confirmMailboxLink(t *testing.T, cfg config.Config, host, link string) {
+	t.Helper()
+	redeemMailedLink(t, cfg, nil, host, "/api/v1/public/auth/verify-email", `{"token":"`+link+`"}`)
+}
+
+// redeemMailedLink is confirmMailboxLink for any route that spends a credential a
+// mail carried — the verification route and the set-password route mint their
+// tokens in different tables and are mailed by different sends, and both are read
+// out of the same mailbox by these cases.
+func redeemMailedLink(t *testing.T, cfg config.Config, client *http.Client, host, path, body string) {
+	t.Helper()
+	code, out := 0, ""
+	for attempt := 1; attempt <= 20; attempt++ {
+		code, out = do(t, cfg, client, http.MethodPost, host, path, body)
+		if code == http.StatusOK || code == http.StatusAccepted {
+			return
+		}
+		if code != http.StatusUnauthorized {
+			t.Fatalf("redeeming the mailed link at %s = %d %s", path, code, out)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatalf("redeeming the mailed link at %s = %d %s after twenty attempts, so the credential "+
+		"the mailbox was holding never became a row the server would spend", path, code, out)
 }
 
 // provision gives a tenant its own administrator, the way the bootstrap gives

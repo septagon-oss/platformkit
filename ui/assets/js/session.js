@@ -30,15 +30,50 @@
     });
   }
 
-  function announce(node, message) {
+  function announce(node, message, quietly = false) {
     if (!node) return;
     node.textContent = message;
     node.hidden = false;
     // Focus completed feedback, including a previously hidden acknowledgment;
-    // revealing an already populated live region alone may not announce it.
-    if (["alert", "status"].includes(node.getAttribute("role"))) {
+    // revealing an already populated live region alone may not announce it. A
+    // correction that arrives on its own, seconds after the person stopped
+    // waiting for the answer, is the one piece of feedback that must not move
+    // focus out from under them: the live region says it either way.
+    if (!quietly && ["alert", "status"].includes(node.getAttribute("role"))) {
       node.setAttribute("tabindex", "-1");
       node.focus();
+    }
+  }
+
+  // The acknowledgment a mailed-link form gives cannot say whether a mail left:
+  // the routes that take an address answer the same either way on purpose. The
+  // delivery record can say one thing about it — that a transport refused the
+  // mail this call asked for — and it is asked over the door beside the endpoint
+  // just posted to, with the id that call was already answered with
+  // (modules/auth/internal/email_registration.go). Two asks, spread out, because
+  // the mail leaves in a worker some time after the answer arrives. A refusal
+  // replaces the acknowledgment; everything else — a `pending` answer, a refused
+  // or unreadable answer, a lost request — leaves it standing, because "we did
+  // not learn that it failed" is not a claim that it worked.
+  async function correctForRefusedMail(response, message) {
+    let door;
+    try {
+      // Response.url is a property of the browser's fetch response, not a method.
+      door = new URL(response.url).pathname.replace(/[^/]+$/, "mail-delivery");
+    } catch { return; }
+    const requestId = response.headers.get("x-request-id");
+    if (!requestId || !local(door)) return;
+    for (const wait of [1500, 5000]) {
+      await new Promise(resolve => setTimeout(resolve, wait));
+      try {
+        const answer = await post(door, { requestId });
+        if (!answer.ok) return;
+        const said = await answer.json().catch(() => null);
+        if (said?.state === "failed") {
+          announce(message, "That email could not be sent just now. Try again, or ask your administrator to send a link.", true);
+          return;
+        }
+      } catch { return; }
     }
   }
 
@@ -107,6 +142,9 @@
             window.location.assign(next?.href || (["reset", "verify-email"].includes(kind) && local(signin)?.href) || "/");
           } else {
             announce(message, success || "If this address can receive an account email, a link will be sent. Check your inbox.");
+            if (["register", "register-password", "forgot", "resend-verification"].includes(kind)) {
+              void correctForRefusedMail(response, message);
+            }
           }
           return;
         }

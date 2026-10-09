@@ -42,6 +42,30 @@ register's number is requested channels of notices with a terminal row, and a
 mail with no notice and no `requested` half would silently narrow what that name
 means. Ask the two tables two questions.
 
+### Limits
+
+* **No retry ladder on this side.** A notice's channel that fails is retried by
+  the outbox and dead-letters; a direct send that fails is acknowledged by the
+  module that made it, so its `failed` row and its `auth.mail_failed` event commit
+  in the transaction of the attempt. That is the trade the ledger is built on — a
+  row that commits with the step it describes or not at all — and what it gives up
+  is named: a transient transport failure on a set-password or verification link is
+  final for that attempt, and the retry is the person asking again, not the queue.
+* **`sent` means "this process proved it", not "it arrived".** The row commits in
+  the transaction that minted the credential; a transaction that aborts after the
+  transport took the message leaves no `sent` row, so the table under-reports a
+  mail that really went rather than over-reporting one that did not. No `requested`
+  row exists to catch the difference, on purpose.
+* **No retention, no export, no screen.** Rows are appended and nothing in this
+  schema deletes or updates them, and the table holds a recipient address, so
+  "what happens to these rows when a person is forgotten" is unanswered here —
+  the platform has no cross-table erasure, and the product that promises to forget
+  people owes that answer. `MailOutcome` is read by one public door in
+  `modules/auth`; `Coverage` ignores the table.
+* **`MailOutcome` answers one request id and nothing else**, newest-first: no
+  listing, no date range, no per-address history. A door that listed a tenant's
+  recorded mails would be a list of who asked for an account.
+
 ## Authorization
 
 ### Permissions

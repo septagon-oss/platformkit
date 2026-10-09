@@ -258,18 +258,6 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	if err != nil {
 		return err
 	}
-	if s.notify != nil {
-		// A path, and one with no query on it: the notification module refuses
-		// an absolute link, and this one is not a credential at all.
-		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: title,
-			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
-			Link: ResetPath,
-		})
-		if err != nil {
-			return err
-		}
-	}
 	if err := s.mail.Mailer.Send(ctx, mailMessage(user.Email, title, body, base, token)); err != nil {
 		// The row goes back the way it came, and the attempt is acknowledged rather
 		// than retried: the record of a refused mail is written in this transaction,
@@ -280,8 +268,26 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		if err := restoreLink(tx, "password_tokens", user.ID, was); err != nil {
 			return err
 		}
+		// And no notice is raised beside it: the in-app copy says "the link is in
+		// the email this raised", and a committed sentence that promises a mail the
+		// transport refused is the same lie the record exists to make impossible.
+		// Before this branch's acknowledged failure the notice rolled back with the
+		// attempt; raising it after the send is what keeps that promise now.
 		return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email,
 			notificationcontracts.MailFailed, err.Error(), token, string(contracts.Hash(token)))
+	}
+	if s.notify != nil {
+		// Only now, and only because the transport took the message: a path, and one
+		// with no query on it, because the notification module refuses an absolute
+		// link and this one is not a credential at all.
+		_, err = s.notify.Notify(ctx, tx, notificationcontracts.Notice{
+			Recipient: user.ID, Title: title,
+			Body: body + "\n\nThe link is in the email this raised. It works once and stops working in an hour.",
+			Link: ResetPath,
+		})
+		if err != nil {
+			return err
+		}
 	}
 	return s.recordMail(ctx, tx, contracts.MailSetPassword, user.Email, notificationcontracts.MailSent, "")
 }

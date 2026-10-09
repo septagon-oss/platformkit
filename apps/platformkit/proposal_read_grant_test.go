@@ -35,10 +35,8 @@ func TestProposalCommandsDoNotRevealAnotherPersonsRowWithoutReadGrant(t *testing
 		}
 		return false
 	})
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for submitter"}`); code != http.StatusOK {
-		t.Fatalf("reset submitter password = %d %s", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for submitter"}`)
 	submitter := signIn(t, cfg, acmeHost, email, "a chosen passphrase for submitter")
 
 	const target = `{"subjectModule":"site","subjectEntity":"settings",` +

@@ -276,10 +276,11 @@ func TestRefusedMailIsRecordedWithoutItsCredential(t *testing.T) {
 }
 
 // TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress is the public read: the
-// id the caller was already answered with, and one of four words about it. Every
+// id the caller was already answered with, and one of two words about it. Every
 // answer has the same shape and the same status, including the ones about an id
 // that named nothing, because a door that 404s the misses is a door that lists the
-// addresses that were mailed.
+// addresses that were mailed — and a door that answers `sent` about a mailed one is
+// a door that lists the addresses that have an account.
 func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	_, conn := dbtest.Schema(t, usermodule.Migrations, notificationmodule.Migrations, auth.Migrations, audit.Migrations)
 	mailer := &verificationFailingMailer{}
@@ -314,14 +315,37 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 		_ = json.NewDecoder(res.Result().Body).Decode(&out)
 		return res.Code, out.State
 	}
-	if code, state := ask(asked); code != http.StatusOK || state != notification.MailSent {
-		t.Errorf("the request that was mailed=%d %q, want 200 sent", code, state)
+	if code, state := ask(asked); code != http.StatusOK || state != notification.MailStatePending {
+		// A mail that went is answered exactly as an id that mailed nothing, and
+		// that is the point: the routes that caused the mail answer neutrally about
+		// the address, so a door that said `sent` here would say who has an account
+		// (contracts.MailReport). The row still exists and still says `sent` — what
+		// changed is that only a refusal is public.
+		t.Errorf("the request that was mailed=%d %q, want 200 pending: a door that answers sent about "+
+			"an address undoes the neutral acknowledgment one call later", code, state)
 	}
 	if code, state := ask("22222222-2222-4222-8222-222222222222"); code != http.StatusOK || state != notification.MailStatePending {
 		t.Errorf("an id that mailed nothing=%d %q, want 200 pending", code, state)
 	}
 	if code, state := ask(""); code != http.StatusOK || state != notification.MailStatePending {
 		t.Errorf("no id at all=%d %q, want 200 pending and never somebody else's row", code, state)
+	}
+	// The one answer this door does give: a transport refused the mail this call
+	// asked for, which is the fact the person can act on and the acknowledgment
+	// cannot carry. It costs a reason in the row and says none of it out loud.
+	const refusedID = "44444444-4444-4444-8444-444444444444"
+	err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		return mailLedger().RecordMail(ctx, tx, notification.MailRecord{
+			Kind: contracts.MailSetPassword, Recipient: "refused@example.com",
+			Outcome: notification.MailFailed, Reason: "the smtp server refused the message",
+			RequestID: refusedID,
+		})
+	})
+	if err != nil {
+		t.Fatalf("record a refused mail: %v", err)
+	}
+	if code, state := ask(refusedID); code != http.StatusOK || state != notification.MailFailed {
+		t.Errorf("the request whose mail was refused=%d %q, want 200 failed", code, state)
 	}
 	// A page on another site asking is the one caller this door refuses outright.
 	// A caller with no Sec-Fetch-Site at all is not refused: kit/httpx/csrf.go
@@ -357,17 +381,28 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	// asks one at a time until the refusal comes and pins that it comes at all:
 	// the promise is the cap, not where this test's own share of it begins.
 	var code int
-	for i := 0; i < contracts.ResetRedemptions; i++ {
+	for i := 0; i < contracts.MailDeliveryAsks; i++ {
 		var state string
 		if code, state = ask(asked); code == http.StatusTooManyRequests {
 			break
 		}
-		if code != http.StatusOK || state != notification.MailSent {
-			t.Fatalf("ask %d within the cap=%d %q, want 200 sent", i+1, code, state)
+		if code != http.StatusOK || state != notification.MailStatePending {
+			t.Fatalf("ask %d within the cap=%d %q, want 200 pending", i+1, code, state)
 		}
 	}
 	if code != http.StatusTooManyRequests {
 		t.Errorf("%d further asks about a mailed request did not reach the cap of %d",
-			contracts.ResetRedemptions, contracts.ResetRedemptions)
+			contracts.MailDeliveryAsks, contracts.MailDeliveryAsks)
+	}
+
+	// And the door spent none of the budget the person needs for the link itself:
+	// a shell that polls this read while somebody waits must not be what locks them
+	// out of redeeming it. The redemption door still answers its own answer rather
+	// than 429, on the same address, immediately after the asks above.
+	res := call(t, router, "POST", "/api/v1/public/auth/verify-email", `{"token":"not-a-link"}`, func(r *http.Request) {
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+	})
+	if res.Code == http.StatusTooManyRequests {
+		t.Errorf("the delivery door exhausted the reset-redemption budget: verify-email=%d, want the link's own refusal", res.Code)
 	}
 }

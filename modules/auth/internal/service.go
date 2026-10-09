@@ -107,6 +107,14 @@ func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
 	return s.limiter.Redeemed(ctx, ip)
 }
 
+// MayAskAboutMail counts one read of a delivery record from an address. It is
+// not MayRedeem: the shell polls this read while a person waits for a link, and
+// spending the link's own budget on waiting would lock the person out of the
+// thing they are waiting for.
+func (s *Service) MayAskAboutMail(ctx context.Context, ip string) bool {
+	return s.limiter.AskedAboutMail(ctx, ip)
+}
+
 var _ contracts.Service = (*Service)(nil)
 
 // Login verifies a password and opens a session.
