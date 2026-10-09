@@ -6,6 +6,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/module"
 )
@@ -43,6 +44,12 @@ func Bootstrap(ctx context.Context, cfg config.Config, mods []module.Module, fn 
 	if err := db.MigrateWith(ctx, cfg.Database.MigrateURL, migrationBudget(cfg.Database), MigrationSources(mods)...); err != nil {
 		return err
 	}
+	// The bootstrap publishes — tenant.created, through events.PublishFor — and it
+	// does so before app.New installs the composition's catalog. An outbox row that
+	// no subscriber can receive is the failure kit/events/checkDeclared exists to
+	// refuse, so the bootstrap has to say what it can emit before it emits it, from
+	// the same manifests app.New will read a moment later.
+	events.DeclareAll(declaredEvents(mods))
 	conn, err := db.OpenWithPool(ctx, cfg.Database.URL, pool)
 	if err != nil {
 		return err
