@@ -67,10 +67,10 @@ const table = "platformkit_limits"
 
 const (
 	// budget is the whole wall one attempt may take, and it is the number
-	// docs/adr/0010 promises the caller — this much, and then an error it can
-	// fail open on. A limiter is on the path of a request that is about to be
-	// refused and must never be the thing that holds one open, so raising it to
-	// cover a queue is the wrong lever: the queue is the traffic's own length.
+	// docs/adr/0010 promises the caller — this much, and then an answer: an
+	// error to fail open on where the store replied, a refusal where it did not.
+	// A limiter is on the path of a request about to be refused and must never
+	// hold one open; the queue is the traffic's own length, not a budget to buy.
 	budget = 2 * time.Second
 
 	// queueBudget is the half of that wall given to waiting for this key's row

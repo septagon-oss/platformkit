@@ -34,7 +34,7 @@ than a race.
 
 | name | what it bounds | why that figure |
 | --- | --- | --- |
-| `budget` (2 s) | one whole attempt: a connection out of the pool, `BEGIN`, the wait for the row, `COMMIT` | ADR 0010's promise to the caller — "this much, and then an error it can fail open on". A limiter that holds a request longer than that has become the thing it exists to keep off the request, which is why raising it to cover a queue was rejected: the queue is the traffic's own length. |
+| `budget` (2 s) | one whole attempt: a connection out of the pool, `BEGIN`, the wait for the row, `COMMIT` | ADR 0010's promise to the caller — this much, and then an answer it can decide about: an error to fail open on where the store replied, a refusal where it spent the budget waiting. A limiter that holds a request longer than that has become the thing it exists to keep off the request, which is why raising it to cover a queue was rejected: the queue is the traffic's own length. |
 | `queueBudget` (1 s) | the wait for **this key's row lock** alone, written into the counter's own transaction as `lock_timeout` with `is_local = true` | The server ends that wait and says which world it ended it in (`55P03`), so the classification reads a code rather than a stopwatch. It is measured arriving at the budget and not at the wall. The wall's remaining second pays for the pool, `BEGIN` and `COMMIT`; `TestTheLimitersQueueBudgetFitsInsideItsWall` checks `queueBudget < budget` rather than trusting a comment. |
 
 `lock_timeout` bounds a wait for a **lock**, never a statement's own work, so an
@@ -66,11 +66,25 @@ Rows two and three are one answer because they are one fact about the attempt: i
 was not recorded, and there is no evidence about the window. Row four is the only
 world ADR 0010's fail-open was ever about.
 
+**Row four's action belongs to the composer, and two composers do not fail open.**
+The column above says what most of them do; handing the decision over with the
+error is the point of row four. `kit/httpx`'s ask-for-access counter (`access.go`'s
+`count`) answers an error with `503` — "An outage is never an allowance here" — and
+so does the caller of `modules/auth`'s verification-mail counter
+(`contracts/limiter.go`'s `VerificationMail`, whose own comment says a failed mail
+limiter fails closed). Both read `err` and nothing else, so rows two and three reach
+them as `ok false`: neither admits a queued attempt, and neither reads a busy
+counter as an outage. Which way a composer chooses is its own and stated by it — a
+lockout and an anonymous form fail open because closing them during maintenance
+helps nobody; an access request and a mail resend fail closed because an uncounted
+one is the thing each of them exists to stop.
+
 **A queued attempt is a refusal and carries no error, and that asymmetry is the
-cure.** Every caller in the field — `kit/httpx/public_writes.go`,
-`modules/auth/contracts/limiter.go`, a client's own anonymous-write guard — decides
-what to do about an error, and decides it by allowing the attempt. If a queued key
-answered `(false, window, ErrBusy)` all three would go on admitting the burst, and
+cure.** Most callers in the field — `kit/httpx/public_writes.go`, `modules/auth`'s
+lockout, a client's own anonymous-write guard — decide what to do about an error by
+allowing the attempt; the two that decide it the other way are named above. If a
+queued key answered `(false, window, ErrBusy)` all three would go on admitting the
+burst, and
 the rule would be one every deployment has to write for itself. `Allow` never
 returns `ErrBusy`; `Count` and `Forget` have no `ok` to refuse with, so they answer
 it and leave the number unstated rather than inventing one.
@@ -84,7 +98,12 @@ stale when it lands, and it would make one header mean two things.
 
 **The fail-open stays, and it stays only in row four.** A store that has vanished
 must not stop people signing in or filling in a form; that argument is ADR 0010's
-and nothing here weakens it. What is refused is refused *with* an answer, and
+and nothing here weakens it. *Vanished* means it answered — "I cannot serve this", a
+refused connection, a denied grant: row four. A store that answers nothing at all, a
+dial that goes nowhere or a server that has stopped replying, is row three, because
+the wall that ended the wait was this attempt's own; a request that needed that store
+fails either way, and what changed is that an attempt is no longer admitted on the
+strength of nobody answering. What is refused is refused *with* an answer, and
 nothing in this design admits an attempt silently.
 
 ## What this does not see
@@ -118,11 +137,14 @@ nothing in this design admits an attempt silently.
 
 ## Who composes it
 
-Three, all in this repository: `kit/httpx`'s public write limit
+Four, all in this repository: `kit/httpx`'s public write limit
 (`Options.WriteLimiter`, 60 anonymous submissions a minute per tenant, route and
-address), `modules/auth`'s lockout and its verification-mail counter, and
-`kit/app`'s hourly `Purge` — which is scheduled there rather than in a module
-because the table belongs to whoever holds a limiter and to nothing else.
+address), the same limiter spent a second way by `kit/httpx`'s ask-for-access counter
+(`access.go`'s `count`, per person and per permission, which answers an error with
+`503` where the write limit allows the attempt), `modules/auth`'s lockout and its
+verification-mail counter, and `kit/app`'s hourly `Purge` — which is scheduled there
+rather than in a module because the table belongs to whoever holds a limiter and to
+nothing else.
 
 `Postgres` is given a pool, not a request context, and the difference matters:
 the public write limit runs *ahead* of the middleware that puts a connection on a
