@@ -16,6 +16,7 @@ package limit
 
 import (
 	"context"
+	"database/sql/driver"
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
@@ -257,7 +258,7 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 		}
 		return fn(ctx, tx)
 	})
-	return classified(err)
+	return classified(err, detached)
 }
 
 // classified is the one place this package says which world an attempt just
@@ -265,31 +266,40 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 // fake cannot hold a different opinion about it. A wait that spent its budget is
 // a refusal — ErrBusy, which Allow carries as ok=false and nothing else — and an
 // error the store sent back is an outage, which stays the error ADR 0010 tells
-// the caller to fail open on.
-func classified(err error) error {
+// the caller to fail open on. The attempt's own context is part of that reading:
+// an error that names no server-side verdict, arriving the instant the attempt's
+// wall expired, is the wall refusing and not the store answering badly.
+func classified(err error, attempt context.Context) error {
 	if err == nil {
 		return nil
 	}
-	if waited(err) {
+	if waited(err, attempt) {
 		return fmt.Errorf("%w: %w", ErrBusy, err)
 	}
 	return fmt.Errorf("limit: %w", err)
 }
 
-// waited reports the two answers that say this attempt never got what it asked
-// for while the store is still there: the server stopped the wait for the row's
+// waited reports the answers that say this attempt never got what it asked for
+// while the store is still there: the server stopped the wait for the row's
 // lock, which is SQLSTATE 55P03 and the code lock_timeout raises, or this
 // attempt's own wall expired, which is what a store that answers nothing — and a
 // pool with nothing free, which is the same wait one level up — leaves behind.
+// A wait for a connection that expired says so only through the wall: the pool's
+// driver answers it with a bare driver.ErrBadConn and drops the deadline from
+// the error, so whose verdict this is, the wall answers rather than the text.
 // A store that is down is different in kind and in time: it answers, and it
 // answers at once, with a refused connection, a closed database, a denied
-// permission. Those keep their error, because ADR 0010 is right that the caller
-// decides about an outage and that a lockout must not close during one.
-func waited(err error) bool {
+// permission. Those keep their error while the wall still stands, because ADR
+// 0010 is right that the caller decides about an outage and that a lockout must
+// not close during one.
+func waited(err error, attempt context.Context) bool {
 	if pg, isPostgres := errors.AsType[*pgconn.PgError](err); isPostgres && pg.Code == "55P03" {
 		return true
 	}
-	return errors.Is(err, context.DeadlineExceeded)
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	return errors.Is(err, driver.ErrBadConn) && errors.Is(attempt.Err(), context.DeadlineExceeded)
 }
 
 // scoped is the key as it is stored: the tenant of the context, then the
