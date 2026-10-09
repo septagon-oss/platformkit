@@ -61,10 +61,8 @@ func TestAWriteMadeOutsideTheProposalRefusesTheApply(t *testing.T) {
 		}
 		return false
 	})
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for the decider"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for the decider"}`)
 	decider := signIn(t, cfg, acmeHost, settingsHandWriteEmail, "a chosen passphrase for the decider")
 
 	// propose is the door a change enters by, with the nil subject id the

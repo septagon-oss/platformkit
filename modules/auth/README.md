@@ -53,7 +53,7 @@ None. The code searched shows no use of `tenancy.Policy` in this module. Role wr
 
 ### Public faces
 
-Public routes are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of four words (`pending`, `sent`, `suppressed`, `failed`), never a recipient, a kind or a reason, and a call that left no record is answered exactly as one from another tenant is. Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset, verify and the delivery read, and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
+Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of **two** words — `failed` when a transport refused the mail that call caused, `pending` for everything else, including a record that says the mail went out. It names no recipient, no kind and no reason, a call that left no record is answered exactly as one from another tenant is, and a call whose mail went is answered exactly as one that mailed nothing, because `sent` about an address is a statement about who has an account here (`contracts.MailReport` is that refusal, and `TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne` is its proof). Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, `AskedAboutMail` for the delivery read — its own budget rather than the redemption one, because the shell polls the read while a person waits for a link and must not spend the link's use on waiting — and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
 
 ### The operator boundary
 
@@ -84,6 +84,84 @@ a user id and no list can name a session by one. **Made reusable:**
 provider cache keyed by issuer rather than by tenant, so two tenants sharing a
 door discover it once; and the discovery-port shape itself — a module that asks
 its composition per request instead of holding a client it resolved at boot.
+
+For the mail record: **Reused** — `internal.record`'s raw-SQL write shape, and
+`verificationLock`'s advisory lock: `offer` takes the same
+`pg_advisory_xact_lock` over `auth/password/<tenant>/<user>` before `recent()`, so
+two reset requests for one person mail one link. The RLS pattern of `000027`,
+`served.go`'s "a fact from the event, needed two frames later" slot (now
+`WithOrigin`/`originOf`, carrying the delivered event's `RequestID` and
+`Traceparent` down to the row that names the call), `contracts.EmailKey` for the
+recipient, and `modules/audit`'s `SubscribeAll`, which puts `auth.mail_failed` on
+the trail with nothing registered anywhere to make that true. **Added** —
+`contracts.MailLedger`, which nothing carried because the two direct sends wrote
+nothing down at all, the `Mails` port on `auth.Deps`, the `auth.mail_failed` event,
+`contracts.Limiter.AskedAboutMail`, and the door. **Made reusable:**
+`contracts.RedactMailReason` and `contracts.MailReport` live in the notification
+module's `contracts/` rather than here, so a second module that mails outside a
+notice records it and answers about it the same way instead of inventing a scrubber
+of its own.
+
+## The record a mail leaves
+
+Two mails go out of this module with no notice behind them — a set-password
+link (`contracts.MailSetPassword`, from a reset request and from an invitation)
+and a verification link (`contracts.MailVerification`, from sign-up and from
+resend). They are recorded in the notification module's `direct_mail_deliveries`
+through `contracts.MailLedger`, in the transaction of the send itself: one row
+per attempt saying who it went to, which kind it was, whether the transport took
+it (`sent`), refused it (`failed`, with the transport's words redacted by
+`contracts.RedactMailReason`) or had nothing to send it through (`suppressed`).
+A refusal is acknowledged rather than retried, which is what lets its row commit,
+and it leaves no credential behind: `offer` restores the token row it found and
+raises no notice, because the in-app copy says "the link is in the email this
+raised" and that sentence is owed only by a record that says `sent`
+(`TestARefusedSetPasswordMailLeavesNoNoticeThatSaysItWasSent`). The failure is on
+the trail as `auth.mail_failed`, in the same transaction as the row.
+
+Nothing in a record is a secret: no subject, body, link, token or hash —
+`TestMailedLinkIsRecordedAndCarriesNoCredential` and
+`TestRefusedMailIsRecordedWithoutItsCredential` scan every base table in the
+schema, enumerated from `information_schema` rather than named, for the token and
+its hash.
+
+The one public read is `POST /api/v1/public/auth/mail-delivery` — see
+[Public faces](#public-faces) for its two words and the reason `sent` is not one
+of them. `ui/assets/js/session.js` asks it after a register, forgot or
+resend-verification form is accepted, with the `X-Request-ID` that call was
+answered with, and replaces the neutral acknowledgment with "that email could not
+be sent" only on `failed`; the neutral sentence itself never claims a mail left.
+
+### Limits
+
+* **The door answers two words, and `sent` is not one of them.** A route that
+  mails only addresses where somebody has an account cannot report whether a mail
+  left without reporting who has an account, so a person who asks is told that
+  nothing failed rather than that something succeeded. The brief's "'we sent you a
+  link' is said only when a record says `sent`" is honoured by the shell never
+  claiming it at all; showing `sent` to anybody is a product decision, and the
+  only shape that keeps both promises is mailing on every branch, which sends mail
+  to addresses nobody has.
+* **What the door still leaks, exactly.** An id that answers `failed` necessarily
+  had somebody to mail, so while a transport is refusing, the door distinguishes
+  an address that has an account from one that does not. That is the whole of the residual, and it is
+  the probability that a transport refuses rather than the probability that an
+  account exists. Nothing about this is airtight while the transport is down, and
+  while it is down the deployment is telling the truth to whoever asks.
+* **A transient SMTP failure is now final for a direct send.** No outbox retry
+  ladder and no dead letter: the row, the `auth.mail_failed` event and a person who
+  can be told are what took the ladder's place. An invitation whose mail the server
+  refused is therefore not retried, and the inviter learns nothing beyond the trail
+  until the invited person's own screen says so.
+* **No retention or erasure** of the addresses these rows record — the same
+  question `notification_deliveries` lives with, and the product's to answer
+  ([§ Object scope](#object-scope)).
+* **The closed-port journey is not run by `make e2e`.** The harness boots one
+  application whose mail points at the catcher; no second application boots with
+  `mail.port` naming a port nothing listens on, so the `failed` half of the
+  acceptance is proven in Go (`mail_delivery_test.go`, `refused_link_notice_test.go`)
+  and the shell's reading of it is proven against a stubbed door
+  (`e2e/email-verification-forms.spec.ts`), never against a live refused SMTP send.
 
 ## A SAML assertion at the same door
 

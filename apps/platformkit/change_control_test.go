@@ -201,10 +201,8 @@ func TestTheSecondAccountIsTheOneWhoWritesTheChange(t *testing.T) {
 		}
 		return false
 	})
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for grace"}`)
 	grace := signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
 
 	// The proposer: the administrator, who holds both grants and is still refused

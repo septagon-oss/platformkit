@@ -1,23 +1,27 @@
 import { expect, test } from '@playwright/test';
 
 // A sign-up leaves two things behind: the message in a mailbox, and a row that says
-// the message left. The row is what this journey reads, over the same door the shell
-// asks — POST /mail-delivery, keyed by the X-Request-ID the sign-up call was already
-// answered with — and it is the only evidence a person gets that the link they were
-// promised is on its way rather than merely promised.
+// the message left. This journey reads the row over the door the shell asks —
+// POST /mail-delivery, keyed by the X-Request-ID the sign-up call was already
+// answered with — and reads the message out of the catcher beside it.
 //
-// The acknowledgment a stranger receives is neutral by design and stays neutral here:
-// it says nothing either way. What the delivery record adds is the difference between
-// "a link is on its way" and "nothing was sent and nobody was told", and the two are
-// indistinguishable from the acknowledgment alone.
+// What it can prove, and what it cannot, are both worth stating. It proves that the
+// door answers a stranger's own call with one field and the word `pending`: nothing
+// was refused. It proves the same answer for the address that has an account and the
+// one that does not (modules/auth/internal/mail_delivery_neutral_test.go, at the
+// route), and it proves no credential crosses the socket. What it cannot prove is
+// that the row says `sent` — the door never says that to anybody, because a route
+// that mails only addresses where somebody has an account cannot report that a mail
+// left without reporting who has an account. The row's own `sent` is read in
+// modules/auth/internal/mail_delivery_test.go against the table, and the shell's
+// reading of a `failed` one in e2e/email-verification-forms.spec.ts.
 //
-// Reading the catcher first and the door second is the order that matters. The mail
-// and its record commit together, so a message already in Mailpit is a send whose row
-// is at worst a commit away; asking the door before the message exists would be a poll
-// against a transaction that has not run yet. And the door's budget is auth's tightest
-// public one (contracts.ResetRedemptions per address per fifteen minutes, one address
-// here for the whole run), so this journey asks it a handful of times and not in a loop
-// that spins. See e2e/mailed-links.spec.ts for the same mailbox read at link length.
+// Reading the catcher first and the door second is the order that matters: the mail
+// and its record commit together, so a message already in Mailpit is a send whose
+// row is at worst a commit away. The door's budget is its own
+// (contracts.MailDeliveryAsks per address per window, one address here for the whole
+// run), so this asks it a handful of times rather than in a loop that spins. See
+// e2e/mailed-links.spec.ts for the same mailbox read at link length.
 
 const mailpit = process.env.PLATFORMKIT_E2E_MAILPIT_URL ?? 'http://localhost:8025';
 
@@ -47,7 +51,7 @@ async function credential(request: import('@playwright/test').APIRequestContext,
   return link![1];
 }
 
-test('a sign-up leaves a delivery record that says the mail was sent, and says no more than that', async ({ page }) => {
+test('the mail one sign-up caused leaves a record, and the door says only that nothing was refused', async ({ page }) => {
   // The record is written when the worker that mails the link runs, not when the
   // sign-up is accepted, and the catcher is what says when that has happened.
   test.setTimeout(120_000);
@@ -109,8 +113,10 @@ test('a sign-up leaves a delivery record that says the mail was sent, and says n
     return { status: answered.status, text: await answered.text() };
   }, { path: door, requestId: requestID });
   // The row commits with the send it describes, so the message is already in the
-  // catcher this may still be a commit away. Three asks, spread over five seconds,
-  // are more than the gap and less than a tenth of this address's budget.
+  // catcher and this may still be a commit away. Three asks, spread over five
+  // seconds, are more than the gap and a twentieth of this address's budget; the
+  // loop only ends early on an answer that is not the `pending` it should be, so a
+  // door that jumped the gun and said `failed` is seen, not waited out.
   let answer = await ask();
   for (const wait of [1000, 2000, 4000]) {
     if (!answer.text.startsWith('{')) break;
@@ -125,10 +131,12 @@ test('a sign-up leaves a delivery record that says the mail was sent, and says n
   // huma answers a JSON body with a link to that body's schema; it names nothing
   // about the mail, and everything below is about what is beside it.
   delete body.$schema;
-  // One field, one word, and that word is `sent`: the mail left, and the person is
-  // told so because the record says so rather than because the form was accepted.
+  // One field, and the one word a door that mails only accounts may say about a
+  // mail that went out: nothing was refused. `sent` would be the same sentence with
+  // an address in it, and `failed` here would be a lie — the catcher is holding the
+  // message this call caused.
   expect(Object.keys(body), `the door says no more than one field: ${answer.text}`).toEqual(['state']);
-  expect(body.state, `the delivery record for ${requestID}`).toBe('sent');
+  expect(body.state, `the delivery record for ${requestID}`).toBe('pending');
   // No secret on the socket: the credential is in the message and in no row, and the
   // door reads that row.
   expect(answer.text).not.toContain(token);

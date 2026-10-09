@@ -62,14 +62,6 @@ func verificationLock(tx db.Tx[db.Tenant], id uuid.UUID) error {
 }
 
 func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) error {
-	if s.mail.Mailer == nil {
-		// Nothing to send it through, which is the deployment's fault and the
-		// operator's to see: a suppressed record, and the person is answered
-		// exactly as they are when the mail does go, because a record is not a
-		// promise about what their mailbox will show.
-		return s.recordMail(ctx, tx, contracts.MailVerification, email,
-			notification.MailSuppressed, "no mail transport is wired")
-	}
 	if s.mail.Hosts == nil {
 		return fmt.Errorf("auth: verification delivery is unavailable")
 	}
@@ -87,6 +79,18 @@ func (s *Service) offerVerification(ctx context.Context, tx db.Tx[db.Tenant], id
 	}
 	if current.Status != user.StatusUnverified || current.PasswordHash == "" || current.Email != contracts.EmailKey(email) {
 		return nil
+	}
+	if s.mail.Mailer == nil {
+		// Nothing to send it through, which is the deployment's fault and the
+		// operator's to see: a suppressed record, and the person is answered
+		// exactly as they are when the mail does go, because a record is not a
+		// promise about what their mailbox will show. It is written behind the lock
+		// and the re-read rather than in front of them, so that the row describes a
+		// mail this account would really have been sent — an event about a person who
+		// has since verified, deleted or changed address had nothing suppressed, it
+		// had nothing to suppress.
+		return s.recordMail(ctx, tx, contracts.MailVerification, current.Email,
+			notification.MailSuppressed, "no mail transport is wired")
 	}
 	var recent bool
 	err = tx.DB().Raw("SELECT EXISTS (SELECT 1 FROM verification_tokens WHERE user_id = ? AND email = ? AND created_at > clock_timestamp() - ?::interval)",
