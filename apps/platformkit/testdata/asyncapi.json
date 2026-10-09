@@ -2043,6 +2043,49 @@
       "summary": "Every tenant's delivery of site.settings_updated.",
       "title": "site.settings_updated"
     },
+    "subject.erased": {
+      "address": "platformkit.*.subject.erased",
+      "description": "Published at platformkit.{tenantId}.subject.erased; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "subject.erased": {
+          "contentType": "application/json",
+          "name": "subject.erased",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "modules": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "requester": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "subject",
+              "modules",
+              "requester",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.erased",
+          "title": "subject.erased"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.erased.",
+      "title": "subject.erased"
+    },
     "task.assigned": {
       "address": "platformkit.*.task.assigned",
       "description": "Published at platformkit.{tenantId}.task.assigned; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4101,6 +4144,23 @@
       "tags": [
         {
           "name": "site"
+        }
+      ]
+    },
+    "subject.erased": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.erased"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.erased/messages/subject.erased"
+        }
+      ],
+      "summary": "The subject module publishes subject.erased.",
+      "tags": [
+        {
+          "name": "subject"
         }
       ]
     },

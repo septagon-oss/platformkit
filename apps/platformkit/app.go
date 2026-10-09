@@ -39,6 +39,7 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
+	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
@@ -162,6 +163,7 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			audit.Module,
 			access(ask),
 			change.Module,
+			subject.Module,
 			admin.Module,
 		}, without)...).
 		Theme(design.Default()).
