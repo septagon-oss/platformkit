@@ -98,8 +98,9 @@ func service(rec *recorder, owners ...ownerStub) contracts.Service {
 	for _, o := range owners {
 		parts = append(parts, personaldata.Part{Module: o.name, Data: o})
 	}
-	return internal.NewService(parts, peopleStub{}, func() time.Time {
-		return time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC)
+	return internal.NewService(internal.Deps{
+		Parts: parts, People: peopleStub{},
+		Now: func() time.Time { return time.Date(2026, time.October, 9, 12, 0, 0, 0, time.UTC) },
 	})
 }
 

@@ -98,6 +98,10 @@ type Service interface {
 	// whole one is the failure this design cannot afford.
 	Export(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID) (*Bundle, error)
 
+	// Door, the two doors as a caller reaches them: a request that commits, the work the
+	// worker does later, and the single-use link onto what it produced.
+	Door
+
 	// Erase asks every owner for its own rows, in module-name order, and
 	// publishes subject.erased in the same commit as the rows it changed.
 	// A refused erasure — a person who is not here, an address that is not the one
