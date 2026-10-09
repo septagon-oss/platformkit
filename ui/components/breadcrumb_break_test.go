@@ -2,11 +2,15 @@ package components
 
 // breadcrumb_break_test.go pins what the trail does with a name nobody can
 // hyphenate. The frame breaks every word it shows (clShellMain sets
-// break-anywhere), which is right for prose and wrong for a breadcrumb: at phone
-// width a record's one-token name split into "Dashboa / rd", and the page
-// scrolled sideways. The table refuses that rule with BreakNormal and the design
-// tool accepts it; the trail now refuses it the same way, item by item, and the
-// links behind the current entry are what give way.
+// break-anywhere, and the property inherits), and at phone width a record's
+// one-token name split into "Dashboa / rd" while a longer one pushed the page
+// sideways. What did that was never the break rule but the row: a flex row that
+// never wraps squeezes every crumb below the width of its own name, and a box
+// narrower than its longest word is a box that breaks words in half. So the trail
+// wraps. No crumb carries a break rule of its own — that is the frame's, on the
+// region (see TestTheFrameBreaksATokenNothingCanHyphenate, which refuses a break
+// rule on any component inside the region because it is what the design tool reads),
+// and the links behind the current entry are still what give way.
 
 import (
 	"strings"
@@ -33,7 +37,7 @@ func listItems(t *testing.T, markup string) []string {
 	}
 }
 
-func TestEveryCrumbBreaksByWordsAndOnlyTheLinksTruncate(t *testing.T) {
+func TestTheTrailWrapsAndOnlyTheLinksTruncate(t *testing.T) {
 	trail := draw(t, Breadcrumb(BreadcrumbProps{Items: []BreadcrumbItem{
 		{Label: "Workspace", Href: "/app"},
 		{Label: "Notes", Href: "/app/task/notes"},
@@ -43,10 +47,16 @@ func TestEveryCrumbBreaksByWordsAndOnlyTheLinksTruncate(t *testing.T) {
 	if len(items) != 5 {
 		t.Fatalf("a three-item trail draws %d <li>, want three items and two separators:\n%s", len(items), trail)
 	}
+	// The cure, in one rule: a row that wraps gives a crumb a line of its own instead of a share
+	// of one, which is the difference between a name wrapped by words and a name split mid-word.
+	ol := classOf(t, trail, "<ol", "ol")
+	if !strings.Contains(ol, "flex-wrap") {
+		t.Errorf("the trail %q does not wrap, so its crumbs are squeezed and break mid-word", ol)
+	}
 	for _, at := range []int{0, 2} { // the two links
-		for _, want := range []string{"break-normal", "truncate", "min-w-0"} {
+		for _, want := range []string{"truncate", "min-w-0"} {
 			if !strings.Contains(items[at], want) {
-				t.Errorf("the link crumb %q lacks %q: a crumb that inherits break-anywhere splits a name mid-word", items[at], want)
+				t.Errorf("the link crumb %q lacks %q: a link gives way with an ellipsis, not by splitting a name", items[at], want)
 			}
 		}
 	}
@@ -59,21 +69,21 @@ func TestEveryCrumbBreaksByWordsAndOnlyTheLinksTruncate(t *testing.T) {
 	if !strings.Contains(current, `aria-current="page"`) {
 		t.Fatalf("the last crumb is not the current one: %s", current)
 	}
-	for _, want := range []string{"break-normal", "min-w-0"} {
-		if !strings.Contains(current, want) {
-			t.Errorf("the current crumb %q lacks %q", current, want)
-		}
+	if !strings.Contains(current, "min-w-0") {
+		t.Errorf("the current crumb %q lacks min-w-0: a flex item's min-width is its content's own minimum, which is how one long token pushed the page sideways", current)
 	}
 	// The name the person came to read is the one thing on the page that is never clipped:
 	// truncate is white-space: nowrap, which would stop the last item wrapping by words.
 	if strings.Contains(current, "truncate") {
 		t.Errorf("the current crumb %q truncates, so a long record name loses the end of its own name", current)
 	}
-	// min-w-0 is not decoration: a flex item's min-width is its content's own minimum, which
-	// is how one long token pushed the page sideways.
-	for _, item := range items {
-		if strings.Contains(item, "break-anywhere") {
-			t.Errorf("a crumb asks for the frame's mid-word break after all: %s", item)
+	// And no crumb takes the break rule into its own hands, either direction: the region owns it,
+	// and a component that declares one is text the design tool will not project for a client.
+	for _, item := range append(items, ol) {
+		for _, rule := range []string{"break-anywhere", "break-normal"} {
+			if strings.Contains(item, rule) {
+				t.Errorf("a crumb declares %q while the frame's content region already does: %s", rule, item)
+			}
 		}
 	}
 }
