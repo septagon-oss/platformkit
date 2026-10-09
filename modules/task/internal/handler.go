@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 
+	"github.com/septagon-oss/platformkit/kit/entity"
+
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -27,28 +29,31 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.Task], sv
 		[]string{contracts.EventAssigned},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in assignBody) (*contracts.Task, error) {
 			return svc.Assign(ctx, tx, id, in.AssigneeID)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Assign"}})
 
 	rest.Command(surfaces, spec, "resolve",
 		"Resolve a task", "Closes the loop. Repeating it with the same resolution changes nothing; a different one is refused.",
 		[]string{contracts.EventResolved},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in resolveBody) (*contracts.Task, error) {
 			return svc.Resolve(ctx, tx, id, in.Resolution)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Resolve"}})
 
 	rest.Command(surfaces, spec, "check-sla",
 		"Check a task's SLA", "Records a breach if the deadline has passed with the task unresolved. Records at most one.",
 		[]string{contracts.EventSLABreached},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Task, error) {
 			return svc.CheckSLA(ctx, tx, id)
-		}, rest.CommandOptions{})
+			// A sweep's work, not a person's: `system` is why no browser route is
+			// mounted for it while the JSON route keeps its guard unchanged, and why
+			// it carries no label, confirmation or message to translate.
+		}, rest.CommandOptions{Present: entity.CommandHints{System: true}})
 }
 
 // assignBody and resolveBody are the arguments of the two commands that take
 // one. check-sla takes none, so its body is the empty struct and a caller sends
 // no body at all.
 type assignBody struct {
-	AssigneeID uuid.UUID `json:"assigneeId" format:"uuid" doc:"The user who becomes responsible"`
+	AssigneeID uuid.UUID `json:"assigneeId" format:"uuid" ui:"label:Assignee" doc:"The user who becomes responsible"`
 }
 
 type resolveBody struct {

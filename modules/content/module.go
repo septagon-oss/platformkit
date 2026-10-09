@@ -17,6 +17,7 @@
 package content
 
 import (
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -57,6 +58,19 @@ var spec = rest.Spec[*contracts.Content]{
 	// declare on the write routes' behalf. The lifecycle's three events are
 	// declared by the three commands that publish them, in internal/handler.go.
 	HookEvents: nil,
+	// Present is how a page reads to the person who maintains it. `previewField`
+	// is written nowhere here: the body is Markdown source, and a row previewing
+	// raw Markdown is the fault decision 0085 photographs.
+	Present: entity.EntryHints{
+		Singular:      "page",
+		Plural:        "pages",
+		Icon:          "document",
+		Group:         &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField:  "title",
+		StatusField:   "status",
+		SummaryFields: []string{"kind"},
+		Sortable:      []string{"title", "publishedAt", "updatedAt"},
+	},
 }
 
 // permissions is what the manifest declares. kit/app checks every route's

@@ -1,11 +1,155 @@
 {
-  "permission.user:read": {
+  "hints.user/user.command.approve-registration.label": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "ler pessoas",
+    "translation": "Aprovar",
     "plural": {
-      "": "ler pessoas"
+      "": "Aprovar"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.body": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Ela não poderá entrar. Um administrador pode reativá-la.",
+    "plural": {
+      "": "Ela não poderá entrar. Um administrador pode reativá-la."
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.confirmLabel": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar",
+    "plural": {
+      "": "Desativar"
+    }
+  },
+  "hints.user/user.command.deactivate.confirmation.title": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar esta pessoa?",
+    "plural": {
+      "": "Desativar esta pessoa?"
+    }
+  },
+  "hints.user/user.command.deactivate.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Desativar",
+    "plural": {
+      "": "Desativar"
+    }
+  },
+  "hints.user/user.command.handle.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome de usuário",
+    "plural": {
+      "": "Nome de usuário"
+    }
+  },
+  "hints.user/user.command.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Definir nome de usuário",
+    "plural": {
+      "": "Definir nome de usuário"
+    }
+  },
+  "hints.user/user.command.roles.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Alterar funções",
+    "plural": {
+      "": "Alterar funções"
+    }
+  },
+  "hints.user/user.command.set-password.field.password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nova senha",
+    "plural": {
+      "": "Nova senha"
+    }
+  },
+  "hints.user/user.command.set-password.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Definir senha",
+    "plural": {
+      "": "Definir senha"
+    }
+  },
+  "hints.user/user.field.displayName.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome",
+    "plural": {
+      "": "Nome"
+    }
+  },
+  "hints.user/user.field.handle.help": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome em minúsculas pelo qual esta pessoa atende neste tenant",
+    "plural": {
+      "": "Nome em minúsculas pelo qual esta pessoa atende neste tenant"
+    }
+  },
+  "hints.user/user.field.handle.label": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Nome de usuário",
+    "plural": {
+      "": "Nome de usuário"
+    }
+  },
+  "hints.user/user.group.people": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "Pessoas",
+    "plural": {
+      "": "Pessoas"
+    }
+  },
+  "hints.user/user.plural": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "pessoas",
+    "plural": {
+      "": "pessoas"
+    }
+  },
+  "hints.user/user.singular": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "pessoa",
+    "plural": {
+      "": "pessoa"
+    }
+  },
+  "permission.user:approve": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "aprovar novas contas",
+    "plural": {
+      "": "aprovar novas contas"
     }
   },
   "permission.user:manage": {
@@ -17,13 +161,13 @@
       "": "gerir pessoas"
     }
   },
-  "permission.user:approve": {
+  "permission.user:read": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "aprovar novas contas",
+    "translation": "ler pessoas",
     "plural": {
-      "": "aprovar novas contas"
+      "": "ler pessoas"
     }
   }
 }

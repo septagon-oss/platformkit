@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -77,7 +78,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
 			principal, _ := tenancy.PrincipalFrom(ctx)
 			return svc.ApproveRegistration(ctx, tx, id, principal.UserID)
-		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionRegistrationApprove)})
+		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionRegistrationApprove), Present: entity.CommandHints{Label: "Approve"}})
 
 	rest.Command(surfaces, spec, "set-password",
 		"Set a user's password",
@@ -88,7 +89,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 				return nil, err
 			}
 			return svc.Get(ctx, tx, id)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Set password"}})
 
 	rest.Command(surfaces, spec, "roles",
 		"Set a user's roles",
@@ -96,7 +97,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		[]string{contracts.EventRolesSet},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in rolesBody) (*contracts.User, error) {
 			return svc.SetRoles(ctx, tx, id, in.Roles)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Change roles"}})
 
 	rest.Command(surfaces, spec, "handle",
 		"Claim or change a user's handle",
@@ -104,7 +105,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		[]string{contracts.EventHandleSet},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in handleBody) (*contracts.User, error) {
 			return svc.SetHandle(ctx, tx, id, in.Handle)
-		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionUserManage)})
+		}, rest.CommandOptions{Auth: httpx.Permission(contracts.PermissionUserManage), Present: entity.CommandHints{Label: "Set username"}})
 
 	rest.Command(surfaces, spec, "deactivate",
 		"Deactivate a user",
@@ -112,18 +113,26 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.User], sv
 		[]string{contracts.EventDeactivated},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.User, error) {
 			return svc.Deactivate(ctx, tx, id)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{
+			Label:       "Deactivate",
+			Destructive: true,
+			Confirmation: &entity.CommandConfirmation{
+				Title:        "Deactivate this person?",
+				Body:         "They will not be able to sign in. An administrator can reactivate them.",
+				ConfirmLabel: "Deactivate",
+			},
+		}})
 }
 
 // passwordBody and rolesBody are the arguments of the two commands that take
 // one. deactivate takes none, so its body is the empty struct and a caller
 // sends no body at all.
 type passwordBody struct {
-	Password string `json:"password" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
+	Password string `json:"password" ui:"label:New password" minLength:"12" maxLength:"256" doc:"The new password; at least twelve characters"`
 }
 
 type handleBody struct {
-	Handle string `json:"handle" minLength:"3" maxLength:"32" doc:"Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform" example:"ada"`
+	Handle string `json:"handle" ui:"label:Username" minLength:"3" maxLength:"32" doc:"Lower-case letters, digits and interior . _ -, three to thirty-two characters, and not a name that stands for the platform" example:"ada"`
 }
 
 type rolesBody struct {

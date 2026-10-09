@@ -61,11 +61,17 @@ func TestVisibilityKeepsAFieldOffTheScreensTheAuthorNamed(t *testing.T) {
 			t.Errorf("the %s page contains %q = %v, want %v:\n%s", want.page, want.needle, found, want.present, around(page, want.needle))
 		}
 	}
-	// Editability is readOnly/immutable, never visibility: the hidden field is
-	// still an argument the form offers.
+	// Editability is readOnly/immutable, never visibility; and the one visibility
+	// that leaves a form is the one that keeps a field off every screen. `detail`
+	// stays an argument the form asks for — four fields of the reference app's are
+	// `validate:"required"` or command-owned, and a required field no form asks for
+	// is a record nobody can create.
 	form := render(t, resource.Form(hintedResource(entity.EntryHints{}, fields), opts, "/app/note/notes", "Edit", row, nil, "", false).Body)
-	if !strings.Contains(form, `name="pinned"`) {
-		t.Errorf("a hidden field left the edit form; visibility is a reading decision:\n%s", around(form, "pinned"))
+	if strings.Contains(form, `name="pinned"`) {
+		t.Errorf("a hidden field is still on the edit form; a control for a field no screen may name is a question nobody may answer:\n%s", around(form, "pinned"))
+	}
+	if !strings.Contains(form, `name="rank"`) {
+		t.Errorf("a detail field left the edit form; detail is the field a record answers:\n%s", around(form, "rank"))
 	}
 }
 
