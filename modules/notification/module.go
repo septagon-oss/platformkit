@@ -34,6 +34,18 @@ type Deps struct {
 	Recipients contracts.RecipientLookup
 
 	// Mailer sends the rendered message, in the worker.
+	//
+	// nil means this installation has no mail transport at all: the deployment
+	// picked notification.Module's "none" because the configuration names no
+	// server and did not ask for the in-memory sink either. It is a value rather
+	// than a panic because "no mail server here" is a state a real deployment is
+	// in, and the module's job in that state is to say so on the record: every
+	// notice is still written and still read in the application, and the mail each
+	// one asks for is recorded as suppressed with the reason, which is the delivery
+	// ledger's own vocabulary rather than a log line somebody has to notice. What
+	// refuses outright is a command whose promise is the message itself
+	// (modules/auth's emailed verification link): that one answers a reasoned 503
+	// and writes nothing, because there is no ledger a stranger can read.
 	Mailer contracts.Mailer
 
 	// Hosts turns the tenant an event belongs to into the host its people reach
@@ -64,11 +76,6 @@ type Deps struct {
 var permissions []module.Permission
 
 func New(deps Deps) (contracts.Service, module.Module) {
-	// A wiring mistake fails where it is written rather than as a nil
-	// dereference in the worker an hour later.
-	if deps.Mailer == nil {
-		panic("notification.Module: Deps.Mailer is required; wire notification.NewMailbox() when there is no mail server")
-	}
 	svc := internal.NewService(deps.Recipients)
 	return svc, module.Module{
 		Name:        "notification",

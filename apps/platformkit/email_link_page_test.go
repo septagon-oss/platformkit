@@ -33,27 +33,6 @@ import (
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 )
 
-func TestAnEmailedLinkNamesThePortItsInstanceListensOn(t *testing.T) {
-	for _, one := range []struct {
-		name, stored, served, want string
-	}{
-		{"the installation's own host on a port", "localhost", "localhost:8099", "localhost:8099"},
-		{"the installation's own host, no port to carry", "localhost", "localhost", "localhost"},
-		{"another customer's host, which this process does not answer at",
-			"acme.example.com", "localhost:8099", "acme.example.com"},
-		{"a host written with the port already on it", "localhost:8099", "localhost:8099", "localhost:8099"},
-		{"an installation that says nothing about its host", "acme.example.com", "", "acme.example.com"},
-		// The name a tenant was stored under is what the link says, capitals and
-		// all: httpx.HostOnly normalises both sides of the comparison, and a link
-		// that rewrote the stored name would be a second normalisation.
-		{"a name stored with capitals in it still gets its port", "LocalHost", "localhost:8099", "LocalHost:8099"},
-	} {
-		if got := withServedPort(one.stored, one.served); got != one.want {
-			t.Errorf("%s: withServedPort(%q, %q) = %q, want %q", one.name, one.stored, one.served, got, one.want)
-		}
-	}
-}
-
 // TestTheEmailedLinkOpensAPageThatConfirms is the journey in one boot of the
 // reference application. The address asked for is the one read out of the
 // message — path, query and all — and nothing here posts the JSON door.

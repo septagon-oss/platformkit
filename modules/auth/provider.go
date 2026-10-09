@@ -46,6 +46,7 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[usercontracts.Granting](),
 	pkit.Optional[authcontracts.RegistrationMode](),
+	pkit.Optional[authcontracts.ConfirmationChrome](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
 	pkit.Provides[pkit.Authenticator](),
@@ -88,6 +89,19 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// plaintext one.
 		FactorKey:  settings.FactorKey,
 		PublicHost: server.PublicHost,
+	}
+	// The page the verification link opens. Its two addresses come from the
+	// composition, which is the only party that knows what it mounted; its
+	// colours and its words come from the skin the resolved composition answered
+	// with, which is the same value the admin shell and the public site draw
+	// themselves from. An application that names neither gets a bare document,
+	// as an empty Deps field always gave.
+	chrome := pkit.Get[authcontracts.ConfirmationChrome](w)
+	if chrome.Assets != "" || chrome.SignIn != "" {
+		skin := w.Skin()
+		deps.Pages = Pages{
+			Theme: skin.Theme, Assets: chrome.Assets, SignIn: chrome.SignIn, Messages: skin.Copy,
+		}
 	}
 	// Which public signup door this installation mounted is a composed module of
 	// its own (Registration, EmailRegistration, ApprovalRegistration), because
