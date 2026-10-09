@@ -1053,6 +1053,25 @@ test('browser capture still refuses explicit infinite or paused animations under
   }
 })
 
+test('browser capture waits a source animation longer than one wave instead of refusing it', async () => {
+  // The refusal above is for an animation that never advances. This is the other side of the same
+  // boundary: a source whose own animation runs to completion, slowly. CI run 56073 (job 56693)
+  // refused exactly this shape — `Capture source animation settling timed out` for
+  // pk-ui.component.product-card/loading-en, a page whose animations the motion floor had already
+  // ended — because the wait carried one stopwatch over its whole duration and that runner was
+  // three browser jobs deep. An animation authored to run 1.6 s is the same refusal with no load
+  // involved, and it is not a thing the capture should refuse: the guarantee is that nothing is
+  // observed while the page is still moving, which is why the assertion is a completed capture.
+  const snapshot = structuredClone(source)
+  const example = snapshot.examples.find(item => item.id === primary)
+  example.html = example.html.replace(/^<button /, '<button style="animation: pk-spin 1.6s linear 1 !important" ')
+  const beforeSnapshot = structuredClone(snapshot)
+  const result = await captureExample(browser, snapshot, primary)
+  assert.equal(result.exampleId, primary)
+  assert.deepEqual(snapshot, beforeSnapshot, 'waiting a slow source animation does not edit the caller\'s snapshot')
+  assert.equal(browser.contexts().length, 0)
+})
+
 test('capture retains closed disclosure content without waiting for its invisible spinner', async () => {
   const exampleId = 'pk-ui.component.plan-comparison/pending-en'
   const beforeSource = structuredClone(source)
