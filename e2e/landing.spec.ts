@@ -76,5 +76,5 @@ test('a person whose role opens one screen is landed on a page that offers it', 
   // for this journey, and the reason `signOut` is published rather than kept here.
   await signOut(as);
 
-  await as.context.close();
+  await as.context().close();
 });
