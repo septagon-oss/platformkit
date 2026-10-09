@@ -76,6 +76,7 @@ can ask for from a browser. The sequence is the ADR's, and every step of it is a
 | open | the requester mints a token — `POST /api/v1/subject/exports/{id}/link` — seven days, single use, stored as a sha256 in `subject_grants`, and the hold on the bytes moves out to the link's own expiry | `Mint`; `contracts.Link.Token` is the only place the token exists outside that response |
 | download | `GET /api/v1/public/subject/bundles/{token}` streams the bundle out of the file module and spends the token in the same statement that reads it | `Redeem`; used, forged and expired answer the same 404 |
 | erase | `POST /api/v1/subject/erasures` with `subject:erase` runs the erasure and files its receipt in the caller's transaction; a refused erasure writes nothing, including the row | `RequestErase`; the unique index on `(tenant, subject)` for `kind = 'erase'` is what makes the request that arrives twice answer the first one |
+| and this module's own rows | the same erasure scrubs `subject_requests.reason` and `.detail`, deletes every unspent `subject_grants` row onto this person's bundles, and ends each bundle — hold, file row, bytes — filing its request `erased` with no bundle | `internal.retire`, in the same transaction; `Mint` and `Redeem` refuse what it voided |
 
 Nothing here is a `rest.Spec`, and that is modules/audit's reason restated: a Spec is
 five routes and three of them write. A request row only ever moves forward, and a PATCH
@@ -181,12 +182,15 @@ that revocation is the product's, not this module's.
   index are already the shape that needs; the walk over the `erase` kind is not written, so
   today an erasure of a big tenant is one long transaction and a client that gave up
   waiting is a client that will retry, get the same row, and be refused.
-* **This module files its own tables and contributes no `Part`.** `subject_requests` and
-  `subject_grants` name a person and are declared (`module.go`), but they are not scrubbed
-  when that person is erased: the row that records an erasure has to outlive it, and the row
-  that records an export request is the receipt for a copy the person was owed. The ADR's
-  §8 row for the kernel's outbox is answered by nobody yet, for the same reason it names:
-  the orchestrator would have to read tables the kernel owns.
+* **This module files its own tables and contributes no `Part`.** It reaches them from
+  `Erase` instead (`internal.retire`), because composing a part it also consumes would be a
+  module depending on itself. `subject_grants` rows onto the person's bundles are deleted and
+  the bundles themselves are removed; `subject_requests` rows stay, because the row that
+  records an erasure has to outlive it and the row that records an export request is the
+  receipt for a copy the person was owed — and their words in `reason` are scrubbed with the
+  same statement every other owner's text is, which is what the `Text` claim in `module.go`
+  obliges. The ADR's §8 row for the kernel's outbox is answered by nobody yet, for the same
+  reason it names: the orchestrator would have to read tables the kernel owns.
 * **Per-owner coverage is uneven.** `modules/file` and `modules/notification` implement
   `personaldata.Part`, are read by the acceptance line in
   `apps/platformkit/exporting_a_seeded_person_finds_their_rows_from_each_module_test.go`,

@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/subject/contracts"
 	"github.com/septagon-oss/platformkit/modules/subject/internal"
 	"github.com/septagon-oss/platformkit/modules/user"
@@ -109,6 +110,11 @@ func transact(t *testing.T, conn *db.Conn, fn func(context.Context, db.Tx[db.Ten
 	return db.Run(tenancy.WithTenant(t.Context(), acme), conn, fn)
 }
 
+// own is this module's own SQL. The erasure is not only the eight contributors' work: it
+// scrubs and voids the module's request rows too, so a case that erases has to hold the
+// tables that erasure touches, exactly as the application holds them.
+var own = subject.Migrations
+
 func TestExportingAPersonBundlesEveryOwnerInTheOrderSomebodyWroteThem(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations)
 	events.Declare[contracts.Erased](contracts.EventErased)
@@ -197,7 +203,7 @@ func TestExportingAPersonBundlesEveryOwnerInTheOrderSomebodyWroteThem(t *testing
 }
 
 func TestErasingAPersonAsksEveryOwnerOnceAndPublishesWithTheRows(t *testing.T) {
-	_, conn := dbtest.Schema(t, user.Migrations)
+	_, conn := dbtest.Schema(t, user.Migrations, own)
 	events.Declare[contracts.Erased](contracts.EventErased)
 	subject := personaldata.Subject{ID: uuid.New(), Email: "jo.jones@example.com", DisplayName: "Jo Jones", Handle: "jjones"}
 	seed(t, conn, subject)
