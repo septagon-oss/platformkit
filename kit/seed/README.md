@@ -29,9 +29,9 @@ internal to the kernel, so a composition cannot mint one for itself.
 **Made reusable:** `Writer`, `Authorizer`, `Plan` and `Apply` let another app
 declare its own resources and embedded files without copying the loader or the
 reconciliation logic. The reference application composes them in
-`apps/platformkit/seed.go` — a page writer, a site writer and a person writer — and runs them with
-`platformkit seed --tenant <slug> --as <email> [--demo] [--dry-run]`, which
-`make seed` wraps.
+`apps/platformkit/seed.go` — writers for pages, sites, people, tasks and uploads —
+and runs them with `platformkit seed --tenant <slug> --as <email> [--demo]
+[--dry-run]`, which `make seed` wraps.
 
 ## Limits
 
