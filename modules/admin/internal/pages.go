@@ -550,10 +550,15 @@ func (p pages) dashboard(ctx context.Context, t tenancy.Tenant) page.View {
 		// Plural("Plan") is "Plans"; a mass noun keeps its own shape at one, which
 		// reads oddly ("1 Settings") and is what the rule says — the catalogue names
 		// the entity `settings` and the kernel has no singular for it.
+		//
+		// The zero case reads the entity the other two do — Humanize first, then the
+		// case, then the plural — because the noun on the card has to be one noun: an
+		// entity the catalogue calls `sla_policy` says "2 Sla policys" and "No sla
+		// policys yet" rather than showing a person the name a table is stored under.
 		title := count + " " + display.Plural(display.Humanize(r.Entity))
 		switch total {
 		case 0:
-			title = "No " + display.Plural(strings.ToLower(r.Entity)) + " yet"
+			title = "No " + display.Plural(strings.ToLower(display.Humanize(r.Entity))) + " yet"
 		case 1:
 			title = "1 " + display.Humanize(r.Entity)
 		}
