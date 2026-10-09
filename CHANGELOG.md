@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+**The wire gate reads the plan feature a door declares.** An operation's authorization
+declaration has three parts — its `kind`, its `permission`, and the plan feature a route
+names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
+asks the tenant's plan about at request time (a refusal answers `402` with
+`PLAN_EXCLUDES`). The compatibility identity in `kit/wire` was a list of key names that left
+the feature out, so on a document whose only other member had moved, dropping a feature,
+adding one to a door that named none, or renaming one were accepted with zero breaks — and
+`UPDATE_GOLDEN=1` then rewrote the reviewed artefact over a plan gate the runtime still
+enforces. The identity is now the whole emitted declaration, spelled `kind`, `permission`,
+`feature`, then any other member by name, so all three are B6 refusals naming the operation
+and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
+`kind=any_credential`) covers no feature it does not spell on both sides. A pair written
+against a declaration with no feature keeps matching exactly what it matched, which is why
+112 of the reference document's 114 declarations are untouched and its golden is not
+regenerated. Enforcement is unchanged, so this is a gate that stopped missing a change, not
+a door that started refusing a request.
+
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
 presented — the words a person is shown, which field names a row, which block a
