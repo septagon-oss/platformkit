@@ -36,12 +36,13 @@ type TimeProps struct {
 // now state an instant the same way, and one test of the datetime attribute
 // covers all three.
 func Time(p TimeProps) g.Node {
-	attrs := []g.Node{g.Attr("datetime", p.Instant.AtUTC.Format(time.RFC3339Nano))}
+	extra := []g.Node{g.Attr("datetime", p.Instant.AtUTC.Format(time.RFC3339Nano))}
+	extra = append(extra, baseAttrs(p.ComponentProps)...)
 	if p.Title != "" {
-		attrs = append(attrs, g.Attr("title", p.Title))
+		extra = append(extra, g.Attr("title", p.Title))
 	}
 	if p.Class != "" {
-		attrs = append(attrs, h.Class(p.Class))
+		extra = append(extra, h.Class(p.Class))
 	}
-	return h.Time(append(baseAttrs(p.ComponentProps), append(attrs, g.Text(p.Instant.Text))...)...)
+	return h.Time(append(extra, g.Text(p.Instant.Text))...)
 }
