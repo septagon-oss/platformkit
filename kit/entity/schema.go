@@ -28,6 +28,17 @@ type Schema struct {
 // moved anything else (kit/rest), and a caller may read it and may not name it.
 const RevisionField = "revision"
 
+// RevisionCondition is the name a generated edit form posts the row's write count back
+// under: the number the form was drawn from, carried so the write can be refused against
+// a row that has moved since the person read it.
+//
+// It is deliberately not RevisionField. A body's "revision" is a value to store, which
+// every write door refuses — a number a caller can set is no use for refusing a stale
+// write — while this is a condition on the write and writes nothing itself. Two names,
+// because the two questions differ; one owner, because the door that draws the form and
+// the door that reads it may not then disagree about what the form carried.
+const RevisionCondition = "expectedRevision"
+
 // ServerOwned reports whether a field belongs to the server at a write door.
 //
 // There are two kinds. Base's, which ReadOnly already names: the id, the tenant

@@ -235,7 +235,7 @@ func (p Pages) run(ctx context.Context, r page.Request, where string, id uuid.UU
 		return page.View{}, problem.NotFound("this application offers no decision controls")
 	}
 	if err := command(ctx, tx); err != nil {
-		return p.detail(ctx, r, where, id, sentence(rest.Fault(err)))
+		return p.detail(ctx, r, where, id, refusal(err, r.Locale))
 	}
 	return page.View{}, httpx.SeeOther(where + "/" + id.String())
 }
@@ -335,7 +335,7 @@ func (p Pages) detail(ctx context.Context, r page.Request, where string, id uuid
 		// reload of the answer says what the click did.
 		status = http.StatusConflict
 		body = append(body, components.Alert(components.AlertProps{
-			Tone: "danger", Title: "That could not be done", Message: refusal, Bordered: true}))
+			Tone: "danger", Title: refusalTitle(r.Locale), Message: refusal, Bordered: true}))
 	}
 	may, err := p.mayDecide(ctx, r)
 	if err != nil {
@@ -415,11 +415,21 @@ func difference(row *contracts.Proposal) g.Node {
 // elements with real submit buttons in reading order, so a phone with no script, a
 // keyboard with no pointer and a screen reader with no styling all get the same two
 // decisions. And a caller who may not decide is given no form at all.
+//
+// Which control a state answers with is the command underneath it, read from the
+// service: a proposed row is decided, an approved row is applied, and a second verdict
+// on a row somebody already approved is a button that cannot change anything — Review
+// refuses it as a row "already approved", so drawing it would offer the person a
+// sentence about their own click instead of the write they came to make. The approved
+// branch therefore comes first, and the two are never drawn together.
 func decisions(where string, row *contracts.Proposal, mayDecide bool) g.Node {
 	at := where + "/" + row.ID.String()
 	open := row.State == contracts.StateProposed || row.State == contracts.StateApproved
 	body := []g.Node{h.H2(g.Attr("id", "change-decision"), g.Text("Decision"))}
 	switch {
+	case mayDecide && row.State == contracts.StateApproved:
+		body = append(body, postForm(at+"/apply", row.Revision, "Apply the approved change",
+			h.Button(h.Type("submit"), g.Text("Apply"))))
 	case mayDecide && open:
 		body = append(body,
 			postForm(at+"/review", row.Revision, "Approve this change",
@@ -430,9 +440,6 @@ func decisions(where string, row *contracts.Proposal, mayDecide bool) g.Node {
 				commentField(at),
 				h.Button(h.Type("submit"), g.Text("Decline"))),
 		)
-	case mayDecide && row.State == contracts.StateApproved:
-		body = append(body, postForm(at+"/apply", row.Revision, "Apply the approved change",
-			h.Button(h.Type("submit"), g.Text("Apply"))))
 	case open:
 		// A watcher watches. The controls are absent rather than disabled, because a
 		// control that cannot be used is a fact about the page, not about the change.
@@ -601,6 +608,51 @@ func written(raw any) string {
 		return fmt.Sprintf("%v", raw)
 	}
 	return string(encoded)
+}
+
+// refusal is the sentence a refused command leaves on the page, in the language the
+// request was answered in. The module owns these refusals, so it owns their copy: the
+// English is the service's own line, passed as the readable fallback, and the catalogue
+// in modules/change/messages answers the key in another language (decision 0012 rule 2 —
+// the same shape ui/page/fault.go uses for a guard's verdict).
+//
+// A refusal the catalogue has no line for stays in the language it was written in, and a
+// page whose shell ships no catalogue is English throughout: a page that declared
+// Portuguese over English copy would be declaring a thing the page does not do.
+func refusal(err error, loc *page.Locale) string {
+	line := sentence(rest.Fault(err))
+	key, known := refusalKey(err)
+	if loc == nil || !known {
+		return line
+	}
+	if said := loc.Text(key, line); said != line {
+		return said
+	}
+	return line
+}
+
+// refusalKey names the copy one of this module's own refusals answers from. Only the
+// sentinels the service declares are matched: a refusal this module did not name is not
+// this module's to re-word, and the English the caller was given is the honest answer.
+func refusalKey(err error) (string, bool) {
+	switch {
+	case errors.Is(err, contracts.ErrSelfReview):
+		return "change.refusal.self_review", true
+	case errors.Is(err, contracts.ErrStaleBase):
+		return "change.refusal.stale_base", true
+	case errors.Is(err, contracts.ErrUnsupportedSubject):
+		return "change.refusal.unsupported_subject", true
+	}
+	return "", false
+}
+
+// refusalTitle is the alert's heading — the one word the page says about a command that
+// failed before it reaches the sentence, which names itself.
+func refusalTitle(loc *page.Locale) string {
+	if loc == nil {
+		return "That could not be done"
+	}
+	return loc.Text("change.refusal.title", "That could not be done")
 }
 
 // sentence is the refusal a person is shown. kit/problem keeps a 5xx's cause on the
