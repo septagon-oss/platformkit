@@ -33,6 +33,67 @@ reconciliation logic. The reference application composes them in
 and runs them with `platformkit seed --tenant <slug> --as <email> [--demo]
 [--dry-run]`, which `make seed` wraps.
 
+## Authorization
+
+### Permissions
+
+The seed declares no permission key of its own, and none is missing: a record is
+written through its owner's write path, so the permission that gates it is the
+owner's, carried on the request as `WriteGrant` and compared in
+`apps/platformkit/seed.go` against what the actor's row says at the moment the run
+asks. `kit/seed` itself names no key, mounts no route and contributes no permission
+to any manifest; the reference application's `seed` module declares only the
+tenant-creation hook it contributes.
+
+### Object scope
+
+Every read and write happens inside the run's `db.Tx[db.Tenant]`, and the mapping
+table `seed_keys` sits under the same row-level security as the rows it names, so a
+run cannot meet a record of another tenant by key text, by natural key, or by
+provenance. `db.RunSystem` reaches the tenant list only to open a scope per tenant,
+and each tenant's records are applied in that tenant's own transaction.
+
+### Duties the module enforces itself
+
+Two, and both are refusals the owner cannot make for it. A run writes as a named
+person whose row is re-read in its own transaction — an inactive person, or one who
+now holds no roles, is refused there rather than trusted from the context's earlier
+snapshot. And a provisioning run — the tenant-creation hook, which has no person to
+ask — is refused unless the tenant holds nobody and no seeded record, so it can only
+ever fill a tenant that came into being in that same transaction.
+
+### Public faces
+
+None. `kit/seed` mounts no route, renders no page and names no surface; the only
+address-bearing thing in it is the reference application's `seed` module, which
+contributes a hook and nothing a caller can reach. What an anonymous visitor reads
+on a seeded site is the ordinary output of the owners whose write paths the run used,
+with no field, face or permission the seed opened.
+
+### The operator boundary
+
+`platformkit seed` is a command the operator runs against a database they already
+hold; it is not reachable from a tenant session, because nothing in this delivery
+listens on a port. It authenticates no caller of its own — the composition's own
+authorizer is the boundary — and the original trace's separate permit type and
+`--as` grant check beyond that authorizer are listed under Limits as undelivered
+rather than claimed.
+
+
+### Provisioning
+
+This is the question the delivery exists to answer. `tenant.Module` takes a
+`tenantcontracts.Hook`, and the reference application contributes one: a new tenant
+is filled from `seed/starter/` — and from `seed/demo/` as well when its own row
+says `demo`, read from that row and not from a caller's wish — through the same
+owners, the same grants and the same events an ordinary command produces. A
+tenant with a person in it, or with any record already mapped, is refused: the hook
+may only ever fill a tenant that came into being in its own transaction. The
+operator's `platformkit seed --tenant <slug> [--demo]` writes the same records into
+a tenant that already exists, as the person `--as` names. A new *client* is not
+provisioned here: no client name, sector rule or price appears in this package, and
+a downstream flagship points the same kernel at its own files.
+
 ## Limits
 
 A record may declare no field its writer leaves behind. `Target` is the writer's
