@@ -261,15 +261,24 @@ type loosePayload struct {
 
 // TestTheHonestUnknownConstrainsNothingAroundItEither is the branch's own
 // guard for the rule kit/events/schema.go states three ways — the comment on
-// project, the `true` that jsonSchema emits for a nil schema, and the nil branch
-// check returns from. One of the three went missing once, so the three are
-// pinned together here: an unprojectable member is JSON Schema's `true` in the
+// project, the `{}` that memberSchema emits for a nil member schema, and the nil
+// branch check returns from. One of the three went missing once, so the three are
+// pinned together here: an unprojectable member is JSON Schema's open schema in the
 // document an integrator reads, any value of it is accepted at the door, and the
 // members the projection *does* describe are still refused by name and path — so
 // a checker that stops being honest about the unknown fails here rather than in
 // the next module's publisher, which is the module this kernel has not written
 // yet. The panic this case holds off killed the publisher's transaction, not the
 // publish: kit/db re-panics after the rollback and only kit/httpx catches it.
+//
+// The open schema is `{}`, not `true`. Both mean "anything" in JSON Schema, and
+// only one of them is a schema: kit/wire's document gate (67a23bf) refuses a member
+// whose schema is not an object, so `true` passed this package's own arithmetic and
+// left the composition's AsyncAPI document unrenderable — events.Change carries
+// before and after as whatever the field was, and every payload carrying a diff hit
+// the rule. A member is asked for an object; the top of a payload still answers
+// `true`, because there the honest statement is "this event declares no payload
+// type" and the document leaves such an event uncovered rather than describing it.
 func TestTheHonestUnknownConstrainsNothingAroundItEither(t *testing.T) {
 	admin, conn := dbtest.Schema(t)
 	declare(t, events.Declare[loosePayload]("billing.loose_issued"))
@@ -284,16 +293,16 @@ func TestTheHonestUnknownConstrainsNothingAroundItEither(t *testing.T) {
 	}
 	props, _ := s["properties"].(map[string]any)
 	for _, name := range []string{"raw", "any"} {
-		if open, ok := props[name].(bool); !ok || !open {
-			t.Errorf("properties.%s is %v, want JSON Schema's true: %s", name, props[name], doc)
+		if open, ok := props[name].(map[string]any); !ok || len(open) != 0 {
+			t.Errorf("properties.%s is %v, want JSON Schema's open object: %s", name, props[name], doc)
 		}
 	}
 	list, _ := props["list"].(map[string]any)
 	if list["type"] != "array" {
 		t.Fatalf("properties.list is %v: %s", props["list"], doc)
 	}
-	if open, ok := list["items"].(bool); !ok || !open {
-		t.Errorf("an []any's items are %v, want JSON Schema's true: %s", list["items"], doc)
+	if open, ok := list["items"].(map[string]any); !ok || len(open) != 0 {
+		t.Errorf("an []any's items are %v, want JSON Schema's open object: %s", list["items"], doc)
 	}
 
 	for _, body := range []any{
