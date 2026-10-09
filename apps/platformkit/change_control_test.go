@@ -42,10 +42,11 @@ const (
 // changeFixture is the reference composition with the one thing the composition
 // file cannot decide for itself set by hand: whether the switch is on.
 //
-// The mailbox sink is asked for by name: five cases below read an invitation link
-// out of this process's memory, and an installation that configured no mail records
-// the invite as suppressed and sends no link (mail_sink_test.go). It is asked for
-// before the flag below, which the configuration that helper returns would drop.
+// The mailbox these cases read is not asked for by name: a development deployment
+// that names no mail server is answered by the notification module's simulated
+// mailbox (mail_transport_test.go). A production deployment with no server records
+// the invite as suppressed and sends no link. The premise is stated before the flag
+// below, which the configuration that helper returns would drop.
 func changeFixture(t *testing.T, gateOn bool) (config.Config, composition, app.Options, string) {
 	t.Helper()
 	path, cfg := configure(t)

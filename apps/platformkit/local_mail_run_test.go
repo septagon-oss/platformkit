@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// The local command must pass the mail sink to the application process. The
+// The local command must pass the mail server to the application process. The
 // stand-in go executable exits immediately, so this checks the actual Make
 // recipe without starting a server or writing a local configuration file.
 func TestLocalRunPassesMailConfigurationToApplication(t *testing.T) {

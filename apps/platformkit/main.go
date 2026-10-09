@@ -76,17 +76,25 @@ func run(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	c := composeReference(cfg, environment(*env))
+	deployment := environment(*env)
+	c := composeReference(cfg, deployment)
 	switch {
 	case cfg.Mail.Enabled():
-	case cfg.Mail.Mailbox():
-		slog.WarnContext(ctx, "app: mail.sink is mailbox, so every message this application sends is kept in this process and none leaves it; set mail.host to send it")
+		// A server was named, which is the whole answer: whatever this application
+		// is asked to send, something outside this process sends it.
+	case deployment == pkit.Development:
+		// The other mail-less state, and it is worth one line because the two are
+		// otherwise indistinguishable from the outside: a development deployment
+		// that names no relay is answered by the notification module's simulated
+		// mailbox, so a sign-up is accepted and its link waits in this process for
+		// whoever is running it to read it.
+		slog.WarnContext(ctx, "app: mail.host is empty and this is a development deployment, so every message this application is asked to send is kept in its own process and none leaves it; set mail.host to send it")
 	default:
 		// Said out loud, because the two failures it warns about are otherwise
 		// quiet: a stranger who asks to sign up is refused with a reasoned 503 and
 		// no row is written, and a notice that asks for mail is recorded as
 		// suppressed in the delivery ledger.
-		slog.WarnContext(ctx, "app: mail is not configured, so an emailed verification link cannot be sent: sign-up by email is refused and notifications marked for email are recorded as suppressed; set mail.host, or mail.sink: mailbox to keep messages in this process")
+		slog.WarnContext(ctx, "app: mail is not configured, so an emailed verification link cannot be sent: sign-up by email is refused and notifications marked for email are recorded as suppressed; set mail.host to send it")
 	}
 	return c.app.Run(ctx, c.once, app.Role(*role))
 }

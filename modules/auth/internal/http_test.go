@@ -159,6 +159,16 @@ func person(t *testing.T, conn *db.Conn, email string, roles ...string) uuid.UUI
 	return id
 }
 
+// deliveryContext is the context kit/events hands a subscription handler: the
+// event's own tenant, and this composition's pool beside it. The one write in
+// this module that opens a second, shorter transaction of its own — the emailed
+// verification credential, which has to be committed before the mail carrying it
+// is handed over — asks the context for that pool (kit/httpx.ConnFrom), because
+// that is where kit/app puts it for every delivery it consumes.
+func deliveryContext(ctx context.Context, conn *db.Conn, tenant tenancy.Tenant) context.Context {
+	return httpx.WithConn(tenancy.WithTenant(ctx, tenant), conn)
+}
+
 // worker runs the module's subscriptions over everything in the outbox, once,
 // which is between them what kit/events' relay and Consume do in a deployment.
 //
@@ -172,7 +182,7 @@ func worker(t *testing.T, conn *db.Conn) {
 		Name    string
 		Payload []byte
 	}
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(deliveryContext(t.Context(), conn, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var rows []pending
 		if err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Find(&rows).Error; err != nil {
 			return err

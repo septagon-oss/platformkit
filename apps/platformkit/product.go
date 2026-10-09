@@ -252,22 +252,19 @@ func caches() app.Caches {
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
 // picked it. Mail is the only port with three implementations, so this is the one
-// place the three states of `mail` are named in the resolver's words: a server for
-// every one of its four fields, the sink for the in-process mailbox and nothing
-// for an installation that sends no mail. What can go wrong here is the list
-// disagreeing with what kit/config loaded — mail_sink_test.go and
-// email_delivery_unavailable_test.go are the two cases that read a running
-// application in the two states a server does not answer for.
+// place the state a server answers for is named in the resolver's words; naming
+// nothing at all leaves the mail-less choice to the module itself — its simulated
+// mailbox in a development deployment, the sender that refuses every send
+// anywhere else. What can go wrong here is the list disagreeing with what
+// kit/config loaded — email_delivery_unavailable_test.go boots a running
+// production application that names no server, and every case that reads a link
+// out of this process's memory boots the development one that does not.
 func deploymentInputs(cfg config.Config) map[string]string {
-	switch {
-	case cfg.Mail.Enabled():
-		return map[string]string{
-			"mail.host": cfg.Mail.Host, "mail.port": fmt.Sprint(cfg.Mail.Port), "mail.from": cfg.Mail.From,
-		}
-	case cfg.Mail.Mailbox():
-		return map[string]string{"mail.sink": cfg.Mail.Sink}
-	default:
+	if !cfg.Mail.Enabled() {
 		return nil
+	}
+	return map[string]string{
+		"mail.host": cfg.Mail.Host, "mail.port": fmt.Sprint(cfg.Mail.Port), "mail.from": cfg.Mail.From,
 	}
 }
 

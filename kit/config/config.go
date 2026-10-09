@@ -364,20 +364,15 @@ func (o OIDC) Enabled() bool { return o.Issuer != "" }
 // is what every service worth naming speaks. An empty host means there is none,
 // and there is no default stand-in for one: a command whose promise is a message
 // (an emailed verification link) refuses with a reasoned 503 and writes nothing,
-// and a notice that asks for mail is recorded as suppressed. The way to ask for
-// the in-memory sink anyway is mail.sink below, said by name.
+// and a notice that asks for mail is recorded as suppressed. What a development
+// deployment gets instead is the notification module's simulated mailbox, which
+// the resolver refuses to pick outside development — see mail.host below and
+// modules/notification's three implementations.
 //
 // Username and Password are optional, because a relay on a private network
 // authenticates by being unreachable from anywhere else. From is not: a message
 // with no sender is refused by the far end, hours later, in somebody else's log.
 type Mail struct {
-	// Sink is the one way to name a mail transport that is not a server.
-	// MailSinkMailbox keeps every message in this process's memory and sends
-	// nothing: what a test that has to read a message, or a screen that has to
-	// show one, asks for by name. It is never the default — a sink wired
-	// because nothing else was configured is how an installation ends up
-	// accepting a sign-up whose confirmation nobody will ever receive.
-	Sink     string `yaml:"sink"`
 	Host     string `yaml:"host"`
 	Port     int    `yaml:"port"`
 	Username string `yaml:"username"`
@@ -385,15 +380,8 @@ type Mail struct {
 	From     string `yaml:"from"`
 }
 
-// MailSinkMailbox is the only value mail.sink takes: this process's memory.
-const MailSinkMailbox = "mailbox"
-
 // Enabled reports whether a mail server is configured.
 func (m Mail) Enabled() bool { return m.Host != "" }
-
-// Mailbox reports whether the configuration asked, by name, for mail to be kept
-// in this process instead of sent.
-func (m Mail) Mailbox() bool { return m.Sink == MailSinkMailbox }
 
 // Audit is how long the audit trail is kept: the one thing modules/audit cannot
 // decide for itself, because a retention period is a compliance obligation and
@@ -744,14 +732,6 @@ const defaultSMTPPort = 587
 // identity provider follows: a host with no sender is a mailer that exists and
 // cannot send, which is worse than no mailer.
 func (m *Mail) validate(path string) error {
-	if m.Sink != "" {
-		if m.Sink != MailSinkMailbox {
-			return fmt.Errorf("config %s: mail.sink is %q; the only sink that is not a mail server is %q", path, m.Sink, MailSinkMailbox)
-		}
-		if m.Enabled() {
-			return fmt.Errorf("config %s: mail.sink %q keeps every message in this process and mail.host %q names a server to send them to; say one", path, m.Sink, m.Host)
-		}
-	}
 	if !m.Enabled() {
 		if m.Username != "" || m.Password != "" || m.From != "" {
 			return fmt.Errorf("config %s: mail has credentials or a sender and no host", path)

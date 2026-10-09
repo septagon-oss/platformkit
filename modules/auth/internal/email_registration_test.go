@@ -439,7 +439,7 @@ func TestVerificationDeliveryFailureRetainsTheRegistrationWithoutPersistingSecre
 	if res := call(t, router, "POST", "/api/v1/public/auth/register", approvalBody(t, "delivery@example.com", nil)); res.Code != http.StatusAccepted {
 		t.Fatalf("signup=%d", res.Code)
 	}
-	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	err := db.Run(deliveryContext(t.Context(), conn, acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var payload []byte
 		if err := tx.DB().Raw("SELECT payload FROM platformkit_outbox WHERE name=?", user.EventRegistrationUnverified).Row().Scan(&payload); err != nil {
 			return err

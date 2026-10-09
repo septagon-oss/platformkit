@@ -1159,6 +1159,20 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 			subs = append(subs, s)
 		}
 	}
+	// The delivery context carries this composition's connection, the way the
+	// transaction middleware carries it on a request (kit/httpx.transaction calls
+	// httpx.WithConn for every one). A subscription is a caller in the same
+	// position as a request: it has a tenant transaction open on the context, and
+	// the one write that legitimately opens a second, shorter one — the fact that
+	// has to be committed *before* the step that announces it, modules/auth's
+	// emailed credential — reaches the pool through httpx.ConnFrom rather than
+	// holding a handle of its own.
+	//
+	// It cannot reach it through the wiring path. Decision 0074 rule 1 composes
+	// the routes and answers every gate over them before this pool is dialled, so
+	// a module that took a connection while its Routes callback ran took nothing,
+	// and the failure only surfaced as a mail that never arrived.
+	ctx = httpx.WithConn(ctx, conn)
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
 	}
