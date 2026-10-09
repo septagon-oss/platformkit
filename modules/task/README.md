@@ -12,8 +12,10 @@ Its SQL is [migrations/](migrations/), embedded and exported as
 `task.Migrations`; the manifest hands the kernel the same files, and a test
 composes it with `dbtest.Schema(t, task.Migrations)`.
 
-Compose it with `task.Deps{Service, Policy, Tenants, SweepEvery, Gate}`; `Policy` and `Gate` are
-optional and [modules/auth/policies](../auth/policies/README.md) shows the
+Compose it with `task.Deps{Service, Policy, Tenants, SweepEvery, Gate}`, or name
+`task.Module` in `Use` and let the resolver fill `Policy` and `Gate` from whatever
+the composition provides; both are optional, and
+[modules/auth/policies](../auth/policies/README.md) shows the
 Topaz adapter. The generated screens appear at `/app/task/tasks` with
 no code of the module's own. `make test TEST_PACKAGES=./modules/task/...`
 needs the development database; the domain package's tests need nothing.
@@ -62,10 +64,14 @@ so no writer moves it twice and none of them moves it by hand. The number exists
 quote one: it is what a stale proposal is refused with, and what the refusal a protected write
 gets quotes back.
 
-`Deps.Gate` is a `rest.Gate`: the door [kit/rest](../kit/rest/README.md) asks at the
+`Deps.Gate` is a `rest.Gate`: the door [kit/rest](../../kit/rest/README.md) asks at the
 lock-merge-write seam of the generic PATCH, the DELETE and the three commands. The module
 answers nothing about *which* fields are protected, and imports no peer module to ask: it
 publishes the vocabulary, and the composition answers, with the installation's own switch.
+Under `Use(task.Module)` that answer arrives as one `Optional` edge of the same
+`rest.Gate` type — the reference application provides it from its own `product` module —
+which is why the door is handed to the module rather than written around the routes a
+`Spec` mounts itself.
 
 - `contracts.ProtectableFields` names the fields a proposal may move; `contracts.CommandOwnedFields`
   names the ones a command owns, and is the one list `spec.Immutable`, `Writer.Save`'s refusal and

@@ -9,20 +9,22 @@ it was reviewed at or not at all.
 
 Which writes need it is not one of them. There is no `rest.Spec` here (a Spec is
 five routes on a collection, three of which write whatever the body says; a
-proposal moves through four named commands with an actor rule each), no HTML, no
-nav entry and no job: a capability that decided which of its host's
+proposal moves through four named commands with an actor rule each), no catalog
+resource and no job: a capability that decided which of its host's
 operations were sensitive would be a capability with a product in it. It reads a switch in
 exactly one place, and only where a composition built the switch into it — `Gate` below, with
 a `Key` somebody else chose and a `WayOn` somebody else serves.
 
 ## Composition
 
-The reference application names it in `Use` (`apps/platformkit/app.go`), and the
-subject it applies proposals for is contributed by `apps/platformkit/product.go`'s
-`access` module, which is the first module in the composition with a site service
-to read one with: a subject is a site settings row, and which writes need change
-control stays this product's fact. `change.Module` is the provider value; the
-literal below builds the hand path.
+The reference application names it in `Use` (`apps/platformkit/app.go`). Its two
+subjects arrive as contributions, one per contributing module, because a
+contribution is the one value of a contract a module *is*: `access` contributes the
+site settings row — the first subject in the composition with a site service to
+read one with — and `product`, first and needing nobody, contributes the task,
+whose two doors are the two argument-free constructors of `modules/task`. Which
+writes need change control stays this product's fact. `change.Module` is the
+provider value; the literal below builds the hand path.
 `readme_composition_test.go` compiles its field names, its `Resolve` signature and
 the `change.Deps` and `change.Module` around them, with a subject stubbed out.
 
@@ -54,6 +56,20 @@ which field, and where the change goes instead. What this module owns is the sha
 answer — ask the subject owner before the switch, so an unreachable provider never refuses a
 write nobody protected, and refuse with an address rather than a wall. What it owns in none of
 them is a key, a subject, or a field of anybody's row.
+
+Three more edges are the composition's rather than this module's, and all three are
+`pkit.Optional`, because each is a thing a module must not guess:
+`contracts.Notifier`, whose absence leaves the manifest's `Subscriptions` nil rather
+than inventing a mail server; `contracts.ProposalPage`, the address a notice names,
+because the module owns the proposal and not the path it answers at; and
+`ReviewChrome`, the `page.Shell` the two screens are drawn in, the authorizer the
+decision controls reuse and the page size. `access` supplies all three in the
+reference application — it is the first module there that can name a person, a
+notice and a site at once — and the read and the four commands are filled by the
+module's own wire, from the one service the resolver builds, so no composition can
+hand a queue a different service than the routes beside it. None of the three arrives
+and this module is the object and six JSON routes: no subscription, no queue, and
+the surface's own 404 for a person who asks for a screen nobody composed.
 
 **Reused** — `kit/crud.GetForUpdate` for the row lock and `kit/db.Tx[db.Tenant]`
 for the caller's transaction; `kit/events.Publish` for the one event per
@@ -270,13 +286,14 @@ declined proposal, which is what proposing it again as a new row is for.
 ## The two screens
 
 The queue at `/app/change/proposals` and the proposal at `/app/change/proposals/{id}` are this
-module's own pages (`modules/change/internal/ui`), mounted when a composition hands `Deps.Reviews`
-its `page.Shell` and declared by the manifest's one `Nav` entry. The module owns the queue, the
+module's own pages (`modules/change/internal/reviews.go`), mounted when the
+composition hands over the `ReviewChrome` whose `page.Shell` draws them and
+declared by the manifest's one `Nav` entry. The module owns the queue, the
 difference, the decision controls and the row's own history of proposals; it does not own the
 shell around them, the dashboard, or the notice a proposer receives — the shell is handed in, and
 the notice goes out through `contracts.Notifier`, which `apps/platformkit` implements over
-`modules/notification` in four lines. A composition that wires neither serves no queue and no
-notice, and the manifest then declares no screen and no subscription.
+`modules/notification` in four lines. A composition that hands neither mounts no page and declares
+no subscription; the manifest's one `Nav` entry stands either way, gated on `change:read`.
 
 A watcher — `change:read` alone — is drawn no decision controls at all, because the page was
 composed for a person who may not press them rather than built for one who may and hidden. The
