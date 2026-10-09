@@ -29,7 +29,11 @@ if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	exit 1
 fi
 race="$(ci_line check-race 'go test')"
-if [[ "$race" != 'go test -race -count=1 ./'* ]]; then
+# The race line's bound is asked for by the same reasoning the line above asks for `check`'s: the
+# fresh race run is a line, and a line that lost its clock is a line that answers to go test's
+# ten-minute default. It is matched at the foot of the package list, which is where the Makefile puts
+# it so the prefix below still names the fresh gate.
+if [[ "$race" != 'go test -race -count=1 ./'*-timeout=30m ]]; then
 	printf 'FAIL: make check-race without TEST_COUNT is not the fresh race line CI depends on:\n%s\n' "$race" >&2
 	exit 1
 fi
