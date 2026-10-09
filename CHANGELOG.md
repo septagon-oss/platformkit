@@ -14,8 +14,10 @@ that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
 whole window, and **no error**, because a refusal that travels as an error is a
 refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
 refuse with, answer `ErrBusy` rather than a number nobody read. A store that
-cannot be reached fails open exactly as ADR 0010 said, unchanged: `kit/limit/README.md`
-ow states the four outcomes and the two budgets for every composer of them.
+answers it cannot serve still fails open exactly as ADR 0010 said; a store that
+answers nothing at all is this attempt's own wall expiring, which is a refusal.
+`kit/limit/README.md` now states the four outcomes and the two budgets for every
+composer of them.
 
 **A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
 routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
