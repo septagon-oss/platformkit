@@ -216,8 +216,10 @@ func (s Site) article(ctx context.Context, tx db.Tx[db.Tenant], settings *siteco
 		return page.View{}, err
 	}
 	v := s.view(settings, r, title, language, []g.Node{h.Article(
-		components.Heading(components.HeadingProps{Text: title, Level: 1}),
-		h.Div(g.Attr("data-prose", ""), components.Prose(components.ProseProps{HTML: html})))})
+		components.Heading(components.HeadingProps{Text: title, Level: 1,
+			ComponentProps: components.ComponentProps{Attrs: langAttr(serving.Foreign(contentcontracts.FieldTitle))}}),
+		h.Div(g.Attr("data-prose", ""), langMark(serving.Foreign(contentcontracts.FieldBody)),
+			components.Prose(components.ProseProps{HTML: html})))})
 	// The alternates come before the description, in the order a reader of the
 	// head meets them: what languages this page stands in, then what it says.
 	v.Head = append(v.Head, alternates(address, serving)...)
@@ -228,6 +230,28 @@ func (s Site) article(ctx context.Context, tx db.Tx[db.Tenant], settings *siteco
 		}
 	}
 	return v, nil
+}
+
+// langAttr and langMark put a field's own language on the element that prints
+// it. They exist because a reader who asked for Portuguese of a page that only
+// partly answers in Portuguese is given that page: the document declares the
+// language its reader asked for, and every field still in the source says so on
+// its own element, which is the only way a screen reader gets the right voice for
+// both halves. A field in the language the document already declares is marked
+// with nothing — the page from before any translation, and every page of a tenant
+// served in one language, print exactly as they did.
+func langAttr(tag string) map[string]string {
+	if tag == "" {
+		return nil
+	}
+	return map[string]string{"lang": tag}
+}
+
+func langMark(tag string) g.Node {
+	if tag == "" {
+		return g.Raw("")
+	}
+	return h.Lang(tag)
 }
 
 // wantedLanguage is the language this reader asked to be answered in: what they
