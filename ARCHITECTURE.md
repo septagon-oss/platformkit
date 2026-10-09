@@ -442,8 +442,8 @@ router's.
 here: a passkey answers the second factor, `github.com/go-webauthn/webauthn`
 plus its CBOR/COSE tree priced as a module dependency in its own `build(budget)`
 commit, written down beside what stays out
-(`modules/auth/README.md:192-194`, `:227-230`). The two things the library
-leaves to the relying party are decided where they are enforced: the config is
+(`modules/auth/README.md:192-194`, `:227-230`). What the library leaves to
+the relying party is decided where it is enforced: the config is
 built per request from the host that already chose the tenant, so a credential
 minted at one tenant's host cannot answer at another's (`:205-208`), and whether
 a passkey may be the whole sign-in, with no password offered first, is that
