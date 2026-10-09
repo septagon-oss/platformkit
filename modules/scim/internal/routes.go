@@ -81,8 +81,9 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-schema-get", Method: http.MethodGet, Path: "/Schemas/{id}",
 		Summary: "One attribute document", Tags: []string{"scim"},
-	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *nameInput) (*document[contracts.Schema], error) {
-		schema, err := svc.Schema(ctx, in.Name)
+		Description: "The identifier is the urn the document answers with, sent as one path segment: a client reads it out of /Schemas and comes straight back with it.",
+	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *schemaInput) (*document[contracts.Schema], error) {
+		schema, err := svc.Schema(ctx, in.ID)
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
@@ -209,7 +210,8 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-group-create", Method: http.MethodPost, Path: "/Groups",
 		Summary: "Declare a group", Tags: []string{"scim"}, DefaultStatus: http.StatusCreated,
-		Errors: []int{http.StatusConflict, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
+		Description: "The collection and who is in it. A document that names a role is refused: the role a group brings is this tenant's to bind, at its own door, and a credential that could write it could grant itself anything.",
+		Errors:      []int{http.StatusConflict, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *groupDraftInput) (*document[contracts.GroupResource], error) {
 		tx, _, err := working(ctx)
 		if err != nil {
@@ -240,7 +242,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-group-replace", Method: http.MethodPut, Path: "/Groups/{id}",
 		Summary: "Replace a group", Tags: []string{"scim"},
-		Description: "The name has to stay this group's: it keys the role mapping somebody chose for it.",
+		Description: "The name has to stay this group's: it keys the role mapping somebody chose for it, and a document that says nothing about the role leaves that mapping alone.",
 		Errors:      []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *groupReplaceInput) (*document[contracts.GroupResource], error) {
 		tx, _, err := working(ctx)
@@ -257,7 +259,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	httpx.Register(protocol, huma.Operation{
 		OperationID: "scim-group-patch", Method: http.MethodPatch, Path: "/Groups/{id}",
 		Summary: "Move membership", Tags: []string{"scim"},
-		Description: "add, remove or replace on members, and the role extension. This is the only door that moves a membership.",
+		Description: "add, remove or replace on members — whole, or one person selected by members[value eq \"<id>\"]. This is the only door that moves a membership, and it writes no role: the tenant binds one at its own group-mappings door.",
 		Errors:      []int{http.StatusNotFound, http.StatusUnprocessableEntity, http.StatusServiceUnavailable},
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *patchInput) (*document[contracts.GroupResource], error) {
 		tx, _, err := working(ctx)
@@ -358,7 +360,17 @@ var noTx db.Tx[db.Tenant]
 // the request.
 type (
 	nameInput struct {
-		Name string `path:"name" doc:"The resource type or schema urn"`
+		Name string `path:"name" doc:"The resource type this service serves"`
+	}
+
+	// schemaInput is the attribute document's own address: the urn a client read
+	// out of /Schemas arrives as one path segment, so the parameter is an id and
+	// not a name. A route that declares {id} while its input reads {name} is
+	// refused by the router before the service is ever asked — which is how every
+	// schema this service published came to answer 422 at the address advertising
+	// it, while /Schemas itself listed the urns.
+	schemaInput struct {
+		ID string `path:"id" doc:"The urn of the attribute document, as /Schemas names it"`
 	}
 
 	idInput struct {

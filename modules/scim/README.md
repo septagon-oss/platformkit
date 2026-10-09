@@ -38,7 +38,14 @@ in one transaction.
 `GET` filtered by `userName eq "<address>"` — the one comparison this service makes,
 because a filter it does not implement must refuse rather than answer unfiltered: a
 connector handed everybody when it asked for a subset will go on to act on everybody
-it meant to spare.
+it meant to spare. A `PATCH` reads the attribute named in `path` and, as Okta sends
+it, the attributes named inside a pathless `replace`'s value — so the two spellings
+of "this person has left" both stop them signing in. One member is selected by
+`members[value eq "<id>"]`, which is how RFC 7644 and Microsoft's provisioning guide
+send it; read as plain `members` it would answer the standard request by emptying the
+group. The discovery documents answer at the addresses they name: a schema is read by
+its urn at `/Schemas/{id}`, one path segment, because that is the address the
+`ServiceProviderConfig` and every document's own `meta.location` point a client at.
 
 ## Authorization
 
@@ -88,9 +95,19 @@ automatically at all.
 - An unknown schema on a resource is refused, not ignored: a payload carrying an
   extension this deployment does not store says something about that person that
   would otherwise be dropped without a trace.
-- Every mutation re-checks the actor's grant, the tenant scope and the caller's
-  expected revision inside its own authoritative transaction. A refused write
-  changes nothing and emits nothing.
+- Every mutation re-checks the tenant scope and the state it is about to change
+  inside its own authoritative transaction, and holds the group's row lock while it
+  decides, so a concurrent delete cannot commit underneath a membership write. A
+  refused write changes nothing and emits nothing. There is no *caller's expected
+  revision* to re-check: `contracts.Service` says why — a connector sends no
+  `If-Match`, the documents carry `meta.version` as an answer and not as a demand,
+  and this service issues no ETag. Anyone who wants compare-and-set has to add it to
+  the protocol door first, and the product's share of that is its own.
+- No group write binds a group to a role. `role` is this platform's extension, not
+  part of the core Group schema, and a credential handed to somebody else's identity
+  provider that could state what a mirrored organisational unit grants could grant
+  itself anything. `MapGroup` at `group-mappings`, under `user:manage`, is the one
+  writer; a draft that names a role is refused where it arrives rather than dropped.
 
 ### Public faces
 
@@ -119,7 +136,40 @@ groups rather than silently making the binding mean something else.
 
 ## Events
 
-The module emits nothing of its own. What happens to a person is the user module's
-event — `user.invited`, `user.email_confirmed`, `user.roles_set` — which is what
-lets a subscriber see an identity created by a connector and an identity created by
-an administrator as the same fact, and lets each grant and each revoke be audited.
+What happens to a person is the user module's event — `user.invited`,
+`user.email_verified`, `user.roles_set`, `user.deactivated` — which is what lets a
+subscriber see an identity created by a connector and an identity created by an
+administrator as the same fact, and lets each grant and each revoke be audited.
+
+The four facts no user event describes are this module's own, published in the
+transaction that writes the row they are about: `scim.group_created`,
+`scim.group_changed` (with `via` saying whether the list arrived whole or one
+operation at a time), `scim.group_removed`, and `scim.mapping_changed` — the last
+carrying both role names, because after a withdrawal the table is the only place
+that has stopped saying what a membership meant, and the trail is the only place
+left that ever knew. A mapping re-stated unchanged emits nothing: an event saying a
+decision was made when it was only repeated is a false line in the one record a
+person reads to find out who decided what a role means.
+
+The audit module subscribes to every declared event, so declaring these is what makes
+a group write auditable at all — and `audit` is why the payloads carry identifiers
+rather than content: a group's id and the name its provider spells it by, how many
+members it now holds, and which role stopped being granted.
+
+## Limits
+
+What this door refuses, and what a caller has to do instead.
+
+| The door refuses | Because | Instead |
+| --- | --- | --- |
+| a group document naming `role` | the mapping is the tenant's, not the provider's | bind it at `group-mappings` under `user:manage` |
+| a `remove` on `members` with a selection other than `value eq "<id>"` | an operation that silently meant "every member" empties the group | name one member, or omit the path and mean it |
+| a PATCH operation with no path whose value is not an object of attributes | guessing which attribute a bare value means | name the attributes, as `{"active":false}` does |
+| `userName`, a `password`, an unknown schema urn, any group `filter` | one address per person, chosen by nobody but the person; a subset handed over as the whole directory | read the notes above |
+| a `DELETE /Groups/{id}` that still has members | membership has one door | remove the members through it first |
+| an `If-Match`, or a revision the caller expected | the protocol sends none, so there is nothing to check | `contracts.Service`'s note on concurrency |
+| any of the above, once refused | nothing of it is kept | — |
+
+The protocol's own conformance door (`contracts/scimtest`) is not here: the module is
+exercised against a real Postgres, the real user module and the real router, which is
+what the tests below run. A portable fake is a follow-up, named in the brief.

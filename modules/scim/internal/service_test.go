@@ -189,9 +189,17 @@ func TestAGroupCarriesItsRoleOntoItsMembersAndTakesItBackOff(t *testing.T) {
 		}
 
 		group, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{
-			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance", Role: "finance",
+			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance",
 		})
 		if err != nil {
+			return err
+		}
+		// The binding is made at the tenant's own door, which is the only writer of
+		// the table there is: the group reads back the same role however it arrived.
+		if _, err := w.svc.MapGroup(ctx, tx, group.DisplayName, "finance"); err != nil {
+			return err
+		}
+		if group, err = w.svc.GetGroup(ctx, tx, group.ID); err != nil {
 			return err
 		}
 		if group.Role != "finance" {
@@ -387,9 +395,12 @@ func TestAnotherTenantCannotReachThisTenantSCIMRows(t *testing.T) {
 	var group, person uuid.UUID
 	if err := db.Run(ctx, w.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		g, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{
-			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance", Role: "finance",
+			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance",
 		})
 		if err != nil {
+			return err
+		}
+		if _, err := w.svc.MapGroup(ctx, tx, g.DisplayName, "finance"); err != nil {
 			return err
 		}
 		group = g.ID
@@ -511,7 +522,7 @@ func TestADeleteRefusesAGroupThatStillHasMembers(t *testing.T) {
 			return err
 		}
 		g, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{
-			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance", Role: "finance",
+			Schemas: []string{contracts.SchemaGroup}, DisplayName: "Finance",
 			Members: []contracts.MemberRef{{Value: u.ID.String()}},
 		})
 		if err != nil {
@@ -587,3 +598,57 @@ func TestTheDiscoveryDocumentsAnswerForThemselves(t *testing.T) {
 }
 
 func pointer(v bool) *bool { return &v }
+
+// TestNoGroupCommandWritesTheTenantsRoleMapping: the rule behind every group
+// write in this module. The protocol has no field to hold a role, and a credential
+// a tenant hands to somebody else's identity provider cannot be the one that says
+// what a mirrored organisational unit grants — so none of the three group writes
+// reads the field, the mapping table is written by MapGroup alone, and nothing
+// arrives in front of the refusal.
+func TestNoGroupCommandWritesTheTenantsRoleMapping(t *testing.T) {
+	w := compose(t, "admin")
+	ctx := tenancy.WithTenant(t.Context(), acme)
+	for _, tc := range []struct {
+		name string
+		call func(context.Context, db.Tx[db.Tenant]) error
+	}{
+		{"create", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			_, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{DisplayName: "People", Role: "admin"})
+			return err
+		}},
+		{"replace", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			g, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{DisplayName: "People"})
+			if err != nil {
+				return err
+			}
+			_, err = w.svc.ReplaceGroup(ctx, tx, g.ID, contracts.GroupDraft{DisplayName: "People", Role: "admin"})
+			return err
+		}},
+		{"patch", func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			g, err := w.svc.CreateGroup(ctx, tx, contracts.GroupDraft{DisplayName: "People"})
+			if err != nil {
+				return err
+			}
+			_, err = w.svc.PatchGroup(ctx, tx, g.ID, []contracts.Operation{{
+				Op: "add", Path: "urn:ietf:params:scim:schemas:extension:pkit:2.0:Group:role", Value: []byte(`"admin"`),
+			}})
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w.refused(t, acme, crud.ErrInvalid, tc.call)
+			if err := db.Run(ctx, w.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				bindings, err := w.svc.GroupMappings(ctx, tx)
+				if err != nil {
+					return err
+				}
+				if len(bindings) != 0 {
+					t.Errorf("the refused %s left the tenant a mapping: %+v", tc.name, bindings)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

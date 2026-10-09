@@ -192,7 +192,14 @@ type GroupDraft struct {
 	ExternalID  string      `json:"externalId,omitempty" required:"false"`
 	DisplayName string      `json:"displayName,omitempty" required:"false"`
 	Members     []MemberRef `json:"members,omitempty" required:"false"`
-	Role        string      `json:"role,omitempty" required:"false"`
+	// Role is the one attribute of this document that this tenant owns and its
+	// identity provider does not, so it is a field refused rather than a field
+	// read — the same standing as UserDraft.Password, for the same reason. The
+	// core Group schema has no place to hold a role, and a credential that could
+	// write one could hand itself authority: which is exactly why a machine may be
+	// given the door at all. MapGroup is the only writer of the binding, at the
+	// tenant's own address, under user:manage.
+	Role string `json:"role,omitempty" required:"false"`
 }
 
 // Operation is one PATCH operation: add, remove or replace, at a path, with a
@@ -315,10 +322,16 @@ type SchemaAttribute struct {
 // check against. The service does not invent one. Every write it performs is a
 // command on modules/user that rechecks its own state inside its own transaction
 // (SetRoles locks the row, ConfirmAddress refuses a status it cannot activate),
-// and the two membership statements are guarded by the row lock their own table
-// gives them; a lost update therefore needs two connectors writing the same
-// group at the same instant, which the lock's owner will answer before this
-// module grows an ETag nobody asked for.
+// and every write of a group takes that group's row lock before it reads who is
+// in it: checking that a collection exists and then writing its members is two
+// statements, and between them a DELETE can commit, so without the lock a second
+// connector's membership would arrive behind a group that no longer exists — an
+// orphan no read of either side can explain. A writer that arrives behind a
+// deletion therefore waits for it, then finds no group to write to.
+//
+// Authority: no group command writes the tenant's role mapping. The protocol
+// carries no such field (see GroupDraft.Role), and the binding is written by
+// MapGroup alone, at the workspace's door, under user:manage.
 type Service interface {
 	// ProviderConfig, ResourceTypes, ResourceType, Schemas and Schema are the
 	// discovery documents. They take no transaction because they read no rows:
@@ -350,6 +363,9 @@ type Service interface {
 
 	ListGroups(ctx context.Context, tx db.Tx[db.Tenant], q ListQuery) (*GroupList, error)
 	GetGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*GroupResource, error)
+	// CreateGroup declares a collection. A draft that names a role is refused:
+	// the mapping is this tenant's to choose, and MapGroup is the only command
+	// that writes it.
 	CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in GroupDraft) (*GroupResource, error)
 	ReplaceGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in GroupDraft) (*GroupResource, error)
 	PatchGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ops []Operation) (*GroupResource, error)

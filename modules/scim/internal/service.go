@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/modules/scim/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -355,10 +357,11 @@ func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 }
 
 // PatchUser applies the operations this module reads: active, externalId and the
-// display name. Anything else refuses the whole PATCH — the protocol says an
-// operation that cannot be applied fails the request, and a partial application
-// would leave the connector's idea of the person and this tenant's two different
-// things with no record of the difference.
+// display name, named in the path or, as Okta sends them, as members of a
+// pathless replace's value (see expandOperations). Anything else refuses the
+// whole PATCH — the protocol says an operation that cannot be applied fails the
+// request, and a partial application would leave the connector's idea of the
+// person and this tenant's two different things with no record of the difference.
 func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ops []contracts.Operation) (*contracts.UserResource, error) {
 	row, err := readUser(tx, id)
 	if err != nil {
@@ -369,7 +372,11 @@ func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 	active := new(bool)
 	*active = row.Status == usercontracts.StatusActive
 	wroteName, wroteExternal, wroteActive := false, false, false
-	for _, op := range ops {
+	expanded, err := expandOperations(ops)
+	if err != nil {
+		return nil, err
+	}
+	for _, op := range expanded {
 		path := strings.ToLower(strings.TrimSpace(op.Path))
 		switch path {
 		case "active":
@@ -575,11 +582,49 @@ func readGroup(tx db.Tx[db.Tenant], id uuid.UUID) (groupRow, error) {
 	return row, nil
 }
 
+// readGroupForUpdate is the read every write of a group starts with: the row's
+// own lock first, then the row.
+//
+// Checking that a collection exists and then writing what hangs off it is two
+// statements, and between them a DELETE can commit — a connector that deleted the
+// group while another was adding a member would leave a membership pointing at an
+// id no group answers, which no read of either table can explain afterwards. The
+// lock makes the second writer wait for the first to finish and then answer that
+// there is nothing there to write to, which is also what its caller's transaction
+// rolls back.
+func readGroupForUpdate(tx db.Tx[db.Tenant], id uuid.UUID) (groupRow, error) {
+	if err := lockGroup(tx, id); err != nil {
+		return groupRow{}, err
+	}
+	return readGroup(tx, id)
+}
+
+// lockGroup holds one group's row for the length of this transaction.
+func lockGroup(tx db.Tx[db.Tenant], id uuid.UUID) error {
+	var held struct {
+		ID uuid.UUID `gorm:"column:id"`
+	}
+	err := tx.DB().Table("scim_groups").Select("id").
+		Where("id = ? AND tenant_id = ?", id, db.TenantOf(tx).ID).
+		Clauses(clause.Locking{Strength: "UPDATE"}).Take(&held).Error
+	if err != nil {
+		return crud.Classify(err)
+	}
+	return nil
+}
+
 // CreateGroup declares a collection. Its name is the connector's, compared
 // without case, and it is refused when this tenant already has that collection
 // under another spelling: two groups called "Finance" and "finance" are two rows
 // that both map to one role, and the mapping is one row.
+//
+// It declares a collection and nothing else: the role it brings is refused here
+// (see refusedGroup) and is written by MapGroup, so a provisioning credential can
+// mirror a directory but cannot decide what mirroring it grants.
 func (s *Service) CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in contracts.GroupDraft) (*contracts.GroupResource, error) {
+	if err := refusedGroup(in); err != nil {
+		return nil, err
+	}
 	name := strings.TrimSpace(in.DisplayName)
 	if name == "" {
 		return nil, fmt.Errorf("%w: a group is named by displayName", crud.ErrInvalid)
@@ -593,10 +638,10 @@ func (s *Service) CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in contr
 	if err := crud.Create(ctx, tx, &g); err != nil {
 		return nil, err
 	}
-	if err := s.mapGroup(ctx, tx, g.ID, in.Role); err != nil {
+	if err := s.replaceMembers(ctx, tx, g.ID, in.Members); err != nil {
 		return nil, err
 	}
-	if err := s.replaceMembers(ctx, tx, g.ID, in.Members); err != nil {
+	if err := s.recordGroupCreated(ctx, tx, g); err != nil {
 		return nil, err
 	}
 	return s.GetGroup(ctx, tx, g.ID)
@@ -608,15 +653,15 @@ func (s *Service) CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in contr
 // are the explicit act, and they are both refused while the group has members, so
 // a rename has to be decided rather than performed by accident.
 func (s *Service) ReplaceGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in contracts.GroupDraft) (*contracts.GroupResource, error) {
-	g, err := readGroup(tx, id)
+	if err := refusedGroup(in); err != nil {
+		return nil, err
+	}
+	g, err := readGroupForUpdate(tx, id)
 	if err != nil {
 		return nil, err
 	}
 	if want := strings.TrimSpace(in.DisplayName); want != "" && !strings.EqualFold(want, g.Name) {
 		return nil, fmt.Errorf("%w: a group's name is the key its role mapping was made for; delete it and declare the new one", crud.ErrInvalid)
-	}
-	if err := s.mapGroup(ctx, tx, id, in.Role); err != nil {
-		return nil, err
 	}
 	if in.Members != nil {
 		if err := s.replaceMembers(ctx, tx, id, in.Members); err != nil {
@@ -628,38 +673,47 @@ func (s *Service) ReplaceGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid
 			return nil, fmt.Errorf("scim: replace group: %w", err)
 		}
 	}
+	if err := s.recordGroupChanged(ctx, tx, id, g.Name, "replace"); err != nil {
+		return nil, err
+	}
 	return s.GetGroup(ctx, tx, id)
 }
 
-// PatchGroup reads the two paths a connector actually sends: members add/remove,
-// and the role extension.
+// PatchGroup reads the members of a collection: add, remove and replace, whole or
+// one person named in a valuePath. The role extension is not one of the paths —
+// see refusedGroup for why the door refuses it whoever sends it.
 func (s *Service) PatchGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ops []contracts.Operation) (*contracts.GroupResource, error) {
-	if _, err := readGroup(tx, id); err != nil {
+	g, err := readGroupForUpdate(tx, id)
+	if err != nil {
 		return nil, err
 	}
-	for _, op := range ops {
+	expanded, err := expandOperations(ops)
+	if err != nil {
+		return nil, err
+	}
+	for _, op := range expanded {
 		path := strings.ToLower(strings.TrimSpace(op.Path))
-		if path == "" || strings.HasPrefix(path, "members") {
+		if path == "members" || strings.HasPrefix(path, "members[") {
+			who, err := memberSelection(path)
+			if err != nil {
+				return nil, err
+			}
 			members, err := patchMembers(op)
 			if err != nil {
 				return nil, err
+			}
+			if len(members) == 0 && who != "" {
+				members = []contracts.MemberRef{{Value: who}}
 			}
 			if err := s.moveMembers(ctx, tx, id, strings.ToLower(strings.TrimSpace(op.Op)), members); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		if strings.HasSuffix(path, ":role") || path == "role" {
-			role, err := patchString(op)
-			if err != nil {
-				return nil, err
-			}
-			if err := s.mapGroup(ctx, tx, id, role); err != nil {
-				return nil, err
-			}
-			continue
-		}
 		return nil, fmt.Errorf("%w: %q is not an attribute this service writes", crud.ErrInvalid, op.Path)
+	}
+	if err := s.recordGroupChanged(ctx, tx, id, g.Name, "patch"); err != nil {
+		return nil, err
 	}
 	return s.GetGroup(ctx, tx, id)
 }
@@ -668,7 +722,8 @@ func (s *Service) PatchGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 // members: membership has one door, and a connector that deleted a group out from
 // under people would silently take their role with it.
 func (s *Service) DeleteGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
-	if _, err := readGroup(tx, id); err != nil {
+	g, err := readGroupForUpdate(tx, id)
+	if err != nil {
 		return err
 	}
 	var n int64
@@ -681,7 +736,12 @@ func (s *Service) DeleteGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	if err := tx.DB().Where("group_id = ?", id).Delete(&GroupMapping{}).Error; err != nil {
 		return fmt.Errorf("scim: remove mapping: %w", err)
 	}
-	return crud.Delete[*Group](tx, id, false)
+	if err := crud.Delete[*Group](tx, id, false); err != nil {
+		return err
+	}
+	return events.Publish(ctx, tx, contracts.EventGroupRemoved, contracts.GroupRemoved{
+		Group: id, DisplayName: g.Name, Role: g.Role, At: db.Now(),
+	})
 }
 
 // GroupMappings is the tenant's mapping table, read for the workspace door. The
@@ -711,60 +771,100 @@ func (s *Service) GroupMappings(_ context.Context, tx db.Tx[db.Tenant]) (contrac
 // role this tenant has never been told about: the alternative is a mapping that
 // grants nothing, discovered the day somebody expects it to have granted
 // something.
+//
+// It is also the only writer of the mapping table anywhere in this module. That
+// is the point of the door rather than a comment on it: the protocol has no field
+// to hold a role, and a credential a tenant hands to somebody else's identity
+// provider must not be able to say what a collection it mirrors grants.
 func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role string) (*contracts.GroupMapping, error) {
 	g, err := s.groupByName(ctx, tx, group)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.mapGroup(ctx, tx, g.ID, role); err != nil {
+	want := strings.TrimSpace(role)
+	// The same lock the membership writes take: without it a group deleted in
+	// another transaction would leave this one's binding pointing at a row that is
+	// on its way out, and a mapping of that kind is read by nobody and cleaned up
+	// by nothing.
+	if err := lockGroup(tx, g.ID); err != nil {
 		return nil, err
 	}
-	return &contracts.GroupMapping{Group: g.Name, Role: strings.TrimSpace(role)}, nil
+	was, err := s.mapGroup(ctx, tx, g.ID, want)
+	if err != nil {
+		return nil, err
+	}
+	if was == want {
+		// The same answer twice changed nobody's authority, and an event saying it
+		// did would be a false line in the one record a person reads to find out
+		// who decided what a membership means.
+		return &contracts.GroupMapping{Group: g.Name, Role: want}, nil
+	}
+	if err := events.Publish(ctx, tx, contracts.EventMappingChanged, contracts.MappingChanged{
+		Group: g.ID, DisplayName: g.Name, Was: was, Now: want, At: db.Now(),
+	}); err != nil {
+		return nil, err
+	}
+	return &contracts.GroupMapping{Group: g.Name, Role: want}, nil
 }
 
-// mapGroup is the one write of the mapping table, from whichever door asked.
-func (s *Service) mapGroup(ctx context.Context, tx db.Tx[db.Tenant], groupID uuid.UUID, role string) error {
+// mapGroup is the one write of the mapping table, from whichever door asked. It
+// answers the role the row held beforehand, which is what the trail records and
+// what the affected people's roles are measured against.
+func (s *Service) mapGroup(ctx context.Context, tx db.Tx[db.Tenant], groupID uuid.UUID, role string) (string, error) {
 	role = strings.TrimSpace(role)
 	if role != "" {
 		known, err := s.roles.HasRole(ctx, tx, role)
 		if err != nil {
-			return err
+			return "", err
 		}
 		if !known {
-			return fmt.Errorf("%w: this tenant has no role called %q to bind a group to", crud.ErrInvalid, role)
+			return "", fmt.Errorf("%w: this tenant has no role called %q to bind a group to", crud.ErrInvalid, role)
 		}
 	}
+	// Which roles the mappings own is read *before* the row changes. The role being
+	// withdrawn is exactly the one that stops being named by this table the moment
+	// the write lands, and a list recomputed afterwards reads it as a grant an
+	// administrator made by hand — which is how a withdrawn mapping came to leave
+	// the role it withdrew assigned to everybody it used to cover.
+	attributable, err := mappedRoles(tx)
+	if err != nil {
+		return "", err
+	}
 	var m GroupMapping
-	err := tx.DB().Where("group_id = ?", groupID).Take(&m).Error
+	err = tx.DB().Where("group_id = ?", groupID).Take(&m).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		if role == "" {
-			return nil
+			return "", nil
 		}
 		m = GroupMapping{GroupID: groupID, Role: role}
 		if err := crud.Create(ctx, tx, &m); err != nil {
-			return err
+			return "", err
 		}
 		first, err := membersOf(tx, groupID)
 		if err != nil {
-			return err
+			return "", err
 		}
-		return s.syncRoles(ctx, tx, first)
+		return "", s.syncRoles(ctx, tx, first, append(attributable, role))
 	}
 	if err != nil {
-		return fmt.Errorf("scim: read mapping: %w", err)
+		return "", fmt.Errorf("scim: read mapping: %w", err)
 	}
+	if m.Role == role {
+		return m.Role, nil
+	}
+	was := m.Role
 	m.Role = role
 	if err := crud.Update(ctx, tx, &m, "role"); err != nil {
-		return err
+		return was, err
 	}
 	// The binding changed, so every member's roles are recomputed: this is the
 	// write that turns an organisational unit mirrored all afternoon into the role
 	// the administrator just decided it meant.
 	left, err := membersOf(tx, groupID)
 	if err != nil {
-		return err
+		return was, err
 	}
-	return s.syncRoles(ctx, tx, left)
+	return was, s.syncRoles(ctx, tx, left, append(attributable, role))
 }
 
 func (s *Service) groupByName(_ context.Context, tx db.Tx[db.Tenant], name string) (groupRow, error) {
@@ -793,6 +893,13 @@ func (s *Service) replaceMembers(ctx context.Context, tx db.Tx[db.Tenant], group
 		}
 		keep = append(keep, id)
 	}
+	// Read who was there and which roles the mappings own before the list moves:
+	// the rule syncRoles applies is decided against the state the write is made
+	// from, not the state it leaves behind.
+	attributable, err := mappedRoles(tx)
+	if err != nil {
+		return err
+	}
 	left, err := membersOf(tx, groupID)
 	if err != nil {
 		return err
@@ -805,7 +912,20 @@ func (s *Service) replaceMembers(ctx context.Context, tx db.Tx[db.Tenant], group
 	}
 	// The people who left are as much affected as the people who arrived: one
 	// brought a role with them and the other took one away.
-	return s.syncRoles(ctx, tx, append(append([]uuid.UUID{}, left...), keep...))
+	return s.syncRoles(ctx, tx, append(append([]uuid.UUID{}, left...), keep...), attributable)
+}
+
+// mappedRoles is which roles this tenant's bindings own. That set is the whole
+// difference between a role a membership may take away and a role a person was
+// given by hand, so every write that recomputes anybody's roles reads it before
+// it writes, while the decision is still being made.
+func mappedRoles(tx db.Tx[db.Tenant]) ([]string, error) {
+	var roles []string
+	if err := tx.DB().Table("scim_group_mappings").Distinct().Select("role").
+		Where("tenant_id = ? AND role <> ''", db.TenantOf(tx).ID).Scan(&roles).Error; err != nil {
+		return nil, fmt.Errorf("scim: read mapped roles: %w", err)
+	}
+	return roles, nil
 }
 
 // membersOf is who is in a group right now, which a write has to know before it
@@ -835,7 +955,11 @@ func membersOf(tx db.Tx[db.Tenant], groupID uuid.UUID) ([]uuid.UUID, error) {
 // decides. It is refused — and the whole membership write with it, in this same
 // transaction — when the grant or the removal would leave the tenant nobody able
 // to administer it.
-func (s *Service) syncRoles(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID) error {
+//
+// attributable is the caller's reading of the mapping table, taken before the
+// write that is in hand: every caller reads it while its own decision is still
+// open rather than from the table it is about to change.
+func (s *Service) syncRoles(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid.UUID, attributable []string) error {
 	unique := make([]uuid.UUID, 0, len(ids))
 	seen := map[uuid.UUID]bool{}
 	for _, id := range ids {
@@ -845,11 +969,6 @@ func (s *Service) syncRoles(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid
 	}
 	if len(unique) == 0 {
 		return nil
-	}
-	var attributable []string
-	if err := tx.DB().Table("scim_group_mappings").Distinct().Select("role").
-		Where("tenant_id = ? AND role <> ''", db.TenantOf(tx).ID).Scan(&attributable).Error; err != nil {
-		return fmt.Errorf("scim: read mapped roles: %w", err)
 	}
 	granted := make(map[string]bool, len(attributable))
 	for _, r := range attributable {
@@ -930,6 +1049,10 @@ func (s *Service) moveMembers(ctx context.Context, tx db.Tx[db.Tenant], groupID 
 	if err != nil {
 		return err
 	}
+	attributable, err := mappedRoles(tx)
+	if err != nil {
+		return err
+	}
 	switch op {
 	case "add":
 		if err := s.addMembers(ctx, tx, groupID, ids); err != nil {
@@ -962,7 +1085,7 @@ func (s *Service) moveMembers(ctx context.Context, tx db.Tx[db.Tenant], groupID 
 	if err != nil {
 		return err
 	}
-	return s.syncRoles(ctx, tx, append(append(append([]uuid.UUID{}, left...), ids...), after...))
+	return s.syncRoles(ctx, tx, append(append(append([]uuid.UUID{}, left...), ids...), after...), attributable)
 }
 
 // addMembers writes membership, refusing a person this tenant cannot see. The
@@ -1016,6 +1139,59 @@ func refused(in contracts.UserDraft) error {
 		}
 	}
 	return nil
+}
+
+// refusedGroup names what no group write through this module accepts, and the one
+// attribute is the role a group brings.
+//
+// The core Group schema has no place to hold a role: it is an extension this
+// platform added, which means the field is not the connector's to send and the
+// fact is not its to state. The reason to refuse it rather than read it is the
+// reason a tenant hands a scoped credential to a system it does not own: a
+// provisioning key that could bind a mirrored organisational unit to a role could
+// grant itself any role in the tenant, and it would do so through a door whose
+// whole purpose is to write down what some other directory says. So the binding
+// is made by a person, at this tenant's own address, under user:manage — see
+// MapGroup, the only writer of the table — and a draft that names a role is
+// refused where it arrives rather than quietly dropped, which is the same rule
+// that stands under a password.
+
+func refusedGroup(in contracts.GroupDraft) error {
+	if role := strings.TrimSpace(in.Role); role != "" {
+		return fmt.Errorf("%w: %q is a role this tenant binds at its own door (the group-mappings write, under user:manage), not by a provisioning credential; the same POST without the role declares the collection", crud.ErrInvalid, role)
+	}
+	for _, s := range in.Schemas {
+		if strings.TrimSpace(s) != contracts.SchemaGroup {
+			return fmt.Errorf("%w: %q is not a schema this service serves", crud.ErrInvalid, s)
+		}
+	}
+	return nil
+}
+
+// recordGroupCreated and recordGroupChanged write the trail's record of a group
+// this module just changed, in the transaction that changed it: which collection,
+// how it changed and how many it now holds. The count is read back rather than
+// counted off the request, because the number an auditor wants is what the group
+// holds after the write, and the two differ the moment a connector sends an id it
+// already had.
+func (s *Service) recordGroupCreated(ctx context.Context, tx db.Tx[db.Tenant], g Group) error {
+	here, err := membersOf(tx, g.ID)
+	if err != nil {
+		return err
+	}
+	return events.Publish(ctx, tx, contracts.EventGroupCreated, contracts.GroupCreated{
+		Group: g.ID, DisplayName: g.Name, ExternalID: g.ExternalID, Members: len(here), At: db.Now(),
+	})
+}
+
+func (s *Service) recordGroupChanged(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, name, via string) error {
+	here, err := membersOf(tx, id)
+	if err != nil {
+		return err
+	}
+	return events.Publish(ctx, tx, contracts.EventGroupChanged, contracts.GroupChanged{
+		Group: id, DisplayName: name, Via: via, Members: len(here), At: db.Now(),
+	})
 }
 
 // addressOf is the person's address, from whichever field the client sent it in.
@@ -1092,6 +1268,63 @@ func patchMembers(op contracts.Operation) ([]contracts.MemberRef, error) {
 		return []contracts.MemberRef{single}, nil
 	}
 	return nil, fmt.Errorf("%w: %s takes a list of members", crud.ErrInvalid, op.Path)
+}
+
+// expandOperations reads the way a PATCH operation states what it writes without
+// naming it in `path`.
+//
+// The shape that matters is a pathless replace. Okta deactivates a leaver with
+// {"op":"replace","value":{"active":false}} and Microsoft's guide sends the same
+// fact as {"op":"replace","path":"active","value":false}; a door that reads only
+// the second answers the first with 422 and leaves a person who has left the
+// company able to sign in, which is the one request a deprovisioning path may not
+// get wrong. An operation with no path is a statement about the resource, so its
+// value is read as the set of attributes it writes, one operation per attribute,
+// and each then meets the judgement it would have met named in the path — the
+// refusals included. A value that is not an object of attributes is refused
+// rather than guessed at.
+func expandOperations(ops []contracts.Operation) ([]contracts.Operation, error) {
+	out := make([]contracts.Operation, 0, len(ops))
+	for _, op := range ops {
+		if strings.TrimSpace(op.Path) != "" {
+			out = append(out, op)
+			continue
+		}
+		var attrs map[string]json.RawMessage
+		if err := json.Unmarshal(op.Value, &attrs); err != nil || len(attrs) == 0 {
+			return nil, fmt.Errorf("%w: a %s with no path names the attributes it writes in an object", crud.ErrInvalid, op.Op)
+		}
+		for _, name := range slices.Sorted(maps.Keys(attrs)) {
+			out = append(out, contracts.Operation{Op: op.Op, Path: name, Value: attrs[name]})
+		}
+	}
+	return out, nil
+}
+
+// memberSelection is a members path read for the one person it names.
+//
+// members[value eq "<id>"] with no value beside it is how RFC 7644 §3.5.2.2
+// removes one member and how Microsoft's provisioning guide tells its customers
+// to send it. Reading that path as plain "members" answers it by emptying the
+// collection — a standard request met with the destructive answer — so the
+// comparison inside the brackets is read and applied. A selection this service
+// cannot evaluate is refused rather than dropped, which is the same rule the
+// filter on a list stands under: an operation that silently meant something else
+// leaves two systems disagreeing about who is in a group.
+func memberSelection(path string) (string, error) {
+	open := strings.Index(path, "[")
+	if open < 0 {
+		return "", nil
+	}
+	fields := strings.Fields(strings.TrimSuffix(path[open+1:], "]"))
+	if len(fields) != 3 || fields[0] != "value" || fields[1] != "eq" {
+		return "", fmt.Errorf("%w: %q; this service selects one member with value eq \"<id>\" and nothing else", crud.ErrInvalid, path)
+	}
+	id := strings.Trim(fields[2], `"`)
+	if _, err := uuid.Parse(id); err != nil {
+		return "", fmt.Errorf("%w: %q selects %q, which is not a person's id", crud.ErrInvalid, path, id)
+	}
+	return id, nil
 }
 
 // jsonIsNull is the protocol's way of clearing a value: an explicit null, and

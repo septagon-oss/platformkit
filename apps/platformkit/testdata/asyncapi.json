@@ -1897,6 +1897,172 @@
       "summary": "Every tenant's delivery of platformkit.event_replayed.",
       "title": "platformkit.event_replayed"
     },
+    "scim.group_changed": {
+      "address": "platformkit.*.scim.group_changed",
+      "description": "Published at platformkit.{tenantId}.scim.group_changed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "scim.group_changed": {
+          "contentType": "application/json",
+          "name": "scim.group_changed",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "members": {
+                "type": "integer"
+              },
+              "via": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "group",
+              "displayName",
+              "via",
+              "members",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "scim — scim.group_changed",
+          "title": "scim.group_changed"
+        }
+      },
+      "summary": "Every tenant's delivery of scim.group_changed.",
+      "title": "scim.group_changed"
+    },
+    "scim.group_created": {
+      "address": "platformkit.*.scim.group_created",
+      "description": "Published at platformkit.{tenantId}.scim.group_created; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "scim.group_created": {
+          "contentType": "application/json",
+          "name": "scim.group_created",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "externalId": {
+                "type": "string"
+              },
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "members": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "group",
+              "displayName",
+              "members",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "scim — scim.group_created",
+          "title": "scim.group_created"
+        }
+      },
+      "summary": "Every tenant's delivery of scim.group_created.",
+      "title": "scim.group_created"
+    },
+    "scim.group_removed": {
+      "address": "platformkit.*.scim.group_removed",
+      "description": "Published at platformkit.{tenantId}.scim.group_removed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "scim.group_removed": {
+          "contentType": "application/json",
+          "name": "scim.group_removed",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "group",
+              "displayName",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "scim — scim.group_removed",
+          "title": "scim.group_removed"
+        }
+      },
+      "summary": "Every tenant's delivery of scim.group_removed.",
+      "title": "scim.group_removed"
+    },
+    "scim.mapping_changed": {
+      "address": "platformkit.*.scim.mapping_changed",
+      "description": "Published at platformkit.{tenantId}.scim.mapping_changed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "scim.mapping_changed": {
+          "contentType": "application/json",
+          "name": "scim.mapping_changed",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "displayName": {
+                "type": "string"
+              },
+              "group": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "now": {
+                "type": "string"
+              },
+              "was": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "group",
+              "displayName",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "scim — scim.mapping_changed",
+          "title": "scim.mapping_changed"
+        }
+      },
+      "summary": "Every tenant's delivery of scim.mapping_changed.",
+      "title": "scim.mapping_changed"
+    },
     "security.access_requested": {
       "address": "platformkit.*.security.access_requested",
       "description": "Published at platformkit.{tenantId}.security.access_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4050,6 +4216,74 @@
       "tags": [
         {
           "name": "platformkit"
+        }
+      ]
+    },
+    "scim.group_changed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scim.group_changed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/scim.group_changed/messages/scim.group_changed"
+        }
+      ],
+      "summary": "The scim module publishes scim.group_changed.",
+      "tags": [
+        {
+          "name": "scim"
+        }
+      ]
+    },
+    "scim.group_created": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scim.group_created"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/scim.group_created/messages/scim.group_created"
+        }
+      ],
+      "summary": "The scim module publishes scim.group_created.",
+      "tags": [
+        {
+          "name": "scim"
+        }
+      ]
+    },
+    "scim.group_removed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scim.group_removed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/scim.group_removed/messages/scim.group_removed"
+        }
+      ],
+      "summary": "The scim module publishes scim.group_removed.",
+      "tags": [
+        {
+          "name": "scim"
+        }
+      ]
+    },
+    "scim.mapping_changed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scim.mapping_changed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/scim.mapping_changed/messages/scim.mapping_changed"
+        }
+      ],
+      "summary": "The scim module publishes scim.mapping_changed.",
+      "tags": [
+        {
+          "name": "scim"
         }
       ]
     },

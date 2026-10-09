@@ -92,6 +92,7 @@ pkit: scim.Module is built after user.Module and auth.Module.
 pkit: scim.Module needs usercontracts.Service from user.Module.
 pkit: scim.Module needs authcontracts.Auth from auth.Module.
 pkit: scim.Module defines the permission scim:provision.
+pkit: scim.Module emits scim.group_created, scim.group_changed, scim.group_removed and scim.mapping_changed.
 pkit: change.Module is built after access.Module.
 pkit: change.Module takes every changecontracts.SubjectBinding from access.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.

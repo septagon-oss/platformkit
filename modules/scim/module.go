@@ -12,6 +12,7 @@
 package scim
 
 import (
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/scim/contracts"
@@ -65,11 +66,21 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		// Nothing is declared, because nothing is published under this name: every
-		// write goes through a user-module command, which publishes user.* events
-		// in the same transaction. A second event about the same activation, from
-		// the module that asked for it, would be two accounts of one fact.
-		Declared:      nil,
+		// The four events of the state this module owns: the collection, its
+		// membership, its removal, and this tenant's binding of a collection to a
+		// role. What happens to a person stays modules/user's event — an identity
+		// created by a connector and one created by an administrator are the same
+		// fact and are published by one name — but a group declared with nobody in it
+		// changes nobody's roles, and a withdrawn mapping decides what a role costs
+		// without writing a single user row, so neither fact lives anywhere at all
+		// unless this module publishes it. The audit trail subscribes to every name
+		// in every manifest, so declaring these is what makes a group write auditable.
+		Declared: []events.Declared{
+			events.Declare[contracts.GroupCreated](contracts.EventGroupCreated),
+			events.Declare[contracts.GroupChanged](contracts.EventGroupChanged),
+			events.Declare[contracts.GroupRemoved](contracts.EventGroupRemoved),
+			events.Declare[contracts.MappingChanged](contracts.EventMappingChanged),
+		},
 		Nav:           nil,
 		Jobs:          nil,
 		Roles:         nil,
