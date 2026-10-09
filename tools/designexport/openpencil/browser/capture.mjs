@@ -164,28 +164,32 @@ export async function captureExample(browser, snapshot, exampleId, {
       // Nothing about what is refused changes — a paused or non-finite animation still refuses
       // on sight, a wave whose frame never arrives still refuses, and so does a page that
       // keeps starting new waves.
-      let settlingTimer
-      const settleWave = running => new Promise((resolve, reject) => {
-        settlingTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 5000)
-        Promise.all(running.map(animation => animation.finished.catch(() => {}))).then(resolve, reject)
-      })
-      try {
-        for (let wave = 0; ; wave++) {
-          for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
-          // A closed disclosure can retain a running, display-locked
-          // animation whose timeline never advances. It cannot paint.
-          const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
-            animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
-          if (active.length === 0) break
-          if (active.some(animation => animation.playState === 'paused' ||
-            !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
-            throw new Error('Capture requires finite, running source animations to settle')
-          }
-          if (wave === 8) throw new Error('Capture source animations never stopped starting new waves')
-          // A cancelled transition can start a replacement; inspect again.
-          await settleWave(active)
+      const settleWave = async running => {
+        let waveTimer
+        try {
+          await Promise.race([
+            Promise.all(running.map(animation => animation.finished.catch(() => {}))),
+            new Promise((_, reject) => {
+              waveTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 5000)
+            }),
+          ])
+        } finally { clearTimeout(waveTimer) }
+      }
+      for (let wave = 0; ; wave++) {
+        for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+        // A closed disclosure can retain a running, display-locked
+        // animation whose timeline never advances. It cannot paint.
+        const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
+          animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
+        if (active.length === 0) break
+        if (active.some(animation => animation.playState === 'paused' ||
+          !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
+          throw new Error('Capture requires finite, running source animations to settle')
         }
-      } finally { clearTimeout(settlingTimer) }
+        if (wave === 8) throw new Error('Capture source animations never stopped starting new waves')
+        // A cancelled transition can start a replacement; inspect again.
+        await settleWave(active)
+      }
       for (const image of absentImages) {
         let suppressed = false
         for (let ancestor = image; ancestor; ancestor = ancestor.parentElement) {
