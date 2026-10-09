@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+**A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
+routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
+composition that can resolve a tenant's identity provider, and `modules/tenant` carries
+that provider as six columns an operator sets with
+`POST /api/v1/ops/tenant/tenants/{id}/saml` and clears with `…/saml/clear`, publishing
+`tenant.saml_set` and `tenant.saml_cleared`. The service provider is built per request
+from the row the `Host` resolved, so two tenants on one installation verify against two
+IdPs at two assertion consumer URLs. The callback requires an assertion signed in its own
+right, addressed to this tenant's entity ID (an assertion that names no audience names
+nobody), bound in the bearer method, current, and answering a request the same browser
+started; it then spends the assertion id in the transaction that opens the session, so a
+sign-in that is refused leaves the assertion presentable and one that succeeds spends it
+exactly once. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+(`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
+add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
+are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to
+v1.6.1, the XML-signature verifier an assertion is checked with, whose previous version
+carries a known signature bypass (GO-2026-4753), and `golang.org/x/net` to v0.60.0 with
+the 2026-10-08 Go security release (GO-2026-6617 and four beside it).
+
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
 `admin.Module` — declaring the contracts it needs and provides, the contributions it

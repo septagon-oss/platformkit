@@ -52,6 +52,8 @@ type SAMLIdP struct {
 	notBefore    time.Time
 	notOnOrAfter time.Time
 	unsigned     bool
+	noAudience   bool
+	noSubject    bool
 	metadataHits int
 }
 
@@ -200,6 +202,27 @@ func (i *SAMLIdP) UnsignedAssertion() {
 	i.unsigned = true
 }
 
+// NoAudienceRestriction drops the conditions' audience block altogether rather than
+// addressing it at somebody else: the document an IdP that ships no audience
+// configuration sends, and the one a library that reads "no audience" as "any audience"
+// accepts. It is a separate knob from AudienceIs for the same reason the two refusals
+// are separate rules — one names an assertion for another tenant, the other names no
+// tenant at all.
+func (i *SAMLIdP) NoAudienceRestriction() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.noAudience = true
+}
+
+// NoSubjectConfirmation leaves the subject a bare name: the assertion is still signed by
+// a provider this tenant trusts, and it binds itself to nobody, so nothing in it says
+// who may present it.
+func (i *SAMLIdP) NoSubjectConfirmation() {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.noSubject = true
+}
+
 func (i *SAMLIdP) serve(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
 	case "/metadata":
@@ -238,6 +261,7 @@ func (i *SAMLIdP) serveSSO(w http.ResponseWriter, r *http.Request) {
 	address, attribute := i.address, i.attribute
 	audience, recipient := i.audience, i.recipient
 	notBefore, notOnOrAfter, unsigned := i.notBefore, i.notOnOrAfter, i.unsigned
+	noAudience, noSubject := i.noAudience, i.noSubject
 	i.mu.Unlock()
 
 	session := &saml.Session{
@@ -270,6 +294,12 @@ func (i *SAMLIdP) serveSSO(w http.ResponseWriter, r *http.Request) {
 	}
 	if !notBefore.IsZero() {
 		request.Assertion.Conditions.NotBefore = notBefore
+	}
+	if noAudience {
+		request.Assertion.Conditions.AudienceRestrictions = nil
+	}
+	if noSubject {
+		request.Assertion.Subject.SubjectConfirmations = nil
 	}
 
 	if unsigned {

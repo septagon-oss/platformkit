@@ -90,14 +90,23 @@ cannot. The service provider is built per request from the row the `Host`
 resolved and addressed at that host, so two tenants on one installation have two
 entity IDs, two assertion consumer URLs and two metadata documents; what is kept
 between requests is only the parsed IdP document, keyed by its own bytes and by
-the URL it came from. The assertion is verified before anything is written: its
-own signature — a Response that signs its envelope and not the assertion inside
-it is refused, which is *not* the library's default and is the case
-`TestAnUnsignedSAMLAssertionIsRefused` holds at the door — its audience against
-this tenant's entity ID, its recipient against this host's ACS URL, its window
-with the library's 180-second skew, and the request it answers, which is the
-browser's own tracking cookie and the reason IdP-initiated sign-in is refused
-rather than allowed with less checking. The address the named attribute carries
+the URL it came from — a copy fetched from a URL for an hour and no longer, so an
+IdP that rotates its signing certificate is followed within the hour instead of
+leaving the tenant at 403 until somebody restarts the process. The assertion is
+verified before anything is written: its own signature — a Response that signs its
+envelope and not the assertion inside it is refused, which is *not* the library's
+default and is the case `TestAnUnsignedSAMLAssertionIsRefused` holds at the door —
+its audience against this tenant's entity ID, and an assertion that names no
+audience at all names nobody and is refused, which is likewise *not* the library's
+default (`TestASAMLAssertionWithNoAudienceRestrictionIsRefused`); its subject bound
+in the bearer method, or by the schema's silence, because the library checks a
+subject's recipient and request id for every confirmation it carries and for none
+when it carries none
+(`TestASAMLAssertionBoundToNoBearerIsRefused`); its recipient against this host's
+ACS URL; its window with the library's 180-second skew; and the request it answers,
+which is the browser's own tracking cookie and the reason IdP-initiated sign-in is
+refused rather than allowed with less checking. The address the named attribute
+carries
 then runs the tenant's registration rule and `Service.Open`, the same call the
 OIDC callback finishes with, so the second-factor rule is not re-expressed here
 at all.
@@ -113,26 +122,39 @@ legs. **Added:** the assertion consumer service and the per-tenant SP metadata
 document, because the trace found no served-XML surface and no inbound-POST leg
 anywhere to extend; the replay table `000047_saml_assertion_replays`, whose
 primary key *is* the claim; `contracts.SAMLProvider` and its `SAMLProviders`
-port, naming no SDK; and `Open`'s sign-in-method argument (`ViaOIDC`,
+port, naming no SDK; the metadata copy's hour, and the fetch's deadline and
+ceiling; and `Open`'s sign-in-method argument (`ViaOIDC`,
 `ViaSAML`) — the port grew by the one value its own trail already carried,
 because a login the log called "oidc" would send whoever reads it to the wrong
-provider about the person they are asking about. **Made reusable:** the
-per-request service provider as a shape — build it from the row, cache only the
-other party's document, key that cache by the document and not by the tenant; an
-external credential spent in the same transaction as the session it buys, which
-is the shape every later "presented exactly once" claim takes; and
-`authtest.SAMLIdP`, the in-process identity provider that can emit the unsigned,
-wrong-audience and wrong-recipient variant of an assertion by construction, so a
-refusal is tested against a document a real IdP would send rather than a
-hand-written one.
+provider about the person they are asking about. **Made reusable, in the one sense
+the word earns here:** `authtest.SAMLIdP`, the in-process identity provider that can
+emit the unsigned, wrong-audience, wrong-recipient, no-audience and unconfirmed-subject
+variant of an assertion by construction, so a refusal is tested against a document a
+real IdP would send rather than a hand-written one. The two shapes the delivery also
+leaned on are named as shapes and are not importable: the per-request service provider
+(build it from the row, cache only the other party's document, key that cache by the
+document and not by the tenant) and the external credential spent in the same
+transaction as the session it buys live as this module's own `SAML` value and
+`spendAssertion`, unexported, and a later module that wants one moves it out with a
+consumer in front of it rather than reaching over.
 
 What is deliberately not here: the service provider holds no key, so AuthnRequests
 go unsigned and the metadata names no `KeyDescriptor` (`contracts.Secrets` is
 where a key would arrive and a `saml_key_ref` column where it would land, neither
 of which anything reads today); an encrypted assertion is refused rather than
-parsed; there is no installation-level SAML default to fall back on, unlike
+parsed, and so is one bound holder-of-key or sender-vouches, for the same lack of
+a key; there is no installation-level SAML default to fall back on, unlike
 OIDC — the legs mount on the port alone; and there is no single logout, so
-`auth.Logout` stands as the only way a session ends.
+`auth.Logout` stands as the only way a session ends. Two residuals are named rather
+than hidden. The assertion consumer service is an anonymous POST on the *app*
+surface, so `kit/httpx`'s public-write limit — which is the Public surface's only
+limit — does not reach it: what one address may cost today is bounded by the request
+body ceiling and by the RSA verification it makes the caller pay for, and putting it
+under a counter needs a bound over app-surface anonymous writes, which is the
+kernel's to strike and not this module's to invent beside it. And the hour a document
+fetched from a metadata URL is trusted for is both the cure and the residual: a
+rotated-in certificate is followed within the hour, and a certificate its owner has
+taken out of service stays trusted here for the same hour.
 
 ## A second factor
 
