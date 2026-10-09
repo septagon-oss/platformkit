@@ -915,10 +915,27 @@ jobs:
               done
               if [ "$seen" = 0 ]; then echo 'job container reports no readable memory ceiling'; fi
           }
+          shared_memory() { # the buffer pool a renderer dies in, in its own words
+              # Run 56073 (job 56694) refused this step with `locator.click: Target crashed` while
+              # the sampler printed 20290 MB of `MemAvailable` and 'no readable memory ceiling'.
+              # Neither line can attribute that death: `MemAvailable` is the host's, and Chromium
+              # puts a renderer's frame buffers in /dev/shm, which a container gets at Docker's own
+              # default unless a step says otherwise - and nothing in this file says otherwise for
+              # a step running in the job's container. This is attribution, not a cure: it prints
+              # the number the next refusal of this step will need to say which of the two it was.
+              local pool
+              if pool=$(df -Pk /dev/shm 2>/dev/null | awk 'NR == 2 { printf "%s %s %s", $2, $3, $5 }') && [ -n "$pool" ]; then
+                  set -- $pool
+                  printf 'job container /dev/shm %s MB used of %s MB (%s full)\n' "$(( $2 / 1024 ))" "$(( $1 / 1024 ))" "$3"
+              else
+                  echo 'job container reports no readable /dev/shm'
+              fi
+          }
           ( while :; do
               awk '/MemAvailable/{printf "runner MemAvailable %d MB\n", $2/1024}' /proc/meminfo
               cut -d' ' -f1-3 /proc/loadavg | sed 's/^/runner load average /'
               container_memory
+              shared_memory
               sleep 30
             done ) & sampler=$!
           trap 'kill "$sampler" 2>/dev/null || true' EXIT

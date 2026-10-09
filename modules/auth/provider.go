@@ -93,6 +93,12 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// composes no Provisioner, and auth then answers every tenant as
 		// `existing`: a refusal, and not a half-made person.
 		Provisioner: pkit.Get[authcontracts.Provisioner](w),
+		// The words the passkey doors answer a refusal in. This is the whole
+		// catalogue the application named with Languages, this module's own words
+		// included: a browser ceremony is read on the sign-in page, whose copy is
+		// translated, and a module that read only its own messages file could not
+		// answer in a language a UI catalogue carries.
+		Messages: w.Skin().Copy,
 		// Empty FactorKey leaves the second-factor routes unmounted, as it does
 		// today: without a key the only secret this module could write is a
 		// plaintext one.

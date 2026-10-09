@@ -1612,6 +1612,17 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
 // would fail on CREATE TABLE tasks — and the applied_at comparison proves the
 // rows were re-owned rather than replaced.
+// fileKey is one shipped migration's place in the ledger: the owner that ships it
+// and the version it names, which is exactly schema_migrations' PRIMARY KEY. It is
+// the pair rather than the version alone because the composition now holds two
+// owners at one version — modules/auth's 000035_passkeys beside modules/audit's
+// 000035_audit_context — and a count keyed on the version folds those two files
+// into one key, so a release that lost either row would still match the file count.
+// The query below renders the same pair in SQL.
+func fileKey(owner string, version int64) string {
+	return owner + "/" + strconv.FormatInt(version, 10)
+}
+
 func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.T) {
 	path, cfg := configure(t)
 	sources := app.MigrationSources(compose(cfg).modules)
@@ -1619,8 +1630,8 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		t.Fatalf("the release before this one: %v", err)
 	}
 	admin := dbtest.Open(t, cfg.Database.MigrateURL)
-	before := map[int64]string{}
-	ledger := func(into map[int64]string, query string) {
+	before := map[string]string{}
+	ledger := func(into map[string]string, query string) {
 		t.Helper()
 		rows, err := admin.QueryContext(t.Context(), query)
 		if err != nil {
@@ -1628,18 +1639,18 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 		defer rows.Close()
 		for rows.Next() {
-			var version int64
+			var file string
 			var value string
-			if err := rows.Scan(&version, &value); err != nil {
+			if err := rows.Scan(&file, &value); err != nil {
 				t.Fatalf("read the ledger: %v", err)
 			}
-			into[version] = value
+			into[file] = value
 		}
 		if err := rows.Err(); err != nil {
 			t.Fatalf("read the ledger: %v", err)
 		}
 	}
-	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	ledger(before, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The number is the point of the assertion: an upgrade fixture that silently
 	// stopped counting a migration would pass while upgrading a real installation
 	// past a file it should have applied, so the files the release holds have to
@@ -1658,7 +1669,12 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
-	// Every version is one file across the composition, kernel and modules alike.
+	// Every version was one file across the composition, kernel and modules alike,
+	// until main took modules/auth's passkeys at 35 under modules/audit's
+	// 000035_audit_context: two owners naming one version, which kit/db allows — it
+	// refuses a repeated version inside one source, and the ledger's PRIMARY KEY is
+	// (owner, version) — and which is why the counts below ask the ledger for owner
+	// and version together, so that two files at one version are two rows to count.
 	// A new file continues past the highest number anywhere in the composition,
 	// whichever owner ships it: modules/file's retention hold and erasure proof is
 	// 000040 for that reason, and not the 30 it was written as when no owner held
@@ -1678,7 +1694,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the ten above the ceiling, because the
+	// 33 stays 33 for those files and for the eighteen above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1687,18 +1703,22 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 50 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-three under modules/*/migrations/
+	// this head prints 51 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-four under modules/*/migrations/
 	// (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33,
-	// 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 50), all at distinct versions.
-	// The release this fixture is applied from shipped 33 of them: the thirteen under
+	// 35 twice, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 50), at fifty distinct
+	// versions: modules/auth's 000035_passkeys and modules/audit's
+	// 000035_audit_context are the first two files of this composition to name one
+	// version under two owners, and the upgrade below reads them as the two ledger
+	// rows their PRIMARY KEY says they are. The release this fixture is applied from
+	// shipped 33 of them: the thirteen under
 	// migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The seventeen above it — the kernel's own 34, 41, 43 and 46,
+	// any owner names. The eighteen above it — the kernel's own 34, 41, 43 and 46,
 	// modules/audit's 35, 36, 37, 48 and 49, modules/change's 38, modules/site's 39,
-	// modules/file's 40, 44 and 45, modules/content's 42 and modules/auth's 47 and
+	// modules/file's 40, 44 and 45, modules/content's 42 and modules/auth's 35, 47 and
 	// 50 — postdate that release, are not in the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
@@ -1730,10 +1750,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// the composed sources before it writes the first tenant.
 	install(t, path)
 
-	owners := map[int64]string{}
-	ledger(owners, "SELECT version, owner FROM schema_migrations")
-	after := map[int64]string{}
-	ledger(after, "SELECT version, applied_at::text FROM schema_migrations")
+	owners := map[string]string{}
+	ledger(owners, "SELECT owner || '/' || version::text, owner FROM schema_migrations")
+	after := map[string]string{}
+	ledger(after, "SELECT version::text, applied_at::text FROM schema_migrations")
 	// The upgrade re-owns the old rows and applies the files that postdate them,
 	// so the ledger grows by exactly the new files and by nothing else: a fixture
 	// that re-ran an old file would be caught below by applied_at, and one that
@@ -1741,16 +1761,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 
 	for version, when := range before {
 		if after[version] != when {
-			t.Errorf("version %d was applied again: %s became %s", version, when, after[version])
+			t.Errorf("version %s was applied again: %s became %s", version, when, after[version])
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the seventeen files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43 and 46, modules/audit 35, 36
+	// release ships is in the ledger under the owner that ships it, which is where the
+	// eighteen files above the adopted ceiling of 33 (the kernel's own 34, 41, 43 and
+	// 46, modules/audit 35, 36
 	// and 37, 48 and 49, modules/change 38, modules/site 39, modules/file 40, 44 and 45,
-	// modules/content 42 and modules/auth 47 and 50, all absent from the old ledger)
-	// have to be accounted for: 50 files in the release, 50 rows.
-	want := map[int64]string{}
+	// modules/content 42 and modules/auth 35, 47 and 50, all absent from the old ledger)
+	// have to be accounted for: 51 files in the release, 51 rows.
+	want := map[string]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
 		if err != nil {
@@ -1761,15 +1782,15 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 			if err != nil {
 				t.Fatalf("%s is not <version>_<name>.up.sql", entry.Name())
 			}
-			want[version] = source.Owner
+			want[fileKey(source.Owner, version)] = source.Owner
 		}
 	}
 	if len(owners) != len(want) {
 		t.Fatalf("the upgrade left %d applied files, want the %d this release ships", len(owners), len(want))
 	}
-	for version, owner := range want {
-		if owners[version] != owner {
-			t.Errorf("version %d reads as %q, want %q", version, owners[version], owner)
+	for file, owner := range want {
+		if owners[file] != owner {
+			t.Errorf("file %s reads as %q, want %q", file, owners[file], owner)
 		}
 	}
 	// And the application built on that schema serves.

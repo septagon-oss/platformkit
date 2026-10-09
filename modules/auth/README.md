@@ -37,7 +37,11 @@ another: which of a tenant's roles grant `role:manage`, which is what
 
 ### Permissions
 
-The manifest declares one permission, `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`). It guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate. The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me), change-password and the three session routes (`auth-session-list`, `auth-session-revoke`, `auth-session-revoke-all`) are `httpx.SignedIn()` and act only on the caller: the list names the machines this person is signed in on without ever carrying a session id, and the two revocations end one of them or all of them, including the request that asked. `modules/admin` serves that list as a page at `/app/auth/sessions`. It has no nav entry: `kit/module.Validate` refuses an entry that names no permission ("a link everyone sees is still a decision"), and the two permissions this module could name for it would both be wrong — `role:manage` hides the screen from the members it is for, and inventing a `session:read` for one's own sessions would be a permission no role can be refused. The product that owns the navigation names the entry beside the permission it seeds.
+The manifest declares two permissions. `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`) guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate.
+
+`passkey:signin` (`contracts.PermissionPasskeySignIn`) guards one operation, `auth-passkey-sign-in-set` at `POST /api/v1/auth/settings/passkey-sign-in`, which is the tenant's own answer to whether a passkey may be the whole sign-in (`SetPasskeySignIn` in `modules/auth/internal/passkeys.go`, `passkey_routes.go`). It is its own key rather than a borrowing of `role:manage` for the reason `modules/auth/module.go` gives about the session list — borrowing that key for a second purpose "would be the wrong decision twice over" — and it is an ordinary permission rather than an operator one because the row it writes belongs to the tenant whose people it changes, which is the argument `migrations/000035_passkeys.up.sql` makes for the table itself. Nothing in this module seeds it: a tenant's `admin` role holds it through the `*` wildcard `SeedRoles` gives it, and the empty `member` role does not, which is the refusal `modules/auth/internal/the_usernameless_door_opens_for_the_permission_it_changes_test.go` pins. No nav entry names it, for the same reason the session list has none.
+
+The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me), change-password and the three session routes (`auth-session-list`, `auth-session-revoke`, `auth-session-revoke-all`) are `httpx.SignedIn()` and act only on the caller: the list names the machines this person is signed in on without ever carrying a session id, and the two revocations end one of them or all of them, including the request that asked. `modules/admin` serves that list as a page at `/app/auth/sessions`. It has no nav entry: `kit/module.Validate` refuses an entry that names no permission ("a link everyone sees is still a decision"), and the two permissions this module could name for it would both be wrong — `role:manage` hides the screen from the members it is for, and inventing a `session:read` for one's own sessions would be a permission no role can be refused. The product that owns the navigation names the entry beside the permission it seeds. The six passkey ceremony routes likewise name none: the enrolment pair is `httpx.SignedIn()` and about the caller's own device, and the four sign-in legs are `httpx.Public()` because the caller has no session by design — what they authenticate is a window the `/login` refusal minted, or a signature over a nonce this server wrote for this tenant's host, and `passkey_routes.go` says why that is not the same thing as nobody.
 
 ### Object scope
 
@@ -266,23 +270,57 @@ refusal and the record in one statement.
   meaning the same thing as the first is two knobs for one policy. Six digits
   across three steps is 3×10⁶ guesses per window, which is nothing to a script,
   so this route needs a rate limit and not only a wide space.
-* **No passkeys.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
-  CBOR/COSE tree — a new module dependency, priced in its own `build(budget)`
-  commit, and a `webauthn.Config` built per request from the resolved host. That
-  is a round of its own and this one did not take it; the `Kind` field on
-  `Factor` and on the two factor events is where it lands when it does, and
-  nothing above has to change for it.
+* **Passkeys are in.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
+  CBOR/COSE tree, priced as a module dependency in its own `build(budget)`
+  commit. A passkey is a
+  second factor whose proof is a signature over a nonce this server minted, and so
+  it is a ceremony rather than a code: `contracts.Passkeys` is beside `Factors`
+  because the only enrolment pair `Factors` offers is shaped by a secret the server
+  hands out, and nothing in that shape is a parameter of a ceremony. Its own
+  `internal/passkeys.go` is the only file in the repository that imports the SDK
+  (`contracts/passkeys.go` names no SDK type, so CBOR and COSE never reach a
+  handler, an event or the contract) and its own `000035_passkeys.up.sql` the only
+  one that adds a challenge table — 000031 declined one for TOTP because RFC 6238
+  already is a challenge, and WebAuthn has no such built-in nonce. Nothing there is
+  sealed: a public key is public, so a deployment with no `auth.factor_key` enrols
+  passkeys and answers both sign-in doors. The two things the library leaves to the
+  relying party are decided where they are enforced: the relying party is built per
+  request from the host that already chose the tenant (so a passkey minted at one
+  tenant's host cannot answer at another's, by construction), and the clone rule —
+  a counter going backwards retires the credential for good and publishes
+  `auth.factor_suspect` — because the library only flags it. `auth.factor_used`
+  names the quieter half: which factor answered. Whether a passkey may be the whole
+  sign-in, with no password offered first, is the tenant's own row in
+  `passkey_settings`, read per request; `TestTheUsernamelessDoorIsTheTenantsOwnRow`
+  is that read, and the read is asked of the answer as well as the prompt — a tenant
+  that shut the door while a ceremony stood open is refused that ceremony
+  (`TestDisablingPasskeySignInRefusesAnOutstandingCeremony`), because the setting is
+  what may open a session here now rather than as at the moment a nonce was minted.
+  The counter is written as a compare-and-set (`UPDATE … WHERE id = ? AND
+  clone_warning = false AND sign_count = ?`), so two assertions carrying one counter
+  settle on one accepted session rather than two, which is the clone rule surviving
+  the interleaving a prompt-per-tab browser creates on its own
+  (`TestConcurrentPasskeyAssertionsRejectARepeatedCounter`). And the refusal to take
+  the last factor away counts the factors that can still answer: a credential retired
+  as suspect is a row and not a way in, so it neither stands in for a usable factor
+  when the last one is being withdrawn nor waits for a favour it cannot use
+  (`TestASuspectPasskeyDoesNotPermitWithdrawingTheLastUsableFactor`,
+  `TestARetiredPasskeyIsWithdrawnAsTheRowThatItIs`). What is *not* here is the administrator's control for that row (the
+  product's), any page, and any attestation policy: this module holds no
+  manufacturer registry, so which AAGUID made an authenticator stays a specialist
+  fact rather than a shared module's table.
 * **Bearer tokens are in** (the brief's item 4) — see the next section, and its
   own list of what is still open there.
-* **No factor page, and the sign-in page has no second step.** `ui` and the
-  admin shell never call `/api/v1/auth/challenge/verify` (only this module's
-  routes and its tests name that path), so a person who enrols a factor through
-  the JSON routes cannot answer the second half from the reference app's sign-in
-  page — the page shows the refusal text and stops. The JSON path does work, and
-  is tested at its address: a correct code there is a 200 and a session cookie.
-  The page work is the shell's, and until it lands, enrolling a factor from a
-  screen that does not know about the challenge route locks a person out of that
-  screen.
+* **No factor page, and the sign-in page answers a passkey, not a code.** The
+  reference app's sign-in page carries the second step for the half that is a
+  ceremony: `modules/admin/internal/pages.go` wires the refusal's own form to
+  `/challenge/passkey/begin` and `/challenge/passkey/verify` and
+  `ui/assets/js/passkeys.js` drives the prompt, which is what
+  `e2e/passkey-second-factor-door.spec.ts` and `e2e/passkeys.spec.ts` walk in a
+  browser. No page calls `/api/v1/auth/challenge/verify`: a TOTP or a recovery
+  code is still answered over the JSON route, which works and is tested at its
+  address — a correct code there is a 200 and a session cookie — while the page
+  shows the refusal text and stops. The code-entry work is the shell's.
 
 ## Bearer tokens for a person's own integrations
 

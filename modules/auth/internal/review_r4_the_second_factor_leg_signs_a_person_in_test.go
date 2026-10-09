@@ -65,7 +65,7 @@ func TestASecondFactorSignsThatPersonInOverItsOwnRoute(t *testing.T) {
 	// leaves it unable to hand over a session must not.
 	challenge := ""
 	for _, m := range api.Mounted() {
-		if m.Module == "auth" && m.Method == http.MethodPost && strings.Contains(m.Path, "challenge") {
+		if m.Module == "auth" && m.Method == http.MethodPost && strings.HasSuffix(m.Path, "/challenge/verify") {
 			challenge = m.Path
 		}
 	}
