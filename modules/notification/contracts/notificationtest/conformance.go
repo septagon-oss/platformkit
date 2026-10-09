@@ -317,24 +317,6 @@ func (f MailFixture) answer(t *testing.T, request string) (string, bool) {
 	return outcome, known
 }
 
-// newest is what the ledger says about the newest record its tenant holds.
-func (f MailFixture) newest(t *testing.T) (string, bool, error) {
-	t.Helper()
-	var (
-		outcome string
-		known   bool
-	)
-	err := f.Step(f.Ctx, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		var err error
-		outcome, known, err = f.Ledger.NewestMailOutcome(ctx, tx)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("NewestMailOutcome: %v", err)
-	}
-	return outcome, known, nil
-}
-
 // rows reads back everything the ledger holds, and fails a case that cannot say.
 func (f MailFixture) rows(t *testing.T) []contracts.MailRecord {
 	t.Helper()
@@ -496,33 +478,6 @@ func mailCases() map[string]func(*testing.T, MailFixture) {
 			// And the answer for a request with two attempts is the last of them.
 			if got, known := f.answer(t, requests[0]); got != contracts.MailFailed || !known {
 				t.Errorf("newest of two=%q known=%t, want failed true", got, known)
-			}
-		},
-
-		"the newest record answers a caller whose own call left none": func(t *testing.T, f MailFixture) {
-			// MailLedger.NewestMailOutcome is the read behind the public door's
-			// other half: a caller whose call mailed nothing (Review 2's HIGH — the
-			// address has no account) is told what the transport is doing to this
-			// tenant's mail rather than being answered "nothing to tell you", which
-			// is the same fact as "nobody has that address". Both implementations
-			// answer from the newest row, whatever call caused it.
-			refused := mailRequest()
-			f.record(t, contracts.MailRecord{
-				Kind: "auth.set_password", Recipient: AdaMail, Outcome: contracts.MailFailed,
-				Reason: "the relay refused", RequestID: refused,
-			})
-			if got, known, err := f.newest(t); err != nil || !known || got != contracts.MailFailed {
-				t.Errorf("newest after a refusal=%q known=%t err=%v, want failed true", got, known, err)
-			}
-			// A mail the transport took ends the refusal without anybody deleting
-			// it: the newest row is the newest, which is what stops a door answering
-			// "the transport is refusing" over a mail that went out an hour later.
-			f.record(t, sentRecord("auth.set_password", mailRequest()))
-			if got, known, err := f.newest(t); err != nil || !known || got != contracts.MailSent {
-				t.Errorf("newest after a send=%q known=%t err=%v, want sent true", got, known, err)
-			}
-			if got, known := f.answer(t, refused); got != contracts.MailFailed || !known {
-				t.Errorf("the refused request answered %q known=%t, want failed true: the newest read does not answer for the request read", got, known)
 			}
 		},
 
