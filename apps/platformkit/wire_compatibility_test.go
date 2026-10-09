@@ -47,6 +47,9 @@ func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 	t.Helper()
 	oldDoc, newDoc := wireDocument(t, golden), wireDocument(t, served)
 	var problems []string
+	// The one path-parameter change a caller cannot feel, worked out once because
+	// two of the rules below have to agree about it.
+	renamed := mistypedPathParams(oldDoc, newDoc)
 
 	// B1, B2 and B6: the address, the operation that answers it, and who may call.
 	known := map[string]bool{}
@@ -83,6 +86,9 @@ func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 		}
 		fresh, ok := newShapes[key]
 		if !ok {
+			if isMistypedParam(renamed, key) {
+				continue
+			}
 			problems = append(problems, fmt.Sprintf("B3 (breaking): %s is gone", key))
 			continue
 		}
@@ -109,11 +115,97 @@ func breakingWireChanges(t *testing.T, golden, served []byte) []string {
 		if !announced[wireOperationOf(key)] || !strings.Contains(key, " request ") || !strings.Contains(key, " requires ") {
 			continue
 		}
+		if r, ok := renamed[wireOperationOf(key)]; ok && key == wireOperationOf(key)+" request param path/"+r.added+" requires "+r.added {
+			continue
+		}
 		problems = append(problems, fmt.Sprintf("B4 (breaking): %s is asked for and an older client never sends it", key))
 	}
 
 	slices.Sort(problems)
 	return problems
+}
+
+// wirePathParameter is one `in: path` parameter of one operation, and whether the
+// address that operation is published at can carry it at all.
+type wirePathParameter struct {
+	name string
+	// namedByAddress is whether the path template holds a {variable} of this name,
+	// which is the only thing that ever fills the parameter in.
+	namedByAddress bool
+}
+
+// wirePathParameters reads the path parameters of every operation in a document.
+func wirePathParameters(doc map[string]any) map[string][]wirePathParameter {
+	out := map[string][]wirePathParameter{}
+	for path, raw := range wireMap(doc["paths"]) {
+		item, _ := raw.(map[string]any)
+		for _, verb := range wireVerbs {
+			route, _ := item[verb].(map[string]any)
+			id, _ := route["operationId"].(string)
+			if route == nil || id == "" {
+				continue
+			}
+			for _, parameter := range wireList(route["parameters"]) {
+				named, _ := parameter.(map[string]any)
+				where, _ := named["in"].(string)
+				name, _ := named["name"].(string)
+				if where != "path" || name == "" {
+					continue
+				}
+				out[id] = append(out[id], wirePathParameter{name: name, namedByAddress: strings.Contains(path, "{"+name+"}")})
+			}
+		}
+	}
+	return out
+}
+
+// wireRename is one parameter name replaced by another.
+type wireRename struct{ gone, added string }
+
+// mistypedPathParams are the operations whose published path parameter the address
+// cannot name, and the name served in its place.
+//
+// A parameter `in: path` is filled from the template variable of the same name, so
+// one the address never names is missing from every request that arrives: the
+// operation refuses the call before its handler runs, whatever the caller put in
+// the URL. B3 and B4 read the golden as what a caller may send, and this golden
+// states nothing a caller could send. The address is the template, B2 holds the
+// template still, and the bytes on the wire are the ones the corrected document
+// describes too — a client generated from either fills the same URL. Naming the
+// parameter what the address itself calls it is therefore a correction of the
+// document rather than a promise withdrawn.
+//
+// The rule is one case wide on purpose: an address with exactly one parameter in
+// each document, the golden's unsatisfiable and the served one the template's own
+// variable. A satisfiable name removed, a second demand added, or a parameter moved
+// out of a multi-parameter address stays breaking, and the case in
+// wire_compatibility_path_parameter_test.go pins each of those.
+func mistypedPathParams(oldDoc, newDoc map[string]any) map[string]wireRename {
+	before, after := wirePathParameters(oldDoc), wirePathParameters(newDoc)
+	out := map[string]wireRename{}
+	for id, old := range before {
+		now := after[id]
+		if len(old) != 1 || len(now) != 1 || old[0].namedByAddress || old[0].name == now[0].name {
+			continue
+		}
+		if now[0].namedByAddress {
+			out[id] = wireRename{gone: old[0].name, added: now[0].name}
+		}
+	}
+	return out
+}
+
+// isMistypedParam reports whether a shape key is one of the two records a path
+// parameter leaves in the walk — the parameter and its required demand — for a name
+// the address never carried and that the served document spells the way the address
+// does.
+func isMistypedParam(renamed map[string]wireRename, key string) bool {
+	r, ok := renamed[wireOperationOf(key)]
+	if !ok {
+		return false
+	}
+	at := " request param path/" + r.gone
+	return key == wireOperationOf(key)+at || key == wireOperationOf(key)+at+" requires "+r.gone
 }
 
 // enumMove is B5, in the two directions that strand somebody: a value a request no
