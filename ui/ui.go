@@ -71,13 +71,15 @@ var scripts embed.FS
 // JavaScript is there" is answered by reading one slice.
 //
 // htmx is first because the others configure it. The remaining scripts enhance
-// themes, requests, confirmation, sign-in, component interaction and gallery controls.
+// themes, requests, confirmation, sign-in, passkey ceremonies, component
+// interaction and gallery controls.
 var Controllers = []string{
 	"htmx.min.js",
 	"htmx-config.js",
 	"theme.js",
 	"confirm.js",
 	"session.js",
+	"passkeys.js",
 	"components.js",
 	"specialists.js",
 	"gallery.js",

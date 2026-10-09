@@ -10,7 +10,7 @@ package internal_test
 // because the record is made by the mount and not by a file name.
 //
 // That is the guarantee a route count has to have to be worth pinning: the
-// module answers with these 23 operations and nothing else, guard included.
+// module answers with these 24 operations and nothing else, guard included.
 // An operation that appears here unannounced is a new door on a signed-in
 // surface, and the person reviewing the diff is the one who has to have
 // written its row.
@@ -48,7 +48,7 @@ func (r route) String() string { return r.surface + " " + r.method + " " + r.pat
 
 // wholeSurface is every operation the auth module answers with, in the
 // composition that has everything: a registration policy and an installation
-// issuer. 23 rows, and one of each of the module's five route groups.
+// issuer. 29 rows, and one of each of the module's six route groups.
 var wholeSurface = []route{
 	// handler.go — signing in and out, the caller's own identity, sessions and
 	// password, and the two roles routes.
@@ -74,6 +74,14 @@ var wholeSurface = []route{
 	{"app", "DELETE", "/api/v1/auth/factors/{id}", "signed_in"},
 	{"app", "POST", "/api/v1/auth/factors/recovery/rotate", "signed_in"},
 	{"app", "POST", "/api/v1/auth/challenge/verify", "public"},
+	// passkey_routes.go — the same second factor, answered by a signature.
+	{"app", "POST", "/api/v1/auth/factors/passkey/begin", "signed_in"},
+	{"app", "POST", "/api/v1/auth/factors/passkey/finish", "signed_in"},
+	{"app", "POST", "/api/v1/auth/challenge/passkey/begin", "public"},
+	{"app", "POST", "/api/v1/auth/challenge/passkey/verify", "public"},
+	{"app", "POST", "/api/v1/auth/login/passkey/begin", "public"},
+	{"app", "POST", "/api/v1/auth/login/passkey/verify", "public"},
+	{"app", "POST", "/api/v1/auth/settings/passkey-sign-in", "permission passkey:signin"},
 	// registration.go — the one register door this composition chose.
 	{"public", "POST", "/api/v1/public/auth/register", "public"},
 	// oidc.go — the two legs, mounted because the installation has an issuer.

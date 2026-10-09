@@ -106,6 +106,24 @@ const (
 	// presentations spread over fifteen minutes is a Monday morning at one
 	// company's front door, not an attack.
 	AssertionWindow = time.Minute
+
+	// PasskeyPrompts is how many passkey ceremonies one address may begin inside
+	// a window.
+	//
+	// Every one of these legs is public and every one writes a row: the nonce a
+	// signature has to match. Uncapped, a stranger with a browser grew the table
+	// one row per request, and the second-factor leg did the password hashing for
+	// an address nobody knows on top of it. The row is swept once its two-minute
+	// window closes (Service.Purge), which bounds the damage a limited run does;
+	// the cap is what stops the run.
+	//
+	// Twenty, for the same two reasons as ResetRedemptions: a person who cannot
+	// get their phone to answer begins again, and one office address is several
+	// people. That is also the residual, stated: a large office behind one NAT
+	// signing everybody in with a passkey at nine in the morning will find this
+	// cap, and the answer is the deployment counting the real client address
+	// rather than the proxy's, which is what ClientOf documents.
+	PasskeyPrompts = 20
 )
 
 // Limiter counts failed logins, per account and per source address, in the one
@@ -175,6 +193,7 @@ func pairKey(email, ip string) string  { return "auth/pair/" + emailHash(email) 
 func forgotKey(ip string) string       { return "auth/forgot/" + ip }
 func redeemKey(ip string) string       { return "auth/redeem/" + ip }
 func notedKey(email, ip string) string { return "auth/noted/" + emailHash(email) + " " + ip }
+func promptKey(ip string) string       { return "auth/passkey-prompt/" + ip }
 
 // acsKey is one address knocking on the assertion consumer service. The assertion
 // itself never enters the key: it is somebody else's credential, its id is a value that
@@ -307,6 +326,15 @@ func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, err
 // question about it.
 func (l *Limiter) Redeemed(ctx context.Context, ip string) bool {
 	return l.within(ctx, redeemKey(ip), ResetRedemptions)
+}
+
+// Prompted counts one passkey ceremony begun from an address and reports whether
+// it is within PasskeyPrompts for this window. It counts the address that asked
+// for the prompt and never the address the prompt was asked about: the second of
+// the two would turn the cap into the account-enumeration question the ceremony's
+// begin leg exists not to answer.
+func (l *Limiter) Prompted(ctx context.Context, ip string) bool {
+	return l.within(ctx, promptKey(ip), PasskeyPrompts)
 }
 
 // Noted reports whether a refusal for this account from this address is worth

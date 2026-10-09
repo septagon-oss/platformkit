@@ -386,21 +386,30 @@ default (`ErrPolicyUnavailable`, `:62`, refused by `RequirePolicy`).
 
 **Where it lives.** `modules/auth`: `Session` and its table
 (`modules/auth/contracts/auth.go:105`, `:127`), and `Factors` as the seam for
-anything beyond a password (`modules/auth/contracts/factors.go:119`) over a
-`Factor` that carries its `Kind` (`:91`), which today is `totp` alone. The
-browser's half is `kit/httpx/cookies.go` — `SessionCookie`
-(`kit/httpx/cookies.go:22`), `CookieName` (`:43`), `SessionCookieOf` (`:63`).
+anything beyond a password (`modules/auth/contracts/factors.go:147`) over a
+`Factor` that carries its `Kind` (`:114`) — `totp` or `passkey` — with the
+ceremony half beside it as `Passkeys` (`modules/auth/contracts/passkeys.go:90`),
+because the enrolment pair `Factors` offers is shaped by a secret the server
+hands out and nothing in that shape is a parameter of a ceremony. The browser's
+half is `kit/httpx/cookies.go` — `SessionCookie` (`kit/httpx/cookies.go:22`),
+`CookieName` (`:43`), `SessionCookieOf` (`:63`).
 
 **Builds on.** RFC 6238 in one file over `crypto/hmac`
 (`modules/auth/internal/totp.go:23`): RFC 4226's 160-bit seed (`:41`), the digits,
-step and skew fixed in the contracts (`modules/auth/contracts/factors.go:58-65`),
+step and skew fixed in the contracts (`modules/auth/contracts/factors.go:81-88`),
 RFC 4648 base32 without padding (`modules/auth/internal/totp.go:45-46`), a
 constant-time comparison over a window walked in a fixed order (`:114`), and the
 `otpauth:` URI an app scans (`:133`). The file says why there is no library: a
 wrapper around those thirty lines would move the review rather than remove it
 (`modules/auth/internal/totp.go:28-29`). The
 dependencies are `golang.org/x/crypto` (BSD-3-Clause), whose `nacl/secretbox`
-seals the stored secret, and `github.com/coreos/go-oidc/v3` (Apache-2.0) for OIDC.
+seals the stored secret, `github.com/coreos/go-oidc/v3` (Apache-2.0) for OIDC,
+and `github.com/go-webauthn/webauthn` (BSD-3-Clause) for the assertion — whose
+only non-test importer is `modules/auth/internal/passkeys.go`, the soft
+authenticator that exercises it being a test fixture that speaks the SDK's own
+CBOR at that seam (`modules/auth/internal/passkey_authenticator_test.go`), so
+CBOR and COSE reach no handler, no event and no contract
+(`modules/auth/README.md:199-201`).
 
 **How the tenant crosses it.** `sessions.tenant_id` under row-level security
 (`modules/auth/migrations/000008_auth.up.sql:15`, `:41-48`) and the same for
@@ -409,24 +418,38 @@ seals the stored secret, and `github.com/coreos/go-oidc/v3` (Apache-2.0) for OID
 secret column is sealed rather than hashed, because verification needs the value
 and a backup must not carry a spendable factor (`:24-31`), and only the
 deployment's key opens it — `svc.EnableFactors([]byte(deps.FactorKey))`,
-`modules/auth/module.go:252`. Without a key the factor doors refuse
-(`Deps.FactorKey`, `modules/auth/module.go:119`).
+`modules/auth/module.go:265`. Without a key the TOTP and recovery-code doors
+answer 503 rather than the routes going missing (`Deps.FactorKey`, `:120`). The
+passkey tables carry the same column and the same policy —
+`passkey_credentials`, `passkey_challenges`, and the usernameless door's own
+`passkey_settings`
+(`modules/auth/migrations/000035_passkeys.up.sql:20`, `:76`, `:144`, `:103`,
+`:109`, `:152`) — and nothing in them is sealed, because a public key is public
+and those doors mount whether or not a factor key exists
+(`modules/auth/module.go:267-278`).
 
 **How it is traced and audited.** Enrolment and withdrawal are events —
 `auth.factor_enrolled` and `auth.factor_withdrawn`
-(`modules/auth/contracts/events.go:161`, `:166`), with `auth.session_revoked`
-beside them — and the trail holds them because the audit module subscribes to
-every declared name (`modules/audit/module.go:93`). No span of its own: the
-sign-in request is the router's.
+(`modules/auth/contracts/events.go:174`, `:179`), with `auth.session_revoked`
+beside them, and the passkey half adds the two quieter ones: `auth.factor_used`
+names which factor answered a door (`:194`), and `auth.factor_suspect` an
+assertion whose counter went backwards (`:200`). The trail holds them because
+the audit module subscribes to every declared name
+(`modules/audit/module.go:93`). No span of its own: the sign-in request is the
+router's.
 
-**How an app extends it.** `Factor.Kind` is the opening, and the module's own
-list of what is deliberately not here names both the shape and the cost of the
-next kind — WebAuthn as `github.com/go-webauthn/webauthn` plus its CBOR/COSE
-tree, a new dependency priced in its own budget commit, and a `webauthn.Config`
-built per request from the resolved host (`modules/auth/README.md:188-192`).
-WebAuthn is planned for T-0229, not on main: no `go.mod` names it and no Go
-file here implements it, so today the only second factor is TOTP. The refusals a person
-hits are correctable — a step replayed after it was spent
+**How an app extends it.** `Factor.Kind` is the opening, and the second kind is
+here: a passkey answers the second factor, `github.com/go-webauthn/webauthn`
+plus its CBOR/COSE tree priced as a module dependency in its own `build(budget)`
+commit, written down beside what stays out
+(`modules/auth/README.md:192-194`, `:227-230`). What the library leaves to
+the relying party is decided where it is enforced: the config is
+built per request from the host that already chose the tenant, so a credential
+minted at one tenant's host cannot answer at another's (`:205-208`), and whether
+a passkey may be the whole sign-in, with no password offered first, is that
+tenant's own row in `passkey_settings` read per request rather than a route an
+operator holds (`:211-215`). The refusals a person hits are correctable — a step
+replayed after it was spent
 (`modules/auth/internal/totp_step_spend_refuses_a_replay_of_the_same_step_test.go`),
 and a second factor offered without its first
 (`modules/auth/internal/second_factor_requires_its_first_half_test.go`).

@@ -444,7 +444,7 @@ func refusedAtTheDoor(err error) error {
 		// they did not type. The provider confirmed the address; the account says
 		// one confirmation is half. Which half is missing, and the address that
 		// finishes it, are both in the sentence.
-		return problem.New(http.StatusUnauthorized,
+		return secondFactorRefusal(
 			"this account also answers with a second factor, which this sign-in did not carry; answer it at /challenge/verify")
 	}
 	return refusal(err)

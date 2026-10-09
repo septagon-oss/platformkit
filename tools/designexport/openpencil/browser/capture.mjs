@@ -144,30 +144,52 @@ export async function captureExample(browser, snapshot, exampleId, {
       } finally { clearTimeout(decodingTimer) }
       // Inherited transitions can start only when descendant styles are read.
       // Flush those styles and await actual completion, not a fixed frame count.
-      let settlingTimer
-      try {
-        await Promise.race([
-          (async () => {
-            while (true) {
-              for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
-              // A closed disclosure can retain a running, display-locked
-              // animation whose timeline never advances. It cannot paint.
-              const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
-                animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
-              if (active.length === 0) return
-              if (active.some(animation => animation.playState === 'paused' ||
-                !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
-                throw new Error('Capture requires finite, running source animations to settle')
-              }
-              // A cancelled transition can start a replacement; inspect again.
-              await Promise.all(active.map(animation => animation.finished.catch(() => {})))
-            }
-          })(),
-          new Promise((_, reject) => {
-            settlingTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 1000)
-          }),
-        ])
-      } finally { clearTimeout(settlingTimer) }
+      //
+      // The bound sits on one wave — the animations the flush found — and on how many
+      // waves a page may start, not on the whole wait, because what one wave waits for
+      // is a frame the *runner* delivers. This capture asks for `reducedMotion: 'reduce'`,
+      // and the motion floor in the shared sheet collapses the only two looping animations
+      // it carries (`pk-spin 1s linear infinite`, `pk-pulse 2s ... infinite`) to
+      // `animation-duration: 0.01ms !important; animation-iteration-count: 1 !important`,
+      // so what the wait is actually waiting for is delivery. Measured here at this head on
+      // a host at load 19: pk-ui.component.product-card/loading-en — 14 nodes, three active
+      // animations, endTime 0 — settles in 18 ms, inside captures of 435-573 ms each, 20 of
+      // 20 clean. A stopwatch over the whole wait therefore measures the host's run queue
+      // and not the page: CI run 56073 (job 56693, step "Native browser observations") spent
+      // more than the whole of a 1000 ms window inside those 18 ms of work and reported the
+      // capture of a page with nothing running as a failure. Five seconds per wave is the
+      // same generous bound the image decode above already carries, and eight waves is more
+      // than any sheet here needs: eight waves that each wait their full five seconds would
+      // be eight sequential five-second animations, which this stylesheet does not declare.
+      // Nothing about what is refused changes — a paused or non-finite animation still refuses
+      // on sight, a wave whose frame never arrives still refuses, and so does a page that
+      // keeps starting new waves.
+      const settleWave = async running => {
+        let waveTimer
+        try {
+          await Promise.race([
+            Promise.all(running.map(animation => animation.finished.catch(() => {}))),
+            new Promise((_, reject) => {
+              waveTimer = setTimeout(() => reject(new Error('Capture source animation settling timed out')), 5000)
+            }),
+          ])
+        } finally { clearTimeout(waveTimer) }
+      }
+      for (let wave = 0; ; wave++) {
+        for (const node of document.querySelectorAll('*')) getComputedStyle(node).color
+        // A closed disclosure can retain a running, display-locked
+        // animation whose timeline never advances. It cannot paint.
+        const active = document.getAnimations().filter(animation => !['finished', 'idle'].includes(animation.playState) &&
+          animation.effect?.target?.checkVisibility({ contentVisibilityAuto: true }))
+        if (active.length === 0) break
+        if (active.some(animation => animation.playState === 'paused' ||
+          !Number.isFinite(animation.effect?.getComputedTiming().endTime))) {
+          throw new Error('Capture requires finite, running source animations to settle')
+        }
+        if (wave === 8) throw new Error('Capture source animations never stopped starting new waves')
+        // A cancelled transition can start a replacement; inspect again.
+        await settleWave(active)
+      }
       for (const image of absentImages) {
         let suppressed = false
         for (let ancestor = image; ancestor; ancestor = ancestor.parentElement) {
