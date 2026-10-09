@@ -13,7 +13,7 @@ import (
 // TimeProps is one instant as a screen shows it. The instant travels in the
 // datetime attribute and the text is the caller's own words for it — the server
 // writes UTC and the reader's browser may re-say the words in the reader's own
-// zone (see ui/assets/js/times.js), which is only possible while the two are
+// zone (see ui/assets/js/components.js), which is only possible while the two are
 // separate.
 //
 // Class is the only styling door. An inline <time> takes its type from the cell
