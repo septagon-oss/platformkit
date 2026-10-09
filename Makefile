@@ -282,8 +282,19 @@ fmt-check: ## Fail when any file is not gofmt'd
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
+# A stated per-package bound, the same number `check` states for the same reason. This goal stated
+# none, so it inherited go test's ten-minute default, and CI job 57346 killed `apps/platformkit` at
+# 600.260s over a dump of cases parked in the migration queue that package's TestMain names — the
+# death its comment describes, with -race doubling the suite: the package measured 421.726s and
+# 437.988s under the detector on the two jobs before it. It is not a looser standard: a hang still
+# stops, and a suite growing under a clock nobody chose stops too. The bound sits after the packages
+# rather than after the count because three cases read this line — two of them by the prefix the
+# fresh count puts first (scripts/check_architecture_test.sh, scripts/make_check_count_default_test.sh)
+# and one by where $(TEST_COUNT) sits after the option separator (scripts/ci_go_cache_test.sh) — and
+# a clock at the foot of the line moves none of them, while a clock before the packages would move
+# all three.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) $(RACE_PACKAGES) -timeout=30m
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
