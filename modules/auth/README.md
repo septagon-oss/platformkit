@@ -145,16 +145,17 @@ of which anything reads today); an encrypted assertion is refused rather than
 parsed, and so is one bound holder-of-key or sender-vouches, for the same lack of
 a key; there is no installation-level SAML default to fall back on, unlike
 OIDC — the legs mount on the port alone; and there is no single logout, so
-`auth.Logout` stands as the only way a session ends. Two residuals are named rather
-than hidden. The assertion consumer service is an anonymous POST on the *app*
-surface, so `kit/httpx`'s public-write limit — which is the Public surface's only
-limit — does not reach it: what one address may cost today is bounded by the request
-body ceiling and by the RSA verification it makes the caller pay for, and putting it
-under a counter needs a bound over app-surface anonymous writes, which is the
-kernel's to strike and not this module's to invent beside it. And the hour a document
-fetched from a metadata URL is trusted for is both the cure and the residual: a
-rotated-in certificate is followed within the hour, and a certificate its owner has
-taken out of service stays trusted here for the same hour.
+`auth.Logout` stands as the only way a session ends. Two things about it are named
+rather than hidden. The assertion consumer service is an anonymous POST on the *app*
+surface, so `kit/httpx`'s public-write limit — the Public surface's only limit — does
+not reach it, and what bounds it is this module's own counter: sixty assertions an
+address a minute (`contracts.AssertionsPerAddress`, the rate the kernel counts the
+forms it does gate at), refused ahead of the base64, the parse and the signature so
+the refusal costs less than the work it refuses — and one office behind one NAT is one
+counter, which is the cost the kernel already accepts for the same reason. And the hour
+a document fetched from a metadata URL is trusted for is both the cure and the
+residual: a rotated-in certificate is followed within the hour, and a certificate its
+owner has taken out of service stays trusted here for the same hour.
 
 ## A second factor
 

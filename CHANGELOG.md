@@ -14,7 +14,9 @@ right, addressed to this tenant's entity ID (an assertion that names no audience
 nobody), bound in the bearer method, current, and answering a request the same browser
 started; it then spends the assertion id in the transaction that opens the session, so a
 sign-in that is refused leaves the assertion presentable and one that succeeds spends it
-exactly once. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+exactly once. An address may present sixty assertions a minute and no more: the leg is mounted on
+the app surface, past the kernel's Public-only write limit, so it carries its own bound,
+refused ahead of the document rather than after it. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
 (`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
 add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
 are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to

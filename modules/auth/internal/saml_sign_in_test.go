@@ -357,6 +357,37 @@ func TestASAMLAssertionBoundToNoBearerIsRefused(t *testing.T) {
 	assertNothingWritten(t, f, before)
 }
 
+// TestTooManySAMLAssertionsFromOneAddressAreRefused is the cost bound in front of the
+// cost. The ACS is an anonymous POST on the app surface, past `kit/httpx`'s Public-only
+// write limit, and everything it accepts is parsed as XML and verified against the
+// tenant's certificate — so the counter has to answer before any of that, and the
+// document that trips it here is deliberately unreadable: a presentation that had
+// reached the parser would have been refused 403 for not being base64 at all, which is
+// what makes the 429 the proof of the order and not of a second rule.
+//
+// The allowance is spent and not sampled, because the number is the thing under test:
+// sixty are let through, sixty-one is not.
+func TestTooManySAMLAssertionsFromOneAddressAreRefused(t *testing.T) {
+	f := samlSignInUp(t)
+	before := f.counts(t)
+	_, cookie := f.start(t, host)
+
+	for n := 1; n <= contracts.AssertionsPerAddress; n++ {
+		if res := post(t, f.router, host, "", "not base64 at all", cookie); res.Code != http.StatusForbidden {
+			t.Fatalf("presentation %d of the sixty = %d %s, want the document's own 403",
+				n, res.Code, res.Body.String())
+		}
+	}
+	res := post(t, f.router, host, "", "not base64 at all", cookie)
+	if res.Code != http.StatusTooManyRequests {
+		t.Fatalf("presentation %d from one address = %d %s, want 429",
+			contracts.AssertionsPerAddress+1, res.Code, res.Body.String())
+	}
+	// The count is the counter's; the assertion a person is holding is still good, and
+	// nothing about being refused here is written anywhere.
+	assertNothingWritten(t, f, before)
+}
+
 func TestASAMLAssertionPresentedTwiceIsRefused(t *testing.T) {
 	f := samlSignInUp(t)
 	location, cookie := f.start(t, host)
