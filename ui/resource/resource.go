@@ -182,7 +182,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := label(row, r.Schema.Fields)
+	named := label(row, readable(r.Schema.Fields))
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
@@ -294,13 +294,19 @@ func listName(one string) string { return one + "s" }
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
 func table(o Options, r Resource, at, title string, rows []map[string]any, sort, count string, pager *components.PaginationProps, slots components.DataListSlots) g.Node {
-	primary := known(r.Schema.Fields)
+	// The identity column is chosen from the fields this list shows, not from the
+	// schema: `known` answers without any declaration, so the gate that refuses an
+	// author pointing `primaryField` at hidden plumbing says nothing about this path,
+	// and a table that led with a value its author kept off every row would put that
+	// value back through the one column every row links on.
+	listed := onList(r.Schema.Fields)
+	primary := known(listed)
 	shown := []entity.Field{primary}
-	for _, f := range r.Schema.Fields {
+	for _, f := range listed {
 		// `hidden` is off every screen and `detail` is off this one; both keep
 		// their value in the schema, the PATCH and the JSON, because what a person
 		// is shown and what a caller may read are two questions.
-		if f.HideList || f.Presentation.OffList() || f.Name == primary.Name || f.Name == "id" {
+		if f.Name == primary.Name || f.Name == "id" {
 			continue
 		}
 		shown = append(shown, f)
@@ -330,7 +336,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		// row, not off the cell above: display.Display spells "nothing" as a dash, and a dash is
 		// not empty, so a cell tested here could never fall back.
 		if display.Text(row[primary.Name]) == "" {
-			if name := label(row, r.Schema.Fields); name != "" {
+			if name := label(row, listed); name != "" {
 				named[display.Text(row["id"])] = name
 			}
 		}
@@ -386,10 +392,10 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	return components.DataListWithSlots(p, slots)
 }
 
-// details is the detail screen: every field, in schema order, as a description
-// list. There is no hiding here — hide:list is about a table being readable,
-// not about a field being secret, and a field a caller may not see is a field
-// the entity's JSON does not carry.
+// details is the detail screen: every field the author kept on a record, in schema
+// order, as a description list. `hide:list` hides nothing here — it is about a table
+// being readable, not about a field being secret — and `visibility:hidden` is the one
+// declaration that is off this screen too, which readable applies.
 func details(r Resource, row map[string]any, rendered map[string]string) g.Node {
 	// One pass, in schema order: richtext becomes a prose section as it always
 	// did, and every other readable field becomes a term beside its value.
@@ -399,10 +405,7 @@ func details(r Resource, row map[string]any, rendered map[string]string) g.Node 
 		item  components.DetailItem
 	}
 	var reads []read
-	for _, f := range r.Schema.Fields {
-		if f.Presentation.Hidden() {
-			continue
-		}
+	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
 				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
@@ -523,6 +526,10 @@ func (r Resource) sortable(f entity.Field) bool {
 // A `text` column counts beside a `string` one: both hold a name, and the reference app's own users
 // are a `text` table — an entity of text columns that has not marked a field used to answer its own
 // heading and its row's only link with a UUID. The mark still wins when both apply; see candidates.
+//
+// It reads the fields the asking screen shows, which is what callers pass it: an identity selection
+// over a whole schema would pick a field that screen does not draw, and the value would come back on
+// the screen anyway — in the leading cell, the row's link and the tab title.
 func known(fields []entity.Field) entity.Field {
 	if c := candidates(fields); len(c) > 0 {
 		return c[0]
@@ -549,6 +556,34 @@ func candidates(fields []entity.Field) []entity.Field {
 			continue // the marked ones are already at the head, and a caller may not write this one
 		}
 		if f.Type == entity.TypeString || f.Type == entity.TypeText {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// onList is the schema as a list of rows reads it: every field whose reading puts it on a row, in
+// schema order. entity.Field.OnList resolves the two tags that say so (`visibility`, and the older
+// `hide:list` a declared visibility overrides); this is where the list asks, once, so the columns it
+// draws and the field it leads with cannot disagree about which fields a row has.
+func onList(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if f.OnList() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// readable is the schema as the record reads it: `hidden` is the only visibility off this screen,
+// `detail` being the field a record answers and a row does not need. A field that is not drawn here
+// cannot name the row here either — the record's title is its toolbar, its breadcrumb and the browser
+// tab a person bookmarks.
+func readable(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if !f.Presentation.Hidden() {
 			out = append(out, f)
 		}
 	}

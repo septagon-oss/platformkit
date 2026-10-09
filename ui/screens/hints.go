@@ -18,8 +18,16 @@ import (
 // document and make "did somebody choose this or did nobody say anything?"
 // unanswerable from the bytes.
 //
-// Hence a pointer per key. `Singular: ""` spelled out by an author and silence
-// are two different documents; with value types they would be one.
+// Hence a pointer per key: the distinction the document can carry is the one
+// between a key with a value in it and no key at all, and a value type would
+// print a default for an author who said nothing.
+//
+// What no Go type can carry is a declared empty value beside silence: the mount
+// gate refuses the declarations whose empty form means nothing (`group` with no
+// label, `sections` with no block), and an empty `singular` is silence by
+// definition — there is no word a person was going to read that is the empty
+// string. `declared` is therefore "this was said" for every non-zero value and
+// never for the zero one, which is the whole of what it promises.
 
 // EntryPresentation is one resource as its author said it reads.
 type EntryPresentation struct {
@@ -50,7 +58,10 @@ type CommandPresentation struct {
 
 // declared is the whole rule in one shape: a zero field of the declaration
 // prints no key, a non-zero one prints the author's value. It computes no
-// default, reads no schema and knows nothing about what an icon is.
+// default, reads no schema and knows nothing about what an icon is. The zero
+// value prints nothing for every type it reads — "no opinion" and "nobody said
+// anything" are the same document, and `Order` is the case that says so in its
+// own comment in kit/entity.
 func declared[T comparable](value T) *T {
 	var none T
 	if value == none {

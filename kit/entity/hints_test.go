@@ -15,7 +15,7 @@ type hinted struct {
 	Level  string `json:"level" enum:"low,high" enumLabels:"low=Low,high=High" enumTones:"low=neutral,high=warning"`
 	Amount int64  `json:"amount" ui:"format:money;currency:unit;scale:2"`
 	Unit   string `json:"unit"`
-	Owner  string `json:"owner" ui:"reference:user.user;section:record"`
+	Owner  string `json:"owner" ui:"reference:user/user;section:record"`
 }
 
 func (hinted) TableName() string { return "hints" }
@@ -39,7 +39,7 @@ func TestFieldsReturnsOneCopyOfEveryHint(t *testing.T) {
 	a["level"].Presentation.EnumLabels["low"] = "Rewritten"
 	a["level"].Presentation.EnumTones["high"] = "danger"
 	a["amount"].Presentation.Money.Scale = 0
-	a["owner"].Presentation.Reference.Resource = "x.x"
+	a["owner"].Presentation.Reference.Resource = "x/x"
 	if got := b["level"].Presentation.EnumLabels["low"]; got != "Low" {
 		t.Errorf("one caller's label reached another caller's schema: %q", got)
 	}
@@ -49,7 +49,7 @@ func TestFieldsReturnsOneCopyOfEveryHint(t *testing.T) {
 	if got := b["amount"].Presentation.Money.Scale; got != 2 {
 		t.Errorf("one caller's money scale reached another caller's schema: %d", got)
 	}
-	if got := b["owner"].Presentation.Reference.Resource; got != "user.user" {
+	if got := b["owner"].Presentation.Reference.Resource; got != "user/user" {
 		t.Errorf("one caller's reference reached another caller's schema: %q", got)
 	}
 }
@@ -92,5 +92,30 @@ func TestVisibilityIsAReadingDecision(t *testing.T) {
 	}
 	if reflect.TypeOf(entity.Field{}.Presentation).Kind() != reflect.Struct {
 		t.Error("Field.Presentation must be a value: the zero FieldHints is \"nobody said anything\"")
+	}
+}
+
+// TestExplicitVisibilityDecidesTheListBesideHideList is the pair of ways to name
+// one column resolved by precedence rather than by refusal, in both directions: the
+// explicit hint wins over the older `hide:list` tag whether that puts the field back
+// on the list or takes it off. A pair that agreed (`hidden` beside `hide:list`) is
+// refused by neither, and silence is the older tag on its own.
+func TestExplicitVisibilityDecidesTheListBesideHideList(t *testing.T) {
+	for _, pair := range []struct {
+		visibility string
+		hideList   bool
+		onList     bool
+	}{
+		{"", false, true}, {"", true, false},
+		{"shown", true, true}, {"shown", false, true},
+		{"detail", false, false}, {"detail", true, false},
+		{"hidden", false, false}, {"hidden", true, false},
+	} {
+		f := entity.Field{HideList: pair.hideList,
+			Presentation: entity.FieldHints{Visibility: pair.visibility}}
+		if got := f.OnList(); got != pair.onList {
+			t.Errorf("visibility %q beside hide:list=%v answers OnList %v, want %v",
+				pair.visibility, pair.hideList, got, pair.onList)
+		}
 	}
 }

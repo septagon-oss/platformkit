@@ -137,6 +137,11 @@ type FieldHints struct {
 	Section string `json:"section,omitempty"`
 	// Visibility is `shown` (absent), `detail` or `hidden`. A reading decision
 	// and nothing else: the field stays in the schema, the PATCH and the JSON.
+	//
+	// Saying it at all is the narrower word about the same column as the older
+	// `ui:"hide:list"` tag, and it wins both ways: `shown` puts a field the tag hid
+	// back on the list, `detail` takes off the list one the tag left on.
+	// See Field.OnList.
 	Visibility string `json:"visibility,omitempty"`
 	// Format is a name Formats admits.
 	Format string `json:"format,omitempty"`
@@ -199,7 +204,30 @@ type CommandConfirmation struct {
 // editability stays readOnly/immutable.
 func (h FieldHints) Hidden() bool { return h.Visibility == "hidden" }
 
-// OffList reports whether the field stays off a list of rows. `hidden` is off
-// both screens and so off this one; `detail` is the field a record answers and a
-// row does not need.
+// OffList reports whether a declared visibility keeps the field off a list of
+// rows. `hidden` is off both screens and so off this one; `detail` is the field a
+// record answers and a row does not need. `shown` — and the silence that means it
+// — is on it.
+//
+// It reads the declaration and nothing else. Field.OnList is the whole answer,
+// because a second, older tag says the same thing about the same column.
 func (h FieldHints) OffList() bool { return h.Visibility == "hidden" || h.Visibility == "detail" }
+
+// OnList reports whether a list of rows carries this field. It is where the two
+// ways to say the same thing about one column are resolved, and the resolution is
+// the brief's: the explicit hint wins over `hide:list`.
+//
+// Which of the two is the author's later word is not a fact a schema can carry,
+// so the rule is by kind rather than by date: `visibility` names one field's
+// reading on every screen, `hide:list` names one column of one screen, and the
+// narrower declaration is the one that reads as an override. Both directions are
+// the same precedence — `shown` reclaims a column `hide:list` took away, `detail`
+// gives up a column `hide:list` left in place — so no pair of declarations about
+// one field is refused: a contract that refused the pair that agreed and honoured
+// the pair that disagreed would refuse the wrong one.
+func (f Field) OnList() bool {
+	if f.Presentation.Visibility == "" {
+		return !f.HideList
+	}
+	return !f.Presentation.OffList()
+}

@@ -92,7 +92,7 @@ func TestEveryDeclaredReferenceResolvesInTheReferenceComposition(t *testing.T) {
 	resources := []httpx.Resource{
 		{Module: "task", Entity: "task", Schema: entity.Schema{Fields: []entity.Field{
 			{Name: "assigneeId", Type: entity.TypeUUID,
-				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "user.user"}}}}}},
+				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "user/user"}}}}}},
 		{Module: "user", Entity: "user"},
 	}
 	if bad := rest.CheckReferences(resources); bad != "" {
@@ -101,14 +101,14 @@ func TestEveryDeclaredReferenceResolvesInTheReferenceComposition(t *testing.T) {
 	broken := []httpx.Resource{
 		{Module: "task", Entity: "task", Schema: entity.Schema{Fields: []entity.Field{
 			{Name: "assigneeId", Type: entity.TypeUUID,
-				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "usr.user"}}}}}},
+				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "usr/user"}}}}}},
 		{Module: "user", Entity: "user"},
 	}
 	bad := rest.CheckReferences(broken)
 	if bad == "" {
 		t.Fatal("a reference to a module nobody composed is served")
 	}
-	for _, needle := range []string{`"usr.user"`, "assigneeId", "no composed module registers"} {
+	for _, needle := range []string{`"usr/user"`, "assigneeId", "no composed module registers"} {
 		if !strings.Contains(bad, needle) {
 			t.Errorf("the refusal does not name %q: %s", needle, bad)
 		}

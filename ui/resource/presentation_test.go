@@ -121,6 +121,42 @@ func TestDeclaredSectionsAreTheBlocksOfTheRecordScreen(t *testing.T) {
 	}
 }
 
+// TestAFieldTheRecordDoesNotDrawDoesNotNameIt. `hidden` keeps a field off the
+// description list, and the record's title is its toolbar, its breadcrumb and the
+// browser tab a person bookmarks: a value the author kept off the page that came
+// back through the row's name would be the same promise broken by the identity
+// selection rather than the column loop. `detail` is drawn here, so it may name it.
+func TestAFieldTheRecordDoesNotDrawDoesNotNameIt(t *testing.T) {
+	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "title": "The name nobody is shown",
+		"body": "The body a record answers", "status": "open"}
+	hidden := resource.Detail(hintedResource(entity.EntryHints{}, fieldsWith(map[string]entity.FieldHints{
+		"title": {Visibility: "hidden"}})), opts, row, false)
+	if strings.Contains(hidden.Title, "The name nobody is shown") {
+		t.Errorf("visibility:hidden names the record from a field it does not draw: %q", hidden.Title)
+	}
+	if !strings.Contains(hidden.Title, "The body a record answers") {
+		t.Errorf("the record fell back past the next field it draws rather than onto it: %q", hidden.Title)
+	}
+	detail := resource.Detail(hintedResource(entity.EntryHints{}, fieldsWith(map[string]entity.FieldHints{
+		"body": {Visibility: "detail"}})), opts, row, false)
+	if !strings.Contains(detail.Title, "The name nobody is shown") {
+		t.Errorf("the field the record leads with lost its name to a visibility that kept nothing off it: %q", detail.Title)
+	}
+}
+
+// TestABlankRowNamesItselfWithAFieldTheListDraws: the fallback for an empty leading
+// cell walks the same fields the columns are drawn from, so a row with nothing in
+// its name cannot be linked by a value its author kept off the list.
+func TestABlankRowNamesItselfWithAFieldTheListDraws(t *testing.T) {
+	row := map[string]any{"id": "11111111-1111-1111-1111-111111111111", "title": "The name nobody is shown",
+		"status": "", "rank": 0.0, "pinned": false}
+	page := render(t, resource.List(hintedResource(entity.EntryHints{}, fieldsWith(map[string]entity.FieldHints{
+		"title": {Visibility: "hidden"}})), opts, []map[string]any{row}, 1, 1, "", false).Body)
+	if strings.Contains(page, "The name nobody is shown") {
+		t.Errorf("a blank row was named by a field off the list:\n%s", around(page, "link"))
+	}
+}
+
 // TestADeclaredConfirmationIsReadBeforeTheButtonAndAnUndeclaredOneIsInventedNowhere.
 func TestADeclaredConfirmationIsReadBeforeTheButtonAndAnUndeclaredOneIsInventedNowhere(t *testing.T) {
 	asked := withCommands(resource.Command{Verb: "sweep", Label: "Reindex everything",

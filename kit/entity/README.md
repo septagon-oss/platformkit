@@ -73,6 +73,15 @@ serialises exactly as it did before these types existed — `Field.Presentation`
 `omitzero`, and `ui/screens` prints a `presentation` key only for a hint somebody
 wrote.
 
+Two declarations can name one column's place on a list: `ui:"hide:list"` and
+`visibility`. `Field.OnList` is the one place they resolve, and it resolves them
+by precedence rather than by refusal — an explicit `visibility` is the narrower
+word about one field's reading, so it wins in both directions, `shown` reclaiming
+a column the older tag took and `detail` giving up one it left. With nothing
+said, `hide:list` stands on its own. A `reference` names its target as
+`module/entity`, and `kit/rest` keys that boot check by the same spelling for a
+field and for a command's argument alike.
+
 **Reused** — `Widgets`/`Presentations` and their `Valid…` predicates, `derive`'s
 tag loop, `kit/entity/display`'s `FieldLabel`/`FieldHelp`, `ui/icon`'s `aliases`
 seam and `ui/components`' `clBadgeTone`. **Added** — the four vocabularies and the

@@ -122,6 +122,10 @@ type badReference struct {
 
 func (badReference) TableName() string { return "rest_hinted" }
 
+// shownAndHidden is the pair that resolves by precedence rather than by refusal:
+// an explicit `visibility` is the author's word about the field's reading, so
+// `shown` puts back on the list the column the older `hide:list` tag took off it.
+// entity.Field.OnList is where that resolves, and ui/resource renders it.
 type shownAndHidden struct {
 	crud.Base
 	Source string `json:"source" ui:"visibility:shown;hide:list"`
@@ -186,8 +190,15 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		PrimaryField: "title", Sortable: []string{"title"},
 	}
 	t.Run("a declaration that names what exists mounts", func(t *testing.T) {
-		mountSpec[*hintedOK](good, "/things") // no panic; the check itself is below
-		_ = mountSpec[*hiddenBesideHideList](good, "/hidden-beside")
+		// Called, not built: a mount closure nobody runs refuses nothing. The real
+		// harness is not decoration either — past the gate Mount writes its routes
+		// onto the routers a real API hands out, and a zero httpx.Surfaces would
+		// fall over on the nil router for a reason that has nothing to do with the
+		// declaration. The two pairs of `visibility` beside `hide:list` mount in
+		// TestHiddenBesideHideListMounts and in
+		// TestExplicitShownVisibilityOverridesHideListAtMount.
+		mountAs(t, rest.Spec[*hintedOK]{Module: "hinted", Entity: "hinted", Path: "/things",
+			Read: "hinted:read", Write: "hinted:write", Present: good}, caller{})
 	})
 	for _, tc := range []struct {
 		name  string
@@ -219,7 +230,9 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 		{"currency is not a string", mountSpec[*currencyIsNotAString](plain, "/xx"), []string{`reads its currency from "unit"`, "not a string field"}},
 		{"scale out of range", mountSpec[*scaleTooWide](plain, "/xx"), []string{"scale 8", "0 to 3"}},
 		{"reference shape", mountSpec[*badReference](plain, "/xx"), []string{`reference "user"`, `module/entity`}},
-		{"shown beside hide:list", mountSpec[*shownAndHidden](plain, "/xx"), []string{`"source" declares visibility:shown and hide:list`}},
+		// No case for `visibility` beside `hide:list` in either direction: the pair
+		// resolves by precedence at entity.Field.OnList, and the two mounts above
+		// are the cases that say so.
 		{"unknown section", mountSpec[*unknownSection](entity.EntryHints{Sections: []entity.EntitySection{{Key: "record", Label: "Record"}}}, "/xx"), []string{`names section "timing"`, "declares no section as"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) { hintRefused(t, tc.mount, tc.want...) })
@@ -232,6 +245,17 @@ func TestEachInvalidHintRefusesToMountNamingIt(t *testing.T) {
 // failure nobody caused.
 func TestHiddenBesideHideListMounts(t *testing.T) {
 	mountAs(t, rest.Spec[*hiddenBesideHideList]{Module: "hinted", Entity: "hinted",
+		Path: "/things", Read: "hinted:read", Write: "hinted:write"}, caller{})
+}
+
+// TestShownBesideHideListMountsTheColumnTheOlderTagTook is the pair that does not
+// agree, and it does not refuse either. `visibility` names one field's reading on
+// every screen and `hide:list` names one column of one screen, so the narrower
+// declaration is the override: `shown` wins the column back. The gate and the
+// renderer read that one rule — entity.Field.OnList — and the screen's half is
+// ui/resource's TestExplicitShownVisibilityOverridesHideListInTheList.
+func TestShownBesideHideListMountsTheColumnTheOlderTagTook(t *testing.T) {
+	mountAs(t, rest.Spec[*shownAndHidden]{Module: "hinted", Entity: "hinted",
 		Path: "/things", Read: "hinted:read", Write: "hinted:write"}, caller{})
 }
 
@@ -282,7 +306,7 @@ func TestAReferenceToAModuleNobodyComposedIsRefused(t *testing.T) {
 	resources := []httpx.Resource{
 		{Module: "task", Entity: "task", Schema: entity.Schema{Fields: []entity.Field{
 			{Name: "assigneeId", Type: entity.TypeUUID,
-				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "site.setting"}}}}}},
+				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "site/setting"}}}}}},
 		{Module: "user", Entity: "user"},
 	}
 	if bad := rest.CheckReferences(resources); bad == "" {
@@ -291,7 +315,7 @@ func TestAReferenceToAModuleNobodyComposedIsRefused(t *testing.T) {
 	good := []httpx.Resource{
 		{Module: "task", Entity: "task", Schema: entity.Schema{Fields: []entity.Field{
 			{Name: "assigneeId", Type: entity.TypeUUID,
-				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "user.user"}}}}}},
+				Presentation: entity.FieldHints{Reference: &entity.FieldReference{Resource: "user/user"}}}}}},
 		{Module: "user", Entity: "user"},
 	}
 	if bad := rest.CheckReferences(good); bad != "" {

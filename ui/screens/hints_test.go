@@ -39,7 +39,7 @@ func hintedFields() []entity.Field {
 				EnumTones:  map[string]string{"in_progress": "info", "open": "neutral", "resolved": "success"}}},
 		{Name: "authorId", Type: entity.TypeUUID,
 			Presentation: entity.FieldHints{Label: "Author", Section: "record", Visibility: "detail",
-				Reference: &entity.FieldReference{Resource: "user.user"}}},
+				Reference: &entity.FieldReference{Resource: "user/user"}}},
 		{Name: "retainerFee", Type: entity.TypeInt,
 			Presentation: entity.FieldHints{Label: "Retainer", Section: "record", Format: "money",
 				Money: &entity.FieldMoney{CurrencyField: "currency", Scale: 2}}},
@@ -161,7 +161,7 @@ const frozenEntry = `{
         "section": "record",
         "visibility": "detail",
         "reference": {
-          "resource": "user.user"
+          "resource": "user/user"
         }
       }
     },
@@ -437,7 +437,7 @@ type hintedTags struct {
 	Title    string `json:"title" ui:"label:Subject;help:One line a person will recognise later;visibility:shown"`
 	Body     string `json:"body" ui:"widget:textarea;hide:list;section:record"`
 	Status   string `json:"status" enum:"open,in_progress,resolved" ui:"widget:select" enumLabels:"open=Open,in_progress=In progress,resolved=Resolved" enumTones:"open=neutral,in_progress=info,resolved=success"`
-	AuthorID string `json:"authorId" ui:"label:Author;section:record;visibility:detail;reference:user.user"`
+	AuthorID string `json:"authorId" ui:"label:Author;section:record;visibility:detail;reference:user/user"`
 	Fee      int64  `json:"retainerFee" ui:"label:Retainer;section:record;format:money;currency:currency;scale:2"`
 	Currency string `json:"currency" ui:"visibility:hidden"`
 	SentAt   string `json:"sentAt" ui:"section:record;format:relative"`

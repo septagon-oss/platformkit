@@ -150,12 +150,14 @@ func fieldHintFault(name string, fields []crud.Field, p entity.EntryHints) strin
 		if h.Reference != nil && !referenceTarget(h.Reference.Resource) {
 			return fmt.Sprintf("reference %q is not \"module/entity\"", h.Reference.Resource)
 		}
-		if h.Visibility == "shown" && f.HideList {
-			return fmt.Sprintf("field %q declares visibility:shown and hide:list; a field shown on the list is on the list", f.Name)
-		}
-		// visibility:hidden beside hide:list is deliberately not a refusal: hidden
-		// is the stronger declaration and implies off-list, so the older tag turns
-		// out to have been saying the same thing.
+		// `visibility` beside `hide:list` is not a refusal in either direction. The
+		// two ways to name one column agree by precedence, which entity.Field.OnList
+		// resolves the same way for the gate and the renderer: the explicit
+		// visibility is the author's word about the field's reading and wins over the
+		// older tag, `shown` reclaims a column `hide:list` took and `detail` gives up
+		// one it left. Refusing the pair that disagreed while saying nothing about the
+		// pair that agreed (`hidden` beside `hide:list`, where both want the column
+		// off) would refuse the wrong half.
 		if h.Section != "" && !hasSection(p.Sections, h.Section) {
 			return fmt.Sprintf("field %q names section %q, which the entry declares no section as", f.Name, h.Section)
 		}
@@ -305,23 +307,55 @@ func confirmationLabel(p entity.CommandHints) string {
 // `module/entity` a composed resource names is a resource this installation
 // actually registered, and "" when they all are. kit/app calls it once the whole
 // resource list exists, which is the first moment the question has an answer.
+//
+// Two declarations carry a reference: a field of the entity, and a field of a
+// command's argument. The first is the one a row holds and the second the one a
+// person sends, and the catalogue publishes both, so the gate reads both — a
+// target gate that walked only the entity's schema would let a command offer to
+// point a value at a resource nobody composed.
+//
+// One spelling throughout: `module/entity`, what `referenceTarget` refuses every
+// other shape of at mount and what the catalogue publishes. A gate that keyed the
+// registry by another spelling would refuse every reference a mounted Spec is
+// allowed to write, which is the same bug as not checking at all, told louder.
 func CheckReferences(resources []httpx.Resource) string {
 	registered := map[string]bool{}
 	for _, r := range resources {
-		registered[r.Module+"."+r.Entity] = true
+		registered[resourceAddress(r.Module, r.Entity)] = true
 	}
 	for _, r := range resources {
-		for _, f := range r.Schema.Fields {
-			ref := f.Presentation.Reference
-			if ref == nil || registered[ref.Resource] {
-				continue
+		owner := resourceAddress(r.Module, r.Entity)
+		if bad := unresolvedReference(owner+" field", r.Schema.Fields, registered); bad != "" {
+			return bad
+		}
+		for _, c := range r.Commands {
+			who := fmt.Sprintf("%s command %q argument field", owner, c.Verb)
+			if bad := unresolvedReference(who, c.Fields, registered); bad != "" {
+				return bad
 			}
-			return fmt.Sprintf("%s.%s field %q references %q, which no composed module registers",
-				r.Module, r.Entity, f.Name, ref.Resource)
 		}
 	}
 	return ""
 }
+
+// unresolvedReference names the first field that points beyond the composition,
+// saying which declaration named it so the author is not left to guess whether the
+// row or one of its commands was the one reaching.
+func unresolvedReference(declaredAs string, fields []entity.Field, registered map[string]bool) string {
+	for _, f := range fields {
+		ref := f.Presentation.Reference
+		if ref == nil || registered[ref.Resource] {
+			continue
+		}
+		return fmt.Sprintf("%s %q references %q, which no composed module registers", declaredAs, f.Name, ref.Resource)
+	}
+	return ""
+}
+
+// resourceAddress is the one way a resource is named as a thing a value can point
+// at: `module/entity`. Both ends of a reference — the registration and the hint —
+// are keyed by it, so the two can only ever meet.
+func resourceAddress(module, entityName string) string { return module + "/" + entityName }
 
 func lowerIdentifier(s string) bool {
 	if s == "" || s[0] < 'a' || s[0] > 'z' {
