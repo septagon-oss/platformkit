@@ -26,7 +26,7 @@ func TestVerificationPageNeitherReadsNorSpendsAnotherTenantsCredential(t *testin
 	seed(t, conn, globex)
 	deps := auth.Deps{Users: realUsers(), Mailer: mailbox, Hosts: authtest.Host(host), PublicHost: host}
 	emailSignup(&deps)
-	svc, mod := auth.Module(deps)
+	svc, mod := auth.New(deps)
 	api, tenants := httpx.New(httpx.Options{
 		Cache: cache.Memory("pkit"), PublicHost: host, Conn: conn,
 		Authorize: svc, Authenticate: svc.Authenticate,
