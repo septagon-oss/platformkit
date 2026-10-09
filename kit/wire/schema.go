@@ -1,9 +1,11 @@
 package wire
 
 import (
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -38,15 +40,86 @@ func enumSet(signature string) ([]string, bool) {
 	return strings.FieldsFunc(rest, func(r rune) bool { return r == ' ' || r == '|' }), true
 }
 
+// authMembers are the declaration members a reader looks for first, in the order the
+// identity spells them: what kit/httpx emits, in the order it emits it. A member that
+// is absent, null or empty contributes nothing, so `kind=public` reads the same whether
+// the permission was omitted, written as null, or written as "".
+var authMembers = []string{"kind", "permission", "feature"}
+
+// wireAuth is one operation's whole authorization declaration, canonically spelled:
+// the members named above in that order, then every other member the declaration
+// carries, sorted by name. It compares what a door is, never whether the answer is
+// sane — a sixth kind, a malformed permission or a feature nobody sells is compared
+// here and refused at boot by kit/httpx, which owns what may be declared.
+//
+// Values that do not read as one word are quoted, so two declarations cannot share a
+// spelling: {"kind":"x permission=y"} is `kind="x permission=y"`, which is not the
+// `kind=x permission=y` two members spell. A declaration that is not an object keeps its
+// value under `value=`, because a comparator that read it as absent would accept a
+// document whose door nobody can name.
 func wireAuth(route map[string]any) string {
-	declared, _ := route["x-platformkit-auth"].(map[string]any)
+	declared, present := route["x-platformkit-auth"]
+	if !present || declared == nil {
+		return ""
+	}
+	members, isObject := declared.(map[string]any)
+	if !isObject {
+		return "value=" + wireJSONText(declared)
+	}
 	var parts []string
-	for _, key := range []string{"kind", "permission", "operator_permission"} {
-		if value, _ := declared[key].(string); value != "" {
-			parts = append(parts, key+"="+value)
+	for _, key := range authMembers {
+		if part, ok := wireAuthMember(key, members[key]); ok {
+			parts = append(parts, part)
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(members)) {
+		if slices.Contains(authMembers, key) {
+			continue
+		}
+		if part, ok := wireAuthMember(key, members[key]); ok {
+			parts = append(parts, part)
 		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// wireAuthMember is one member's segment, or nothing when the member says nothing:
+// absent, null or empty is what `omitempty` and `Auth.Feature() == ""` already mean.
+func wireAuthMember(key string, value any) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	if text, isString := value.(string); isString && text == "" {
+		return "", false
+	}
+	return key + "=" + wireValueText(value), true
+}
+
+// wireValueText is a declaration value as one segment can hold it: verbatim when it
+// reads as one word, quoted when it holds a space, a tab, a newline or a quote, and the
+// JSON it is when it is not a string at all.
+func wireValueText(value any) string {
+	text, isString := value.(string)
+	if !isString {
+		return wireJSONText(value)
+	}
+	if strings.ContainsAny(text, " \t\n\"") {
+		return strconv.Quote(text)
+	}
+	return text
+}
+
+// wireJSONText is the compact JSON of a declaration member or of a declaration that is
+// no object at all. A string keeps its quotes here, which is what keeps
+// {"x-platformkit-auth":"public"} from reading as the `value=public` an object holding a
+// member named value spells. Every value came out of encoding/json, so it always
+// encodes again; the fallback is the text a person reads if that ever stops being true.
+func wireJSONText(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return strconv.Quote(fmt.Sprint(value))
+	}
+	return string(encoded)
 }
 
 func walkWire(out map[string]string, id, at string, node map[string]any, doc map[string]any, depth int) {
