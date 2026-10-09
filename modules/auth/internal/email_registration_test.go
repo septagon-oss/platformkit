@@ -367,7 +367,10 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 		t.Fatalf("recipient limiter requests=%d err=%v", queued, err)
 	}
 	worker(t, conn)
-	if len(mailbox.Sent()) != 1 {
+	// The cooldown bounds the credential, which is what a resend is: no second link
+	// leaves for a person already sent one. A message that says no link was sent is
+	// not a bypass of that (linksMailed, internal/no_link.go).
+	if len(linksMailed()) != 1 {
 		t.Fatal("immediate resend bypassed the token cooldown")
 	}
 	// Advance only disposable fixture timestamps; no wait or changed policy.
@@ -382,7 +385,7 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 		t.Fatalf("later resend=%d", res.Code)
 	}
 	worker(t, conn)
-	letters := mailbox.Sent()
+	letters := linksMailed()
 	if len(letters) != 2 {
 		t.Fatalf("later resend count=%d", len(letters))
 	}
@@ -406,7 +409,11 @@ func TestVerificationResendIsNeutralAndReplacesOnlyItsOwnCredential(t *testing.T
 	}); !errors.Is(err, crud.ErrConflict) {
 		t.Fatalf("password change bypassed verification: %v", err)
 	}
-	if len(mailbox.Sent()) != 2 {
+	// Two credentials have left this account's lifetime — the verification link and
+	// its rotation — and recovery added no third: an unverified account is never
+	// mailed a set-password link. The message it does get says no link was sent and
+	// carries none of that in it (linksMailed, internal/no_link.go).
+	if len(linksMailed()) != 2 {
 		t.Fatal("password recovery emailed an unverified account")
 	}
 	if res := call(t, router, "POST", "/api/v1/public/auth/verify-email", verificationBody(t, second)); res.Code != http.StatusOK {

@@ -17,6 +17,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
+	"github.com/septagon-oss/platformkit/modules/auth/contracts/authtest"
 	notificationmodule "github.com/septagon-oss/platformkit/modules/notification"
 	usermodule "github.com/septagon-oss/platformkit/modules/user"
 )
@@ -90,12 +91,20 @@ func TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne(t *testing.
 	}
 	known, unknown := forgot("ada@acme.localhost"), forgot("nobody@acme.localhost")
 	relayWithRequest(t, conn)
-	// The worker ran and mailed the one address that has an account: the door has
-	// something to say about one of the two calls.
-	if got := len(mailbox.Sent()); got != 1 {
-		t.Fatalf("mails after the relay=%d, want the one link for the address that is here", got)
+	// The worker ran, and it ran on both calls: the address that has an account was
+	// mailed the link, and the one with nobody behind it was mailed the message that
+	// says no link was sent — which is what lets the door answer the second call from
+	// its own record instead than from anybody else's (internal/no_link.go). What the
+	// two calls may not differ in is a credential: exactly one message carries a link
+	// and it went to the address that is here.
+	if got := len(linksMailed()); got != 1 {
+		t.Fatalf("mails carrying a credential after the relay=%d, want the one link for the address that is here", got)
 	}
-
+	for _, letter := range mailbox.Sent() {
+		if letter.To != "ada@acme.localhost" && authtest.TokenIn(letter.Body) != "" {
+			t.Fatalf("a credential left for %s, which has no account to send it to", letter.To)
+		}
+	}
 	if a, b := ask(router, known), ask(router, unknown); a != b {
 		t.Errorf("the door answers %q about the address with an account and %q about the one without:"+
 			" asked with the id the forgotten-password route answered, it says who has an account", a, b)
