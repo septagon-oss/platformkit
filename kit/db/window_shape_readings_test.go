@@ -27,7 +27,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -413,30 +412,94 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// What the bound is made of decides how the case measures it. It is a number of windows —
-// ten thousand batches of the five rows this file's window holds — and the body adds five rows
-// per window, so the key the cursor stands on counts the windows the tick committed: the drain
-// that respects its bound stops at the key of its ten-thousandth batch, and one that does not
-// walks past it. So the guard is that key, read from a second connection while the drain runs:
-// it refuses the regression as soon as the work past the bound commits, on a loaded machine and
-// an idle one alike, and it says nothing about a drain that stopped where it should. Ten
-// thousand windows cost this case four times as much when the gate runs every other package
-// beside it as when it runs alone, and a stopwatch is not the bound the claim is about.
+// The watch over that case counts the drain's windows rather than the seconds it runs.
 //
-// The context carries no deadline: the guard above needs none, because it reads the drain's
-// position rather than the clock. What a clock could not tell apart here is a tick that is slow
-// and a tick that is stuck, and the difference between those two is a factor of six on the machine
-// this gate runs on. The same ten thousand windows measured 48.6 s for this case alone against a
-// Postgres nobody else was migrating into, and 304.34 s at load average 38-43 on 32 cores with six
-// other whole-suite runs asking the same server; the loaded reading barely moved to 301.35 s once
-// the drain's commits stopped waiting for a WAL flush, so what one window costs there is the server
-// being scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`,
-// `window`, the body, the progress row, the commit: drainWindow) paid ten thousand times. A fixed
-// deadline sits between those two readings and bounds nothing either of them: sized for the quiet
-// one it refuses a healthy tick on a busy evening, sized for the loaded one it lets a tick that is
-// stuck stay stuck for five minutes first. So the case reads the drain's position, and the clock
-// notices only the one failure that leaves no position to read: a cursor that stops moving for two
-// minutes is a run open and getting nowhere, which is what the bound exists to make impossible.
+// It used to be a deadline, and a deadline measures the machine, not the drain. The drain the
+// bound stops is 10 000 committed transactions: 117 s with a Postgres to itself — the measurement
+// that moved the number from 120 s to five minutes — and past 300 s during the whole-suite run of
+// 2026-10-08, when every other package in the repository was writing into the same server. Both
+// times the case reported "this drain has no bound" about a drain that was merely slow, which is
+// what any bound on a wait the machine answers eventually reports. A count cannot: it stops the
+// run at twice the rows the tick's own bound allows it to write, a state a drain that stops at its
+// bound is nowhere near at any speed and one that stops nowhere walks into at any speed.
+//
+// The run of 2026-10-06 measured the same drain from the other side and reached the same reading
+// from the other direction: 48.6 s against a Postgres nobody else was migrating into, 304.34 s at
+// load average 38-43 with six other rounds' whole-suite runs asking that server, and 301.35 s again
+// with its commits not waiting for a WAL flush. What one window costs there is the server being
+// scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`, `window`,
+// the body, the progress row, the commit: `drainWindow`) paid ten thousand times. Two machines, one
+// conclusion: the seconds are the machine's, the windows are the tick's, and only one of the two
+// bounds anything.
+//
+// The stall line is asked of the same reading, and it is the other half: no window committing for
+// six minutes is a run stuck rather than a run slow. Six minutes is twice what the whole 10 000
+// window drain took at load average 40, so a single window costing more than that is not a busy
+// disk. Behind both stands the per-package bound `make check` states (30m), which is this
+// repository's answer to a test that hangs, and neither line is the case's assertion: the case
+// asserts ErrBackfillBudget, the bound named in its sentence, and the ledger it leaves.
+const (
+	tickWindows       = 10000 // migration_header.go's workerBackfillBatches, named by the report below
+	tickRowsPerWindow = 5     // the `-- pkit: batch=5` windowShapesData declares
+	watchPoll         = 500 * time.Millisecond
+	watchStall        = 6 * time.Minute
+)
+
+// watchDrainWindows stops a drain that will not stop, and says which line stopped it. The reading
+// is the drained table's own highest key, on a pool of the caller's: each committed window puts
+// five rows above the cursor — that is the body this case is written with — so the key counts
+// windows without trusting one thing the runner says about itself. The reason goes to a buffered
+// channel before the cancel, so the caller reads it with a non-blocking receive once Backfill has
+// returned instead of guessing it from a context error that could have come from anywhere.
+func watchDrainWindows(ctx context.Context, cancel context.CancelFunc, admin sqlDB, from int) chan string {
+	overrun := int64(from) + tickRowsPerWindow*2*tickWindows
+	stopped := make(chan string, 1)
+	go func() {
+		reading, poll := context.WithoutCancel(ctx), time.NewTicker(watchPoll)
+		defer poll.Stop()
+		stop := func(reason string) {
+			stopped <- reason
+			cancel()
+		}
+		last, moved := int64(from), time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-poll.C:
+			}
+			var top int64
+			if err := admin.QueryRowContext(reading, `SELECT coalesce(max(id), 0) FROM probe`).Scan(&top); err != nil {
+				if ctx.Err() == nil {
+					stop(fmt.Sprintf("the watch could not read the drained table: %v", err))
+				}
+				return
+			}
+			// The overrun is asked before the progress below and not after it, because a run that
+			// puts rows into the table on every poll is the run this line exists for. Read the
+			// other way round — advance, then look — the guard only ever looked on a poll where
+			// nothing moved, and the mutated drain this case was run against to check it reached
+			// 484 232 rows, 121 times past its bound, before a poll happened to see no growth.
+			if top >= overrun {
+				stop(fmt.Sprintf("the drained table holds %d rows, twice the %d that the %d windows a tick gives itself may write",
+					top, tickRowsPerWindow*tickWindows, tickWindows))
+				return
+			}
+			if top > last {
+				last, moved = top, time.Now()
+				continue
+			}
+			if stalled := time.Since(moved); stalled >= watchStall {
+				stop(fmt.Sprintf("no window committed in %s", stalled.Round(time.Second)))
+				return
+			}
+		}
+	}()
+	return stopped
+}
+
+// The bound is reached, so the case costs a tick's worth of windows; the watch above is what turns
+// a regression to no bound at all into a failure rather than a hang, counted in those windows.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -453,68 +516,27 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	const (
-		boundBatches = 10000 // one tick's bound, which the report below has to name
-		windowRows   = 5     // the batch=5 this file's header asks for
-		// Five windows of slack: the arithmetic above is this file's reading of its own body,
-		// and what the monitor refuses is the harm — work marching on past the bound — rather
-		// than an off-by-one in that reading.
-		boundKey = int64(boundBatches)*windowRows + 5*windowRows
-	)
+	admin := dbtest.Open(t, migrateURL)
+	// The rows the probe file wrote are where the counting starts, so the watch measures the
+	// drain's windows and not the size of the table it drains.
+	from := countRows(t, admin, "SELECT coalesce(max(id), 0) FROM probe")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
-	// The drain's own ledger, read from a connection of the test's rather than the runner's:
-	// each batch commits its cursor, so what stands there is how far the tick has come, and the
-	// moment it stops moving is the moment the tick stopped getting anywhere.
-	watch := dbtest.Open(t, migrateURL)
-	stopped, watched := make(chan struct{}), make(chan struct{})
-	var past, stalled int64
-	go func() {
-		defer close(watched)
-		tick := time.NewTicker(250 * time.Millisecond)
-		defer tick.Stop()
-		last, moved := "", time.Now()
-		for {
-			select {
-			case <-stopped:
-				return
-			case <-tick.C:
-			}
-			var cursor string
-			if err := watch.QueryRowContext(context.Background(),
-				"SELECT coalesce(cursor, '0') FROM schema_migration_backfill WHERE owner = 'ticks' AND version = 2").Scan(&cursor); err == nil && cursor != last {
-				last, moved = cursor, time.Now()
-			}
-			key, err := strconv.ParseInt(last, 10, 64)
-			if err == nil && key > boundKey {
-				past = key // the tick is past its bound; nothing it writes from here is evidence
-				cancel()
-				return
-			}
-			if idle := time.Since(moved); idle > 2*time.Minute {
-				stalled = int64(idle.Seconds())
-				cancel()
-				return
-			}
-		}
-	}()
+	stopped := watchDrainWindows(ctx, cancel, admin, from)
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
-	close(stopped)
-	<-watched
-	if past > 0 {
-		t.Fatalf("the tick's drain committed work up to key %d, past the %d its %d windows of %d rows end at: every tick rewrites work while holding the job's advisory lock",
-			past, boundBatches*windowRows, boundBatches, windowRows)
-	}
-	if stalled > 0 {
-		t.Fatalf("the tick's drain wrote no new cursor for %d seconds: the run is open and getting nowhere, which is what the bound a tick gives itself exists to end", stalled)
+	cancel() // the watch reads on a context of its own; this is what ends it
+	select {
+	case reason := <-stopped:
+		t.Fatalf("the worker's tick did not end at the bound it gives itself: %s; a drain with no bound "+
+			"rewrites work while holding the job's advisory lock", reason)
+	default:
 	}
 	if !errors.Is(err, db.ErrBackfillBudget) {
 		t.Fatalf("the bound a tick gives itself reported %v, not ErrBackfillBudget; a run that may not be open forever has to say so", err)
 	}
-	if !strings.Contains(err.Error(), fmt.Sprintf("%d batches of %d", boundBatches, windowRows)) {
+	if !strings.Contains(err.Error(), fmt.Sprintf("%d batches of %d", tickWindows, tickRowsPerWindow)) {
 		t.Errorf("the report does not name the bound it stopped at: %v", err)
 	}
-	admin := dbtest.Open(t, migrateURL)
 	// A bound is a stop and not a refusal: what committed stands, the cursor says where the next
 	// tick starts, and the version is not applied over work that is still there.
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 1 {

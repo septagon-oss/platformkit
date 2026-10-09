@@ -7,5 +7,59 @@
     "plural": {
       "": "gerir funções"
     }
+  },
+  "permission.passkey:signin": {
+    "references": [
+      "modules/auth/module.go"
+    ],
+    "translation": "permitir entrada apenas com passkey",
+    "plural": {
+      "": "permitir entrada apenas com passkey"
+    }
+  },
+  "auth.refusal.passkey-sign-in-off": {
+    "references": [
+      "modules/auth/internal/passkey_words.go"
+    ],
+    "translation": "esta organização não inicia sessão só com uma passkey; inicie sessão com a sua palavra-passe e depois adicione uma passkey",
+    "plural": {
+      "": "esta organização não inicia sessão só com uma passkey; inicie sessão com a sua palavra-passe e depois adicione uma passkey"
+    }
+  },
+  "auth.refusal.passkey-prompt-expired": {
+    "references": [
+      "modules/auth/internal/passkey_words.go"
+    ],
+    "translation": "essa inscrição expirou ou nunca foi iniciada aqui; comece de novo",
+    "plural": {
+      "": "essa inscrição expirou ou nunca foi iniciada aqui; comece de novo"
+    }
+  },
+  "auth.refusal.passkey-did-not-answer": {
+    "references": [
+      "modules/auth/internal/passkey_words.go"
+    ],
+    "translation": "esse pedido de passkey expirou ou não respondeu; tente novamente",
+    "plural": {
+      "": "esse pedido de passkey expirou ou não respondeu; tente novamente"
+    }
+  },
+  "auth.refusal.passkey-too-many-prompts": {
+    "references": [
+      "modules/auth/internal/passkey_words.go"
+    ],
+    "translation": "este dispositivo pediu pedidos de passkey demasiadas vezes; aguarde alguns minutos e tente novamente",
+    "plural": {
+      "": "este dispositivo pediu pedidos de passkey demasiadas vezes; aguarde alguns minutos e tente novamente"
+    }
+  },
+  "auth.refusal.passkey-answer-from-the-page": {
+    "references": [
+      "modules/auth/internal/passkey_words.go"
+    ],
+    "translation": "responda ao pedido de passkey a partir da própria página de início de sessão",
+    "plural": {
+      "": "responda ao pedido de passkey a partir da própria página de início de sessão"
+    }
   }
 }

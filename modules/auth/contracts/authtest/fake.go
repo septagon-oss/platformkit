@@ -60,21 +60,38 @@ type Fake struct {
 	// password_tokens.created_at.
 	offered   map[uuid.UUID]time.Time
 	published []string
+
+	// The second factor's two maps, and the tenant's own row about the
+	// usernameless door. See passkeys.go for what the fake decides about them
+	// and what it deliberately does not.
+	factors       map[uuid.UUID]*fakeFactor
+	ceremonies    map[uuid.UUID]*fakeCeremony
+	passkeySignIn bool
+
+	// proofs is the first-factor window: the address /login refused to finish,
+	// and when. See RequireFirstFactorProof.
+	proofs map[string]time.Time
 }
 
 // NewFake returns a fake signing people in from users.
 func NewFake(users contracts.Users) *Fake {
 	return &Fake{
-		Users:    users,
-		limiter:  contracts.NewLimiter(limit.Memory()),
-		sessions: map[uuid.UUID]contracts.Session{},
-		roles:    map[string]contracts.Permissions{},
-		offered:  map[uuid.UUID]time.Time{},
-		tokens:   map[string]uuid.UUID{},
+		Users:      users,
+		limiter:    contracts.NewLimiter(limit.Memory()),
+		sessions:   map[uuid.UUID]contracts.Session{},
+		roles:      map[string]contracts.Permissions{},
+		offered:    map[uuid.UUID]time.Time{},
+		tokens:     map[string]uuid.UUID{},
+		factors:    map[uuid.UUID]*fakeFactor{},
+		ceremonies: map[uuid.UUID]*fakeCeremony{},
+		proofs:     map[string]time.Time{},
 	}
 }
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service  = (*Fake)(nil)
+	_ contracts.Passkeys = (*Fake)(nil)
+)
 
 // Published is the names of the events the fake would have emitted, in order.
 func (f *Fake) Published() []string {
@@ -374,6 +391,20 @@ func (f *Fake) Purge(_ context.Context, _ db.Tx[db.Tenant]) (int64, error) {
 			gone++
 		}
 	}
+	// A ceremony the person never answered is the row the real Purge sweeps
+	// first, and the fake's map is the same shape of nothing: a begun prompt is
+	// not state anybody should have to keep.
+	for id, ceremony := range f.ceremonies {
+		if !ceremony.expire.After(db.Now()) {
+			delete(f.ceremonies, id)
+			gone++
+		}
+	}
+	for address, at := range f.proofs {
+		if !at.Add(contracts.FirstFactorProofWindow).After(db.Now()) {
+			delete(f.proofs, address)
+		}
+	}
 	return gone, nil
 }
 
@@ -398,6 +429,21 @@ func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password s
 		return nil, nil, f.fail(ctx, email, from.IP)
 	}
 	f.limiter.Succeeded(ctx, email)
+	// The person who holds a factor is held at the door. This is where the
+	// window that makes the other half answerable is minted, and it is the
+	// reason a code — a thing a person may have written down somewhere — is
+	// never on its own the account. Nothing is published for the refusal: it is
+	// an outcome and not a fault, and no session is opened by it.
+	//
+	// Open, the provider's door, is the fake's known gap: it opens the session
+	// whatever the person holds. Closing it would change what every consumer's
+	// signed-in test sees through a door this module has never gated in here.
+	if f.holds(user.ID) {
+		f.mu.Lock()
+		f.proofs[strings.ToLower(strings.TrimSpace(email))] = db.Now()
+		f.mu.Unlock()
+		return nil, nil, contracts.ErrFactorRequired
+	}
 	return f.open(ctx, tx, user, from)
 }
 

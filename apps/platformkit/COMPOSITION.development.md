@@ -77,8 +77,8 @@ pkit: auth.Module uses authcontracts.SAMLProviders from tenant.Module.
 pkit: auth.Module uses authcontracts.RegistrationMode from emailregistration.Module.
 pkit: auth.Module reads config.Auth.
 pkit: auth.Module reads config.Server.
-pkit: auth.Module defines the permission role:manage.
-pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested and auth.verification_requested.
+pkit: auth.Module defines the permission role:manage and passkey:signin.
+pkit: auth.Module emits auth.logged_in, auth.logged_out, auth.login_failed, auth.reset_requested, auth.password_reset, auth.role_set, auth.session_revoked, auth.factor_enrolled, auth.factor_withdrawn, auth.recovery_codes_issued, auth.recovery_code_used, auth.factor_used, auth.factor_suspect, auth.passkey_sign_in_set, auth.api_token_issued, auth.api_token_revoked, auth.registration_requested and auth.verification_requested.
 pkit: auth.Module handles user.invited, auth.reset_requested, user.registration_unverified and auth.verification_requested.
 pkit: access.Module is built after product.Module, user.Module, notification.Module and site.Module.
 pkit: access.Module needs usercontracts.Service from user.Module.

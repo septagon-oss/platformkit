@@ -515,8 +515,18 @@ func TestAssetsServeSheetsControllersAndOverlays(t *testing.T) {
 
 func TestThereAreFewControllers(t *testing.T) {
 	t.Parallel()
-	if len(ui.Controllers) > 8 {
-		t.Fatalf("there are %d browser controllers; the budget is 8", len(ui.Controllers))
+	// Nine, and the number is stated rather than discovered. Every entry here is
+	// a script each page downloads, which is what this ceiling exists to keep
+	// small. The base this branch and main both forked from shipped seven under
+	// this ceiling of eight, and two deliveries each spent that last slot: main
+	// on specialists.js, which registers the shared component families, this one
+	// on passkeys.js, which runs the two WebAuthn ceremonies. The merge is where
+	// they meet, so the merge is where the count is decided, and the decision is
+	// nine rather than a folding of one into the other: one script talks to an
+	// authenticator, the other defines custom elements, and neither is sign-in
+	// state (session.js) or component behaviour (components.js).
+	if len(ui.Controllers) > 9 {
+		t.Fatalf("there are %d browser controllers; the budget is 9", len(ui.Controllers))
 	}
 	for _, name := range ui.Controllers {
 		if !strings.HasSuffix(name, ".js") {
