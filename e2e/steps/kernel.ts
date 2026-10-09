@@ -61,13 +61,25 @@ function doorTo(next: string) {
   return `${endpoints.signInPage}?next=${encodeURIComponent(next)}`;
 }
 
-// Where the browser stands once a step's own act is done. Compared as a path, because the
-// origin is the run's (a port scripts/e2e.sh chose) and a query or a fragment is the page's own
-// business. A regular expression is not enough here: `toHaveURL` matches it against the whole
-// address, so a pattern that begins with the path can only ever fail — which is how the first
-// version of this helper took gate 10 red on every sign-in, and why the comparison is a path.
-function atEnd(path: string) {
-  return (url: URL) => url.pathname === path;
+// Where the browser stands once a step's own act is done. Compared without the origin,
+// because the origin is the run's (a port scripts/e2e.sh chose). The guarded address may
+// carry its query — a filtered or paginated page is exactly what the person asked for, and
+// the door carries `next` through whole, which `e2e/session-forms.spec.ts` and the auth
+// handler's own tests prove — so a destination that names a query is landed on that query
+// too, and one that names none leaves any query or fragment to the page's own business.
+// The destination is split by hand rather than resolved with `new URL`, because the only
+// origin it could be resolved against is a guess and the origin is exactly what this
+// comparison must not look at. A regular expression is not enough either: `toHaveURL`
+// matches it against the whole address, so a pattern that begins with the path can only
+// ever fail — which is how the first version of this helper took gate 10 red on every
+// sign-in, and why the comparison is a path.
+function atEnd(destination: string) {
+  const query = destination.indexOf('?');
+  const wanted = query < 0 ? { path: destination, search: '' }
+    : { path: destination.slice(0, query), search: destination.slice(query) };
+  return (url: URL) => wanted.search === ''
+    ? url.pathname === wanted.path
+    : url.pathname + url.search === wanted.path + wanted.search;
 }
 
 // The run's own address, refused rather than guessed. A step that defaulted it would be a
@@ -311,13 +323,25 @@ export async function workspace(page: Page): Promise<string[]> {
     .then(labels => labels.map(label => label.trim()));
 }
 
+// escapeRegExp quotes a visible name so it matches as the literal words it is. A term is
+// prose the screen hands the component — `ui/components/detail_list.go` draws whatever label
+// it is given, and nothing restricts it to letters: `Cost (USD)` interpolated raw into a
+// RegExp is an unclosed group that finds no field at all, and `Version 1.0` becomes a
+// pattern that also answers for `Version 1X0`. Punctuation that means itself is quoted
+// before anything anchors it.
+function escapeRegExp(literal: string) {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // detail is one field of a generated detail screen, addressed by the name its own term shows
 // rather than by position in the list. The identity is the component's:
 // `ui/components/detail_list.go:92` and `detail_panel.go:93` write `[data-detail-item]`, which
-// is what `e2e/shared-retained-field-refusal.spec.ts:18` reads.
+// is what `e2e/shared-retained-field-refusal.spec.ts:18` reads. The name is matched as the
+// literal words it is — escaped, then anchored, so one field's name cannot select another's
+// (`escapeRegExp`) — because a journey addresses a field the way a person reads it.
 export function detail(page: Page, name: string) {
   return page.locator('[data-detail-item]')
-    .filter({ has: page.locator('dt', { hasText: new RegExp(`^\\s*${name}\\s*$`) }) }).locator('dd');
+    .filter({ has: page.locator('dt', { hasText: new RegExp(`^\\s*${escapeRegExp(name)}\\s*$`) }) }).locator('dd');
 }
 
 // toggle sets a checkbox from the keyboard, wherever it lives: on a generated screen, on a
