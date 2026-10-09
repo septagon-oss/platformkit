@@ -69,7 +69,7 @@ func seedCommand(args []string) error {
 	}
 	logger(cfg.Log.Level)
 	c := compose(cfg)
-	service, err := seedService(c)
+	service, err := seedService(c, cfg.Demo.Password)
 	if err != nil {
 		return err
 	}

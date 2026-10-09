@@ -141,7 +141,7 @@ type NewTenant struct {
 	// the operator permission and creating a demo tenant is the ordinary way to
 	// get one; the flag names which seed records the tenant may be given, never
 	// who may reach the control plane. It is written here or not at all — see
-	// migrations/000044_tenant_demo.up.sql.
+	// migrations/000046_tenant_demo.up.sql.
 	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
@@ -477,4 +477,20 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 		}
 	}
 	return out, nil
+}
+
+// Languages is the set a tenant's locale may be set to: what this installation's
+// copy is written in, read off the catalogues the composition installed.
+//
+// It is a contract and not a Deps field because the composition is the thing
+// that read the files, and the module that refuses a locale has to be told what
+// exists — this module names no tag of its own. A composition that installs no
+// catalogues composes no provider, and then nothing is checked against anything.
+//
+// It is a struct around the tags rather than the slice itself because a slice is
+// the resolver's own spelling of "take every contribution of the element"
+// (pkit.Needs[[]E]): a named []string would be read as a demand for every
+// contributed string, and this is one value holding a list.
+type Languages struct {
+	Tags []string
 }

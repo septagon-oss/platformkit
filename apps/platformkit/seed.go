@@ -12,9 +12,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"mime"
@@ -27,6 +25,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/seed"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -40,6 +39,7 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // seedFiles is the application's own seed, embedded for the same reason its
@@ -59,18 +59,46 @@ func (seedClock) Now() time.Time { return db.Now() }
 // seedService is the whole seed surface of this application: the literal writer
 // list, the embedded files, and the authorizer. It is a function and not a field
 // of composition because nothing reads it until a seed command asks for it.
-func seedService(c composition) (*seed.Service, error) {
+// demoPassword is config's Demo.Password, which whoever runs a command already
+// holds: the password a demonstration's people sign in with is a deployment's
+// answer, and no file under seed/ carries one.
+func seedService(c composition, demoPassword string) (*seed.Service, error) {
 	return seed.New(seed.Deps{
 		Files: seedFiles, Root: "seed", Clock: seedClock{},
 		Writers: []seed.Writer{
 			&contentSeeder{svc: c.contents},
 			&siteSeeder{sites: c.sites},
-			&userSeeder{users: c.users, demoPassword: c.demoPassword},
+			&userSeeder{users: c.users, demoPassword: demoPassword},
 			&taskSeeder{svc: c.tasks},
 			&fileSeeder{svc: c.files},
 		},
 		Authorize: seedGrants{auth: c.auth},
 	})
+}
+
+// seeding contributes the tenant-creation hook that fills a new tenant with this
+// application's starter content. It declares one thing — that it contributes a
+// tenantcontracts.Hook — and needs nothing, which is not an omission but the fact
+// the resolver names when it is declared otherwise.
+//
+// The owners a seeded record is written through cannot be Needs of this module.
+// task.Module needs jobs.TenantLister, which tenant.Module provides, and auth puts
+// the authorizer behind tenant as well, so a module that both needs either of them
+// and contributes a hook the tenant module takes is the cycle the build refuses:
+// `seed → task → tenant → seed`, and `seed → auth → tenant → seed`. That is a fact
+// about the graph, not about this file: the hook has to exist before the tenant
+// module is built, and the services it writes through are built after it.
+//
+// So the provisioner is the one late-bound value in this composition, and it is
+// filled in app.go's composeReference, beside the two values that file already
+// fills the same way (`ask` and the shell) and from the same resolved plan. Its
+// own OnTenantCreate refuses to write anything until then, so a composition that
+// forgot the line fails by name rather than by a nil interface.
+func seeding(provision *seedProvisioner) *pkit.Module {
+	return pkit.NewModule("seed", func(w *pkit.Wiring) (module.Module, error) {
+		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(provision.OnTenantCreate))
+		return module.Module{Name: "seed"}, nil
+	}, pkit.Contributes[tenantcontracts.Hook]())
 }
 
 // seedProvisioner is this application's second tenant-creation hook: the new
@@ -87,9 +115,9 @@ func seedService(c composition) (*seed.Service, error) {
 // through the same owners, the same grants of the same module, and the same
 // events a person's click produces.
 //
-// The fields are filled at the end of compose, in the same shape roleGranter
-// takes: the hook has to exist before the tenant module does, and the owners it
-// writes through are composed after it.
+// The fields are the owners this application writes through, filled once by
+// composeReference from the plan it resolved; see seeding for why no module can
+// declare them as its needs.
 type seedProvisioner struct {
 	users        usercontracts.Service
 	contents     contentcontracts.Service
@@ -102,7 +130,7 @@ type seedProvisioner struct {
 
 func (p *seedProvisioner) OnTenantCreate(ctx context.Context, tx db.Tx[db.System], t *tenantcontracts.Tenant) error {
 	if p.users == nil || p.contents == nil || p.sites == nil || p.tasks == nil || p.files == nil || p.auth == nil {
-		return errors.New("seed: the creation hook ran before compose filled its owners")
+		return errors.New("seed: the creation hook ran before the composition filled its owners")
 	}
 	service, err := seed.New(seed.Deps{
 		Files: seedFiles, Root: "seed", Clock: seedClock{},
@@ -226,7 +254,7 @@ func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Ten
 	// The principal, and deliberately not the actor. tenancy.Actor means "the
 	// person whose session this is", and no session wrote a seeded row: the run
 	// did, on that person's behalf. The outbox column therefore stays NULL —
-	// migrations/000046 says why — and the person is named beside it as the
+	// migrations/000048 says why — and the person is named beside it as the
 	// run's initiator, taken off this principal by kit/seed.
 	return tenancy.WithPrincipal(ctx, tenancy.Principal{
 		UserID: person.ID, Roles: []string(person.Roles),
@@ -944,21 +972,30 @@ func (fileSeeder) Target(_ context.Context, r seed.Record, _ map[string]uuid.UUI
 		return seed.Target{}, fmt.Errorf("visibility %q is not %s or %s", visibility,
 			filecontracts.VisibilityPublic, filecontracts.VisibilityPrivate)
 	}
-	// The bytes themselves are create-only, the way a deadline is: an upload writes
-	// them once and no rerun patches them (see Update), so they are an instruction
-	// for the record's creation rather than a state to reconcile. What the run does
-	// reconcile is their digest, under the name the record spells them in. The owner
-	// already stores the SHA-256 of what arrived, so both sides of the comparison
-	// hold a value the owner keeps, and a file whose asset changed on disk since the
-	// upload reaches Update and refuses there, rather than a run reporting a record
-	// it silently declined to write. A declared value nobody compares is the defect
-	// this path refuses elsewhere: see unappliedField in kit/seed/decide.go.
+	// Two values are create-only rather than state, and the file module is the reason
+	// for the second. The bytes are the first: an upload writes them once and no
+	// rerun patches them (see Update), so they instruct the record's creation the way
+	// a relative date does. The media type is the second, because the owner does not
+	// keep the one this record declared: a raster is measured, turned and re-encoded
+	// on its way into storage, "the row's size, digest and media type are read from"
+	// that pass rather than from what the request declared, and the frame's alpha
+	// decides the container (decision 0069 §4, filecontracts.ImagePass). So the
+	// digest on a stored row is the digest of the frame a reader is served — a
+	// different object from the bytes beside this record — and its media type is the
+	// container those pixels chose, not the extension's answer.
+	//
+	// A record that reconciled either of them would refuse every image on the run
+	// after the one that wrote it: a refusal of the write that is not there to take,
+	// over a row whose bytes no seed run could put there in any case. What the record
+	// manages, and so what it compares, is the two facts the owner keeps as they were
+	// declared: the name a list shows and the visibility that decides which reader an
+	// Open answers.
+	//
+	// Both create-only values stay named, because a declared field is accounted for or
+	// refused: see unappliedField in kit/seed/decide.go.
 	return seed.Target{
-		Fields: map[string]any{
-			"name": name, "contentType": contentType,
-			"visibility": visibility, "asset": assetFingerprint(body),
-		},
-		CreateOnly: map[string]any{"asset": body},
+		Fields:     map[string]any{"name": name, "visibility": visibility},
+		CreateOnly: map[string]any{"asset": body, "contentType": contentType},
 	}, nil
 }
 
@@ -989,13 +1026,19 @@ func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 	if !uploaded {
 		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no asset bytes to upload", name)
 	}
+	// The media type is create-only too (see Target): it is what this upload
+	// declares, and the owner answers with the container the frame re-encodes to.
+	contentType, declared := t.CreateOnly["contentType"].(string)
+	if !declared {
+		return seed.Snapshot{}, fmt.Errorf("the record behind %q names no media type for its asset", name)
+	}
 	// The accessor answers with the run's own transaction, because there is
 	// nothing to stream: the bytes are already in the binary, so no connection
 	// stands open while they arrive, which is the only reason Upload takes an
 	// accessor rather than a transaction.
 	row, err := w.svc.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
 		filecontracts.Upload{
-			Name: name, ContentType: t.Fields["contentType"].(string),
+			Name: name, ContentType: contentType,
 			Visibility: t.Fields["visibility"].(string), Declared: -1, Body: bytes.NewReader(body),
 		})
 	if err != nil {
@@ -1004,40 +1047,32 @@ func (w fileSeeder) Create(ctx context.Context, tx db.Tx[db.Tenant], t seed.Targ
 	return fileState(row), nil
 }
 
-// fileState is the record as its owner stores it: the name a list shows, the
-// media type a response header carries, and the visibility that decides which
-// reader an Open answers. Read, Create and the rerun that finds them all equal
-// come through here, because the two sides of the comparison must be the same
-// three facts in the same three spellings — and a snapshot that left the
-// visibility out would call a record the file declared private unchanged while it
-// sat in a public row.
+// fileState is the record as its owner stores it, in the two facts the owner keeps as
+// they were declared: the name a list shows and the visibility that decides which
+// reader an Open answers. Read, Create and the rerun that finds them both equal come
+// through here, because the two sides of the comparison must be the same facts in the
+// same spellings — and a snapshot that left the visibility out would call a record the
+// file declared private unchanged while it sat in a public row.
+//
+// Neither the digest nor the media type the row carries is among them, and the file
+// module's image pass is why (decision 0069 §4): both belong to the frame the module
+// stored rather than to what the record declared, so neither is a value this record
+// could reconcile without refusing the run that found nothing to write. Target says
+// which two create-only instructions the record does send.
 func fileState(row *filecontracts.File) seed.Snapshot {
 	return seed.Snapshot{Present: true, ID: row.ID,
-		Fields: map[string]any{"name": row.Name, "contentType": row.ContentType,
-			"visibility": row.Visibility, "asset": row.SHA256}}
+		Fields: map[string]any{"name": row.Name, "visibility": row.Visibility}}
 }
 
-// assetFingerprint is a record's declared bytes in the one spelling the file module
-// stores them: the lower-case hex SHA-256 of the pass that wrote them. The bytes
-// are never the compared value, because a snapshot of a megabyte would travel
-// through a plan whose document promises it carries none of them.
-func assetFingerprint(body []byte) string {
-	digest := sha256.Sum256(body)
-	return hex.EncodeToString(digest[:])
-}
-
-// Update refuses, and the refusal is the design: a rerun reads back the name, the
-// media type, the visibility and the digest of the bytes it stored, finds them
-// unchanged, and never reaches here. The alternative — re-uploading the asset every
-// run — would leave a new row and new bytes on every deploy, and the old ones
-// behind. Reaching here means the file and the row have come apart, and the two
-// ways they can are answered in their own words: the digest differs because the
-// asset beside the record changed after the upload, and there is no command that
-// puts new bytes behind a row that already has some.
-func (fileSeeder) Update(_ context.Context, _ db.Tx[db.Tenant], cur seed.Snapshot, t seed.Target) (seed.Snapshot, error) {
-	if want, have := t.Fields["asset"].(string), cur.Fields["asset"].(string); want != have {
-		return seed.Snapshot{}, errors.New("file: the asset beside this record changed since its upload, and the seed writes no bytes over an existing upload")
-	}
+// Update refuses, and the refusal is the design: a rerun reads back the name and the
+// visibility, finds them unchanged, and never reaches here. The alternative —
+// re-uploading the asset every run — would leave a new row and new bytes on every
+// deploy, and the old ones behind. Reaching here means the record and the row disagree
+// about one of the two facts the record manages, and no seed command puts new bytes
+// behind a row that already has some: the name and the visibility of an existing
+// upload are a person's file's, and moving them is that person's own write through the
+// module's own screen.
+func (fileSeeder) Update(_ context.Context, _ db.Tx[db.Tenant], _ seed.Snapshot, _ seed.Target) (seed.Snapshot, error) {
 	return seed.Snapshot{}, errors.New("file: the seed uploads an asset and writes no bytes over it")
 }
 

@@ -50,7 +50,7 @@ import (
 // nobody caused it: a job, an event handler, the bootstrap. EventID is the
 // outbox event's own id, which is what makes recording idempotent whatever
 // redelivers it. The columns are migrations/000010 and, for the four that name a
-// cause which was no session, migrations/000047.
+// cause which was no session, migrations/000049.
 type Event struct {
 	ID         uuid.UUID       `json:"id" format:"uuid" doc:"The trail row's own id"`
 	TenantID   uuid.UUID       `json:"-"`
@@ -84,7 +84,7 @@ type Event struct {
 	TraceID *uuid.UUID `json:"traceId,omitempty" format:"uuid" gorm:"-" doc:"The trace this event happened in, absent when nobody traced it"`
 
 	// Attribution: what caused this when the cause was not a session. The outbox
-	// carries these four (kit/events.Attribution, migrations/000046) and this trail
+	// carries these four (kit/events.Attribution, migrations/000048) and this trail
 	// is where they outlive it, because the relay deletes a published row once its
 	// retention window passes and the trail is append-only: a copy that dropped
 	// them is the last chance the installation had to say what caused the write.
@@ -96,7 +96,7 @@ type Event struct {
 	// Actor — the trail's Actor is a login, and no login wrote a seed run's row.
 	// SourceFile and SourceLine are cited together or not at all: the pair rule is
 	// kit/events.Attribution's, and Record keeps it here because this table holds no
-	// constraint of its own on the pair. migrations/000047 says why nothing here is
+	// constraint of its own on the pair. migrations/000049 says why nothing here is
 	// backfilled.
 	ActorKind  *string    `json:"actorKind,omitempty" doc:"What kind of cause wrote this, when it was no session: user, system, seed or job" example:"seed"`
 	SourceFile *string    `json:"sourceFile,omitempty" maxLength:"512" doc:"The file that asked for the write, cited by the run that made it" example:"seed/starter/contents.yaml"`

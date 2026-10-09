@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -38,6 +39,23 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
+// FileUses rewrites the file references one richtext field makes, inside the
+// transaction that writes the field. kit/rest declares it rather than importing
+// a file module: the kit may not know what a file is, and the composition wires
+// the one implementation the application has. It is the same shape as
+// richtext.Files beside it, for the same reason.
+type FileUses interface {
+	SetUses(ctx context.Context, tx db.Tx[db.Tenant], in UsesInput) error
+}
+
+// UsesInput names one field of one record, in one locale, and the files it shows
+// in document order. Repeats collapse to one use at the far end.
+type UsesInput struct {
+	Module, Entity, Field, Locale string
+	Record                        uuid.UUID
+	Files                         []uuid.UUID
+}
+
 // Spec is one entity's presence in the application: five routes, two
 // permissions, three events and a schema. A module writes one of these and
 // mounts it; everything below is the same for every entity, which is why it is
@@ -45,6 +63,15 @@ import (
 type Spec[T crud.Entity] struct {
 	// RichTextFiles resolves richtext image references in the request transaction.
 	RichTextFiles richtext.Files
+	// FileUses records which file a richtext field of this resource references,
+	// in the same transaction that writes the field. It is what a file module
+	// keeps so that it can answer "is anything showing this" at all. A Spec with
+	// a richtext field and no FileUses is not refused: it takes RecordNoUses,
+	// which writes every body and keeps no ledger, and mount logs that once —
+	// the day a release sweep exists to delete a file nobody reads, a resource on
+	// that default is a resource whose images the sweep is entitled to delete
+	// under a published page, which is when this becomes a mount-time refusal.
+	FileUses FileUses
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -358,6 +385,14 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
 	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	// The record has to be itself before its own body can be filed. What a body
+	// shows is recorded in prepareRichText below, and a use names the record that
+	// shows the file — an id stamped by crud.Create one step later would be filed
+	// under nil, which is the row nobody can link back to or sweep forward. So
+	// the id is chosen here, and Create keeps the id it finds rather than making
+	// another one. Reset already dereferenced the entity, so there is nothing
+	// between these two lines that a nil body could have reached.
+	entity.BaseOf(e).ID = uuid.New()
 	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
@@ -416,6 +451,14 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// tenant may read, the statement below reaches a row the request's tenant may
 	// not write, and the event would be published over a row it removed.
 	if err := crud.RecheckTenant(tx, e); err != nil {
+		return e, err
+	}
+	// A record that stops existing shows nothing, so its uses end in the same
+	// transaction that removes its row. A ledger row that outlived its record is a
+	// file panel that links to a record no route answers, and — once the release
+	// sweep exists — a file that can never be released because something that no
+	// longer exists is said to be reading it.
+	if err := s.clearRichTextUses(ctx, tx, e); err != nil {
 		return e, err
 	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
@@ -743,6 +786,21 @@ func (s Spec[T]) check() {
 			if s.RichTextFiles == nil {
 				bad = fmt.Sprintf("richtext field %q needs a Files port", field.Name)
 				break
+			}
+			// A nil FileUses is not refused at mount the way a nil Files port
+			// is, and the difference is deliberate: a resource that resolves no
+			// image cannot write any body with an image in it, while a resource
+			// that records no uses writes every body it is given and simply does
+			// not keep the ledger. The zero value is therefore the port that
+			// records nothing, named for what it does, and mount says the
+			// consequence out loud once. SPECIFY.md §4.4 asks for a refusal here
+			// instead; it becomes one with the release sweep, in the commit that
+			// could otherwise delete a published page's image. See RecordNoUses.
+			if s.FileUses == nil {
+				slog.Warn("rest: "+s.Module+"."+s.Entity+" has a richtext field and no FileUses port; "+
+					"it will record no use, so nothing can ask which record shows its files",
+					"module", s.Module, "entity", s.Entity)
+				s.FileUses = RecordNoUses{}
 			}
 		}
 	}

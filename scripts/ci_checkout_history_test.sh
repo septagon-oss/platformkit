@@ -23,7 +23,10 @@
 # Each case below names the file that decides it. `make mobile-e2e` is one line calling one script, so
 # the journey's scan is that script; the rest of its steps are apt, docker and adb, which read no
 # repository object. `check` reads history through two paths and is content with the one case that
-# names the wider of them.
+# names the wider of them. `editor` — the job the built editor's own browser suites moved to when the
+# `check` job's minutes ran out — reads none either: its image build takes its sources from URLs the
+# Dockerfile checksums, and `grep -rnwi git tools/designexport/openpencil` answers nothing, which is
+# the same read the `design` case already makes over the same directory.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -82,6 +85,7 @@ while IFS='|' read -r workflow job how source regex; do
 done <<'CASES'
 ci|check|reads|scripts/check_budget_ratchet.sh|git rev-list --no-merges
 ci|design|none|tools/designexport/openpencil|git
+ci|editor|none|tools/designexport/openpencil|git
 mobile|journey|none|scripts/mobile_e2e.sh|git
 public-consumption|report|reads|.gitea/workflows/public-consumption.yml|git rev-parse
 CASES

@@ -434,6 +434,12 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// MaxImagePixels is the largest frame an uploaded image is decoded into: a
+	// file claiming more pixels is refused with the reason rather than
+	// allocated, which is the decompression bomb. Zero means the module's own
+	// default of forty megapixels; it bounds a decode and not an upload, so it
+	// says nothing about how large a file may be (max_bytes does that).
+	MaxImagePixels int `yaml:"max_image_pixels"`
 	// Retention is how long each class of file lives, keyed by the `kind` an
 	// upload carried. It is a table and not a column because a class is the
 	// product's word and a duration is the deployment's: this package parses the

@@ -28,7 +28,7 @@ import (
 // transport holds the struct, the way it holds Event.
 type Attribution = transport.Attribution
 
-// The four kinds an attribution may name. migrations/000046 repeats them as a
+// The four kinds an attribution may name. migrations/000048 repeats them as a
 // CHECK on the outbox column, and transport.Attribution.Valid is what refuses
 // anything else before a statement is tried.
 const (

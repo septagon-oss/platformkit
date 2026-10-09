@@ -53,10 +53,13 @@ and `Update` must not. The alternative is a value that moves with every clock an
 so reports an update on every run forever, rewriting a field a person can change
 through its own screen. Two of the reference application's writers use it: the
 task writer for a declared `dueAt`, and the file writer for the bytes of the
-record's own `asset`, which an upload writes once and no later run patches. What a
-rerun compares for those bytes is the digest their owner stores, named in
-`Fields`: bytes nobody compared would be a declared value a changed file could not
-report, and the writer refuses where the digest disagrees.
+record's own `asset` and for the media type it declares — an upload writes the
+bytes once and no later run patches them, and the owner answers the container
+itself (decision 0069 §4 re-encodes a raster and reads the row's media type from
+that pass), so neither is a value a rerun could reconcile. What a rerun does
+compare is the two facts the owner keeps as the record declared them, the name and
+the visibility; a declared field nobody names in `Fields` or `CreateOnly` is
+refused by `unappliedField` rather than dropped.
 
 The demo refusal reads `tenants.demo` under the run's own transaction, not the
 `tenancy.Tenant` value on the context, so a caller that builds its own tenant value
@@ -151,7 +154,7 @@ same events; anything else names a person.
 The seed publishes nothing of its own. Every write goes through its owner, so the
 owner publishes the event; what the seed adds is the attribution carried beside it.
 `Apply` and `ApplyProvisioned` put `events.WithAttribution` around each owner write,
-and the outbox row (migrations/000046) and the CloudEvents envelope the relay
+and the outbox row (migrations/000048) and the CloudEvents envelope the relay
 publishes record `actor_kind=seed`, the record's own `source_file` and `source_line`
 and the `initiator` the run named — with `actor` left NULL, because no session wrote
 a seeded row and a command line is not a login. `Plan.String()` names `file:line`

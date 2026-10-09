@@ -114,7 +114,7 @@ var roles = []module.RoleDecl{
 }
 
 // Module mounts one shared lifecycle implementation for routes and jobs.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	svc := deps.Service
 	if deps.Policy != nil {
 		if svc != nil {

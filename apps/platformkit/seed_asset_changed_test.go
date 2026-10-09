@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"image"
+	"io"
 	"io/fs"
 	"strings"
 	"testing"
@@ -16,14 +19,19 @@ import (
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 )
 
-// The record's `asset` is a declared value the run reads, so a rerun answers it.
-// An upload writes its bytes once and the seed puts none over them, which is the
-// only honest answer for a row that already has some — but the shape the run must
-// never take is a rerun that reads new bytes beside the record, compares nothing,
-// and prints UNCHANGED while the reader keeps being served the old ones. So the
-// compared value is the digest the file module already stores, and a changed asset
-// refuses at the record whose bytes moved.
-func TestSeedRefusesAnAssetThatChangedSinceItsUpload(t *testing.T) {
+// The record's `asset` is a declared value the run reads, and a rerun answers it by
+// writing nothing: an upload writes its bytes once, the owner runs its own image pass
+// over what arrived (decision 0069 §4 — the row and the object carry the frame it
+// re-encoded to), and no seed run puts others behind a row that already has some.
+//
+// So a later deploy whose asset moved converges rather than refuses. The comparison
+// it declines to make is the one the owner cannot win: the digest on the row belongs
+// to the stored frame, not to the bytes beside the record, and refusing a run that
+// found every managed fact already settled is refusing the write that is not there to
+// take. What this case holds is the half that is this run's to hold — that the later
+// deploy's bytes reached neither the object store nor the row, that no second upload
+// appeared, and that the record the run read is the record the tenant already had.
+func TestSeedWritesNoBytesOverAnExistingUpload(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
@@ -32,36 +40,30 @@ func TestSeedRefusesAnAssetThatChangedSinceItsUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	png, err := fs.ReadFile(seedFiles, "seed/demo/assets/welcome.png")
-	if err != nil {
-		t.Fatal(err)
-	}
-	document := []byte(`apiVersion: platformkit.seed/v1
+	document := `apiVersion: platformkit.seed/v1
 resource: files
 records:
   - key: starter-image
     asset: assets/welcome.png
-`)
-	stored := func(body []byte) string {
-		digest := sha256.Sum256(body)
-		return hex.EncodeToString(digest[:])
-	}
-	first, second := append(append([]byte{}, png...), []byte("the bytes at the first deploy")...),
-		append(append([]byte{}, png...), []byte("the bytes a later deploy puts there")...)
+`
+	// Two rasters of different frames: the second deploy's asset is not a re-encode
+	// of the first, so a run that did write bytes would be seen in the frame.
+	first, second := pngFrame(t, 8, 5), pngFrame(t, 2, 7)
 	fixture := func(body []byte) fs.FS {
 		return fstest.MapFS{
-			"seed/starter/files.yaml":         {Data: document},
+			"seed/starter/files.yaml":         {Data: []byte(document)},
 			"seed/starter/assets/welcome.png": {Data: body},
 		}
 	}
-	apply := func(t *testing.T, files fs.FS) error {
+	apply := func(t *testing.T, files fs.FS) (seed.Plan, error) {
 		t.Helper()
 		service, err := seed.New(seed.Deps{Files: files, Root: "seed", Clock: seedClock{},
 			Writers: []seed.Writer{fileSeeder{svc: c.files}}, Authorize: seedGrants{auth: c.auth}})
 		if err != nil {
-			return err
+			return seed.Plan{}, err
 		}
-		return dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
+		var plan seed.Plan
+		err = dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
 			tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
 			if err != nil {
 				return err
@@ -71,20 +73,28 @@ records:
 				if err != nil {
 					return err
 				}
-				_, err = service.Apply(ctx, tx, seed.Selection{})
+				plan, err = service.Apply(ctx, tx, seed.Selection{})
 				return err
 			})
 		})
+		return plan, err
 	}
-	if err := apply(t, fixture(first)); err != nil {
+	created, err := apply(t, fixture(first))
+	if err != nil {
 		t.Fatalf("first seed run: %v", err)
 	}
-	err = apply(t, fixture(second))
-	if err == nil {
-		t.Fatal("a rerun whose asset changed reported success")
+	if len(created.Items) != 1 || created.Items[0].Action != seed.Create {
+		t.Fatalf("first seed run = %s; want one created file", created)
 	}
-	if !strings.Contains(err.Error(), "asset") {
-		t.Errorf("refusal %q does not name the asset it could not apply", err)
+	rerun, err := apply(t, fixture(second))
+	if err != nil {
+		t.Fatalf("rerun whose asset moved: %v (plan: %s)", err, rerun)
+	}
+	if len(rerun.Items) != 1 || rerun.Items[0].Action != seed.Unchanged {
+		t.Errorf("rerun = %s; want the one record unchanged", rerun)
+	}
+	if !strings.Contains(rerun.String(), "UNCHANGED files/starter-image") {
+		t.Errorf("rerun plan does not name the record it left alone:\n%s", rerun)
 	}
 	if err := dbtest.System(t.Context(), conn, func(ctx context.Context, system db.Tx[db.System]) error {
 		tenant, err := c.tenants.ByHost(ctx, system, acmeHost)
@@ -97,11 +107,37 @@ records:
 				return err
 			}
 			if len(rows) != 1 {
-				t.Errorf("the refused run left %d file rows; want the one upload it made before", len(rows))
+				t.Errorf("the rerun left %d file rows; want the one upload the first run made", len(rows))
 				return nil
 			}
-			if rows[0].SHA256 != stored(first) {
-				t.Errorf("stored digest %s is not the first deploy's %s", rows[0].SHA256, stored(first))
+			row := rows[0]
+			if row.ID != created.Items[0].RecordID {
+				t.Errorf("the rerun answered key starter-image with %s, not the row that already had it (%s)",
+					row.ID, created.Items[0].RecordID)
+			}
+			storedFile, reader, err := c.files.Open(ctx, tx, row.ID, false)
+			if err != nil {
+				return err
+			}
+			defer reader.Close()
+			if storedFile.ID != row.ID {
+				t.Errorf("Open answered %s for the row this case opened (%s)", storedFile.ID, row.ID)
+			}
+			stored, err := io.ReadAll(reader)
+			if err != nil {
+				return err
+			}
+			frame, _, err := image.DecodeConfig(bytes.NewReader(stored))
+			if err != nil {
+				return err
+			}
+			if frame.Width != 8 || frame.Height != 5 {
+				t.Errorf("the bytes a reader is served are a %dx%d frame; the rerun must leave the first deploy's 8x5 alone",
+					frame.Width, frame.Height)
+			}
+			digest := sha256.Sum256(stored)
+			if row.SHA256 != hex.EncodeToString(digest[:]) {
+				t.Errorf("row digest %s is not the digest of the stored bytes", row.SHA256)
 			}
 			return nil
 		})

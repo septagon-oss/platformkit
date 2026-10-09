@@ -1,6 +1,6 @@
 -- The trail says what caused an event when the cause was no person.
 --
--- The outbox has carried attribution since 000046: which kind of cause wrote the
+-- The outbox has carried attribution since 000048: which kind of cause wrote the
 -- row, which file and line asked for it, and on whose behalf. This trail is the
 -- outbox's history — modules/audit subscribes to every event every module
 -- declares — and until now it copied one column out of that attribution, `actor`,

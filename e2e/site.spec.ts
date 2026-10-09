@@ -13,7 +13,7 @@ const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-// The first four lines are the tenant's first day: `platformkit bootstrap` created
+// The first three lines are the tenant's first day: `platformkit bootstrap` created
 // the tenant through the tenant module, whose creation hook applied the starter seed
 // (apps/platformkit/seed/starter), so the visitor lands on a page and not on an
 // apology. The empty state this case used to assert is still what a site with a home
@@ -26,7 +26,16 @@ test('a new tenant opens on its starter home, and a published page takes its pla
   await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
 
-  await page.goto('/app/admin/login');
+  // The workspace is entered at its root: /app is the address the public frame is
+  // allowed to offer (webcontracts.Links.SignIn, pinned by
+  // TestThePublicFrameLinksOnlyTheWorkspaceRoot), and the root is what turns a
+  // visitor with no session towards the form. A tenant that opens on seeded content
+  // renders no "Sign in to the admin" link to follow — modules/web puts that link in
+  // nothingYet() and notPublished() alone — so the journey names the same door the
+  // link carries rather than clicking one this home page does not have. The form and
+  // the landing it answers for are main's own: the same next=%2Fapp, /app after.
+  await page.goto('/app');
+  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();

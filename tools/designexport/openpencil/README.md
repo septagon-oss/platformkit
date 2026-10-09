@@ -498,7 +498,7 @@ variant changes and FIG reloads without changing the definition's intrinsic sizi
 
 Nested construction includes block flow with uniform nonnegative collapsed margins
 (no outer collapse), vertical stretch/fill and intrinsic blocks in wrapping rows.
-Border-box paragraphs support pixel maximum widths and intrinsic flex-column alignment.
+Border-box paragraphs support pixel maximum widths, intrinsic sizing and full-width flex-column alignment.
 Configured-font EmptyState retains linked actions, nonempty copy edits and responsive line boxes through two editor saves.
 Nonnegative flex margins use private margin-box frames; fixed border-box sizes and
 zero-basis horizontal fill keep reusable children independent of their placement.
@@ -544,9 +544,9 @@ LFs, blank lines, clearing and measured edits survive two saves; failures roll b
 Text-property fields accept Enter for newlines and Ctrl+Enter to commit.
 Caret scrolling, scrollbars, manual resizing and textarea controllers are not modeled.
 Single-line labels retain required markers after edits and saves; only label/value bind. Multiline labels remain unverified.
-Text binds `content` to one editable paragraph. [Source wrapping](paragraph-correction.mjs)
-keeps oversized words intact; tests cover alignment, Unicode offsets, selection, painting,
-property history and two saves. Controls and unmarked native text retain their own policy.
+Text binds `content` to one editable paragraph. [Source wrapping](paragraph-correction.mjs) preserves
+normal word boundaries and supports break-word/anywhere emergency breaks. Checks cover alignment,
+Unicode offsets, selection, paint, edit history and two saves. Controls and unmarked text keep their own policy.
 Hyphenation, dictionary-based breaking and paragraph container-resize history remain unverified.
 Captured horizontal Flex rows wrap linked children with CSS minimum gaps and
 start/center/end/space-between alignment. Constructor-based checks cover both themes,

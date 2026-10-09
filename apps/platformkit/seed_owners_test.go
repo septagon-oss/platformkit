@@ -55,7 +55,7 @@ func TestTheReferenceSeedWritesEachRecordThroughItsOwner(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	service, err := seedService(c)
+	service, err := seedService(c, cfg.Demo.Password)
 	if err != nil {
 		t.Fatalf("the composition's own seed service: %v", err)
 	}
@@ -188,11 +188,11 @@ func TestAProvisioningRunRefusesATenantThatIsNotBeingCreated(t *testing.T) {
 	path, cfg := configure(t)
 	install(t, path)
 	c := compose(cfg)
-	service, err := seedService(c)
+	service, err := seedService(c, cfg.Demo.Password)
 	if err != nil {
 		t.Fatalf("the composition's own seed service: %v", err)
 	}
-	// All six owners, as modules.go fills them: the refusal asked for here is
+	// All six owners, as the seed module fills them: the refusal asked for here is
 	// the state check, and a hook two owners short is refused by the wiring
 	// guard before it ever reads the tenant.
 	provision := &seedProvisioner{

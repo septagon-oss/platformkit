@@ -30,7 +30,14 @@ import (
 // and the author comes off the request's own context. It is a struct rather
 // than no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
-type Deps struct{ Files richtext.Files }
+type Deps struct {
+	Files richtext.Files
+	// Uses records which file a body of this resource references, in the
+	// transaction that writes the body. Unwired, nothing is recorded and mount
+	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
+	// for as long as no sweep releases a file nobody reads.
+	Uses rest.FileUses
+}
 
 // Spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads. It is
@@ -65,13 +72,18 @@ var permissions = []module.Permission{
 
 // Module is the manifest. The implementation is constructed here, in one line,
 // and handed to the one place that uses it.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	files := deps.Files
 	if files == nil {
 		files = richtext.RejectImages{}
 	}
+	uses := deps.Uses
+	if uses == nil {
+		uses = rest.RecordNoUses{}
+	}
 	resource := Spec
 	resource.RichTextFiles = files
+	resource.FileUses = uses
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",

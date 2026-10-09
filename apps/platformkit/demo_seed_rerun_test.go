@@ -27,7 +27,7 @@ func TestDemoSeedRerunConvergesOnWorkAndFiles(t *testing.T) {
 	install(t, path)
 	cfg.Demo.Password = "a demo password long enough for the policy"
 	c := compose(cfg)
-	service, err := seedService(c)
+	service, err := seedService(c, cfg.Demo.Password)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -10,9 +10,11 @@ line. Not delivered: a permit type, an `--as` grant check beyond the composition
 own authorizer, and the typed `Problem` codes. Where this document says
 `RunCommand`, the kernel door is `app.RunCommand`. Original trace:
 `20afc2b0cf43b2bf2a1a046a799e49613243ddbd`.
-The existing consumer is the reference application's literal module composition in
-[`apps/platformkit/modules.go`](../apps/platformkit/modules.go): tenant creation
-currently calls `seedRoles`, while the site journey in
+The existing consumer is the reference application's composition — one file
+(`apps/platformkit/modules.go`) when this was traced, and since decision 0074 the
+sentence in [`apps/platformkit/app.go`](../apps/platformkit/app.go) with this
+product's own values in [`apps/platformkit/product.go`](../apps/platformkit/product.go):
+tenant creation calls `seedRoles` and this delivery's seed hook, while the site journey in
 [`e2e/site.spec.ts`](../e2e/site.spec.ts) creates and publishes content and saves
 site settings through their owners. The focused `kit/rest` Spec boundary test
 passed in the worker's trace; the tenant hook test could not reach Postgres.
@@ -36,7 +38,7 @@ built; the writers, hook, command and fixtures below are not.
 | Persisted demo-tenant marker | **Composed from** `tenant.NewTenant`, `tenant.Tenant` and `tenancy.Tenant`; its new column is read by seed selection and cannot be changed after creation. |
 | `seed_keys` persistence | **New, because** the trace found no provenance/key mapping table; its migration belongs to the kernel migration source in `migrations/embed.go`. |
 | Audit and trace attribution | **Composed from** `events.Publish`, the outbox trace fields, and audit's `SubscribeAll`; extend their envelope and audit row so source and seed actor survive delivery. |
-| Reference command and Make target | **Composed from** `apps/platformkit/main.go`, `apps/platformkit/modules.go` and the existing Makefile command pattern. A downstream flagship owns its own literal client switch. |
+| Reference command and Make target | **Composed from** `apps/platformkit/main.go`, `apps/platformkit/app.go` and `apps/platformkit/seed.go`, and the existing Makefile command pattern. A downstream flagship owns its own literal client switch. |
 | Operator seed transaction runner | **New, because** `app.Bootstrap` can only create the first tenant and the trace found no existing CLI path that authenticates an operator and visits two tenant scopes within one system transaction. |
 | Conformance fake and cases | **New, because** the trace found no generic seed `Writer` fake; compose the existing content/task/file contract fakes for their command behavior, and share `seed.Decide` with the future SQL adapter. |
 | Reference app fixtures and journey | **Composed from** the existing site and task journeys and the content/site/user/file/task contracts; no client-only module is introduced. |
@@ -218,15 +220,19 @@ that names none asks for, a third answer refuses the record, and so does a
 visibility written as anything but text: `visibility: 0` is a value the record
 declared, and reading it as none would store an upload public that its record
 did not. A record that wants its bytes read by signed URL only says `private`.
-The file writer uploads those bytes through `file.Service.Upload` once. It writes
-no bytes over an
-existing upload: a rerun reads back the name, media type, visibility and SHA-256
-the row carries, finds the four equal, and uploads nothing, because re-uploading
+The file writer uploads those bytes through `file.Service.Upload` once, with the
+media type the asset's own name carries. It writes
+no bytes over an existing upload: a rerun reads back the name and the visibility
+the row carries, finds both equal, and uploads nothing, because re-uploading
 would leave a new row and new bytes on every deploy with the old ones behind. The
-digest is on both sides of that comparison because the record's `asset` is a
-value the run read: a file whose bytes changed beside the record after its upload
-reaches the writer's update and refuses there, naming the record whose bytes
-moved, rather than reporting a record it silently declined to rewrite. It updates
+SHA-256 and the media type on that row are on neither side of the comparison, and
+the file module is the reason: decision 0069 §4 measures a raster, turns it the way
+its camera said, and stores what the frame re-encodes to, with the row's size,
+digest and media type read from that pass rather than from what was sent — a PNG
+whose pixels carry no alpha comes back a JPEG. A record that compared either would
+refuse every image on the run after the one that wrote it, which is a refusal of the
+write that is not there to take; the bytes and the container of an existing upload
+are the owner's, and no seed command could put others behind the row. It updates
 `seed_keys` to the returned ID in the same tenant transaction. No upload is ever
 replaced under one key, so `prune` — which files never declare — would concern
 removed keys and nothing else. An upload
@@ -564,7 +570,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    No stale `Plan` is applied. This checkout's content/task/user Specs have no
    revision API; they use row locking until T-0138's owner revision exists.
 5. `seed_keys` is a kernel-owned table, one transactional
-   `000045_seed_keys.up.sql` migration (no down file), with
+   `000047_seed_keys.up.sql` migration (no down file), with
    `(tenant_id,module,entity,key)` as primary key, `kind` and nullable `record_id` as
    read fields, `tenant_id NOT NULL`, `ENABLE` and `FORCE ROW LEVEL SECURITY`,
    and the same `platformkit_tenant_match(tenant_id)` `USING`/`WITH CHECK`
@@ -611,7 +617,7 @@ its own typed refusal, which is preserved with the same source wrapper.
    a downstream flagship owns the same flags and its literal client switch.
    `make seed CLIENT=<slug>` is a thin invocation of that command; no server
    is started. A tenant creation hook reads `NewTenant.Demo`, persisted on
-   `Tenant` by a transactional `000044_tenant_demo.up.sql` migration and carried
+   `Tenant` by a transactional `000046_tenant_demo.up.sql` migration and carried
    by `tenancy.Tenant`; only creation sets it. Starter applies for every
    tenant, demo only when that flag is true.
 
@@ -691,12 +697,12 @@ licensing are product decisions.
 **Delivered (T-0194).** The outbox, the envelope and the audit trail all carry
 the attribution. `kit/events.WithAttribution` puts an `Attribution`
 (`ActorKind`, `SourceFile`, `SourceLine`, `InitiatorID`) on the run's context,
-`Apply` puts it around each owner write, `migrations/000046_outbox_attribution.up.sql`
+`Apply` puts it around each owner write, `migrations/000048_outbox_attribution.up.sql`
 stores the four beside `actor`, and the relay carries them onto the CloudEvents
 envelope (`actorkind`, `sourcefile`, `sourceline`, `initiator`). A
 `platformkit seed` run mints one W3C trace, so `traceparent` names the run for
 every row it caused. `audit.Service.Record` copies the four into `audit_events`
-(`modules/audit/migrations/000047_audit_attribution.up.sql`), so the trail
+(`modules/audit/migrations/000049_audit_attribution.up.sql`), so the trail
 outlives the outbox row the relay deletes: a seeded write is labelled `seed`
 between the file and line that asked for it, with no actor because nobody
 signed in, and its initiator beside it. The two read routes return them.

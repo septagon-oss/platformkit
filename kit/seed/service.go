@@ -239,7 +239,7 @@ func Provisioning(ctx context.Context) bool {
 // seedAttribution is the provenance every write of this run leaves on the events
 // its owners publish: the kind of cause, the file and line that asked for the
 // record, and the person the run named. kit/events owns the type and the outbox
-// columns; see migrations/000046.
+// columns; see migrations/000048.
 func seedAttribution(ctx context.Context, source Source) events.Attribution {
 	a := events.Attribution{
 		ActorKind:  events.ActorSeed,

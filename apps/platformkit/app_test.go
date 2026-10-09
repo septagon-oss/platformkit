@@ -170,7 +170,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -823,7 +823,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
-	mods := []module.Module{task.Module(task.Deps{
+	mods := []module.Module{task.New(task.Deps{
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
@@ -1105,13 +1105,23 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 // GET /health is what the wait ends on instead: both roles serve it (kit/health
 // and app.work), it runs no check of its own, so 200 says this application is up
 // and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so in a second rather than after thirty of
-// waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string) {
+// holds the port, and the case says so at once rather than after the whole bound
+// of waiting and one request that was never going to be answered here.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // the read above freed the slot, so this cannot block
+				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		res, err := http.Get("http://" + addr + "/health")
 		if err != nil {
 			// Nobody is home, which is what it looks like while the application is
@@ -1121,6 +1131,9 @@ func waitFor(t *testing.T, addr string) {
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+				}
 				return
 			}
 			// /health is liveness: it runs no check, and this process answers it with
@@ -1133,8 +1146,25 @@ func waitFor(t *testing.T, addr string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
+	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
+		time.Since(started).Round(time.Second), last)
 }
+
+// bootWait is how long a fixture waits for an application it started to answer.
+// Run migrates a whole installation before it listens, and the same boot that
+// answers in a couple of seconds when one package runs costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once. A bound sized for the quiet case reports a working machine as
+// a broken application, so it is sized for the loaded one and stated here rather
+// than left as a literal inside the loop; slowBoot is when a green wait starts
+// saying how long it took, which is what the next red run reads.
+const (
+	// Five minutes, the same room as kit/app's bootWait and for the same measured reason: a migration
+	// of the whole installation crossed 120 s on 2026-10-06 with eight of this program's suites
+	// running beside it, and a boot that is only slow on somebody else's machine is not a fault here.
+	bootWait = 5 * time.Minute
+	slowBoot = bootWait / 10
+)
 
 // The band freeAddr picks from. The kernel allocates nothing below
 // ip_local_port_range — an :0 bind and the source port of an outbound
@@ -1664,31 +1694,33 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 47 — nineteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 44, 45, 46) and twenty-eight under
-	// modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24,
-	// 25, 27, 31, 32, 33, 35, 36, 37, 38, 39, 40, 42, 47), all at distinct versions.
-	// The release this fixture is applied from shipped 33 of them: the thirteen under
-	// migrations/ up to the adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29,
-	// 30) and the twenty a module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18,
-	// 19, 22, 23, 24, 25, 27, 31, 32, 33), which is every version to modules/auth's 33,
-	// the highest number any owner names. The fourteen above it — the kernel's own 34,
-	// 41, 43, 44, 45 and 46, modules/audit's 35, 36, 37 and 47, modules/change's 38,
-	// modules/site's 39, modules/file's 40 and modules/content's 42 — postdate that
-	// release, are not in the old installation's ledger, and legacyLayout leaves them
-	// out; the upgrade below applies them under the owner that ships them and counts
-	// them as new rows. Each continues past the highest number anywhere in the
-	// composition, which is the rule this fixture exists to enforce.
+	// this head prints 49 — nineteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46, 47, 48) and thirty under modules/*/migrations/ (4,
+	// 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
+	// 37, 38, 39, 40, 42, 44, 45, 49), all at distinct versions. The release this fixture
+	// is applied from shipped 33 of them: the thirteen under migrations/ up to the
+	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
+	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
+	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
+	// any owner names. The sixteen above it — the kernel's own 34, 41, 43, 46, 47 and 48,
+	// modules/audit's 35, 36, 37 and 49, modules/change's 38, modules/site's 39,
+	// modules/file's 40, 44 and 45 and modules/content's 42 — postdate that release, are
+	// not in the old installation's ledger, and legacyLayout leaves them out; the upgrade
+	// below applies them under the owner that ships them and counts them as new rows.
+	// Each continues past the highest number anywhere in the composition, which is the
+	// rule this fixture exists to enforce.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
-	// merged as, for the reason this paragraph has now recorded five times: this
-	// fixture flattens every owner's files under one owner, and every number from 35
-	// to 43 was taken on main while the other branch was still open — 000035 is
-	// modules/audit's audit_context and 000041 is the kernel's own outbox baggage.
-	// One version, one row. This delivery's own four arrived as 000035, 000036, 000037
-	// and modules/audit's 000038, and are 000044 (the tenant's demo marker), 000045 (the
-	// seed's provenance keys), 000046 (the attribution columns beside each outbox row)
-	// and modules/audit's 000047 (those four copied into the trail) for that one reason.
+	// merged as, for the reason this paragraph has now recorded six times: this fixture
+	// flattens every owner's files under one owner, and every number from 35 to 45 was
+	// taken on main while another branch was still open — 000035 is modules/audit's
+	// audit_context, 000041 is the kernel's own outbox baggage, and 000044 and 000045 are
+	// modules/file's image dimensions and file uses. One version, one row. This
+	// delivery's own four arrived as 000035, 000036, 000037 and modules/audit's 000038,
+	// then as 000044, 000045, 000046 and modules/audit's 000047, and are 000046 (the
+	// tenant's demo marker), 000047 (the seed's provenance keys), 000048 (the attribution
+	// columns beside each outbox row) and modules/audit's 000049 (those four copied into
+	// the trail) for that one reason.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -1712,11 +1744,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the fourteen files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 44, 45 and 46, modules/audit
-	// 35, 36, 37 and 47, modules/change 38, modules/site 39, modules/file 40 and
-	// modules/content 42, all absent from the old ledger) have to be accounted for: 47
-	// files in the release, 47 rows.
+	// release ships is in the ledger, which is where the sixteen files above the
+	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 47 and 48, modules/audit
+	// 35, 36, 37 and 49, modules/change 38, modules/site 39, modules/file 40, 44 and 45
+	// and modules/content 42, all absent from the old ledger) have to be accounted for:
+	// 49 files in the release, 49 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
