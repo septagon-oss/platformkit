@@ -53,7 +53,7 @@ None. The code searched shows no use of `tenancy.Policy` in this module. Role wr
 
 ### Public faces
 
-Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of **two** words — `failed` when a transport refused the mail that call caused, `pending` for everything else, including a record that says the mail went out. It names no recipient, no kind and no reason, a call that left no record is answered exactly as one from another tenant is, and a call whose mail went is answered exactly as one that mailed nothing, because `sent` about an address is a statement about who has an account here (`contracts.MailReport` is that refusal, and `TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne` is its proof). Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, `AskedAboutMail` for the delivery read — its own budget rather than the redemption one, because the shell polls the read while a person waits for a link and must not spend the link's use on waiting — and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
+Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of **two** words — `failed` when a transport refused the mail, `pending` for everything else, including a record that says the mail went out. The record it reads is the caller's own when its call left one, and the tenant's newest (`contracts.MailLedger.NewestMailOutcome`) when it left none, because "no record for that id" is the shape of "nobody has this address" and the door is open to strangers. It names no recipient, no kind and no reason, a call that left no record is answered exactly as one from another tenant is, and a call whose mail went is answered exactly as one that mailed nothing while mail is going out, because `sent` about an address is a statement about who has an account here (`contracts.MailReport` is that refusal, and `TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne` and `TestFailedMailDoesNotDiscloseWhetherAnAccountExists` are its proofs). Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, `AskedAboutMail` for the delivery read — its own budget rather than the redemption one, because the shell polls the read while a person waits for a link and must not spend the link's use on waiting — and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
 
 ### The operator boundary
 
@@ -129,8 +129,12 @@ The one public read is `POST /api/v1/public/auth/mail-delivery` — see
 [Public faces](#public-faces) for its two words and the reason `sent` is not one
 of them. `ui/assets/js/session.js` asks it after a register, forgot or
 resend-verification form is accepted, with the `X-Request-ID` that call was
-answered with, and replaces the neutral acknowledgment with "that email could not
-be sent" only on `failed`; the neutral sentence itself never claims a mail left.
+answered with, and replaces the neutral acknowledgment with "mail could not be
+sent just now: the mail server refused it" only on `failed`; the neutral sentence
+itself never claims a mail left. The door's address is the module's mount plus
+`/mail-delivery` — `kit/httpx/surfaces.go`'s shape, not the last segment of the
+route that answered, which is how a `/password/forgot` form came to ask a path
+nobody mounts and to leave a refusal unsaid.
 
 ### Limits
 
@@ -142,12 +146,25 @@ be sent" only on `failed`; the neutral sentence itself never claims a mail left.
   claiming it at all; showing `sent` to anybody is a product decision, and the
   only shape that keeps both promises is mailing on every branch, which sends mail
   to addresses nobody has.
-* **What the door still leaks, exactly.** An id that answers `failed` necessarily
-  had somebody to mail, so while a transport is refusing, the door distinguishes
-  an address that has an account from one that does not. That is the whole of the residual, and it is
-  the probability that a transport refuses rather than the probability that an
-  account exists. Nothing about this is airtight while the transport is down, and
-  while it is down the deployment is telling the truth to whoever asks.
+* **What the door still leaks, exactly.** A transport that refuses one mailbox and
+  takes another tells a fact about the address it refused, and any word about it
+  names that address: a caller whose own mail was refused is told so, and a caller
+  whose call mailed nothing is told what the transport is doing to this tenant's
+  newest record, which is the same answer for everybody asking at that moment. So
+  the disclosure is the *selective* refusal, not the outright one — while the
+  transport is down for the installation, as it is for every address at once, the
+  door answers `failed` to the address that has an account and to the one that has
+  none in the same breath, and says something a stranger cannot use. Nothing about
+  the selective case is airtight while it lasts, and it is the case the door cannot
+  speak of without naming somebody: the only shape that closes it completely is
+  never answering `failed` at all, which leaves the person with a promise of a link
+  nobody sent. The shell's sentence is about the mail server for that reason.
+* **The door's `failed` can describe another caller's mail.** A call that left no
+  record is answered from the tenant's newest one, so a person who typed an address
+  nobody has, while the transport is refusing somebody else's mail, is told the
+  mail server is refusing — which is true of the server and is not a claim about
+  their address. That is the price of an answer that does not depend on whether an
+  account exists.
 * **A transient SMTP failure is now final for a direct send.** No outbox retry
   ladder and no dead letter: the row, the `auth.mail_failed` event and a person who
   can be told are what took the ladder's place. An invitation whose mail the server

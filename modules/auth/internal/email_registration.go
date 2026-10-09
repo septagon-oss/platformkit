@@ -108,27 +108,35 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// The read of the delivery record, for the one question the acknowledgment
 	// cannot answer: "did the mail actually leave?" See contracts.MailLedger.
 	//
-	// Two words, not four. An id that left no record — because the cap wrote
-	// none, because nobody has the address, because it is another tenant's,
-	// because the caller typed nonsense — and an id whose mail went out are both
-	// `pending`, and only a transport's refusal is `failed`. The reason is
-	// contracts.MailReport's: a route that mails only accounts it found answers
-	// "a mail left" about exactly the addresses that have an account, so a door
-	// that said `sent` would undo the neutral acknowledgment one call later and
-	// be a list of who has an account here. What this door still cannot be is
-	// oracle-free: an id that answers `failed` necessarily had somebody to mail,
-	// so it leaks existence with exactly the probability that a transport
-	// refuses — which is why the sentence the shell says on `pending` is the
-	// acknowledgment's own, and asks nothing back. The bounds are in these lines:
-	// an unguessable handle the caller already holds about its own call, one
-	// indexed lookup of the same shape either way, a budget of its own in front
-	// of it (contracts.MailDeliveryAsks — not the redemption budget, which the
-	// person needs for the link they are waiting for), RLS behind it, and a
-	// response that names no address, no kind and no reason.
+	// Two words, not four, and neither of them about the address. An id whose
+	// mail went out is `pending`, and so is an id that left no record while the
+	// transport is taking mail — what a caller with no record of its own is
+	// answered is the newest record this tenant holds, not the absence of its
+	// own, because "no record for that id" is the shape of "nobody has this
+	// address" and this door is open to strangers. Only a refusal is `failed`:
+	// the caller's own record when its own call left one, the tenant's newest
+	// when it left none. The reason is contracts.MailReport's: a route that mails
+	// only accounts it found answers "a mail left" about exactly the addresses
+	// that have an account, so a door that said `sent`, or that answered "nothing
+	// to tell you" only to the addresses with nobody behind them, would undo the
+	// neutral acknowledgment one call later and be a list of who has an account.
+	//
+	// The residue, stated because it cannot be designed away: a transport that
+	// refuses one mailbox and takes another tells a fact about the address it
+	// refused, and any word about it names it. That is the bound — an outright
+	// transport failure, which is the failure this door exists to speak of, is the
+	// same answer to every caller at that moment, and a refusal aimed at one
+	// address is not. It is why the sentence the shell says is about the mail
+	// server rather than the person's account, why the bounds are in these lines
+	// (an unguessable handle the caller already holds about its own call, one
+	// indexed lookup of the same shape either way, a budget of its own in front of
+	// it — contracts.MailDeliveryAsks, not the redemption budget, which the person
+	// needs for the link they are waiting for), RLS behind it, and a response that
+	// names no address, no kind and no reason.
 	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
-		Summary:     "Ask whether the mail one call asked for was refused",
-		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused it, pending otherwise — and names no address, no kind and no reason. A call that left no delivery record, one whose mail went out, and one from another tenant are answered identically, so the door cannot be walked for the addresses that have a record.",
+		Summary:     "Ask whether the mail this call asked for was refused",
+		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused it, pending otherwise — and names no address, no kind and no reason. A call that left no delivery record of its own is answered from the newest record this tenant holds, because the absence of a record is itself a fact about the address: an id whose mail went out, an id nobody mailed for while mail is going out, and an id from another tenant are answered identically, so the door cannot be walked for the addresses that have a record.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusOK,
 		Errors: []int{http.StatusForbidden, http.StatusTooManyRequests},
 	}, httpx.Public(), func(ctx context.Context, in *mailDeliveryInput) (*mailDeliveryOutput, error) {
@@ -153,6 +161,17 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		outcome, known, err := svc.mail.Mails.MailOutcome(ctx, tx, in.Body.RequestID)
 		if err != nil {
 			return nil, rest.Fault(err)
+		}
+		// The caller's own record answers about its own call — including when it
+		// says `sent`, which no aggregate gets to overrule. When it left no record,
+		// the door says what the transport is doing rather than what the missing
+		// row would imply: the newest record this tenant holds, which is one fact
+		// for everybody asking at this moment, bounded to this tenant by RLS and to
+		// a page holding an id of its own call by the budget above.
+		if !known {
+			if outcome, known, err = svc.mail.Mails.NewestMailOutcome(ctx, tx); err != nil {
+				return nil, rest.Fault(err)
+			}
 		}
 		out.Body.State = notificationcontracts.MailReport(outcome, known)
 		return out, nil
@@ -204,7 +223,10 @@ type mailDeliveryOutput struct {
 	// recipient, no kind, no reason, no timestamp and no count — and no `sent`,
 	// which is contracts.MailReport's refusal and the reason the reason there is
 	// no 404: every answer has the same shape, so the door cannot be walked for
-	// the addresses that have a record.
+	// the addresses that have a record. A `failed` says a transport refused a
+	// mail — this call's, or, when this call left no record of its own, the newest
+	// one this tenant holds, which is the same answer for every caller at that
+	// moment.
 	Body struct {
 		State string `json:"state" enum:"pending,failed" doc:"Whether the mail that call asked for was refused"`
 	}

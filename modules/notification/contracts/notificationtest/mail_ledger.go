@@ -57,6 +57,18 @@ func (l *FakeMailLedger) MailOutcome(_ context.Context, _ db.Tx[db.Tenant], requ
 	return "", false, nil
 }
 
+// NewestMailOutcome mirrors internal.Service.NewestMailOutcome: the newest record
+// appended, whichever request caused it, and known=false for a ledger with no
+// rows at all.
+func (l *FakeMailLedger) NewestMailOutcome(_ context.Context, _ db.Tx[db.Tenant]) (string, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if len(l.rows) == 0 {
+		return "", false, nil
+	}
+	return l.rows[len(l.rows)-1].Outcome, true, nil
+}
+
 // Rows is every record, in the order they were appended — what a consumer's own
 // test asserts about the mails it caused.
 func (l *FakeMailLedger) Rows() []contracts.MailRecord {

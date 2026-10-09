@@ -371,8 +371,21 @@ func TestTheMailDeliveryDoorAnswersTheRequestNotTheAddress(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record in globex: %v", err)
 	}
-	if code, state := ask(elsewhere); code != http.StatusOK || state != notification.MailStatePending {
-		t.Errorf("another tenant's request id=%d %q, want 200 pending", code, state)
+	// The answer is the same word an id nobody ever minted gets — which, at this
+	// point in the tenant's own record, is `failed`, because the newest mail this
+	// tenant sent was refused. It is not `pending`, and that is the cure rather
+	// than the leak: a call that left no record is answered from what the
+	// transport is doing to this tenant's mail, never from the absence in front of
+	// it, because the absence is the shape of "nobody has this address" here and
+	// of "not in this tenant" across tenants alike (contracts.MailReport).
+	elsewhereAnswer, foreignState := ask(elsewhere)
+	mintedAnswer, mintedState := ask("55555555-5555-4555-8555-555555555555")
+	if elsewhereAnswer != http.StatusOK {
+		t.Errorf("another tenant's request id=%d %q, want a 200 and one word", elsewhereAnswer, foreignState)
+	}
+	if elsewhereAnswer != mintedAnswer || foreignState != mintedState {
+		t.Errorf("another tenant's request id=%d %q, an id nobody minted=%d %q: the two answers differ",
+			elsewhereAnswer, foreignState, mintedAnswer, mintedState)
 	}
 
 	// And the door is behind the per-address budget that caps spending a link, so
