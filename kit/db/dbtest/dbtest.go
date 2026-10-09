@@ -19,7 +19,9 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql driver "pgx"
 
@@ -259,4 +261,52 @@ func SystemToken() tenancy.SystemToken { return systemToken }
 // sees it.
 func System(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error {
 	return db.RunSystem(ctx, conn, systemToken, fn)
+}
+
+// Hold runs stmt on a session of its own, inside one transaction, and keeps
+// whatever lock that statement took until the caller releases it or the test
+// ends — whichever comes first. It answers once the lock is held, because the
+// statement that took it has already returned.
+//
+// This is how a test slows a store on purpose. The alternative, a Go timer in the
+// test's own goroutine, waits for a sleep rather than for a queue, and the
+// behaviour worth testing — a statement that cannot get the lock it asked for
+// because somebody else is holding it — is exactly what a loaded machine does by
+// itself. A caller that wants a row rather than a table takes it by name, with
+// UPDATE … WHERE key = $1; one that wants every statement to wait locks the table
+// instead, since a plain read never queues behind a row lock.
+//
+// The transaction is rolled back rather than committed, so the holder leaves no
+// mark on what the test reads afterwards, and the sleep that holds the lock is
+// cut short when the test ends rather than running out its bound.
+func Hold(t testing.TB, admin *sql.DB, hold time.Duration, stmt string, args ...any) (release func()) {
+	t.Helper()
+	ctx := context.WithoutCancel(t.Context())
+	session, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatalf("dbtest: open a session to hold %q: %v", stmt, err)
+	}
+	if _, err := session.ExecContext(ctx, "BEGIN"); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: begin the holder: %v", err)
+	}
+	if _, err := session.ExecContext(ctx, stmt, args...); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: hold %q: %v", stmt, err)
+	}
+	released := make(chan struct{})
+	sleeping, stop := context.WithCancel(ctx)
+	go func() {
+		defer close(released)
+		defer session.Close()
+		_, _ = session.ExecContext(sleeping, "SELECT pg_sleep($1)", hold.Seconds())
+		// Roll back whether the sleep ran out or was cut short: a transaction whose
+		// statement was interrupted is aborted, and an aborted transaction is still
+		// holding the lock somebody else is waiting for.
+		_, _ = session.ExecContext(context.WithoutCancel(sleeping), "ROLLBACK")
+	}()
+	var once sync.Once
+	release = func() { once.Do(func() { stop(); <-released }) }
+	t.Cleanup(release)
+	return release
 }
