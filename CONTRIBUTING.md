@@ -108,9 +108,9 @@ reports, use the gotestsum options documented beside `TEST_OPTIONS` in [Makefile
 The cache cannot observe database or NATS state; after external-input changes,
 run `make test TEST_FLAGS=-count=1`. See [native watch](tools/designexport/openpencil/README.md).
 
-`make check` always runs fresh tests across all packages, regardless of local
-filters, plus build, vet, formatting, budgets, imports, declared-version and
-tenant-setting checks.
+`make check` runs fresh tests across all packages regardless of local filters,
+unless its caller empties `TEST_COUNT` (CI sets nothing, so CI always runs fresh),
+plus build, vet, formatting, budgets, imports, version and tenant-setting checks.
 `make check-race` runs the outbox, the request transaction, the advisory locks,
 the limit counters and the router under the race detector. CI runs `check` and
 `check-race`, so the detector is not something a contributor has to remember; it

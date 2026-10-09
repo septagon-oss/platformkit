@@ -410,6 +410,15 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 // run at twice the rows the tick's own bound allows it to write, a state a drain that stops at its
 // bound is nowhere near at any speed and one that stops nowhere walks into at any speed.
 //
+// The run of 2026-10-06 measured the same drain from the other side and reached the same reading
+// from the other direction: 48.6 s against a Postgres nobody else was migrating into, 304.34 s at
+// load average 38-43 with six other rounds' whole-suite runs asking that server, and 301.35 s again
+// with its commits not waiting for a WAL flush. What one window costs there is the server being
+// scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`, `window`,
+// the body, the progress row, the commit: `drainWindow`) paid ten thousand times. Two machines, one
+// conclusion: the seconds are the machine's, the windows are the tick's, and only one of the two
+// bounds anything.
+//
 // The stall line is asked of the same reading, and it is the other half: no window committing for
 // six minutes is a run stuck rather than a run slow. Six minutes is twice what the whole 10 000
 // window drain took at load average 40, so a single window costing more than that is not a busy

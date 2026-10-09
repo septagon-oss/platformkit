@@ -26,7 +26,7 @@ import (
 func TestModuleUsesComposedService(t *testing.T) {
 	admin, conn := dbtest.Schema(t, task.Migrations)
 	svc := &observedService{Service: task.NewService()}
-	manifest := task.Module(task.Deps{Service: svc, Tenants: activeTenants{acme}})
+	manifest := task.New(task.Deps{Service: svc, Tenants: activeTenants{acme}})
 	api, router := httpx.New(httpx.Options{
 		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},

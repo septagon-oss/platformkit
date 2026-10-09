@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+**A kernel module names itself, and the app names it.** Every module of the kernel
+now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
+`admin.Module` — declaring the contracts it needs and provides, the contributions it
+takes, the phase it runs in and the configuration section it reads, and building
+itself from the wiring. An application's composition is one list:
+`pkit.NewApp("acme").Use(user.Module, audit.Module, admin.Module)`. The constructors
+keep their behaviour under the one name free in every package, `New`, which is a
+**breaking rename** for any caller that wrote `user.Module(deps)`: the field list is
+unchanged, only the name it is called by. Two configuration sections are read by the
+kernel now: `deployment.mail.method` (`smtp` or `mailbox`) and
+`deployment.payments.method` (`manual`), each refused before any module builds when
+the deployment leaves it ambiguous.
+
 **A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
 the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
 key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
@@ -447,6 +460,18 @@ files included, because `go build` compiles them and `git diff` does not see the
 copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
+
+**The migration lock belongs to one application's namespace, not to one database.**
+`db.Migrate` holds its advisory lock for the namespace it is about to write: the key
+carries the OID of `current_schema()` beside its own constant, because the ledger it
+protects — `schema_migrations`, and every table an applied file creates — lands wherever
+that run's `search_path` resolves. Two applications that share one Postgres database in
+separate namespaces therefore apply their own files while one another migrates; two
+replicas of one application still reach one namespace through one URL and still queue,
+so ADR 0005's boot where one process migrates and the rest wait and find nothing to do
+is the same guarantee it was. A run whose path resolves to no namespace at all is refused
+rather than locked around, because `pg_advisory_lock(key, NULL)` answers NULL without
+taking the lock, and that would be a run that set out believing it was alone.
 
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,

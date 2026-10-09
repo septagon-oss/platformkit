@@ -35,3 +35,45 @@ type RegistrationRequested struct {
 	// subscriber. See ResetRequested.Served.
 	Served string `json:"served,omitempty"`
 }
+
+// RegistrationMode is one of the doors a stranger may use to become a person
+// here: which public signup lifecycle this installation mounted.
+//
+// It is a contract because which way in a product offers is the product's, and
+// `Deps` once carried three mutually exclusive fields for that one decision. The
+// three named constructors in modules/auth (Registration, EmailRegistration,
+// ApprovalRegistration) each provide exactly one mode, so composing two of them
+// is the ambiguity `Choose` answers, and a composition that names none has no
+// public signup door at all — which is what leaving the field empty means today.
+//
+// Each mode carries the policy its own lifecycle needs (the people it writes
+// through and the roles the account arrives with), because a half-filled one is
+// a form that posts to a route that cannot answer it: the named constructor
+// fills every field before it puts the value, and Checked runs in auth's build,
+// so an incomplete policy is a refusal at boot rather than at the first visitor.
+type RegistrationMode interface {
+	// Mode is the lifecycle's own name for itself, as a reader of a composition
+	// file sees it: "password", "email" or "approval".
+	Mode() string
+}
+
+// PasswordRegistration is member signup with emailed password setup: the
+// account waits for the mailbox link before it can sign in.
+type PasswordRegistration struct {
+	Users RegistrationUsers
+	Roles []string
+}
+
+func (PasswordRegistration) Mode() string { return "password" }
+
+// EmailRegistrationMode is the password door that also requires independent
+// mailbox confirmation. It needs mail delivery.
+type EmailRegistrationMode struct{ Policy *EmailRegistration }
+
+func (EmailRegistrationMode) Mode() string { return "email" }
+
+// ApprovalRegistrationMode accepts a password, a confirmation and a terms
+// consent and keeps the account pending for review. It needs no mail delivery.
+type ApprovalRegistrationMode struct{ Policy *ApprovalRegistration }
+
+func (ApprovalRegistrationMode) Mode() string { return "approval" }

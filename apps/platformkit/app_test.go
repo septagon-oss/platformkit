@@ -816,7 +816,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
-	mods := []module.Module{task.Module(task.Deps{
+	mods := []module.Module{task.New(task.Deps{
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
@@ -1687,17 +1687,17 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 43 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43) and twenty-seven under modules/*/migrations/ (4, 7,
+	// this head prints 45 — sixteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43) and twenty-nine under modules/*/migrations/ (4, 7,
 	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
-	// 37, 38, 39, 40, 42), all at distinct versions. The release this fixture is
+	// 37, 38, 39, 40, 42, 44, 45), all at distinct versions. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The ten above it — the kernel's own 34, 41 and 43, modules/audit's
-	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40 and
-	// modules/content's 42 — postdate that release, are not in the old installation's
+	// any owner names. The twelve above it — the kernel's own 34, 41 and 43, modules/audit's
+	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45
+	// and modules/content's 42 — postdate that release, are not in the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
 	// highest number anywhere in the composition, which is the rule this fixture
@@ -1732,11 +1732,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the ten files above the
+	// release ships is in the ledger, which is where the twelve files above the
 	// adopted ceiling of 33 (the kernel's own 34, 41 and 43, modules/audit 35, 36 and
-	// 37, modules/change 38, modules/site 39, modules/file 40 and modules/content 42,
-	// all absent from the old ledger) have to be accounted for: 43 files in the
-	// release, 43 rows.
+	// 37, modules/change 38, modules/site 39, modules/file 40, 44 and 45 and
+	// modules/content 42, all absent from the old ledger) have to be accounted for:
+	// 45 files in the release, 45 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

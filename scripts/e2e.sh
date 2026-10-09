@@ -262,25 +262,24 @@ run_app() {
 	exec "$work/platformkit" "$@"
 }
 
-# serve starts one installation on one port and waits for /health — the config,
-# the port, the log, the bootstrap password, and the name of the variable that
-# holds the process it forked. The status codes are the reason it is a function
-# rather than a block: 0 once this run's own process is serving it, 1 when that
-# process died, 2 when nothing ever answered, 3 when a process this run did not
-# start holds the port. The second installation asks the same question of the
-# same owner of the answer — scripts/free_port_test.sh pins these very lines,
-# which is why this one takes its names (the pid variable included, under the
-# nameref) rather than a copy of its own. The pid arrives by name because cleanup
-# has to reach the process the moment it exists, and a run that loses a port must
-# stop its own holder before it moves.
-serve() {
-	local config="$1" port="$2" log="$3" secret="$4" pid_name="$5"
-	local -n app_pid="$pid_name"
-	echo "e2e: serving on $port"
-	run_app "$secret" run --config "$config" >"$log" 2>&1 &
-	app_pid=$!
-	local waited=0 owners=""
-	while [ "$waited" -lt 60 ]; do
+# wait_healthy answers whether the application this run started served its probe
+# within its bound, and is scripts/mobile_e2e.sh's function of the same name read
+# against this script's log: 0 once this run's own process is serving it, 1 when that
+# process died, 2 when nothing ever answered, 3 when a process this run did not start
+# holds the port. The two pins that ask it a question
+# (scripts/e2e_health_owner_test.sh, scripts/e2e_health_requires_own_listener_test.sh)
+# extract this function from the committed file rather than retyping it, so the
+# ownership helper it needs is reached here when the caller has not reached it first.
+# It is asked of the forking serve's own $app_pid and $port, which is what lets one
+# answer cover both installations this run serves: the second tenant is served by
+# the same function rather than a copy that could drift out of the ownership rule.
+wait_healthy() { # bound in seconds
+	local bound="$1" waited=0 owners=""
+	if ! command -v port_listeners >/dev/null 2>&1; then
+		# shellcheck source=scripts/free_port.sh
+		. "${root:?}/scripts/free_port.sh"
+	fi
+	while [ "$waited" -lt "$bound" ]; do
 		# The process is asked before /health is, and the answer is not trusted until
 		# the operating system says the socket behind it belongs to this run. A listener
 		# that took the port while the binary was being built answers the probe, and an
@@ -302,6 +301,25 @@ serve() {
 		waited=$((waited + 1))
 	done
 	return 2
+}
+
+# serve starts one installation on one port and waits for /health — the config,
+# the port, the log, the bootstrap password, and the name of the variable that
+# holds the process it forked. The status codes are wait_healthy's: 0 once this
+# run's own process is serving it, 1 when that process died, 2 when nothing ever
+# answered, 3 when a process this run did not start holds the port. The second
+# installation asks the same question of the same owner of the answer —
+# scripts/free_port_test.sh pins these very lines, which is why this one takes its
+# names (the pid variable included, under the nameref) rather than a copy of its
+# own. The pid arrives by name because cleanup has to reach the process the moment
+# it exists, and a run that loses a port must stop its own holder before it moves.
+serve() {
+	local config="$1" port="$2" log="$3" secret="$4" pid_name="$5"
+	local -n app_pid="$pid_name"
+	echo "e2e: serving on $port"
+	run_app "$secret" run --config "$config" >"$log" 2>&1 &
+	app_pid=$!
+	wait_healthy 60
 }
 
 write_config

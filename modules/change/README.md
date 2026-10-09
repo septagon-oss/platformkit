@@ -15,14 +15,18 @@ operations were sensitive would be a capability with a product in it.
 
 ## Composition
 
-The reference application composes it in `apps/platformkit/modules.go`, over the
-one subject it applies proposals for. The literal below builds:
+The reference application names it in `Use` (`apps/platformkit/app.go`), and the
+subject it applies proposals for is contributed by `apps/platformkit/product.go`'s
+`access` module, which is the first module in the composition with a site service
+to read one with: a subject is a site settings row, and which writes need change
+control stays this product's fact. `change.Module` is the provider value; the
+literal below builds the hand path.
 `readme_composition_test.go` compiles its field names, its `Resolve` signature and
 the `change.Deps` and `change.Module` around them, with a subject stubbed out.
 
 ```go
 // contracts is github.com/septagon-oss/platformkit/modules/change/contracts
-change.Module(change.Deps{Subjects: []contracts.SubjectBinding{{
+change.New(change.Deps{Subjects: []contracts.SubjectBinding{{
 	Module: "site", Entity: "settings",
 	Resolve: func(ctx context.Context, tx db.Tx[db.Tenant], subjectID uuid.UUID) (contracts.Subject, error) {
 		return siteSubject{sites: sites, locked: locked}, nil
@@ -33,7 +37,7 @@ change.Module(change.Deps{Subjects: []contracts.SubjectBinding{{
 `apps/platformkit/change.go` holds `siteSubject` (its two methods over
 `sitecontracts.Service` and `sitecontracts.LockedReader`), `settingsGate` (the site
 module's `WriteGate` question answered by one flag, wired into
-`site.Module(site.Deps{Gate: …})`) and `configFlags` (the `kit/flags.Evaluator`
+(`site.New(site.Deps{Gate: …})`, or `Use(site.Module)` with a `sitecontracts.WriteGate` composed) and `configFlags` (the `kit/flags.Evaluator`
 over `kit/config`'s flags block). One `SubjectBinding` per subject, written out by
 one author, checked by the compiler; `change.Deps.Subjects` empty means no subject
 exists and every proposal for one is `contracts.ErrUnsupportedSubject`.

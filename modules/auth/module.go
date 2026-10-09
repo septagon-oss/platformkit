@@ -142,10 +142,13 @@ type Deps struct {
 	// Messages is the application's whole catalogue of copy, this module's
 	// included, and it is what lets the passkey doors refuse a person in the
 	// language they asked to be answered in: a browser ceremony is read on the
-	// sign-in page, and that page's own words are translated. Wired from the
-	// composition (apps/platformkit/catalog.go), which is what knows every
-	// catalogue that ships; with none, every refusal this module answers is
-	// English, which is what it was before the field existed.
+	// sign-in page, and that page's own words are translated. The reference
+	// composition wires the application's own Skin copy — the one catalogue the
+	// sentence names, merged from every layer that ships words — in
+	// modules/auth/provider.go; a module that read its own messages file could
+	// not answer in a language a UI catalogue carries. With none, every refusal
+	// this module answers is English, which is what it was before the field
+	// existed.
 	Messages locale.Messages
 
 	// PublicHost is the name the application believes it is reached at. One
@@ -157,7 +160,7 @@ type Deps struct {
 
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
-func Module(deps Deps) (contracts.Auth, module.Module) {
+func New(deps Deps) (contracts.Auth, module.Module) {
 	if deps.EmailRegistration != nil {
 		if deps.Registration != nil || deps.ApprovalRegistration != nil {
 			panic("auth: choose only one registration lifecycle")

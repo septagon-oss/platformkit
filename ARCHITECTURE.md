@@ -58,6 +58,11 @@ establish management screens, deployed connections or migration of downstream cl
 
 ## Independently usable parts
 
+[Wire](kit/wire/README.md) checks a composition's OpenAPI or AsyncAPI contract
+against its published golden using B1–B6. It links only the standard library;
+the reference composition delegates both document gates to it. Products supply
+their renderer, golden path and explicit reviewed authorization allowances.
+
 Import the owner of the capability you need: [entity](kit/entity/README.md) for
 field metadata without CRUD, [forms](ui/forms/README.md) for captured controls
 without REST, [locale](kit/locale/README.md) for worker or page translations, and
@@ -102,6 +107,14 @@ and claims no deployment, and a product reaches a tier with its own evidence.
 of module constructors. Each constructor accepts a typed `Deps` struct and
 returns a manifest. There is no runtime discovery step. The compiler checks
 dependency types; composition tests check required values and selected modules.
+
+[apps/platformkit/app.go](apps/platformkit/app.go) is the same application read
+as one sentence — the modules it uses, the ports the kernel asks the application
+for, and the roles it says a tenant begins as — and what it resolves to is
+committed beside it as
+[COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md), which
+`TestCompositionFile` compares on every `make check` and refuses when the
+composition moves and the file does not.
 
 Tenant creation uses [auth.SeedRoles](modules/auth/module.go) inside its existing
 transaction. Provisioning is independent of the authentication service, so
@@ -726,7 +739,7 @@ their numbers into prose; run `make check-loc` and `make check-packages`.
 check`, then `make check-race`, `govulncheck`, the native editor and browser
 checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
-workflows](.github/workflows/ci.yml) are kept in step with it and do not run
+workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
 release workflow beside them. An absent GitHub check establishes nothing. A
 publisher for the image, SBOM and release notes is not yet approved, so no tag

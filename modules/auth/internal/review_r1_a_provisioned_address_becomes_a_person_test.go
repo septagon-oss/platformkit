@@ -47,11 +47,11 @@ func (m maker) Provision(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 func mountProvision(t *testing.T, providers contracts.OIDCProviders, secrets contracts.Secrets, makes contracts.Provisioner) (chi.Router, *db.Conn) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations)
-	users, userModule := user.Module(user.Deps{
+	users, userModule := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
 	})
-	svc, authModule := auth.Module(auth.Deps{
+	svc, authModule := auth.New(auth.Deps{
 		Users: users, Notify: &authtest.Notices{}, Mailer: &authtest.Mailbox{},
 		Hosts: authtest.Host(host), OIDCProviders: providers, Secrets: secrets,
 		Provisioner: makes, PublicHost: host,

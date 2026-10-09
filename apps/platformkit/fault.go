@@ -26,7 +26,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -129,8 +128,7 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
-func faultPage(c composition) httpx.Fault {
-	messages := c.messages
+func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
@@ -139,7 +137,7 @@ func faultPage(c composition) httpx.Fault {
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
 		// label is that module's words, read off the manifest that defines it.
-		Granter: c.granter,
+		Granter: granter,
 		// The ask door exists in this composition, so the refusal page may offer
 		// it. A product that wired no AskForAccess leaves this empty and the page
 		// draws no button — the kernel never offers a door it has not mounted.
@@ -171,48 +169,18 @@ func workspaceCatalog() func(api *httpx.API) {
 	})
 }
 
-// appOptions is the composition every entry point of this binary shares. It exists so
-// that the line wiring the failure page is one line rather than two — an entry point
-// that spells its own options out drifts, and the drift is invisible until somebody is
-// refused in production and sees JSON, while the other entry point shows a page.
-//
-// It is also the reason a test can claim the application does this: the test composes
-// through here, so it exercises the wiring rather than a copy of it.
-func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
-	return app.Options{
-		// The installation's own host, from the configuration. It is the only
-		// address that serves the control plane, and the console of the
-		// installation itself — /ops — answers there and nowhere else.
-		Installation: app.Installation{Host: cfg.Server.InstallationHost},
-		// The document a native shell reads; see workspaceCatalog.
-		WorkspaceCatalog: workspaceCatalog(),
-		Tenants:          c.tenants,
-		Authorize:        c.auth,
-		Entitle:          c.plans,
-		Authenticate:     c.auth.Authenticate,
-		Fault:            faultPage(c),
-		// Asking for access: the reach is this product's, the page is ui's, and
-		// the command behind both doors is the kernel's.
-		Access:     c.access,
-		AccessPage: func(router *httpx.Router) { page.MountAccess(router, faultShell(c)) },
-		Role:       role,
-		Transports: transports(),
-		Caches:     caches(),
-	}
-}
-
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once
 // per composition. One page per shell, and the shell is this file's to build —
 // the admin module builds its own, for the screens it mounts.
-func faultShell(c composition) page.Shell {
+func faultShell(messages page.Messages, granter page.Granter) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		Granter:   c.granter,
+		Granter:   granter,
 		Ask:       pinnedAsk,
-		Messages:  c.messages,
+		Messages:  messages,
 	}
 }

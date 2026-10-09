@@ -46,8 +46,10 @@ describes the available settings; its defaults are for local development.
 ## Build your application
 
 Use PlatformKit as a versioned Go dependency and compose it with your own modules.
-[The reference application](apps/platformkit/modules.go) shows how to connect
-module constructors and their typed dependencies. Start with
+[The reference application](apps/platformkit/app.go) shows how to name the
+modules you use and let them wire themselves by contract, and
+[apps/platformkit/product.go](apps/platformkit/product.go) shows the share an
+application owns: the values no module may decide. Start with
 [the task module](modules/task/) when adding a capability: its public contracts
 describe the behavior, while its implementation stays behind that boundary.
 
@@ -58,6 +60,43 @@ Email delivery likewise requires an SMTP configuration.
 
 [Architecture](ARCHITECTURE.md) explains composition, tenant isolation,
 authorization and migrations in more detail.
+
+### Compose it in sentences
+
+`pkit` is the composition layer above the kernel: one application, named, with
+the modules it uses and the handful of things no kernel module can decide for
+itself.
+
+```go
+app := pkit.NewApp("collect").Use(uses...).Theme(pair).Languages(copy).
+	Home("/").ErrorPage(refusal).AskForAccess(reach, form).Roles(roles...)
+return app.Run(ctx, deployment, app.All)
+```
+
+  - **Reused** — `kit/app` stays the engine: it builds the API and answers its
+    gates, opens the connection, migrates, opens the transport and serves. `pkit`
+    adds the dry registrations before all of it and nothing after it.
+  - **Added** — the resolver over declared needs, provides and contributions, and
+    every answer given before the first effect: no connection is opened, no
+    migration runs, no store is dialled and no port is listened on until the
+    composition resolves and its route gates — the whole composition mounted four
+    times and compared against itself, the last of those being the API that would
+    serve — have answered. Beside those answers the process keeps two records. Which
+    application it runs on which database, and with which composition: a second
+    application over a held database — hosted by another `pkit.Server` value or built
+    straight from an `App` — or the held name coming back with a different list of
+    modules is refused there, naming the application already standing. And the shapes
+    a composition declares its events to have, which are process state, claimed above
+    the connection: a boot beside a live application installs its declarations next to
+    the standing ones, is refused if it spells one of them another way before it dials
+    or migrates anything, and gives back what its own boot declared when its `Runtime`
+    closes — or when a refusal of its routes leaves no `Runtime` to close. A refused
+    build changes nothing in the process, nor the database it named.
+  - **Made reusable** — the reference application is composed this way in
+    [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
+    committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)
+    and [COMPOSITION.production.md](apps/platformkit/COMPOSITION.production.md),
+    written by `pkit.Server.Explain` and refused when it drifts.
 
 ## Build a screen
 

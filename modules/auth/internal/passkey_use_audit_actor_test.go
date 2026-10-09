@@ -30,7 +30,7 @@ func passkeyUseActor(t *testing.T, alreadySignedIn bool) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations, audit.Migrations)
 	router, _, _, api := mountRecorded(t, conn, auth.OIDC{}, false)
-	trail := audit.Module(audit.Deps{})
+	trail := audit.New(audit.Deps{})
 	trail.Routes(api.Surfaces("audit"))
 	ada := person(t, conn, "ada@acme.localhost", contracts.RoleAdmin)
 	session := signIn(t, router, "ada@acme.localhost")
