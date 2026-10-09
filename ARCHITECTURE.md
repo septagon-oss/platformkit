@@ -292,7 +292,7 @@ terms of a token, which is the whole reason to have themes (`design/design.go:11
 web standard, not a dependency.
 
 **How the tenant crosses it.** It does not. The theme is chosen once, at
-composition (`Theme: design.Default()`, `apps/platformkit/modules.go:235`), one
+composition (`Theme: design.Default()`, `apps/platformkit/app.go:167`), one
 stylesheet serves every tenant, and no theme reads a row: isolation lives in the
 database, and a stylesheet adds none of it.
 
@@ -300,10 +300,12 @@ database, and a stylesheet adds none of it.
 one stylesheet per pair rather than recomposing per request
 (`design/design.go:165-166`); no span opens and no event publishes.
 
-**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:439`) a `Pair` of its
-own, plus a `ui.Extra` (`ui/ui.go:102`) for rules. The reference product's own
-line is `apps/platformkit/modules.go:285`: `design.Default()` is where a client's
-colours go, and the only line that changes when they do.
+**How an app extends it.** Hand `ui.Compose` (`ui/ui.go:440`) a `Pair` of its
+own, plus a `ui.Extra` (`ui/ui.go:103`) for rules. The reference product's own
+line is `apps/platformkit/fault.go:110`: `ui.Compose(design.Default())`, the same
+pair the composition hands the shell at `apps/platformkit/app.go:167`. A client's
+colours go into that one pair; everything above the tokens is written in terms of
+a role.
 
 ### CSS and JavaScript
 
@@ -323,7 +325,7 @@ only the client layer is a consumer's (`docs/adr/0018-cascade-layers-decide-prec
 **How the tenant crosses it.** It does not. What is enforced here is instead
 mechanical: `scripts/check_ui_layers.sh` (`scripts/check_ui_layers.sh:13-24`)
 refuses a raw utility class and a class no rule in its own layer styles, and runs
-as `check-ui` (`Makefile:171`). `css.Literal` (`ui/css/css.go:46`) is kernel-only
+as `check-ui` (`Makefile:192`). `css.Literal` (`ui/css/css.go:46`) is kernel-only
 by decision 0080, and the reason sits above the symbol: nobody outside the binary
 contributes CSS (`ui/css/css.go:45`).
 
@@ -373,8 +375,8 @@ the owning module's event. Each decision carries `sha256:` of the policy source
 nameable afterwards.
 
 **How an app extends it.** It implements `tenancy.Policy`, and composition names
-which one: `var taskPolicy = opa.MustNew(…)` at `apps/platformkit/modules.go:89`,
-handed to the task module at `:222`, with the rules in the application's own
+which one: `var taskPolicy = opa.MustNew(…)` at `apps/platformkit/product.go:220`,
+put for the task module to take at `:109`, with the rules in the application's own
 `apps/platformkit/policy/task.rego:1`. A denial (`ErrPolicyDenied`,
 `kit/tenancy/policy.go:61`) belongs to the caller; a nil provider, a failing one,
 or an answer that is not `{"allow": bool}` is an outage and never a permissive
@@ -387,7 +389,7 @@ default (`ErrPolicyUnavailable`, `:62`, refused by `RequirePolicy`).
 anything beyond a password (`modules/auth/contracts/factors.go:119`) over a
 `Factor` that carries its `Kind` (`:91`), which today is `totp` alone. The
 browser's half is `kit/httpx/cookies.go` — `SessionCookie`
-(`kit/httpx/cookies.go:21`), `CookieName` (`:42`), `SessionCookieOf` (`:58`).
+(`kit/httpx/cookies.go:22`), `CookieName` (`:43`), `SessionCookieOf` (`:63`).
 
 **Builds on.** RFC 6238 in one file over `crypto/hmac`
 (`modules/auth/internal/totp.go:23`): RFC 4226's 160-bit seed (`:41`), the digits,
@@ -447,7 +449,7 @@ hangs off the resolved tenant (`:44`) and off the resolved host
 (`kit/httpx/tenant.go:49`, `:53`), and each request negotiates inside what that
 tenant declared: `page.Serve` selects from `TenantPreferences`
 (`ui/page/serve.go:101`, `ui/page/locale.go:61`). Why a refusal may not answer in
-an undeclared language is the comment at `kit/httpx/tenant.go:280-283` — a page
+an undeclared language is the comment at `kit/httpx/tenant.go:281-289` — a page
 one of them renders would negotiate from the caller's `Accept-Language` alone and
 answer in a language this tenant refused. The declaration is a row
 (`migrations/000029_tenant_locale.up.sql:1`).
@@ -466,7 +468,7 @@ its tenant never declared is not served in that language and is not refused for
 asking: the preferences the tenant does not serve are dropped and the tenant's own
 default answers (`ui/page/locale.go:104-113`, the case at
 `ui/page/tenant_locale_test.go:131-140`). Being served in the caller's language is
-the tenant's declaration to make — `scripts/e2e.sh:119-125` shows bootstrap's
+the tenant's declaration to make — `scripts/e2e.sh:202-208` shows bootstrap's
 `--language` doing exactly that.
 
 ### Change control: modules/change
@@ -502,7 +504,7 @@ event is built (`modules/change/internal/service.go:296-300`). No span of its ow
 
 **How an app extends it.** Implement `Subject` and bind it: `changeSubjects`
 (`apps/platformkit/change.go:188`) and the one line that calls it
-(`apps/platformkit/modules.go:279`) are the whole of what the reference product
+(`apps/platformkit/product.go:200`) are the whole of what the reference product
 adds. A refusal carries the owner module's answer in `Refusal`
 (`modules/change/contracts/change.go:284`), which is why this module needs no
 vocabulary of its own.
@@ -511,7 +513,7 @@ vocabulary of its own.
 
 **Where it lives.** `kit/events` — `Publish` (`kit/events/events.go:61`),
 `PublishFor` (`:80`) for a system transaction that has to name its tenant,
-`Consume` (`:199`), and the claim and dead-letter paths (`:265`, `:286`). The
+`Consume` (`:208`), and the claim and dead-letter paths (`:284`, `:293`). The
 wire format is its own file, `kit/events/transport/cloudevents.go`.
 
 **Builds on.** CloudEvents 1.0 in structured content mode, hand-built: the
@@ -535,16 +537,16 @@ and `tracestate` (`kit/events/transport/cloudevents.go:56-62`), plus a PlatformK
 owned `baggage` carrying the publisher's request id, because the specification fixes
 those two members and says nothing about correlation (`:63-70`; the column is
 `migrations/000041_outbox_baggage.up.sql:42`). Spans: the relay's batch
-(`kit/events/relay.go:261`), `<event> publish` and `<event> deliver`
+(`kit/events/relay.go:281`), `<event> publish` and `<event> deliver`
 (`kit/events/trace.go:143`, `:178`). The trail *is* this stream: `SubscribeAll`
 (`modules/audit/module.go:93`) turns every declared event into a row.
 
 **How an app extends it.** Declare in the manifest — `Declared` and
-`Subscriptions` (`kit/module/module.go:71`, `:75`) — and write one transport line
+`Subscriptions` (`kit/module/module.go:87`, `:91`) — and write one transport line
 at composition: `app.Transports{Memory: memory.New, JetStream: eventnats.Connect}`
-(`apps/platformkit/modules.go:312`), in the function the application calls the one
-place it names an event provider (`:311`). `kit/app` selects by name and imports
-no provider (`kit/app/app.go:186-192`). An unknown `specversion` is refused rather
+(`apps/platformkit/product.go:227`), in the function the application calls the one
+place it names an event provider (`:226`). `kit/app` selects by name and imports
+no provider (`kit/app/app.go:195-203`). An unknown `specversion` is refused rather
 than guessed at, and an event with no tenant cannot be formed; a claimed event
 that is already handled is a no-op, so delivery is at-least-once and an external
 effect still needs its provider's idempotency contract.
@@ -574,12 +576,13 @@ tenant modules, so this module never names either
 (`modules/notification/contracts/events.go:22-24`) reach the trail through
 `SubscribeAll`; no span of its own.
 
-**How an app extends it.** Implement `Mailer`. Composition makes the one choice:
-SMTP when configured, the mailbox when not (`apps/platformkit/modules.go:342-344`),
-and the mailbox is no stub — "it keeps every message and logs each one"
-(`:339-340`) — so a deployment without mail records everything and says what it
-would have sent (`apps/platformkit/main.go:82`). A refusal a person must see
-raises a `Notice` (`apps/platformkit/modules.go:504`). A nil lookup writes every
+**How an app extends it.** Implement `Mailer`. The deployment names which sender
+it has (`FromDeployment`, `modules/notification/provider.go:39-42`): SMTP when the
+process names a host, port and from-address, the mailbox when not (`:52-59`), and
+the mailbox is no stub — "it keeps every message and logs each one" (`:23-26`) —
+so a deployment without mail records everything and says what it would have sent
+(`apps/platformkit/main.go:82`). A refusal a person must see
+raises a `Notice` (`apps/platformkit/product.go:292`). A nil lookup writes every
 row and sends no mail: the notice is the record, the mail is a copy.
 
 ### Object storage: modules/file over S3
@@ -612,8 +615,9 @@ delivery that dies on the eleventh retries the eleventh (`:15-21`) — and
 
 **How an app extends it.** Write `S3Config` into `Deps.Storage` or let `Local`
 stand (`modules/file/module.go:53`), and hand the store to another module the way
-the reference app hands it to content (`apps/platformkit/modules.go:212`,
-`modules/content/module.go:71`). Over quota is correctable — free space, or ask
+this repository hands it to content: the file module puts its own rich-text
+adapter (`modules/file/provider.go:49`) and content mounts it
+(`modules/content/module.go:82`). Over quota is correctable — free space, or ask
 for quota (`modules/file/module.go:83-86`); a store that cannot prove erasure is
 not, at that adapter: S3 leaves `verified_at` NULL and leans on a bucket lifecycle
 rule (`:51-52`).
@@ -646,11 +650,11 @@ in-process store and the Valkey adapter run, over two fixed tenants
 (`kit/cache/cachetest/conformance.go:29-34`) so a key that lets one customer reach
 another is reproducible from the failure message alone.
 
-**How an app extends it.** Add a field to `app.Caches` (`kit/app/app.go:155`,
-selected at `:510`); the reference composition names `valkey.Connect` and nothing
-else (`apps/platformkit/modules.go:320`, in `caches()` at `:319`). A selected
+**How an app extends it.** Add a field to `app.Caches` (`kit/app/app.go:173`,
+selected at `:448`); the reference composition names `valkey.Connect` and nothing
+else (`apps/platformkit/product.go:235`, in `caches()` at `:234`). A selected
 adapter with no constructor is refused before anything opens
-(`kit/app/app.go:167`). `noeviction` is a requirement and not politeness: the
+(`kit/app/app.go:185-192`). `noeviction` is a requirement and not politeness: the
 counter a `Move` raises carries no TTL, an evicted counter reads back as
 generation 0, and what `Move` closed reopens (`compose.yaml:77-81`) — a deployment
 fault, not a caller's.
@@ -664,7 +668,7 @@ the attribute names (`:94-97`), `WithRequestID` and `RequestID` (`:136`, `:153`)
 `Instruments` (`kit/telemetry/instruments.go:34`). `kit/trace` carries the
 context — `Context` (`kit/trace/trace.go:59`), `Parent` (`:70`), `Parse` (`:100`) —
 with the header names written once (`:27-31`). `kit/app` installs the one
-`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:250`, `:262`).
+`TracerProvider` and `MeterProvider` (`kit/app/telemetry.go:325`, `:326`).
 
 **Builds on.** `go.opentelemetry.io/otel` v1.46.0 (Apache-2.0) and its OTLP/gRPC
 exporters; W3C Trace Context, which `kit/trace` implements rather than wraps. The
@@ -681,8 +685,8 @@ process serves many tenants, as `## Follow a request` says.
 **How it is traced and audited.** This pillar *is* the trace: the transport span
 (`kit/httpx/traced.go:50`), named after the operation id (`:86`), the transaction
 span (`kit/db/tx.go:284`), publish and deliver (`kit/events/trace.go:143`, `:178`),
-the relay batch (`kit/events/relay.go:261`), and the job run with one span per
-tenant (`kit/jobs/jobs.go:192`, `:322`). The audit row stores `traceparent`
+the relay batch (`kit/events/relay.go:281`), and the job run with one span per
+tenant (`kit/jobs/jobs.go:199`, `:329`). The audit row stores `traceparent`
 verbatim and indexes the trace out of it, as the audit section below explains.
 The instruments are the three named at `kit/telemetry/instruments.go:61-69`,
 with latency buckets that run to a minute because the work slow enough to matter
@@ -691,10 +695,10 @@ the measured figures; this page quotes none.
 
 **How an app extends it.** A module never holds a provider. A deployment writes
 `telemetry.otlp_endpoint` and `telemetry.sample_ratio`
-(`kit/config/config.go:85-108`), whose zero value exports nothing
+(`kit/config/config.go:108-127`), whose zero value exports nothing
 (`kit/config/config.go:39-41`), and any package names attributes through
 `SpanAttrs`. An unreachable collector must not stop serving, so OpenTelemetry's
-own error handler keeps serving (`kit/config/config.go:84`).
+own error handler keeps serving (`kit/config/config.go:105-107`).
 
 ### Audit
 
@@ -728,7 +732,7 @@ the connection, never a header a client could write (`:63-64`). Say what that do
 not include: the trail is append-only in this module's code, it is not
 hash-chained, and the application role still holds `UPDATE` and `TRUNCATE` through
 the cluster's default privileges (`modules/audit/contracts/audit.go:16-27`,
-restated at `modules/audit/README.md:38`). No hash chain is on main.
+restated at `modules/audit/README.md:51-53`). No hash chain is on main.
 
 **How an app extends it.** Nothing per app, and that is the point:
 `SubscribeAll: true` (`modules/audit/module.go:89-93`) is expanded by the kernel
@@ -741,7 +745,7 @@ the composition's decision (`modules/audit/module.go:50-61`).
 
 **Where it lives.** `e2e/` — 27 specs, one Playwright config
 (`e2e/playwright.config.ts:10`) and shared steps in `e2e/steps/content.ts` —
-behind the `e2e` goal (`Makefile:112`) and `scripts/e2e.sh`.
+behind the `e2e` goal (`Makefile:131`) and `scripts/e2e.sh`.
 
 **Builds on.** `@playwright/test` ^1.63.0 (Apache-2.0), Chromium only, one worker,
 no retries: a gate, not a compatibility matrix
@@ -751,7 +755,7 @@ a dependency of the runtime.
 **How the tenant crosses it.** Each run boots the application against a database
 of its own, migrated from nothing, and creates one tenant and one administrator
 with `platformkit bootstrap --tenant e2e --host localhost`
-(`scripts/e2e.sh:123-125`); the browser then arrives at that tenant's host.
+(`scripts/e2e.sh:206-208`); the browser then arrives at that tenant's host.
 Playwright starts nothing, because the teardown has to happen whichever step
 failed (`e2e/playwright.config.ts:4`, `scripts/e2e.sh:11-12`).
 
@@ -765,7 +769,7 @@ pillar that checks the others.
 `e2e/steps/content.ts`. What this pillar's settings buy is a failure that repeats,
 not an assertion that means something: one worker and `retries: 0` make a passing
 spec a pass seen on the first attempt (`e2e/playwright.config.ts:12-14`), and a
-database created for the run and dropped after it (`scripts/e2e.sh:50`, `:78`) make
+database created for the run and dropped after it (`scripts/e2e.sh:148`, `:120`) make
 the state it found the state the run created. That the spec expects the right thing
 is the spec's own claim to carry — it names the refusal or the rendered state it
 wants, and the refusals themselves are proved by the command tests, not here. A
@@ -777,11 +781,12 @@ flaky spec is a bug report, not a retry.
 and operation catalogue — `CatalogVersion` (`ui/screens/catalog.go:25`), `Catalog`
 (`:31`), `Entry` with the operation ids an app calls (`:42`, `:77`) — at
 `/api/v1/app/resources` (`kit/httpx/surfaces.go:77`); `kit/app` renders the event
-half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:47`, `CoveredEvents`
-`:146`), pinned by the golden files in `apps/platformkit/testdata/`.
-`apps/platformkit/wire_compatibility_test.go` is the gate, with rules B1–B6 quoted
-at `:13-21`, and `e2e/maestro/flows.json` is the device journey behind
-`mobile-e2e` (`Makefile:120`) and `.gitea/workflows/mobile.yml:1`.
+half as AsyncAPI 3.0.0 (`kit/app/asyncapi.go:1`, `AsyncAPI` `:48`, `CoveredEvents`
+`:161`), pinned by the golden files in `apps/platformkit/testdata/`.
+`apps/platformkit/wire_compatibility_test.go` is the gate, with the rules B1–B6
+that `kit/wire` owns and lists (`kit/wire/README.md:28-35`), and
+`e2e/maestro/flows.json` is the device journey behind
+`mobile-e2e` (`Makefile:141`) and `.gitea/workflows/mobile.yml:1`.
 
 **Builds on.** OpenAPI 3, emitted by `github.com/danielgtaylor/huma/v2` v2.39.1
 (MIT), and AsyncAPI 3.0.0 as a document this repository writes itself. Maestro
@@ -793,7 +798,7 @@ dependency. Screens are derived from schemas rather than authored
 the tenant's own address, so a shell never names a tenant
 (`kit/httpx/surfaces.go:77`), and every operation inside it carries the tenant
 through the request's transaction like any other call. `CoveredEvents`
-(`kit/app/asyncapi.go:146`) counts the declared events the document names, which
+(`kit/app/asyncapi.go:161`) counts the declared events the document names, which
 is the claim that a shell sees no event nobody declared.
 
 **How it is traced and audited.** Nothing new: the events a shell may see are the
@@ -803,12 +808,13 @@ renamed JSON tag fails `make check` rather than a shipped build.
 
 **How an app extends it.** Nothing — a shell renders the document, and a
 product's share is not to extend it but not to break it. Nothing overrides a
-refusal, including `UPDATE_GOLDEN=1`; a planned breaking change ships as a new
-address plus an alias row (`apps/platformkit/wire_compatibility_test.go:24-30`,
+refusal, including `UPDATE_GOLDEN=1` (`kit/wire/README.md:17-19`); a planned
+breaking change ships as a new
+address plus an alias row (`kit/httpx/aliases.go:87`,
 `httpx.API.Alias` and `module.Module.Moved`). B1–B6 are immutable to the change —
 a removed operationId, a retyped schema member, a new required field, an enum that
-strands a reader, a narrowed authorisation — and additive change is always allowed
-(`:22-23`). `apps/platformkit/catalog_version_test.go` is the companion proof that
+strands a reader, a narrowed authorisation — and additive change is always allowed.
+`apps/platformkit/catalog_version_test.go` is the companion proof that
 the version number moves when it must.
 
 ## Evolve the schema by owner
