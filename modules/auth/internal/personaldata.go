@@ -43,8 +43,12 @@ type authPart struct {
 	FirstFactorProofs []authProofRow     `json:"firstFactorProofs"`
 }
 
+// authSessionRow names no session. A session's id is its credential, and migration
+// 000013 stopped storing it: the row is keyed by sha256 of the value the cookie holds,
+// so there is nothing to hand back and a bundle that carried a hash would carry a
+// guessable-at-brute-force copy of a live door. The dates, the browser and the address
+// are the part a person recognises as "that login from the laptop".
 type authSessionRow struct {
-	ID         uuid.UUID `json:"id"`
 	CreatedAt  time.Time `json:"createdAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 	LastSeenAt time.Time `json:"lastSeenAt"`
@@ -100,7 +104,7 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 		return db_.Table(table).Select(columns).Where("user_id = ?", s.ID).Order(order).Find(dest).Error
 	}
 	if err := q(&out.Sessions, "sessions",
-		"id, created_at, expires_at, last_seen_at, user_agent, ip", "created_at, id"); err != nil {
+		"created_at, expires_at, last_seen_at, user_agent, ip", "created_at"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's sessions: %w", s.ID, err)
 	}
 	if err := q(&out.APITokens, "api_tokens",
@@ -117,8 +121,8 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	if err := q(&out.PasswordTokens, "password_tokens", "created_at, expires_at", "created_at"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's password tokens: %w", s.ID, err)
 	}
-	if err := q(&out.VerificationEmail, "authVerification_tokens", "email, created_at, expires_at", "created_at"); err != nil {
-		return nil, fmt.Errorf("auth: export %s's authVerification tokens: %w", s.ID, err)
+	if err := q(&out.VerificationEmail, "verification_tokens", "email, created_at, expires_at", "created_at"); err != nil {
+		return nil, fmt.Errorf("auth: export %s's address verifications: %w", s.ID, err)
 	}
 	if err := q(&out.FirstFactorProofs, "first_factor_proofs", "expires_at", "expires_at"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's first-factor proofs: %w", s.ID, err)
@@ -139,7 +143,9 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 		db.Now(), s.ID, db.Now()).Error; err != nil {
 		return fmt.Errorf("auth: end %s's sessions: %w", s.ID, err)
 	}
-	for _, t := range []string{"password_tokens", "authVerification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs"} {
+	// verification_tokens and not a name of this file's inventing: it is the table
+	// modules/auth/migrations/000024_email_verification.up.sql creates.
+	for _, t := range []string{"password_tokens", "verification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs"} {
 		// The table name is this file's own constant, never a caller's: it is the only
 		// thing a name written into SQL could be.
 		if err := db_.Exec("DELETE FROM "+t+" WHERE user_id = ?", s.ID).Error; err != nil {

@@ -46,20 +46,41 @@ type eventRow struct {
 	EventID    string          `json:"eventId"`
 	Payload    json.RawMessage `json:"payload"`
 	RequestID  *string         `json:"requestId,omitempty"`
-	ClientIP   *string         `json:"clientIp,omitempty"`
+}
+
+// eventScan is the same row as it comes back from the driver. json.RawMessage is a
+// byte slice the encoder validates, and a jsonb column arrives as a string, so the
+// two are not one struct: an earlier revision selected straight into the marshalled
+// shape and every export of a person with one audit row died with `unsupported Scan,
+// storing driver.Value type string into type *jsontext.Value`. The payload is read as
+// the text the database gives and handed on as the document it already is.
+type eventScan struct {
+	Name       string
+	OccurredAt time.Time
+	EventID    string
+	Payload    string
+	RequestID  *string
 }
 
 func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	s personaldata.Subject) (json.RawMessage, error) {
-	var rows []eventRow
+	// client_ip is not selected: the address a row recorded belongs to whoever acted,
+	// which for a trail about this person is often somebody else, and one person's
+	// bundle must not carry another's address. It is the actor's own address that the
+	// erasure below removes.
+	var scanned []eventScan
 	err := tx.DB().WithContext(ctx).Table("audit_events").
-		Select("name, occurred_at, actor::text AS actor, event_id::text AS event_id, payload::text AS payload, request_id").
-		Where("actor = ?", s.ID).Order("occurred_at, id").Find(&rows).Error
+		Select("name, occurred_at, event_id::text AS event_id, payload::text AS payload, request_id").
+		Where("actor = ?", s.ID).Order("occurred_at, id").Find(&scanned).Error
 	if err != nil {
 		return nil, fmt.Errorf("audit: export %s's trail: %w", s.ID, err)
 	}
-	for i := range rows {
-		rows[i].Actor = s.ID.String()
+	rows := make([]eventRow, len(scanned))
+	for i, e := range scanned {
+		rows[i] = eventRow{
+			Name: e.Name, OccurredAt: e.OccurredAt, Actor: s.ID.String(),
+			EventID: e.EventID, Payload: json.RawMessage(e.Payload), RequestID: e.RequestID,
+		}
 	}
 	return json.Marshal(auditPart{Events: rows})
 }

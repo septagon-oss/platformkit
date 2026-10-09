@@ -167,11 +167,11 @@ func query(s Subject, table string, columns []string, isJSON bool,
 		for _, id := range ids {
 			// Identifiers are longest first, so a name inside the person's own address
 			// goes with the address and not after it, which would leave the tail of a
-			// mailbox in a note about somebody. escapePattern is what lets an address
-			// full of dots, pluses and question marks be a pattern at all: quoted, it
-			// matches itself and nothing else.
+			// mailbox in a note about somebody. boundedPattern is what lets an address
+			// full of dots, pluses and question marks be a pattern at all, and stops that
+			// pattern finding a colleague's word that merely contains them.
 			expr = "regexp_replace(" + expr + ", ?, ?, 'gi')"
-			q.args = append(q.args, escapePattern(id), s.Token())
+			q.args = append(q.args, boundedPattern(id), s.Token())
 		}
 		if isJSON {
 			// Back to jsonb by cast, and an unparseable payload fails here rather than
@@ -180,10 +180,11 @@ func query(s Subject, table string, columns []string, isJSON bool,
 		}
 		q.sets = append(q.sets, c+" = "+expr)
 		for _, id := range ids {
-			// strpos, not a pattern: the filter only has to find a substring, and a
-			// substring test needs no escaping and costs no regex engine.
-			terms = append(terms, "strpos(lower("+text+"), lower(?)) > 0")
-			termArgs = append(termArgs, id)
+			// The same pattern the rewrite used, and not a plain substring test: the
+			// re-read has to ask what the rewrite would find, or a row the rewrite left
+			// alone reads as residue and a row it could not reach reads as clean.
+			terms = append(terms, text+" ~* ?")
+			termArgs = append(termArgs, boundedPattern(id))
 		}
 	}
 
@@ -194,13 +195,61 @@ func query(s Subject, table string, columns []string, isJSON bool,
 		}
 		q.filter = "(" + where + ") AND (" + q.filter + ")"
 	}
-	// The two halves of the argument list are built per column and joined once, because
-	// the finished SQL is one SET list and then one filter: interleaving them by column
-	// would bind every value one expression away from the placeholder that means it, and
-	// the statement would run, change nothing, and report a clean erasure.
-	q.args = append(q.args, termArgs...)
+	// The three groups are appended in the order their placeholders sit in the finished
+	// SQL, which is one SET list, then the caller's own filter, then this file's own
+	// terms. The caller's `?` are in the left half of the WHERE, so their values go
+	// before the terms', not after them. Neither this file nor a caller counts a
+	// placeholder, which is why that order lives here and nowhere else. Getting it wrong
+	// is not a failure anybody sees as one: every value lands one placeholder away from
+	// the expression that means it, and the statement either dies on a type the server
+	// will not coerce (an address in a uuid column, which is how the auth scrub was found
+	// mis-bound) or, worse, runs, matches nothing, and reports a clean erasure.
 	q.args = append(q.args, args...)
+	q.args = append(q.args, termArgs...)
 	return q, nil
+}
+
+// boundedPattern quotes an identifier for Postgres' ARE pattern syntax and puts a word
+// boundary around it.
+//
+// Two jobs, and the second is the one that keeps other people's writing. Unbounded,
+// erasing a person called Ann whose handle is "ann" rewrites a colleague's "Annual
+// planning" as "<erased …>ual pl<erased …>ing" in every text column of the tenant: data
+// that belongs to somebody else, destroyed by an operation that cannot be undone. What
+// the ADR's substring rule is for is finding "Jo.Jones@Example.COM" as the same mailbox
+// as the lower-case spelling, and a case-insensitive whole-word match still finds both.
+// A word inside the person's own name is still found: "Mary Ann Smith" is erased by the
+// identifier "Mary Ann Smith" as one whole, and the longest-first order above is what
+// puts the address before the name that sits inside it.
+//
+// \m and \M are zero-width, so two mentions side by side are both found, where a pattern
+// that swallowed the space between them would find only the first. They are also only
+// honest beside a word character, and "word" is the server's locale-dependent answer —
+// a boundary that does not match there is a mention never erased, which is the wrong way
+// to fail. So a boundary is written only where this file can know the server will honour
+// it: next to an ASCII letter, digit or underscore. An identifier that begins or ends
+// with anything else is bounded on the side it can be and matched as a substring on the
+// side it is not. Over-broad leaves a token in a word nobody meant; under-broad leaves
+// the person's own address in somebody's notes. Only one of those is the failure this
+// contract exists to prevent.
+//
+// escapePattern is the other job, and is described beside it.
+func boundedPattern(id string) string {
+	var out strings.Builder
+	out.Grow(len(id) + 16)
+	if id[0] < 0x80 && isWordByte(id[0]) {
+		out.WriteString(`\m`)
+	}
+	out.WriteString(escapePattern(id))
+	if id[len(id)-1] < 0x80 && isWordByte(id[len(id)-1]) {
+		out.WriteString(`\M`)
+	}
+	return out.String()
+}
+
+// isWordByte reports whether an ASCII byte is a word character in Postgres' ARE syntax.
+func isWordByte(b byte) bool {
+	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
 }
 
 // escapePattern quotes an identifier for Postgres' ARE pattern syntax: every
