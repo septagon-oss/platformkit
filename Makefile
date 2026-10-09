@@ -477,6 +477,19 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
 	# pays the real waits pays the first of them.
 	bash scripts/ci_apt_index_test.sh
+	# scripts/ci_package_install_refusal_test.py runs the half of that step the guard above cannot see: the
+	# index answered, the ask went out, and the package did not arrive. apt-get install exits 100, and the
+	# `-e` act_runner runs every step body under is what stops it there. A body that lost it, or gained a
+	# `|| true`, would carry on and look green doing it: ci.yml's three questions are answered by whatever
+	# is on PATH, so `command -v ss` and `python3 -c 'import yaml'` would pass off a stub and report an
+	# install that installed nothing, and mobile.yml's next line dials `psql -h postgres`. This case runs
+	# both jobs' committed step bodies with PATH the stub directory alone, refuses the install, and asks
+	# two things of each: that the step exits 100 after exactly two apt calls, and that the file its psql,
+	# ss and python3 stubs each append to the moment they run was never created. It reuses the apt double
+	# scripts/ci_apt_index_test.sh defines rather than carrying a second one, installs nothing, starts no
+	# container, pays no real wait (the retry bound is handed `0 0`) and writes only inside a
+	# TemporaryDirectory it removes.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_package_install_refusal_test.py
 	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
 	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
 	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
