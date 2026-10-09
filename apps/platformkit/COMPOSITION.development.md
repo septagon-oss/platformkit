@@ -102,6 +102,7 @@ pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
+pkit: admin.Module uses usercontracts.Service from user.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
 pkit: admin.Module uses admincontracts.Locale from product.Module.
 pkit: admin.Module could use admincontracts.Storybook; platformkit composes no provider, so it will not.
