@@ -157,6 +157,17 @@ func (s *service) file(ctx context.Context, tx db.Tx[db.Tenant], row contracts.R
 	return &row, nil
 }
 
+// store is the bundle store, or the refusal a composition without one deserves. The
+// resolver makes the file module a need of this module, so in a composed application this
+// is unreachable; it is an error rather than a panic in New because the manifest a reader
+// and a test build (module.go's `New`) composes nothing, and building it must not crash.
+func (s *service) store() (contracts.BundleSource, error) {
+	if s.bundles == nil {
+		return nil, fmt.Errorf("subject: no bundle store is composed, so a bundle can be neither stored nor linked to: %w", crud.ErrInvalid)
+	}
+	return s.bundles, nil
+}
+
 // Request answers one request row to the person who filed it.
 func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*contracts.Request, error) {
 	row := &contracts.Request{}
@@ -187,6 +198,10 @@ func (s *service) Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor 
 	if row.Bundle == uuid.Nil || row.State != contracts.StateReady {
 		return nil, fmt.Errorf("subject: that request has no bundle to link to yet: %w", crud.ErrInvalid)
 	}
+	store, err := s.store()
+	if err != nil {
+		return nil, err
+	}
 	token, hash, err := contracts.NewToken()
 	if err != nil {
 		return nil, err
@@ -208,7 +223,7 @@ func (s *service) Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor 
 	}
 	// The hold moves with the link. A bundle held only to the instant the walk finished
 	// would be swept out from under a person who asked for their door on day six.
-	if err := s.bundles.Hold(ctx, tx, row.Bundle, expires); err != nil {
+	if err := store.Hold(ctx, tx, row.Bundle, expires); err != nil {
 		return nil, err
 	}
 	return &contracts.Link{
@@ -379,16 +394,20 @@ func (s *service) runOne(ctx context.Context, conn *db.Conn, id uuid.UUID) error
 		if err != nil {
 			return err
 		}
+		store, err := s.store()
+		if err != nil {
+			return err
+		}
 		at := s.now()
 		expires := at.Add(contracts.LinkLife)
-		fileID, err := s.bundles.Put(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
+		fileID, err := store.Put(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return tx, nil },
 			fmt.Sprintf("export-%s.zip", row.ID), bundle.Zip)
 		if err != nil {
 			return err
 		}
 		// Held from the moment it exists: the walk's own instant is the floor, and every
 		// link minted later pushes it out again (contracts.BundleSource).
-		if err := s.bundles.Hold(ctx, tx, fileID, expires); err != nil {
+		if err := store.Hold(ctx, tx, fileID, expires); err != nil {
 			return err
 		}
 		if err := s.notify(ctx, tx, row, expires); err != nil {
