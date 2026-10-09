@@ -557,8 +557,8 @@ func TestTheDiscoveryDocumentsAnswerForThemselves(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(types) != 2 || types[0].Endpoint != "/Users" || types[1].Endpoint != "/Groups" {
-			t.Errorf("resource types = %+v, want User at /Users and Group at /Groups", types)
+		if len(types.Resources) != 2 || types.Resources[0].Endpoint != "/Users" || types.Resources[1].Endpoint != "/Groups" {
+			t.Errorf("resource types = %+v, want User at /Users and Group at /Groups", types.Resources)
 		}
 		if _, err := w.svc.ResourceType(ctx, "Membership"); !errors.Is(err, crud.ErrNotFound) {
 			t.Errorf("a third resource type was answered with %v, want not found", err)
@@ -567,12 +567,21 @@ func TestTheDiscoveryDocumentsAnswerForThemselves(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if len(schemas) != 2 {
-			t.Errorf("%d schemas, want User and Group", len(schemas))
+		if len(schemas.Resources) != 2 {
+			t.Errorf("%d schemas, want User and Group", len(schemas.Resources))
+		}
+		// Both discovery collections answer inside the envelope every other list of
+		// this protocol answers with, because a client reads them before it reads any
+		// resource and decodes them as one.
+		if len(types.Schemas) != 1 || types.Schemas[0] != contracts.SchemaListResponse || types.TotalResults != len(types.Resources) {
+			t.Errorf("resource types answer outside the ListResponse envelope: %+v", types)
+		}
+		if len(schemas.Schemas) != 1 || schemas.Schemas[0] != contracts.SchemaListResponse || schemas.TotalResults != len(schemas.Resources) {
+			t.Errorf("schemas answer outside the ListResponse envelope: %+v", schemas)
 		}
 		// The readOnly attributes are the module's explanation of itself, so the
 		// ones that matter are named here rather than trusted.
-		user := schemas[0]
+		user := schemas.Resources[0]
 		for _, want := range []struct{ name, mutability string }{
 			{"userName", "readOnly"}, {"password", "readOnly"}, {"groups", "readOnly"}, {"emails", "readOnly"},
 			{"active", "readWrite"}, {"externalId", "readWrite"},

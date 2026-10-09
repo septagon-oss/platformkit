@@ -45,8 +45,14 @@ func (s *Service) ProviderConfig(_ context.Context) (*contracts.ProviderConfig, 
 // ResourceTypes names the two types and the addresses they answer at. The
 // endpoints are the protocol's own tails; the kernel composes the prefix, so the
 // module that does not know its own prefix cannot state a wrong one.
+//
+// The two discovery collections come back inside a ListResponse. RFC 7644 §4
+// answers a GET that returns many documents with one document, and these two are
+// the addresses a client reads first: a service that hands them out as bare arrays
+// is a service a correctly typed client cannot finish configuring itself with,
+// however right every element inside the array is.
 func (s *Service) ResourceTypes(_ context.Context) (contracts.ResourceTypeList, error) {
-	return contracts.ResourceTypeList{
+	all := []*contracts.ResourceType{
 		{
 			Schemas: []string{"urn:ietf:params:scim:schemas:core:2.0:ResourceType"},
 			ID:      contracts.ResourceTypeUser, Name: contracts.ResourceTypeUser,
@@ -59,6 +65,10 @@ func (s *Service) ResourceTypes(_ context.Context) (contracts.ResourceTypeList, 
 			Endpoint: "/Groups", Schema: contracts.SchemaGroup,
 			Description: "A collection the identity provider declares, and the role it brings.",
 		},
+	}
+	return contracts.ResourceTypeList{
+		Schemas: []string{contracts.SchemaListResponse}, TotalResults: len(all),
+		StartIndex: 1, ItemsPerPage: len(all), Resources: all,
 	}, nil
 }
 
@@ -66,7 +76,7 @@ func (s *Service) ResourceTypes(_ context.Context) (contracts.ResourceTypeList, 
 // not serve — which is what a client that asks for a third type deserves.
 func (s *Service) ResourceType(_ context.Context, name string) (*contracts.ResourceType, error) {
 	all, _ := s.ResourceTypes(context.Background())
-	for _, rt := range all {
+	for _, rt := range all.Resources {
 		if rt.Name == name {
 			return rt, nil
 		}
@@ -74,9 +84,13 @@ func (s *Service) ResourceType(_ context.Context, name string) (*contracts.Resou
 	return nil, fmt.Errorf("%w: no resource type %q here", crud.ErrNotFound, name)
 }
 
-// Schemas is the attribute documents' index.
+// Schemas is the attribute documents' index, in the same envelope.
 func (s *Service) Schemas(_ context.Context) (contracts.SchemaList, error) {
-	return contracts.SchemaList{userSchema(), groupSchema()}, nil
+	all := []*contracts.Schema{userSchema(), groupSchema()}
+	return contracts.SchemaList{
+		Schemas: []string{contracts.SchemaListResponse}, TotalResults: len(all),
+		StartIndex: 1, ItemsPerPage: len(all), Resources: all,
+	}, nil
 }
 
 // Schema is one attribute document.

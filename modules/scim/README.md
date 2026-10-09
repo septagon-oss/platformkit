@@ -12,6 +12,24 @@ A person provisioned here is the same row as a person invited from the workspace
 screen, with the same events and the same last-administrator floor. That is the
 module's whole design, and the reason a connector can be trusted with a door.
 
+Reused: the person and every write to one (`modules/user`'s `Invite`,
+`ConfirmAddress`, `SetRoles`, `SetRoles`' locked read, `Deactivate`), the tenant
+transaction and its row-level security, the caller's credential and the ceiling it
+carries, the permission guard on the route, the outbox and the audit trail that
+subscribes to it, `crud`'s page bounds and its `GetForUpdate` row lock, the locale
+catalogue, and `dbtest`'s real schema.
+
+Added: the protocol door (the documents, the nineteen operations, and the two
+extension rules the connectors' own guides force), the three tables of membership,
+external identifier and group→role binding, the derivation that turns a membership
+into a role, and five events.
+
+Made reusable: `httpx.Router.At` (an address a module names without knowing the
+prefix) and the response body that names its own media type, both of which came out
+of this module's need and are the kernel's now — `kit/httpx`, not `modules/scim`.
+Nothing in this directory is reusable: the fake the brief asked for is a follow-up,
+named below.
+
 ## Services
 
 `contracts.Service` is the module's own port over the protocol: discovery, the user
@@ -21,6 +39,16 @@ collaborator, along with a `contracts.RoleDirectory` the composition implements 
 wherever role definitions actually live — this module may read neither auth's role
 table nor user's role column, so the question "is this a role this tenant knows"
 arrives as a port rather than an import.
+
+### Interface
+
+None of this module's own. It declares no screen and no `rest.Spec`: the manifest
+passes `Nav: nil`, and `internal/` holds no `ui` package, because a machine door has
+no face to render and rule 6 lets a module's `internal/ui` exist only where a page is
+its own. `git grep -n 'Page(\|PageRaw\|rest.Spec\|Catalog' modules/scim` answers
+nothing. What a person administers — which group brings which role — is two workspace
+routes at `/api/v1/scim/group-mappings`, and the generated command surface for them
+is a follow-up named in the delivery report, not a claim made here.
 
 ## Routes
 
@@ -40,12 +68,16 @@ because a filter it does not implement must refuse rather than answer unfiltered
 connector handed everybody when it asked for a subset will go on to act on everybody
 it meant to spare. A `PATCH` reads the attribute named in `path` and, as Okta sends
 it, the attributes named inside a pathless `replace`'s value — so the two spellings
-of "this person has left" both stop them signing in. One member is selected by
+of "this person has left" both stop them signing in, and the same two spellings of
+"this person is active" both let them back in. One member is selected by
 `members[value eq "<id>"]`, which is how RFC 7644 and Microsoft's provisioning guide
 send it; read as plain `members` it would answer the standard request by emptying the
 group. The discovery documents answer at the addresses they name: a schema is read by
 its urn at `/Schemas/{id}`, one path segment, because that is the address the
-`ServiceProviderConfig` and every document's own `meta.location` point a client at.
+`ServiceProviderConfig` and every document's own `meta.location` point a client at,
+and the two collections of them answer inside the same `ListResponse` envelope every
+other list of this protocol uses, because a client decodes a SCIM list as one
+envelope wherever it appears — including at the two addresses it reads first.
 
 ## Authorization
 
@@ -103,6 +135,25 @@ automatically at all.
   `If-Match`, the documents carry `meta.version` as an answer and not as a demand,
   and this service issues no ETag. Anyone who wants compare-and-set has to add it to
   the protocol door first, and the product's share of that is its own.
+- A group's lock is not enough for what a membership write leaves behind, so each
+  person it affects is locked too — ascending by id, and *before* their roles are
+  worked out. Two collections, two writers, one person: each holds a lock the other
+  does not want, and a `want` computed before the person's row is held is a
+  computation about a moment the other writer is spending. The last one to commit
+  would restore the role the first one revoked, which is a revoked grant that
+  outlives its revocation; `TestConcurrentGroupRemovalsRevokeBothRoles` holds an
+  unrelated transaction on the person's row to keep the two writers genuinely
+  simultaneous and asks what the person is left holding.
+- `MapGroup` re-checks the caller's own credential inside its transaction, and not
+  only at the guard on its route. `Principal.Permissions` is the authority a
+  credential carries, and a non-nil list is a ceiling: a caller whose credential
+  carries one and does not name `user:manage` is refused here whoever it is and
+  however it reached the function, so a provisioning key cannot bind a group to a
+  role by naming the command instead of the door. **The limit, plainly:** which
+  permissions a signed-in caller's *roles* carry is auth's table, which this module
+  may not read, so such a caller is refused only by the guard its route declares —
+  closing that half needs a port answered at composition, and it is written as a
+  follow-up rather than pretended about.
 - No group write binds a group to a role. `role` is this platform's extension, not
   part of the core Group schema, and a credential handed to somebody else's identity
   provider that could state what a mirrored organisational unit grants could grant
@@ -141,15 +192,19 @@ What happens to a person is the user module's event — `user.invited`,
 subscriber see an identity created by a connector and an identity created by an
 administrator as the same fact, and lets each grant and each revoke be audited.
 
-The four facts no user event describes are this module's own, published in the
+The five facts no user event describes are this module's own, published in the
 transaction that writes the row they are about: `scim.group_created`,
 `scim.group_changed` (with `via` saying whether the list arrived whole or one
-operation at a time), `scim.group_removed`, and `scim.mapping_changed` — the last
+operation at a time), `scim.group_removed`, `scim.mapping_changed` — the last
 carrying both role names, because after a withdrawal the table is the only place
 that has stopped saying what a membership meant, and the trail is the only place
-left that ever knew. A mapping re-stated unchanged emits nothing: an event saying a
-decision was made when it was only repeated is a false line in the one record a
-person reads to find out who decided what a role means.
+left that ever knew — and `scim.user_changed`, which names the attributes of a
+person that no `user.` event describes and that no other module could: `displayName`,
+which `modules/user` owns as a column and owns no command for, and `externalId`,
+which is this module's own row. A write that restated what was already there emits
+nothing, from any of the five. A mapping re-stated unchanged is the clearest case:
+an event saying a decision was made when it was only repeated is a false line in the
+one record a person reads to find out who decided what a role means.
 
 The audit module subscribes to every declared event, so declaring these is what makes
 a group write auditable at all — and `audit` is why the payloads carry identifiers
@@ -173,3 +228,31 @@ What this door refuses, and what a caller has to do instead.
 The protocol's own conformance door (`contracts/scimtest`) is not here: the module is
 exercised against a real Postgres, the real user module and the real router, which is
 what the tests below run. A portable fake is a follow-up, named in the brief.
+
+## Verification
+
+Every case is `go test ./modules/scim/... ` against `dbtest.Schema(t, user.Migrations,
+scim.Migrations)` — a real tenant transaction, the real `modules/user`, and the real
+`httpx` router with its real grant chain — and `go test ./apps/platformkit -run SCIM`
+asks the composed application the same questions through a token it minted. The
+naming is the claim, so the list is the acceptance trace rather than a summary.
+
+| The claim | The case |
+| --- | --- |
+| a provider vouching for an address is what makes a person able to sign in, and neither half sets a password | `TestTheProviderVouchingForAnAddressIsWhatMakesAPersonAbleToSignIn` |
+| every attribute write is auditable in the transaction that wrote it, and a restatement writes nothing | `TestEveryUserAttributeWriteLeavesATransactionalAuditEvent`, `TestAPersonWriteThatChangedNothingLeavesNoAuditLine` |
+| `PUT` and `PATCH` both honour `active`, in both directions | `TestReplacingAnInvitedUserHonoursTheActiveAttribute`, `TestConnectorDeactivationShapesStopThePerson` |
+| the collection carries its role onto its members and takes it back off, through one member, one leaver and a concurrent delete | `TestAGroupCarriesItsRoleOntoItsMembersAndTakesItBackOff`, `TestFilteredMemberRemovalPreservesOtherMembers`, `TestMembershipCannotCommitBehindAConcurrentGroupDeletion`, `TestConcurrentGroupRemovalsRevokeBothRoles` |
+| no group write, from no door, writes the tenant's binding — and the binding's own command refuses a caller whose credential does not carry it | `TestNoGroupCommandWritesTheTenantsRoleMapping`, `TestProvisioningCannotChooseTheTenantRoleMapping`, `TestMappingCommandRefusesAProvisionOnlyActor`, `TestAMappingWrittenByACredentialThatCarriesUserManage` |
+| a refused write changes nothing, emits nothing and returns no row, including when the role directory is unreachable | `TestWithdrawingAMappingRevokesTheRoleItGranted`, `TestAMappingToARoleNobodyDeclaredIsRefusedAndWritesNothing`, `TestRoleDirectoryFailureDoesNotCommitAMapping` |
+| a tenant cannot see, change or be affected by another tenant's provisioning | `TestForeignTenantCannotMutateOrReadProvisionedState` |
+| the last administrator survives every SCIM write, and the connector's deactivation is the one that stops them signing in | `TestSCIMRefusesTheLastAdministratorWithoutChangingState`, `TestConnectorDeactivationShapesStopThePerson` |
+| the discovery documents describe the door that answered them, at addresses that answer, in the envelope a client decodes | `TestTheDiscoveryDocumentsAnswerForThemselves`, `TestEveryAdvertisedSchemaCanBeReadByItsIdentifier`, `TestDiscoveryCollectionsUseTheSCIMListEnvelope`, `TestTheSCIMDoorAnswersAtTheAddressTheProtocolNames` (in `apps/platformkit`) |
+| an anonymous caller and a key scoped to the wrong door meet a refusal that wrote nothing | `TestProvisioningCannotChooseTheTenantRoleMapping`, and the kernel's own `kit/httpx` refusal cases |
+
+Not verified by anything here, and not claimed: a live Entra or Okta tenant, the
+browser and device journeys of a tenant that configured one, the localisation of a
+refusal sentence into the tenant's language, and compare-and-set on an `If-Match` this
+service does not implement. `If-Match` is refused for the reason in `Limits` above —
+there is no revision to check against — and a stale-etag request is therefore not a
+case this module can pass or fail until the door carries an ETag.

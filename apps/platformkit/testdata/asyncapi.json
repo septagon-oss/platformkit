@@ -2063,6 +2063,44 @@
       "summary": "Every tenant's delivery of scim.mapping_changed.",
       "title": "scim.mapping_changed"
     },
+    "scim.user_changed": {
+      "address": "platformkit.*.scim.user_changed",
+      "description": "Published at platformkit.{tenantId}.scim.user_changed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "scim.user_changed": {
+          "contentType": "application/json",
+          "name": "scim.user_changed",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "changed": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "user": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "user",
+              "changed",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "scim — scim.user_changed",
+          "title": "scim.user_changed"
+        }
+      },
+      "summary": "Every tenant's delivery of scim.user_changed.",
+      "title": "scim.user_changed"
+    },
     "security.access_requested": {
       "address": "platformkit.*.security.access_requested",
       "description": "Published at platformkit.{tenantId}.security.access_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4281,6 +4319,23 @@
         }
       ],
       "summary": "The scim module publishes scim.mapping_changed.",
+      "tags": [
+        {
+          "name": "scim"
+        }
+      ]
+    },
+    "scim.user_changed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/scim.user_changed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/scim.user_changed/messages/scim.user_changed"
+        }
+      ],
+      "summary": "The scim module publishes scim.user_changed.",
       "tags": [
         {
           "name": "scim"

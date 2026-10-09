@@ -329,13 +329,26 @@ type SchemaAttribute struct {
 // orphan no read of either side can explain. A writer that arrives behind a
 // deletion therefore waits for it, then finds no group to write to.
 //
+// The group lock is not enough for what a membership write leaves behind. Two
+// collections, two writers, one person: each holds a different group's lock, so
+// neither waits for the other, and the roles each recomputes are read off the
+// person's own row. So every person a membership write touches is locked,
+// ascending by id, and what their roles become is computed *after* the lock is
+// held and not before it — otherwise the second writer restores a role the first
+// one had just taken away, which is a revoked grant that outlives the revocation.
+//
 // Authority: no group command writes the tenant's role mapping. The protocol
 // carries no such field (see GroupDraft.Role), and the binding is written by
-// MapGroup alone, at the workspace's door, under user:manage.
+// MapGroup alone, which rechecks the caller's own scope inside its transaction
+// before it writes: the guard on the door is not the whole rule, because MapGroup
+// is exported and any module may call it.
 type Service interface {
 	// ProviderConfig, ResourceTypes, ResourceType, Schemas and Schema are the
 	// discovery documents. They take no transaction because they read no rows:
-	// what this service supports is a fact about its code.
+	// what this service supports is a fact about its code. The two that name many
+	// documents answer inside the ListResponse envelope RFC 7644 §4 gives every
+	// collection of this protocol, because a client that decodes them as one — the
+	// only shape a SCIM list has — has to be able to read them at all.
 	ProviderConfig(ctx context.Context) (*ProviderConfig, error)
 	ResourceTypes(ctx context.Context) (ResourceTypeList, error)
 	ResourceType(ctx context.Context, name string) (*ResourceType, error)
@@ -372,9 +385,11 @@ type Service interface {
 	DeleteGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error
 
 	// GroupMappings is the tenant's mapping table, and MapGroup writes one row
-	// of it. Mapping is the workspace's door (user:read, user:manage) rather
-	// than the protocol's: it is a role assignment decided in advance by an
-	// administrator at a screen, not an act of provisioning.
+	// of it. Mapping is the workspace's door (user:read, user:manage) rather than
+	// the protocol's: it is a role assignment decided in advance by an
+	// administrator at a screen, not an act of provisioning. MapGroup rechecks
+	// the caller's scope itself, so a caller whose credential carries its own
+	// authority cannot reach this table by naming the command instead of the door.
 	GroupMappings(ctx context.Context, tx db.Tx[db.Tenant]) (MappingList, error)
 	MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group string, role string) (*GroupMapping, error)
 }
@@ -416,13 +431,39 @@ func (ResourceTypeList) ContentType(string) string { return mediaType }
 func (Schema) ContentType(string) string           { return mediaType }
 func (SchemaList) ContentType(string) string       { return mediaType }
 
-// MappingList, ResourceTypeList and SchemaList are the protocol's list answers.
-// They are named types rather than slices because the document a client reads is
-// an array body, and an array body has to name its own media type like any other.
+// MappingList is the tenant's own bindings, read at the workspace's door. It is
+// an array body rather than a ListResponse because it is this platform's list and
+// not the protocol's: no SCIM client reads it, and the door that does is guarded
+// by the user module's permissions. An array body has to name its own media type
+// like any other.
+type MappingList []*GroupMapping
+
+// ResourceTypeList and SchemaList are the protocol's two discovery collections,
+// and they are the ListResponse envelope rather than a bare array because
+// RFC 7644 §4 answers a GET that returns many documents with one document — the
+// same envelope a page of people and a page of groups use, for the same reason: a
+// client decodes a list of this protocol as a ListResponse, and the two addresses
+// a client uses to find out what the service serves are the last two it should
+// fail to decode.
+//
+// The two are separate types rather than one generic envelope because huma builds
+// an OpenAPI schema out of each, and a client reads that document before it reads
+// either body.
 type (
-	MappingList      []*GroupMapping
-	ResourceTypeList []*ResourceType
-	SchemaList       []*Schema
+	ResourceTypeList struct {
+		Schemas      []string        `json:"schemas"`
+		TotalResults int             `json:"totalResults"`
+		StartIndex   int             `json:"startIndex"`
+		ItemsPerPage int             `json:"itemsPerPage"`
+		Resources    []*ResourceType `json:"Resources,omitempty"`
+	}
+	SchemaList struct {
+		Schemas      []string  `json:"schemas"`
+		TotalResults int       `json:"totalResults"`
+		StartIndex   int       `json:"startIndex"`
+		ItemsPerPage int       `json:"itemsPerPage"`
+		Resources    []*Schema `json:"Resources,omitempty"`
+	}
 )
 
 // FoldName is how the protocol's split name becomes this platform's one name.

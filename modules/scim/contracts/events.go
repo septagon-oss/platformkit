@@ -31,7 +31,33 @@ const (
 	EventGroupChanged   = "scim.group_changed"
 	EventGroupRemoved   = "scim.group_removed"
 	EventMappingChanged = "scim.mapping_changed"
+	EventUserChanged    = "scim.user_changed"
 )
+
+// UserChanged is the payload of EventUserChanged: an attribute of a person that
+// no other module's event describes was written here, and the trail has to say so
+// even though the person's row stays modules/user's.
+//
+// Which attributes those are is a short list and it is decided by ownership, not
+// by taste: `externalId` lives in this module's own table, and `displayName` is
+// the one column of modules/user this door writes and that module publishes
+// nothing about — its commands are Invite, ConfirmAddress, SetRoles, SetHandle
+// and Deactivate, and a rename is none of them. Everything else a SCIM write does
+// to a person already has an event under a `user.` name: an invitation, a
+// verified address, a set of roles, a deactivation. What is missing is the record
+// of a connector changing what somebody is called or which of its own identifiers
+// it calls them by, which is exactly the pair a person reads the trail for after
+// a directory sync rewrote half its people.
+//
+// `Changed` names the attributes, in the protocol's own spelling, and nothing
+// else: what the old value was and what the new one is stay out of a payload the
+// trail keeps for a year, which is the rule modules/audit writes for every
+// payload in the platform.
+type UserChanged struct {
+	User    uuid.UUID `json:"user"`
+	Changed []string  `json:"changed"`
+	At      time.Time `json:"at"`
+}
 
 // GroupCreated is the payload of EventGroupCreated: a collection the identity
 // provider names now exists in this tenant, with however many members arrived

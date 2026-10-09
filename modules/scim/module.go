@@ -24,10 +24,10 @@ import (
 // which are somebody else's rows.
 type Deps struct {
 	// Users is the only writer of people this module knows. Provisioning is
-	// Invite, ConfirmAddress, SetRoles and Deactivate; there is no SQL in this
-	// module that touches the users table, and there must not be, because the
-	// rules about who may become what — and who may take the last administrator
-	// away — live behind those commands.
+	// Invite, ConfirmAddress, SetRoles and Deactivate; this module writes no column
+	// of the users table and locks a person's row only to decide what their roles
+	// become, because the rules about who may become what — and who may take the
+	// last administrator away — live behind those commands.
 	Users usercontracts.Service
 
 	// Roles answers whether this tenant knows a role name at all, which is the
@@ -66,20 +66,25 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		// The four events of the state this module owns: the collection, its
-		// membership, its removal, and this tenant's binding of a collection to a
-		// role. What happens to a person stays modules/user's event — an identity
-		// created by a connector and one created by an administrator are the same
-		// fact and are published by one name — but a group declared with nobody in it
-		// changes nobody's roles, and a withdrawn mapping decides what a role costs
-		// without writing a single user row, so neither fact lives anywhere at all
-		// unless this module publishes it. The audit trail subscribes to every name
-		// in every manifest, so declaring these is what makes a group write auditable.
+		// The five events of the state and the writes this module owns: the
+		// collection, its membership, its removal, this tenant's binding of a
+		// collection to a role, and the two attributes of a person no other module
+		// publishes. What happens to a person otherwise stays modules/user's event —
+		// an identity created by a connector and one created by an administrator are
+		// the same fact and are published by one name — but a group declared with
+		// nobody in it changes nobody's roles, a withdrawn mapping decides what a role
+		// costs without writing a single user row, and modules/user owns no command
+		// for a name, so a connector that renamed a person or re-labelled them with
+		// one of its own identifiers would otherwise leave no trace anywhere at all.
+		// The audit trail subscribes to every name in every manifest, so declaring
+		// these is what makes a group or a person write auditable at the door it
+		// arrived through.
 		Declared: []events.Declared{
 			events.Declare[contracts.GroupCreated](contracts.EventGroupCreated),
 			events.Declare[contracts.GroupChanged](contracts.EventGroupChanged),
 			events.Declare[contracts.GroupRemoved](contracts.EventGroupRemoved),
 			events.Declare[contracts.MappingChanged](contracts.EventMappingChanged),
+			events.Declare[contracts.UserChanged](contracts.EventUserChanged),
 		},
 		Nav:           nil,
 		Jobs:          nil,

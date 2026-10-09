@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/scim/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
@@ -314,8 +316,18 @@ func (s *Service) CreateUser(ctx context.Context, tx db.Tx[db.Tenant], in contra
 			return nil, err
 		}
 	}
-	if err := s.setExternal(ctx, tx, u.ID, in.ExternalID); err != nil {
+	wrote, err := s.setExternal(ctx, tx, u.ID, in.ExternalID)
+	if err != nil {
 		return nil, err
+	}
+	if wrote {
+		// The person's arrival is user.invited and their activation is
+		// user.email_verified, but the identifier the provider calls them by is this
+		// module's row and no event under a `user.` name could describe it, so the
+		// create that carried one says so here as well.
+		if err := s.recordPersonChanged(ctx, tx, u.ID, "externalId"); err != nil {
+			return nil, err
+		}
 	}
 	return s.GetUser(ctx, tx, u.ID)
 }
@@ -330,6 +342,12 @@ func (s *Service) CreateUser(ctx context.Context, tx db.Tx[db.Tenant], in contra
 // the login lookup, and the user module owns no command that moves it — a SCIM
 // write that renamed the address would be an account the person cannot find their
 // way back into, with no event anywhere saying it happened.
+//
+// `active` is read in both directions. A document that says `true` is saying the
+// provider vouches for this mailbox, which is ConfirmAddress's fact and the same
+// judgement PATCH makes; answering it by leaving an invited person unable to sign
+// in while returning 200 would be a door that tells a connector its write landed
+// when it did not, and Okta's documented update path is a PUT.
 func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in contracts.UserDraft) (*contracts.UserResource, error) {
 	if err := refused(in); err != nil {
 		return nil, err
@@ -341,16 +359,40 @@ func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	if want := strings.ToLower(strings.TrimSpace(userNameOf(in, row))); want != "" && want != strings.ToLower(row.Email) {
 		return nil, fmt.Errorf("%w: userName is the person's address and this tenant's login lookup; no door here moves it", crud.ErrInvalid)
 	}
+	changed := make([]string, 0, 3)
 	name := contracts.FoldName(in.DisplayName, in.Name)
-	if err := s.rename(ctx, tx, id, name); err != nil {
+	wrote, err := s.rename(ctx, tx, id, name)
+	if err != nil {
 		return nil, err
 	}
-	if in.Active != nil && !*in.Active {
-		if _, err := s.users.Deactivate(ctx, tx, id); err != nil {
-			return nil, err
+	if wrote {
+		changed = append(changed, "displayName")
+	}
+	if in.Active != nil {
+		if !*in.Active {
+			if _, err := s.users.Deactivate(ctx, tx, id); err != nil {
+				return nil, err
+			}
+		} else if row.Status != usercontracts.StatusActive {
+			// The one activation door reachable from here, and the same refusal PATCH
+			// makes: a closed account or one awaiting a person's own approval is not
+			// reopened by an integration, because the approval is a person's act. Both
+			// halves of `active` are published by modules/user under their own names —
+			// user.email_verified and user.deactivated — so neither is added to the
+			// list below: one fact, one event, whoever opened the door.
+			if _, err := s.users.ConfirmAddress(ctx, tx, id, row.Email); err != nil {
+				return nil, err
+			}
 		}
 	}
-	if err := s.setExternal(ctx, tx, id, in.ExternalID); err != nil {
+	wrote, err = s.setExternal(ctx, tx, id, in.ExternalID)
+	if err != nil {
+		return nil, err
+	}
+	if wrote {
+		changed = append(changed, "externalId")
+	}
+	if err := s.recordPersonChanged(ctx, tx, id, changed...); err != nil {
 		return nil, err
 	}
 	return s.GetUser(ctx, tx, id)
@@ -403,9 +445,14 @@ func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 			return nil, fmt.Errorf("%w: %q is not an attribute this service writes", crud.ErrInvalid, op.Path)
 		}
 	}
+	changed := make([]string, 0, 2)
 	if wroteName {
-		if err := s.rename(ctx, tx, id, name); err != nil {
+		wrote, err := s.rename(ctx, tx, id, name)
+		if err != nil {
 			return nil, err
+		}
+		if wrote {
+			changed = append(changed, "displayName")
 		}
 	}
 	if wroteActive {
@@ -424,9 +471,20 @@ func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 		}
 	}
 	if wroteExternal {
-		if err := s.setExternal(ctx, tx, id, external); err != nil {
+		wrote, err := s.setExternal(ctx, tx, id, external)
+		if err != nil {
 			return nil, err
 		}
+		if wrote {
+			changed = append(changed, "externalId")
+		}
+	}
+	// One line for one request, naming what actually moved. A PATCH that repeated
+	// what the person was already called changed nobody and writes nothing, and an
+	// event saying otherwise would be a false entry in the one record a person
+	// reads to find out what a connector did to their directory.
+	if err := s.recordPersonChanged(ctx, tx, id, changed...); err != nil {
+		return nil, err
 	}
 	return s.GetUser(ctx, tx, id)
 }
@@ -446,42 +504,78 @@ func (s *Service) DeactivateUser(ctx context.Context, tx db.Tx[db.Tenant], id uu
 // rename writes the one name this platform keeps, and only when it changed. The
 // user module owns the row, so this goes through the generic write its own Spec
 // would take rather than an UPDATE of a table this module does not own.
-func (s *Service) rename(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, name string) error {
+//
+// It answers whether the row moved, because the caller has to say so in the trail:
+// modules/user publishes an event for every command it owns and owns no command
+// for a name, so a rename that arrived through this door would otherwise be the
+// one person-side write in the platform with no record that it happened.
+func (s *Service) rename(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, name string) (bool, error) {
 	u, err := s.users.Get(ctx, tx, id)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if u.DisplayName == name {
-		return nil
+		return false, nil
 	}
 	u.DisplayName = name
-	return crud.Update(ctx, tx, u, "display_name", "updated_at")
+	return true, crud.Update(ctx, tx, u, "display_name", "updated_at")
+}
+
+// recordPersonChanged writes the trail's record of an attribute of a person that
+// no event under a `user.` name describes. The list arrives already narrowed to
+// what changed, and an empty one writes nothing: a request that restated what was
+// already there is not an event, and the outbox is where an auditor reads what a
+// connector did.
+func (s *Service) recordPersonChanged(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, changed ...string) error {
+	if len(changed) == 0 {
+		return nil
+	}
+	return events.Publish(ctx, tx, contracts.EventUserChanged, contracts.UserChanged{
+		User: id, Changed: changed, At: db.Now(),
+	})
 }
 
 // setExternal records the identifier the provider calls this person by. An empty
 // one withdraws it, which is a write rather than a deletion so that a connector
 // that stops sending the id is not indistinguishable from one that never had it.
-func (s *Service) setExternal(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, external string) error {
+//
+// It answers whether the row moved for the same reason rename does, and the
+// reason is stronger here: this table is this module's own, so no other module's
+// event could ever describe what happened to it.
+func (s *Service) setExternal(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID, external string) (bool, error) {
 	external = strings.TrimSpace(external)
-	var row struct {
-		UserID uuid.UUID `gorm:"column:user_id"`
+	var held struct {
+		UserID     uuid.UUID `gorm:"column:user_id"`
+		ExternalID string    `gorm:"column:external_id"`
 	}
 	err := tx.DB().Table("scim_user_external").
-		Where("user_id = ? AND tenant_id = ?", userID, db.TenantOf(tx).ID).Take(&row).Error
+		Where("user_id = ? AND tenant_id = ?", userID, db.TenantOf(tx).ID).Take(&held).Error
 	switch {
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		if external == "" {
-			return nil
+			return false, nil
 		}
-		return tx.DB().Table("scim_user_external").Create(map[string]any{
+		if err := tx.DB().Table("scim_user_external").Create(map[string]any{
 			"tenant_id": db.TenantOf(tx).ID, "user_id": userID, "external_id": external,
-		}).Error
+		}).Error; err != nil {
+			return false, err
+		}
+		return true, nil
 	case err != nil:
-		return fmt.Errorf("scim: read external id: %w", err)
+		return false, fmt.Errorf("scim: read external id: %w", err)
 	}
-	return tx.DB().Table("scim_user_external").
+	if held.ExternalID == external {
+		// The same identifier again is not a write, and it is not an event either:
+		// a connector that re-sent what it had already sent changed nobody's record,
+		// and the trail would otherwise fill with a retry's noise.
+		return false, nil
+	}
+	if err := tx.DB().Table("scim_user_external").
 		Where("user_id = ? AND tenant_id = ?", userID, db.TenantOf(tx).ID).
-		Update("external_id", external).Error
+		Update("external_id", external).Error; err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // ListGroups pages the tenant's collections. The filter is refused the same way
@@ -777,6 +871,9 @@ func (s *Service) GroupMappings(_ context.Context, tx db.Tx[db.Tenant]) (contrac
 // to hold a role, and a credential a tenant hands to somebody else's identity
 // provider must not be able to say what a collection it mirrors grants.
 func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role string) (*contracts.GroupMapping, error) {
+	if err := mayBindMapping(ctx); err != nil {
+		return nil, err
+	}
 	g, err := s.groupByName(ctx, tx, group)
 	if err != nil {
 		return nil, err
@@ -805,6 +902,46 @@ func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role
 		return nil, err
 	}
 	return &contracts.GroupMapping{Group: g.Name, Role: want}, nil
+}
+
+// mayBindMapping is MapGroup's own recheck of who is asking, made inside the
+// transaction the binding is written in.
+//
+// The guard on the door is not the whole rule. MapGroup is exported, and this
+// module is called by other modules: a collaborator that took the request's own
+// transaction and called this by name would otherwise write a grant its actor
+// never held, and the answer would look like any other mapping — because it *is*
+// any other mapping, read back by every member of that group from that day. The
+// whole point of the tenant's provisioning credential is that it mirrors a
+// directory it does not own and cannot decide what mirroring it costs, and a rule
+// that holds only for whoever happens to enter through the HTTP door is that rule
+// with a hole in the shape of every other caller.
+//
+// What a module can decide for itself is the caller's own ceiling.
+// tenancy.Principal.Permissions is the authority a credential carries, and a
+// non-nil list is a ceiling and never an addition — so a caller whose credential
+// carries one is held to it here, by exact name, whoever it is and however it
+// reached this function. A refusal reads nothing, writes nothing, publishes
+// nothing and returns no row, and it arrives as the kernel's own 403 for a caller
+// that reached it through a request.
+//
+// What stays with the door is the question the module cannot answer: which
+// permissions a signed-in caller's roles carry is the auth module's table, and
+// reading it would be two modules' rows in one query (the same split as
+// RoleDirectory, answered at composition rather than reached across). So a caller
+// that carries no scope of its own is refused only by the guard its route
+// declared, and that limit is stated in the module's README and asked about by
+// TestMappingCommandRefusesAProvisionOnlyActor instead of being argued away.
+func mayBindMapping(ctx context.Context) error {
+	p, ok := tenancy.PrincipalFrom(ctx)
+	if !ok || p.Permissions == nil {
+		return nil
+	}
+	if slices.Contains(p.Permissions, usercontracts.PermissionUserManage) {
+		return nil
+	}
+	return fmt.Errorf("%w: binding a group to a role is %s work, and this credential carries its own scope without it",
+		tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
 }
 
 // mapGroup is the one write of the mapping table, from whichever door asked. It
@@ -950,6 +1087,20 @@ func membersOf(tx db.Tx[db.Tenant], groupID uuid.UUID) ([]uuid.UUID, error) {
 // mapping would silently ungrant a role a person was given by hand, or a hand
 // grant would silently survive the collection that was supposed to mean it.
 //
+// The order of the two reads below is the whole of the concurrency argument, and
+// it is not interchangeable with the order the sentences above fall into. A
+// membership write holds its *group's* lock, and two groups have two locks: a
+// person in both is being rewritten by two writers at once, each holding the one
+// row the other does not want. So each affected person is locked first, in
+// ascending id order so two writers cannot cross, and only then are the two facts
+// `want` is made of read — which of their collections they are still in, and which
+// roles the row already carries. Read before the lock, those two facts are a
+// snapshot of a moment that the other writer is spending: both writers compute
+// from the same stale roles, the one that finishes last writes back the role the
+// first one revoked, and the revocation is gone with nothing left to say it ever
+// happened. `SetRoles` locking the row again afterwards buys nothing here, because
+// by then the decision it would recheck has already been made from the old state.
+//
 // SetRoles is the user module's command, so the write publishes user.roles_set,
 // rechecks the caller's right to hand the role out, and holds the row while it
 // decides. It is refused — and the whole membership write with it, in this same
@@ -970,21 +1121,25 @@ func (s *Service) syncRoles(ctx context.Context, tx db.Tx[db.Tenant], ids []uuid
 	if len(unique) == 0 {
 		return nil
 	}
+	// The lock order, fixed here rather than left to whichever group arrived
+	// first: a writer that locked people in the order its own group listed them
+	// could be holding the one the other writer is waiting for.
+	slices.SortFunc(unique, func(a, b uuid.UUID) int { return bytes.Compare(a[:], b[:]) })
 	granted := make(map[string]bool, len(attributable))
 	for _, r := range attributable {
 		granted[r] = true
 	}
 	for _, id := range unique {
+		u, err := crud.GetForUpdate[*usercontracts.User](tx, id)
+		if err != nil {
+			return err
+		}
 		var brought []string
-		err := tx.DB().Table("scim_group_members gm").Distinct().Select("m.role").
+		err = tx.DB().Table("scim_group_members gm").Distinct().Select("m.role").
 			Joins("JOIN scim_group_mappings m ON m.group_id = gm.group_id").
 			Where("gm.user_id = ? AND m.role <> ''", id).Scan(&brought).Error
 		if err != nil {
 			return fmt.Errorf("scim: read the roles this person's groups bring: %w", err)
-		}
-		u, err := s.users.Get(ctx, tx, id)
-		if err != nil {
-			return err
 		}
 		want := make([]string, 0, len(u.Roles)+len(brought))
 		for _, r := range u.Roles {
