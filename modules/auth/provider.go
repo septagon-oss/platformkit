@@ -45,6 +45,10 @@ var Module = pkit.NewModule("auth", wire,
 	pkit.Needs[authcontracts.OIDCProviders](),
 	pkit.Needs[jobs.TenantLister](),
 	pkit.Needs[usercontracts.Granting](),
+	// Optional, not Needed: with no tenant module there is no tenant whose IdP could
+	// be resolved and no installation-level default to fall back to, so auth mounts
+	// no SAML leg at all rather than three doors that answer 404 for everybody.
+	pkit.Optional[authcontracts.SAMLProviders](),
 	pkit.Optional[authcontracts.RegistrationMode](),
 	pkit.Provides[authcontracts.Auth](),
 	pkit.Provides[httpx.Authorizer](),
@@ -75,6 +79,11 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		// payload and no audit record.
 		OIDC:          OIDCFromConfig(settings.OIDC),
 		OIDCProviders: pkit.Get[authcontracts.OIDCProviders](w),
+		// Optional rather than Needed, and the reason is the shape of the answer: a
+		// composition with no tenant module has no tenant whose IdP could be resolved,
+		// and SAML has no installation-level default to fall back to. It then mounts no
+		// SAML leg at all, which is what the surface says out loud.
+		SAMLProviders: pkit.Get[authcontracts.SAMLProviders](w),
 		Secrets:       EnvironmentSecrets{},
 		// A tenant that sets `provision` has said, at its own control-plane
 		// route, that an address its provider verified is an account here. The

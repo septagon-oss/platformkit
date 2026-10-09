@@ -106,8 +106,10 @@ type LoggedIn struct {
 	UserID uuid.UUID `json:"userId"`
 	// SessionRef(id), never the id: the id is the cookie credential (review 2026-09-29).
 	SessionRef string `json:"sessionRef"`
-	// Method is "password" or "oidc", because "somebody signed in with a
-	// password after we turned single sign-on on" is a question with an answer.
+	// Method is a contracts.SignInMethod — "password", "oidc" or "saml" — because
+	// "somebody signed in with a password after we turned single sign-on on" is a
+	// question with an answer, and it is the only field in this payload that says how
+	// somebody got in.
 	Method string    `json:"method"`
 	IP     string    `json:"ip,omitempty"`
 	At     time.Time `json:"at"`
