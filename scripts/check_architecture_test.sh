@@ -814,20 +814,42 @@ if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -
 	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
+# The race goal's own line, pinned the same way and for the same two reasons: the count, because a race
+# verdict served out of a build cache across commits is a worse answer than no detector, and the bound,
+# because go test's ten-minute default is a per-package clock nobody here chose. `apps/platformkit` is in
+# this goal's package list, and forge runs 521 and 519 each killed it at that default — 600.295s and
+# 603.370s, `panic: test timed out after 10m0s` with one case two seconds into its own start and the
+# rest of the package parked in t.Parallel — where the three race runs before them had taken that same
+# package 421.7s, 426.4s and 438.0s. The bound the line now states is `check`'s own, and the measurements
+# behind it are written above the line in the Makefile. The loop below refuses a re-pin that drops a part
+# the race gate is made of, so the number is arguable and the parts are not.
+race_fresh="go test -race -count=1 -timeout=30m"
+for race_part in "-race" "-count=1" "-timeout="; do
+	case " $race_fresh " in
+	*" $race_part"*) ;;
+	*)
+		echo "FAIL: the pinned race boundary no longer carries $race_part; that part is the race gate, so re-pin what the Makefile runs around it rather than this:" >&2
+		echo "$race_fresh" >&2
+		exit 1
+		;;
+	esac
+done
 case "$(race_commands -count=1 check-race)" in
-	'go test -race -count=1 ./'*) ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+	"$race_fresh ./"*) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"
 case "$empty_race" in
-	'go test -race '*'./apps/platformkit') ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
+	# Two spaces where the count was, and the bound still there: an empty TEST_COUNT is a caller taking
+	# its own count out, not this repository taking its clock out.
+	'go test -race  -timeout=30m '*./apps/platformkit) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race, its stated bound or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
 esac
 if [[ "$empty_race" == *-count* ]]; then
 	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2
 	exit 1
 fi
-echo 'test feedback: the count is one variable, the CI default stays fresh and an empty value costs only the count'
+echo 'test feedback: the count is one variable, the CI default stays fresh and bounded, and an empty value costs only the count'
 
 # An unrelated PATH formatter must not change formatting or hide tool errors.
 formatting="$temporary/formatting"

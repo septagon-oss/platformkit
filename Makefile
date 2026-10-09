@@ -283,7 +283,39 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
+	# The bound `make check` carries above, stated here too, for the reason written there: go test's
+	# ten-minute default is a clock over one package binary, and this goal's slowest package has been past
+	# it while still working. Four race runs of 2026-10-09 brought `apps/platformkit` in at 410.939s
+	# (forge run 501), 421.726s (509), 426.405s (505) and 437.988s (513). Three more took the same bytes
+	# past the default and reported them as a failure: run 517 `FAIL …/apps/platformkit 600.260s`, run 519
+	# 603.370s and run 521 — this branch's head — 600.295s, each under `panic: test timed out after 10m0s`
+	# with one case two or three seconds into its own start in the "running tests" line
+	# (TestASuspensionCannotReportCompleteSuccessWhenInvalidationFails,
+	# TestEveryAddressAShippedExampleNavigatesToIsStillServed,
+	# TestASuspensionThroughTheRouteStopsTheOtherProcessServingTheHost — three different cases, which is
+	# how a clock reads rather than a hang) and the goal's other database package, `modules/auth/internal`,
+	# at 487.272s, 490.160s and 473.359s on those same three runs against 246.080s to 312.342s on the four
+	# that passed. Whatever else those three runners were carrying is the difference — the same bytes at
+	# half the wall clock on the other four — and this step is one `go test` over ten package patterns at
+	# the check job's own GOFLAGS of -p=4 against one Postgres, so the slowest package waits behind its own
+	# neighbours too. Run 521's step had been running 13m27s (19:47:16Z to 20:00:43Z) when the default
+	# fired.
+	#
+	# Thirty minutes is the number that package already answers to in `check`'s line, sized there from a
+	# whole-suite run that took `modules/tenant/internal` to 18m37s: the same cases, the same database and
+	# the same host, so one bound sized for it serves both goals rather than one per goal and the other
+	# forgotten. It is a ceiling on one package, not a wait, so a healthy run never meets it — the four
+	# measurements above are its worst — and what it removes is a verdict that arrives as a panic over a
+	# suite still working. The job behind this line names 75 minutes for itself and the forge has cut it at
+	# about an hour, so the bound that stops a real hang is this line's rather than the job's either way.
+	#
+	# The count stays directly after `-race`, and the bound sits behind it rather than in front, for the
+	# same reason as in `check`'s line: scripts/ci_go_cache_test.sh reads the count where it sits, and a
+	# sentence of this comment that spelled the command out would answer that guard from prose. Three
+	# files hold this line's bytes — here, scripts/check_architecture_test.sh and
+	# scripts/make_check_count_default_test.sh — and both guards refuse a re-pin that drops -race, the
+	# count, the package list or any stated bound, so what a re-pin may change is the number itself.
+	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
