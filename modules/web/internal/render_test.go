@@ -29,7 +29,7 @@ func render(t *testing.T, nodes []g.Node) string {
 func TestTheDocumentPinsOnlyAThemeAndAColourItRecognises(t *testing.T) {
 	t.Parallel()
 	site := Site{}
-	pinned := site.view(&sitecontracts.SiteSettings{Theme: "dark", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", nil)
+	pinned := site.view(&sitecontracts.SiteSettings{Theme: "dark", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", sourceLanguage, nil)
 	if pinned.Theme != "dark" {
 		t.Errorf("theme = %q, want dark", pinned.Theme)
 	}
@@ -37,12 +37,12 @@ func TestTheDocumentPinsOnlyAThemeAndAColourItRecognises(t *testing.T) {
 		t.Errorf("head = %s", head)
 	}
 	for _, colour := range []string{"red", "#fff", "#c0ffee}body{display:none", "#C0FFEE;", "", "url(x)"} {
-		v := site.view(&sitecontracts.SiteSettings{Theme: "sepia", PrimaryColor: colour}, page.Request{}, "Welcome", nil)
+		v := site.view(&sitecontracts.SiteSettings{Theme: "sepia", PrimaryColor: colour}, page.Request{}, "Welcome", sourceLanguage, nil)
 		if v.Theme != "" || len(v.Head) != 0 {
 			t.Errorf("colour %q / theme sepia was pinned: theme=%q head=%d", colour, v.Theme, len(v.Head))
 		}
 	}
-	if v := site.view(&sitecontracts.SiteSettings{Theme: "light", PrimaryColor: "#C0FFEE"}, page.Request{}, "Welcome", nil); v.Theme != "light" || len(v.Head) != 1 {
+	if v := site.view(&sitecontracts.SiteSettings{Theme: "light", PrimaryColor: "#C0FFEE"}, page.Request{}, "Welcome", sourceLanguage, nil); v.Theme != "light" || len(v.Head) != 1 {
 		t.Error("upper-case hex and the light theme are valid and were refused")
 	}
 }
@@ -61,7 +61,7 @@ func TestTheSiteNamesItselfFromSettingsThenTenantThenBrand(t *testing.T) {
 	if got := name(&sitecontracts.SiteSettings{}, page.Request{}); got != brand {
 		t.Errorf("brand = %q", got)
 	}
-	body := render(t, []g.Node{Site{}.header(&sitecontracts.SiteSettings{Tagline: "Notes", Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}}}, acme)})
+	body := render(t, []g.Node{Site{}.header(&sitecontracts.SiteSettings{Tagline: "Notes", Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}}}, acme, sourceLanguage)})
 	for _, want := range []string{">Acme<", "Notes", `href="/about"`, `aria-label="Site navigation"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("header lacks %q:\n%s", want, body)

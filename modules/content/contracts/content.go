@@ -65,6 +65,16 @@ const (
 	MaxBody  = 262144
 )
 
+// FieldTitle and FieldBody are the JSON names of the two fields a reader of a
+// page reads. They are spelled here because whoever translates this entity needs
+// them by name — the side-by-side view keys on them, and modules/web reads a
+// page's text through the translation port rather than through this struct — and
+// a name two callers each typed separately is a name neither can trust.
+const (
+	FieldTitle = "title"
+	FieldBody  = "body"
+)
+
 // fold is the transliteration Slugify does before it drops what is left. It is
 // the letters that carry no combining mark to strip — norm.NFD gets the accents,
 // and these are the ones decomposition does not touch — so that a German, Danish,
