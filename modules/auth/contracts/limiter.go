@@ -147,7 +147,10 @@ const (
 // log. It is the right way for this one to fail: the alternative is an
 // installation nobody can sign in to because a counter table is unreachable,
 // and every refusal this makes is a refusal the password check would make
-// anyway.
+// anyway. Which stores those are is stated once, in kit/limit/README.md: an
+// attempt the counter did not record, because the key's row was still busy with
+// it, arrives as a refusal carrying no error, and a refusal is never allowed
+// here.
 //
 // It lives in contracts rather than in internal/ because the lockout is part of
 // what Login promises, so the fake keeps it too and the conformance suite can
