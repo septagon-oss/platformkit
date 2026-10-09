@@ -418,6 +418,17 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# brings its prose under the rule in the same commit. It starts nothing and reads tracked text; the
 	# planted cases it proves itself on are written into a directory of its own, outside the tree.
 	bash scripts/test_comments_explain_what_they_protect_test.sh
+	# scripts/comment_group_boundaries_test.py asks whether the guard above can still see the shape it
+	# exists for. It runs that guard's own scanner definitions, read out of the file above rather than
+	# copied, on inputs no test file in the tree happens to contain: a citation wrapped over the last two
+	# lines of a file, behind a blank line and a tab, at each of the two comment markers and each of the
+	# two line endings, where a group reader that stops at end of file or numbers a group from its last
+	# line loses the phrase; a blank line and a line of code between two comment groups, which must stay
+	# two groups so two unrelated sentences never collapse into one citation; and the domain prose —
+	# "Review the proposal", "rounded 5 values" — that has to stay allowed. Three mutants of those
+	# definitions die on it: a run that carries on across code, a group reported at its last line, and a
+	# matcher that refuses the word "review". It starts nothing, reads two files and answers in 5 ms.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/comment_group_boundaries_test.py
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
