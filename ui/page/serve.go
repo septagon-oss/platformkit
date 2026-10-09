@@ -189,7 +189,7 @@ func read(ctx context.Context, c Chrome) Request {
 		r.Principal, r.SignedIn = p, true
 	}
 	if req, ok := httpx.RequestFrom(ctx); ok {
-		r.Path = req.URL.Path
+		r.Path, r.Host = req.URL.Path, req.Host
 	}
 	if c.Theme == "" {
 		r.Inline = []g.Node{InlineScript(ctx, beforePaint)}
