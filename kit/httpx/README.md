@@ -166,7 +166,10 @@ them lives in [../idempotency](../idempotency), and the counter behind the other
 **The header.** A write that carries `Idempotency-Key` is answered from a
 [record](../idempotency/idempotency.go) rather than run again: the same key, the same
 body and the same caller get the first attempt's status, `Content-Type` and body, and
-the handler does not run. The same key with a different body is a 422 —
+the handler does not run. "The same write" is digested over the method, the mounted
+pattern, the path *as it arrived* — chi routes on `RawPath`, so `/records/a%2Fb/c` and
+`/records/a/b%2Fc` are two resources and one decoded path is not one resource — the
+query, the content type and the body. The same key with a different body is a 422 —
 `IDEMPOTENCY_KEY_IN_USE` — because the only way out of a spent key is a fresh one; a
 retry that arrives while the first is still running is a 409,
 `IDEMPOTENCY_IN_FLIGHT`, which is the answer no caller can compute from the outside.

@@ -131,6 +131,25 @@ func isToken(v string) bool {
 	return true
 }
 
+// addressOf is the path half of the request identity: the address as it arrived on
+// the wire, not a decoding of it.
+//
+// The distinction is not cosmetic. `PATCH /records/a%2Fb/c` and
+// `PATCH /records/a/b%2Fc` decode to one path, /records/a/b/c, and route to two
+// resources — chi matches on RawPath when the request carries one, and huma then
+// unescapes each captured parameter on its own, so the first binds group `a/b` and id
+// `c` and the second binds group `a` and id `b/c`. A digest over the decoding cannot
+// tell the two writes apart, and the harm of that is the harm of the missing path
+// below: one caller's retry answered with the other resource's answer, its own write
+// suppressed and nothing on the wire saying so. Digesting the sent bytes is also the
+// direction that fails safe — two spellings of one address (`%2F` and `%2f`) are two
+// records, which costs a caller a 422 on a retry rather than an answer for a different
+// resource. URL.EscapedPath is Go's own verdict on which spelling a request sent:
+// it answers RawPath when that is a faithful encoding of Path and the re-escaped Path
+// otherwise, so a request that carries no escapes digests the same string it always
+// did, and `%20` names one address however the space reached it.
+func addressOf(r *http.Request) string { return r.URL.EscapedPath() }
+
 // fingerprint is what the request was, digested. Every field here is one a caller
 // can change while believing they retried the same write — the address, the query,
 // the content type, one byte of the body — and a record keyed on the body alone
@@ -143,7 +162,8 @@ func isToken(v string) bool {
 // pattern the write was aimed at. `PATCH /records/first` and `PATCH /records/second`
 // match one pattern and are two writes, and a memory that could not tell them apart
 // would answer for a resource it never touched — the second caller told their write
-// succeeded while the first one's answer is what came back.
+// succeeded while the first one's answer is what came back. That is the reason the
+// path enters as addressOf spells it rather than as the router's own decoding.
 func fingerprint(method, route, path, rawQuery, contentType string, body []byte) [sha256.Size]byte {
 	h := sha256.New()
 	for _, part := range []string{method, route, path, rawQuery, contentType} {
@@ -238,7 +258,7 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 		Method: ctx.Method(),
 		Route:  routeOf(ctx),
 		Key:    key,
-		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), ctx.URL().Path,
+		Fingerprint: fingerprint(ctx.Method(), routeOf(ctx), addressOf(r),
 			r.URL.RawQuery, r.Header.Get("Content-Type"), body),
 	}
 
