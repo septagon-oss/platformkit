@@ -25,10 +25,11 @@
 --     REVOKE says nothing about: the table's owner, and a superuser, both of which hold
 --     every privilege by definition and cannot be refused by a grant.
 --
--- Three triggers, one per way a row stops being what it was: UPDATE rewrites one, the
--- UPDATE trigger refuses it; DELETE removes one, the DELETE trigger admits only the
--- expiry shape; TRUNCATE removes every row of every tenant at once, and the TRUNCATE
--- trigger refuses it outright. The last is the one no REVOKE can be trusted for, twice
+-- Four triggers, one per way a row stops being what it was: UPDATE rewrites one, the
+-- UPDATE trigger refuses it; DELETE removes one, the DELETE row trigger admits only the
+-- expiry shape and the DELETE statement trigger refuses an expiry by a role the deployment
+-- gave an append door beside the trail; TRUNCATE removes every row of every tenant at once,
+-- and the TRUNCATE trigger refuses it outright. The last is the one no REVOKE can be trusted for, twice
 -- over: it is refused by a grant the operator can hand back with one statement, and it
 -- ignores row-level security, so the one write that reaches across tenants is exactly
 -- the one a privilege list alone would have to catch. PostgreSQL lets a BEFORE TRUNCATE
@@ -66,8 +67,14 @@
 -- unforgeable in a way a chain would: this table gains no prev_hash, and README.md's
 -- Limits section carries the sentence that it is still owed.
 
--- The two bodies touch only pg_catalog (pg_trigger's OID, has_table_privilege,
--- has_column_privilege, pg_attribute, current_user), so the path is pinned: a caller's
+-- Which clause is asked where is a cost rather than a taste: the trail's own privileges are
+-- one catalog lookup and belong on the row, where the floor lives too, and the append doors a
+-- deployment can build beside the trail are a walk over pg_depend and belong on the statement.
+-- Both halves are measured in the header of audit_events_never_expired_through_a_door.
+--
+-- The bodies touch only pg_catalog (pg_trigger's OID, pg_depend, pg_rewrite, pg_class,
+-- has_table_privilege, has_column_privilege, has_any_column_privilege, pg_attribute,
+-- current_user), so the path is pinned: a caller's
 -- search_path must not be able to resolve a different pg_class, a different
 -- pg_attribute, or a different privilege function under it.
 CREATE FUNCTION audit_events_never_rewritten() RETURNS trigger
@@ -88,8 +95,9 @@ CREATE FUNCTION audit_events_expire_only_after() RETURNS trigger
 AS $$
 BEGIN
 	-- Capability, not identity, and not a setting: may delete, may not append, and
-	-- past the floor. The first two conditions are what make the retention role a
-	-- different role from the application rather than the application wearing a hat.
+	-- past the floor. The first condition and the append question together are what make the
+	-- retention role a different role from the application rather than the application
+	-- wearing a hat.
 	IF has_table_privilege(current_user, TG_RELID, 'DELETE')
 		AND NOT has_table_privilege(current_user, TG_RELID, 'INSERT')
 		-- "May not append" is asked of every column and not only of the table. INSERT is
@@ -97,7 +105,7 @@ BEGIN
 		-- GRANT INSERT ON audit_events, and GRANT INSERT (tenant_id, occurred_at, name,
 		-- actor, event_id, payload, records, request_id, client_ip, traceparent) ON
 		-- audit_events, which is what a least-privilege writer is handed when the trail's
-		-- own generated columns are to stay generated. has_column_privilege reports a
+		-- own defaults are to stay the table's. has_column_privilege reports a
 		-- table-level grant through each of the table's columns too, so this one clause
 		-- covers both grant shapes — and the table-only clause above does not, which is how
 		-- a role with no table-level INSERT appended through the real service and then
@@ -105,6 +113,14 @@ BEGIN
 		-- F1). One column right is enough to insert a row alongside its defaults, so the
 		-- answer is "any column", not "every column"; and no deployment that grants INSERT
 		-- by column can be fenced by a question that only asks about the table.
+		--
+		-- What these two clauses cannot see is an append made through a relation that draws its
+		-- rows from the trail rather than one the trail granted INSERT to — a deployment's own
+		-- view over it — because that question is not answered by this table's ACL or by any
+		-- column of it. audit_events_never_expired_through_a_door asks it, once per DELETE
+		-- statement: asked per row, the same question costs 1.1 ms a row measured — 23 s to
+		-- expire 20 000 rows, where the same sweep asked once per statement costs what the
+		-- fence without it costs (its header carries both numbers and how they were run).
 		AND NOT EXISTS (
 			SELECT 1 FROM pg_attribute col
 			WHERE col.attrelid = TG_RELID AND col.attnum > 0 AND NOT col.attisdropped
@@ -115,6 +131,66 @@ BEGIN
 	END IF;
 	RAISE EXCEPTION 'audit history is append-only: % refuses an expiry by %', TG_TABLE_NAME, current_user
 		USING ERRCODE = 'insufficient_privilege';
+END
+$$;
+
+-- The append door a deployment can build beside the trail is asked about once per DELETE
+-- statement, and not in the row trigger at all. An INSERT through a plain view resolves as the
+-- view's owner — PostgreSQL's security_invoker option defaults to off — so a view over the trail
+-- owned by the trail's owner writes history for a role the trail granted no INSERT at either
+-- level, and the row trigger's two clauses read that role as an expiry role: it appended through
+-- the deployment's own object, then DELETEd the row unmarked. What a role may append to the trail
+-- is a fact about the deployment's objects, not about which catalog row its grant was written
+-- against, so the walk follows the hinges pg_depend records between a rule and the relation it
+-- reads, as far as they go — a view over a view is the same door with one more hinge in it — and
+-- one INSERT right on any column of any of them opens it. internal.TestViewAppenderCannotExpireHistory
+-- and internal.TestViewOverViewAppenderCannotExpireHistory are the two doors, one with each depth.
+--
+-- FOR EACH STATEMENT is the shape this costs, and the number is measured rather than assumed.
+-- Expiring 20 000 aged rows in one DELETE on the supplied stack: the fence as it stood before this
+-- trigger answers in 10 microseconds a row (183–279 ms for the sweep, nine runs), this same walk
+-- asked per row answers in 1.1 milliseconds a row (22.7–27.4 s — a retention job that never
+-- finishes), and asked once per statement it changes nothing an interleaved run can see, with a
+-- view over the trail or without one (174–356 ms and 183–345 ms, nine runs each). A BEFORE
+-- STATEMENT trigger fires before the first row trigger and before any row is touched, so a refused
+-- expiry leaves the trail exactly where it was, and it refuses the retention job's own delete no
+-- more often than the row trigger refuses it today: the same capability question, answered earlier
+-- and a thousand times cheaper.
+CREATE FUNCTION audit_events_never_expired_through_a_door() RETURNS trigger
+	LANGUAGE plpgsql
+	SET search_path = pg_catalog
+AS $$
+BEGIN
+	-- Only the expiry shape is worth the walk: a role that cannot delete was refused by the
+	-- privilege check that ran before this trigger fired, and one that may append directly is
+	-- refused by the row trigger's clauses either way.
+	IF has_table_privilege(current_user, TG_RELID, 'DELETE')
+		AND EXISTS (
+			WITH RECURSIVE append_door(oid) AS (
+				SELECT drawn.ev_class
+				FROM pg_depend hinge
+				JOIN pg_rewrite drawn ON drawn.oid = hinge.objid
+				JOIN pg_class door ON door.oid = drawn.ev_class AND door.relkind = 'v'
+				WHERE hinge.classid = 'pg_rewrite'::regclass
+					AND hinge.refclassid = 'pg_class'::regclass
+					AND hinge.refobjid = TG_RELID
+				UNION
+				SELECT drawn.ev_class
+				FROM pg_depend hinge
+				JOIN pg_rewrite drawn ON drawn.oid = hinge.objid
+				JOIN pg_class door ON door.oid = drawn.ev_class AND door.relkind = 'v'
+				JOIN append_door drawn_from ON drawn_from.oid = hinge.refobjid
+			)
+			SELECT 1 FROM append_door door
+			WHERE has_any_column_privilege(current_user, door.oid, 'INSERT')
+		) THEN
+		RAISE EXCEPTION 'audit history is append-only: % refuses an expiry by %: the role appends through a view over it',
+			TG_TABLE_NAME, current_user
+			USING ERRCODE = 'insufficient_privilege';
+	END IF;
+	-- A BEFORE trigger returns the row it would write and a statement-level one has no row;
+	-- NULL is PostgreSQL's "carry on with the row the planner already has".
+	RETURN NULL;
 END
 $$;
 
@@ -132,6 +208,14 @@ CREATE TRIGGER audit_events_never_rewritten
 CREATE TRIGGER audit_events_never_emptied
 	BEFORE TRUNCATE ON audit_events
 	FOR EACH STATEMENT EXECUTE FUNCTION audit_events_never_rewritten();
+
+-- BEFORE DELETE, FOR EACH STATEMENT: the door beside the trail, asked once for the whole
+-- statement and before any row is touched. It is a statement trigger because the question is
+-- about the deployment's objects rather than about one row, and because the same question asked
+-- per row makes a retention sweep two thousand times the cost it needs to be.
+CREATE TRIGGER audit_events_never_expired_through_a_door
+	BEFORE DELETE ON audit_events
+	FOR EACH STATEMENT EXECUTE FUNCTION audit_events_never_expired_through_a_door();
 
 -- BEFORE DELETE: the append door and the expiry door are different doors, and an
 -- expiry inside the floor is the same forgery in a slower costume.

@@ -54,13 +54,16 @@ That is now true of the database and not only of this module's code.
 `migrations/000041_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
 `REFERENCES` and `TRIGGER` from every grantee the catalog discovers (the shape
 `kit/db/migrate.go` uses for the runner's own ledger, because a module may name no
-role), and installs three triggers: `audit_events_never_rewritten` refuses every
+role), and installs four triggers: `audit_events_never_rewritten` refuses every
 `UPDATE`, from every role including the table's owner and a superuser;
 `audit_events_expire_only_after` admits a `DELETE` only when the role holding it may
 delete, may **not** insert — asked of every column as well as of the table, because
 `INSERT (col, …)` is a grant an application really holds and `has_table_privilege` alone
-answers "no" about a role that appends through one — and the row is past 365 days; and
-`audit_events_never_emptied` refuses `TRUNCATE` outright. The last is the reason the
+answers "no" about a role that appends through one — and the row is past 365 days;
+`audit_events_never_expired_through_a_door` refuses a `DELETE` by a role that can append
+through a view the deployment built over the trail, which nothing in the trail's own
+grants can see, asked once per statement because asked per row it costs a sweep three
+orders of magnitude; and `audit_events_never_emptied` refuses `TRUNCATE` outright. The last is the reason the
 revoke alone is not the fence. `TRUNCATE` ignores row-level security, so it is the one
 write that reaches every tenant's history out of one tenant's transaction, and an
 operator's `GRANT ALL … TO <app role>` hands it back in one statement. A `BEFORE
@@ -81,9 +84,11 @@ three statements as that role inside an ordinary tenant transaction, and
 The residual, in one sentence: the application role still *holds* `DELETE` on
 `audit_events` — `has_table_privilege` answers true — and cannot use it, because the door
 that admits an expiry must be a capability and not a setting the fenced role can write.
-`TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer, and
+`TestExpiryRoleIsTheOnlyDoor` is the behaviour behind that answer,
 `TestColumnAppenderCannotExpireHistory` is the same answer for the role whose `INSERT`
-arrives by column rather than by table.
+arrives by column rather than by table, and
+`TestViewAppenderCannotExpireHistory` and `TestViewOverViewAppenderCannotExpireHistory`
+are the same answer for the role whose append arrives through a view over the trail.
 
 Retention runs as a third role, `database.retain_url`: the job opens it for the length
 of one run, deletes a batch per transaction, and writes one row per batch into
@@ -157,7 +162,7 @@ table/RLS/policy shape, `kit/jobs/backfill.go`'s ignore-the-scheduler's-connecti
 shape, `jobs.PerTenantConcurrent` and `jobs.TenantLister`, `kit/db`'s `Open`
 role check, and the `Service` interface and hand-written `httpx.Register` shape
 `internal/handler.go` already carries. **Added** — `000041_audit_history_append_only.up.sql`
-(the revoke and the three triggers) and `000042_audit_retention_marks.up.sql`, because
+(the revoke and the four triggers) and `000042_audit_retention_marks.up.sql`, because
 nothing in the repository had ever revoked a privilege from a module table or written
 a trigger, and a trigger is the only thing that refuses the table's own owner;
 `Deps.RetainURL` and `database.retain_url`, because the expiry door must be a role the
@@ -165,7 +170,7 @@ application is not; and `dbtest.Role`, because the two handles a test had — th
 superuser owner and the appending application role — cannot stand where a
 delete-only role stands. **Made reusable** — `dbtest.Role`, a generic "create the role
 this boundary needs and hand me its DSN" door for the next module that fences a table
-by capability, and the trigger triple plus the mark table as the pattern for any other
+by capability, and the four triggers plus the mark table as the pattern for any other
 append-only table this kernel takes over.
 
 ## Limits
@@ -174,10 +179,14 @@ Four things this delivery leaves open, named where the reviewer will look.
 
 * **The application role still holds `DELETE`** on `audit_events`, and
   `has_table_privilege` answers true. What it cannot do is use it: the door the trigger
-  admits is a *shape* (may delete, may not append by table or by column, past the floor)
-  precisely so that no setting the fenced role can write opens it. What the privilege
-  cannot buy is the delete: `TestExpiryRoleIsTheOnlyDoor` is the behaviour, and a role
-  that can `DROP TRIGGER` is the DDL role, outside this boundary by definition.
+  admits is a *shape* (may delete, may not append — by table, by column, or through a view
+  the deployment built over the trail — and only past the floor) precisely so that no
+  setting the fenced role can write opens it. What the privilege cannot buy is the delete:
+  `TestExpiryRoleIsTheOnlyDoor` is the behaviour, and a role that can `DROP TRIGGER` is the
+  DDL role, outside this boundary by definition. The door question walks views to any depth
+  and stops there: a `SECURITY DEFINER` function that inserts into the trail and grants
+  `EXECUTE` onward is another append door an installation could build, and it is refused by
+  never writing one, the way the trail's own append path is.
 * **No hash chain.** Decision 0013's per-tenant `seq` with a `prev_hash`/`hash` pair,
   an advisory lock over the append and a checkpoint row are still owed. What is
   delivered proves that nothing inside the application's reach rewrote or expired a
