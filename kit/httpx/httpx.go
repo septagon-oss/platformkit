@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -392,6 +393,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	errorShape.Do(func() { huma.NewError = problem.HumaError })
 
 	config := huma.DefaultConfig("PlatformKit", "1.0.0")
+	config.Components.Schemas = huma.NewMapRegistry("#/components/schemas/", schemaNamer)
 	if cfg.PublicHost != "" {
 		config.Servers = []*huma.Server{{URL: "https://" + cfg.PublicHost}}
 	}
@@ -772,4 +774,24 @@ func describe(op *huma.Operation) string {
 		return op.Method + " " + op.Path
 	}
 	return op.Method + " " + op.Path + " (" + op.OperationID + ")"
+}
+
+// schemaNamer is huma's own namer with one concession, and the concession is
+// the language overlay's: a translated page's body *is* the page's body — the
+// same items, the same paging, the same total — and the overlay adds a header
+// and answers a query parameter, not a member. Left alone, huma names the
+// anonymous struct behind a translated page after its parent, so the same
+// document shape would be published twice under "PageContentBody" and
+// "TranslatedPageContentBody": a client generator would emit two types for one
+// wire object, and this repository's own OpenAPI gate (rule B3) reads a renamed
+// schema where no member moved. Only unnamed struct hints are rewritten: they
+// are generated from the parent's name and are the overlay's whole footprint,
+// while named types — a TranslateBody that genuinely is a new shape — keep
+// whatever name the type itself states.
+func schemaNamer(t reflect.Type, hint string) string {
+	name := huma.DefaultSchemaNamer(t, hint)
+	if t.Name() == "" {
+		name = strings.TrimPrefix(name, "Translated")
+	}
+	return name
 }

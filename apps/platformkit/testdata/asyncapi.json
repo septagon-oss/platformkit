@@ -3228,6 +3228,74 @@
       "summary": "Every tenant's delivery of tenant.suspended.",
       "title": "tenant.suspended"
     },
+    "translation.updated": {
+      "address": "platformkit.*.translation.updated",
+      "description": "Published at platformkit.{tenantId}.translation.updated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "translation.updated": {
+          "contentType": "application/json",
+          "name": "translation.updated",
+          "payload": {
+            "properties": {
+              "entity": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "locale": {
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "origin": {
+                "type": "string"
+              },
+              "recordId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "reviewedAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "revision": {
+                "type": "integer"
+              },
+              "sourceHash": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              },
+              "translator": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "module",
+              "entity",
+              "recordId",
+              "field",
+              "locale",
+              "status",
+              "origin",
+              "revision"
+            ],
+            "type": "object"
+          },
+          "summary": "translation — translation.updated",
+          "title": "translation.updated"
+        }
+      },
+      "summary": "Every tenant's delivery of translation.updated.",
+      "title": "translation.updated"
+    },
     "user.deactivated": {
       "address": "platformkit.*.user.deactivated",
       "description": "Published at platformkit.{tenantId}.user.deactivated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4902,6 +4970,23 @@
       "tags": [
         {
           "name": "tenant"
+        }
+      ]
+    },
+    "translation.updated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/translation.updated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/translation.updated/messages/translation.updated"
+        }
+      ],
+      "summary": "The translation module publishes translation.updated.",
+      "tags": [
+        {
+          "name": "translation"
         }
       ]
     },
