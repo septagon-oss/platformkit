@@ -297,6 +297,16 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
 
+# The journey steps this module publishes are a surface a pinned consumer compiles against, and
+# nothing else here asks them a question: `make check` builds Go, and gate 10 transpiles the two
+# files without asking whether they should exist. So the published names, the specifiers a module
+# zip can carry, the addresses the reference application serves and the hosts a harness step may
+# fall back to are decided here, beside check-apidiff, which makes the same promise about Go. It
+# reads text and builds no fixture tree, so nothing it asks needs node, a browser or a database —
+# the placement argument check-run-owner makes above.
+check-step-library: ## Refuse a published journey step that vanished, or one that cannot load from the pin
+	bash scripts/e2e_step_library_test.sh
+
 # Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
@@ -369,7 +379,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-step-library check-rehearse check-apidiff ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
