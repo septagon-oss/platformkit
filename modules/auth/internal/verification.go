@@ -140,7 +140,7 @@ const credentialWriteBudget = 2 * time.Second
 
 // postVerification commits one verification credential on its own.
 func (s *Service) postVerification(ctx context.Context, id uuid.UUID, email, token string, at time.Time) error {
-	return s.writeVerification(ctx, "commit", func(tx db.Tx[db.Tenant]) error {
+	return s.writeCredential(ctx, "commit", "verification", func(tx db.Tx[db.Tenant]) error {
 		return tx.DB().Exec("INSERT INTO verification_tokens (token_hash, tenant_id, user_id, email, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)"+
 			" ON CONFLICT (tenant_id, user_id) DO UPDATE SET token_hash = EXCLUDED.token_hash, email = EXCLUDED.email,"+
 			" created_at = EXCLUDED.created_at, expires_at = EXCLUDED.expires_at, sent_at = NULL",
@@ -159,7 +159,7 @@ func (s *Service) postVerification(ctx context.Context, id uuid.UUID, email, tok
 // error: the retry then rotates the row it finds and mails a fresh credential, so
 // no row outlives its twenty-four hours and no link goes out twice.
 func (s *Service) retractVerification(ctx context.Context, id uuid.UUID, token string) {
-	err := s.writeVerification(ctx, "withdraw", func(tx db.Tx[db.Tenant]) error {
+	err := s.writeCredential(ctx, "withdraw", "verification", func(tx db.Tx[db.Tenant]) error {
 		return tx.DB().Exec("DELETE FROM verification_tokens WHERE user_id = ? AND token_hash = ?",
 			id, contracts.Hash(token)).Error
 	})
@@ -169,9 +169,11 @@ func (s *Service) retractVerification(ctx context.Context, id uuid.UUID, token s
 	}
 }
 
-// writeVerification runs one statement about one credential in a transaction
-// that commits by itself, which is the only shape that puts a row in front of a
-// reader before the message that names it is sent.
+// writeCredential runs one statement about one emailed credential in a
+// transaction that commits by itself, which is the only shape that puts a row in
+// front of a reader before the message that names it is sent. Both credentials
+// this module mails are written through here, because "ahead of the message, on
+// the pool the caller carries" is one rule and two spellings of it drift.
 //
 // The pool is the one on the context — the same door every detached write in
 // this module asks (see forget), and the reason it is asked rather than carried:
@@ -185,15 +187,15 @@ func (s *Service) retractVerification(ctx context.Context, id uuid.UUID, token s
 // would join it rather than end before the send; context.WithoutCancel because a
 // delivery whose deadline has passed must not abandon a row halfway through
 // writing it — the statement is bounded by its own budget instead.
-func (s *Service) writeVerification(ctx context.Context, what string, stmt func(db.Tx[db.Tenant]) error) error {
+func (s *Service) writeCredential(ctx context.Context, verb, kind string, stmt func(db.Tx[db.Tenant]) error) error {
 	conn, ok := httpx.ConnFrom(ctx)
 	if !ok {
-		return fmt.Errorf("auth: %s the emailed verification credential: this caller carries no application pool", what)
+		return fmt.Errorf("auth: %s the emailed %s credential: this caller carries no application pool", verb, kind)
 	}
 	run, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), credentialWriteBudget)
 	defer cancel()
 	if err := db.Run(run, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error { return stmt(tx) }); err != nil {
-		return fmt.Errorf("auth: %s the emailed verification credential: %w", what, err)
+		return fmt.Errorf("auth: %s the emailed %s credential: %w", verb, kind, err)
 	}
 	return nil
 }
