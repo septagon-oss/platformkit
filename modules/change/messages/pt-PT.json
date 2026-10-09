@@ -35,6 +35,60 @@
       "": "este tipo de registo não aceita propostas de alteração"
     }
   },
+  "change.refusal.stale_proposal": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "esta proposta mudou desde que este formulário foi desenhado; volte a lê-la antes de decidir outra vez",
+    "plural": {
+      "": "esta proposta mudou desde que este formulário foi desenhado; volte a lê-la antes de decidir outra vez"
+    }
+  },
+  "change.refusal.already_decided": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "esta proposta já foi decidida; se discorda do resultado, proponha a alteração de novo",
+    "plural": {
+      "": "esta proposta já foi decidida; se discorda do resultado, proponha a alteração de novo"
+    }
+  },
+  "change.refusal.not_approved": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "só uma proposta aprovada pode ser aplicada; esta proposta não está aprovada",
+    "plural": {
+      "": "só uma proposta aprovada pode ser aplicada; esta proposta não está aprovada"
+    }
+  },
+  "change.refusal.not_proposer": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "só a pessoa que propôs uma alteração a pode retirar; se discorda dela, recuse-a",
+    "plural": {
+      "": "só a pessoa que propôs uma alteração a pode retirar; se discorda dela, recuse-a"
+    }
+  },
+  "change.refusal.proposal_over": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "esta proposta já terminou e não aceita mais comandos; proponha a alteração de novo",
+    "plural": {
+      "": "esta proposta já terminou e não aceita mais comandos; proponha a alteração de novo"
+    }
+  },
+  "change.refusal.verdict": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "um veredicto é aprovado ou recusado",
+    "plural": {
+      "": "um veredicto é aprovado ou recusado"
+    }
+  },
   "permission.change:read": {
     "references": [
       "modules/change/module.go"
