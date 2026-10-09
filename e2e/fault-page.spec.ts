@@ -60,10 +60,11 @@ for (const width of [390, 1440]) {
     expect(await value.text(), 'the JSON answer says what is missing').toContain('"status":404');
 
     // And a person who lands here is not left with a status code and nowhere to go:
-    // the page the site mount answers carries the *site's* way onward. Round 1 wrote
-    // this address up as a page with "no link on it at all"; asked again, at both
-    // widths, with a browser and with curl, the link that was absent is the
-    // workspace's — the site's own is on the page, and this is the case that says so.
+    // the page the site mount answers carries the *site's* way onward. An earlier
+    // reading of this address wrote it up as a page with "no link on it at all";
+    // asked again, at both widths, with a browser and with curl, the link that was
+    // absent is the workspace's — the site's own is on the page, and this is the
+    // case that says so.
     await expect(page.getByRole('link', { name: 'Back to the site' })).toBeVisible();
   });
 

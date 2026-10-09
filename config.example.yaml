@@ -202,9 +202,13 @@ auth:
 # difference between "this machine has no relay today" and "this installation
 # accepted a sign-up whose confirmation nobody will ever receive".
 mail:
-  # "" sends nothing; "mailbox" keeps every message in this process. Nothing else.
-  sink: ""
   host: ""
+  # sink picks where a deployment with no mail server puts what it is asked to
+  # send: "" or mailbox keeps it in this process, and none composes no transport
+  # at all, which is what makes a sign-up answer 503 rather than file a message
+  # nobody will ever read. Nothing else is a sink: an empty host never picks the
+  # in-process mailbox, which is why the key exists.
+  sink: ""
   # Submission with STARTTLS, which is what a modern relay listens on.
   port: 587
   username: ""
