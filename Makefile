@@ -467,6 +467,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# with more comment than a pipe buffer holds, so the refusal cannot depend on whether the writer
 	# happened to finish first, and asks for the guard's own verdicts on both sides of the padding.
 	bash scripts/ci_go_cache_guard_comments_test.sh
+	# The one step of the check job that asks a mirror for anything. Its `apt-get update` ended the job
+	# red on 2026-10-09 with exit 100 and no assertion — `File has unexpected size … Mirror sync in
+	# progress?`, a CDN node whose index had rolled forward under the Release it was serving — and every
+	# guard that asks for psql, ss or PyYAML was red behind a fact about Canonical's mirrors. This file
+	# runs the retry it replaced: which failures are worth another ask, how long they wait, that a fact
+	# about the index is refused at once, that every step of the workflows which asks apt for a package
+	# goes through that bound, and that the step which buys three tools asks all three whether they
+	# arrived. It breaks no mirror of its own: the stub apt-get answers from memory, and the one case that
+	# pays the real waits pays the first of them.
+	bash scripts/ci_apt_index_test.sh
 	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
 	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
 	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that

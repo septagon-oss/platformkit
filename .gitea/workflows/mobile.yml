@@ -185,11 +185,17 @@ jobs:
           adb version
           emulator -version | head -3
 
+      # The same retry the kernel's check job asks for, and the same measured reason: `apt-get update`
+      # ends this step under `bash -e`, so a mirror mid-sync leaves this job no `psql` and the role
+      # below never gets prepared. scripts/ci_apt_index.sh holds why a retry is the answer; this is the
+      # line that stops the journey's job from being the one half of the program that still pays a
+      # mirror's bad minute in full. scripts/ci_apt_index_test.sh runs this body against a stub apt-get
+      # that refuses the way the mirror refused.
       - name: Install the database client and prepare the role
         env:
           PGPASSWORD: platformkit
         run: |
-          apt-get update
+          bash scripts/ci_apt_index.sh
           apt-get install --yes --no-install-recommends postgresql-client
           psql -h postgres -U postgres -d platformkit -v ON_ERROR_STOP=1 -f apps/platformkit/postgres-init.sql
 

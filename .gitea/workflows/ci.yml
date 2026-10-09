@@ -284,10 +284,32 @@ jobs:
       # and exited 0. Case 11 of scripts/ci_go_cache_test.sh is the matching refusal: it
       # asks the Makefile which goals it runs parse YAML and this job whether it installs
       # a reader before the step that runs them.
+      #
+      # `apt-get update` is not a line of this file any more; it is a call to scripts/ci_apt_index.sh.
+      # Run 56143, job 56770 (head cea7e46b, 2026-10-09) ended this step with exit 100 and no assertion
+      # anywhere in its log, on `File has unexpected size (1377452 != 1380818). Mirror sync in
+      # progress?` from security.ubuntu.com — a CDN node serving a Release beside an index it had
+      # already rolled forward. The file's header holds the whole refusal and why a bounded retry is the
+      # answer rather than a rerun; scripts/ci_apt_index_test.sh pins the bound, the refusal, and that
+      # this step reaches the retry at all.
+      #
+      # The four lines under the install ask the three tools the same question the steps that need them
+      # will ask. Without them a step is green because apt exited 0, which says the index was readable
+      # and nothing about `psql`, `ss` or `import yaml` being there to answer; the guards that ask are
+      # the ones whose refusal reads like a defect in the tree.
       - name: Install the database client, the socket probe and the YAML reader
         run: |
-          apt-get update
+          bash scripts/ci_apt_index.sh
           apt-get install --yes --no-install-recommends postgresql-client iproute2 python3-yaml
+          missing=''
+          for tool in psql ss; do
+            command -v "$tool" >/dev/null 2>&1 || missing="$missing $tool"
+          done
+          python3 -c 'import yaml' >/dev/null 2>&1 || missing="$missing python3-yaml"
+          if [ -n "$missing" ]; then
+            echo "the install step exited 0 and these are still missing:${missing} — the guards that ask for one of them would refuse for a reason that is not in the tree" >&2
+            exit 1
+          fi
 
       - name: Start NATS with JetStream on this job's network
         id: nats
