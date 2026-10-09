@@ -2,7 +2,7 @@ package resource_test
 
 // times_test.go pins what a generated screen does with an instant. The words in
 // the cell are still the ones this kernel has always written — the zone a person
-// reads is chosen by the reader's own engine (ui/assets/js/times.js), and putting
+// reads is chosen by the reader's own engine (see ui/assets/js/components.js), and putting
 // a zone into the shared string instead would have moved every reading of it,
 // including everything kit/rest delegates. What is new is the machine-readable
 // instant beside those words, and the exact moment in the title.
