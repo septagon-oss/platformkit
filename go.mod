@@ -2,7 +2,7 @@ module github.com/septagon-oss/platformkit
 
 go 1.26.6
 
-toolchain go1.27.1
+toolchain go1.27.2
 
 require (
 	github.com/aserto-dev/go-authorizer v0.24.1
@@ -34,7 +34,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
