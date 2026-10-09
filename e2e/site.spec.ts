@@ -29,11 +29,11 @@ test('a new tenant opens on its starter home, and a published page takes its pla
   // The workspace is entered at its root: /app is the address the public frame is
   // allowed to offer (webcontracts.Links.SignIn, pinned by
   // TestThePublicFrameLinksOnlyTheWorkspaceRoot), and the root is what turns a
-  // visitor with no session towards the form. A tenant that opens on seeded content
-  // renders no "Sign in to the admin" link to follow — modules/web puts that link in
-  // nothingYet() and notPublished() alone — so the journey names the same door the
-  // link carries rather than clicking one this home page does not have. The form and
-  // the landing it answers for are main's own: the same next=%2Fapp, /app after.
+  // visitor with no session towards the form. The bar of a seeded home page offers
+  // that door too — modules/web carries it on every public page now, and
+  // public-frame-links-workspace-root.spec.ts is the browser's evidence for it —
+  // and this journey names the door itself, so it is not at the bar's mercy.
+  // The form and the landing it answers for are main's own: next=%2Fapp, /app after.
   await page.goto('/app');
   await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await page.getByLabel('Email').fill(email);
