@@ -201,8 +201,10 @@ proposal, no synthetic history. A tenant with no `change:decide` holder cannot
 approve anything, which is the configuration a customer's own roles decide — and
 that configuration is what the rule is for, so the module seeds none of it. The
 three keys are grantable the moment the module is composed, and
-`modules/change/messages/pt-PT.json` carries the words a refusal uses for a tenant
-served in Portuguese.
+`modules/change/messages/pt-PT.json` carries the copy of every refusal the two
+review pages answer with — one key per sentinel in `contracts`, which is what makes
+"a refusal speaks the page's language" true of the set rather than of the three
+cases somebody happened to write (the copy's edges are in Limits).
 
 ## The table
 
@@ -272,6 +274,19 @@ anyone emptied it — is a way through that closes itself. A task whose deadline
 priority was chosen is protected against deletion; a task carrying nothing but defaults is not,
 which is the difference between a door and a wall, and the reason `Writer.Save`'s one override is
 not the only way to remove a row.
+
+Translated copy, and where it stops. Every refusal `contracts` names — the nine a decider can act
+on — is keyed in `internal.refusalKey`, and `messages/pt-PT.json` answers all nine and the alert's
+heading. Three things stay English, by fact rather than by oversight, each owed its own key: the
+pages' own copy (`Decision`, `Approve`, `Apply`, `Withdraw`, the queue's toolbar), the
+literal-English convention `modules/admin`'s hand-drawn pages use; a refusal this module raises but
+never named, whose words belong to whoever raised it — `crud`'s own sentences, or the JSON error
+behind `Apply`'s merge of a stored diff, which names the value that broke rather than the cure; and
+`contracts.Refusal`, the gated door's sentence, which the shell interpolates inside
+`fault.holds_the_row` around its English. A translated refusal is the service's sentence without the
+number or the state name the English interpolates — x/text formats a catalogue line with the
+arguments a caller passes and the page passes none — and the row's state and the revision it is on
+now are drawn on the same page, above the controls.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
