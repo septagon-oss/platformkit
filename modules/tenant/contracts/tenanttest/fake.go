@@ -31,6 +31,7 @@ type Fake struct {
 	tenants map[uuid.UUID]contracts.Tenant
 	hosts   map[string]uuid.UUID
 	oidc    map[uuid.UUID]contracts.OIDCSettings
+	saml    map[uuid.UUID]contracts.SAMLSettings
 	log     []publication
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.

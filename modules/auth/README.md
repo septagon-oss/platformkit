@@ -1,9 +1,10 @@
 # Auth module
 
 `modules/auth` is signing in: sessions and passwords, single sign-on through
-each tenant's own OpenID Connect provider (the installation may name one of its
-own, and a tenant's row names another), the roles that decide what a caller may
-do, and the three opt-in registration modes described in
+each tenant's own OpenID Connect or SAML provider (the installation may name one
+of its own over OIDC, and a tenant's row names another of either kind), the roles
+that decide what a caller may do, and the three opt-in registration modes
+described in
 [ARCHITECTURE.md](../../ARCHITECTURE.md#start-at-the-composition). Routes live
 under `/api/v1/auth`, and the doors an anonymous caller may use — the ones
 the public surface serves — under `/api/v1/public/auth`; `role:manage` guards
@@ -79,6 +80,59 @@ a user id and no list can name a session by one. **Made reusable:**
 provider cache keyed by issuer rather than by tenant, so two tenants sharing a
 door discover it once; and the discovery-port shape itself — a module that asks
 its composition per request instead of holding a client it resolved at boot.
+
+## A SAML assertion at the same door
+
+`Deps.SAMLProviders` mounts three app-surface routes — `auth-saml-start`,
+`auth-saml-callback` and `auth-saml-metadata` — for a composition that can
+resolve a tenant's identity provider at all, and no route at all for one that
+cannot. The service provider is built per request from the row the `Host`
+resolved and addressed at that host, so two tenants on one installation have two
+entity IDs, two assertion consumer URLs and two metadata documents; what is kept
+between requests is only the parsed IdP document, keyed by its own bytes and by
+the URL it came from. The assertion is verified before anything is written: its
+own signature — a Response that signs its envelope and not the assertion inside
+it is refused, which is *not* the library's default and is the case
+`TestAnUnsignedSAMLAssertionIsRefused` holds at the door — its audience against
+this tenant's entity ID, its recipient against this host's ACS URL, its window
+with the library's 180-second skew, and the request it answers, which is the
+browser's own tracking cookie and the reason IdP-initiated sign-in is refused
+rather than allowed with less checking. The address the named attribute carries
+then runs the tenant's registration rule and `Service.Open`, the same call the
+OIDC callback finishes with, so the second-factor rule is not re-expressed here
+at all.
+
+Decision 0022, for this delivery. **Reused:** `Service.Open` and everything
+behind it — `ErrFactorRequired`, `markFirstFactorProved`, `refusedAtTheDoor`;
+`users.ByEmail`, `ConfirmAddress` and `contracts.Provisioner`, which is how an
+unknown address stays the tenant's decision rather than a protocol's;
+`discover`'s cached-resolution-and-503 shape for metadata that cannot be fetched;
+the hourly sweep's batched `purge` loop, one arm of which is the replay row's
+expiry; `httpx.Register` with `httpx.Public()`, and `redirectOutput` for the two
+legs. **Added:** the assertion consumer service and the per-tenant SP metadata
+document, because the trace found no served-XML surface and no inbound-POST leg
+anywhere to extend; the replay table `000047_saml_assertion_replays`, whose
+primary key *is* the claim; `contracts.SAMLProvider` and its `SAMLProviders`
+port, naming no SDK; and `Open`'s sign-in-method argument (`ViaOIDC`,
+`ViaSAML`) — the port grew by the one value its own trail already carried,
+because a login the log called "oidc" would send whoever reads it to the wrong
+provider about the person they are asking about. **Made reusable:** the
+per-request service provider as a shape — build it from the row, cache only the
+other party's document, key that cache by the document and not by the tenant; an
+external credential spent in the same transaction as the session it buys, which
+is the shape every later "presented exactly once" claim takes; and
+`authtest.SAMLIdP`, the in-process identity provider that can emit the unsigned,
+wrong-audience and wrong-recipient variant of an assertion by construction, so a
+refusal is tested against a document a real IdP would send rather than a
+hand-written one.
+
+What is deliberately not here: the service provider holds no key, so AuthnRequests
+go unsigned and the metadata names no `KeyDescriptor` (`contracts.Secrets` is
+where a key would arrive and a `saml_key_ref` column where it would land, neither
+of which anything reads today); an encrypted assertion is refused rather than
+parsed; there is no installation-level SAML default to fall back on, unlike
+OIDC — the legs mount on the port alone; and there is no single logout, so
+`auth.Logout` stands as the only way a session ends.
 
 ## A second factor
 

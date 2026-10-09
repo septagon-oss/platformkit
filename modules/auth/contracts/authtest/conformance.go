@@ -217,7 +217,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 
 		"a session opened for somebody already recognised is a session": func(t *testing.T, f Fixture) {
 			id := f.User("ada@acme.example.com", Password, contracts.RoleAdmin)
-			session, identity, err := f.Service.Open(f.Ctx, f.Tx, id, nobody)
+			session, identity, err := f.Service.Open(f.Ctx, f.Tx, id, nobody, contracts.ViaOIDC)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -228,7 +228,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// password is checked, and an account that is not active is still
 			// refused.
 			invited := f.User("invited@acme.example.com", "")
-			if _, _, err := f.Service.Open(f.Ctx, f.Tx, invited, nobody); !errors.Is(err, contracts.ErrCredentials) {
+			if _, _, err := f.Service.Open(f.Ctx, f.Tx, invited, nobody, contracts.ViaOIDC); !errors.Is(err, contracts.ErrCredentials) {
 				t.Errorf("Open for somebody who has not accepted their invitation = %v, want ErrCredentials", err)
 			}
 			published(t, f, contracts.EventLoggedIn)

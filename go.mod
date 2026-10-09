@@ -6,7 +6,9 @@ toolchain go1.27.1
 
 require (
 	github.com/aserto-dev/go-authorizer v0.24.1
+	github.com/beevik/etree v1.7.0
 	github.com/coreos/go-oidc/v3 v3.21.0
+	github.com/crewjam/saml v0.5.1
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/dave/dst v0.28.0
 	github.com/fergusstrange/embedded-postgres v1.34.0
@@ -33,7 +35,7 @@ require (
 	go.opentelemetry.io/otel/sdk/metric v1.46.0
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/crypto v0.57.0
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.23.0
 	golang.org/x/sys v0.48.0
@@ -63,6 +65,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/glob v1.0.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
+	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/css v1.0.1 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.30.0 // indirect
@@ -71,6 +74,7 @@ require (
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/klauspost/compress v1.20.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.0 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
@@ -81,6 +85,7 @@ require (
 	github.com/lestrrat-go/httprc/v3 v3.0.6 // indirect
 	github.com/lestrrat-go/jwx/v3 v3.3.0 // indirect
 	github.com/lestrrat-go/option/v2 v2.0.0 // indirect
+	github.com/mattermost/xml-roundtrip-validator v0.1.0 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
@@ -90,6 +95,7 @@ require (
 	github.com/philhofer/fwd v1.2.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/rs/xid v1.6.0 // indirect
+	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
