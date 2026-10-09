@@ -75,7 +75,7 @@ func TestRefusalsCarrySubmittedLinesAndRemedies(t *testing.T) {
 }
 
 func FuzzNormaliseIdempotent(f *testing.F) {
-	for _, source := range []string{"", "plain", "## Heading", "**bold** *italic*", "- one\n- two", "    code", "| A |\n| --- |\n| b |", "![x](" + testImage + ")", "<script>x</script>", "1. Open the door\n\n    Then walk in.\n\n2. Sit down", "- fruit\n\n    - apple\n    - pear", "Intro:\n\n    ```go\n    fmt.Println(1)\n    ```", "text\n\n    code\n\n\n    more", "Opening\n-----\n\n    code\n\n- a"} {
+	for _, source := range []string{"", "plain", "## Heading", "**bold** *italic*", "- one\n- two", "    code", "| A |\n| --- |\n| b |", "![x](" + testImage + ")", "<script>x</script>", "1. Open the door\n\n    Then walk in.\n\n2. Sit down", "- fruit\n\n    - apple\n    - pear", "Intro:\n\n    ```go\n    fmt.Println(1)\n    ```", "text\n\n    code\n\n\n    more", "Opening\n-----\n\n    code\n\n- a", "Tickets cost $5 and $8.", "see note:todo: later", "$x^{2}$", "$$a$$", "code span with `$5$`", `\:escaped:`, "Between $5 and $8, with $1,299.99 a year"} {
 		f.Add(source)
 	}
 	f.Fuzz(func(t *testing.T, source string) {
