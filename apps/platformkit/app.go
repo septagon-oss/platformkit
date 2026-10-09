@@ -26,6 +26,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -46,6 +47,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -63,22 +65,38 @@ import (
 // place a service is handed over: the same values the resolver put, seen from
 // outside it.
 type composition struct {
-	modules  []module.Module
-	options  app.Options
-	planned  *pkit.Planned
-	tenants  tenantcontracts.Service
-	users    usercontracts.Service
-	auth     authcontracts.Auth
-	notify   notificationcontracts.Service
-	mail     notificationcontracts.Mailer
-	files    filecontracts.Service
-	plans    httpx.Entitler
-	task     taskcontracts.Service
-	content  contentcontracts.Service
-	sites    sitecontracts.Service
-	access   httpx.AskForAccess
-	granter  page.Granter
-	messages xtext.Catalog
+	modules []module.Module
+	options app.Options
+	planned *pkit.Planned
+	tenants tenantcontracts.Service
+	users   usercontracts.Service
+	auth    authcontracts.Auth
+	notify  notificationcontracts.Service
+	mail    notificationcontracts.Mailer
+	files   filecontracts.Service
+	plans   httpx.Entitler
+	task    taskcontracts.Service
+	content contentcontracts.Service
+	sites   sitecontracts.Service
+	// The three values the workspace's own face is read from, and the two facts
+	// about the installation that no module owns: whether it mounted a password
+	// door at all, and whether a mail could leave it. See connection.go.
+	passkeys     authcontracts.PasskeyDoor
+	links        webcontracts.Links
+	signin       admincontracts.Signin
+	recoveryMail bool
+	// connection is the face this composition mounts at /api/v1/app/connection,
+	// filled below for the same reason `ask` and `shell` are: the mount is written
+	// in the sentence, and the answers come out of the plan.
+	connection *connectionFace
+	// passwordDoor is whether this installation mounted a password door at all,
+	// which is a fact about the composition and not about a tenant: a workspace
+	// with no door cannot be signed in to with a password whatever its person's
+	// account says.
+	passwordDoor bool
+	access       httpx.AskForAccess
+	granter      page.Granter
+	messages     xtext.Catalog
 }
 
 // reference is the application, its deployment, and the composition it resolved.
@@ -109,7 +127,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell := sentences(cfg)
+	a, ask, shell, face := sentences(cfg)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -128,9 +146,23 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		access:  ask,
 		// The words a refusal is allowed to use: the label of the grant that
 		// gates role management, read off the manifest that defines it.
-		granter: refusalGrant(p.Skin()),
+		granter:      refusalGrant(p.Skin()),
+		passkeys:     auth.NewPasskeyDoor(),
+		links:        value[webcontracts.Links](p),
+		signin:       value[admincontracts.Signin](p),
+		recoveryMail: cfg.Mail.Enabled(),
+		connection:   face,
 	}
+	// Whether a password door stands here at all is read off the plan the sentence
+	// resolved and not written as a constant: a composition that took auth out
+	// would otherwise keep advertising a door it stopped mounting, which is the
+	// same lie the ask above is built to avoid.
+	c.passwordDoor = c.auth != nil
 	*shell = faultShell(c.messages, c.granter)
+	// The face, filled from the composition the plan answered. The mount was
+	// written into the sentence with an empty holder beside it, because a mount is
+	// part of the sentence and the answers are not.
+	*face = connectionFace{describe: c.describe}
 	return reference{app: a, once: once, composition: c}
 }
 
@@ -143,8 +175,8 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 // repository boots the same composition with when it wants the handler rather
 // than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell) {
-	ask, shell := &accessReach{}, &page.Shell{}
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *connectionFace) {
+	ask, shell, face := &accessReach{}, &page.Shell{}, &connectionFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg),
@@ -170,8 +202,8 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceCatalog())
-	return a, ask, shell
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
+	return a, ask, shell, face
 }
 
 // omitted takes the names a case asked to leave out of the list. It exists for

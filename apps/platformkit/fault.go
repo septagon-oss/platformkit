@@ -181,6 +181,22 @@ func workspaceCatalog() func(api *httpx.API) {
 	}
 }
 
+// workspaceFace mounts every module-less route this product owns on the workspace
+// surface. app.Options.WorkspaceCatalog is the only seam that hands a composition
+// the *httpx.API of /api/v1/app/… — no module may compose that prefix, and kit may
+// not import ui — and it takes an arbitrary mount function, so a second such route
+// needs no new kernel seam, only this line. The field's name is now narrower than
+// what runs through it: the catalogue and the connection document are both mounted
+// here, and both are the composition's because both addresses are the kernel's and
+// both bodies are ui's.
+func workspaceFace(routes ...func(api *httpx.API)) func(api *httpx.API) {
+	return func(api *httpx.API) {
+		for _, mount := range routes {
+			mount(api)
+		}
+	}
+}
+
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once
 // per composition. One page per shell, and the shell is this file's to build —

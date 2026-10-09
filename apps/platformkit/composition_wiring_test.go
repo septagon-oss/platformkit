@@ -36,7 +36,7 @@ import (
 // case that asks the resolver a question and reads nothing else. The two values
 // sentences also returns belong to the composition's own chrome.
 func sentencesOf(cfg config.Config, without ...string) *pkit.App {
-	a, _, _ := sentences(cfg, without...)
+	a, _, _, _ := sentences(cfg, without...)
 	return a
 }
 

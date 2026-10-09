@@ -46,3 +46,27 @@ None. `site:manage` does not set `Operator: true`, and the module registers no `
 The code names no role. A composition grants `site:manage` to the people who configure the tenant's site.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## The accent is measured, not typed-and-hoped
+
+`Validate` refuses a `primaryColor` that reads under `MinAccentRatio` (3:1) against
+*both* kit canvases — `CanvasLight` and `CanvasDark`, which are `design`'s
+`SurfaceCanvas` values, pinned to it by `TestTheCanvasesAreTheKitsOwn` rather than
+imported, because `contracts/` names no theme. The ratios are the WCAG 2.x ones, and
+3:1 is this repository's published target for non-text contrast: 4.5 would refuse
+`DefaultPrimaryColor`, and so every tenant that never chose a colour. It rejects and
+never adjusts, so the stored row, the served value and the trail's diff stay one
+value; an older out-of-band row still reads and still renders (`Settings` answers
+what is stored, and `AccentRatios` answers how it reads). One rule, in `Validate`,
+so the SQL service, the change apply and `sitetest`'s fake cannot disagree.
+
+## Composition
+
+**Reused** — `SiteSettings`, its `Validate`, `hexColor` and `DefaultPrimaryColor`;
+`rest.Singleton`'s public door; `design.Light()/Dark().SurfaceCanvas`; `sitetest`'s
+conformance harness, whose fake shares the rule by calling `Validate`.
+**Added** — `CanvasLight`, `CanvasDark`, `MinAccentRatio`, `ContrastRatio`,
+`AccentRatios` and the clause in `Validate`: no package here computed a contrast
+ratio, so nothing existing carried the judgement.
+**Made reusable** — `ContrastRatio(a, b)` and the pinned-canvas test, which any
+future theme check can call instead of re-deriving luminance a second time.
