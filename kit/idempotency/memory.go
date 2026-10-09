@@ -78,6 +78,21 @@ func (m *memory) Claim(_ context.Context, s Scope, at time.Time) (Verdict, error
 	return v, nil
 }
 
+func (m *memory) Begin(_ context.Context, s Scope, claim uuid.UUID, _ time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	cur, found := m.records[s.key()]
+	// The same three conditions the shared store puts in its WHERE clause: this
+	// attempt's claim, no answer landed, no mark already made. The claim moment keeps
+	// its reading — Begin neither lengthens nor shortens the lease.
+	if !found || cur.row.claim != claim || cur.row.completed || cur.row.began {
+		return ErrLostClaim
+	}
+	cur.row.began = true
+	m.records[s.key()] = cur
+	return nil
+}
+
 func (m *memory) Complete(_ context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error {
 	at = m.clock(at)
 	m.mu.Lock()

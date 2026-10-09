@@ -21,6 +21,7 @@ package idempotency
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -56,10 +57,26 @@ type Scope struct {
 
 // Answer is what the caller was finally given, held so the next attempt of the
 // same write can be handed the same thing rather than a second copy of the work.
+//
+// Headers are part of the answer rather than decoration on it: a 303 whose
+// Location is gone is not the same answer, it is a status with nothing to act
+// on. Which names are worth keeping is nobody's business here — this package
+// holds what it is given, verbatim, and kit/httpx decides what an answer
+// consists of. It is the same division that keeps the body opaque: the memory
+// does not read what it remembers.
 type Answer struct {
 	Status      int
 	ContentType string
 	Body        []byte
+	Headers     []Header
+}
+
+// Header is one response header kept with an answer, name and value exactly as
+// it was given. Order is kept, because a repeated name is a repeated value and
+// a set that lost its order is a set that replays differently than it answered.
+type Header struct {
+	Name  string `json:"n"`
+	Value string `json:"v"`
 }
 
 // VerdictKind is what one attempt at a key is met with.
@@ -100,6 +117,15 @@ type Verdict struct {
 type Store interface {
 	// Claim takes a key nobody holds, or reads what whoever holds it has.
 	Claim(ctx context.Context, s Scope, at time.Time) (Verdict, error)
+
+	// Begin marks that the attempt holding claim was let in to do the write. It is
+	// the one fact that separates a claim nobody acted on from a write that may have
+	// committed and never got its answer recorded, and only the record can carry it:
+	// the process that knows is the one that may have died. An abandoned claim the
+	// handler never entered may be taken up again by the next attempt; a begun one
+	// may not, because re-running it is the second write the key exists to prevent.
+	// Only the attempt that still owns the claim may mark it; nothing else changes.
+	Begin(ctx context.Context, s Scope, claim uuid.UUID, at time.Time) error
 
 	// Complete lands an answer, and only for the attempt that still owns the
 	// claim. The zero Status is the spent record: the write happened and its
@@ -238,9 +264,10 @@ func (p postgres) Claim(ctx context.Context, s Scope, at time.Time) (Verdict, er
 	taken = false
 	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		res := tx.DB().Exec(`UPDATE `+table+` SET claim = ?, claimed_at = ?, fingerprint = ?,
-				completed_at = NULL, recorded = FALSE, status = NULL, content_type = NULL, body = NULL
+				completed_at = NULL, recorded = FALSE, status = NULL, content_type = NULL, body = NULL,
+				headers = NULL, began = FALSE
 			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
-			  AND (claimed_at <= ? OR (completed_at IS NULL AND claimed_at <= ?))`,
+			  AND (claimed_at <= ? OR (completed_at IS NULL AND began = FALSE AND claimed_at <= ?))`,
 			claim, at, s.Fingerprint[:],
 			s.Tenant, s.Caller, s.Method, s.Route, s.Key,
 			at.Add(-retention), at.Add(-lease))
@@ -259,14 +286,45 @@ func (p postgres) Claim(ctx context.Context, s Scope, at time.Time) (Verdict, er
 	return Verdict{Kind: InFlight, Lease: remaining(existing, at, lease)}, nil
 }
 
+func (p postgres) Begin(ctx context.Context, s Scope, claim uuid.UUID, at time.Time) error {
+	// One conditional statement, for the reason kit/limit gives for merging its read
+	// and its write: the row is what decides, and a read-then-write is two answers
+	// about one attempt. A row that answers zero is a claim this attempt no longer
+	// holds or an answer already landed on it, and the caller must not walk in to the
+	// write on either.
+	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
+		res := tx.DB().Exec(`UPDATE `+table+` SET began = TRUE
+			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
+			  AND claim = ? AND began = FALSE AND completed_at IS NULL`,
+			s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrLostClaim
+		}
+		return nil
+	})
+	if err != nil && !errors.Is(err, ErrLostClaim) {
+		return fmt.Errorf("idempotency: begin: %w", err)
+	}
+	return err
+}
+
 func (p postgres) Complete(ctx context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error {
 	recorded := a.Status != 0
-	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
+	headers, err := encodeHeaders(a.Headers)
+	if err != nil {
+		// An answer this package cannot write down is an answer it must not half-
+		// remember: the status alone would be replayed as the whole of it.
+		return fmt.Errorf("idempotency: complete: %w", err)
+	}
+	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		res := tx.DB().Exec(`UPDATE `+table+`
-			SET completed_at = ?, recorded = ?, status = ?, content_type = ?, body = ?
+			SET completed_at = ?, recorded = ?, status = ?, content_type = ?, body = ?, headers = ?
 			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
 			  AND claim = ? AND completed_at IS NULL`,
-			at, recorded, a.Status, a.ContentType, answerBody(a),
+			at, recorded, a.Status, a.ContentType, answerBody(a), answerHeaders(a, headers),
 			s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim)
 		if res.Error != nil {
 			return res.Error
@@ -290,7 +348,7 @@ func (p postgres) read(ctx context.Context, s Scope) (*row, bool, error) {
 	)
 	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		rows, err := tx.DB().Raw(`SELECT fingerprint, claim, claimed_at, completed_at IS NOT NULL, recorded,
-			COALESCE(status, 0), COALESCE(content_type, ''), body
+			COALESCE(status, 0), COALESCE(content_type, ''), body, headers, began
 			FROM `+table+` WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?`,
 			s.Tenant, s.Caller, s.Method, s.Route, s.Key).Rows()
 		if err != nil {
@@ -301,12 +359,16 @@ func (p postgres) read(ctx context.Context, s Scope) (*row, bool, error) {
 			return rows.Err()
 		}
 		got = true
-		var fp []byte
-		if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &body); err != nil {
+		var fp, kept []byte
+		if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &body, &kept, &r.began); err != nil {
 			return err
 		}
 		copy(r.fingerprint[:], fp)
 		r.answer.Body = body
+		r.answer.Headers, err = decodeHeaders(kept)
+		if err != nil {
+			return err
+		}
 		return rows.Err()
 	})
 	if err != nil {
@@ -370,7 +432,12 @@ type row struct {
 	claimedAt   time.Time
 	completed   bool
 	recorded    bool
-	answer      Answer
+	// began says the attempt that holds this claim was let in to do the write. It
+	// is a boolean and not a timestamp because nothing reads the moment: the one
+	// question it answers is whether a claim whose lease ran out may be taken up
+	// again, and a time would be a field nothing consults.
+	began  bool
+	answer Answer
 }
 
 // decide is the whole disposition, and the only place it is decided.
@@ -398,6 +465,20 @@ func decide(existing *row, found bool, want Scope, at time.Time, claim uuid.UUID
 	}
 	if held := at.Sub(existing.claimedAt); held < lease {
 		return Verdict{Kind: InFlight, Lease: lease - held}
+	}
+	// The lease has run out and no answer came. Two very different attempts look
+	// like this, and only the record can tell them apart: one died before anybody
+	// acted on it, and taking it up again costs nothing; the other was let in to do
+	// the write, may have committed it, and simply never got its answer down — the
+	// store went away mid-request, or the process with it. Re-running the second is
+	// the duplicate the key exists to prevent, and no length of lease makes that
+	// window shorter, because the window is the write itself. So a begun claim is
+	// spent and its caller is refused, which is the direction that costs a retry and
+	// never a second write. See kit/httpx's Begin call for the other half: the mark
+	// is put on before the handler runs, so an attempt that never reached it stays
+	// takeable.
+	if existing.began {
+		return Verdict{Kind: Spent}
 	}
 	return Verdict{Kind: First, Claim: claim}
 }
@@ -429,4 +510,35 @@ func answerBody(a Answer) []byte {
 		return nil
 	}
 	return a.Body
+}
+
+// answerHeaders is the same rule for the headers: nothing is kept of an answer
+// that is not being kept.
+func answerHeaders(a Answer, encoded []byte) []byte {
+	if a.Status == 0 {
+		return nil
+	}
+	return encoded
+}
+
+// encodeHeaders is the row's own spelling of a kept header list: JSON in a bytea,
+// which is how the body is already held, so neither column is parsed by anything
+// but this package and a name kept is a name replayed verbatim. A list rather
+// than an object, because the same name may appear twice.
+func encodeHeaders(h []Header) ([]byte, error) {
+	if len(h) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(h)
+}
+
+func decodeHeaders(kept []byte) ([]Header, error) {
+	if len(kept) == 0 {
+		return nil, nil
+	}
+	var h []Header
+	if err := json.Unmarshal(kept, &h); err != nil {
+		return nil, err
+	}
+	return h, nil
 }

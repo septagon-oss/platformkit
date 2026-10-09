@@ -36,6 +36,15 @@ CREATE TABLE platformkit_idempotency (
 	-- believe they are the write.
 	claim        uuid        NOT NULL,
 	claimed_at   timestamptz NOT NULL DEFAULT now(),
+	-- Whether this attempt was let in to do the write. It is the one fact that
+	-- separates the two ways a claim can outlive its lease: an attempt that died
+	-- before anybody acted on it, which the next attempt may take up, and an attempt
+	-- that may have committed its write and never got its answer down — the store
+	-- went away mid-request, or the process with it. The second is answered as spent
+	-- and never re-run, because re-running it is the duplicate the key exists to
+	-- prevent and no length of lease shortens that window: the window is the write.
+	-- A boolean and not a timestamp — nothing reads the moment, only the verdict.
+	began        boolean     NOT NULL DEFAULT false,
 	-- NULL while the write is in flight. The takeover of an abandoned claim and the
 	-- purge both read this column rather than a status field, because "has an
 	-- answer" is the fact and a status enum is a second answer to the same question.
@@ -46,6 +55,13 @@ CREATE TABLE platformkit_idempotency (
 	status       integer,
 	content_type text,
 	body         bytea,
+	-- The answer's own response headers, JSON in a bytea the way the body is.
+	-- A 303 whose Location is gone is not the same answer: it is a status with
+	-- nothing to act on, and a caller who retried a form that worked could not reach
+	-- the page it said the write had finished at. Which names are worth keeping is
+	-- kit/httpx's decision (idempotency.go's keptHeaders); this row holds verbatim
+	-- what it is handed, the same way it holds the body.
+	headers      bytea,
 	PRIMARY KEY (tenant, caller, method, route, key)
 );
 

@@ -269,6 +269,52 @@ var cases = map[string]func(*testing.T, idempotency.Store, context.Context){
 			t.Fatalf("a spent key = %v, want Spent", v.Kind)
 		}
 	},
+
+	"a begun claim whose lease ran out is spent, not taken over": func(t *testing.T, s idempotency.Store, ctx context.Context) {
+		// The pair of "a claim older than the lease is taken over once", and the reason
+		// that case is not the whole rule: a claim nobody entered and a claim whose
+		// write committed and never got its answer down look identical until somebody
+		// marks which one it was. Taking the second over is the duplicate write.
+		one := scope("begun")
+		first, err := s.Claim(ctx, one, start)
+		if err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		if err := s.Begin(ctx, one, first.Claim, start); err != nil {
+			t.Fatalf("begin: %v", err)
+		}
+		v, err := s.Claim(ctx, one, start.Add(idempotency.Lease+time.Minute))
+		if err != nil {
+			t.Fatalf("claim after the lease: %v", err)
+		}
+		if v.Kind != idempotency.Spent {
+			t.Fatalf("an abandoned begun claim = %v, want Spent", v.Kind)
+		}
+		// While its lease runs the answer is the one every in-flight write gets: the
+		// mark changes what happens when the lease runs out, not what a caller is told
+		// while the attempt may still be answering.
+		if v, err = s.Claim(ctx, one, start.Add(time.Minute)); err != nil || v.Kind != idempotency.InFlight {
+			t.Fatalf("a begun claim while its lease runs = %v, %v, want InFlight", v.Kind, err)
+		}
+	},
+
+	"Begin belongs to whoever holds the claim": func(t *testing.T, s idempotency.Store, ctx context.Context) {
+		one := scope("begin-lost")
+		if _, err := s.Claim(ctx, one, start); err != nil {
+			t.Fatalf("claim: %v", err)
+		}
+		if err := s.Begin(ctx, one, uuid.New(), start); !errors.Is(err, idempotency.ErrLostClaim) {
+			t.Errorf("begin by a stranger = %v, want ErrLostClaim", err)
+		}
+		// The record is untouched, so its own holder can still mark it and answer.
+		first, err := s.Claim(ctx, one, start)
+		if err != nil {
+			t.Fatalf("re-claim: %v", err)
+		}
+		if first.Kind != idempotency.InFlight {
+			t.Fatalf("the holder's own claim = %v, want InFlight", first.Kind)
+		}
+	},
 }
 
 // TestPurgeKeepsWhatIsInsideTheDay asks the retention of the store that has to

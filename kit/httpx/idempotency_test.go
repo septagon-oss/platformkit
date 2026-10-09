@@ -438,6 +438,10 @@ func (brokenStore) Claim(context.Context, idempotency.Scope, time.Time) (idempot
 	return idempotency.Verdict{}, errStoreDown
 }
 
+func (brokenStore) Begin(context.Context, idempotency.Scope, uuid.UUID, time.Time) error {
+	return errStoreDown
+}
+
 func (brokenStore) Complete(context.Context, idempotency.Scope, uuid.UUID, idempotency.Answer, time.Time) error {
 	return errStoreDown
 }

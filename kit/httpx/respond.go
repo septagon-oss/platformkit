@@ -84,7 +84,7 @@ func (a *API) respond(next http.Handler) http.Handler {
 				// Read after send, because send is where a replaced answer has finished
 				// being replaced: the headers and the bytes here are the ones the caller
 				// was given, which is the only answer worth remembering.
-				a.complete(r.Context(), n, b.status, b.Header().Get("Content-Type"), b.body.Bytes(), held)
+				a.complete(r.Context(), n, b.status, b.Header(), b.body.Bytes(), held)
 			}
 		}()
 		next.ServeHTTP(b, r)

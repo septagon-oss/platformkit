@@ -278,6 +278,22 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 
 	switch v.Kind {
 	case idempotency.First:
+		// Before the handler, on the store, and before the note: this is the mark that
+		// says an attempt got as far as the write, and a write it committed may still
+		// be there when its answer is nowhere to be found. Put it on first, because
+		// the fact has to be durable before the thing it records can happen, and put
+		// it on failing closed, because a record that cannot be marked is a promise
+		// this attempt cannot keep and the write has to wait for it.
+		//
+		// An attempt that never gets past this line leaves no mark, which is what
+		// keeps the abandoned claim takeable: the store being down is never a reason a
+		// caller can never retry a write that demonstrably never ran.
+		if err := store.Begin(context.WithoutCancel(ctx.Context()), scope, v.Claim, time.Now().UTC()); err != nil {
+			a.rlog(ctx.Context()).ErrorContext(ctx.Context(), "httpx: the keyed write could not be marked as begun; the write is refused",
+				"method", ctx.Method(), "path", ctx.URL().Path, "error", err)
+			a.refuse(ctx, http.StatusServiceUnavailable, CodeIdempotencyUnavailable+": this write could not be remembered, so it was not made")
+			return
+		}
 		noteClaim(ctx, store, scope, v.Claim)
 		next(ctx)
 	case idempotency.Replay:
@@ -309,10 +325,21 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // the body keeps naming the request that did the work: a person quoting a replayed
 // 422 is quoting the call that produced it, and the two ids are how an operator
 // joins them. That divergence is stated so nobody calls it a bug later.
+//
+// What does travel, besides the body, is whatever keptHeaders names: the headers
+// the answer cannot be without. A redirect is a functional answer — the write is
+// done and the caller is being sent somewhere — and the retry of one that dropped
+// its destination is a caller left at a status with no page to go to.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
 		w.Header().Set("Content-Type", stored.ContentType)
+	}
+	// The kept headers go on before the status line, as every header does: a 303
+	// replayed without its Location is a status with nothing to act on, and the
+	// retry of a form that worked would arrive somewhere it could not go.
+	for _, h := range stored.Headers {
+		w.Header().Add(h.Name, h.Value)
 	}
 	// Both places, as declared does: the writer holds the answer, and the huma
 	// context holds the verdict the transaction middleware commits or rolls back on.
@@ -368,6 +395,34 @@ func withClaim(ctx context.Context) context.Context {
 	return context.WithValue(ctx, claimKey{}, &claimNote{})
 }
 
+// keptHeaders are the response headers an answer is not the same answer without.
+//
+// Two of them, both navigation: `Location` is the 303 a browser follows and
+// `HX-Redirect` is the same instruction as htmx reads it (html.go's Redirect
+// chooses between them by the request in front of it), so a keyed form post that
+// answered by sending the caller to the page its write finished at still sends
+// them there on the retry. Every other header is deliberately absent:
+// `Set-Cookie` is withheld by the public surface's own promise and by
+// buffer.go's writer, `Cache-Control` and `Vary` describe this exchange rather
+// than the answer, and `Content-Type` has its own field because it is the one
+// the row is read into. A header not on this list is a header a replay answers
+// without, which is the trade the memory makes on purpose: keep what the answer
+// does, not how it was transported.
+var keptHeaders = []string{"Location", "HX-Redirect"}
+
+// keepHeaders reads the headers worth keeping out of the response the caller was
+// finally given, in the order the list names them, with the value the writer
+// actually sent.
+func keepHeaders(h http.Header) []idempotency.Header {
+	var kept []idempotency.Header
+	for _, name := range keptHeaders {
+		if v := h.Get(name); v != "" {
+			kept = append(kept, idempotency.Header{Name: name, Value: v})
+		}
+	}
+	return kept
+}
+
 // completeBudget bounds the write-down, from kit/limit's budget for the same reason:
 // it runs beside an answer already given, and a stalled database must cost the log
 // line rather than a response that never finishes. It is five seconds for the reason
@@ -396,7 +451,7 @@ const completeBudget = 5 * time.Second
 // that hung up nor the transaction that closed underneath this defer can un-remember
 // an answer the caller received — and the caller who retries is precisely the caller
 // this row is for.
-func (a *API) complete(ctx context.Context, n *claimNote, status int, contentType string, body []byte, held bool) {
+func (a *API) complete(ctx context.Context, n *claimNote, status int, header http.Header, body []byte, held bool) {
 	if n == nil || n.store == nil || n.claim == uuid.Nil {
 		return
 	}
@@ -404,7 +459,7 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, contentTyp
 	if now == nil {
 		now = ctx
 	}
-	answer := idempotency.Answer{Status: status, ContentType: contentType, Body: body}
+	answer := idempotency.Answer{Status: status, ContentType: header.Get("Content-Type"), Body: body, Headers: keepHeaders(header)}
 	if !held || len(answer.Body) > maxRecordedAnswer {
 		// The bytes were already on the wire, or they are too large to hold: the
 		// write is remembered as spent, which costs the caller a 409 and never a
