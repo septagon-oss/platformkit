@@ -11,6 +11,7 @@ App `platformkit` · environment `development` · 17 modules · role `all`.
 pkit: platformkit in development builds 17 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
+pkit: a tenant of platformkit begins as subject_officer, holding subject:export and subject:erase.
 pkit: product.Module needs no other module.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
@@ -106,10 +107,14 @@ pkit: web.Module needs sitecontracts.Service from site.Module.
 pkit: web.Module needs contentcontracts.Service from content.Module.
 pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
-pkit: subject.Module is built after user.Module, notification.Module, auth.Module, file.Module, task.Module, content.Module, audit.Module and change.Module.
+pkit: subject.Module is built after user.Module, tenant.Module, notification.Module, auth.Module, file.Module, task.Module, content.Module, audit.Module and change.Module.
 pkit: subject.Module takes every personaldata.Part from user.Module, notification.Module, auth.Module, file.Module, task.Module, content.Module, audit.Module and change.Module.
 pkit: subject.Module needs usercontracts.Service from user.Module.
-pkit: subject.Module emits subject.erased.
+pkit: subject.Module needs filecontracts.Service from file.Module.
+pkit: subject.Module needs notificationcontracts.Service from notification.Module.
+pkit: subject.Module needs jobs.TenantLister from tenant.Module.
+pkit: subject.Module defines the permission subject:export and subject:erase.
+pkit: subject.Module emits subject.erased, subject.export_requested and subject.export_ready.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.
@@ -118,7 +123,6 @@ pkit: admin.Module could use admincontracts.Storybook; platformkit composes no p
 pkit: admin.Module runs after everything and saw every other module's manifest.
 pkit: admin.Module defines the permission gallery:read.
 pkit: tenant.Module provides httpx.TenantLoader; no module in platformkit needs it.
-pkit: file.Module provides filecontracts.Service; no module in platformkit needs it.
 pkit: task.Module provides taskcontracts.Service; no module in platformkit needs it.
 pkit: billing.Module provides httpx.Entitler; no module in platformkit needs it.
 pkit: auth.Module provides httpx.Authorizer; no module in platformkit needs it.

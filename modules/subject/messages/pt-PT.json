@@ -1,0 +1,20 @@
+{
+  "permission.subject:export": {
+    "references": [
+      "modules/subject/module.go"
+    ],
+    "translation": "exportar os dados de uma pessoa",
+    "plural": {
+      "": "exportar os dados de uma pessoa"
+    }
+  },
+  "permission.subject:erase": {
+    "references": [
+      "modules/subject/module.go"
+    ],
+    "translation": "apagar os dados de uma pessoa",
+    "plural": {
+      "": "apagar os dados de uma pessoa"
+    }
+  }
+}

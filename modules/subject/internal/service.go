@@ -19,6 +19,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -43,19 +44,41 @@ type service struct {
 	parts  []personaldata.Part
 	people usercontracts.Service
 	now    func() time.Time
+
+	// bundles and notifier are the two ports the door needs and the two commands do not:
+	// a bundle has to go somewhere and a person has to be told. A composition that wires
+	// neither has the read and the erasure, and the door says so rather than storing a
+	// bundle nowhere — which is why they are checked where they are used.
+	bundles  contracts.BundleSource
+	notifier contracts.Notifier
 }
 
-// NewService builds the two commands over the contributions the composition
-// collected. Now is the clock the bundle's manifest and the receipt are stamped
-// with, and nil means db.Now: a command that reads its own watch is a command a
-// test cannot stop at one instant.
-func NewService(parts []personaldata.Part, people usercontracts.Service, now func() time.Time) contracts.Service {
-	if people == nil {
-		panic("subject: an export and an erasure both start by reading the person, so the people service is not optional")
-	}
+// Deps is what this module cannot make for itself.
+type Deps struct {
+	// Parts are the contributions every owner of a person's rows handed over.
+	Parts []personaldata.Part
+	// People is the one read across the boundary: the address and the name.
+	People usercontracts.Service
+	// Now is the clock the bundle's manifest, the receipt and the link's expiry are
+	// stamped with; nil means db.Now. A command that reads its own watch is a command a
+	// test cannot stop at one instant.
+	Now func() time.Time
+	// Bundles stores a bundle's bytes and holds them; Notes tells the person they are
+	// there. Both belong to the door (contracts/requests.go) and nothing else.
+	Bundles contracts.BundleSource
+	Notes   contracts.Notifier
+}
+
+// NewService builds the module's commands over the contributions the composition
+// collected. The value it returns also satisfies Walker, which is the one method the
+// worker's job needs and no caller outside this module has.
+func NewService(d Deps) contracts.Service {
+	now := d.Now
 	if now == nil {
 		now = db.Now
 	}
+	people := d.People
+	parts := d.Parts
 	own := slices.Clone(parts)
 	// Module-name order, once, at construction: the bundle and the receipt then
 	// read the same whatever order the resolver built the contributors in.
@@ -72,7 +95,7 @@ func NewService(parts []personaldata.Part, people usercontracts.Service, now fun
 		}
 		seen[p.Module] = true
 	}
-	return &service{parts: own, people: people, now: now}
+	return &service{parts: own, people: people, now: now, bundles: d.Bundles, notifier: d.Notes}
 }
 
 // person reads the strings the contributors must stop finding, and is the reason
@@ -80,6 +103,13 @@ func NewService(parts []personaldata.Part, people usercontracts.Service, now fun
 // boundary, and only the person's own module holds the name and the address
 // (ADR 0020 §1). A person with no row is nobody's data and answers ErrNotFound.
 func (s *service) person(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (personaldata.Subject, error) {
+	if s.people == nil {
+		// Refused here rather than panicked at construction, because the manifest a reader
+		// and a test build (`New`) composes nothing, and the same value has to answer both
+		// questions. In a composed application the resolver refuses the module before this
+		// line is reachable: it Needs the people service and would be built without it.
+		return personaldata.Subject{}, errors.New("subject: no people service is composed, so an export and an erasure have nothing to read")
+	}
 	u, err := s.people.Get(ctx, tx, id)
 	if err != nil {
 		return personaldata.Subject{}, fmt.Errorf("subject: %w", err)

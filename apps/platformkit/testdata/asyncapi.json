@@ -2086,6 +2086,97 @@
       "summary": "Every tenant's delivery of subject.erased.",
       "title": "subject.erased"
     },
+    "subject.export_ready": {
+      "address": "platformkit.*.subject.export_ready",
+      "description": "Published at platformkit.{tenantId}.subject.export_ready; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "subject.export_ready": {
+          "contentType": "application/json",
+          "name": "subject.export_ready",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "bundle": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "digest": {
+                "type": "string"
+              },
+              "expiresAt": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "request": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "request",
+              "subject",
+              "bundle",
+              "digest",
+              "expiresAt",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.export_ready",
+          "title": "subject.export_ready"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.export_ready.",
+      "title": "subject.export_ready"
+    },
+    "subject.export_requested": {
+      "address": "platformkit.*.subject.export_requested",
+      "description": "Published at platformkit.{tenantId}.subject.export_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "subject.export_requested": {
+          "contentType": "application/json",
+          "name": "subject.export_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "request": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "requester": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "subject": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "request",
+              "subject",
+              "requester",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "subject — subject.export_requested",
+          "title": "subject.export_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of subject.export_requested.",
+      "title": "subject.export_requested"
+    },
     "task.assigned": {
       "address": "platformkit.*.task.assigned",
       "description": "Published at platformkit.{tenantId}.task.assigned; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4158,6 +4249,40 @@
         }
       ],
       "summary": "The subject module publishes subject.erased.",
+      "tags": [
+        {
+          "name": "subject"
+        }
+      ]
+    },
+    "subject.export_ready": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.export_ready"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.export_ready/messages/subject.export_ready"
+        }
+      ],
+      "summary": "The subject module publishes subject.export_ready.",
+      "tags": [
+        {
+          "name": "subject"
+        }
+      ]
+    },
+    "subject.export_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/subject.export_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/subject.export_requested/messages/subject.export_requested"
+        }
+      ],
+      "summary": "The subject module publishes subject.export_requested.",
       "tags": [
         {
           "name": "subject"
