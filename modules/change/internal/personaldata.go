@@ -38,20 +38,27 @@ type changePart struct {
 }
 
 type proposalRow struct {
-	ID            uuid.UUID  `json:"id"`
-	SubjectModule string     `json:"subjectModule"`
-	SubjectEntity string     `json:"subjectEntity"`
-	SubjectID     string     `json:"subjectId"`
-	BaseRevision  int64      `json:"baseRevision"`
-	Summary       string     `json:"summary"`
-	Comment       string     `json:"comment"`
-	Diff          string     `json:"diff"`
-	Status        string     `json:"status"`
-	Role          string     `json:"role"`
-	ProposedBy    string     `json:"proposedBy"`
-	ReviewedBy    string     `json:"reviewedBy,omitempty"`
-	CreatedAt     time.Time  `json:"createdAt"`
-	DecidedAt     *time.Time `json:"decidedAt,omitempty"`
+	ID            uuid.UUID `json:"id"`
+	SubjectModule string    `json:"subjectModule"`
+	SubjectEntity string    `json:"subjectEntity"`
+	SubjectID     string    `json:"subjectId"`
+	BaseRevision  int64     `json:"baseRevision"`
+	Summary       string    `json:"summary"`
+	Comment       string    `json:"comment"`
+	Diff          string    `json:"diff"`
+	// Named as change.Proposal names them, because this shape is this module's and
+	// the field a proposal carries is `state`, not a second word for the same thing,
+	// and the moment it was decided is `reviewed_at` (modules/change/contracts/
+	// change.go:115-128). An earlier revision invented "status" and "decidedAt",
+	// asked the database for two columns it does not have, and every export of a
+	// person died on `column "status" does not exist`.
+	State      string     `json:"state"`
+	Verdict    string     `json:"verdict"`
+	Role       string     `json:"role"`
+	ProposedBy string     `json:"proposedBy"`
+	ReviewedBy string     `json:"reviewedBy,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
 }
 
 func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
@@ -59,8 +66,8 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	var rows []proposalRow
 	err := tx.DB().WithContext(ctx).Table("change_proposals").
 		Select("id, subject_module, subject_entity, subject_id::text AS subject_id, base_revision, "+
-			"summary, comment, diff, status, proposer::text AS proposed_by, reviewer::text AS reviewed_by, "+
-			"created_at, decided_at, 'proposed' AS role").
+			"summary, comment, diff, state, verdict, proposer::text AS proposed_by, reviewer::text AS reviewed_by, "+
+			"created_at, reviewed_at, 'proposed' AS role").
 		Where("proposer = ? OR reviewer = ?", s.ID, s.ID).Order("created_at, id").Find(&rows).Error
 	if err != nil {
 		return nil, fmt.Errorf("change: export %s's proposals: %w", s.ID, err)

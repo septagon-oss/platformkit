@@ -51,9 +51,14 @@ type userPart struct {
 }
 
 type userRow struct {
-	ID        uuid.UUID  `json:"id"`
-	Email     string     `json:"email"`
-	Name      string     `json:"displayName"`
+	ID    uuid.UUID `json:"id"`
+	Email string    `json:"email"`
+	// The column is display_name; the field is what the person's own copy calls it.
+	// Without the column name here, gorm maps Name to a column called "name", finds no
+	// such column in the select, and leaves the field empty: an Article 15 copy of a
+	// person called "Jo Jones" that says their name is the empty string, which is a
+	// wrong answer rather than a failed one.
+	Name      string     `gorm:"column:display_name" json:"displayName"`
 	Handle    *string    `json:"handle,omitempty"`
 	Status    string     `json:"status"`
 	Roles     string     `json:"roles"`
