@@ -49,6 +49,12 @@ func ChromeContext(p ChromeContextProps) g.Node {
 // clChromeContext is the one rule that makes this line the sidebar's mirror rather
 // than its duplicate: from the large breakpoint up, where the sidebar paints, this
 // is display:none.
-var clChromeContext = style.New().Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
-	return c.Display(style.DisplayHidden)
-})
+//
+// The base rule is the one a <p> already has. It is written because the class list
+// compiler emits a breakpoint override beside a rule at the base — declare only the
+// override and the rule that hides this line is silently nothing at all, which is the
+// duplicate reappearing on every screen rather than a missing one.
+var clChromeContext = style.New().Display(style.DisplayBlock).
+	Breakpoint(style.BreakpointLG, func(c style.ClassList) style.ClassList {
+		return c.Display(style.DisplayHidden)
+	})
