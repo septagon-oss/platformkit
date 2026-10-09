@@ -1,8 +1,8 @@
 package httpx_test
 
 // This file pins
-// the one sentence of the delivery that no earlier round of this task ran as a
-// number for every answer the router gives.
+// one sentence of the kernel's own promise, as a measurement rather than a
+// reading: what every answer the router gives does to the latency histogram.
 //
 //	kit/telemetry/instruments.go: "Refusals counts the answers the kernel gave a
 //	client it would not serve ... It counts refusals and not errors: a 500 the

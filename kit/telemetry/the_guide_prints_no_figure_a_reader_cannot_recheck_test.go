@@ -23,7 +23,8 @@ package telemetry_test
 // same sentence — `scripts/check_packages.sh`'s last line and
 // `TestOnlyTheCompositionLinksTheMeasurementSDK`, above — the claim the script once
 // failed, and which holds only while both name the same import paths. This is the
-// case that would have caught a cure that widened one and not the It costs nothing to check and cannot be satisfied by moving a figure.
+// case that would have caught a cure that widened one guard's list and not the
+// other's; it costs nothing to run and cannot be satisfied by moving a figure.
 
 import (
 	"os"
