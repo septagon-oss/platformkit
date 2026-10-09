@@ -490,6 +490,21 @@ func (s *Service) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.Sugge
 			return fmt.Errorf("%w: %s returned the %s text unchanged, which is not a translation",
 				crud.ErrConflict, q.Locale, q.From)
 		}
+		// Provider output is text nobody has read, held to the same format the
+		// person's own editor enforces. The human door validates what a person
+		// typed; a machine's answer arrives through no editor at all, and markup
+		// a provider echoes or invents would otherwise sit in the row until a
+		// reviewer — who is being asked to check the *translation*, not its
+		// safety — pressed review over it. Hashing is the check: it is the one
+		// parse both the write and the read agree on, and a richtext field whose
+		// canonical form cannot be computed is a field whose staleness nothing
+		// could ever decide.
+		if rich[field] || q.RichText[field] {
+			if _, err := contracts.Hash(out, true); err != nil {
+				return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
+					crud.ErrInvalid, q.Locale, field, err)
+			}
+		}
 		values[field] = out
 	}
 	if len(values) == 0 {
@@ -507,10 +522,25 @@ func (s *Service) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.Sugge
 // means on the record's own form. It is a write, so it is audited: the event
 // names the field that went away, which is the only record
 // that a Portuguese translation existed and somebody removed it.
+//
+// Expected revisions are rechecked over every locked row before one row is
+// deleted, in the same two passes Save runs: a removal that loses on the
+// revision of one field must not delete another field somebody has since
+// rewritten, and a delete cannot be undone by a rollback the caller never
+// sees — the deletion of the loser's row would stand as a fact even inside a
+// transaction the caller later aborts, because the refusal itself is what must
+// have written nothing.
 func (s *Service) Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQuery) error {
 	rows, err := s.lock(ctx, tx, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields)
 	if err != nil {
 		return err
+	}
+	for _, field := range reviewedOrder(rows) {
+		row := rows[field]
+		if q.Expected != nil && row.Revision != q.Expected[field] {
+			return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
+				crud.ErrConflict, q.Locale, field, row.Revision, q.Expected[field])
+		}
 	}
 	for _, row := range rows {
 		if err := tx.DB().Where("id = ?", row.ID).Delete(&Row{}).Error; err != nil {
@@ -727,14 +757,33 @@ func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], module, enti
 // where it was, because that pair is the evidence the reviewer is working
 // against; silently re-basing it onto the newest source would delete the
 // paragraph they were told to look at.
+//
+// The revision does not move either: this is not an edit of the translation, it
+// is the source moving under it, and a client holding the row's revision must
+// not be pushed into conflict by a fact it did not write. What every marked row
+// does gain is an event. Subscribers — the audit trail, a search index — keep
+// the complete state of each translation from translation.updated; a column
+// flipped without an announcement would leave every one of them saying
+// "up to date" about a paragraph the tenant has since rewritten, which is the
+// exact lie this marking exists to record.
 func (s *Service) MarkOutdated(ctx context.Context, tx db.Tx[db.Tenant], module, entity, field string, recordID uuid.UUID) error {
-	_ = ctx
-	result := tx.DB().Model(&Row{}).
+	var rows []Row
+	err := tx.DB().
 		Where("module = ? AND entity = ? AND record_id = ? AND field = ? AND status <> ?",
-			module, entity, recordID, field, rest.FallbackOutdated).
-		Updates(map[string]any{"status": rest.FallbackOutdated, "updated_at": s.now()})
-	if result.Error != nil {
-		return crud.Classify(result.Error)
+			module, entity, recordID, field, rest.FallbackOutdated).Find(&rows).Error
+	if err != nil {
+		return crud.Classify(err)
+	}
+	for _, row := range rows {
+		if err := tx.DB().Model(&Row{}).Where("id = ?", row.ID).
+			Updates(map[string]any{"status": rest.FallbackOutdated, "updated_at": s.now()}).Error; err != nil {
+			return crud.Classify(err)
+		}
+		marked := row
+		marked.Status = rest.FallbackOutdated
+		if err := s.publish(ctx, tx, module, entity, recordID, field, row.Locale, &marked); err != nil {
+			return err
+		}
 	}
 	return nil
 }

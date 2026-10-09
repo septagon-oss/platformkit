@@ -28,10 +28,13 @@
 package rest
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -39,6 +42,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
 // The five states one translatable field of one response can be in. Four of
@@ -396,26 +401,27 @@ type TranslatedPage[T any] struct {
 // what the same resource looks like with no language asked. They are factored out
 // of Mount so the four registrations are three lines each and not four copies of
 // the paging, the read and the error mapping. Each translated one answers, as its
-// second result, whether anything was served in the requested language — which is
-// what decides whether the response may claim a Content-Language at all.
-func (s Spec[T]) pageRows(ctx context.Context, in listInput, schema crud.Schema, lang string) (*TranslatedPage[T], bool, error) {
+// second result, the language the response is written in — the one asked for or
+// the one negotiated from the caller's own signals — which is what decides
+// whether the response may claim a Content-Language at all and what it names.
+func (s Spec[T]) pageRows(ctx context.Context, in listInput, schema crud.Schema, lang string) (*TranslatedPage[T], string, error) {
 	tx, err := transaction(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	q, err := in.query(schema.Fields)
 	if err != nil {
-		return nil, false, Fault(err)
+		return nil, "", Fault(err)
 	}
 	items, total, err := crud.List[T](tx, q)
 	if err != nil {
-		return nil, false, Fault(err)
+		return nil, "", err
 	}
 	out := &TranslatedPage[T]{}
 	out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
 	served, err := s.overlay(ctx, tx, lang, out.Body.Items)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	return out, served, nil
 }
@@ -438,14 +444,14 @@ func (s Spec[T]) plainRows(ctx context.Context, in listInput, schema crud.Schema
 	return out, nil
 }
 
-func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*TranslatedItem[T], bool, error) {
+func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*TranslatedItem[T], string, error) {
 	tx, err := transaction(ctx)
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	e, err := crud.Get[T](tx, id)
 	if err != nil {
-		return nil, false, Fault(err)
+		return nil, "", Fault(err)
 	}
 	// The entity is a pointer, so the overlay writes into the same value this
 	// response carries: the language replaces the field, and `_i18n` says which
@@ -453,7 +459,7 @@ func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*Trans
 	out := &TranslatedItem[T]{Body: e}
 	served, err := s.overlay(ctx, tx, lang, []T{e})
 	if err != nil {
-		return nil, false, err
+		return nil, "", err
 	}
 	return out, served, nil
 }
@@ -488,16 +494,25 @@ func (s Spec[T]) oneRow(ctx context.Context, id uuid.UUID) (T, error) {
 // Read: the door that shows a stranger the record is a module's own handler, and
 // it sets Public when it calls the port.
 //
-// It answers whether anything was served in the requested language, which is what
-// decides the response's Content-Language: a read in the tenant's own language
-// says so and asks nothing of the translations table at all.
-func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, rows []T) (bool, error) {
+// It answers the language the response is written in, which is what decides the
+// response's Content-Language: a read in the tenant's own language says so, and
+// a read that named no language and expressed no preference is written in the
+// source and claims nothing.
+//
+// A read that named no language but *expressed* one — a `lang` cookie the
+// workspace left behind, an `Accept-Language` in the caller's own order — is
+// negotiated here, in the one place both read doors pass through, so no door can
+// forget the question the caller asked without spelling it in a query.
+func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, rows []T) (string, error) {
 	languages := db.TenantOf(tx).Languages
+	if lang == "" && len(rows) > 0 {
+		lang = negotiateLang(ctx, languages)
+	}
 	if lang == "" || !slices.Contains(languages.Preferred(), lang) || len(rows) == 0 {
-		return false, nil
+		return "", nil
 	}
 	if lang == languages.Default {
-		return true, nil // the source copy is the translation of the default language
+		return languages.Default, nil // the source copy is the translation of the default language
 	}
 	src := &specSource[T]{spec: s}
 	ids := make([]uuid.UUID, 0, len(rows))
@@ -514,7 +529,7 @@ func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, 
 		RecordIDs: ids, Sources: sources, RichText: src.RichText(),
 	})
 	if err != nil {
-		return false, err
+		return "", err
 	}
 	byRecord := make(map[uuid.UUID]map[string]TranslatedField, len(translated))
 	for _, rec := range translated {
@@ -553,7 +568,118 @@ func (s Spec[T]) overlay(ctx context.Context, tx db.Tx[db.Tenant], lang string, 
 			base.I18N = &fallbacks
 		}
 	}
-	return true, nil
+	return lang, nil
+}
+
+// CookieNameLanguage is the workspace's language cookie: the language the last
+// page this person read was served in, and therefore the language the next one
+// should be. It is a first-party cookie like the session's — the __Host- spelling
+// over https, the plain one where a browser would refuse Secure — and the
+// workspace shell sets it when a person switches language.
+const CookieNameLanguage = "lang"
+
+// negotiateLang is the language question of a read that did not name one, in the
+// order the contract fixes: what the caller said for this one request (`?lang=`,
+// handled by the caller of this function, which is why silence arrives here),
+// then the cookie the workspace set, then the browser's own list in the order the
+// caller ranked it, and then nothing.
+//
+// Silence is not answered with the tenant's default: a caller who expressed no
+// preference is served the source and the response claims no language, which is
+// the same answer there was before negotiation existed. Defaulting a preference
+// nobody expressed would put a Content-Language on responses whose callers never
+// asked a question, and would make every cache in front of the installation hold
+// one response where the caller's own header asked for another.
+//
+// A preference the tenant is not served in is dropped, not honoured: serving
+// somebody's first choice under a header the tenant cannot keep would be a
+// response that lies about its own language.
+func negotiateLang(ctx context.Context, languages *tenancy.Languages) string {
+	req, ok := httpx.RequestFrom(ctx)
+	if !ok {
+		return ""
+	}
+	speaking := languages.Preferred()
+	for _, name := range []string{httpx.CookieName(CookieNameLanguage, true), CookieNameLanguage} {
+		if c, err := req.Cookie(name); err == nil {
+			if tag, ok := matchLanguage(c.Value, speaking); ok {
+				return tag
+			}
+		}
+	}
+	for _, tag := range parseAcceptLanguage(req.Header.Get("Accept-Language")) {
+		if match, ok := matchLanguage(tag, speaking); ok {
+			return match
+		}
+	}
+	return ""
+}
+
+// matchLanguage answers the tenant's own spelling of a requested tag, or nothing.
+// Comparison ignores case, because "pt-pt" and "PT-PT" are one tag, and a
+// response that stored the caller's casing would be storing a tag the tenant
+// never declared.
+func matchLanguage(tag string, speaking []string) (string, bool) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" || strings.EqualFold(tag, "*") {
+		return "", false
+	}
+	for _, has := range speaking {
+		if strings.EqualFold(has, tag) {
+			return has, true
+		}
+	}
+	return "", false
+}
+
+// parseAcceptLanguage is the header in the caller's ranked order: q descending,
+// ties in the order they were written, and an absent q treated the way the
+// specification treats it. A malformed q ends the parse rather than being
+// skipped: what is left of a header nobody can rank is not a preference.
+func parseAcceptLanguage(header string) []string {
+	if header == "" {
+		return nil
+	}
+	var prefs []languagePreference
+	for _, part := range strings.Split(header, ",") {
+		fields := strings.Split(part, ";")
+		tag := strings.TrimSpace(fields[0])
+		if tag == "" {
+			return rankedTags(prefs)
+		}
+		q := 1.0
+		for _, param := range fields[1:] {
+			param = strings.TrimSpace(param)
+			if !strings.HasPrefix(param, "q=") {
+				continue
+			}
+			value, err := strconv.ParseFloat(strings.TrimPrefix(param, "q="), 64)
+			if err != nil || value < 0 || value > 1 {
+				return rankedTags(prefs)
+			}
+			q = value
+		}
+		prefs = append(prefs, languagePreference{tag: tag, q: q})
+	}
+	return rankedTags(prefs)
+}
+
+// languagePreference is one entry of an Accept-Language header, and rankedTags
+// is the whole of turning the list into the caller's order — sorting whatever
+// was parsed before a malformed entry, which is why the parse's early returns
+// run through it too.
+type languagePreference struct {
+	tag string
+	q   float64
+}
+
+func rankedTags(prefs []languagePreference) []string {
+	slices.SortStableFunc(prefs, func(a, b languagePreference) int { return cmp.Compare(b.q, a.q) })
+	out := make([]string, len(prefs))
+	for i, p := range prefs {
+		out[i] = p.tag
+	}
+	return out
 }
 
 // setString writes one translated value back into the entity by the field index

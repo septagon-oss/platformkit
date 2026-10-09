@@ -25,10 +25,8 @@ import (
 	"github.com/septagon-oss/platformkit/modules/content/internal"
 )
 
-// Deps is what this module cannot make for itself, and it is empty: content
-// belongs to a tenant by carrying its id, which row-level security matches on,
-// and the author comes off the request's own context. It is a struct rather
-// than no parameter so that the day it needs something, every call site gains a
+// Deps is what this module cannot make for itself. It is a struct rather than
+// no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
 type Deps struct {
 	Files richtext.Files
@@ -37,7 +35,14 @@ type Deps struct {
 	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
 	// for as long as no sweep releases a file nobody reads.
 	Uses rest.FileUses
+	// Translations is the record's door onto another module's table: the title
+	// and the body declare themselves translatable, and a mount that says so
+	// without a port to answer `?lang=` is refused by the Spec's own check. The
+	// composition writes this one line; the translation module is told about
+	// content by TranslationSource below, and by nothing else.
+	Translations rest.Translations
 }
+
 
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
@@ -81,6 +86,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource := spec
 	resource.RichTextFiles = files
 	resource.FileUses = uses
+	resource.Translations = deps.Translations
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",

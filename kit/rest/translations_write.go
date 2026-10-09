@@ -33,6 +33,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/google/uuid"
 
@@ -218,8 +219,68 @@ func (s Spec[T]) untranslateRow(ctx context.Context, tx db.Tx[db.Tenant], id uui
 	}
 	return e, s.Translations.Untranslate(ctx, tx, ReviewQuery{
 		Module: s.Module, Entity: s.Entity, Locale: in.Lang, RecordID: id,
-		Fields: in.Fields, Source: src.Values,
+		Fields: in.Fields, Expected: in.Expected, Source: src.Values,
 		RichText: (&specSource[T]{spec: s}).RichText(),
+	})
+}
+
+// translatedPatchInput is the record's PATCH with the language question added.
+// It exists because `?lang=` is one contract, not a read-only one: writing a
+// record `?lang=<other>` means "this is that language's text of these fields",
+// and a parameter that silently wrote the Portuguese into the English column
+// while claiming 200 would file text under the wrong language and destroy the
+// source it should have been measured against.
+//
+// It is a separate shape from patchInput for the same reason the two read doors
+// are: a resource with no translatable field must not advertise a `?lang=` its
+// PATCH would have to refuse.
+type translatedPatchInput struct {
+	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
+	Lang string         `query:"lang" doc:"Write this language's translation of the body's fields instead of the record itself; the tenant's own language, or none, writes the record"`
+	Body map[string]any `doc:"The translatable fields to write in that language"`
+}
+
+// localePatch is the PATCH of a body that is somebody's Portuguese, not the
+// record's English: the same door translate walks — lock, tenant recheck,
+// language check against the tenant's declaration, the field's own rules — and
+// the same port call. The source row is never touched; the body must name only
+// translatable fields, because a mixed body would be half a translation and
+// half a source edit, and the caller should find out which one they asked for
+// before either of them is written.
+//
+// A locale write carries no expected revisions — the body is the field map, not
+// the translate body's three-part shape — so it creates a translation, and a
+// field that already has one is the 409 that points at /translate, which names
+// the revision it overwrites.
+func (s Spec[T]) localePatch(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, lang string, body map[string]any) (T, error) {
+	e, src, err := s.translationDoor(ctx, tx, id, lang)
+	if err != nil {
+		return e, err
+	}
+	if len(body) == 0 {
+		return e, fmt.Errorf("%w: name at least one field to translate", crud.ErrInvalid)
+	}
+	rich := (&specSource[T]{spec: s}).RichText()
+	values := make(map[string]string, len(body))
+	for name, typed := range body {
+		f, ok := translatableField[T](name)
+		if !ok {
+			return e, fmt.Errorf("%w: %s is not a translatable field of %s; a ?lang=%s write writes only translations — the record itself is written without the parameter",
+				crud.ErrInvalid, name, s.Entity, lang)
+		}
+		text, ok := typed.(string)
+		if !ok {
+			return e, fmt.Errorf("%w: a translation of %s must be text", crud.ErrInvalid, name)
+		}
+		values[name], err = s.prepareTranslated(ctx, tx, f, rich[name], text)
+		if err != nil {
+			return e, err
+		}
+	}
+	return e, s.Translations.Save(ctx, tx, SaveQuery{
+		Module: s.Module, Entity: s.Entity, Locale: lang, RecordID: id,
+		Values: values, Source: src.Values,
+		Origin: OriginHuman, RichText: rich,
 	})
 }
 
@@ -229,8 +290,22 @@ func (s Spec[T]) untranslateRow(ctx context.Context, tx db.Tx[db.Tenant], id uui
 // the source could never be saved in. A richtext body is stored normalised for
 // the same reason the source is: two spellings of one document must not read as
 // two translations.
+//
+// The plain branch is not "return whatever arrived". The generic write doors
+// bind the body into the entity, so the field's declared maxLength and enum are
+// enforced by the schema the body is validated against; a translated body is a
+// map of free strings, and nothing beside this function would ever look at the
+// field's own ceiling again. A Portuguese title longer than the column is the
+// same mistake in another language, and the door that made it is the one that
+// has to refuse it.
 func (s Spec[T]) prepareTranslated(ctx context.Context, tx db.Tx[db.Tenant], f crud.Field, isRichText bool, typed string) (string, error) {
 	if !isRichText {
+		if f.MaxLength > 0 && utf8.RuneCountInString(typed) > f.MaxLength {
+			return "", fmt.Errorf("%w: %s is longer than its %d characters", crud.ErrInvalid, f.Name, f.MaxLength)
+		}
+		if len(f.Enum) > 0 && !slices.Contains(f.Enum, typed) {
+			return "", fmt.Errorf("%w: %s is not one of %s", crud.ErrInvalid, f.Name, strings.Join(f.Enum, ", "))
+		}
 		return typed, nil
 	}
 	normal, err := richtext.Prepare(ctx, tx, typed, s.RichTextFiles, f.MaxLength)

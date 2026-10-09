@@ -313,9 +313,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 				if err != nil {
 					return nil, err
 				}
-				if served {
-					out.ContentLanguage = in.Lang
-				}
+				out.ContentLanguage = served
 				return out, nil
 			})
 		} else {
@@ -358,9 +356,7 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 				if err != nil {
 					return nil, err
 				}
-				if served {
-					out.ContentLanguage = in.Lang
-				}
+				out.ContentLanguage = served
 				return out, nil
 			})
 		} else {
@@ -375,19 +371,47 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 
 	if s.offers(httpx.CRUDUpdate) {
-		httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
-			"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-			s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
-				tx, err := transaction(ctx)
-				if err != nil {
-					return nil, err
-				}
-				e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				return &Item[T]{Body: e}, nil
-			})
+		if len(translatableFields[T]()) > 0 {
+			// The translated PATCH is the write half of `?lang=`: the parameter
+			// names the language the body is written in, and a body in a language
+			// other than the tenant's own is a translation, not an edit of the
+			// record. The record's own rules and the record's own port decide which
+			// of the two this was; a PATCH that ignored the parameter and wrote the
+			// Portuguese into the English column would destroy a source to file a
+			// translation under the wrong language.
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity,
+				"Only the fields present in the body change; read-only fields are refused. With ?lang= naming a language other than the tenant's own, the body writes that language's translation of its fields and the record itself is untouched."),
+				s.writeAuth(), func(ctx context.Context, in *translatedPatchInput) (*Item[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					if in.Lang != "" && in.Lang != db.TenantOf(tx).Languages.Default {
+						e, err := s.localePatch(ctx, tx, in.ID, in.Lang, in.Body)
+						return &Item[T]{Body: e}, Fault(err)
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &Item[T]{Body: e}, nil
+				})
+		} else {
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
+				s.writeAuth(), func(ctx context.Context, in *patchInput) (*Item[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &Item[T]{Body: e}, nil
+				})
+		}
 	}
 
 	if s.offers(httpx.CRUDDelete) {
@@ -407,8 +431,14 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	// The four translation doors, and only for a resource that declared a field
 	// worth translating: the same rule that keeps `?lang=` off a plain resource's
 	// reads keeps a `translate` command off its writes. They carry the record's own
-	// write permission, which is what guards a translation of it.
-	if len(translatableFields[T]()) > 0 {
+	// write permission, which is what guards a translation of it — and a write
+	// guard that names no grant guards nothing here. A translation is written to a
+	// row the caller names, and reaching it asks whose tenant and never whose row;
+	// operationsFault refuses the generic writes for exactly that reason, and a
+	// command mounted beside the refusal would be the way around it. A read-only
+	// resource under a membership guard keeps its reads, `?lang=` included, and
+	// mounts no write door at all.
+	if len(translatableFields[T]()) > 0 && s.writeAuth().NamesAGrant() {
 		s.mountTranslationDoors(surfaces)
 	}
 	for _, field := range schema.Fields {

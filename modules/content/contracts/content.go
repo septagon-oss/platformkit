@@ -4,10 +4,13 @@
 //
 // Content is a page or a post: a slug, a title, a body in Markdown, and a
 // status that decides whether the public site serves it. There are no
-// versions, no categories and no translations. Versions in particular are a
-// module of their own — a history table, a diff, a restore and a retention
-// rule — and the private catalogue has one; what a reference architecture owes
-// is the lifecycle, which is draft, published, archived.
+// versions. There are no translations in this table either: the title and the
+// body declare themselves translatable, and the text of another language lives
+// in the translation module's own table, reached through the record's own door.
+// Versions in particular are a module of their own — a history table, a diff, a
+// restore and a retention rule — and the private catalogue has one; what a
+// reference architecture owes is the lifecycle, which is draft, published,
+// archived.
 package contracts
 
 import (
@@ -122,12 +125,15 @@ type Content struct {
 	// is normalised on every write, so two callers cannot disagree about
 	// whether "About Us" and "about-us" are the same page.
 	Slug string `json:"slug" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"URL name, unique within the tenant" example:"about-us"`
-	// Title is what a list and a heading show.
-	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"Headline" example:"About us"`
+	// Title is what a list and a heading show. It is one of the two fields this
+	// entity offers for translation: the text of another language is a row of the
+	// translation module's, not a column here, and `?lang=` on this record's own
+	// door is what puts the two together.
+	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" i18n:"translatable" doc:"Headline" example:"About us"`
 	// Body is canonical Markdown. It is normalized on write and rendered on read, so
 	// a change to what the renderer allows applies to everything ever written
 	// rather than to whatever happens to be saved next.
-	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" doc:"The content itself, in Markdown"`
+	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" i18n:"translatable" doc:"The content itself, in Markdown"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.

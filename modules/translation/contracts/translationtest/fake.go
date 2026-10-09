@@ -330,6 +330,16 @@ func (f *Fake) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.SuggestQ
 			return fmt.Errorf("%w: %s returned the %s text unchanged, which is not a translation",
 				crud.ErrConflict, q.Locale, q.From)
 		}
+		// The same format rule the real service holds machine output to: what
+		// nobody has read is checked against the format it will be stored in,
+		// and the fake that skipped it would pass a consumer the real service
+		// refuses. See internal.Service.Suggest.
+		if rich := f.rich(q.Module, q.Entity); rich[field] || q.RichText[field] {
+			if _, err := contracts.Hash(out, true); err != nil {
+				return fmt.Errorf("%w: the %s draft of %s is not text this field can hold: %v",
+					crud.ErrInvalid, q.Locale, field, err)
+			}
+		}
 		values[field] = out
 	}
 	if len(values) == 0 {
@@ -344,11 +354,22 @@ func (f *Fake) Suggest(ctx context.Context, tx db.Tx[db.Tenant], q rest.SuggestQ
 
 // Untranslate mirrors internal.Service.Untranslate: a write, so it is audited —
 // the event it publishes is the only record that a Portuguese existed at all.
+// And like the real one, it rechecks every expected revision over the whole set
+// before deleting any row, so a removal that lost one field writes none of them.
 func (f *Fake) Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q rest.ReviewQuery) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	tenantID := db.TenantOf(tx).ID
-	for _, r := range f.holding(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields) {
+	held := f.holding(tenantID, q.Module, q.Entity, q.Locale, q.RecordID, q.Fields)
+	if q.Expected != nil {
+		for _, r := range held {
+			if r.Revision != q.Expected[r.Field] {
+				return fmt.Errorf("%w: the %s translation of %s changed since you read it (revision %d, you sent %d)",
+					crud.ErrConflict, q.Locale, r.Field, r.Revision, q.Expected[r.Field])
+			}
+		}
+	}
+	for _, r := range held {
 		removed := *r
 		removed.Status = rest.FallbackRemoved
 		removed.Revision = r.Revision + 1
@@ -520,8 +541,13 @@ func (f *Fake) MarkOutdated(_ context.Context, tx db.Tx[db.Tenant], module, enti
 	tenantID := db.TenantOf(tx).ID
 	for _, r := range f.rows {
 		if r.TenantID == tenantID && r.Module == module && r.Entity == entity &&
-			r.RecordID == recordID && r.Field == field {
+			r.RecordID == recordID && r.Field == field && r.Status != rest.FallbackOutdated {
 			r.Status = rest.FallbackOutdated
+			// The event the real service publishes: subscribers keep the whole
+			// state of each translation from translation.updated, and a fake
+			// that moved the column in silence would let a consumer's test pass
+			// against a trail its production deployment would not have.
+			f.events = append(f.events, payload(field, r))
 		}
 	}
 	return nil
