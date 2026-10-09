@@ -108,21 +108,27 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 	// The read of the delivery record, for the one question the acknowledgment
 	// cannot answer: "did the mail actually leave?" See contracts.MailLedger.
 	//
-	// 200 in every case, one field, one of four words. An id that left no record —
-	// because the cap wrote none, because nobody has the address, because it is
-	// another tenant's, because the caller typed nonsense — is `pending`, which is
-	// the same sentence the neutral acknowledgment already gives and the answer
-	// every request that produced no mail gets. What this door cannot be is
-	// oracle-free: an id that answers `failed` necessarily had somebody to mail, so
-	// it leaks existence with exactly the probability that a transport refuses.
-	// The bounds are in these lines: an unguessable handle the caller already holds
-	// about its own call, one indexed lookup of the same shape either way, the
-	// module's tightest public budget in front of it, RLS behind it, and a response
-	// that names no address, no kind and no reason.
+	// Two words, not four. An id that left no record — because the cap wrote
+	// none, because nobody has the address, because it is another tenant's,
+	// because the caller typed nonsense — and an id whose mail went out are both
+	// `pending`, and only a transport's refusal is `failed`. The reason is
+	// contracts.MailReport's: a route that mails only accounts it found answers
+	// "a mail left" about exactly the addresses that have an account, so a door
+	// that said `sent` would undo the neutral acknowledgment one call later and
+	// be a list of who has an account here. What this door still cannot be is
+	// oracle-free: an id that answers `failed` necessarily had somebody to mail,
+	// so it leaks existence with exactly the probability that a transport
+	// refuses — which is why the sentence the shell says on `pending` is the
+	// acknowledgment's own, and asks nothing back. The bounds are in these lines:
+	// an unguessable handle the caller already holds about its own call, one
+	// indexed lookup of the same shape either way, a budget of its own in front
+	// of it (contracts.MailDeliveryAsks — not the redemption budget, which the
+	// person needs for the link they are waiting for), RLS behind it, and a
+	// response that names no address, no kind and no reason.
 	httpx.Register(surfaces.Public, huma.Operation{
 		OperationID: "auth-mail-delivery", Method: http.MethodPost, Path: "/mail-delivery",
-		Summary:     "Ask what became of the mail one call asked for",
-		Description: "Answers one word — pending, sent, suppressed or failed — about the mail the call bearing this request id caused. It names no address, no kind and no reason; a call that left no delivery record is answered exactly as one from another tenant is.",
+		Summary:     "Ask whether the mail one call asked for was refused",
+		Description: "Answers two words about the mail the call bearing this request id caused — failed when a transport refused it, pending otherwise — and names no address, no kind and no reason. A call that left no delivery record, one whose mail went out, and one from another tenant are answered identically, so the door cannot be walked for the addresses that have a record.",
 		Tags:        []string{"auth"}, DefaultStatus: http.StatusOK,
 		Errors: []int{http.StatusForbidden, http.StatusTooManyRequests},
 	}, httpx.Public(), func(ctx context.Context, in *mailDeliveryInput) (*mailDeliveryOutput, error) {
@@ -130,8 +136,8 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if !httpx.SameSite(r) {
 			return nil, problem.New(http.StatusForbidden, "ask about the mail from the page that asked for it")
 		}
-		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
-			return nil, problem.New(http.StatusTooManyRequests, "too many account link attempts; wait and try again")
+		if !svc.MayAskAboutMail(ctx, ClientOf(r).IP) {
+			return nil, problem.New(http.StatusTooManyRequests, "too many mail delivery questions; wait and try again")
 		}
 		out := &mailDeliveryOutput{}
 		out.Body.State = notificationcontracts.MailStatePending
@@ -148,7 +154,7 @@ func RegisterEmailRegistrationRoutes(surfaces httpx.Surfaces, svc *Service, poli
 		if err != nil {
 			return nil, rest.Fault(err)
 		}
-		out.Body.State = notificationcontracts.MailState(outcome, known)
+		out.Body.State = notificationcontracts.MailReport(outcome, known)
 		return out, nil
 	})
 }
@@ -194,11 +200,12 @@ type mailDeliveryInput struct {
 }
 
 type mailDeliveryOutput struct {
-	// State is the one word the shell is allowed to say: pending, sent, suppressed
-	// or failed. No recipient, no kind, no reason, no timestamp and no count — the
-	// reason there is no 404 is that every answer has the same shape, so the door
-	// cannot be walked for the addresses that have a record.
+	// State is the one word the shell is allowed to say: pending or failed. No
+	// recipient, no kind, no reason, no timestamp and no count — and no `sent`,
+	// which is contracts.MailReport's refusal and the reason the reason there is
+	// no 404: every answer has the same shape, so the door cannot be walked for
+	// the addresses that have a record.
 	Body struct {
-		State string `json:"state" enum:"pending,sent,suppressed,failed" doc:"What became of the mail that call asked for"`
+		State string `json:"state" enum:"pending,failed" doc:"Whether the mail that call asked for was refused"`
 	}
 }

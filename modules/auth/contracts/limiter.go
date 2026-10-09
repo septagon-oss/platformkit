@@ -124,6 +124,24 @@ const (
 	// cap, and the answer is the deployment counting the real client address
 	// rather than the proxy's, which is what ClientOf documents.
 	PasskeyPrompts = 20
+
+	// MailDeliveryAsks is how many delivery questions one address may ask in a
+	// window — the shell's read of what became of the mail its own call asked
+	// for.
+	//
+	// It is its own bucket rather than ResetRedemptions because the two are
+	// spent by different acts and one of them is a page that is merely open.
+	// Shared, a shell that polls the record a few times per acknowledgment would
+	// eat the redemptions that let the person spend the link when it arrives,
+	// and a stranger could lock an address's people out of their own reset by
+	// asking about mail they never requested. Shared the other way — counted as
+	// a forgotten-password request — it would spend the cap on asking for the
+	// link on reading about one.
+	//
+	// Sixty, because one acknowledgment costs the shell three asks, a person
+	// who is waiting may submit twice, and an office behind one NAT is several
+	// of them at once.
+	MailDeliveryAsks = 60
 )
 
 // Limiter counts failed logins, per account and per source address, in the one
@@ -192,6 +210,7 @@ func sourceKey(ip string) string       { return "auth/source/" + ip }
 func pairKey(email, ip string) string  { return "auth/pair/" + emailHash(email) + " " + ip }
 func forgotKey(ip string) string       { return "auth/forgot/" + ip }
 func redeemKey(ip string) string       { return "auth/redeem/" + ip }
+func mailAskKey(ip string) string      { return "auth/mail-ask/" + ip }
 func notedKey(email, ip string) string { return "auth/noted/" + emailHash(email) + " " + ip }
 func promptKey(ip string) string       { return "auth/passkey-prompt/" + ip }
 
@@ -335,6 +354,15 @@ func (l *Limiter) Redeemed(ctx context.Context, ip string) bool {
 // begin leg exists not to answer.
 func (l *Limiter) Prompted(ctx context.Context, ip string) bool {
 	return l.within(ctx, promptKey(ip), PasskeyPrompts)
+}
+
+// AskedAboutMail counts one read of what became of the mail one of this
+// address's own calls asked for, and reports whether it is within
+// MailDeliveryAsks for this window. It counts the address asking and never the
+// request it asks about, for the reason every other public cap here does: a cap
+// that depended on which request was named would be an answer about it.
+func (l *Limiter) AskedAboutMail(ctx context.Context, ip string) bool {
+	return l.within(ctx, mailAskKey(ip), MailDeliveryAsks)
 }
 
 // Noted reports whether a refusal for this account from this address is worth

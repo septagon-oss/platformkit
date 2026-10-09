@@ -174,23 +174,39 @@ var (
 	ErrMailRequest   = errors.New("notification: a mail record's request id is the id one call was answered with")
 )
 
-// MailStatePending is what a caller answers when the record says nothing, and it
-// is not an outcome: no row ever says it. It lives here because both the door
-// that answers it and the shell that reads it need the same one word.
+// MailStatePending is what a caller answers when there is nothing to tell it,
+// and it is not an outcome: no row ever says it. It lives here because both the
+// door that answers it and the shell that reads it need the same one word.
 const MailStatePending = "pending"
 
-// MailState is the one word a caller may say about a request's mail: the outcome
-// the ledger holds for that request, or MailStatePending when it holds nothing.
-// It is the whole of what a person is allowed to be told — no reason, no
-// address, no kind — and the reason it is a function rather than a string read
-// off the row is that "no row" has to be an answer with a shape of its own.
-func MailState(outcome string, known bool) string {
-	if !known {
-		return MailStatePending
-	}
-	switch outcome {
-	case MailSent, MailSuppressed, MailFailed:
-		return outcome
+// MailReport is the one word a stranger may be told about the mail its own call
+// asked for: MailFailed when the record says a transport refused that mail,
+// MailStatePending for every other case, including a record that says the mail
+// went.
+//
+// Why only the refusal is answerable. A public call that names an address mails
+// only when somebody has an account there, and the routes that take the address
+// answer neutrally on purpose (Reissue's enumeration defence, and the README's
+// "acknowledgments are meant to be neutral and not reveal whether an account
+// exists"). So any answer that differs between "a mail left" and "no mail left"
+// is an answer about who has an account, one call after the acknowledgment took
+// the trouble not to give one: `sent` for the addresses that are here, `pending`
+// for the ones that are not. This function is where that is refused — not by
+// hiding the record, which the operator reads, and not by answering `sent` about
+// a mail that did not leave, which would be the lie the record exists to
+// prevent. The refusal is answerable because it is the one outcome the caller
+// needs acted on and cannot produce for an address that has no account: a
+// request that answers MailFailed necessarily had a transport refuse it, so the
+// door leaks existence with exactly the probability that a transport refuses —
+// the bound the route's own comment claims, and this function is the one place
+// that bound is kept.
+//
+// What the caller cannot learn here is any of: that a mail went, that nobody has
+// the address, which kind of mail it was, which address it named, or why it
+// failed. Those stay in the row, which the tenant's own operator reads.
+func MailReport(outcome string, known bool) string {
+	if known && outcome == MailFailed {
+		return MailFailed
 	}
 	return MailStatePending
 }

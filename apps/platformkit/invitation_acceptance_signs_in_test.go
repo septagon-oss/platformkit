@@ -51,11 +51,8 @@ func TestAcceptingAnInvitationSignsThePersonIn(t *testing.T) {
 		return http.ErrUseLastResponse
 	}}
 	const chosen = "the password this person chose"
-	code, body = do(t, cfg, person, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
+	redeemMailedLink(t, cfg, person, acmeHost, "/api/v1/auth/password/reset",
 		`{"token":"`+tokenIn(t, mail)+`","new":"`+chosen+`"}`)
-	if code != http.StatusOK {
-		t.Fatalf("accept the invitation = %d %s, want 200", code, body)
-	}
 	code, body = do(t, cfg, person, http.MethodGet, acmeHost, "/api/v1/auth/me", "")
 	if code != http.StatusOK {
 		t.Errorf("accepting the invitation left the person signed out: /me = %d %s", code, body)
