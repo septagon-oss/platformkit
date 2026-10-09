@@ -286,7 +286,9 @@ func classified(err error, attempt context.Context) error {
 // pool with nothing free, which is the same wait one level up — leaves behind.
 // A wait for a connection that expired says so only through the wall: the pool's
 // driver answers it with a bare driver.ErrBadConn and drops the deadline from
-// the error, so whose verdict this is, the wall answers rather than the text.
+// the error, so whose verdict this is, the wall answers rather than the text — and
+// it answers from the deadline, because the cancellation that would have said so
+// arrives a goroutine late (see wallPassed).
 // A store that is down is different in kind and in time: it answers, and it
 // answers at once, with a refused connection, a closed database, a denied
 // permission. Those keep their error while the wall still stands, because ADR
@@ -299,7 +301,23 @@ func waited(err error, attempt context.Context) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	return errors.Is(err, driver.ErrBadConn) && errors.Is(attempt.Err(), context.DeadlineExceeded)
+	return errors.Is(err, driver.ErrBadConn) && wallPassed(attempt)
+}
+
+// wallPassed reports whether an attempt's own wall is behind it — the fact
+// waited needs, of which context.Err() is only the notification, and the
+// notification is late by construction. WithTimeout cancels from a time.AfterFunc
+// callback that runs in a goroutine of its own, so on a runner with no free core
+// the deadline has passed, the waiting has been broken off, and Err() still
+// reports nothing. Read the notification alone and the wall is mistaken for a
+// down store, which answers with the error every fail-open caller admits: the one
+// answer this package exists to withhold. An attempt with no wall of its own has
+// no deadline to read and is judged on the notification alone, as before.
+func wallPassed(attempt context.Context) bool {
+	if deadline, ok := attempt.Deadline(); ok && !time.Now().Before(deadline) {
+		return true
+	}
+	return errors.Is(attempt.Err(), context.DeadlineExceeded)
 }
 
 // scoped is the key as it is stored: the tenant of the context, then the

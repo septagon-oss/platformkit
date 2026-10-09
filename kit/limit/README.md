@@ -59,7 +59,7 @@ about a limiter.
 | --- | --- | --- | --- | --- |
 | counted | the statement returned | `ok` from the count, `retryAfter` = what is left, no error | the number, what is left, nil | normal path |
 | **queued** — the row's lock was not ours within `queueBudget` | SQLSTATE `55P03`, read off the driver error | **`false`, the whole window, no error** | `ErrBusy` | refuse it: `429` with that `Retry-After` |
-| **unserved** — the wall expired before anything answered | the attempt's own wall: `context.DeadlineExceeded`, or the bare `driver.ErrBadConn` the pool's driver answers when the wall expires while a connection is still being acquired and the deadline loses its name — the attempt's own context says which | **`false`, the whole window, no error** | `ErrBusy` | refuse it, the same way |
+| **unserved** — the wall expired before anything answered | the attempt's own wall: `context.DeadlineExceeded`, or the bare `driver.ErrBadConn` the pool's driver answers when the wall expires while a connection is still being acquired and the deadline loses its name — the attempt's own **deadline** says which, read rather than awaited: the cancellation `WithTimeout` sends arrives in a goroutine of its own, so on a runner with no free core it lags the wall it announces | **`false`, the whole window, no error** | `ErrBusy` | refuse it, the same way |
 | **down** | any other error: no pool on the context (`ErrNoConnection`), a refused connection, a closed database, a denied grant | `false`, 0, the error | the error | **fail open, log once** |
 
 Rows two and three are one answer because they are one fact about the attempt: it
