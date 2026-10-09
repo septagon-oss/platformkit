@@ -703,16 +703,15 @@ var (
 
 	// Breadcrumb.
 	// A breadcrumb carries a row's name in its current entry, and a name can be one token nobody can
-	// hyphenate: without a break rule the entry measured 1352px wide inside a 390px viewport and the page
-	// scrolled sideways. The frame sets that rule for everything it shows (clShellMain), and here it is
-	// refused the way the table refuses it (clTable): a crumb that broke mid-word read "Dashboa / rd".
-	// The links behind the current entry are what give way, so they truncate with an ellipsis; the entry
-	// the person is reading keeps its whole name and wraps by words.
+	// hyphenate: with no break rule the entry measured 1352px inside a 390px viewport and the page scrolled
+	// sideways. The frame owns that rule (clShellMain, `overflow-wrap: anywhere`) and it inherits; what split
+	// "Dashboard" was never the rule but the row squeezing every crumb below its own name. So the trail wraps,
+	// the links give way with an ellipsis, and no crumb declares a rule — which keeps them all projectable.
 	clBreadcrumb = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).Gap(style.S2).FontSize(style.TextSM).
-			ListStyle("none").Margin(style.S0).Padding(style.S0)
-	clBreadcrumbItem = style.New().BreakNormal().Truncate().MinWidth(style.S0)
+			ListStyle("none").Margin(style.S0).Padding(style.S0).FlexWrap()
+	clBreadcrumbItem = style.New().Truncate().MinWidth(style.S0)
 	clBreadcrumbSep  = style.New().TextColor(style.FgTertiary).FlexShrink0()
-	clBreadcrumbCur  = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium).BreakNormal().MinWidth(style.S0)
+	clBreadcrumbCur  = style.New().TextColor(style.FgPrimary).FontWeight(style.FontMedium).MinWidth(style.S0)
 
 	// Sidebar.
 	clSidebarRootAdmin = style.New().Display(style.DisplayHidden).

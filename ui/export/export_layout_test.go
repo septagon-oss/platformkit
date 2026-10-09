@@ -214,7 +214,16 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// flex-shrink-0, w-full — was already in the sheet, which is why /css is byte for
 	// byte what it was. The digest below is that measurement of this tree, printed by
 	// the refusal above the re-measure and copied from it.
-	if legacy.SHA256 != "785fdc3e1a3e4ead52d7cea8a5cd59c86872cf4e494e5cdbdc4d4a2b2af2cf27" {
+	// The same task then lost its own rough edge: `break-normal` on every crumb beat the
+	// frame's inherited `anywhere`, so a record named with one unbreakable token stopped
+	// breaking and set the page sideways at 390px — three refusals in `make e2e`, the goal
+	// that had never been run. The trail now wraps instead of refusing the rule, which
+	// needs no new utility: measured leaf by leaf against the export of this tree before
+	// that change, 99,892 leaves stay 99,892, none added or removed, and two change —
+	// /sha256 and the html of pk-ui.component.breadcrumb/default. No CSS, token, theme,
+	// notice, icon or schema leaf moves: `flex-wrap` was already emitted, and no utility
+	// was taken away, since only the crumbs stopped naming one.
+	if legacy.SHA256 != "8e749f89558e7c30f660b012c874aabc6a7f2d12550fa16d63badc445591241f" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
