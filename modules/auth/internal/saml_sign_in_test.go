@@ -317,6 +317,46 @@ func TestASAMLAssertionAddressedToAnotherHostIsRefused(t *testing.T) {
 	assertNothingWritten(t, f, before)
 }
 
+// TestASAMLAssertionWithNoAudienceRestrictionIsRefused is the forwarded assertion at
+// its cheapest: not an audience that names another tenant — the case above — but no
+// audience at all, in a document a trusted IdP signed. A reader that takes an empty list
+// of restrictions as "nothing to check" accepts it at every tenant on one installation
+// at once, which is the property this refusal takes away.
+func TestASAMLAssertionWithNoAudienceRestrictionIsRefused(t *testing.T) {
+	f := samlSignInUp(t)
+	before := f.counts(t)
+	f.idp.NoAudienceRestriction()
+
+	res := f.signInTo(t, host)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("an assertion naming no audience = %d %s, want 403", res.Code, res.Body.String())
+	}
+	if sessionCookie(res) != "" {
+		t.Error("the refusal still set a session cookie")
+	}
+	assertNothingWritten(t, f, before)
+}
+
+// TestASAMLAssertionBoundToNoBearerIsRefused is the same document with its subject cut
+// down to a bare name: still signed, still addressed here, and binding itself to nobody
+// who could present it. The library checks Recipient and the request an assertion answers
+// for every confirmation a subject carries, and for none when it carries no confirmation
+// at all, so this refusal is the installation's own.
+func TestASAMLAssertionBoundToNoBearerIsRefused(t *testing.T) {
+	f := samlSignInUp(t)
+	before := f.counts(t)
+	f.idp.NoSubjectConfirmation()
+
+	res := f.signInTo(t, host)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("an assertion confirming no bearer = %d %s, want 403", res.Code, res.Body.String())
+	}
+	if sessionCookie(res) != "" {
+		t.Error("the refusal still set a session cookie")
+	}
+	assertNothingWritten(t, f, before)
+}
+
 func TestASAMLAssertionPresentedTwiceIsRefused(t *testing.T) {
 	f := samlSignInUp(t)
 	location, cookie := f.start(t, host)

@@ -1,12 +1,14 @@
 package internal
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -36,7 +38,8 @@ import (
 // the parsed IdP metadata, keyed by the document's own bytes and by the URL it came
 // from: the one fact genuinely shared by everyone who names that IdP, and a cache
 // keyed by anything looser would let the first tenant's federation answer for every
-// tenant after it.
+// tenant after it. A copy fetched from a URL is kept for an hour and no longer; a copy
+// the tenant's own row carries is keyed by its bytes and so cannot go stale.
 //
 // No signing key. `Key` is nil on every SP this builds, so AuthnRequests go
 // unsigned and the SP metadata carries no KeyDescriptor; see contracts.SAMLProvider
@@ -56,14 +59,58 @@ type SAML struct {
 	metadataPath string
 
 	mu   sync.Mutex
-	idps map[string]*saml.EntityDescriptor
+	idps map[string]cachedIdP
+
+	// ttl is how long a document fetched from a URL stays the answer. It is a field
+	// rather than only a constant so a case can age an entry out without waiting for
+	// an hour; composition never sets it.
+	ttl time.Duration
+
+	// httpClient is the metadata fetch's own: a deadline and a ceiling, on an address
+	// an operator typed.
+	httpClient *http.Client
 }
 
 // NewSAMLProvider prepares the providers. Nothing is dialled here: a metadata URL
 // that cannot be reached is a sign-in that answers 503, not a process that will not
 // start — `discover`'s rule for an unreachable issuer, for the same reason.
 func NewSAMLProvider(cookies Cookies, secure bool, providers contracts.SAMLProviders) *SAML {
-	return &SAML{cookies: cookies, secure: secure, providers: providers, idps: map[string]*saml.EntityDescriptor{}}
+	return &SAML{
+		cookies: cookies, secure: secure, providers: providers,
+		idps: map[string]cachedIdP{}, ttl: metadataTTL,
+		httpClient: &http.Client{Timeout: metadataTimeout, Transport: boundedBody{next: http.DefaultTransport}},
+	}
+}
+
+// How long a metadata document fetched from a URL is answered from memory, how many
+// documents are held, and what one may weigh and take to arrive.
+//
+// The expiry is what makes the cache a cache rather than a decision. An identity provider
+// rotates its signing certificate; the document at its metadata URL says so the moment it
+// does, and a tenant whose provider is trusted from a copy fetched months ago is then
+// refused at 403 for a fact nobody in this installation can see, until somebody restarts
+// the process. Keeping the copy for an hour keeps the performance and bounds the lockout
+// — and bounds how long a certificate its owner has taken out of service goes on being
+// trusted here, which is the same fact read from the other side. `ValidUntil`, when the
+// document carries one, cuts the hour short; nothing ever extends it.
+//
+// The ceiling exists because the keys are operator-supplied strings — a URL, or the hash
+// of a stored document — and a map nothing bounds is a memory leak with a tenant-shaped
+// knob on it. An evicted entry costs one fetch, which is what a cache is for.
+const (
+	metadataTTL      = time.Hour
+	metadataMax      = 64
+	metadataTimeout  = 10 * time.Second
+	metadataMaxBytes = 1 << 20
+)
+
+// cachedIdP is one entry. An inline document is keyed by a hash of its own bytes, so the
+// value is that document forever and `expiresAt` is zero; a document fetched from a URL
+// is keyed by the URL, which outlives the document it named, and carries the moment this
+// installation stops vouching for the copy.
+type cachedIdP struct {
+	descriptor *saml.EntityDescriptor
+	expiresAt  time.Time
 }
 
 // trackedCookie remembers which AuthnRequests *this browser* started, so that an
@@ -122,6 +169,35 @@ func (p *SAML) sp(cfg contracts.SAMLProvider, idp *saml.EntityDescriptor, host s
 		// bindings every real IdP offers, and the pair the tenant's metadata is
 		// refused at the write unless it names a location for.
 		AuthnNameIDFormat: saml.EmailAddressNameIDFormat,
+		// This tenant's entity ID is the only audience, and it has to be named.
+		ValidateAudienceRestriction: audienceOf(cfg.EntityID),
+	}
+}
+
+// audienceOf is the audience rule this installation writes in place of the library's:
+// the assertion must name this tenant's entity ID as one of its audiences, and an
+// assertion that names no audience at all names nobody.
+//
+// The rule is spelled here because the default two lines above is weaker than this
+// module's: `service_provider.go:1247` opens with
+// `audienceRestrictionsValid := len(assertion.Conditions.AudienceRestrictions) == 0`,
+// so a document stripped of its `<AudienceRestriction>` — signed, from an IdP this
+// tenant trusts, and addressed to nobody — reads as addressed here. That is the
+// forwarded assertion at its cheapest: one signed document from a shared IdP, posted at
+// whichever tenant's ACS the attacker chose, with nothing in its bytes saying who it is
+// for. `ValidateAudienceRestriction` is the library's own door for a stricter rule, and
+// what it replaces is the weaker default rather than a check of ours bolted on after.
+func audienceOf(entityID string) func(*saml.Assertion) error {
+	return func(assertion *saml.Assertion) error {
+		if assertion.Conditions == nil {
+			return fmt.Errorf("assertion carries no conditions, so it names no audience")
+		}
+		for _, restriction := range assertion.Conditions.AudienceRestrictions {
+			if restriction.Audience.Value == entityID {
+				return nil
+			}
+		}
+		return fmt.Errorf("assertion names no audience equal to %q", entityID)
 	}
 }
 
@@ -129,8 +205,9 @@ func (p *SAML) sp(cfg contracts.SAMLProvider, idp *saml.EntityDescriptor, host s
 //
 // Inline XML wins over the URL when both are stored, so an IdP whose metadata
 // endpoint is offline still signs people in — the case the tenant's row keeps the
-// document for. A URL is fetched once and cached under itself, and a fetch failure
-// is a 503 that writes nothing, which is `discover`'s answer to a wrong issuer.
+// document for. A URL is fetched, cached under itself for as long as the entry is
+// vouched for (see metadataTTL), and fetched again after that; a fetch failure is a 503
+// that writes nothing, which is `discover`'s answer to a wrong issuer.
 func (p *SAML) idpMetadata(ctx context.Context, cfg contracts.SAMLProvider) (*saml.EntityDescriptor, error) {
 	if cfg.MetadataXML != "" {
 		key := "sha256:" + fmt.Sprintf("%x", sha256.Sum256([]byte(cfg.MetadataXML)))
@@ -141,7 +218,7 @@ func (p *SAML) idpMetadata(ctx context.Context, cfg contracts.SAMLProvider) (*sa
 		if err != nil {
 			return nil, problem.New(http.StatusServiceUnavailable, "this tenant's SAML metadata does not parse")
 		}
-		p.remember(key, parsed)
+		p.remember(key, parsed, time.Time{})
 		return parsed, nil
 	}
 	if cfg.MetadataURL == "" {
@@ -154,25 +231,94 @@ func (p *SAML) idpMetadata(ctx context.Context, cfg contracts.SAMLProvider) (*sa
 	if err != nil {
 		return nil, problem.New(http.StatusServiceUnavailable, "this tenant's SAML metadata URL cannot be parsed")
 	}
-	fetched, err := samlsp.FetchMetadata(ctx, http.DefaultClient, *u)
+	fetched, err := samlsp.FetchMetadata(ctx, p.httpClient, *u)
 	if err != nil {
 		return nil, problem.New(http.StatusServiceUnavailable, "this tenant's SAML identity provider cannot be reached right now")
 	}
-	p.remember(cfg.MetadataURL, fetched)
+	p.remember(cfg.MetadataURL, fetched, p.freshFor(fetched))
 	return fetched, nil
+}
+
+// freshFor is how long a freshly fetched document is the answer: this installation's
+// bound, cut short by the document's own `ValidUntil` when it carries one.
+func (p *SAML) freshFor(descriptor *saml.EntityDescriptor) time.Time {
+	until := db.Now().Add(p.ttl)
+	if v := descriptor.ValidUntil; !v.IsZero() && v.Before(until) {
+		// A document that expired before it arrived is not cached at all: an entry
+		// already stale is a fetch skipped for a provider nobody has checked on.
+		return v
+	}
+	return until
+}
+
+// boundedBody is the metadata fetch's ceiling on what one document may weigh. The
+// library reads the response body itself, so the only place a caller of it can bound the
+// read is under the transport: the body is read here, to the byte, and a document past
+// the ceiling is an error rather than a slice of memory nobody asked for. The address is
+// operator-supplied, so this is a mistaken URL rather than an attack; a deadline without
+// a ceiling would still let one answer the process out.
+type boundedBody struct{ next http.RoundTripper }
+
+func (b boundedBody) RoundTrip(r *http.Request) (*http.Response, error) {
+	res, err := b.next.RoundTrip(r)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(res.Body, metadataMaxBytes+1))
+	if err != nil || int64(len(body)) > metadataMaxBytes {
+		if err == nil {
+			err = fmt.Errorf("metadata over %d bytes", metadataMaxBytes)
+		}
+		return nil, err
+	}
+	res.Body = io.NopCloser(bytes.NewReader(body))
+	res.ContentLength = int64(len(body))
+	return res, nil
 }
 
 func (p *SAML) cached(key string) (*saml.EntityDescriptor, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	found, ok := p.idps[key]
-	return found, ok
+	if !ok {
+		return nil, false
+	}
+	if !found.expiresAt.IsZero() && !found.expiresAt.After(db.Now()) {
+		delete(p.idps, key)
+		return nil, false
+	}
+	return found.descriptor, true
 }
 
-func (p *SAML) remember(key string, idp *saml.EntityDescriptor) {
+// remember keeps one document, evicting whatever has already aged out and, if that is not
+// enough, the entry whose own lease ends soonest.
+func (p *SAML) remember(key string, idp *saml.EntityDescriptor, expiresAt time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	p.idps[key] = idp
+	if !expiresAt.IsZero() && !expiresAt.After(db.Now()) {
+		// A document whose lease had already run out when it arrived is not worth a
+		// map entry: whoever asks next is going to fetch again anyway.
+		delete(p.idps, key)
+		return
+	}
+	if len(p.idps) >= metadataMax {
+		now := db.Now()
+		oldest, oldestKey := expiresAt, ""
+		for k, entry := range p.idps {
+			if !entry.expiresAt.IsZero() && entry.expiresAt.Before(now) {
+				delete(p.idps, k)
+				continue
+			}
+			if oldestKey == "" || (!entry.expiresAt.IsZero() && entry.expiresAt.Before(oldest)) {
+				oldest, oldestKey = entry.expiresAt, k
+			}
+		}
+		if oldestKey != "" {
+			delete(p.idps, oldestKey)
+		}
+	}
+	p.idps[key] = cachedIdP{descriptor: idp, expiresAt: expiresAt}
 }
 
 // RegisterSAMLRoutes mounts the three SAML legs: the request out, the assertion
@@ -283,8 +429,12 @@ func RegisterSAMLRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		// assertion signature stripped out of somebody else's Response invalidates
 		// that Response's own — and when the Response is unsigned the library
 		// verifies this signature itself.
-		if !assertionSigned(response) {
+		switch shape := assertionsIn(response); {
+		case !shape.signed():
 			return nil, problem.New(http.StatusForbidden, "that assertion is not signed")
+		case !shape.boundToItsBearer():
+			return nil, problem.New(http.StatusForbidden,
+				"that assertion is not bound to whoever presents it, or names no window in which it is valid")
 		}
 		assertion, err := sp.ParseXMLResponse(response, p.tracked(r), sp.AcsURL)
 		if err != nil {
@@ -459,15 +609,52 @@ func spendAssertion(ctx context.Context, tx db.Tx[db.Tenant], assertion *saml.As
 	return result.RowsAffected == 1, nil
 }
 
-// assertionSigned reports whether every assertion in the document carries its own
-// enveloped signature, and refuses a document that carries none, or carries none that
-// the service provider would go on to read.
-func assertionSigned(document []byte) bool {
+// assertionShape is what the document carries, read off its XML before the library is
+// given it: how many assertions there are, and how many of them satisfy each rule this
+// installation cannot let the library decide. Reading them in one pass over the same
+// bytes is what lets the two refusals below name their own reason instead of sharing a
+// vague one.
+type assertionShape struct {
+	found         int // <saml:Assertion> elements an ACS could try to read
+	signatures    int // of those, the ones carrying their own enveloped signature
+	confirmations int // of those, the ones confirmed for whoever presents them
+	windows       int // of those, the ones carrying a <Conditions> element
+}
+
+// signed reports whether the document carries an assertion and every one of them is
+// signed in its own right.
+func (s assertionShape) signed() bool {
+	return s.found > 0 && s.signatures == s.found
+}
+
+// boundToItsBearer reports whether every assertion names a subject confirmation in the
+// bearer method and a validity window of its own.
+//
+// The library checks Recipient, InResponseTo and the confirmation's own expiry for
+// every confirmation a document carries — and nothing at all when the list is empty:
+// `service_provider.go:1188` guards that whole block with the loop over them. An
+// assertion whose subject is a bare `<NameID>`, or bound holder-of-key or
+// sender-vouches, therefore verifies against a certificate the tenant trusts while
+// naming nobody who could present it. Neither could ever be consumed here: v1 holds no
+// service provider key, so there is no certificate to hold a key against and no
+// assertion is ever decrypted — the same reason an `EncryptedAssertion` is no assertion
+// to the walk below. Refusing them at the structure is the true answer rather than a
+// 403 three steps later, and it is what keeps the library's own checks from standing on
+// a nil subject.
+func (s assertionShape) boundToItsBearer() bool {
+	return s.found > 0 && s.confirmations == s.found && s.windows == s.found
+}
+
+// assertionsIn reads an assertion document's shape. It is not a validator: it decides
+// nothing about signatures, audiences or windows, which the service provider does with
+// the tenant's IdP certificate in hand; it decides only what this installation will not
+// ask anyone to read.
+func assertionsIn(document []byte) assertionShape {
+	var shape assertionShape
 	doc := etree.NewDocument()
 	if err := doc.ReadFromBytes(document); err != nil {
-		return false
+		return shape
 	}
-	found, signed := 0, 0
 	var walk func(el *etree.Element)
 	walk = func(el *etree.Element) {
 		if el.Tag != "Assertion" || el.NamespaceURI() != assertionNS {
@@ -476,35 +663,55 @@ func assertionSigned(document []byte) bool {
 			}
 			return
 		}
-		found++
+		shape.found++
 		for _, child := range el.ChildElements() {
-			if child.Tag == "Signature" && child.NamespaceURI() == signatureNS {
-				signed++
+			if child.NamespaceURI() != assertionNS && child.NamespaceURI() != signatureNS {
+				continue
+			}
+			switch child.Tag {
+			case "Signature":
+				shape.signatures++
+			case "Subject":
+				if confirmedAsBearer(child) {
+					shape.confirmations++
+				}
+			case "Conditions":
+				shape.windows++
 			}
 		}
-		for _, child := range el.ChildElements() {
-			walk(child)
-		}
 	}
-	if doc.Root() != nil {
-		walk(doc.Root())
+	if root := doc.Root(); root != nil {
+		walk(root)
 	}
-	// An `EncryptedAssertion` is not an assertion this installation reads: v1 holds
-	// no service provider key, so a document whose only assertion is encrypted has no
-	// address in it, and the refusal is the true one rather than a parse failure
-	// three steps later.
-	return found > 0 && found == signed
+	return shape
 }
 
-// The two namespace prefixes a SAML document's own assertion and signature carry. The
-// library marshals them this way and every mainstream IdP does, and a document that
-// spells the namespaces as the default rather than as a prefix is caught by the
-// namespace check below rather than assumed away.
+// confirmedAsBearer is whether one <saml:Subject> binds the assertion to whoever
+// presents it: at least one <SubjectConfirmation> whose Method is absent — SAML core
+// 3.2.1 reads an absent Method as bearer — or spelled as bearer. Any other method is a
+// binding this installation has no key to honour.
+func confirmedAsBearer(subject *etree.Element) bool {
+	for _, child := range subject.ChildElements() {
+		if child.Tag != "SubjectConfirmation" || child.NamespaceURI() != assertionNS {
+			continue
+		}
+		if method := child.SelectAttrValue("Method", ""); method == "" || method == bearerMethod {
+			return true
+		}
+	}
+	return false
+}
+
+// The namespaces a SAML document's own assertion and signature carry, and the one
+// spelling of "bearer" worth matching. The library marshals them this way and every
+// mainstream IdP does; a document that spells the namespaces as the default rather than
+// as a prefix is caught here by namespace rather than assumed away, and an `EncryptedAssertion`
+// is no assertion at all to this walk because v1 holds no service provider key to open it
+// with — the refusal is the true one rather than a parse failure three steps later.
 const (
-	assertionPrefix = "saml"
-	signaturePrefix = "ds"
-	assertionNS     = "urn:oasis:names:tc:SAML:2.0:assertion"
-	signatureNS     = "http://www.w3.org/2000/09/xmldsig#"
+	assertionNS  = "urn:oasis:names:tc:SAML:2.0:assertion"
+	signatureNS  = "http://www.w3.org/2000/09/xmldsig#"
+	bearerMethod = "urn:oasis:names:tc:SAML:2.0:cm:bearer"
 )
 
 // addressIn is the assertion's own words for the address: the first non-empty value
