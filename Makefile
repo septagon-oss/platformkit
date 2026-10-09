@@ -439,6 +439,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# definitions die on it: a run that carries on across code, a group reported at its last line, and a
 	# matcher that refuses the word "review". It starts nothing, reads two files and answers in 5 ms.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/comment_group_boundaries_test.py
+	# scripts/plural_comment_citations_test.py holds the plural half of that matcher, which no other layer
+	# names out loud: narrow the matcher to the singular and this file is the one that says which half went
+	# missing, on six subcases over both comment markers and three casings of the word, where the guard's
+	# own planted case fails for a reason that reads like a broken arithmetic boundary. It holds the other
+	# side too — four sentences of ordinary numeric prose, "5.2 to 5, with half rounded up" and "A round
+	# trip reads 8 rows" among them, that the matcher must keep accepting — so a matcher widened past the
+	# digits fails here as well. It reads the matcher through the case above, which execs the guard's own
+	# definitions, so no copied pattern can drift from the real one. It starts nothing, reads two files and
+	# answers in milliseconds.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/plural_comment_citations_test.py
 	bash scripts/check_budget_ratchet_test.sh
 	bash scripts/ci_checkout_history_test.sh
 	bash scripts/mobile_journey_fetch_test.sh
