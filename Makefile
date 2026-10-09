@@ -490,6 +490,15 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# container, pays no real wait (the retry bound is handed `0 0`) and writes only inside a
 	# TemporaryDirectory it removes.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/ci_package_install_refusal_test.py
+	# scripts/package_install_refusal_guard_test.py asks whether the case above would still refuse if the
+	# refusal it exists to catch came back as success. It runs that case twice over the committed workflow
+	# bodies — once as written, once with `|| true` appended to every `apt-get install` line in the step
+	# body the runner passes through subprocess — and requires the second run to fail both workflow
+	# subcases with no error and no skip. Nothing on disk changes: the mutation lives in the argument list
+	# of the one call, and the workflows stay as committed. It is here because a pin nobody can break is
+	# a pin nobody can trust: the two apt doubles and the three stub tools are shared with the case it
+	# mutates, so this file carries no fixture of its own and costs the two runs it names.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/package_install_refusal_guard_test.py
 	# scripts/ci_container_leak_test.sh asks what the program's CI does with the containers it starts by
 	# hand: whether every `docker run -d` names itself after the run id and clears that name first,
 	# whether every one carries `--label pkit.ci.run=<run id>`, whether the first step of a job that
