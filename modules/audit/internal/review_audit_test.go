@@ -32,7 +32,7 @@ import (
 // recorded through the real audit service, then an UPDATE and a DELETE through
 // ordinary tenant transactions. Both used to commit (reproductions.log: "ordinary
 // tenant transaction committed an UPDATE of audit history"); both are refused now, by
-// the revoke where the deployment pinned the privilege and by migrations/000041's
+// the revoke where the deployment pinned the privilege and by migrations/000048's
 // triggers wherever it did not.
 func TestReviewAuditStorageRejectsMutation(t *testing.T) {
 	admin, conn := dbtest.Schema(t, audit.Migrations)

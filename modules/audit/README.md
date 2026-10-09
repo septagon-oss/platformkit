@@ -51,7 +51,7 @@ only deletion is the retention job (`Retention` in
 `modules/audit/internal/retention.go`), which runs per tenant.
 
 That is now true of the database and not only of this module's code.
-`migrations/000041_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
+`migrations/000048_audit_history_append_only.up.sql` revokes `UPDATE`, `TRUNCATE`,
 `REFERENCES` and `TRIGGER` from every grantee the catalog discovers (the shape
 `kit/db/migrate.go` uses for the runner's own ledger, because a module may name no
 role), and installs four triggers: `audit_events_never_rewritten` refuses every
@@ -161,8 +161,8 @@ The expected holders are tenant administrators and any role an administrator nam
 table/RLS/policy shape, `kit/jobs/backfill.go`'s ignore-the-scheduler's-connection
 shape, `jobs.PerTenantConcurrent` and `jobs.TenantLister`, `kit/db`'s `Open`
 role check, and the `Service` interface and hand-written `httpx.Register` shape
-`internal/handler.go` already carries. **Added** — `000041_audit_history_append_only.up.sql`
-(the revoke and the four triggers) and `000042_audit_retention_marks.up.sql`, because
+`internal/handler.go` already carries. **Added** — `000048_audit_history_append_only.up.sql`
+(the revoke and the four triggers) and `000049_audit_retention_marks.up.sql`, because
 nothing in the repository had ever revoked a privilege from a module table or written
 a trigger, and a trigger is the only thing that refuses the table's own owner;
 `Deps.RetainURL` and `database.retain_url`, because the expiry door must be a role the

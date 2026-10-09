@@ -40,7 +40,7 @@ func retainPool() db.Pool {
 // The connection the scheduler hands a job is the application's. This job uses it for
 // one thing and not for the other: it lists tenants on it, and it expires rows on the
 // DSN below. The reason the expiry cannot use the scheduler's connection is the
-// trigger: 000041 fences the application role's DELETE away — a role that may append to
+// trigger: 000048 fences the application role's DELETE away — a role that may append to
 // the trail may never expire it — so the expiry runs as the one role the fence admits,
 // the one named by database.retain_url. That job opens its own connection, for one run,
 // and closes it, which is the exception kit/jobs/jobs.go's comment about doubling the

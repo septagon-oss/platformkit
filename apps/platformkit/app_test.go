@@ -1687,19 +1687,20 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 47 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty under modules/*/migrations/
+	// this head prints 49 — seventeen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46) and thirty-two under modules/*/migrations/
 	// (4, 7,
 	// 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36,
-	// 37, 38, 39, 40, 42, 44, 45, 47), all at distinct versions. The release this fixture is
+	// 37, 38, 39, 40, 42, 44, 45, 47, 48, 49), all at distinct versions. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The fourteen above it — the kernel's own 34, 41, 43 and 46,
+	// any owner names. The sixteen above it — the kernel's own 34, 41, 43 and 46,
 	// modules/audit's
 	// 35, 36 and 37, modules/change's 38, modules/site's 39, modules/file's 40,
-	// modules/content's 42 and modules/auth's 47 — postdate that release, are not in
+	// modules/content's 42, modules/auth's 47 and modules/audit's 48 and 49 —
+	// postdate that release, are not in
 	// the old installation's
 	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
@@ -1708,7 +1709,10 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db reads a repeated version only inside one owner: the kernel's
 	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
 	// under two owners, and the only thing that says so is the one map below that
-	// counts every shipped file under one key.
+	// counts every shipped file under one key. modules/audit's 48 and 49 are this
+	// rule's newest customer: the append-only trail and its retention marks were
+	// numbered 41 and 42 while the branch was open, and main took 41 for the kernel's
+	// own outbox baggage and 42 for modules/content's body characters underneath it.
 	//
 	// modules/content's body-character file is 000042 and not the 000035 it was first
 	// merged as, for the reason this paragraph has now recorded four times: this
@@ -1739,11 +1743,12 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the fourteen files above the
+	// release ships is in the ledger, which is where the sixteen files above the
 	// adopted ceiling of 33 (the kernel's own 34, 41, 43 and 46, modules/audit 35, 36
-	// and 37, modules/change 38, modules/site 39, modules/file 40, modules/content 42
-	// and modules/auth 47, all absent from the old ledger) have to be accounted for:
-	// 47 files in the release, 47 rows.
+	// and 37, modules/change 38, modules/site 39, modules/file 40, modules/content 42,
+	// modules/auth 47 and modules/audit 48 and 49, all absent from the old ledger) have
+	// to be accounted for:
+	// 49 files in the release, 49 rows.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

@@ -50,7 +50,7 @@ type Deps struct {
 	// dependency rather than a constant because a retention period is a
 	// compliance obligation, and a module that chose one would be choosing
 	// somebody else's. config.Audit is where it comes from, and config.Validate is
-	// what refuses a period below the floor migrations/000041 spells.
+	// what refuses a period below the floor migrations/000048 spells.
 	RetentionDays int
 
 	// RetainURL is the role that may expire the trail: database.retain_url, a

@@ -13,7 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/audit/internal"
 )
 
-// TestTrailRefusesTruncateWhenThePrivilegeComesBack is the case migrations/00041's
+// TestTrailRefusesTruncateWhenThePrivilegeComesBack is the case migrations/000048's
 // header names as the triggers' reason to exist: an operator runs GRANT ALL on the
 // trail to the application role. UPDATE and DELETE are still refused by the row
 // triggers; TRUNCATE must be refused too, and TRUNCATE ignores row-level security, so

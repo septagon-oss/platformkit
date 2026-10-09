@@ -13,7 +13,7 @@ import (
 var sixDigits = regexp.MustCompile(`^[0-9]{6}_[a-z0-9_]+\.up\.sql$`)
 
 // TestMigrationFilesCarrySixDigitVersions holds the module's files to the shape every
-// other owner's files have, so a listing sorts by version and a reader finds 41 after 37.
+// other owner's files have, so a listing sorts by version and a reader finds 48 after 47.
 func TestMigrationFilesCarrySixDigitVersions(t *testing.T) {
 	names, err := fs.Glob(audit.Migrations.Files, "*.sql")
 	if err != nil {

@@ -23,7 +23,7 @@ import (
 // and what the one role that may expire history may and may not do.
 //
 // The two halves refuse different things, so each is asked separately. The REVOKE
-// in migrations/000041 is what refuses the application today, in PostgreSQL's own
+// in migrations/000048 is what refuses the application today, in PostgreSQL's own
 // vocabulary; the triggers are what refuses it after an operator hands the
 // privilege back, and what refuses the table's owner, which no REVOKE reaches.
 
@@ -190,7 +190,7 @@ func TestExpiryRoleIsTheOnlyDoor(t *testing.T) {
 // TestRecordingTwiceWritesOneRowEvenWithTheTriggersInPlace is the case the triggers
 // could have broken: ON CONFLICT DO NOTHING is a statement, and a statement trigger
 // or a row trigger reading the row it conflicts with would turn a redelivery into a
-// refused write. Recording is idempotent after 000041 exactly as it was before it.
+// refused write. Recording is idempotent after 000048 exactly as it was before it.
 func TestRecordingTwiceWritesOneRowEvenWithTheTriggersInPlace(t *testing.T) {
 	admin, conn := dbtest.Schema(t, audit.Migrations)
 	ctx := tenancy.WithTenant(t.Context(), acme)

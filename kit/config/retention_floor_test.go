@@ -28,7 +28,7 @@ func exampleWith(t *testing.T, old, replacement string) string {
 }
 
 // TestARetentionPeriodBelowTheFloorIsRefusedAtBoot holds config.Load to the floor
-// migrations/00041 installs: a shorter period is refused and names the floor, the
+// migrations/000048 installs: a shorter period is refused and names the floor, the
 // floor itself boots, and the expiry role's DSN is read from the file.
 func TestARetentionPeriodBelowTheFloorIsRefusedAtBoot(t *testing.T) {
 	_, err := config.Load(exampleWith(t, "retention_days: 365", "retention_days: 30"))

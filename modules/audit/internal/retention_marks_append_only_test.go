@@ -13,7 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/audit/internal"
 )
 
-// TestRetentionMarksRefuseARewrite holds migrations/00042's claim that the record of
+// TestRetentionMarksRefuseARewrite holds migrations/000049's claim that the record of
 // an expiry "is append-only in the same sense audit_events is, and it is fenced the
 // same way": the table's owner may not rewrite or remove a mark, and the application
 // role may not either once an operator hands the privileges back.

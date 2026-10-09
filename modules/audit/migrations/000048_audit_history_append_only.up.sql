@@ -45,7 +45,7 @@
 -- satisfy the shape — that is why its DELETE privilege, revoked or not, opens nothing.
 -- Revoking DELETE as well was the other option and it is the wrong one: the retention
 -- job runs on the application's connection, so revoking it would leave the expiry with
--- no door except a role the application is not, which is what 000042 and Deps.RetainURL
+-- no door except a role the application is not, which is what 000049 and Deps.RetainURL
 -- deliver; and leaving DELETE to a GUC, a session setting or a marker row the
 -- application could write would be a door the fenced-in role can open — platformkit_app
 -- already sets platformkit.system_access for itself today (a measurement this delivery
