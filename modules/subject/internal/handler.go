@@ -63,7 +63,11 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 		if !ok {
 			return nil, problem.New(http.StatusUnauthorized, "this request carries no identity to export")
 		}
-		row, err := svc.RequestExport(ctx, tx, contracts.RequestExportInput{Subject: actor, Reason: in.Reason})
+		reason := ""
+		if in.Body != nil {
+			reason = in.Body.Reason
+		}
+		row, err := svc.RequestExport(ctx, tx, contracts.RequestExportInput{Subject: actor, Reason: reason})
 		return &rest.Item[*contracts.Request]{Body: row}, fault(err)
 	})
 
@@ -84,7 +88,11 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 			if !ok {
 				return nil, unavailable
 			}
-			row, err := svc.RequestExport(ctx, tx, contracts.RequestExportInput{Subject: in.Subject, Reason: in.Reason})
+			ask := exportForBody{}
+			if in.Body != nil {
+				ask = *in.Body
+			}
+			row, err := svc.RequestExport(ctx, tx, contracts.RequestExportInput{Subject: ask.Subject, Reason: ask.Reason})
 			return &rest.Item[*contracts.Request]{Body: row}, fault(err)
 		})
 
@@ -173,7 +181,11 @@ func RegisterRoutes(r httpx.Surfaces, svc contracts.Service, files filecontracts
 			if !ok {
 				return nil, unavailable
 			}
-			_, receipt, err := svc.RequestErase(ctx, tx, contracts.EraseInput{Subject: in.Subject, Confirm: in.Confirm})
+			ask := personEraseBody{}
+			if in.Body != nil {
+				ask = *in.Body
+			}
+			_, receipt, err := svc.RequestErase(ctx, tx, contracts.EraseInput{Subject: ask.Subject, Confirm: ask.Confirm})
 			return &rest.Item[*contracts.Erasure]{Body: receipt}, fault(err)
 		})
 
@@ -228,25 +240,62 @@ type idInput struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The export request's id"`
 }
 
-// mineInput is the body a person may send with their own request: a reason, and nothing
-// else. There is no subject field on this route on purpose — the subject of a request made
-// by a signed-in person is that person, and a body that could name somebody else would be
-// a door onto their rows under a permission that asks for none.
+// The three bodies these doors read are nested structs of their own, and not JSON fields
+// written straight onto the input. That is kit/rest's shape for a command body — and kit/rest's
+// reason, which modules/file wrote down beside its own eraseInput: huma reads a request body
+// from a field named Body and from nothing else, so the flat spelling is a route that answers
+// every request as though the caller had sent nothing, with a schema whose request body has
+// no properties in it to say so. A door that ignores the person it was asked about is not a
+// door, so the nesting is what the handlers below depend on.
+//
+// The three bodies these doors read are nested structs of their own, and not JSON fields
+// written straight onto the input. That is kit/rest's shape for a command body (commandInput)
+// and kit/rest's reason, which modules/file wrote down beside its own eraseInput: huma reads
+// a request body from a field named Body and from nothing else, so the flat spelling is a
+// route that answers every request as though the caller had sent nothing, with a schema whose
+// request body has no properties in it to say so. A door that ignores the person it was asked
+// about is not a door, so the nesting is what the handlers above depend on. The pointer is
+// rest's own reason: a body is read as required otherwise, and "{}" is not something a caller
+// should have to send to say nothing — an ask that names nobody is the zero value, and the
+// service answers it as the person who is not there.
+//
+// The three type names carry the module's work in them because a schema name comes from the
+// Go type: an eraseBody beside modules/file's eraseBody is one registry refusing the boot.
+//
+// There is no subject field on the person's own route on purpose — the subject of a request
+// made by a signed-in person is that person, and a body that could name somebody else would
+// be a door onto their rows under a permission that asks for none.
 type mineInput struct {
-	Reason string `json:"reason" maxLength:"500" doc:"Why you are asking, in your words. Recorded, and it buys nothing."`
+	Body *ownExportBody
+}
+
+type ownExportBody struct {
+	// omitempty and not bare: this is the reason, which a person may leave out, and a
+	// schema that required it would refuse the plain ask for one's own copy.
+	Reason string `json:"reason,omitempty" maxLength:"500" doc:"Why you are asking, in your words. Recorded, and it buys nothing."`
 }
 
 // forInput is the operator's ask: the person, and the reason.
 type forInput struct {
-	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The person whose copy is wanted"`
-	Reason  string    `json:"reason" maxLength:"500" doc:"Why, recorded on the request"`
+	Body *exportForBody
+}
+
+type exportForBody struct {
+	Subject uuid.UUID `json:"subject,omitempty" format:"uuid" doc:"The person whose copy is wanted"`
+	Reason  string    `json:"reason,omitempty" maxLength:"500" doc:"Why, recorded on the request"`
 }
 
 // eraseInput is the irreversible ask. Confirm is checked against the person's own row, not
-// against this body, which is the whole of what it is for.
+// against this body, which is the whole of what it is for — and the body still has to carry
+// it, because a door that erased whoever happened to be named in the session would be the
+// failure this one was written against.
 type eraseInput struct {
-	Subject uuid.UUID `json:"subject" format:"uuid" doc:"The person to stop holding data about"`
-	Confirm string    `json:"confirm" maxLength:"320" doc:"That person's email address, repeated"`
+	Body *personEraseBody
+}
+
+type personEraseBody struct {
+	Subject uuid.UUID `json:"subject,omitempty" format:"uuid" doc:"The person to stop holding data about. Nothing is erased when nobody is named"`
+	Confirm string    `json:"confirm,omitempty" maxLength:"320" doc:"That person's email address, repeated. The erasure checks it against the row, so an ask that does not repeat it writes nothing"`
 }
 
 // tokenInput is a minted link.

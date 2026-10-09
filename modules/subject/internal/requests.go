@@ -24,6 +24,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/personaldata"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/subject/contracts"
 	"gorm.io/gorm/clause"
@@ -107,6 +108,92 @@ func (s *service) RequestErase(ctx context.Context, tx db.Tx[db.Tenant], in cont
 	}
 	row.State, row.UpdatedAt, row.Revision = contracts.StateErased, at, row.Revision+1
 	return row, receipt, nil
+}
+
+// erasedBundleDetail is what a request row says once the erasure has taken what it
+// produced. It names no person, so it survives the scrub two lines below it.
+const erasedBundleDetail = "the person was erased; the bundle this request produced was removed with them"
+
+// retire is the erasure turned back on this module's own holdings: the person's words in
+// its request rows, every link it minted onto a copy of their rows, and that copy.
+//
+// The words go because module.go declares subject_requests.reason and .detail as Text — the
+// columns an identifier may have been copied into — and a Text claim no scrub honours is an
+// address in a row with a manifest beside it saying the address is not there. The row stays,
+// because it is the receipt; what it says about the person does not. The scrub is the same
+// statement every other owner runs, over the whole tenant's rows rather than only the ones
+// whose subject_id matches: a colleague's request whose reason names the person is the
+// person's own data sitting in somebody else's row, and the identifier is what the erasure
+// looks for, not the column.
+//
+// The links die because a seven-day door that outlives the erasure hands the address back
+// out of a zip the erasure was meant to end. Redeem's whole answer is the grant row, so
+// removing the row is what closes the door; a spent, expired and deleted token are already
+// one refusal.
+//
+// The bundle goes because it is a copy of the person's rows that this module made, and
+// `subject:erase` is the tenant saying it stops holding them. Two other ways it could come
+// back out are why this is not left to the link: the file module's own door serves a
+// private file to any holder of file:read, and that module's sweep never removes a file of
+// a kind it has no retention policy for. Release then Discard, in that order — the module
+// refuses to delete a held file, and the hold is this module's promise about a link the
+// erasure is ending. The bytes go on `file.deleted`'s subscription after this transaction
+// commits, which is that module's order for every removal.
+//
+// What the request row says afterwards is `erased` with its bundle pointer cleared. It is
+// still the receipt of a request that was answered; a row that went on saying `ready` about
+// bytes that are gone would be a row nobody can act on, and `Mint` already refuses anything
+// that is not `ready`, which is the door shut by the state rather than by a lookup.
+func (s *service) retire(ctx context.Context, tx db.Tx[db.Tenant], sj personaldata.Subject) error {
+	if _, err := personaldata.Scrub(ctx, tx, sj, "subject_requests",
+		[]string{"reason", "detail"}, ""); err != nil {
+		return fmt.Errorf("subject: scrub the requests' own words: %w", err)
+	}
+
+	// Locked, because the rows are about to be rewritten and a walk claiming one of them
+	// concurrently should see this erasure's answer rather than race it.
+	var rows []contracts.Request
+	if err := tx.DB().WithContext(ctx).Model(&contracts.Request{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("subject_id = ? AND kind = ?", sj.ID, contracts.KindExport).
+		Order("id").Find(&rows).Error; err != nil {
+		return fmt.Errorf("subject: %w", crud.Classify(err))
+	}
+	ids := make([]uuid.UUID, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	if len(ids) > 0 {
+		if err := tx.DB().WithContext(ctx).Where("request_id IN ?", ids).
+			Delete(&contracts.Grant{}).Error; err != nil {
+			return fmt.Errorf("subject: revoke the links to %s's bundles: %w", sj.ID, err)
+		}
+	}
+
+	at := s.now()
+	for _, r := range rows {
+		if r.Bundle != uuid.Nil {
+			store, err := s.store()
+			if err != nil {
+				return err
+			}
+			if err := store.Discard(ctx, tx, r.Bundle); err != nil {
+				return fmt.Errorf("subject: remove the bundle %s made for %s: %w", r.ID, sj.ID, err)
+			}
+		}
+		if r.State == contracts.StateErased {
+			continue
+		}
+		if err := tx.DB().WithContext(ctx).Model(&contracts.Request{}).
+			Where("id = ? AND revision = ?", r.ID, r.Revision).
+			Updates(map[string]any{
+				"state": contracts.StateErased, "bundle_file_id": uuid.Nil, "bundle_digest": "",
+				"detail": erasedBundleDetail, "updated_at": at, "revision": r.Revision + 1,
+			}).Error; err != nil {
+			return fmt.Errorf("subject: %w", err)
+		}
+	}
+	return nil
 }
 
 // openErase reads the erase request one person already has open.
@@ -195,6 +282,12 @@ func (s *service) Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor 
 	if !operator && row.Requester != actor {
 		return nil, crud.ErrNotFound
 	}
+	// A request the erasure voided has no bundle and gets the answer that does not confirm
+	// there ever was one: `subject:erase` ended this door, and a mint that moved the hold out
+	// another seven days would be the same leak with a fresher date on it.
+	if row.State == contracts.StateErased {
+		return nil, fmt.Errorf("subject: %w", crud.ErrNotFound)
+	}
 	if row.Bundle == uuid.Nil || row.State != contracts.StateReady {
 		return nil, fmt.Errorf("subject: that request has no bundle to link to yet: %w", crud.ErrInvalid)
 	}
@@ -282,7 +375,9 @@ func (s *service) Redeem(ctx context.Context, tx db.Tx[db.Tenant], token string)
 		// caller holding an open link cannot act on any finer an answer.
 		return nil, contracts.ErrGrant
 	}
-	if row.Bundle == uuid.Nil {
+	if row.Bundle == uuid.Nil || row.State != contracts.StateReady {
+		// The bundle is gone, or the erasure voided the request that named it. Either way the
+		// caller holds a token and the answer is the one a wrong token gets.
 		return nil, contracts.ErrGrant
 	}
 	return &contracts.Link{Request: row.ID, Subject: row.Subject, File: row.Bundle}, nil

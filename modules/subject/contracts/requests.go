@@ -92,7 +92,8 @@ type Request struct {
 	State     string    `json:"state" gorm:"column:state"`
 	Reason    string    `json:"reason,omitempty" gorm:"column:reason"`
 	// Detail is the failure, in the words of whoever failed: the module that said no to
-	// an erasure, or the error a bundle died on. Empty while the work is open.
+	// an erasure, or the error a bundle died on. Empty while the work is open, and the
+	// sentence "the person was erased" on a request whose bundle went with them.
 	Detail string `json:"detail,omitempty" gorm:"column:detail"`
 	// Bundle names the file row that holds the zip and the digest it was checked at.
 	// The nil uuid and the empty string mean there is no bundle yet.
@@ -221,6 +222,14 @@ type BundleSource interface {
 	// One call at production time would either sweep bytes under an open link or hold them
 	// forever, and a person whose copy was deleted while their link worked has no answer.
 	Hold(ctx context.Context, tx db.Tx[db.Tenant], file uuid.UUID, until time.Time) error
+
+	// Discard ends a stored bundle: its hold, its row, and the bytes behind them. The
+	// erasure of the person whose rows the bundle was made of is the only thing that calls
+	// it — the copy is this module's own, so ending it asks no leave of a retention class.
+	// The hold goes first, because the module that stores the bytes refuses to delete a file
+	// still under one, and that hold is this module's own promise about a link the erasure
+	// is ending. The bytes go afterwards, on the storage module's own removal path.
+	Discard(ctx context.Context, tx db.Tx[db.Tenant], file uuid.UUID) error
 }
 
 // Tx opens the transaction the file row is written in. It is this package's own spelling

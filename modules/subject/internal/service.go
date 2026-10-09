@@ -222,6 +222,14 @@ func (s *service) Erase(ctx context.Context, tx db.Tx[db.Tenant], in contracts.E
 		names = append(names, p.Module)
 	}
 
+	// This module's own rows, links and bundles are the nine contributors' equal, and it is
+	// the only one that can reach them: it is not a part in its own walk (that would be a
+	// module composing itself), so the erasure turns around here once the contributors are
+	// done. Same transaction, same all-or-nothing as an owner's refusal above.
+	if err := s.retire(ctx, tx, sj); err != nil {
+		return nil, err
+	}
+
 	requester, _ := tenancy.ActorFrom(ctx)
 	// The event commits with the rows: the outbox write is in this transaction, so
 	// a rolled-back erasure publishes nothing and a published erasure changed

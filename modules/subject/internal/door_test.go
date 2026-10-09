@@ -43,13 +43,15 @@ func (d *stamps) Now() time.Time { return d.at }
 // bundlesStub is where a bundle goes: it remembers the bytes it was handed and the instant
 // until which it was asked to keep them.
 type bundlesStub struct {
-	puts  int
-	holds int
-	name  string
-	body  []byte
-	until time.Time
-	id    uuid.UUID
-	err   error
+	puts      int
+	holds     int
+	discards  int
+	discarded uuid.UUID
+	name      string
+	body      []byte
+	until     time.Time
+	id        uuid.UUID
+	err       error
 }
 
 func (b *bundlesStub) Put(_ context.Context, _ contracts.Tx, name string, body []byte) (uuid.UUID, error) {
@@ -69,6 +71,15 @@ func (b *bundlesStub) Put(_ context.Context, _ contracts.Tx, name string, body [
 func (b *bundlesStub) Hold(_ context.Context, _ db.Tx[db.Tenant], _ uuid.UUID, until time.Time) error {
 	b.holds++
 	b.until = until
+	return nil
+}
+
+// Discard counts the bundles the erasure asked the store to end. The claim the case below
+// makes about it is that an erasure reaches the copy this module made of a person, not only
+// the rows that named them.
+func (b *bundlesStub) Discard(_ context.Context, _ db.Tx[db.Tenant], file uuid.UUID) error {
+	b.discards++
+	b.discarded = file
 	return nil
 }
 

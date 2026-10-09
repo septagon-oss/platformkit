@@ -112,6 +112,22 @@ func (b bundles) Hold(ctx context.Context, tx db.Tx[db.Tenant], file uuid.UUID, 
 	return err
 }
 
+// Discard ends a bundle the erasure of its person has overtaken: the hold this module
+// placed while a link was open, then the row and the bytes behind it. Release before Delete
+// because the file module asks that question before every removal — a hold is a promise to
+// somebody that the bytes outlive the class they were filed under, and the erasure is the
+// moment that promise is withdrawn.
+func (b bundles) Discard(ctx context.Context, tx db.Tx[db.Tenant], file uuid.UUID) error {
+	if b.files == nil {
+		return context.Canceled
+	}
+	if err := b.files.Release(ctx, tx, file); err != nil {
+		return err
+	}
+	_, err := b.files.Delete(ctx, tx, file)
+	return err
+}
+
 // notices tells the person their bundle is ready, through the module that owns inboxes.
 // It says the bundle exists and points at the request; the token is never in it, because a
 // link in a row is a link a database read hands out (ADR 0020 §6).
