@@ -29,6 +29,16 @@
 # approval journeys review a *proposal*, and a guard that refused that word would be refusing the
 # product's own language. What is refused is a round, a finding number and an attempt number — the
 # three ways these comments have of citing a discussion instead of a behaviour.
+#
+# The matcher is deliberately blunt about the round, and its one known cost is arithmetic. Because it
+# matches `rounds?\s+\d+` to catch the plural a citation takes when two rounds are named together, a
+# comment that *rounds* a number is refused too: "A worker rounds 5.2 to 5" reads as a citation of
+# "rounds 5" to it. Narrowing that — dropping the `s`, or refusing a bare integer so a decimal stays
+# legal — buys the arithmetic line back and loses the citation it was added for, so the blunt shape
+# stays and the trade is written down rather than discovered by whoever writes the arithmetic. The
+# planted case below pins the refusal as today's boundary, so a future narrowing fails there and has
+# to be argued with that case, not found by surprise. An arithmetic comment that needs to pass today
+# names its operands without the verb: "5.2 to 5", "half rounded up".
 set -euo pipefail
 
 cd "$(cd "$(dirname "$0")/.." && pwd)"
@@ -54,6 +64,13 @@ func TestTheLedgerGrows(t *testing.T) {}
 // deepHelper reads the ledger. Round 8 measured the number this helper defends.
 func deepHelper() int { return 0 }
 GO
+cat >"$scratch/pinned/arithmetic_test.go" <<'GO'
+package pinned
+
+// A worker rounds 5.2 to 5 and never the other way.
+
+func TestAWorkerRounds(t *testing.T) {}
+GO
 cat >"$scratch/pinned/clean_test.go" <<'GO'
 package pinned
 
@@ -74,7 +91,9 @@ TEST_SUFFIXES = ("_test.go", "_test.sh", "_test.py", ".spec.ts", ".test.ts", ".t
 CENSUS = re.compile(r"(^|/)[^/]*(review|probe|round[0-9])[^/]*(_test\.go|\.test\.tsx?|\.spec\.ts|_test\.py|_test\.sh)$")
 CENSUS_CEILING = 22
 # A round, a finding's number, an attempt's number. "round trip", "rounded 5" and "background 5"
-# form none of these: the number has to stand where the round's ordinal stands.
+# form none of these: the number has to stand where the round's ordinal stands. The `s?` that lets
+# "rounds 8 and 9" be caught is also what refuses "rounds 5.2 to 5"; see the header for that trade
+# and for the planted case that holds it.
 NARRATION = re.compile(r"(?i)\b(review[\s-]+rounds?\b|rounds?\s+\d+|findings?\s+#?\d+|attempt\s+\d+)")
 
 
@@ -142,6 +161,7 @@ planted = sys.argv[1]
 _, caught = scan([f"{planted}/wrapped_test.go"], lambda p: open(p, encoding="utf-8").read())
 _, middle = scan([f"{planted}/mid_file_test.go"], lambda p: open(p, encoding="utf-8").read())
 _, quiet = scan([f"{planted}/clean_test.go"], lambda p: open(p, encoding="utf-8").read())
+_, arith = scan([f"{planted}/arithmetic_test.go"], lambda p: open(p, encoding="utf-8").read())
 if len(caught) != 1 or "review round" not in caught[0]:
     bad.append("the planted phrase wrapped across two // lines was not caught as the round it is: "
                f"{caught} — a comment group broken across lines escapes the match")
@@ -155,6 +175,15 @@ if quiet:
     bad.append("a comment that names behaviour, or the domain term 'round trip', was refused: " + "; ".join(quiet))
 else:
     print("ok   a comment that names behaviour, and the domain term 'round trip', are not refused")
+# The known limit, written down: an arithmetic sentence is refused today, and this is the case that
+# says so. A matcher narrowed to let it through fails here, where the trade is written, rather than
+# quietly losing the plural citation the `s?` was there for.
+if len(arith) != 1 or "rounds 5" not in arith[0]:
+    bad.append(f"the planted arithmetic comment was reported as {arith}; the matcher was either "
+               "narrowed — then update this case and the header paragraph together — or broken")
+else:
+    print("ok   an arithmetic 'rounds 5.2 to 5' is refused today, and the case that says so fails if "
+          "the matcher narrows")
 
 for line in bad:
     print("REFUSAL " + line)
