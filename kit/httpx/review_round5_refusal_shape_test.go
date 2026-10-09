@@ -61,6 +61,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
@@ -108,15 +109,20 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 }
 
 // round5Answer is what one request read off a real server: the status, the headers as they
-// arrived (Content-Length included) and the whole body a client would parse.
+// arrived (Content-Length included) and the whole body a client would parse. The two stamps
+// bracket the exchange on the client's own clock, which is the interval inside which the
+// server can have written the Date this answer carries; round5Date is what reads them.
 type round5Answer struct {
 	status int
 	header http.Header
 	body   string
+	sentAt time.Time
+	readAt time.Time
 }
 
 func round5Ask(t *testing.T, server, authority, path, accept, id string) round5Answer {
 	t.Helper()
+	sent := time.Now()
 	req, err := http.NewRequest(http.MethodGet, server+path, nil)
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
@@ -134,12 +140,52 @@ func round5Ask(t *testing.T, server, authority, path, accept, id string) round5A
 	if err != nil {
 		t.Fatalf("%s: %v", path, err)
 	}
-	return round5Answer{status: res.StatusCode, header: res.Header, body: string(body)}
+	return round5Answer{status: res.StatusCode, header: res.Header, body: string(body),
+		sentAt: sent, readAt: time.Now()}
 }
 
 // noncePattern is the per-request content security policy nonce, random by construction
 // (headers.go), which is the one thing a comparison of two responses may not read apart.
 var noncePattern = regexp.MustCompile(`'nonce-[A-Za-z0-9_=+/]+'`)
+
+// round5Date compares the other thing two responses may not be read apart on — and this file
+// had it wrong, which is why the reason is written here. `Date` is not part of the answer this
+// kernel writes: nothing in kit/httpx sets or clears one (the word does not appear in the
+// package's non-test files, nor in any file of this repository that touches a ResponseWriter),
+// and the server writes it itself, from its own clock, as it writes the response. Two refusals
+// of one host therefore answer the same Date only while the clock stays inside one second —
+// not a property of the refusal, a coincidence of when the pair was taken. Read as bytes, this
+// comparison refused on 2026-10-09 (`make check-race`, run 55756 job 56412: the control-plane
+// 404 answered `… 04:38:34` and the never-mounted 404 `… 04:38:35`) and passed on the other
+// runs of the same bytes.
+//
+// README.md, CHANGELOG.md and authorize.go's notHere claim that no header says which surface
+// answered, and a stamp taken as the answer was written says nothing about the surface. So Date
+// is compared as an instant, and it is still pinned: exactly one of them, readable as an HTTP
+// date, inside the interval of its own exchange — one second of allowance, because the header
+// resolves to whole seconds and truncates downward, so an answer taken at …:34.9 reads …:34.
+// A refusal that answers no Date, two, an unreadable one, or one from outside the round trip
+// that carried it (copied off a cached answer, or a writer that stopped the clock) fails here.
+// What stopped being a failure condition is the agreement of the two strings, which was never
+// this case's claim.
+func round5Date(t *testing.T, which string, answer round5Answer) {
+	t.Helper()
+	values := answer.header.Values("Date")
+	if len(values) != 1 {
+		t.Errorf("%s answers %d Date headers (%v), want the one every response of this server carries",
+			which, len(values), values)
+		return
+	}
+	when, err := http.ParseTime(values[0])
+	if err != nil {
+		t.Errorf("%s answers Date=%s, which is not an HTTP date a client could read: %v", which, values[0], err)
+		return
+	}
+	if before, after := answer.sentAt.Add(-time.Second), answer.readAt; before.After(when) || when.After(after) {
+		t.Errorf("%s answers Date=%s, outside the exchange that produced it (asked %s, read whole %s): the stamp is not the moment this answer was written",
+			which, values[0], answer.sentAt.UTC().Format(time.RFC3339Nano), after.UTC().Format(time.RFC3339Nano))
+	}
+}
 
 func round5Same(t *testing.T, a, b round5Answer, asked, reference string) {
 	t.Helper()
@@ -151,9 +197,20 @@ func round5Same(t *testing.T, a, b round5Answer, asked, reference string) {
 		t.Errorf("%s and %s are not the same body:\n %s: %s\n %s: %s", asked, reference,
 			asked, a.body, reference, b.body)
 	}
+	// The two Date stamps are compared as instants, which is the only way two of them taken a
+	// second apart are comparable: each must be the single readable stamp of its own exchange,
+	// and that bracket bounds the pair, since both then lie between the first ask and the
+	// reading of the second. round5Date says why, and fails the case when either answer fails
+	// it; the header is out of the loop below because no string comparison has anything left
+	// to catch in it.
+	round5Date(t, asked, a)
+	round5Date(t, reference, b)
 	for name := range b.header {
 		if strings.EqualFold(name, "X-Request-Id") {
 			continue // the caller sent it, and sent the same value on both
+		}
+		if name == "Date" {
+			continue // round5Date compared it above, as the instant it is
 		}
 		got := fmt.Sprint(a.header.Values(name))
 		want := fmt.Sprint(b.header.Values(name))
