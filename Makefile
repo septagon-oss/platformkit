@@ -472,6 +472,16 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# range the `toolchain` line and the x/net pin land on — and mutates both back inside them, so the
 	# acceptance is a comparison and not a print. It reads no feed and reaches no network.
 	bash scripts/go_mod_above_advisory_test.sh
+	# That guard's own inputs, asked of a tree it did not write. Every mutation the shell makes starts
+	# from the committed go.mod, so three branches of it live unless a synthetic tree reaches them: the
+	# directory argument that names such a tree, the rule that a commented-out dependency is not a pin
+	# (`\t// golang.org/x/net v0.60.0` answers `is absent, so nothing here resolves above the range`),
+	# and a release *superseding* a fix — the committed pins sit exactly at v0.60.0 and go1.27.2, so
+	# "strictly above" is never asked of them. This case writes five go.mod files into a temporary
+	# directory and asks the guard about each through its subprocess, and asserts exit codes rather than
+	# sentences, so a floor comparison that passes for the wrong reason — an absent pin read as a
+	# satisfied range — cannot answer 0. It reaches no network and builds nothing.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/go_mod_advisory_inputs_test.py
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
