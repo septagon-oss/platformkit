@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
+
+	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
@@ -17,19 +21,15 @@ import (
 // administer itself takes, and the reason it is not named after this module.
 //
 // The property is one — this tenant can still administer itself — and two
-// modules check halves of it. This one counts the roles that grant role:manage;
-// the user module counts the people holding such a role. On separate keys they
-// do not see each other at all: two concurrent writes that each verify what the
-// other is falsifying both pass, so emptying a second administering role and
-// standing the last administrator down are each valid alone and together reach
-// the tenant both floors are for.
-//
-// What this lock buys is that those two cannot happen at the same time. It does
-// not make the state unreachable, and a reader of this comment must not take it
-// that way: the same two writes one after the other are each still permitted,
-// because each half is asked in isolation and the composed question is asked by
-// nobody. contracts.CheckedAdministration says what is left open and what the
-// fix would look like. This is the concurrent case, closed.
+// modules guard it from opposite sides. The decision is one rule, written once,
+// in the user module's contracts: what a role grants is this table and who holds
+// one is theirs, so each side asks the other and both call the same function.
+// What this lock buys is that a write in one module cannot answer the rule from a
+// state the other is in the middle of changing: emptying a second administering
+// role and standing the last administrator down are each valid alone, each
+// verifies exactly what the other is falsifying, and on separate keys they both
+// passed — which is the concurrent case, closed here, and was closed in queue
+// order and nothing else.
 //
 // So the string is deliberately neither module's. It is written out in both
 // rather than imported from one, because a module reaching into another for a
@@ -46,10 +46,16 @@ import (
 // takes the roles row. The user module's delete route locks the subject row
 // first, because kit/rest reads and locks it before any hook runs, and takes
 // this lock after. The two orders are opposite and that is fine, because no
-// transaction wants both: nothing here touches a user row, and nothing there
-// touches a roles row outside this lock. A path that took a row lock and then
-// asked for this one would close the cycle; there is none, and this comment is
-// where to check before adding one.
+// transaction wants both in a way that can wait.
+//
+// The composed floor changed what this side reads, so read this before adding
+// anything: the check below asks who holds a granting role, which is rows of the
+// user module's table. It asks them read-only, under the key this holds, with no
+// FOR UPDATE, no lock and no write — and a plain SELECT cannot wait on a row
+// lock, because MVCC reads the last committed version. The cycle stays open on
+// that. A path here that took a users row lock after this key would close it,
+// and apps/platformkit's TestTheAdministrationLockQueuesTheOtherModuleBehindIt
+// is the case that would report it.
 func administrationLock(tenant tenancy.Tenant) string {
 	return "administration/" + tenant.ID.String()
 }
@@ -137,12 +143,23 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 		// by accident.
 		return nil, fmt.Errorf("auth: read the role %q: %w", name, err)
 	}
-	// The one write a tenant cannot undo from inside the product. The query is
-	// behind the rule rather than in front of it, so only a write that is
-	// taking role:manage away pays for it. See contracts.CheckedAdministration.
+	// The one write a tenant cannot undo from inside the product, which is one
+	// rule the user module owns and this module asks through the door above. The
+	// two reads are behind the rule's own gate rather than in front of it, so only
+	// a write that is taking role:manage away pays for them.
 	if err := contracts.CheckedAdministration(name, was, want, func() ([]*contracts.Role, error) {
 		return s.Roles(ctx, tx)
+	}, func(names []string) ([]uuid.UUID, error) {
+		// Who holds a name is the user module's column, asked in this tenant's
+		// transaction under the key this file already holds, read-only.
+		return s.users.Holders(ctx, tx, names)
 	}); err != nil {
+		if errors.Is(err, crud.ErrInvalid) {
+			// The rule refused it. A read that did not happen also refuses the
+			// write, but it is not this rule refusing, and recording it would put
+			// a lockout attempt on the trail every time a query failed.
+			s.recordRefusal(ctx, name, was, want)
+		}
 		return nil, err
 	}
 	at := db.Now()
@@ -160,6 +177,45 @@ func (s *Service) SetRole(ctx context.Context, tx db.Tx[db.Tenant], name string,
 	return role, events.Publish(ctx, tx, contracts.EventRoleSet, contracts.RoleSet{
 		Role: name, Was: was, Now: want, At: at,
 	})
+}
+
+// recordRefusal puts a write the last-administrator rule stopped on the trail,
+// in a transaction of its own.
+//
+// It has to be outside the caller's: the request transaction is about to roll
+// back — a 422 is a response of 400 or worse, and kit/httpx does not commit those
+// — so a row written inside it would never exist, and the attempt is the only
+// fact about this write anybody would ever read. This is this module's own
+// precedent, not a new mechanism: recordFailure does the same for a failed login,
+// and copies the same four things — db.Detached over the request's context, which
+// keeps the tenant, the actor, the request id and the trace context while dropping
+// the cancellation and the pending transaction; the pool connection kit/httpx put
+// on the request; detachedWriteBudget, so the trail write cannot make the refusal
+// the slow part of the call; and the request's own ctx given to Publish, so the
+// row carries them. With no request connection on ctx — a job, a harness, a system
+// transaction — there is nowhere to write and the rule still refuses: the answer
+// a caller gets was never contingent on its paperwork.
+//
+// It logs rather than fails, for the same reason recordFailure does: the write is
+// already refused, and a trail that could not take the row does not make the
+// caller's request any less refused. The failure is not silent, though — it is a
+// logged line naming the role.
+func (s *Service) recordRefusal(ctx context.Context, name string, was, want contracts.Permissions) {
+	conn, ok := httpx.ConnFrom(ctx)
+	if !ok {
+		return
+	}
+	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), detachedWriteBudget)
+	defer cancel()
+	err := db.Run(detached, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
+		return events.Publish(ctx, tx, contracts.EventAdministrationRefused, contracts.AdministrationRefused{
+			Role: name, Was: was, Now: want, At: db.Now(),
+		})
+	})
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: could not record a refused role write",
+			"role", name, "error", err)
+	}
 }
 
 // Undeclared reports, for one tenant, every role row naming a permission the

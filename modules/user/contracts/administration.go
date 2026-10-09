@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 )
@@ -149,170 +151,150 @@ func (u *User) holds(administering []string) bool {
 	})
 }
 
-// CheckedAdministration refuses the one write a tenant cannot undo from inside
-// the product: the one that takes away the last person who could still sign in
-// and administer it.
+// Reach is one state of one tenant as the last-administrator rule sees it: the
+// people who could sign in and administer it in that state, and nothing else.
 //
-// before is the row as it stands and after is the row the write would leave;
-// after is nil for a delete, which leaves no row at all. others is read only on
-// the path that can refuse, so an ordinary write costs no query.
+// Every door builds two of these — the state before the write and the state it
+// would leave — and hands them to CheckedAdministration, which is the only
+// reader. The ids are what Service.Holders answers and what User.CanAdminister
+// decides, so the two modules that guard this property count the same people by
+// applying one predicate rather than by keeping two lists in step.
+type Reach struct {
+	// CanAdminister are the people who could sign in and administer this
+	// tenant in this state: active, not deleted, holding one of the role names
+	// that grant the permission which manages roles. An empty list is the fact
+	// that nobody could, which is the only thing the rule looks at.
+	CanAdminister []uuid.UUID
+}
+
+// CheckedAdministration is the one check every write that can move the
+// invariant runs, inside administrationLock, on the state it is about to leave.
 //
-// After that write nobody inside the tenant can change a role again — not
-// through the generated user screen, not through the roles screen, not through
-// POST /api/v1/user/users/{id}/roles and not through
-// PUT /api/v1/auth/roles/{name}. Every one of those is guarded by a permission
-// the tenant's own roles no longer grant anybody.
+// The invariant, in one sentence: in one tenant, at every commit, at least one
+// person who is active and not deleted holds at least one role that, in that
+// same transaction's view of the roles table, grants the permission that manages
+// roles — and no write may be the write that makes that false.
+//
+// Both halves used to live in one module each, and each asked only its own
+// question: this module counted the people holding a role whose names it was
+// handed, and modules/auth counted the roles granting the permission, never
+// asking who held one. Each was right about its own rows, and the composed
+// question was asked by nobody, so two permitted writes — create a role
+// granting role:manage and give it to nobody, then empty the role everybody
+// holds — reached a tenant nobody inside can administer, with no concurrency at
+// all. That is the sequence apps/platformkit's
+// TestTheTwoFloorsComposeIntoOneInvariant now asserts is refused. The question
+// is asked once, here, over the people and the grants together, and every door
+// that can move it answers it before it writes.
+//
+// It refuses the write that takes the last one away and never the write that
+// finds none: after is what the tenant would be left with, before is what it is
+// now, and a tenant that already has nobody is a tenant that needs a grant, so
+// refusing its writes would take the repair away with the damage. lastWayBack is
+// the caller's answer to "does this write destroy the last thing that could
+// still restore the invariant" — the appointment a person is being moved out
+// of, for the doors in this module; the grant being removed, for the door in
+// modules/auth. It is what keeps the tenant whose only holders have not accepted
+// their invitations from having the thread they hang from cut, and it is never
+// set by a write that adds.
+//
+// leaving is the caller's own sentence about what its write takes away, because
+// only the caller knows which row it is moving: LeavingAdministration is this
+// module's words, and modules/auth's contracts.CheckedAdministration is the
+// other door's. The value is crud.ErrInvalid, so both doors answer 422 with the
+// rule, what it would leave, and the repair — and the repair is never itself
+// refused, because a write that adds a grant or activates somebody returns here
+// at the first line.
+//
+// # Who records the refusal
+//
+// This function writes nothing: it is a decision over two sets of ids with no
+// transaction of its own, and the caller's is about to be rolled back. Each door
+// therefore records its own refusal beside itself — internal.Service.floor
+// publishes user.administration_refused, and modules/auth's SetRole publishes
+// auth.administration_refused, each in a detached transaction because the
+// refused write takes its own transaction down with it. A door that returns this
+// error and writes neither has a refusal that nobody will ever read, which is why
+// the two records are named on the rule rather than left to the files that call it.
 //
 // # Who can still repair it, exactly
 //
-// A customer's tenant is not beyond help, and saying otherwise would be the
-// overclaim this comment exists not to make. The installation's operator can
-// put a fresh administrator into one with POST /api/v1/tenant/tenants/{id}/invite,
-// which runs in a system transaction and needs no session at the customer's
-// host. Verified by running it: against a tenant whose only administrator had
-// been stripped it answered 201 and left a second person holding the admin
-// role.
+// A customer's tenant is not beyond help, and saying otherwise would be an
+// overclaim. The installation's operator can put a fresh administrator into one
+// with POST /api/v1/tenant/tenants/{id}/invite, which runs in a system
+// transaction and needs no session at the customer's host; it was verified by
+// running it against a tenant whose only administrator had been stripped. Two
+// things bound that, and a contract has to say them. The route hands out a role
+// by name, chosen by the application's adapter — "admin" in this repository's
+// composition — so it recovers a tenant whose people lost their grants, not one
+// where the named role is itself the role that was emptied; and it exists only
+// where an application wires the capability. The operator's own tenant is the
+// case with no way back inside the product: that route declares an operator
+// permission held through the operator tenant's own roles, so once that tenant
+// has nobody who administers it the control plane is shut and what is left is
+// SQL. POST /api/v1/tenant/tenants/{id}/suspend against it is one request with
+// no reverse route at all, which predates this rule and is outside it — a floor
+// under who may administer a tenant cannot help a tenant that is no longer
+// served.
 //
-// Two things bound that, and a contract has to say them even though the test
-// did not need them. What the route hands out is a role by name, chosen by the
-// application's adapter — "admin" in this repository's composition — so it
-// recovers a tenant whose people lost their grants and not one where the named
-// role is itself the role that was emptied, because that is the role it hands
-// out. And the route exists at all only where an application wires the
-// capability; modules/tenant mounts it if and only if it was given an inviter.
-//
-// The operator's own tenant is the case with no way back. That route declares
-// tenant:manage as an operator permission, held through the operator tenant's
-// own roles, so once that tenant has nobody who administers it the control
-// plane is shut: no tenant can be created, none can be given an administrator,
-// and the price list cannot be read. What is left there is SQL.
-//
-// Roles are not the only way there, and this comment used to imply they were.
-// POST /api/v1/tenant/tenants/{id}/suspend on the operator's own tenant is one
-// request: it answered 200, every operator host then answered 404 "no site is
-// served", and the whole route surface has no resume or activate to undo it.
-// That path predates this floor and neither floor touches it — a floor under
-// who may administer a tenant cannot help with a tenant that is no longer
-// served at all.
-//
-// The middle case — a tenant whose people still hold a role that still grants
-// something — is the one this floor and modules/auth's jointly keep reachable.
-//
-// # What it refuses, stated so the two predicates do not make it a lie
-//
-// This used to read "the last administrator leaving, and not a demand that one
-// exist: a write in a tenant that already has none passes". That was true when
-// one predicate answered both questions and it is false now, and the state it
-// is false in is reachable: in a tenant where every holder of an administering
-// role is invited, pending or unverified, Administers says yes for each of them
-// and CanAdminister says no for all of them, so removing any one of them is
-// refused even though an identical second holder is sitting there and neither
-// could sign in.
-//
-// What is actually refused is one thing: the write after which nobody who can
-// sign in would hold a role that administers this tenant. In that state every
-// removal of such a holder is refused, deliberately — those unaccepted
-// invitations are the tenant's only thread, and dropping one is not repair.
-//
-// It is still never a dead end, because it never refuses a grant. Giving an
-// administering role to somebody already active is not a write this rule can
-// refuse — the subject held no such role, so it returns at the first line — and
-// once it lands, the removal that was refused is allowed. That is the repair,
-// and the refusal message names it rather than leaving somebody to find it.
-//
-// What it never demands is that an administrator exist before any write at all:
-// somebody who holds no administering role is removed freely, whatever state
-// the tenant is in.
-//
-// The caller must hold the reads and the write together — see
-// internal.Service.floor, which takes an advisory lock on the tenant — or two
+// The caller must hold the reads, the decision and the write together —
+// internal.Service.floor and modules/auth's internal.SetRole each take the
+// advisory lock on the tenant before the deciding read, on the same key — or two
 // administrators standing down at once both pass this and the tenant ends with
 // neither.
 //
-// # What this does not close
-//
-// It counts people holding a role. It does not check what that role grants
-// today, because that is the auth module's table: administering is a list of
-// names handed in, and this rule is only as true as the answer it was given.
-// Five consequences, written down rather than implied:
-//
-//   - Emptying the role itself reaches the same locked-out tenant from the
-//     other side. PUT /api/v1/auth/roles/admin with no permissions leaves every
-//     administrator holding a name that grants nothing, and this floor sees a
-//     tenant full of administrators. modules/auth owns that door; on this
-//     branch it is open, and closing it does not close this one either.
-//
-//   - The two floors do not compose into the invariant, and sharing a lock does
-//     not make them. That was claimed here and it was false. Both take
-//     "administration/<tenant id>" through
-//     pg_advisory_xact_lock(hashtextextended(key, 0)) — the same literal
-//     written out in both modules, pinned by a test on each side, and necessary
-//     — but it only orders concurrent writes. It cannot make a check that never
-//     asks the question answer it. Reproduced with both floors in one binary,
-//     the shared key in place and no concurrency at all: create a role granting
-//     role:manage, give it to nobody, then empty the role everybody holds. Two
-//     200s, one actor, one write that matters, and a tenant that answers 403 to
-//     its own roles screen. Sequentially the same from the other side: strip the
-//     person holding the second administering role, then empty the first — each
-//     floor verified a fact the other write then removed.
-//
-//     The join is this rule, for the writes it sees. It reads administering —
-//     what the roles grant, from whoever owns roles — and counts the reachable
-//     people holding them, which is the composed property itself, so every
-//     write in this module is checked against it. That is the whole of the
-//     claim: this rule is never consulted about an auth-module write, so it
-//     holds the property for user-module writes and for no others. The mirror
-//     is needed because of that boundary, not in spite of it. modules/auth's floor counts roles in isolation: a
-//     role nobody holds satisfies it. The symmetric fix is the mirror of the
-//     dependency this module already accepts — modules/auth asking who holds a
-//     role before it changes what a role grants, and refusing the write after
-//     which no reachable person holds one that grants role:manage. Until it
-//     does, writes in that module can still reach the state this one refuses to
-//     reach.
-//
-//   - Reachable counts an invited, pending or unverified person. If the last
-//     administrator is a pending registration and nobody else holds
-//     user:approve, the tenant is still unreachable — this floor permitted the
-//     write that got there, because it saw somebody. See Reachable for why the
-//     narrower rule is worse.
-//
-//   - It knows nothing about the world outside the database. An administrator
-//     whose mailbox is gone, or who has forgotten a password nobody can reset
-//     for them, is a lockout no row shows.
-//
-//   - It is per tenant and says nothing about the installation. The operator's
-//     own tenant is protected exactly as much as a customer's, which is to say
-//     that an operator tenant with one administrator is one row from being the
-//     whole control plane's floor.
-//
-//   - Nothing in this repository renames or deletes a role, so a name somebody
-//     holds cannot vanish from under them through an API today. A module that
-//     adds either will need its own floor; this one will not catch it, because
-//     it never reads the roles table.
-//
-// So this closes the user module's doors and says what is still open.
-func CheckedAdministration(before, after *User, administering []string, others func() ([]*User, error)) error {
-	if !before.Administers(administering) {
-		return nil
+// What this cannot see is the same list it always was. It reads two sets of ids
+// somebody hands it, so it is only as true as the caller's reads: an
+// administrator who has forgotten a password nobody can reset for them is a
+// lockout no row shows, and a module that someday renames or deletes a role will
+// have to answer this rule about the name it removes, because nothing here does.
+func CheckedAdministration(before, after Reach, lastWayBack bool, leaving string) error {
+	if len(after.CanAdminister) > 0 {
+		return nil // somebody would still be able to act; this write takes nothing last
 	}
-	if after.Administers(administering) {
-		return nil
+	if len(before.CanAdminister) == 0 && !lastWayBack {
+		return nil // the write found nobody, and a write that finds none is not refused
 	}
-	rest, err := others()
-	if err != nil {
-		return err
+	return fmt.Errorf("%w: this would leave nobody who can sign in and administer this tenant: %s; grant it to somebody already active first",
+		crud.ErrInvalid, leaving)
+}
+
+// UserReach is this module's door onto that rule: the state of a tenant as
+// CheckedAdministration sees it, from the person a write is moving and the other
+// people in the tenant who could administer it. after is nil for a delete,
+// which leaves no row at all, and the nil reaches CanAdminister's own nil check.
+//
+// others is every other person's row, read under the same lock: the subject is
+// excluded by whoever read it, and everybody else is counted by the same
+// predicate the subject is counted by. Both doors here go through this function —
+// internal.Service.floor and the conformance fake alike — so the fake's cases
+// are the service's cases and the two cannot drift.
+//
+// The query that fills others is behind this module's cheap gate, not in front
+// of it: a write about somebody who never administered the tenant pays for no
+// read at all.
+func UserReach(u *User, administering []string, others []*User) Reach {
+	var out Reach
+	if u.CanAdminister(administering) {
+		out.CanAdminister = append(out.CanAdminister, u.ID)
 	}
-	for _, other := range rest {
-		if other.ID != before.ID && other.CanAdminister(administering) {
-			return nil
+	for _, other := range others {
+		if other.CanAdminister(administering) {
+			out.CanAdminister = append(out.CanAdminister, other.ID)
 		}
 	}
-	// What this says and does not say is the correction of a real defect. It
-	// used to call the subject "the last person who can still sign in", which
-	// is false whenever nobody could sign in to begin with — and it pointed
-	// away from the one write that repairs the state instead of at it.
-	return fmt.Errorf("%w: this would leave nobody who can sign in and administer this tenant: %s holds %s, and no active person would still hold it; grant it to somebody already active first",
-		crud.ErrInvalid, before.Email, strings.Join(held(before, administering), ", "))
+	return out
+}
+
+// LeavingAdministration names, for the refusal, what a write in this module
+// takes away: this person, and the administering roles they would no longer
+// hold. It says "would", because the sentence is read about a write that did not
+// happen; the one before it called the subject "the last person who can still
+// sign in", which is false whenever nobody could sign in to begin with, and
+// pointed away from the grant that repairs the state.
+func LeavingAdministration(u *User, administering []string) string {
+	return fmt.Sprintf("%s holds %s, and no active person would still hold it",
+		u.Email, strings.Join(held(u, administering), ", "))
 }
 
 // held names the administering roles this person actually holds, so the refusal

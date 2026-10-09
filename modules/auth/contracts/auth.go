@@ -229,6 +229,16 @@ type Users interface {
 	// module's decision, and it refuses an account this tenant closed or has not
 	// yet approved.
 	ConfirmAddress(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, email string) (*usercontracts.User, error)
+	// Holders is the people in this tenant holding at least one of roles: the
+	// same answer the user module's own floor counts with, and this module needs
+	// it for the same reason — changing what a role grants changes who can
+	// administer the tenant, and a role held by nobody administers nothing.
+	//
+	// It is the same question Deps.Administration answers from the other side,
+	// joined by the composition and never by a read across a module's rows: which
+	// names grant is this module's table, which people hold them is the user
+	// module's. An empty or nil roles answers an empty list and no error.
+	Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error)
 }
 
 // Notifier is what this module needs of the notification module to tell
