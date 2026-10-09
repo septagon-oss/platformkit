@@ -143,7 +143,7 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	}
 	after := *u
 	after.Roles = want
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptRoles, u, &after); err != nil {
 		return nil, err
 	}
 	u.Roles = want
@@ -258,7 +258,7 @@ func (s *Service) Deactivate(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 	}
 	after := *u
 	after.Status = contracts.StatusInactive
-	if err := s.floor(ctx, tx, u, &after); err != nil {
+	if err := s.floor(ctx, tx, attemptStatus, u, &after); err != nil {
 		return nil, err
 	}
 	u.Status = contracts.StatusInactive

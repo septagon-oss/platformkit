@@ -42,6 +42,12 @@ const (
 	// trail that answers "when did I kick that one out, and was it before the
 	// laptop I forgot about".
 	EventSessionRevoked = "auth.session_revoked"
+	// EventAdministrationRefused is a write to a role this module refused because
+	// it would have left the tenant with nobody who can sign in and administer it.
+	// It records an attempt that did not happen: the refused write rolls back, so
+	// the trail row is the only trace of it. See AdministrationRefused and
+	// internal.Service.SetRole.
+	EventAdministrationRefused = "auth.administration_refused"
 )
 
 // Events is every event this module emits, for the manifest.
@@ -64,6 +70,7 @@ var Events = []events.Declared{
 	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
+	events.Declare[AdministrationRefused](EventAdministrationRefused),
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for
@@ -98,6 +105,24 @@ type PasswordReset struct {
 
 // RoleSet is the payload of EventRoleSet.
 type RoleSet struct {
+	Role string    `json:"role"`
+	Was  []string  `json:"was"`
+	Now  []string  `json:"now"`
+	At   time.Time `json:"at"`
+}
+
+// AdministrationRefused is the payload of EventAdministrationRefused: somebody
+// tried to take role:manage off the last role anybody active holds, and the write
+// was refused.
+//
+// It names the role, not the caller: actor, request id, client address and trace
+// context ride on every outbox row already and modules/audit copies them into the
+// trail, so a copy here would be a second one to drift. Both grant lists are
+// carried, as RoleSet carries them, because the two lists are the refusal — what
+// this role granted before the write and what it would have granted after — and
+// unlike the user module's record they really do differ: the write was about this
+// row, and a refusal describes the row it found.
+type AdministrationRefused struct {
 	Role string    `json:"role"`
 	Was  []string  `json:"was"`
 	Now  []string  `json:"now"`

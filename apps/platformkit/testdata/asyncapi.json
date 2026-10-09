@@ -1,6 +1,50 @@
 {
   "asyncapi": "3.0.0",
   "channels": {
+    "auth.administration_refused": {
+      "address": "platformkit.*.auth.administration_refused",
+      "description": "Published at platformkit.{tenantId}.auth.administration_refused; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.administration_refused": {
+          "contentType": "application/json",
+          "name": "auth.administration_refused",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "role": {
+                "type": "string"
+              },
+              "was": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "role",
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.administration_refused",
+          "title": "auth.administration_refused"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.administration_refused.",
+      "title": "auth.administration_refused"
+    },
     "auth.api_token_issued": {
       "address": "platformkit.*.auth.api_token_issued",
       "description": "Published at platformkit.{tenantId}.auth.api_token_issued; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3228,6 +3272,48 @@
       "summary": "Every tenant's delivery of tenant.suspended.",
       "title": "tenant.suspended"
     },
+    "user.administration_refused": {
+      "address": "platformkit.*.user.administration_refused",
+      "description": "Published at platformkit.{tenantId}.user.administration_refused; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "user.administration_refused": {
+          "contentType": "application/json",
+          "name": "user.administration_refused",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "attempt": {
+                "type": "string"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "attempt",
+              "roles",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.administration_refused",
+          "title": "user.administration_refused"
+        }
+      },
+      "summary": "Every tenant's delivery of user.administration_refused.",
+      "title": "user.administration_refused"
+    },
     "user.deactivated": {
       "address": "platformkit.*.user.deactivated",
       "description": "Published at platformkit.{tenantId}.user.deactivated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3783,6 +3869,23 @@
     "version": "1.0.0"
   },
   "operations": {
+    "auth.administration_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.administration_refused"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.administration_refused/messages/auth.administration_refused"
+        }
+      ],
+      "summary": "The auth module publishes auth.administration_refused.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
     "auth.api_token_issued": {
       "action": "send",
       "channel": {
@@ -4902,6 +5005,23 @@
       "tags": [
         {
           "name": "tenant"
+        }
+      ]
+    },
+    "user.administration_refused": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.administration_refused"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.administration_refused/messages/user.administration_refused"
+        }
+      ],
+      "summary": "The user module publishes user.administration_refused.",
+      "tags": [
+        {
+          "name": "user"
         }
       ]
     },
