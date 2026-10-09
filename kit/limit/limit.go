@@ -19,9 +19,11 @@ import (
 	"errors"
 	"fmt"
 	"github.com/septagon-oss/platformkit/kit/appname"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
@@ -40,6 +42,12 @@ type Limiter interface {
 	// still within limit: the limit-th event is allowed and the one after it is
 	// not. retryAfter is what is left of the window, and it is zero when the
 	// answer is yes.
+	//
+	// An error means the counter could not be reached, and only that: an attempt
+	// that was not recorded because the counter was still busy with its key is
+	// answered as a refusal — ok false, retryAfter the window, no error — so that
+	// a caller which fails open on an error cannot let a busy counter admit the
+	// traffic it exists to refuse. kit/limit/README.md owns that failure mode.
 	Allow(ctx context.Context, key string, limit int, window time.Duration) (ok bool, retryAfter time.Duration, err error)
 
 	// Count reports how many events key has in the window that is open now, and
@@ -58,11 +66,22 @@ type Limiter interface {
 const table = "platformkit_limits"
 
 const (
-	// budget bounds every statement here. A limiter is on the path of a
-	// request that is about to be refused and must never be the thing that
-	// holds one open: a database that has stopped answering costs the caller
-	// this much and then an error it can fail open on.
+	// budget is the whole wall one attempt may take, and it is the number
+	// docs/adr/0010 promises the caller — this much, and then an error it can
+	// fail open on. A limiter is on the path of a request that is about to be
+	// refused and must never be the thing that holds one open, so raising it to
+	// cover a queue is the wrong lever: the queue is the traffic's own length.
 	budget = 2 * time.Second
+
+	// queueBudget is the half of that wall given to waiting for this key's row
+	// lock. It is written into the counter's own transaction as lock_timeout, so
+	// the server ends the wait rather than a stopwatch and says which world it
+	// ended it in — SQLSTATE 55P03, the same code kit/db's migration runner reads
+	// to tell a contended lock from a failed migration. The wall's other second
+	// pays for everything else it waits for: a connection out of the pool, BEGIN,
+	// COMMIT. It is checked rather than commented by
+	// TestTheLimitersQueueBudgetFitsInsideItsWall, and README.md names both.
+	queueBudget = 1 * time.Second
 
 	// keep is how long a row outlives its window before Purge deletes it. A
 	// day is far longer than any window a caller here uses and short enough
@@ -82,14 +101,36 @@ var systemToken = syscap.NewSystemToken("rate limit counters")
 // wrong for a paywall.
 var ErrNoConnection = errors.New("limit: no database connection on this context")
 
-// Connections is where a limiter finds the pool, and httpx.ConnFrom is what the
-// application passes: the kernel puts the connection on every request's context.
+// ErrBusy is what Count and Forget answer when the attempt spent its budget
+// rather than being refused by a store that replied: the row's lock was not
+// ours within queueBudget, or the wall expired before anything was answered at
+// all. Nothing was read and nothing was written, and a count invented here
+// would be a number nobody took.
+//
+// Allow never returns it. Its answer to the same fact is the refusal triple —
+// ok false, retryAfter the whole window, no error — because what an error means
+// is the caller's decision, and every caller in the field fails open on one.
+// That is the failure mode this package exists to stop, so it is carried in the
+// answer rather than in the error; README.md says why, and says what a caller
+// that means to fail open would have to ask for.
+var ErrBusy = errors.New("limit: the counter was still busy with this key, and the attempt was not counted")
+
+// Connections is where a limiter finds the pool.
 //
 // It is a parameter rather than an import for two reasons. A composition builds
 // its modules before kit/app opens the pool, so a limiter cannot be handed one
 // at construction; and a package that counts rows has no business linking a web
 // server to find out where they go — modules/auth's contracts package holds a
 // Limiter, and a contracts package is the entity and the interfaces.
+//
+// What it hands back is the pool itself, not a connection: a count is written in
+// a transaction of its own, detached from whatever request asked for it. Read it
+// from a held handle (`kit/app` composes `limit.Postgres(a.held.read)`) rather
+// than from a request context: `httpx.ConnFrom` answers nothing until the
+// middleware that opens the request's transaction has run, and the public write
+// limit counts ahead of it, so a composition built that way would find no pool on
+// every anonymous write and — the failure mode below says which way that goes —
+// admit all of them.
 type Connections func(context.Context) (*db.Conn, bool)
 
 // Postgres returns the limiter every replica shares.
@@ -120,6 +161,13 @@ func (p postgres) Allow(ctx context.Context, key string, limit int, window time.
 		RETURNING count, extract(epoch FROM (window_start + ?::interval - now()))`
 	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
 	if err != nil {
+		if errors.Is(err, ErrBusy) {
+			// The attempt reached no row, so no window was read and there is
+			// nothing honest to report as what is left of one; the whole window is
+			// the one figure that cannot understate the wait. The refusal carries no
+			// error for the reason ErrBusy's comment gives.
+			return false, window, nil
+		}
 		return false, 0, err
 	}
 	if n <= limit {
@@ -179,7 +227,7 @@ func (p postgres) scan(ctx context.Context, query string, args ...any) (int, tim
 		return rows.Scan(&n, &left)
 	})
 	if err != nil {
-		return 0, 0, fmt.Errorf("limit: %w", err)
+		return 0, 0, err
 	}
 	if left < 0 {
 		left = 0
@@ -187,10 +235,12 @@ func (p postgres) scan(ctx context.Context, query string, args ...any) (int, tim
 	return n, time.Duration(left * float64(time.Second)), nil
 }
 
-// run opens the counter's own transaction. Detached, so the count survives the
-// rollback of the request that made it; WithoutCancel, so a caller who hung up
-// is still counted; and bounded, because neither of those may turn a database
-// that has stopped answering into a request that never ends.
+// run opens the counter's own transaction, and answers for what happened in it.
+// Detached, so the count survives the rollback of the request that made it;
+// WithoutCancel, so a caller who hung up is still counted; and bounded, because
+// neither of those may turn a database that has stopped answering into a request
+// that never ends. The two waits inside that wall are told apart here, which is
+// the whole of this package's cure: see classified.
 func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 	conn, ok := p.conns(ctx)
 	if !ok {
@@ -198,7 +248,48 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 	}
 	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), budget)
 	defer cancel()
-	return db.RunSystem(detached, conn, systemToken, fn)
+	err := db.RunSystem(detached, conn, systemToken, func(ctx context.Context, tx db.Tx[db.System]) error {
+		// is_local, so the budget belongs to this transaction and dies with it
+		// rather than riding the pooled connection to somebody else's statement.
+		if err := tx.DB().Exec("SELECT set_config('lock_timeout', ?, true)",
+			strconv.FormatInt(queueBudget.Milliseconds(), 10)).Error; err != nil {
+			return err
+		}
+		return fn(ctx, tx)
+	})
+	return classified(err)
+}
+
+// classified is the one place this package says which world an attempt just
+// lived in, so that every method answers from one decision and a conformance
+// fake cannot hold a different opinion about it. A wait that spent its budget is
+// a refusal — ErrBusy, which Allow carries as ok=false and nothing else — and an
+// error the store sent back is an outage, which stays the error ADR 0010 tells
+// the caller to fail open on.
+func classified(err error) error {
+	if err == nil {
+		return nil
+	}
+	if waited(err) {
+		return fmt.Errorf("%w: %w", ErrBusy, err)
+	}
+	return fmt.Errorf("limit: %w", err)
+}
+
+// waited reports the two answers that say this attempt never got what it asked
+// for while the store is still there: the server stopped the wait for the row's
+// lock, which is SQLSTATE 55P03 and the code lock_timeout raises, or this
+// attempt's own wall expired, which is what a store that answers nothing — and a
+// pool with nothing free, which is the same wait one level up — leaves behind.
+// A store that is down is different in kind and in time: it answers, and it
+// answers at once, with a refused connection, a closed database, a denied
+// permission. Those keep their error, because ADR 0010 is right that the caller
+// decides about an outage and that a lockout must not close during one.
+func waited(err error) bool {
+	if pg, isPostgres := errors.AsType[*pgconn.PgError](err); isPostgres && pg.Code == "55P03" {
+		return true
+	}
+	return errors.Is(err, context.DeadlineExceeded)
 }
 
 // scoped is the key as it is stored: the tenant of the context, then the
