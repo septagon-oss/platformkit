@@ -94,7 +94,15 @@ func TestACachedResolutionCarriesTheWholeTenant(t *testing.T) {
 		Languages: &tenancy.Languages{Default: "pt", Others: []string{"en"}},
 	}
 	// Both replicas exist before anything is written, so the only thing between the
-	// write and the read is the read.
+	// write and the read is the read. That order is main's (T-0279, 0572dad), and its
+	// reason is main's measurement: while the whole suite was in flight the two
+	// fixtures' migrations started 111 s apart — every one of the thirty migration
+	// files they logged answered in under 525 ms — and the case cost 218.89 s, against
+	// a host believed for hostTTL, 30 s (tenant.go:28). Writing before the reader
+	// exists spends the entry's whole life inside a wait nobody asked the case to make,
+	// and the read below lands as "no tenant at this host" over a store that had
+	// nothing wrong with it. One schema, shared, is the same cure taken one step
+	// further: with a single migration there is no second fixture left to queue.
 	_, app := dbtest.Schema(t)
 	writer := resolverOver(t, app, shared, &fixed{tenant: installation})
 	// The reader's own loader knows nothing: what it resolves came from the store.
