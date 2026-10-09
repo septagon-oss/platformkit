@@ -40,9 +40,15 @@ async function mailbox(request: import('@playwright/test').APIRequestContext, to
   return held;
 }
 
-// The account links one message carries: the workspace pages named in auth's
-// VerifyEmailPath and ResetPath, each with its one-time credential on the query.
-const linkPattern = /https?:\/\/[^\s"'<>]+\/app\/auth\/(reset|verify-email)\?token=[A-Za-z0-9_\-=%]+/g;
+// The account links one message carries, at the two addresses auth mails them at.
+// They are not the same surface, and the difference is the module's, not this
+// journey's: the confirmation link sits on auth's *public* face — contracts.VerifyEmailPath
+// is /auth/verify-email, because the person opening it holds no session yet
+// (modules/auth/internal/ui/page.go mounts it there and refuses a composition that
+// moves it) — while the set-password link is a workspace screen, ResetPath being
+// httpx.Workspace("/auth/reset"). One expression spells both, so neither journey
+// gets to invent a third address.
+const linkPattern = /https?:\/\/[^\s"'<>]+\/(?:app\/)?auth\/(reset|verify-email)\?token=[A-Za-z0-9_\-=%]+/g;
 
 function links(messages: Mailed[]): string[] {
   return messages.flatMap(message => message.body.match(linkPattern) ?? []);
@@ -107,8 +113,8 @@ test('a sign-up is confirmed by one mailed link and an explicit resend by anothe
     })
     .toBe(1);
   const first = links(held);
-  expect(pages(first), 'one confirmation and nothing else').toEqual(['/app/auth/verify-email']);
-  expect(first[0].startsWith(`${served}/app/auth/verify-email?token=`), `the link: ${first[0]}`).toBe(true);
+  expect(pages(first), 'one confirmation and nothing else').toEqual(['/auth/verify-email']);
+  expect(first[0].startsWith(`${served}/auth/verify-email?token=`), `the link: ${first[0]}`).toBe(true);
 
   // Auth's own window between one confirmation and the next is a minute, counted
   // from the message that is already in the catcher, so this waits it out.
@@ -126,9 +132,9 @@ test('a sign-up is confirmed by one mailed link and an explicit resend by anothe
     })
     .toBe(2);
   expect(pages(replaced), 'both messages are confirmations').toEqual(
-    ['/app/auth/verify-email', '/app/auth/verify-email']);
+    ['/auth/verify-email', '/auth/verify-email']);
   for (const link of replaced) {
-    expect(link.startsWith(`${served}/app/auth/verify-email?token=`), `the link: ${link}`).toBe(true);
+    expect(link.startsWith(`${served}/auth/verify-email?token=`), `the link: ${link}`).toBe(true);
   }
   expect(new Set(replaced.map(token)).size, 'the resent link replaces the first').toBe(2);
 });
@@ -162,7 +168,7 @@ test('a person who signed up, confirmed and then forgot their password is sent a
       timeout: 30_000,
     })
     .toBe(1);
-  expect(mailed[0].startsWith(`${served}/app/auth/verify-email?token=`), `the link: ${mailed[0]}`).toBe(true);
+  expect(mailed[0].startsWith(`${served}/auth/verify-email?token=`), `the link: ${mailed[0]}`).toBe(true);
 
   // The link is opened by the person it was addressed to, in their own browser, and
   // it turns the account on: a mailed link that opens a page answering nothing is a
@@ -172,9 +178,19 @@ test('a person who signed up, confirmed and then forgot their password is sent a
   await as.goto(mailed[0]);
   const confirmed = as.waitForResponse(r =>
     r.request().method() === 'POST' && new URL(r.url()).pathname.endsWith('/auth/verify-email'));
-  await as.locator('form[data-auth-form="verify-email"] button[type="submit"]').click();
-  expect((await confirmed).ok(), 'the mailed confirmation link did not confirm the address').toBe(true);
-  await expect(as).not.toHaveURL(/\/app\/auth\/verify-email/);
+  // This form is found by the one field it carries. It has no data-auth-form and is not
+  // this page's to grow one: that attribute is session.js's instruction to submit a form
+  // as JSON (ui/assets/js/session.js), and this page spends its credential through a real
+  // form post whose answer is a redirect — the one answer that script's fetch refuses
+  // (redirect: "error"), so a marker borrowed from it would turn the button into "the
+  // request outcome is unknown" on every page that ever ships that script.
+  await as.locator('form:has(input[name="token"]) button[type="submit"]').click();
+  // A confirmed address is answered with the 303 to sign-in — which Response.ok(), being
+  // 2xx only, reports as a failure. For a form a browser submits rather than a fetch, the
+  // redirect is what "it worked" is spelled as, and the Go journey of this same page
+  // (apps/platformkit/email_link_page_test.go) pins the same status.
+  expect((await confirmed).status(), 'the mailed confirmation link did not confirm the address').toBe(303);
+  await expect(as).toHaveURL(/\/app\/admin\/login$/);
 
   // The password they chose at sign-up now opens the door.
   await as.goto('/app/admin/login');
