@@ -76,6 +76,42 @@ func TestARecordStatesTheSameInstantTheListDoes(t *testing.T) {
 	}
 }
 
+// TestASectionedRecordStatesItsInstantInTheBlockItLandedIn: the record is drawn as
+// the blocks the author named, each block its own description list. The instant
+// belongs to the field, not to whichever block the field was placed in, so the value
+// door is on the list every block opens — a time inside a declared section is the same
+// element in the same words as a time on a record of no sections at all.
+func TestASectionedRecordStatesItsInstantInTheBlockItLandedIn(t *testing.T) {
+	r := timed()
+	r.Schema.Fields[1].Presentation = entity.FieldHints{Section: "timing"} // `created`
+	r.Present = entity.EntryHints{Sections: []entity.EntitySection{{Key: "timing", Label: "Timing"}}}
+	row := map[string]any{"id": "1", "title": "Buy milk", "created": "2026-07-01T14:12:00Z",
+		"exported": "not a date"}
+	out := render(t, resource.Detail(r, opts, row, false).Body)
+
+	block := strings.Index(out, "Timing")
+	instant := strings.Index(out, `<time datetime="2026-07-01T14:12:00Z"`)
+	if block < 0 || instant < 0 {
+		t.Fatalf("the sectioned record lost its heading (at %d) or its instant (at %d):\n%s", block, instant, out)
+	}
+	if instant < block {
+		t.Errorf("the instant was drawn before the block that holds its field (time at %d, heading at %d)", instant, block)
+	}
+	for _, want := range []string{`title="2026-07-01 14:12:00 UTC"`, ">2026-07-01 14:12</"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("a sectioned record lacks %q; a block is a place on the page, not a different kind of value:\n%s", want, out)
+		}
+	}
+	if strings.Count(out, "<time") != 1 {
+		t.Errorf("the sectioned record holds %d time elements where one field is an instant:\n%s", strings.Count(out, "<time"), out)
+	}
+	// The field that named no section is drawn after every block, and it is still the
+	// text it always was: no instant in it, no element over it.
+	if !strings.Contains(out, "not a date") {
+		t.Errorf("the unsectioned field disappeared behind the blocks:\n%s", out)
+	}
+}
+
 // TestATimeWithoutAValueIsStillNothing checks the case that has no instant to
 // carry: an absent time is a dash, not an empty element with an empty attribute.
 func TestATimeWithoutAValueIsStillNothing(t *testing.T) {
