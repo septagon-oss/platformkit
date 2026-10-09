@@ -538,6 +538,22 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# prose. Wiring it is these two lines.
 	bash scripts/journey_and_pillar_check_wiring_test.sh
 	bash scripts/journey_and_pillar_check_refusal_test.sh
+	# The third and fourth lines here are that argument run once more over itself. Review 6 wrote
+	# scripts/journey_check_recipe_test.sh — the one assertion that both source-gate guards still execute
+	# as children of a parallel make, which is the question `make -n` cannot answer — and the sixth
+	# round adopted its bytes at `f676a6e` unwired, on scope rather than cost: the file measured 0.52 s
+	# standalone and the same inside a recipe at -j2, with make printing `-j2 forced in submake:
+	# resetting jobserver mode`, which is the nested recipe taking its own token pool. Review 6 named
+	# that deferral as the thing left to adopt, and a gate nobody runs is prose, so it is wired here.
+	# scripts/journey_check_recipe_wiring_test.sh is the case this line needs and `f676a6e` deliberately
+	# did not write: `go tool gotestsum --packages='./...'` sees no shell script, so a recipe line that
+	# leaves this list leaves nothing else red. It asks the dry-run recipe for this command, copies this
+	# Makefile to a temporary tree, deletes the one line, and requires the same assertion to fail there —
+	# three dry runs of a goal one of these two prerequisites already dry-runs, 0.2 s for the file.
+	# What pins the last line is nothing: the case has no peer to pin it, and it says so rather than
+	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
+	bash scripts/journey_check_recipe_test.sh
+	bash scripts/journey_check_recipe_wiring_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
