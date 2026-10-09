@@ -47,6 +47,7 @@ import (
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	auditcontracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
@@ -81,6 +82,7 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[authcontracts.ConfirmationChrome](),
 		pkit.Contributes[tenantcontracts.Hook](),
 	}
 	if cfg.Server.StorybookDir != "" {
@@ -154,6 +156,16 @@ func product(cfg config.Config) *pkit.Module {
 		// exists before the operator narrows it, so a page can answer a person in
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
+		// The two addresses the sheet a mailed confirmation link opens has to link.
+		// They are written here because every part of them is this product's fact:
+		// which mount hands out the stylesheet, and which sign-in page a person who
+		// has just confirmed their address is sent to. The module names the port and
+		// never an address — TestTheEmailedLinkOpensAPageThatConfirms asks the running
+		// application that the page the link opens answers, links the sheet named
+		// here, and returns the person to the page named here.
+		pkit.Put[authcontracts.ConfirmationChrome](w, authcontracts.ConfirmationChrome{
+			Assets: pinnedAssets, SignIn: pinnedSignIn,
+		})
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
 		if cfg.Server.StorybookDir != "" {
 			pkit.Put[admincontracts.Storybook](w, admincontracts.Storybook(operatorStorybook(cfg.Server.StorybookDir)))
@@ -239,14 +251,23 @@ func caches() app.Caches {
 // inputs for. It is not an edge and it names no module: the key list is what
 // makes an implementation choosable (pkit refuses one whose inputs are absent),
 // and the values it runs on are read from the typed section by the module that
-// picked it. The one thing that can go wrong here is the pair disagreeing with
-// cfg.Mail.Enabled(), and composition_deployment_inputs_test.go refuses that.
+// picked it. Mail is the only port with three implementations, so this is the one
+// place the three states of `mail` are named in the resolver's words: a server for
+// every one of its four fields, the sink for the in-process mailbox and nothing
+// for an installation that sends no mail. What can go wrong here is the list
+// disagreeing with what kit/config loaded — mail_sink_test.go and
+// email_delivery_unavailable_test.go are the two cases that read a running
+// application in the two states a server does not answer for.
 func deploymentInputs(cfg config.Config) map[string]string {
-	if !cfg.Mail.Enabled() {
+	switch {
+	case cfg.Mail.Enabled():
+		return map[string]string{
+			"mail.host": cfg.Mail.Host, "mail.port": fmt.Sprint(cfg.Mail.Port), "mail.from": cfg.Mail.From,
+		}
+	case cfg.Mail.Mailbox():
+		return map[string]string{"mail.sink": cfg.Mail.Sink}
+	default:
 		return nil
-	}
-	return map[string]string{
-		"mail.host": cfg.Mail.Host, "mail.port": fmt.Sprint(cfg.Mail.Port), "mail.from": cfg.Mail.From,
 	}
 }
 

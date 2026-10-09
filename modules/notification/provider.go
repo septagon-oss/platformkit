@@ -18,12 +18,21 @@ import (
 // building a second one: two senders in one process is two answers to "where does
 // this installation's mail go".
 //
-// Which sender that is is the deployment's pick (FromDeployment): smtp when the
-// process names a host, port and from-address, the in-memory mailbox otherwise.
-// Neither is simulated, and that is not an oversight — the mailbox is what a
-// deployment with no SMTP actually runs, it keeps every message and logs each
-// one, and marking it simulated would refuse every mail-less production
-// installation at boot.
+// Which sender that is is the deployment's pick (FromDeployment), and there are
+// three answers rather than two: smtp when the process names a host, port and
+// from-address; the in-memory mailbox when the configuration asks for that sink
+// by name (`mail.sink: mailbox`); and no transport at all when it says neither.
+//
+// None of the three is simulated, and the third one is the reason the list is not
+// two: a sink wired because nothing else was configured is how an installation
+// ends up accepting a sign-up whose confirmation link nobody will ever read. With
+// no transport the command that would promise a mailed link answers a reasoned
+// refusal and writes no row (modules/auth refuses on exactly this nil), and a
+// notice that asks for mail is recorded as suppressed on the delivery ledger
+// (modules/notification/internal/mail.go), which is an answer a reader can act on
+// rather than a message that silently never arrives. An installation that means to
+// keep mail in this process — every test that reads a confirmation link, and a
+// development machine that wants one — says `mailbox`.
 var Module = pkit.NewModule("notification", wire,
 	pkit.Needs[contracts.RecipientLookup](),
 	pkit.Needs[contracts.HostLookup](),
@@ -38,23 +47,27 @@ var Module = pkit.NewModule("notification", wire,
 	pkit.Provides[contracts.Mailer](),
 	pkit.FromDeployment(
 		pkit.Implementation{Name: "smtp", Inputs: []string{"mail.host", "mail.port", "mail.from"}},
-		pkit.Implementation{Name: "mailbox"},
+		pkit.Implementation{Name: "mailbox", Inputs: []string{"mail.sink"}},
+		pkit.Implementation{Name: "none"},
 	),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	mail := pkit.Config(w, func(c config.Config) config.Mail { return c.Mail })
 	server := pkit.Config(w, func(c config.Config) config.Server { return c.Server })
-	// The three inputs the pick reads are this struct's three host, port and
-	// from fields, so an implementation the deployment could pick is always one
-	// this line can build.
+	// The three inputs the smtp pick reads are this struct's three host, port and
+	// from fields, and the one input the mailbox pick reads is the sink field, so
+	// an implementation the deployment could pick is always one this line can
+	// build. "none" reads nothing and builds nothing: the nil that leaves the
+	// sender is the installation that says it sends no mail.
 	var mailer contracts.Mailer
-	if w.Implementation() == "smtp" {
+	switch w.Implementation() {
+	case "smtp":
 		mailer = SMTP(Mail{
 			Host: mail.Host, Port: mail.Port, Username: mail.Username,
 			Password: mail.Password, From: mail.From,
 		})
-	} else {
+	case "mailbox":
 		mailer = NewMailbox()
 	}
 	svc, manifest := New(Deps{

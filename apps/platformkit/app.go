@@ -119,8 +119,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 	c := composition{
 		planned: p, modules: p.Modules(), options: p.Options(), messages: catalogues(),
 		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
-		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
-		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
+		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p), files: value[filecontracts.Service](p),
 		plans:   value[httpx.Entitler](p),
 		task:    value[taskcontracts.Service](p),
 		content: value[contentcontracts.Service](p),
@@ -130,6 +129,14 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		// gates role management, read off the manifest that defines it.
 		granter: refusalGrant(p.Skin()),
 	}
+	// The mailer is read without the panic every other value gets, because nil is
+	// one of the three answers this deployment can give for it: an installation
+	// that names no mail server and does not ask for the in-process sink composes
+	// no transport (modules/notification's "none"), which is the state
+	// email_delivery_unavailable_test.go boots on purpose. Every reader of this
+	// field already treats nil as "nothing sends here", which is what makes the
+	// module's own refusal and this line the same fact.
+	c.mail, _ = pkit.Value[notificationcontracts.Mailer](p)
 	*shell = faultShell(c.messages, c.granter)
 	return reference{app: a, once: once, composition: c}
 }
