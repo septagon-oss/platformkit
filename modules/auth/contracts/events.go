@@ -42,6 +42,19 @@ const (
 	// trail that answers "when did I kick that one out, and was it before the
 	// laptop I forgot about".
 	EventSessionRevoked = "auth.session_revoked"
+	// EventNoLinkRequested is a sign-up for an address this tenant already has an
+	// account at: the route said the same thing it says about an address it created,
+	// and it asks the worker to hand the transport the message that says no link was
+	// sent. It is not a failure and it names no judgement about the address — it is
+	// the sign-up route's half of the rule that a call which names an address hands
+	// exactly one message to the transport whichever branch it took, so that the
+	// public delivery door can answer that call from its own record and not from
+	// somebody else's (modules/auth/internal/no_link.go, contracts.MailReport).
+	//
+	// The send stays out of the request for the reason VerificationRequested gives:
+	// a mail handed to a transport inside the transaction that can still roll back
+	// is a mail the record would describe wrongly.
+	EventNoLinkRequested = "auth.no_link_requested"
 	// EventMailFailed is one mail this module could not send. It exists because
 	// an operator has to be able to see failed sign-up mail in the trail, and
 	// modules/audit records an event by its having been emitted
@@ -74,7 +87,23 @@ var Events = []events.Declared{
 	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
+	events.Declare[NoLinkRequested](EventNoLinkRequested),
 	events.Declare[MailFailed](EventMailFailed),
+}
+
+// NoLinkRequested is the payload of EventNoLinkRequested: this address asked to
+// register, somebody has an account there, and no link will follow this call. It
+// carries the address for the reason ResetRequested does — an address that asked is
+// what an account under attack looks like — and nothing else: no user id, no status,
+// no reason, because the subscriber needs only the mailbox to write to and the trail
+// keeps what an operator reads back.
+type NoLinkRequested struct {
+	Email string    `json:"email"`
+	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, for the reason
+	// ResetRequested and VerificationRequested give: the sentence is rendered in the
+	// worker, and the "ask again" it points at is the address the person typed.
+	Served string `json:"served,omitempty"`
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for

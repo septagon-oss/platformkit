@@ -21,8 +21,8 @@ const (
 		" If it was not you, nothing needs to be done."
 )
 
-// noLink mails and records the message above, in the caller's transaction, for one
-// of the two `*_no_link` kinds.
+// noLink mails and records the message above, in the caller's transaction, for the
+// `verification_no_link` kind.
 //
 // # Why a call that sends no link sends a message at all
 //
@@ -45,11 +45,18 @@ const (
 // and the request is already capped by the budget the route that raised it applies
 // (contracts.ResetRequests, contracts.MailDeliveryAsks, the recipient cooldown).
 //
+// A flow that cannot pay that price keeps its refusals out of the public door: the
+// forgotten-password route is pinned to one link and nothing else for a known and an
+// unknown request together, so its no-account branch sends nothing, and the door
+// names none of its kinds (internal/email_registration.go's mailDeliveryKinds).
+// Mailing here is what buys the right to speak, and the sign-up flow pays it.
+//
 // It carries no credential, so a refused send has no token row to put back and no
 // secret to scrub out of the record's reason; recordMail still redacts it, and still
 // publishes auth.mail_failed beside the row, because a mail that did not go is a
 // fact the tenant's own trail should hold whichever message it was.
 func (s *Service) noLink(ctx context.Context, tx db.Tx[db.Tenant], kind, recipient string) error {
+	recipient = contracts.EmailKey(recipient)
 	if s.mail.Mailer == nil {
 		// The deployment's fault, not the caller's: a suppressed record, which is
 		// the answer every other no-mail branch of this flow gives, so a
@@ -68,13 +75,8 @@ func (s *Service) noLink(ctx context.Context, tx db.Tx[db.Tenant], kind, recipie
 	return s.recordMail(ctx, tx, kind, recipient, notificationcontracts.MailSent, "")
 }
 
-// noResetLink and noVerificationLink are the two calls of that message, named for
-// the link that was not sent so the kind in the row says which door the person was
-// standing at.
-func (s *Service) noResetLink(ctx context.Context, tx db.Tx[db.Tenant], recipient string) error {
-	return s.noLink(ctx, tx, contracts.MailResetNoLink, recipient)
-}
-
+// noVerificationLink is that message, named for the link that was not sent so the
+// kind in the row says which door the person was standing at.
 func (s *Service) noVerificationLink(ctx context.Context, tx db.Tx[db.Tenant], recipient string) error {
 	return s.noLink(ctx, tx, contracts.MailVerificationNoLink, recipient)
 }

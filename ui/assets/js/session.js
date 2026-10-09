@@ -48,20 +48,26 @@
   // The acknowledgment a mailed-link form gives cannot say whether a mail left:
   // the routes that take an address answer the same either way on purpose. The
   // delivery record can say one thing about it — that a transport refused the
-  // mail here — and it is asked over the door beside the endpoint just posted
-  // to, with the id that call was already answered with
+  // mail this very call caused — and it is asked over the door beside the endpoint
+  // just posted to, with the id that call was already answered with
   // (modules/auth/internal/email_registration.go). Two asks, spread out, because
   // the mail leaves in a worker some time after the answer arrives. A refusal
   // replaces the acknowledgment; everything else — a `pending` answer, a refused
   // or unreadable answer, a lost request — leaves it standing, because "we did
   // not learn that it failed" is not a claim that it worked.
   //
+  // The door answers about the sign-up and resend mails only, which are the flows
+  // that hand one message to the transport whichever branch they take; the
+  // forgotten-password route mails only the addresses it found accounts at, so a
+  // refusal there is a fact about the address and the door is not told to read it
+  // (modules/auth/README.md). Asking after a forgot response would be a round trip
+  // that can only ever come back `pending`, so it is not asked.
+  //
   // The door hangs off the module's mount, not off the last segment of the route
   // that answered: kit/httpx/surfaces.go mounts a module's public JSON at
   // /api/v1/public/<module> and its app JSON at /api/v1/<module>, and a route is
-  // however many segments the module declared it with — auth's forgotten-
-  // password route is /password/forgot, so replacing the last segment asked a
-  // path that answers 404 and the failure went unsaid.
+  // however many segments the module declared it with, so replacing the last
+  // segment asked a path that answers 404 and the failure went unsaid.
   function deliveryDoor(response) {
     try {
       const mount = new URL(response.url).pathname.match(/^\/api\/v1\/(?:public\/|ops\/)?[^/]+/);
@@ -80,10 +86,11 @@
         if (!answer.ok) return;
         const said = await answer.json().catch(() => null);
         if (said?.state === "failed") {
-          // About the mail server, not about the address: the record the door
-          // read may be the newest one this installation holds rather than this
-          // caller's own, and a sentence claiming this person's mail was refused
-          // would be a claim about an account it cannot know about.
+          // About the mail server, not about the address: the door answers about
+          // this call's own record, but the record names the address rather than
+          // the person, and a mailbox can be refused for reasons that have nothing
+          // to do with the account — a full box, a relay that is down, a domain
+          // that moved. What the person can act on is that the mail did not leave.
           announce(message, "Mail could not be sent just now: the mail server refused it, so the link may not arrive. Try again shortly, or ask your administrator to send a link.", true);
           return;
         }
@@ -156,7 +163,7 @@
             window.location.assign(next?.href || (["reset", "verify-email"].includes(kind) && local(signin)?.href) || "/");
           } else {
             announce(message, success || "If this address can receive an account email, a link will be sent. Check your inbox.");
-            if (["register", "register-password", "forgot", "resend-verification"].includes(kind)) {
+            if (["register", "register-password", "resend-verification"].includes(kind)) {
               void correctForRefusedMail(response, message);
             }
           }

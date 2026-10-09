@@ -96,7 +96,14 @@ type MailLedger interface {
 	// newest-record read: an anonymous door that answered a caller with the tenant's
 	// latest refusal let whoever could plant one refusal classify every address that
 	// had caused no mail. See MailReport.
-	MailOutcome(ctx context.Context, tx db.Tx[db.Tenant], requestID string) (outcome string, known bool, err error)
+	//
+	// The kinds it is given are the kinds to answer among: MailOutcome(id, "a.x")
+	// answers as if no row of any other kind existed, and with no kinds at all it
+	// answers about every mail the call caused. A caller names the kinds it is
+	// prepared to speak about; the ledger holds no list of them, because which kinds
+	// a sender uses is the sender's fact and a table that listed them would be a
+	// schema change every time a module mailed something new.
+	MailOutcome(ctx context.Context, tx db.Tx[db.Tenant], requestID string, kinds ...string) (outcome string, known bool, err error)
 }
 
 // RedactMailReason turns what a transport said into what a record may say. It
@@ -202,11 +209,17 @@ const MailStatePending = "pending"
 // the answer comes from the record the caller's own call caused, and a caller
 // whose call caused none is answered as one whose mail went — never from another
 // caller's row. That rule costs the caller something, and the routes pay it rather
-// than the door: a call that names an address and sends no link still hands one
-// message to the transport and records it under its own request id, so there is
-// always a record of the caller's own behind the answer (modules/auth/internal
-// /no_link.go). A refusal is therefore sayable about the transport the caller's own
-// mail went through, and never about a mail the caller did not cause.
+// than the door: a flow whose refusals the door is to speak of hands exactly one
+// message to the transport whichever branch the call takes (modules/auth/internal
+// /no_link.go), so a refusal is sayable about the transport the caller's own mail
+// went through and never about a mail the caller did not cause.
+//
+// A flow that does not pay that price has no sayable refusals, and the door says so
+// by naming none of its kinds to MailOutcome: where a route mails only the addresses
+// it found accounts at, "this call's mail was refused" and "this call caused no mail
+// at all" are the same sentence read two ways, and the door that says the first has
+// said the second. Silence there is the answer, not a gap in it — the record is still
+// written, and the operator still reads it.
 //
 // What that still cannot be closed: a transport that refuses one address and
 // takes another is a fact only about the address it refused, and any word about
