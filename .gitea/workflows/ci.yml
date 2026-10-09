@@ -699,7 +699,16 @@ jobs:
         working-directory: tools/designexport/openpencil
         run: |
           npx playwright install --with-deps chromium
-          npm run test:browser
+          # The samples run beside the suite, and the account comes out with the failure.
+          # This step refused run 56095 job 56717 with one line — `Capture source
+          # animation settling timed out` — from a 286-test file that had taken 299.5 s
+          # against the 103-110 s the same test took in the 141 job logs task T-0219
+          # holds (`zgrep -h "gallery construction coverage" logs/*.gz`), and the run
+          # said nothing about the host it did that on. The step behind this one has
+          # sampled its host since `d189e65`; this one never did, and the same script
+          # covers both. The verdict is still the suite's: `run` passes the exit code
+          # through and changes no assertion.
+          bash ../../../scripts/ci_browser_report.sh run "native browser observations" npm run test:browser
 
       # Last, and for the same reason as the step of the same name in `check` — this suite compiles
       # Go itself (browser/fixtures.test.mjs: `go build -o <executable> <file>`), so the save that
@@ -957,7 +966,19 @@ jobs:
               sleep 15
               waited=$((waited + 15))
           done
-          node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
+          # The sampler above answers "what was the host doing"; it cannot answer
+          # "what was left alive when the step died", because the trap takes it with
+          # the step. Nine of the 141 job logs task T-0219 holds end this step with a
+          # Chromium that reported `Target crashed` (jobs 44315, 45285, 45346, 45702,
+          # 45734 among them), and run 56095 job 56718 is the tenth — `locator.press:
+          # Target crashed` at 10.9 s into its own case, with the sampler printing
+          # 19484 MB available and load 13.19 across 32 cores one line before it, so
+          # the host's own numbers cleared it and the reader was left with a dead
+          # renderer and no account. `run` adds that account: a browser count in every
+          # sample, and the kernel's memory verdict at the exit. The suite's exit code
+          # is still the step's answer; nothing here asserts anything or retries.
+          bash ../../../scripts/ci_browser_report.sh run "built editor" \
+            node --import ./register.mjs --test --test-concurrency=1 editor/*.test.mjs
 
       - name: Verify both font profiles and visible editable preview text
         id: preview
