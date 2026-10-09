@@ -383,6 +383,83 @@
       "summary": "Every tenant's delivery of auth.login_failed.",
       "title": "auth.login_failed"
     },
+    "auth.mail_failed": {
+      "address": "platformkit.*.auth.mail_failed",
+      "description": "Published at platformkit.{tenantId}.auth.mail_failed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.mail_failed": {
+          "contentType": "application/json",
+          "name": "auth.mail_failed",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "recipient": {
+                "type": "string"
+              },
+              "requestId": {
+                "type": "string"
+              },
+              "traceparent": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "recipient",
+              "reason",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.mail_failed",
+          "title": "auth.mail_failed"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.mail_failed.",
+      "title": "auth.mail_failed"
+    },
+    "auth.no_link_requested": {
+      "address": "platformkit.*.auth.no_link_requested",
+      "description": "Published at platformkit.{tenantId}.auth.no_link_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.no_link_requested": {
+          "contentType": "application/json",
+          "name": "auth.no_link_requested",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "email": {
+                "type": "string"
+              },
+              "served": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "email",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.no_link_requested",
+          "title": "auth.no_link_requested"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.no_link_requested.",
+      "title": "auth.no_link_requested"
+    },
     "auth.passkey_sign_in_set": {
       "address": "platformkit.*.auth.passkey_sign_in_set",
       "description": "Published at platformkit.{tenantId}.auth.passkey_sign_in_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3930,6 +4007,40 @@
         }
       ],
       "summary": "The auth module publishes auth.login_failed.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.mail_failed": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.mail_failed"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.mail_failed/messages/auth.mail_failed"
+        }
+      ],
+      "summary": "The auth module publishes auth.mail_failed.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.no_link_requested": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.no_link_requested"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.no_link_requested/messages/auth.no_link_requested"
+        }
+      ],
+      "summary": "The auth module publishes auth.no_link_requested.",
       "tags": [
         {
           "name": "auth"
