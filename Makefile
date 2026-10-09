@@ -463,6 +463,15 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# the job that reads this lock, at that level and in that directory. It reads no feed and installs
 	# nothing: the feed moved under the runner, so the lock is the only half of this a tree can answer.
 	bash scripts/openpencil_lock_above_advisory_test.sh
+	# The Go half of that line. `govulncheck` is this repository's only Go security gate, it runs in the
+	# check job *after* `make check` and it needs the network, so nothing in the local aggregate can see the
+	# advisory feed move: forge run 55758 refused `check / govulncheck` on `golang.org/x/net@v0.59.0` and on
+	# the go1.27.1 standard library over a tree whose `make check` had come back green a few minutes earlier,
+	# and forge run 54902 reports the same step `success` on the same two versions two days before it. This
+	# case asks the one question a tree can answer about a feed it does not hold — which side of a published
+	# range the `toolchain` line and the x/net pin land on — and mutates both back inside them, so the
+	# acceptance is a comparison and not a print. It reads no feed and reaches no network.
+	bash scripts/go_mod_above_advisory_test.sh
 	bash scripts/check_pin_rehearsal_test.sh
 	# Where a run finds the mail catcher. The journeys that open a mailed link are
 	# the only proof the address the application dials is right, and they cannot say
