@@ -24,7 +24,12 @@ func TestLocalRunPassesMailConfigurationToApplication(t *testing.T) {
 	}
 	cmd := exec.CommandContext(t.Context(), "make", "-C", root, "-o", "config.yaml", "run")
 	for _, setting := range os.Environ() {
-		if strings.HasPrefix(setting, "PLATFORMKIT_MAIL_") || strings.HasPrefix(setting, "PATH=") || strings.HasPrefix(setting, "PKIT_CAPTURE=") {
+		// The mail names, both spellings: the recipe's own defaults are what this
+		// case measures, and a host whose stack publishes the catcher elsewhere must
+		// not decide the answer. PLATFORMKIT_MAILPIT_SMTP_PORT is the name compose.yaml
+		// and the Makefile carry; PLATFORMKIT_MAIL_* is what the application reads.
+		if strings.HasPrefix(setting, "PLATFORMKIT_MAIL_") || strings.HasPrefix(setting, "PLATFORMKIT_MAILPIT_") ||
+			strings.HasPrefix(setting, "PATH=") || strings.HasPrefix(setting, "PKIT_CAPTURE=") {
 			continue
 		}
 		cmd.Env = append(cmd.Env, setting)

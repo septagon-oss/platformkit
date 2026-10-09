@@ -119,7 +119,8 @@ vet: ## Run go vet
 	go vet ./...
 
 run: config.yaml ## Run the reference app; a missing config.yaml is created from the example
-	cd apps/platformkit && go run . --config ../../config.yaml
+	cd apps/platformkit && PLATFORMKIT_MAIL_HOST=127.0.0.1 PLATFORMKIT_MAIL_PORT=$(PLATFORMKIT_MAILPIT_SMTP_PORT) \
+	  PLATFORMKIT_MAIL_FROM=platformkit@localhost go run . --config ../../config.yaml
 
 # A first run has no config.yaml, and the example is the development
 # configuration `make up` matches, so the first run gets a copy of it. The rule
