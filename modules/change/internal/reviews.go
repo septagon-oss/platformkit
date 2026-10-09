@@ -311,7 +311,10 @@ func tableLinks(where string) components.TableSlots {
 //
 // refusal is what a command the person just tried said about itself, or "" for a page
 // nobody was refused on. It is drawn above everything else, because a decision that
-// failed is the thing they came back to read.
+// failed is the thing they came back to read. It is also the page's one rail: every word
+// the row says itself sits on one column, so the one thing that steps aside is the thing
+// that just refused the person. apps/platformkit/change_refusal_layout_test.go measures
+// that, and the two sections below are how the page kept to it.
 func (p Pages) detail(ctx context.Context, r page.Request, where string, id uuid.UUID, refusal string) (page.View, error) {
 	tx, live := httpx.TxFrom(ctx)
 	if !live {
@@ -388,20 +391,25 @@ func facts(row *contracts.Proposal) []components.DetailItem {
 // the field holds *now* is the subject's own screen, named by the subject line above:
 // this page does not read another module's row to print a second number, which is what
 // keeps it true to one second.
+//
+// An empty diff is this section saying a different thing, not a panel standing inside it.
+// The reason is measured: gates/design_gate.py allows a page two text alignments — one
+// content column and at most one rail — and the inset panel this used to draw for the
+// empty case put its sentence a second inset from the column, the third alignment that
+// refused the page the moment a refusal took the first one. Heading and sentence sit on the
+// column either way, which is also how the decision section below says "nothing to do".
 func difference(row *contracts.Proposal) g.Node {
 	fields := slices.Sorted(maps.Keys(row.Diff))
-	if len(fields) == 0 {
-		return components.EmptyState(components.EmptyStateProps{
-			Title: "The diff is empty", Description: "This proposal would write nothing.",
-			Compact: true, Bordered: true,
-		})
-	}
 	items := make([]components.DetailItem, 0, len(fields))
 	for _, field := range fields {
 		items = append(items, components.DetailItem{Label: field, Value: written(row.Diff[field])})
 	}
+	said := "The value each field is set to, as reviewed."
+	if len(items) == 0 {
+		said = "Nothing: this proposal would write no field."
+	}
 	return components.DetailList(components.DetailListProps{
-		Title: "The change it would make", Description: "The value each field is set to, as reviewed.",
+		Title: "The change it would make", Description: said,
 		SemanticRole: "change-difference", Items: items,
 	})
 }
@@ -495,10 +503,14 @@ func history(where string, mine uuid.UUID, rows []*contracts.Proposal) g.Node {
 	}
 	at := strings.TrimSuffix(where+"/"+mine.String(), "/"+mine.String())
 	if len(others) == 0 {
-		return components.EmptyState(components.EmptyStateProps{
-			Title:       "Nothing else proposed for this row",
-			Description: "This is the first change put forward for it through change control.",
-			Compact:     true, Bordered: true,
+		// The column again rather than an inset panel: see difference. A first proposal
+		// is told as a fact about the row, in the same section voice as the row's other
+		// facts, so the page keeps its one column and leaves the second alignment to the
+		// refusal a refused command puts above it.
+		return components.DetailList(components.DetailListProps{
+			Title:        "Other proposals for this row",
+			Description:  "This is the first change put forward for it through change control.",
+			SemanticRole: "change-history",
 		})
 	}
 	return h.Section(
