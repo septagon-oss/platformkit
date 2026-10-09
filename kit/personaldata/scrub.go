@@ -17,6 +17,8 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/septagon-oss/platformkit/kit/db"
 )
@@ -224,32 +226,50 @@ func query(s Subject, table string, columns []string, isJSON bool,
 //
 // \m and \M are zero-width, so two mentions side by side are both found, where a pattern
 // that swallowed the space between them would find only the first. They are also only
-// honest beside a word character, and "word" is the server's locale-dependent answer —
-// a boundary that does not match there is a mention never erased, which is the wrong way
-// to fail. So a boundary is written only where this file can know the server will honour
-// it: next to an ASCII letter, digit or underscore. An identifier that begins or ends
-// with anything else is bounded on the side it can be and matched as a substring on the
-// side it is not. Over-broad leaves a token in a word nobody meant; under-broad leaves
+// honest beside a word character, and "word" is the server's locale-dependent answer.
+// So a boundary is written only where this file can say what the server will make of the
+// side it sits against, read as a whole rune and not as a byte: an identifier that begins
+// or ends with a letter, digit or underscore in any script is bounded, and one that begins
+// or ends with punctuation is bounded on the side it can be and matched as a substring on
+// the side it is not. Over-broad leaves a token in a word nobody meant; under-broad leaves
 // the person's own address in somebody's notes. Only one of those is the failure this
 // contract exists to prevent.
 //
+// Reading the byte instead of the rune was the bug this comment is written against: the
+// last byte of "René" is the second byte of é, which looked "not a word character" to an
+// ASCII test, so no closing boundary was written and erasing René rewrote the first four
+// letters of a colleague called Renée — the substring corruption the whole boundary rule
+// exists to stop, arriving through a name with an accent on it. The reading is now the
+// server's own: this tree's database is created ENCODING 'UTF8' with a UTF-8 ctype, where
+// `\m`/`\M` count é as a word character (`'Renée' ~* '\mRené\M'` answers false there, and
+// `'René' ~* 'é\M'` answers true), so a letter of any script is bounded here and honoured
+// there. A deployment on a database whose ctype calls accented letters non-word would lose
+// the closing boundary and leave a mention unerased rather than corrupt a neighbour — the
+// direction this rule keeps failing towards — and the residue re-read asks the same
+// pattern, so such a mention is at least reported rather than certified clean.
+//
 // escapePattern is the other job, and is described beside it.
 func boundedPattern(id string) string {
+	first, _ := utf8.DecodeRuneInString(id)
+	last, _ := utf8.DecodeLastRuneInString(id)
 	var out strings.Builder
 	out.Grow(len(id) + 16)
-	if id[0] < 0x80 && isWordByte(id[0]) {
+	if isWordRune(first) {
 		out.WriteString(`\m`)
 	}
 	out.WriteString(escapePattern(id))
-	if id[len(id)-1] < 0x80 && isWordByte(id[len(id)-1]) {
+	if isWordRune(last) {
 		out.WriteString(`\M`)
 	}
 	return out.String()
 }
 
-// isWordByte reports whether an ASCII byte is a word character in Postgres' ARE syntax.
-func isWordByte(b byte) bool {
-	return b == '_' || (b >= '0' && b <= '9') || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z')
+// isWordRune reports whether Postgres' ARE word boundary would count r as a word
+// character on a database in a UTF-8 locale: `[:alnum:]` and the underscore, which is the
+// same set this file can decide without a server, and which is why the check is a rune one
+// — see boundedPattern.
+func isWordRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // escapePattern quotes an identifier for Postgres' ARE pattern syntax: every
