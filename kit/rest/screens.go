@@ -114,7 +114,15 @@ func (s Spec[T]) resource() httpx.Resource {
 		},
 		Update: func(ctx context.Context, id uuid.UUID, values map[string]any) (map[string]any, error) {
 			return answered(ctx, func(tx db.Tx[db.Tenant]) (T, error) {
-				return s.updateRow(ctx, tx, id, schema.Fields, values, "")
+				// The form quotes the revision it was drawn from, which is the only
+				// answer to "did this person see the row they are editing" that a
+				// transaction can check. Absent, the write is what it always was.
+				quoted, fields, err := conditional(values)
+				if err != nil {
+					var none T
+					return none, err
+				}
+				return s.updateRow(ctx, tx, id, schema.Fields, fields, quoted)
 			})
 		},
 		Delete: func(ctx context.Context, id uuid.UUID) error {
@@ -206,7 +214,10 @@ func Values(body []byte, fields []crud.Field, refuse []string) (map[string]any, 
 }
 
 // UpdateValues reads an edit form, retaining submitted blank text, empty lists
-// and null optional instants while omitting absent and command-owned fields.
+// and null optional instants while omitting absent and command-owned fields. It
+// also carries the row's condition: the revision the form was drawn from arrives
+// under entity.RevisionCondition, and conditional turns it into the tag the write
+// is made against.
 func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[string]any, error) {
 	values, err := formValues(body, fields, nil, true)
 	return Writable(values, immutable), err
@@ -231,6 +242,12 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 			continue
 		}
 		if slices.Contains(refuse, f.Name) {
+			continue
+		}
+		if f.Name == entity.RevisionCondition {
+			// Read once, by the code below, as the condition on the write rather than as
+			// a field to merge. An entity that named a column this way would have its own
+			// meaning for the name, which is why Spec.check refuses the collision.
 			continue
 		}
 		raw, sent := form[f.Name]
@@ -310,7 +327,50 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 			out[f.Name] = text
 		}
 	}
+	// An edit form carries the revision it was drawn from, and an edit is the one write
+	// that can be made against a row the person never saw. The name is read after the
+	// fields rather than among them: it is no column's value, and a form that sent
+	// nothing under it keeps the unconditional write every caller written before this
+	// door has — the condition is how a screen says it read the row, not a tax it pays.
+	if update {
+		if raw, sent := form[entity.RevisionCondition]; sent {
+			if text := strings.TrimSpace(raw[0]); text != "" {
+				out[entity.RevisionCondition] = text
+			}
+		}
+	}
 	return out, nil
+}
+
+// conditional takes the row's write count out of the values a form posted, and gives it
+// back as the tag kit/rest's conditional doors compare against. The map it returns holds
+// the fields to write and nothing else, so the one merge behind both write doors keeps
+// refusing every name that is not a field — including this one, which belongs to the door
+// and not to the row.
+//
+// A form that carried nothing gives "" and an unconditional write. A form that carried
+// something no row's revision could be is refused by name: a condition nobody can read is
+// not a condition, and writing whatever arrived as though it had never been sent would be
+// the loss the tag exists to prevent.
+func conditional(values map[string]any) (string, map[string]any, error) {
+	raw, sent := values[entity.RevisionCondition]
+	if !sent {
+		return "", values, nil
+	}
+	text, isText := raw.(string)
+	if !isText {
+		return "", nil, invalid(entity.RevisionCondition, "is not a revision")
+	}
+	out := make(map[string]any, len(values)-1)
+	for name, value := range values {
+		if name != entity.RevisionCondition {
+			out[name] = value
+		}
+	}
+	if _, err := parseTag(`"` + text + `"`); err != nil {
+		return "", out, invalid(entity.RevisionCondition, "is not a whole revision the row can be at")
+	}
+	return `"` + text + `"`, out, nil
 }
 
 // Writable drops the fields a route of its own owns. The update route refuses
@@ -355,6 +415,21 @@ func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback strin
 		return nil, strings.Join(lines, "; ")
 	}
 	return out, strings.Join(lines, "; ")
+}
+
+// conditionFault names the one field name a generated form could not make sense of: an
+// entity column called what an edit form calls the row's condition would be read as a
+// condition and never written, which is a silent lie about the person's own submission.
+// The name is asked folded, as every other door asks names, because the browser posts
+// what the renderer wrote and the decoder would bind either spelling into the column.
+func conditionFault(fields []crud.Field) string {
+	for _, f := range fields {
+		if strings.EqualFold(f.Name, entity.RevisionCondition) {
+			return fmt.Sprintf("the entity has a field %q, which is the name an edit form carries the row's revision in",
+				entity.RevisionCondition)
+		}
+	}
+	return ""
 }
 
 // invalid is a 422 about one field, in the shape FieldErrors reads back.

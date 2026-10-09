@@ -1,4 +1,40 @@
 {
+  "change.refusal.title": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "Isso não pôde ser feito",
+    "plural": {
+      "": "Isso não pôde ser feito"
+    }
+  },
+  "change.refusal.self_review": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "a pessoa que propôs uma alteração não pode ser a que decide sobre ela",
+    "plural": {
+      "": "a pessoa que propôs uma alteração não pode ser a que decide sobre ela"
+    }
+  },
+  "change.refusal.stale_base": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "o registo mudou desde que esta alteração foi preparada; faça uma nova proposta contra a revisão atual",
+    "plural": {
+      "": "o registo mudou desde que esta alteração foi preparada; faça uma nova proposta contra a revisão atual"
+    }
+  },
+  "change.refusal.unsupported_subject": {
+    "references": [
+      "modules/change/internal/reviews.go"
+    ],
+    "translation": "este tipo de registo não aceita propostas de alteração",
+    "plural": {
+      "": "este tipo de registo não aceita propostas de alteração"
+    }
+  },
   "permission.change:read": {
     "references": [
       "modules/change/module.go"
