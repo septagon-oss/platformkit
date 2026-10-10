@@ -124,7 +124,7 @@ Four tiers, and `make check` is the sum of them rather than one of them:
 
 | tier | runs | what it must not run |
 |---|---|---|
-| `make check-push` | build, vet, formatting, the budgets and pins, and the Go cases of the packages a diff reaches that open no stack | anything that opens Postgres, a broker, the object store or the mail catcher — the selector refuses the selection rather than waiting for one |
+| `make check-push` | build, vet, formatting, the budgets and pins, and the Go cases of the packages a diff reaches — by directory, by owning a changed `testdata/` or embedded file, by import, or by test-only import — that open no stack | anything that opens Postgres, a broker, the object store or the mail catcher — the selector refuses the selection rather than waiting for one |
 | `make check-merge` | `make check-rehearse` and `make check`: the whole suite, the race suite beside it, and the composition journeys inside it | — |
 | `make check-nightly` | `make e2e`, `make mobile-e2e`, `make flakes` | — |
 | the inventory | `make check-test-inventory` re-derives [tests/inventory.json](tests/inventory.json) from the tree | a row with no test, a test with no row, a verdict outside the four, a `merge` naming nothing, a `delete` beside an unmeasured coverage column, a round-named count above its ceiling |
@@ -138,8 +138,14 @@ slowest` as already pinned in [go.mod](go.mod), `apps/platformkit`'s own harness
 (`configure`/`install`/`compose`/`appOptions`/`start`/`signIn`/`do`) and
 `trailIncluded` for the new journey, and `go list`'s dependency graph for the
 diff's consumers — production importers and, since review 2, the packages whose
-test binary compiles the change. **Added** — `scripts/test_inventory.py`, because the tree holds
-no test register of any kind and 0088 asks for one CI can re-check; and
+test binary compiles the change — and `go list`'s own package list for the
+package that owns a changed file sitting under a directory of its own, which is
+how a golden and an embedded catalogue reach the tier whose test binary reads
+them. **Added** — `scripts/test_inventory.py`, because the tree holds
+no test register of any kind and 0088 asks for one CI can re-check; the walk of
+`*.test.{js,mjs,ts}` files beside it, because the design tooling's `node --test`
+cases are tests a pull request runs and no Go-shaped walk could count them, their
+round-named ceiling included; and
 `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go`,
 because the composition refused a plan-gated tenant only in prose until two tenants
 walked one door in one boot. **Made reusable** — a tier selector any later task
