@@ -296,7 +296,7 @@ func formField(words Words, f entity.Field) forms.Field {
 	for _, value := range f.Enum {
 		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
 	}
-	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: display.FieldHelp(f), Options: options}
+	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
 }
 
 // listName is the heading a list screen wears. It is also the accessible name of
