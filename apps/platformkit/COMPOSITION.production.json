@@ -1,0 +1,452 @@
+{
+  "schema": "platformkit.composition.v1",
+  "app": "platformkit",
+  "environment": "production",
+  "resolved": true,
+  "modules": [
+    {
+      "name": "product",
+      "provides": [
+        "usercontracts.Administration",
+        "usercontracts.Granting",
+        "filecontracts.Storage",
+        "auditcontracts.Plan",
+        "tenancy.Policy",
+        "sitecontracts.WriteGate",
+        "webcontracts.Links",
+        "admincontracts.Signin",
+        "admincontracts.Locale",
+        "tenantcontracts.Languages"
+      ],
+      "contributes": [
+        {
+          "contract": "tenantcontracts.Hook",
+          "to": [
+            "tenant"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "user",
+      "provides": [
+        "usercontracts.Service",
+        "authcontracts.Users",
+        "authcontracts.Provisioner",
+        "notificationcontracts.RecipientLookup",
+        "tenantcontracts.Inviter"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Administration",
+          "from": "product"
+        },
+        {
+          "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
+      "name": "site",
+      "provides": [
+        "sitecontracts.Service"
+      ],
+      "uses": [
+        {
+          "contract": "sitecontracts.WriteGate",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
+      "name": "tenant",
+      "provides": [
+        "tenantcontracts.Service",
+        "httpx.TenantLoader",
+        "jobs.TenantLister",
+        "notificationcontracts.HostLookup",
+        "authcontracts.OIDCProviders",
+        "authcontracts.SAMLProviders"
+      ],
+      "needs": [
+        {
+          "contract": "tenantcontracts.Inviter",
+          "from": "user"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "tenantcontracts.Languages",
+          "from": "product"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "tenantcontracts.Hook",
+          "from": [
+            "product"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "user"
+      ],
+      "reads": [
+        "config.NATS",
+        "config.Server"
+      ]
+    },
+    {
+      "name": "emailregistration",
+      "provides": [
+        "authcontracts.RegistrationMode"
+      ],
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        }
+      ],
+      "after": [
+        "user"
+      ]
+    },
+    {
+      "name": "notification",
+      "provides": [
+        "notificationcontracts.Service",
+        "authcontracts.Notifier",
+        "notificationcontracts.Mailer"
+      ],
+      "needs": [
+        {
+          "contract": "notificationcontracts.RecipientLookup",
+          "from": "user"
+        },
+        {
+          "contract": "notificationcontracts.HostLookup",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "user",
+        "tenant"
+      ],
+      "reads": [
+        "config.Mail",
+        "config.Server"
+      ],
+      "implementation": {
+        "name": "mailbox"
+      }
+    },
+    {
+      "name": "file",
+      "provides": [
+        "filecontracts.Service",
+        "richtext.Files",
+        "rest.FileUses"
+      ],
+      "needs": [
+        {
+          "contract": "filecontracts.Storage",
+          "from": "product"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Files"
+      ]
+    },
+    {
+      "name": "task",
+      "provides": [
+        "taskcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "tenancy.Policy",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ]
+    },
+    {
+      "name": "billing",
+      "provides": [
+        "httpx.Entitler"
+      ],
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "after": [
+        "tenant"
+      ],
+      "implementation": {
+        "name": "manual"
+      }
+    },
+    {
+      "name": "audit",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "auditcontracts.Plan",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Audit",
+        "config.Database"
+      ]
+    },
+    {
+      "name": "auth",
+      "provides": [
+        "authcontracts.Auth",
+        "httpx.Authorizer",
+        "pkit.Authenticator"
+      ],
+      "needs": [
+        {
+          "contract": "authcontracts.Users",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Provisioner",
+          "from": "user"
+        },
+        {
+          "contract": "authcontracts.Notifier",
+          "from": "notification"
+        },
+        {
+          "contract": "notificationcontracts.Mailer",
+          "from": "notification"
+        },
+        {
+          "contract": "notificationcontracts.HostLookup",
+          "from": "tenant"
+        },
+        {
+          "contract": "authcontracts.OIDCProviders",
+          "from": "tenant"
+        },
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "authcontracts.SAMLProviders",
+          "from": "tenant"
+        },
+        {
+          "contract": "authcontracts.RegistrationMode",
+          "from": "emailregistration"
+        }
+      ],
+      "after": [
+        "product",
+        "user",
+        "tenant",
+        "notification",
+        "emailregistration"
+      ],
+      "reads": [
+        "config.Auth",
+        "config.Server"
+      ]
+    },
+    {
+      "name": "access",
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "notificationcontracts.Service",
+          "from": "notification"
+        },
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "to": [
+            "change"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "user",
+        "notification",
+        "site"
+      ]
+    },
+    {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        }
+      ],
+      "after": [
+        "file"
+      ]
+    },
+    {
+      "name": "change",
+      "provides": [
+        "changecontracts.Service"
+      ],
+      "takes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "from": [
+            "access"
+          ]
+        }
+      ],
+      "after": [
+        "access"
+      ]
+    },
+    {
+      "name": "web",
+      "needs": [
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "contentcontracts.Service",
+          "from": "content"
+        },
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webcontracts.Links",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product",
+        "file",
+        "content",
+        "site"
+      ]
+    },
+    {
+      "name": "admin",
+      "needs": [
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        },
+        {
+          "contract": "tenantcontracts.Service",
+          "from": "tenant"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "admincontracts.Signin",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Locale",
+          "from": "product"
+        },
+        {
+          "contract": "admincontracts.Storybook",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant",
+        "auth"
+      ],
+      "runsLast": true
+    }
+  ],
+  "roles": [
+    {
+      "name": "coordinator",
+      "grants": [
+        "task:read",
+        "task:update"
+      ]
+    },
+    {
+      "name": "observer",
+      "grants": [
+        "task:read"
+      ]
+    }
+  ],
+  "problems": []
+}

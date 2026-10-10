@@ -171,7 +171,7 @@ func (a *App) resolve(d Deployment) (*plan, []issue) {
 			continue
 		}
 		survivingSuppliers[key] = picked
-		passed := moduleNames(filter(cand, func(m *Module) bool { return !chosen[m] }))
+		passed := names(filter(cand, func(m *Module) bool { return !chosen[m] }))
 		for _, c := range picked {
 			p.choices = append(p.choices, choice{key: key, picked: c, passed: passed})
 		}

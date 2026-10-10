@@ -300,13 +300,23 @@ func (m *Module) declares(key any, kinds ...kind) bool {
 // what another put, so building a composition that does not resolve is how a
 // mistake turns into a crash instead of an answer.
 func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, error) {
+	p, built, puts, _, err := a.inspect(d)
+	return p, built, puts, err
+}
+
+// inspect is compose with its problems still in hand: the same phases, the same
+// order, the same joined error, and the []issue behind that error returned
+// beside it rather than folded into it and dropped. Describe needs to say each
+// problem as a field as well as a sentence, and a second collector of problems
+// would be a second answer to the question the resolver already answers — so
+// this is the one place they are collected, and compose is the wrapper that
+// throws the list away. The build phase's own refusals (a module's build, a put
+// that is not the one it declared, the kernel's manifest gates) join the same
+// list under the method name the joined sentence already carries: Build.
+func (a *App) inspect(d Deployment) (*plan, []module.Module, map[*Module]map[any][]any, []issue, error) {
 	p, issues := a.resolve(d)
-	var errs []error
-	for _, in := range issues {
-		errs = append(errs, fmt.Errorf("pkit: %s: %s: %w", a.name, in.method, in.err))
-	}
-	if len(errs) > 0 {
-		return p, nil, nil, errors.Join(errs...)
+	if len(issues) > 0 {
+		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}
 	w := &Wiring{plan: p, values: map[*Module]map[any][]any{}, skin: a.recordedSkin()}
 	for _, m := range p.order {
@@ -326,13 +336,13 @@ func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any
 			}
 		}
 		for _, e := range w.errs {
-			errs = append(errs, fmt.Errorf("pkit: %s: Build: %w", a.name, e))
+			issues = append(issues, issue{method: "Build", err: e})
 		}
 		p.manifest[m] = manifest
 		w.built = append(w.built, manifest)
 	}
-	if len(errs) > 0 {
-		return p, nil, nil, errors.Join(errs...)
+	if len(issues) > 0 {
+		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}
 	// The kernel's own manifest gates, run over what the dry build produced
 	// rather than over a list somebody re-wrote: a module that subscribes to
@@ -342,9 +352,23 @@ func (a *App) compose(d Deployment) (*plan, []module.Module, map[*Module]map[any
 	// gates kit/app would otherwise answer after opening a connection.
 	expanded := module.Expand(append([]module.Module{}, w.built...))
 	if err := module.Validate(expanded); err != nil {
-		return p, nil, nil, errors.Join(append(errs, fmt.Errorf("pkit: %s: Build: %w", a.name, err))...)
+		issues = append(issues, issue{method: "Build", err: err})
+		return p, nil, nil, issues, joinIssues(a.name, issues)
 	}
-	return p, w.built, w.values, nil
+	return p, w.built, w.values, issues, nil
+}
+
+// joinIssues answers the list of problems the way it has always been answered:
+// one line each, prefixed with the app and the method that caused it, joined so
+// a caller reads every problem in one error. The sentence a DescribedProblem
+// carries and the sentence here come from the same fmt.Errorf call, which is the
+// reason a machine view needs no message format of its own.
+func joinIssues(app string, issues []issue) error {
+	errs := make([]error, 0, len(issues))
+	for _, in := range issues {
+		errs = append(errs, fmt.Errorf("pkit: %s: %s: %w", app, in.method, in.err))
+	}
+	return errors.Join(errs...)
 }
 
 // Validate answers every problem with the composition — duplicates, missing,
@@ -370,56 +394,62 @@ func (a *App) Validate(d Deployment) error {
 // recorded. Routes and tenant hosts are the two parts of rule 4 this cannot say
 // yet: a manifest registers its routes through a function rather than listing
 // them, and the server that would mount them is not composed here.
+//
+// Every sentence about the wiring is this file's rendering of the Description
+// Describe hands back — one projection, two encodings — so the composition file
+// a client commits and the machine-readable view a tool reads cannot be settled
+// about different compositions. Two lines are the text's own, because the view
+// does not carry what they name: what a module `describes` to the environment is
+// an arbitrary Go value rather than a name, and the note about a contract nobody
+// needs asks what the built module actually put, which is a build output and not
+// a resolution decision.
+//
+// The order of the sentences is the text's too: the view groups a module's
+// declarations by kind, and the composition file keeps them in the order the
+// module wrote them, so the reading below walks the declarations and takes each
+// answer from the projection in the order the projection appended it.
 func (a *App) Explain(d Deployment) (string, error) {
-	p, built, puts, err := a.compose(d)
+	p, _, puts, _, err := a.inspect(d)
 	if err != nil {
 		return "", err
 	}
+	doc := a.described(p, d.Environment)
 	var b strings.Builder
 	noun := "modules"
-	if len(built) == 1 {
+	if len(doc.Modules) == 1 {
 		noun = "module"
 	}
-	fmt.Fprintf(&b, "pkit: %s in %s builds %d %s.\n", a.name, d.Environment, len(built), noun)
-	for _, r := range a.roles {
+	fmt.Fprintf(&b, "pkit: %s in %s builds %d %s.\n", a.name, d.Environment, len(doc.Modules), noun)
+	for _, r := range doc.Roles {
 		held := "nothing"
 		if len(r.Grants) > 0 {
 			held = andList(r.Grants)
 		}
 		fmt.Fprintf(&b, "pkit: a tenant of %s begins as %s, holding %s.\n", a.name, r.Name, held)
 	}
-	for _, m := range p.order {
-		if m != p.last {
-			switch deps := p.deps[m]; len(deps) {
+	for i, dm := range doc.Modules {
+		m := p.order[i]
+		if !dm.RunsLast {
+			switch len(dm.After) {
 			case 0:
 				fmt.Fprintf(&b, "pkit: %s.Module needs no other module.\n", m.name)
 			default:
-				fmt.Fprintf(&b, "pkit: %s.Module is built after %s.\n", m.name, andList(moduleNames(deps)))
+				fmt.Fprintf(&b, "pkit: %s.Module is built after %s.\n", m.name, andList(suffixed(dm.After)))
 			}
 		}
-		for _, dl := range m.decls {
-			switch {
-			case dl.kind == needs && !dl.many:
-				fmt.Fprintf(&b, "pkit: %s.Module needs %s from %s.Module.\n", m.name, contract(dl.key), p.from[edge{m, dl.key}].name)
-			case dl.kind == optional && !dl.many:
-				if s := p.from[edge{m, dl.key}]; s != nil {
-					fmt.Fprintf(&b, "pkit: %s.Module uses %s from %s.Module.\n", m.name, contract(dl.key), s.name)
-				} else {
-					fmt.Fprintf(&b, "pkit: %s.Module could use %s; %s composes no provider, so it will not.\n", m.name, contract(dl.key), a.name)
-				}
-			case (dl.kind == needs || dl.kind == optional) && dl.many:
-				fmt.Fprintf(&b, "pkit: %s.Module takes every %s from %s.\n", m.name, contract(dl.key), whoOrNobody(moduleNames(p.contributors[dl.key])))
-			}
-		}
+		explainWiring(&b, a.name, m, dm)
 		// A module that reads a setting says so in the composition file, the same
 		// way it says which module it needs: nothing a build reads stays hidden
 		// (0074 rule 4). One line per section, in the order they were asked for.
-		for _, t := range p.reads[m] {
-			fmt.Fprintf(&b, "pkit: %s.Module reads %s.\n", m.name, contract(t))
+		for _, t := range dm.Reads {
+			fmt.Fprintf(&b, "pkit: %s.Module reads %s.\n", m.name, t)
 		}
+		given := 0
 		for _, dl := range m.decls {
 			switch {
-			case dl.kind == contributes && len(p.takers[dl.key]) == 0:
+			case dl.kind == contributes:
+				c := dm.Contributes[given]
+				given++
 				// Decided here (0074 rule 4, and T-0225's open question): a
 				// contribution no composed module takes is a note, not a refusal.
 				// A taker declares Needs[[]E], which the resolver reads as zero or
@@ -428,11 +458,17 @@ func (a *App) Explain(d Deployment) (string, error) {
 				// reader has to be told, and not a mistake that stops the app: the
 				// fixture's wishlist and collectibles both contribute an extension
 				// to a cart that need not be composed at all.
-				fmt.Fprintf(&b, "pkit: %s.Module contributes one %s; no module in %s takes one.\n", m.name, contract(dl.key), a.name)
-			case dl.kind == contributes:
-				fmt.Fprintf(&b, "pkit: %s.Module contributes one %s to %s.\n", m.name, contract(dl.key), whoOrNobody(moduleNames(p.takers[dl.key])))
+				if len(c.To) == 0 {
+					fmt.Fprintf(&b, "pkit: %s.Module contributes one %s; no module in %s takes one.\n", m.name, c.Contract, a.name)
+					continue
+				}
+				fmt.Fprintf(&b, "pkit: %s.Module contributes one %s to %s.\n", m.name, c.Contract, whoOrNobody(suffixed(c.To)))
 			case dl.kind == fromDeployment:
-				fmt.Fprintf(&b, "pkit: %s.Module runs on %s, which the deployment picked.\n", m.name, p.impl[m])
+				name := ""
+				if dm.Implementation != nil {
+					name = dm.Implementation.Name
+				}
+				fmt.Fprintf(&b, "pkit: %s.Module runs on %s, which the deployment picked.\n", m.name, name)
 			case dl.kind == describes:
 				fmt.Fprintf(&b, "pkit: %s.Module describes %v.\n", m.name, dl.about)
 			case dl.kind == after:
@@ -441,9 +477,9 @@ func (a *App) Explain(d Deployment) (string, error) {
 		}
 		b.WriteString(describesToKernel(p.manifest[m]))
 	}
-	for _, c := range p.choices {
-		if len(c.passed) > 0 {
-			fmt.Fprintf(&b, "pkit: %s chose %s.Module over %s for %s.\n", a.name, c.picked.name, andList(c.passed), contract(c.key))
+	for _, c := range doc.Choices {
+		if len(c.PassedOver) > 0 {
+			fmt.Fprintf(&b, "pkit: %s chose %s.Module over %s for %s.\n", a.name, c.Picked, andList(suffixed(c.PassedOver)), c.Contract)
 		}
 	}
 	// A contract nobody needs is a note, never a refusal. It is sometimes
@@ -459,4 +495,32 @@ func (a *App) Explain(d Deployment) (string, error) {
 		}
 	}
 	return b.String(), nil
+}
+
+// explainWiring prints the sentences about who is on the other end of each of a
+// module's needs, in the order the module declared them. The answers are the
+// projection's; the only thing the declaration walk decides is which sentence
+// comes next, because the view groups by kind and the composition file does not.
+func explainWiring(b *strings.Builder, app string, m *Module, dm DescribedModule) {
+	needed, used, taken := 0, 0, 0
+	for _, dl := range m.decls {
+		switch {
+		case dl.kind == needs && !dl.many:
+			n := dm.Needs[needed]
+			needed++
+			fmt.Fprintf(b, "pkit: %s.Module needs %s from %s.Module.\n", m.name, n.Contract, n.From)
+		case dl.kind == optional && !dl.many:
+			n := dm.Uses[used]
+			used++
+			if n.From == "" {
+				fmt.Fprintf(b, "pkit: %s.Module could use %s; %s composes no provider, so it will not.\n", m.name, n.Contract, app)
+				continue
+			}
+			fmt.Fprintf(b, "pkit: %s.Module uses %s from %s.Module.\n", m.name, n.Contract, n.From)
+		case (dl.kind == needs || dl.kind == optional) && dl.many:
+			t := dm.Takes[taken]
+			taken++
+			fmt.Fprintf(b, "pkit: %s.Module takes every %s from %s.\n", m.name, t.Contract, whoOrNobody(suffixed(t.From)))
+		}
+	}
 }

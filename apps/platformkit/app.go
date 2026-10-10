@@ -17,6 +17,7 @@ package main
 // are what this product adds to them.
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/septagon-oss/platformkit/design"
@@ -285,6 +286,30 @@ func (r reference) explain(role app.Role) string {
 		return fmt.Sprintf("# COMPOSITION — platformkit\n\nrefused: %v\n", err)
 	}
 	return text
+}
+
+// describe is the same resolution the composition file states in sentences,
+// stated as values: the modules in the order they are built, who supplies whose
+// need, what Choose settled, which implementation this environment picked, the
+// configuration sections each module read and the roles the app recorded. The
+// text is what a person reads and this is what a tool reads, both rendered from
+// the one resolved plan, so the two cannot be settled about different
+// compositions.
+//
+// It is names only — no configuration value, no deployment input, no credential
+// and no tenant row — which is what lets it be committed beside the text file at
+// all: a machine-readable file is a wider surface than a markdown one a reviewer
+// reads, so it takes the narrower statement of what is in it.
+func (r reference) describe() ([]byte, error) {
+	doc, err := r.app.Describe(r.once)
+	if err != nil {
+		return nil, err
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("platformkit: the resolved composition cannot be encoded: %w", err)
+	}
+	return append(out, '\n'), nil
 }
 
 // startingRoles is this application's claim about who a tenant begins as, in
