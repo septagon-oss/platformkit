@@ -24,8 +24,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
-	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
@@ -152,9 +152,9 @@ func localeStates(ctx context.Context, r httpx.Resource, row map[string]any) ([]
 	if r.Locales == nil {
 		return nil, nil
 	}
-	id, err := uuid.Parse(rest.Text(row["id"]))
+	id, err := uuid.Parse(display.Text(row["id"]))
 	if err != nil {
-		return nil, fmt.Errorf("screens: the %s row's id is %q, which is no id: %w", r.Entity, rest.Text(row["id"]), err)
+		return nil, fmt.Errorf("screens: the %s row's id is %q, which is no id: %w", r.Entity, display.Text(row["id"]), err)
 	}
 	return r.Locales(ctx, id)
 }
