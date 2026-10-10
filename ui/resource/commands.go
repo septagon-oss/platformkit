@@ -20,7 +20,6 @@ package resource
 
 import (
 	g "maragu.dev/gomponents"
-	h "maragu.dev/gomponents/html"
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/ui/components"
@@ -115,7 +114,11 @@ func commandForm(o Options, words Words, c Command, item string) g.Node {
 	}
 	controls := make([]g.Node, 0, len(c.Fields)+2)
 	if warning != nil && warning.Body != "" {
-		controls = append(controls, h.P(g.Text(warning.Body)))
+		// The consequence is the form's own copy, so the design system owns its text
+		// scale and its reading measure. Drawn as a bare paragraph it arrived on a
+		// generated record page at 16px across 142ch — a third body size beside the
+		// help line and the label, and a measure the design floor refuses.
+		controls = append(controls, components.FormSentence(components.FormSentenceProps{Text: warning.Body}))
 	}
 	arguments := words.forCommand(c.Verb)
 	for _, f := range c.Fields {
