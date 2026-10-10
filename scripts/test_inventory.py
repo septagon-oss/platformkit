@@ -20,6 +20,12 @@ Three modes, one implementation of each decision behind a figure:
                    refuses a selection that opens a stack: its promise is "no database", and no
                    flag opens that door.
 
+The exit status is part of the answer, not a courtesy: 0 for "the tree answers the table", 1 for a
+refused --check, 2 for a --ceiling that would rise, 3 for a push selection that opens a stack, 4 for
+a tool the selector could not ask (a failed `git diff` or `go list`, which is not the same empty
+answer as "the diff reaches nothing"). scripts/check_test_inventory.sh execs it and
+scripts/check_push_tier.sh substitutes it, so both inherit these numbers verbatim.
+
 Columns split by who may fill them:
 
   mechanical  file, pkg, name, kind, area, layer, tier, needs_db, round_named — recomputed from
@@ -483,6 +489,19 @@ def report(failures, total, summary, md=True):
 
 # --------------------------------------------------------------------------- tier
 
+def asked(cmd, where):
+    """Run a command the selection is read from, and say so when it cannot answer. A selector that
+    ignores its own tools treats "nothing reached" and "nothing asked" as the same empty answer, and
+    the wrapper prints the first and exits 0 on either."""
+    run = subprocess.run(cmd, cwd=where, capture_output=True, text=True)
+    if run.returncode:
+        why = run.stderr.strip().splitlines() or ["no reason given"]
+        print("TIER: %s failed, so the packages the diff reaches cannot be answered (exit 4): %s"
+              % (" ".join(cmd), why[0]), file=sys.stderr)
+        return None, 4
+    return run.stdout, 0
+
+
 def tier_selection(tier, base):
     """The packages the named tier runs, for the directories a diff reaches. Selection is a pure
     function of the diff: `go list` gives the dependency graph, its inverse gives the consumers,
@@ -493,33 +512,64 @@ def tier_selection(tier, base):
         if r["kind"] == "go":
             pkgs.setdefault(r["pkg"], r["tier"])
     if base:
-        changed = subprocess.run(("git", "diff", "--name-only", base + "...HEAD"), cwd=root,
-                                 capture_output=True, text=True).stdout.splitlines()
+        changed_text, code = asked(("git", "diff", "--name-only", base + "...HEAD"), root)
+        if code:
+            return None, code
+        changed = changed_text.splitlines()
         changed += git("ls-files", "--others", "--exclude-standard")
     else:
         changed = tracked("*")
     dirs = {os.path.dirname(p) for p in changed if os.path.dirname(p)}
-    graph = subprocess.run(("go", "list", "-f", "{{.ImportPath}} {{join .Deps \" \"}}", "./..."),
-                           cwd=root, capture_output=True, text=True).stdout.splitlines()
-    import_dir = {}
-    for r in subprocess.run(("go", "list", "-f", "{{.ImportPath}}|{{.Dir}}", "./..."),
-                            cwd=root, capture_output=True, text=True).stdout.splitlines():
-        path, _, d = r.partition("|")
-        import_dir[d] = path
-    reached = {import_dir[d] for d in dirs if d in import_dir}
-    for line in graph:
-        name, _, deps = line.partition(" ")
-        if any(dep in reached for dep in deps.split()):
-            reached.add(name)
-    prefix = MODULE + "/"
-    selected = {p[len(prefix):] for p in reached if p.startswith(prefix)} | {d for d in dirs if d in pkgs}
-    out = sorted(p for p in selected if p in pkgs and pkgs[p] == tier)
-    if tier == "push":
-        opens = [p for p in out for r in doc["rows"] if r["pkg"] == p and r["needs_db"]]
+
+    def choose(reached):
+        """The tier's own packages among the directories the selection reaches — a package with no
+        test row is not scheduled, and a package whose rows sit in another tier is not this one's."""
+        prefix = MODULE + "/"
+        selected = {p[len(prefix):] for p in reached if p.startswith(prefix)} | {d for d in dirs if d in pkgs}
+        return sorted(p for p in selected if p in pkgs and pkgs[p] == tier)
+
+    def opens_stack(selected):
+        if tier != "push":
+            return 0
+        opens = [p for p in selected for r in doc["rows"] if r["pkg"] == p and r["needs_db"]]
         if opens:
             print("PUSH TIER: the selection reaches packages that open a stack, which the push tier never runs: %s"
                   % " ".join(sorted(set(opens))), file=sys.stderr)
-            return None, 3
+            return 3
+        return 0
+
+    # The push tier's promise is asked twice: of the directories the diff touched, before the
+    # dependency graph is consulted, and of the whole selection after. The first asking is what a
+    # caller that touched a package opening a stack has already earned, and it is answered whatever
+    # `go list` does next — including on a tree `go list` cannot read, where the refusal a caller
+    # earned must not be replaced by the selector's own complaint about its tool.
+    code = opens_stack(choose(set()))
+    if code:
+        return None, code
+
+    graph, code = asked(("go", "list", "-f", "{{.ImportPath}} {{join .Deps \" \"}}", "./..."), root)
+    if code:
+        return None, code
+    listing, code = asked(("go", "list", "-f", "{{.ImportPath}}|{{.Dir}}", "./..."), root)
+    if code:
+        return None, code
+    import_dir = {}
+    for r in listing.splitlines():
+        path, _, d = r.partition("|")
+        # go list answers with an absolute directory; the diff answers with a path relative to the
+        # checkout. One of the two has to move, and a selector that keyed the absolute one matched
+        # nothing: the selection was only the directories the diff touched, so no package ever
+        # reached its consumer on a push (review 1, finding 1).
+        import_dir[os.path.relpath(d, root)] = path
+    reached = {import_dir[d] for d in dirs if d in import_dir}
+    for line in graph.splitlines():
+        name, _, deps = line.partition(" ")
+        if any(dep in reached for dep in deps.split()):
+            reached.add(name)
+    out = choose(reached)
+    code = opens_stack(out)
+    if code:
+        return None, code
     return out, 0
 
 
@@ -594,4 +644,8 @@ def main():
     return report(failures, total, fresh, bool(md_path))
 
 
-main()
+# The refusal is the answer: --check's exit status is the verdict CI acts on, and check_push_tier.sh
+# reads the selection's status before it reads the selection. A bare call here threw the value away and
+# every path exited 0, so a refused table and a refused selection both looked green to the gate that
+# asked (review 1, finding 2).
+sys.exit(main())

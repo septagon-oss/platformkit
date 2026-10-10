@@ -577,6 +577,19 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
+	# scripts/test_inventory.py feeds two gates — `check-test-inventory` above and the push tier's
+	# selection in scripts/check_push_tier.sh — and until review 1 neither could fail, because the
+	# tool returned its refusal and the script discarded it. The three cases below are what keeps that
+	# shape now: scripts/test_inventory_test.sh pins the eight refusals and the exit status of each,
+	# against a fixture tree in a temporary directory; scripts/a_refused_inventory_check_exits_nonzero_
+	# test.sh asks the status of a removed row and of a push selection that opens a stack; and
+	# scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh asks that a change to a
+	# package selects the package that imports it — a selector that keyed `go list`'s absolute
+	# directories against the diff's relative ones matched nothing, so no push ever ran a consumer.
+	# None of the three opens a stack; together they cost about four seconds.
+	bash scripts/test_inventory_test.sh
+	bash scripts/a_refused_inventory_check_exits_nonzero_test.sh
+	bash scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

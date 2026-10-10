@@ -45404,6 +45404,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/a_refused_inventory_check_exits_nonzero_test.sh",
+   "id": "scripts/a_refused_inventory_check_exits_nonzero_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "a_refused_inventory_check_exits_nonzero_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/architecture_pillars_test.py",
    "id": "scripts/architecture_pillars_test.py",
    "kind": "shell_pin",
@@ -46004,6 +46024,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh",
+   "id": "scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "push_tier_reaches_the_consumers_of_a_changed_package_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/restore_drill_store_test.sh",
    "id": "scripts/restore_drill_store_test.sh",
    "kind": "shell_pin",
@@ -46139,7 +46179,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1011,
+  "files": 1013,
   "forge_runs": [
    408,
    413,
@@ -46174,7 +46214,7 @@
   ],
   "layers": {
    "behaviour": 2091,
-   "composition": 157,
+   "composition": 159,
    "contract": 19,
    "journey": 54
   },
@@ -46192,23 +46232,23 @@
   },
   "round_named_ceiling": 214,
   "round_named_files": 214,
-  "rows": 2321,
+  "rows": 2323,
   "tiers": {
    "merge": 1432,
    "nightly": 54,
-   "push": 835
+   "push": 837
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 797,
+   "keep": 799,
    "keep-rewrite": 69,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 1975,
+   "keep": 1977,
    "keep-rewrite": 131,
    "merge": 215
   }
