@@ -403,7 +403,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 			if name, ok := named[row.ID]; ok {
 				text = name
 			}
-			return components.Link(components.LinkProps{Label: text, Href: at + "/" + row.ID})
+			return components.RowLink(components.LinkProps{Label: text, Href: at + "/" + row.ID})
 		},
 	}
 	return components.DataListWithSlots(p, slots)
