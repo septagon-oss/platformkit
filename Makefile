@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -282,6 +282,20 @@ check-nightly: ## The nightly tier: the journeys, and the reports the inventory'
 FLAKE_RUNS ?= 5
 flakes: ## Run the whole push tier FLAKE_RUNS times and print the per-test flake rate and the slowest tests
 	./scripts/check_flake_report.sh $(FLAKE_RUNS)
+
+# The instrument 0088's acceptance line needs a "before" for: "coverage not lower" is
+# uncheckable in a tree that never measures it — `-coverprofile` appears nowhere in this
+# repository, and the inventory's `unique_lines` column exists only for the 36 files the
+# specify round measured one at a time. This goal runs the suite once with the mode the
+# delta needs (`set`, not `count`: the prune asks whether a line is reached, not how often)
+# and leaves the answer in reports/ as a named path — the figure a prune commit refuses to
+# fall below, read with `go tool cover -func`. It is a goal and not a `check:` line because
+# instrumenting every package costs real time, and a gate that is slow for a number nobody
+# reads tomorrow gets switched off.
+cover: ## Record this tree's statement coverage in reports/coverage.out and coverage.txt
+	mkdir -p reports
+	go test -count=1 -timeout=30m -covermode=set -coverprofile=reports/coverage.out $(TEST_PACKAGES) | tee reports/coverage.txt
+	go tool cover -func=reports/coverage.out | tail -1
 
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \

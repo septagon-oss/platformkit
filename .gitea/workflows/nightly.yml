@@ -12,13 +12,16 @@
 # one of them, five times over, in one `go` invocation, with gotestsum's JSON
 # report under reports/ as the artifact a later inventory round re-reads.
 #
-# What is NOT here, said plainly: the browser and device journeys. 0088 puts them
-# in this tier, and they still run on the pull-request job in ci.yml, because
-# `make e2e` needs the Postgres, NATS, object store and mail catcher containers
-# that job starts by hand — named, labelled and swept, which is what
-# scripts/ci_container_leak_test.sh refuses a job for losing. Copying those steps
-# here is the change that moves the journeys; it is a copy of ~150 lines and its
-# own sweep step, and it is not something to write beside a first tier wiring.
+# What is NOT here, said plainly: the browser and device journeys, and
+# `make cover`. 0088 puts the journeys in this tier, and they still run on the
+# pull-request job in ci.yml, because `make e2e` needs the Postgres, NATS, object
+# store and mail catcher containers that job starts by hand — named, labelled and
+# swept, which is what scripts/ci_container_leak_test.sh refuses a job for losing.
+# `make cover` runs the whole suite over ./... , so it needs those same containers:
+# its figure is the merge-tier job's to record once the coverage baseline has an
+# owner, and the goal prints it in the meantime. Copying the service steps here is
+# the change that moves all three; it is a copy of ~150 lines and its own sweep
+# step, and it is not something to write beside a first tier wiring.
 name: nightly
 
 on:
