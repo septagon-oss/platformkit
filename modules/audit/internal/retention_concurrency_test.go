@@ -62,12 +62,20 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 			unlisted := tenancy.Tenant{ID: uuid.New(), Slug: "unlisted"}
 			for _, tenant := range append(slices.Clone(tenants), unlisted) {
 				if _, err := admin.ExecContext(ctx, `INSERT INTO audit_events (tenant_id, occurred_at, name, event_id, payload)
-                    VALUES ($1, now() - interval '40 days', 'expired', gen_random_uuid(), '{}'),
+                    VALUES ($1, now() - interval '400 days', 'expired', gen_random_uuid(), '{}'),
                            ($1, now(), 'kept', gen_random_uuid(), '{}')`, tenant.ID); err != nil {
 					t.Fatal(err)
 				}
 			}
-			job := audit.New(audit.Deps{Tenants: tenants, RetentionDays: 30}).Jobs[0]
+			// The sweep no longer runs on the application's connection: 000048 fences the
+			// app role's DELETE away, so Deps names the expiry role the fence admits, and
+			// the job opens it for the length of one run. What this case now measures is
+			// that the deletes reach the lock from that pool and never from the
+			// application's, which is the assertion below.
+			_, retainURL := dbtest.Role(t, admin,
+				"SELECT, DELETE ON TABLE audit_events",
+				"SELECT, INSERT ON TABLE audit_retention_marks")
+			job := audit.New(audit.Deps{Tenants: tenants, RetentionDays: 365, RetainURL: retainURL}).Jobs[0]
 			if job.Name != "audit-retention" || job.Parallel {
 				t.Fatal("retention lost its scheduled-job lock")
 			}
@@ -85,14 +93,14 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := conn.Stats()
+			// The job's own pool is four connections, one per tenant callback plus the
+			// tenant list, so three callbacks at most are ever in flight whatever the
+			// application's pool is — which is the point of opening one.
+			want := 3
 			done := make(chan error, 1)
 			var work sync.WaitGroup
 			work.Go(func() { done <- job.Run(ctx, conn) })
 			defer func() { cancel(); _ = blocker.Rollback(); work.Wait() }()
-			want := 4
-			if poolSize == 2 {
-				want = 1
-			}
 			for {
 				var waiting int
 				if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
@@ -114,8 +122,10 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 				case <-time.After(10 * time.Millisecond):
 				}
 			}
-			if stats := conn.Stats(); stats.InUse != want+1 || stats.WaitCount != before.WaitCount {
-				t.Fatalf("retention exceeded the available pool or omitted its job lock: %+v", stats)
+			// The application pool is what it was: the sweep holds connections of its
+			// own, so a busy retention pass no longer queues requests behind it.
+			if stats := conn.Stats(); stats.InUse != before.InUse || stats.WaitCount != before.WaitCount {
+				t.Fatalf("retention took application connections: before %+v now %+v", before, stats)
 			}
 			if err := blocker.Rollback(); err != nil {
 				t.Fatal(err)

@@ -202,11 +202,17 @@ func TestTheTrailKeepsWhatCausedTheEvent(t *testing.T) {
 // TestRetentionForgetsOnlyWhatIsOldEnough, a batch at a time. The batch is a
 // thousand and the fixture is smaller, so what this proves is the boundary and
 // the loop's exit, not the batching itself.
+//
+// The ages are past and inside the floor the trigger in migrations/000048 refuses to
+// cross, and the job runs on the expiry connection rather than the application's,
+// because the role that appends may not remove. What it removed is read back from
+// audit_retention_marks: a sweep that forgot silently would pass a count of what is
+// left and fail only this second assertion.
 func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
 	admin, conn := dbtest.Schema(t, audit.Migrations)
 	svc := internal.NewService()
 
-	old := db.Now().AddDate(0, 0, -40)
+	old := db.Now().AddDate(0, 0, -400)
 	recent := db.Now().AddDate(0, 0, -2)
 	recentID := uuid.New()
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -224,7 +230,10 @@ func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
 		t.Fatalf("seed the trail: %v", err)
 	}
 
-	job := internal.Retention(lister{acme}, 30)
+	_, retainURL := dbtest.Role(t, admin,
+		"SELECT, DELETE ON TABLE audit_events",
+		"SELECT, INSERT ON TABLE audit_retention_marks")
+	job := internal.Retention(lister{acme}, 365, retainURL)
 	if err := job.Run(t.Context(), conn); err != nil {
 		t.Fatalf("the retention job: %v", err)
 	}
@@ -243,6 +252,80 @@ func TestRetentionForgetsOnlyWhatIsOldEnough(t *testing.T) {
 	}
 	if keptID != recentID || !keptAt.Equal(recent) {
 		t.Errorf("retained %s at %s, want the recent event %s at %s", keptID, keptAt, recentID, recent)
+	}
+
+	// The expiry wrote its own record, in the transaction of the delete it describes.
+	var marks int
+	var cutoff time.Time
+	var removed int64
+	var mine bool
+	if err := admin.QueryRowContext(t.Context(),
+		`SELECT count(*), max(cutoff), sum(removed), bool_and(tenant_id = $1) FROM audit_retention_marks`, acme.ID).
+		Scan(&marks, &cutoff, &removed, &mine); err != nil {
+		t.Fatalf("read the retention marks: %v", err)
+	}
+	if marks != 1 || removed != 1 || !mine {
+		t.Fatalf("the sweep left %d marks naming %d rows of this tenant: %v, want one mark naming one row of %s",
+			marks, removed, mine, acme.ID)
+	}
+	if !cutoff.Before(recent) {
+		t.Errorf("the mark's cutoff %s is not before the retained row at %s", cutoff, recent)
+	}
+
+	// A second pass has nothing to remove, and a record of a nothing is not a record.
+	if err := job.Run(t.Context(), conn); err != nil {
+		t.Fatalf("the retention job, second pass: %v", err)
+	}
+	if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM audit_retention_marks`).Scan(&marks); err != nil {
+		t.Fatal(err)
+	}
+	if marks != 1 {
+		t.Errorf("an empty sweep wrote %d marks, want the one that already described the removal", marks)
+	}
+}
+
+// TestRetentionRefusesWithoutItsOwnRole is the refusal a deployment sees first: the
+// application role cannot expire the trail, so a job with no retain_url has no door
+// and says so rather than deleting nothing and reporting success.
+func TestRetentionRefusesWithoutItsOwnRole(t *testing.T) {
+	_, conn := dbtest.Schema(t, audit.Migrations)
+	err := internal.Retention(lister{acme}, 365, "").Run(t.Context(), conn)
+	if err == nil {
+		t.Fatal("the retention job ran with no expiry role and reported success")
+	}
+}
+
+// TestRetentionLeavesAnotherTrailsOwnerAlone is the pillar-1 case, and the one a
+// misconfigured retain_url would pass: a retain role's connection is not a
+// superuser's, so the first tenant's pass deletes the first tenant's rows. A
+// BYPASSRLS DSN could not even be opened (kit/db refuses it); this case is what
+// proves the policy, not the role attribute, is doing the work.
+func TestRetentionLeavesAnotherTenantTrailAlone(t *testing.T) {
+	admin, conn := dbtest.Schema(t, audit.Migrations)
+	svc := internal.NewService()
+	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex"}
+	for _, tc := range []tenancy.Tenant{acme, globex} {
+		ctx := tenancy.WithTenant(t.Context(), tc)
+		if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return svc.Record(ctx, tx, events.Event{ID: uuid.New(), Name: "task.task.created", At: db.Now().AddDate(0, 0, -400), Payload: []byte(`{}`)})
+		}); err != nil {
+			t.Fatalf("seed %s: %v", tc.Slug, err)
+		}
+	}
+	_, retainURL := dbtest.Role(t, admin,
+		"SELECT, DELETE ON TABLE audit_events",
+		"SELECT, INSERT ON TABLE audit_retention_marks")
+	if err := internal.Retention(lister{acme}, 365, retainURL).Run(t.Context(), conn); err != nil {
+		t.Fatalf("the retention job: %v", err)
+	}
+	for tenant, want := range map[uuid.UUID]int{acme.ID: 0, globex.ID: 1} {
+		var kept int
+		if err := admin.QueryRowContext(t.Context(), `SELECT count(*) FROM audit_events WHERE tenant_id = $1`, tenant).Scan(&kept); err != nil {
+			t.Fatal(err)
+		}
+		if kept != want {
+			t.Errorf("trimming %s left %d of its rows, want %d", tenant, kept, want)
+		}
 	}
 }
 

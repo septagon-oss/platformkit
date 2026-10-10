@@ -13,19 +13,17 @@
 // updates a row and nothing removes one but the retention job, which is also why
 // there is no rest.Spec — a Spec is five routes and three of them write.
 //
-// Say plainly what that does not include, because the sentence used to claim
-// more than the tree delivered (T-0118, decision 0013's integrity property). The
-// trail carries the request that caused each row — actor, request id, client
-// address, trace context (migrations/000035) — but it is not hash-chained, and
-// the role the application connects as still holds UPDATE and TRUNCATE on the
-// table through the cluster's default privileges. "Append-only" is therefore a
-// statement about this module's code, not a property the database will refuse a
-// rewrite of. The chain that would make it one — a per-tenant sequence and
-// prev_hash/hash pair, a named advisory lock per tenant over the append, a
-// checkpoint row for retention, the two grants revoked and a BEFORE DELETE
-// trigger that admits only the retention transaction — is the next delivery's,
-// and modules/audit/README.md's Limits section is where the shape is written
-// down so a second engineer builds the same thing.
+// Say plainly what that does not include. The trail carries the request that caused
+// each row — actor, request id, client address, trace context (migrations/000035) —
+// and the database refuses a rewrite of it: migrations/000048 revokes UPDATE and
+// TRUNCATE from every grantee the catalog discovers, and installs a BEFORE UPDATE
+// trigger that refuses every role, the table's owner included, beside a BEFORE DELETE
+// trigger that admits only a role that may delete and may not insert, and only past
+// 365 days. What it is still not is hash-chained: the per-tenant sequence and
+// prev_hash/hash pair decision 0013 owes is undelivered, so what this proves is that
+// nothing inside the application's reach rewrote a row, not that no row was ever
+// inserted. modules/audit/README.md's Duties section carries the same account with the
+// command that checks it.
 package contracts
 
 import (
@@ -50,7 +48,8 @@ import (
 // nobody caused it: a job, an event handler, the bootstrap. EventID is the
 // outbox event's own id, which is what makes recording idempotent whatever
 // redelivers it. The columns are migrations/000010 and, for the four that name a
-// cause which was no session, migrations/000049.
+// cause which was no session, this module's
+// migrations/000053_audit_attribution.up.sql.
 type Event struct {
 	ID         uuid.UUID       `json:"id" format:"uuid" doc:"The trail row's own id"`
 	TenantID   uuid.UUID       `json:"-"`
@@ -84,7 +83,8 @@ type Event struct {
 	TraceID *uuid.UUID `json:"traceId,omitempty" format:"uuid" gorm:"-" doc:"The trace this event happened in, absent when nobody traced it"`
 
 	// Attribution: what caused this when the cause was not a session. The outbox
-	// carries these four (kit/events.Attribution, migrations/000048) and this trail
+	// carries these four (kit/events.Attribution,
+	// migrations/000052_outbox_attribution.up.sql) and this trail
 	// is where they outlive it, because the relay deletes a published row once its
 	// retention window passes and the trail is append-only: a copy that dropped
 	// them is the last chance the installation had to say what caused the write.
@@ -96,8 +96,9 @@ type Event struct {
 	// Actor — the trail's Actor is a login, and no login wrote a seed run's row.
 	// SourceFile and SourceLine are cited together or not at all: the pair rule is
 	// kit/events.Attribution's, and Record keeps it here because this table holds no
-	// constraint of its own on the pair. migrations/000049 says why nothing here is
-	// backfilled.
+	// constraint of its own on the pair.
+	// modules/audit/migrations/000053_audit_attribution.up.sql says why nothing here
+	// is backfilled.
 	ActorKind  *string    `json:"actorKind,omitempty" doc:"What kind of cause wrote this, when it was no session: user, system, seed or job" example:"seed"`
 	SourceFile *string    `json:"sourceFile,omitempty" maxLength:"512" doc:"The file that asked for the write, cited by the run that made it" example:"seed/starter/contents.yaml"`
 	SourceLine *int       `json:"sourceLine,omitempty" doc:"The line of that file" example:"12"`

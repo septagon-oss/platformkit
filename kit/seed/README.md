@@ -215,7 +215,8 @@ same events; anything else names a person.
 The seed publishes nothing of its own. Every write goes through its owner, so the
 owner publishes the event; what the seed adds is the attribution carried beside it.
 `Apply` and `ApplyProvisioned` put `events.WithAttribution` around each owner write,
-and the outbox row (migrations/000048) and the CloudEvents envelope the relay
+and the outbox row (`migrations/000052_outbox_attribution.up.sql`) and the CloudEvents
+envelope the relay
 publishes record `actor_kind=seed`, the record's own `source_file` and `source_line`
 and the `initiator` the run named — with `actor` left NULL, because no session wrote
 a seeded row and a command line is not a login. `Plan.String()` names `file:line`

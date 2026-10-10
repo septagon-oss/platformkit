@@ -254,8 +254,9 @@ func seedActor(ctx context.Context, users usercontracts.Service, tx db.Tx[db.Ten
 	// The principal, and deliberately not the actor. tenancy.Actor means "the
 	// person whose session this is", and no session wrote a seeded row: the run
 	// did, on that person's behalf. The outbox column therefore stays NULL —
-	// migrations/000048 says why — and the person is named beside it as the
-	// run's initiator, taken off this principal by kit/seed.
+	// migrations/000052_outbox_attribution.up.sql says why — and the person is
+	// named beside it as the run's initiator, taken off this principal by
+	// kit/seed.
 	return tenancy.WithPrincipal(ctx, tenancy.Principal{
 		UserID: person.ID, Roles: []string(person.Roles),
 	}), nil

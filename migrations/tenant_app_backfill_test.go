@@ -37,13 +37,23 @@ import (
 // appFile is the file under test, by the name the ledger carries.
 const appFile = "000043_tenant_app.up.sql"
 
-// beforeApp is the kernel's own history up to the release before the one that
-// carries the column: the state of an installation on the day that release boots.
-// It withholds that file and every file numbered above it — a machine standing on
-// version 42 has not run version 44 either, and the runner refuses a file that
-// precedes an applied version, so a fixture that took only 43 out would describe
-// an installation that never existed and would fail on the next file the kernel
-// appends rather than on the one this test is about.
+// appVersion is that file's ledger number, read off its own name so the two cannot
+// drift: every file from here on postdates the installation this fixture plants.
+var appVersion, _ = fileVersion(appFile)
+
+// beforeApp is the kernel's own history with that one file — and every file
+// appended after it — taken out: the state of an installation on the day the
+// release that carries it boots.
+//
+// The files after it belong in the removal for the same reason 000043 does, and
+// leaving them in refuses this fixture for a reason it does not ask about: an
+// installation that predates the release predates everything appended since, so a
+// fixture that applied 000046 first would have the ledger read 46, and kit/db would
+// answer the second run below with "000043 precedes applied version 46; append a new
+// version" — an ordering refusal, reached before the back-fill, and every assertion
+// here would be reading the wrong error. The higher files are absent from the
+// fixture rather than skipped after the fact: the point of the run is the state of
+// an installation, not a list of names.
 type beforeApp struct{ inner fs.FS }
 
 func (b beforeApp) Open(name string) (fs.File, error) { return b.inner.Open(name) }
@@ -53,10 +63,9 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	if err != nil {
 		return nil, err
 	}
-	cut := appVersion // the version the file under test carries
 	out := rows[:0:0]
 	for _, row := range rows {
-		if v, ok := fileVersion(row.Name()); ok && v >= cut {
+		if version, numbered := fileVersion(row.Name()); numbered && version >= appVersion {
 			continue
 		}
 		out = append(out, row)
@@ -64,27 +73,17 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	return out, nil
 }
 
-// appVersion is the number appFile's name starts with, read rather than written,
-// so the fixture cannot drift from the file it is built around.
-var appVersion = func() int {
-	v, ok := fileVersion(appFile)
-	if !ok {
-		panic("migrations: " + appFile + " does not start with a version")
-	}
-	return v
-}()
-
-// fileVersion reads the leading digits of a migration file's name; anything that
-// does not start with a number is not a migration and stays in the fixture.
+// fileVersion is the ledger number a migration file carries, and whether it carries
+// one at all. The number is the part before the first underscore — the same split
+// kit/db and every ledger count in this repository make — and it is read as a number
+// because the four digits are a filename convention, not the ledger: 000043 and 43
+// name one file to kit/db, and a fixture that compared text would place 1000043
+// below 21.
 func fileVersion(name string) (int, bool) {
-	digits := 0
-	for digits < len(name) && name[digits] >= '0' && name[digits] <= '9' {
-		digits++
-	}
-	if digits == 0 {
+	if !strings.HasSuffix(name, ".up.sql") {
 		return 0, false
 	}
-	n, err := strconv.Atoi(name[:digits])
+	n, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
 	return n, err == nil
 }
 

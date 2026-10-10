@@ -174,6 +174,26 @@ func project(t reflect.Type) *Schema {
 	return nil
 }
 
+// memberSchema is jsonSchema asked of a schema that sits *inside* another one — a
+// property, an array's item, a map's value. The honest unknown is the empty schema
+// `{}` rather than the bare `true`: both mean "anything", and only one of them is a
+// schema at all. kit/wire/document.go, which validates every AsyncAPI document this
+// kernel renders before it is committed, refuses a member whose schema is not an
+// object, so `true` here is a document an integrator cannot open — and the member
+// this arrived for is a real one: events.Change carries `before` and `after` as
+// whatever the field was, and an audited change whose payload nobody can publish is
+// no answer at all.
+//
+// The nil *at the top* of a payload keeps returning `true` (see jsonSchema): that one
+// means "this event declares no payload type at all", which the document answers by
+// listing the event as uncovered rather than by describing it.
+func memberSchema(s *Schema) any {
+	if s == nil {
+		return map[string]any{}
+	}
+	return s.jsonSchema()
+}
+
 var marshalerType = reflect.TypeFor[json.Marshaler]()
 
 func parseTag(tag string) (name string, opts []string) {
@@ -201,7 +221,7 @@ func (s *Schema) jsonSchema() any {
 	case s.Type == "object" && len(s.Properties) > 0:
 		props, required := map[string]any{}, []string{}
 		for _, p := range s.Properties {
-			props[p.Name] = p.Schema.jsonSchema()
+			props[p.Name] = memberSchema(p.Schema)
 			if p.Required {
 				required = append(required, p.Name)
 			}
@@ -211,15 +231,15 @@ func (s *Schema) jsonSchema() any {
 			out["required"] = required
 		}
 		if s.Values != nil {
-			out["additionalProperties"] = s.Values.jsonSchema()
+			out["additionalProperties"] = memberSchema(s.Values)
 		}
 	case s.Type == "object":
 		// A map, or an object nothing constrained: the keys stay open.
 		if s.Values != nil {
-			out["additionalProperties"] = s.Values.jsonSchema()
+			out["additionalProperties"] = memberSchema(s.Values)
 		}
 	case s.Type == "array":
-		out["items"] = s.Items.jsonSchema()
+		out["items"] = memberSchema(s.Items)
 	}
 	return out
 }
@@ -259,7 +279,8 @@ func (s *Schema) Validate(body []byte) error {
 func (s *Schema) check(path string, v any) error {
 	if s == nil {
 		// The same honest unknown Validate answers and jsonSchema emits as JSON
-		// Schema's `true`. Recursing through a member the projection could not
+		// Schema's anything — `{}` on a member, `true` at the top of a payload.
+		// Recursing through a member the projection could not
 		// describe — a json.RawMessage, an `any`, a []any, a map with non-string
 		// keys, a type that marshals itself — is how an honest unknown turns into
 		// a nil dereference inside the publisher's own transaction.

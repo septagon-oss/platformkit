@@ -133,6 +133,98 @@
       "summary": "Every tenant's delivery of auth.factor_enrolled.",
       "title": "auth.factor_enrolled"
     },
+    "auth.factor_suspect": {
+      "address": "platformkit.*.auth.factor_suspect",
+      "description": "Published at platformkit.{tenantId}.auth.factor_suspect; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.factor_suspect": {
+          "contentType": "application/json",
+          "name": "auth.factor_suspect",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "factorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "observedCount": {
+                "type": "integer"
+              },
+              "previousCount": {
+                "type": "integer"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "factorId",
+              "kind",
+              "previousCount",
+              "observedCount",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.factor_suspect",
+          "title": "auth.factor_suspect"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.factor_suspect.",
+      "title": "auth.factor_suspect"
+    },
+    "auth.factor_used": {
+      "address": "platformkit.*.auth.factor_used",
+      "description": "Published at platformkit.{tenantId}.auth.factor_used; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.factor_used": {
+          "contentType": "application/json",
+          "name": "auth.factor_used",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "door": {
+                "type": "string"
+              },
+              "factorId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "factorId",
+              "kind",
+              "door",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.factor_used",
+          "title": "auth.factor_used"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.factor_used.",
+      "title": "auth.factor_used"
+    },
     "auth.factor_withdrawn": {
       "address": "platformkit.*.auth.factor_withdrawn",
       "description": "Published at platformkit.{tenantId}.auth.factor_withdrawn; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -290,6 +382,40 @@
       },
       "summary": "Every tenant's delivery of auth.login_failed.",
       "title": "auth.login_failed"
+    },
+    "auth.passkey_sign_in_set": {
+      "address": "platformkit.*.auth.passkey_sign_in_set",
+      "description": "Published at platformkit.{tenantId}.auth.passkey_sign_in_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "auth.passkey_sign_in_set": {
+          "contentType": "application/json",
+          "name": "auth.passkey_sign_in_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "now": {
+                "type": "boolean"
+              },
+              "was": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "was",
+              "now",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "auth — auth.passkey_sign_in_set",
+          "title": "auth.passkey_sign_in_set"
+        }
+      },
+      "summary": "Every tenant's delivery of auth.passkey_sign_in_set.",
+      "title": "auth.passkey_sign_in_set"
     },
     "auth.password_reset": {
       "address": "platformkit.*.auth.password_reset",
@@ -692,6 +818,22 @@
               "active": {
                 "type": "boolean"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "code": {
                 "type": "string"
               },
@@ -758,6 +900,22 @@
               "active": {
                 "type": "boolean"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "code": {
                 "type": "string"
               },
@@ -823,6 +981,22 @@
             "properties": {
               "active": {
                 "type": "boolean"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "code": {
                 "type": "string"
@@ -1253,6 +1427,22 @@
               "body": {
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1316,6 +1506,22 @@
               "body": {
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -1378,6 +1584,22 @@
               },
               "body": {
                 "type": "string"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "createdAt": {
                 "format": "date-time",
@@ -2015,6 +2237,22 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "homeSlug": {
                 "type": "string"
               },
@@ -2170,6 +2408,22 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -2250,6 +2504,22 @@
                 "format": "uuid",
                 "type": "string"
               },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -2329,6 +2599,22 @@
               "assigneeId": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
               },
               "createdAt": {
                 "format": "date-time",
@@ -2814,6 +3100,99 @@
       "summary": "Every tenant's delivery of tenant.renamed.",
       "title": "tenant.renamed"
     },
+    "tenant.saml_cleared": {
+      "address": "platformkit.*.tenant.saml_cleared",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_cleared; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "tenant.saml_cleared": {
+          "contentType": "application/json",
+          "name": "tenant.saml_cleared",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "entityId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "tenant — tenant.saml_cleared",
+          "title": "tenant.saml_cleared"
+        }
+      },
+      "summary": "Every tenant's delivery of tenant.saml_cleared.",
+      "title": "tenant.saml_cleared"
+    },
+    "tenant.saml_set": {
+      "address": "platformkit.*.tenant.saml_set",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "tenant.saml_set": {
+          "contentType": "application/json",
+          "name": "tenant.saml_set",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "emailAttribute": {
+                "type": "string"
+              },
+              "entityId": {
+                "type": "string"
+              },
+              "metadataUrl": {
+                "type": "string"
+              },
+              "registration": {
+                "type": "string"
+              },
+              "replaced": {
+                "type": "boolean"
+              },
+              "roles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "tenantId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "wasEntityId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenantId",
+              "entityId",
+              "emailAttribute",
+              "registration",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "tenant — tenant.saml_set",
+          "title": "tenant.saml_set"
+        }
+      },
+      "summary": "Every tenant's delivery of tenant.saml_set.",
+      "title": "tenant.saml_set"
+    },
     "tenant.suspended": {
       "address": "platformkit.*.tenant.suspended",
       "description": "Published at platformkit.{tenantId}.tenant.suspended; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -3186,6 +3565,22 @@
           "name": "user.user.created",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -3243,6 +3638,22 @@
           "name": "user.user.deleted",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -3300,6 +3711,22 @@
           "name": "user.user.updated",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "createdAt": {
                 "format": "date-time",
                 "type": "string"
@@ -3407,6 +3834,40 @@
         }
       ]
     },
+    "auth.factor_suspect": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.factor_suspect"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.factor_suspect/messages/auth.factor_suspect"
+        }
+      ],
+      "summary": "The auth module publishes auth.factor_suspect.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.factor_used": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.factor_used"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.factor_used/messages/auth.factor_used"
+        }
+      ],
+      "summary": "The auth module publishes auth.factor_used.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
     "auth.factor_withdrawn": {
       "action": "send",
       "channel": {
@@ -3469,6 +3930,23 @@
         }
       ],
       "summary": "The auth module publishes auth.login_failed.",
+      "tags": [
+        {
+          "name": "auth"
+        }
+      ]
+    },
+    "auth.passkey_sign_in_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/auth.passkey_sign_in_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/auth.passkey_sign_in_set/messages/auth.passkey_sign_in_set"
+        }
+      ],
+      "summary": "The auth module publishes auth.passkey_sign_in_set.",
       "tags": [
         {
           "name": "auth"
@@ -4370,6 +4848,40 @@
         }
       ],
       "summary": "The tenant module publishes tenant.renamed.",
+      "tags": [
+        {
+          "name": "tenant"
+        }
+      ]
+    },
+    "tenant.saml_cleared": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/tenant.saml_cleared"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/tenant.saml_cleared/messages/tenant.saml_cleared"
+        }
+      ],
+      "summary": "The tenant module publishes tenant.saml_cleared.",
+      "tags": [
+        {
+          "name": "tenant"
+        }
+      ]
+    },
+    "tenant.saml_set": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/tenant.saml_set"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/tenant.saml_set/messages/tenant.saml_set"
+        }
+      ],
+      "summary": "The tenant module publishes tenant.saml_set.",
       "tags": [
         {
           "name": "tenant"

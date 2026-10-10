@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/jobs"
+	"github.com/septagon-oss/platformkit/kit/locale"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -108,6 +109,15 @@ type Deps struct {
 	// process, each answering for its own host.
 	OIDC OIDC
 
+	// SAMLProviders answers "which SAML 2.0 identity provider does the tenant this
+	// request resolved to sign in against?", per request, from the transaction the
+	// Host header chose. Unlike OIDC there is no installation-level default to fall
+	// back to — no `kit/config.SAML` block exists, because SAML ships tenant-only
+	// and a single-IdP deployment configures its one tenant's row — so this port
+	// being nil is the whole of "nobody here signs in with SAML", and the three SAML
+	// legs are then not mounted at all.
+	SAMLProviders contracts.SAMLProviders
+
 	// OIDCProviders answers "which provider does the tenant this request
 	// resolved to sign in against?", per request, from the transaction the Host
 	// header chose. A composition wires it over the tenant module's OIDCOf; a
@@ -137,6 +147,18 @@ type Deps struct {
 	// exist is the user module's decision and not this one's; with no
 	// Provisioner, `provision` refuses as `existing` does.
 	Provisioner contracts.Provisioner
+
+	// Messages is the application's whole catalogue of copy, this module's
+	// included, and it is what lets the passkey doors refuse a person in the
+	// language they asked to be answered in: a browser ceremony is read on the
+	// sign-in page, and that page's own words are translated. The reference
+	// composition wires the application's own Skin copy — the one catalogue the
+	// sentence names, merged from every layer that ships words — in
+	// modules/auth/provider.go; a module that read its own messages file could
+	// not answer in a language a UI catalogue carries. With none, every refusal
+	// this module answers is English, which is what it was before the field
+	// existed.
+	Messages locale.Messages
 
 	// PublicHost is the name the application believes it is reached at. One
 	// thing is decided from it: whether the session cookie is marked Secure. A
@@ -251,6 +273,18 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			// 404 that says nothing about why.
 			svc.EnableFactors([]byte(deps.FactorKey))
 			internal.RegisterFactorRoutes(s, svc, cookies)
+			// The passkey half mounts always and unconditionally, and it is not
+			// gated on the factor key: a passkey writes no secret, so a deployment
+			// with no key has nothing it cannot do here. What gates the usernameless
+			// door is that tenant's own row in passkey_settings, read per request in
+			// the transaction the host resolved it in — a capability of the tenant,
+			// never a module list and never a deployment setting. With no row
+			// anywhere, which is every installation until somebody writes one, that
+			// door answers 403 with the reason and every other door behaves as it did
+			// before this file existed. The relying party's display name is the tenant's
+			// own row's Name, so Deps carries no installation-wide name for a platform
+			// prompt and nothing here is a fact about one customer.
+			internal.RegisterPasskeyRoutes(s, svc, cookies, internal.PasskeyWords{Messages: deps.Messages})
 			if deps.Registration != nil {
 				internal.RegisterRegistrationRoutes(s, svc)
 			}
@@ -268,6 +302,15 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 				internal.RegisterOIDCRoutes(s, svc, deps.Users, deps.Provisioner,
 					internal.NewProvider(deps.OIDC, cookies, secure, deps.OIDCProviders, deps.Secrets))
 			}
+			// The gate is the same shape as OIDC's and has one clause less: there is
+			// no installation-level SAML default to ask about, so "can any tenant here
+			// reach an IdP" is answered by the port alone. A composition with no
+			// tenant module — and so no provider to resolve — mounts no /saml/ route,
+			// rather than three doors that would answer 404 for everybody.
+			if deps.SAMLProviders != nil {
+				internal.RegisterSAMLRoutes(s, svc, deps.Users, deps.Provisioner,
+					internal.NewSAMLProvider(cookies, secure, deps.SAMLProviders))
+			}
 		},
 	}
 	if deps.Registration != nil {
@@ -279,10 +322,13 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 	return svc, manifest
 }
 
-// permissions is what the manifest declares: one, guarding the two roles
-// routes. Every other route here is about the caller themselves. See
-// contracts/permissions.go.
-var permissions = []module.Permission{{Key: contracts.PermissionRoleManage, Label: "manage roles"}}
+// permissions is what the manifest declares: two, guarding the two roles routes
+// and the one route that opens the usernameless door. Every other route here is
+// about the caller themselves. See contracts/permissions.go.
+var permissions = []module.Permission{
+	{Key: contracts.PermissionRoleManage, Label: "manage roles"},
+	{Key: contracts.PermissionPasskeySignIn, Label: "let a passkey sign people in alone"},
+}
 
 // SeedRoles provisions a newly created tenant through auth's own storage path,
 // independently of sessions, delivery and periodic jobs. Pass trusted defaults

@@ -141,7 +141,7 @@ type NewTenant struct {
 	// the operator permission and creating a demo tenant is the ordinary way to
 	// get one; the flag names which seed records the tenant may be given, never
 	// who may reach the control plane. It is written here or not at all — see
-	// migrations/000046_tenant_demo.up.sql.
+	// migrations/000050_tenant_demo.up.sql.
 	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
@@ -426,6 +426,29 @@ type Service interface {
 	//
 	// It answers false, not an error, when this tenant has no provider.
 	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*OIDCSettings, bool, error)
+
+	// SetSAML says which SAML 2.0 identity provider one tenant's people sign in
+	// against. It refuses the same half-providers SetOIDC refuses — an entity ID
+	// with no metadata, metadata with no entity ID, `provision` with no roles —
+	// naming the field an operator has to fix, and it refuses a metadata document
+	// that carries no signing certificate, because an assertion presented against
+	// that document could never be verified and the moment worth saying so is the
+	// write rather than the first person turned away at the door.
+	//
+	// Writing the same values again changes nothing and publishes nothing.
+	SetSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SAMLSettings) (*Tenant, error)
+
+	// ClearSAML takes a tenant's SAML provider away, leaving its OIDC provider —
+	// if it has one — exactly where it was: the two column families are
+	// independent and neither command touches the other's columns. People already
+	// signed in stay signed in, for the reason ClearOIDC gives.
+	ClearSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// SAMLSettingsOf is OIDCOf for the other protocol: the read the SAML legs
+	// make, per request, in the transaction the Host header resolved, answering
+	// false and not an error when this tenant signs in no other way than it
+	// always has. A tenant may answer both reads at once.
+	SAMLSettingsOf(ctx context.Context, tx db.Tx[db.Tenant]) (*SAMLSettings, bool, error)
 
 	// Get is one tenant with its hosts.
 	Get(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)

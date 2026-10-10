@@ -105,7 +105,8 @@ const MaxSourceFile = 512
 
 // Actor kinds, spelled the way the outbox column stores them. kit/tenancy names
 // the two a request can be; a seed and a job are the two an application's own
-// background work adds. migrations/000048 repeats the four as a CHECK.
+// background work adds.
+// migrations/000052_outbox_attribution.up.sql repeats the four as a CHECK.
 const (
 	ActorUser   = "user"
 	ActorSystem = "system"

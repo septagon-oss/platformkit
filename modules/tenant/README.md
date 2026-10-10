@@ -44,7 +44,7 @@ None. `git grep` finds no `tenancy.Policy` use in `modules/tenant`. The routes a
 - `NewTenant.Operator` is `json:"-"` (`modules/tenant/contracts/tenant.go`), so no request body can mark a tenant as the operator. `Service.Create` in `modules/tenant/internal/service.go` copies it from the input.
 - `invite` takes no password and no roles from the caller. The roles are chosen by the `Inviter`.
 - `SetOIDC` refuses half a provider: an issuer that is not a URL, is plain HTTP for a host that is not local, or carries a query; a client id that is empty; a secret reference that is not an environment variable's name; a registration mode outside `disabled | existing | provision`; and `provision` with no roles, which would be a door into an empty room. `migrations/000030` puts the same rule on the row as a CHECK, so a write that reaches the table by another route is refused there, and `modules/tenant/internal/oidc_test.go` is the case that tries it. Writing the same provider again changes nothing and publishes nothing.
-- `Demo` is written by `Service.Create` and by nothing else: `modules/tenant/internal/handler.go` mounts no route that patches it, and the column (`migrations/000046_tenant_demo.up.sql`) defaults to `false` for every tenant that existed before it. The application's seed reads it to decide whether demo records are allowed for a tenant ([`docs/seed.md`](../../docs/seed.md)); the tenant module itself never branches on it.
+- `Demo` is written by `Service.Create` and by nothing else: `modules/tenant/internal/handler.go` mounts no route that patches it, and the column (`migrations/000050_tenant_demo.up.sql`) defaults to `false` for every tenant that existed before it. The application's seed reads it to decide whether demo records are allowed for a tenant ([`docs/seed.md`](../../docs/seed.md)); the tenant module itself never branches on it.
 
 - `RemoveHost` refuses a tenant's primary host and its last one, naming the verb that
   would lift each refusal; `Suspend` and `Delete` refuse the installation's own tenant,
@@ -143,3 +143,28 @@ never in a row — the column holds an environment variable's *name*, because
 `modules/audit` copies every payload it is handed — and a control-plane fact a
 lower module reads through its own port, so `modules/auth` resolves an issuer per
 request without importing this module.
+
+The SAML provider beside it is the same delivery a third time. **Reused:**
+`SetSAML` is `SetOIDC`'s command shape — validate, `Get`, compare, one `UPDATE`
+of the whole family, `events.PublishFor` — down to "equal values write nothing
+and publish nothing", and `SAMLSettingsOf` is `OIDCOf`'s read, answering *false,
+not an error* for a tenant with no SAML, in the tenant's own transaction under
+the policy `000006` already puts over `tenants`. **Added:** the six `saml_*`
+columns and the two CHECKs of `migrations/000046_tenant_saml.up.sql` (a known
+mode; all of a provider or none, `provision` ⇒ roles), `SetSAML` / `ClearSAML` /
+`SAMLSettingsOf`, the `set-saml` and `clear-saml` control-plane routes, and
+`tenant.saml_set` / `tenant.saml_cleared` — whose payload names the entity ID and
+never carries the metadata document, because `modules/audit` copies every payload
+it is handed and an IdP's descriptor is kilobytes. **Made reusable:** a second
+column family on a row whose first family already refused half a provider, which
+is what makes the "all of it or none" CHECK a pattern rather than one provider's
+quirk — the two families never fire for each other's sake, and
+`TestSAMLAndOIDCAreIndependent` says so in SQL — and `validSAML`'s rule that an
+input document is *parsed* at the write, so a metadata XML that could never
+verify an assertion is refused where somebody can still fix it rather than at the
+first person who tries to sign in with it.
+
+What stays the installation's and not this module's: a tenant writing its own SSO
+settings would need a settings table with write row-level security — today the
+control plane writes both providers and a tenant only reads its own row — and a
+service-provider signing key has no column here because nothing would read it.
