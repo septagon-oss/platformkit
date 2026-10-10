@@ -27,6 +27,11 @@ e2e/playwright-report/
 # review found an uploaded file staged for commit.
 data/
 
+# The nightly tier's reports. `make cover` and `make flakes` write them; a run
+# artifact committed is a measurement frozen at whichever revision happened to run
+# it, which is the opposite of what the flake and coverage columns are for.
+reports/
+
 # Scratch space
 .tmp/
 
