@@ -48,18 +48,18 @@
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Nome de usuário",
+    "translation": "Nome de utilizador",
     "plural": {
-      "": "Nome de usuário"
+      "": "Nome de utilizador"
     }
   },
   "hints.user/user.command.handle.label": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Definir nome de usuário",
+    "translation": "Definir nome de utilizador",
     "plural": {
-      "": "Definir nome de usuário"
+      "": "Definir nome de utilizador"
     }
   },
   "hints.user/user.command.roles.label": {
@@ -75,18 +75,18 @@
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Nova senha",
+    "translation": "Nova palavra-passe",
     "plural": {
-      "": "Nova senha"
+      "": "Nova palavra-passe"
     }
   },
   "hints.user/user.command.set-password.label": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Definir senha",
+    "translation": "Definir palavra-passe",
     "plural": {
-      "": "Definir senha"
+      "": "Definir palavra-passe"
     }
   },
   "hints.user/user.field.displayName.label": {
@@ -102,18 +102,18 @@
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Nome em minúsculas pelo qual esta pessoa atende neste tenant",
+    "translation": "Nome em minúsculas pelo qual esta pessoa atende nesta organização",
     "plural": {
-      "": "Nome em minúsculas pelo qual esta pessoa atende neste tenant"
+      "": "Nome em minúsculas pelo qual esta pessoa atende nesta organização"
     }
   },
   "hints.user/user.field.handle.label": {
     "references": [
       "modules/user/module.go"
     ],
-    "translation": "Nome de usuário",
+    "translation": "Nome de utilizador",
     "plural": {
-      "": "Nome de usuário"
+      "": "Nome de utilizador"
     }
   },
   "hints.user/user.group.people": {
