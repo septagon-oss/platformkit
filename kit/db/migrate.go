@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -578,6 +579,9 @@ type runner struct {
 	conn   *sql.Conn
 	budget MigrationBudget
 	locked bool // whether this session holds compositionLockKey right now
+	// lockedFile is the "owner/version" of the file this session is running outside a
+	// transaction, whose lock it therefore holds; empty when it holds none.
+	lockedFile string
 }
 
 // holdCompositionLock takes the composition's advisory lock for this session.
@@ -627,24 +631,26 @@ func (r *runner) holdCompositionLock(ctx context.Context) error {
 // this session out of a deadlock, for the statements a run is allowed to send twice: the
 // ask for the composition lock, and the drop half of a concurrent index repair
 // (kit/db/certify.go), which is `DROP INDEX CONCURRENTLY IF EXISTS`. It bounds the retry
-// rather than aiming at a schedule: the cancellation breaks one cycle, and a database
-// whose next wait joins another is a state a boot should name rather than sit in — with
-// no wait between the re-asks, this many are all the retry costs. The other half of that
-// repair, the rebuild, is not one of these statements and does not go through this one:
-// a cancelled concurrent build leaves its invalid index behind, so its retry is a whole
-// cycle rather than a re-send, bounded beside this constant by repairAttempts.
+// rather than aiming at a schedule: the cancellation breaks one cycle, and a database whose
+// next wait joins another is a state a boot should name rather than sit in — with no wait
+// between the re-asks, this many are all the retry costs. The other half of that repair, the
+// rebuild, is not one of these statements and does not go through this one: a cancelled
+// concurrent build leaves its invalid index behind, so its retry is a whole cycle rather
+// than a re-send, bounded beside this constant by repairAttempts.
 const reasksAfterDeadlock = 4
 
 // execReaskable sends one of the statements named above and re-sends it while the server
-// keeps choosing this session out of somebody else's cycle. A cancelled one of these left
-// nothing behind and undid nothing: the ask holds no lock and is the session's first
-// statement, and the drop is written to answer the same way twice. Anything else the
-// server answers — a budget that ran out, a statement that is simply wrong — comes back to
-// the caller unchanged, on the first answer it gives.
+// keeps choosing this session out of somebody else's cycle, or while it answers that the
+// catalog row this statement went to change was being changed by someone else. A cancelled
+// one of these left nothing behind and undid nothing: an ask holds nothing but the lock it
+// is asking for, the drop is written to answer the same way twice, and the only migration
+// statement re-sent here is one the rule table refuses unless it is re-runnable. Anything
+// else the server answers — a budget that ran out, a statement that is simply wrong — comes
+// back to the caller unchanged, on the first answer it gives.
 func (r *runner) execReaskable(ctx context.Context, statement string, args ...any) error {
 	for attempt := 0; ; attempt++ {
 		_, err := r.conn.ExecContext(ctx, statement, args...)
-		if err == nil || !deadlockVictim(err) || attempt >= reasksAfterDeadlock {
+		if err == nil || !(deadlockVictim(err) || catalogTupleRace(err)) || attempt >= reasksAfterDeadlock {
 			return err
 		}
 	}
@@ -659,6 +665,114 @@ func deadlockVictim(err error) bool {
 	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
 	return isPostgres && pg.Code == "40P01"
 }
+
+// catalogTupleRace reports the answer that says "someone else was changing the catalog row
+// this statement came for, and still is": XX000 with the one message that means it. It is
+// what two sessions dropping and rebuilding one index do to each other's pg_class tuple,
+// and, unlike a build the detector cancelled, it leaves nothing half-built behind — the
+// statement simply did not happen, which is why it is one of the statements execReaskable
+// re-sends. Read apart from a plain XX000, which is the server saying it has no idea what
+// went wrong: re-sending that would be a guess at a diagnosis.
+func catalogTupleRace(err error) bool {
+	pg, isPostgres := errors.AsType[*pgconn.PgError](err)
+	return isPostgres && pg.Code == "XX000" && strings.Contains(pg.Message, "tuple concurrently updated")
+}
+
+// holdFileLock takes the advisory lock of the one file this run is running outside a
+// transaction, and releaseFileLock gives it back.
+//
+// The composition lock is what keeps two replicas off each other's files, and an autocommit
+// file gives that lock up for the length of its statement — which is what the mode is for,
+// and what ADR 0011 makes the runner do. What the release leaves is two boots that each
+// read the file as pending before either recorded it, and the work they then do is not
+// per-session: the half-built index one is dropping and rebuilding is the object the other
+// is dropping and rebuilding, and two sessions doing that to one index answer each other
+// with a cycle the detector picks one of (40P01) and with "tuple concurrently updated"
+// (XX000). Measured by kit/db/concurrent_index_replicas_test.go, which starts two runs over
+// one table whose index is already invalid: with only the composition lock released, one of
+// the two boots refused, and neither the repair's retry budget nor the re-ask of the ledger
+// row could answer it, because the conflict arrives earlier than both — in the drop, and in
+// the file's own statement.
+//
+// So a file takes a lock of its own while it runs unlocked: the same session lock, named
+// per file rather than per composition. Nothing of the release is given back, because what
+// the second boot does is wait for the turn it is already entitled to, and what it finds
+// when the turn comes is the object the first boot finished building.
+//
+// The wait is an ask repeated with the session idle between asks, and that shape is the
+// whole of the finding, measured by kit/db/concurrent_index_turn_test.go. A lock *queue* is
+// a transaction that stays open: the session standing in it is a running statement with a
+// snapshot, and a concurrent build waits for the transactions that are in the database — so
+// queueing for this lock inside the holder's own critical section puts the two sessions in
+// one cycle, the builder waiting for the waiter's transaction and the waiter for the
+// builder's lock, and the pick lands on the boot that is doing the work:
+//
+//	Process 127881 waits for ShareLock on virtual transaction 7/102598; blocked by process 127882.
+//	Process 127882 waits for ExclusiveLock on advisory lock [16384,7240102,456793824,2]; blocked by process 127881.
+//
+// That is the composition-lock deadlock of ADR 0011 at a finer grain, arriving through the
+// lock that was meant to fix it. An ask that comes back false is not waiting: it holds
+// nothing, registers no request in the lock table, and leaves the session idle between asks,
+// so there is no cycle to detect and nothing to be picked for. The wait is bounded by the
+// caller's context, which is what bounds the patient wait for the composition lock too.
+func (r *runner) holdFileLock(ctx context.Context, file string) error {
+	if r.lockedFile != "" {
+		return nil
+	}
+	for {
+		var taken bool
+		if err := r.conn.QueryRowContext(ctx, fileLockTry, fileLockSpace, file).Scan(&taken); err != nil {
+			return fmt.Errorf("db: migrate: the file lock on %s: %w", file, err)
+		}
+		if taken {
+			r.lockedFile = file
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("db: migrate: the file lock on %s is held by another boot running the same file: %w", file, ctx.Err())
+		case <-time.After(fileLockWait):
+		}
+	}
+}
+
+// fileLockTry asks for the file lock without queueing for it: see holdFileLock.
+const fileLockTry = "SELECT pg_try_advisory_lock($1, hashtext($2))"
+
+// fileLockWait is how long a boot leaves its session idle between asks for a file another
+// boot is running. Long enough that no build has to be polled for, short enough that a boot
+// that came to the wrong moment does not notice the wait.
+const fileLockWait = 50 * time.Millisecond
+
+// releaseFileLock gives the file this run is running its lock back. An unlock waits for
+// nothing, so it goes out with the run's budgets on the session.
+func (r *runner) releaseFileLock(ctx context.Context) error {
+	if r.lockedFile == "" {
+		return nil
+	}
+	if _, err := r.conn.ExecContext(ctx, fileLockRelease, fileLockSpace, r.lockedFile); err != nil {
+		return fmt.Errorf("db: migrate: release the file lock on %s: %w", r.lockedFile, err)
+	}
+	r.lockedFile = ""
+	return nil
+}
+
+// fileLockSpace namespaces the advisory lock an autocommit file takes for itself, and the
+// two statements take and give it back. The two-key form is deliberate: it puts the
+// namespace in pg_locks.classid, where the one-key form the composition lock takes puts 0.
+// kit/db/concurrent_index_repair_test.go reads the composition lock out of that pair to
+// show a repair that holds it, and a lock the repair is entitled to hold must not read as
+// the fact that case injects around.
+//
+// hashtext is the server's own hash of the file's name — the same choice db.TryLock makes
+// (kit/db/lock.go), for its reason: two replicas that spell the file the same way take the
+// same lock, with no registry of numbers to keep in step. Two files whose names collide in
+// one 32-bit hash cost each other a wait for work neither is doing, and nothing else.
+const fileLockSpace = 7240102
+
+const (
+	fileLockRelease = "SELECT pg_advisory_unlock($1, hashtext($2))"
+)
 
 // noBudgets takes the session's two budgets off for one wait on the composition lock.
 // The pair is written out rather than reset to defaults, because the run's own budgets
@@ -700,23 +814,36 @@ func (r *runner) apply(ctx context.Context, migration migration) (drainReport, e
 		// the budgets went on the session above this branch, so the run's own lock budget
 		// is what a concurrent build gets, and a build that runs out of it is cancelled
 		// with its half-built index left behind under the name it was building. That is
-		// why success is not the end of this branch: certifyConcurrentIndex reads the
-		// object back and refuses to record a file whose object does not hold, and the lock
-		// goes down for that read-back and its repair for this paragraph's own reason. What
-		// two replicas may reach besides all this is a statement the rule table already
-		// demands be re-runnable, and recordRerunnableHistory turns a lost race into a
-		// file that applied rather than a boot that failed.
+		// why success is not the end of this branch: sendRerunnable reads the object the
+		// statement named back and refuses to record a file whose object does not hold, and
+		// the lock goes down for that read-back and its repair for this paragraph's own
+		// reason.
+		//
+		// What the release leaves behind is what the file lock below is for: two boots that
+		// each read this file as pending before either recorded it, reaching one half-built
+		// index at the same moment. What those two boots may still do to each other is the
+		// statement the rule table already demands be re-runnable, and
+		// recordRerunnableHistory turns a lost race on the ledger row into a file that
+		// applied rather than a boot that failed.
 		if err := r.releaseCompositionLock(ctx); err != nil {
 			return drainReport{}, err
 		}
-		_, applyErr := r.conn.ExecContext(ctx, migration.sql)
-		if applyErr == nil {
-			// The repair waits for the same transactions this statement was released to
-			// wait for, so the lock goes down for it too and comes back afterwards. Measured
-			// with the lock held across the repair: `make check` picked this session out of
-			// that cycle five times running in one file, which is every cycle
-			// repairAttempts holds and still no index. ADR 0011 carries the deadlock DETAIL.
-			applyErr = r.certifyConcurrentIndex(ctx, migration)
+		// One file, one boot at a time: see holdFileLock. The lock goes back before the
+		// composition lock is asked for again, so that no session ever waits on the
+		// composition lock while holding the lock another boot's build is waiting for.
+		file := fmt.Sprintf("%s/%d", migration.owner, migration.version)
+		if err := r.holdFileLock(ctx, file); err != nil {
+			return drainReport{}, err
+		}
+		applyErr := r.sendRerunnable(ctx, migration)
+		// The release takes a context that cannot be the caller's cancellation for the
+		// reason the composition lock's release takes one: the statement is what lets the
+		// next replica's boot start on time rather than on timeout.
+		released, cancelRelease := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		gateErr := r.releaseFileLock(released)
+		cancelRelease()
+		if gateErr != nil {
+			return drainReport{}, errors.Join(applyErr, gateErr)
 		}
 		if lockErr := r.holdCompositionLock(ctx); lockErr != nil {
 			return drainReport{}, errors.Join(applyErr, lockErr)

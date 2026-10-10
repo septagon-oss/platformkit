@@ -62,6 +62,31 @@ func certifiableName(name string) bool {
 	return regexp.MustCompile(`^[a-z_][a-z0-9_$]*(\.[a-z_][a-z0-9_$]*)?$`).MatchString(name)
 }
 
+// sendRerunnable runs one autocommit file's statement and certifies what it named: the
+// half of an autocommit apply that happens with the composition lock down, under the file's
+// own lock (kit/db/migrate.go's holdFileLock).
+//
+// The statement goes out through execReaskable, which re-sends it while the server keeps
+// choosing this session out of somebody else's cycle. The rule table's own demand that an
+// autocommit statement be re-runnable is what makes that legal; the certification beside it
+// is what makes it honest. A re-send that arrives after its own build was cancelled meets
+// the `IF NOT EXISTS` the file has to carry and answers "relation already exists, skipping"
+// over the invalid index the cancelled send left behind — which is the answer this file
+// exists to refuse to record, and kit/db/concurrent_index_repair_test.go is the case that
+// reads the object back. The repair needs no re-send of its own for the same reason: it
+// already begins at the drop.
+func (r *runner) sendRerunnable(ctx context.Context, migration migration) error {
+	if err := r.execReaskable(ctx, migration.sql); err != nil {
+		return err
+	}
+	// The repair waits for the same transactions this statement was released to wait for,
+	// so the composition lock stays down for it too and comes back afterwards. Measured with
+	// the lock held across the repair: `make check` picked this session out of that cycle five
+	// times running in one file, which is every cycle repairAttempts holds and still no index.
+	// ADR 0011 carries the deadlock DETAIL.
+	return r.certifyConcurrentIndex(ctx, migration)
+}
+
 func (r *runner) certifyConcurrentIndex(ctx context.Context, migration migration) error {
 	// The rule table's own reading, for the same reason it uses it: outside a value,
 	// `concurrently` is the keyword and nothing else, so the file that writes a function
@@ -100,14 +125,16 @@ const repairAttempts = reasksAfterDeadlock + 1
 // drop, while repairAttempts holds. The cycle is the unit of the retry because the two
 // statements are not re-sendable in the same way: see this file's opening.
 //
-// None of it happens under the composition lock. Every statement here waits for the
-// transactions already in the database, which is what the file's own autocommit
-// statement is released to do (kit/db/migrate.go), and the lock is the one every other
-// boot queues behind: a run that holds it while it waits for a transaction that is
-// waiting for it is the cycle, and the pick lands on the wait that started first, which
-// is this one. Measured with the lock held across the repair, `make check` picked this
-// session out of that cycle on every cycle of one file — five picks, the whole of
-// repairAttempts, and a refused file at the end of it.
+// None of it happens under the composition lock — see sendRerunnable — and none of it
+// happens beside another boot repairing the same object, because the file this repair
+// belongs to runs under its own lock (kit/db/migrate.go's holdFileLock). Every statement
+// here waits for the transactions already in the database, which is what the file's own
+// autocommit statement is released to do, and the composition lock is the one every other
+// boot queues behind: a run that holds it while it waits for a transaction that is waiting
+// for it is the cycle, and the pick lands on the wait that started first, which is this
+// one. Measured with the lock held across the repair, `make check` picked this session out
+// of that cycle on every cycle of one file — five picks, the whole of repairAttempts, and a
+// refused file at the end of it.
 //
 // An answer that is not the detector's pick comes back as it arrived: a wait that ran
 // out stays the refusal that send makes it, as it was before this function existed, and
