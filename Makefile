@@ -282,8 +282,27 @@ fmt-check: ## Fail when any file is not gofmt'd
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
+# The same stated per-package bound `check` carries, for the same reason and against the same
+# measurement: go test's ten-minute default is not a decision this repository made, and
+# apps/platformkit has grown up to it. The package's own wall clock under -race on CI's runner, read
+# out of four logs where the step passed: 438.9s (run 57363), 448.5s (57557), 462.1s (57497),
+# 484.3s (57383), 489.8s (57488). Read out of four more where it did not: `panic: test timed out
+# after 10m0s`, at 57644 (parked in TestASetPasswordLinkOpensOneSessionInItsOwnTenant, 5s in), 57686
+# (TestTheCompositionMountsTheCatalogItsContractIsGeneratedFrom, 1s in), 57718
+# (TestTheCatalogNamesWhereTheWritesOfAResourceAre, 2s in) and 57727
+# (TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP, 3s in). Four different tests, none of
+# them hung, each of them simply the one that was open when the tenth minute arrived on a box doing
+# other work. A bound that the suite passes on a quiet runner and the same suite misses on a busy
+# one is not a bound; it is a coin toss reported as a defect — which is why `check` already says 30m
+# beside its count rather than trusting the default. Thirty minutes is also the smaller of the two
+# numbers this file can name: -race roughly doubles the suite, so the race run of the package that
+# needs 30m without it cannot promise less with it, and the job that runs both steps gives itself 75
+# minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
+# as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
+# directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
+# hold byte copies of the line that result, in CI's expansion and with the count emptied.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
