@@ -1296,6 +1296,10 @@ seam separates routers, not hosts.
 
 [kit/httpx](kit/httpx/) sets response security headers and a request-nonce
 content security policy. Inline style attributes remain an explicit allowance.
+A page that instantiates WebAssembly declares it for its own response
+(`httpx.AllowWASM`, or `document.View.RunsWASM` through the page adapter), which
+adds `'wasm-unsafe-eval'` to that response's `script-src` and leaves every other
+document's policy byte-identical.
 The file module rejects unsafe inline content and validates declared renderable
 types against uploaded bytes. Read the corresponding code and tests when
 changing these boundaries; a proxy or browser assumption is not evidence.

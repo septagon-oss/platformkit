@@ -160,6 +160,13 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 			}
 		}
 		applyPrivacy(out, v.Sensitive)
+		if v.RunsWASM {
+			// Read from the view that was actually rendered: a handler that refused
+			// answers with the kernel's fault page, which instantiates nothing, and a
+			// redirect returned above this line — so neither carries the token, and no
+			// branch here has to know that a refusal cleared the declaration.
+			httpx.AllowWASM(ctx)
+		}
 		if v.Revalidate && !v.Sensitive && httpx.SurfaceOf(ctx) == httpx.SurfacePublic {
 			// "Ask first" rather than "do not store": the copy may still be kept and
 			// revalidated, and the one thing that cannot happen is a cache answering a

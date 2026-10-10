@@ -38,8 +38,10 @@ and refuses growth beyond these recorded closures:
 - `ui/page` and `ui/screens` are the adapters and are gated at the adapter
   closure, which reaches kit/db and net/http through kit/httpx; neither may
   import `ui/export` or `ui/source`. What needs the kernel stays there: the
-  local-path check on a sign-in link, the nonce on an inline script, the
-  guarded closures of an `httpx.Resource`.
+  local-path check on a sign-in link, the nonce on an inline script, a view's
+  `RunsWASM` declaration (the kernel's `httpx.AllowWASM`, called for the rendered
+  view and for no refusal or redirect), the guarded closures of an
+  `httpx.Resource`.
 - `ui/components` never imports `ui/components/examples`: a renderer needs no
   reflection. `ui` never imports `ui/export`: a shell needs no design tooling.
 

@@ -108,8 +108,17 @@ type View struct {
 	// that kept the answer. Only the public face is cacheable to begin with, so this
 	// says nothing about a workspace document, which is never stored at all.
 	Revalidate bool
-	Head       []g.Node
-	Body       []g.Node
+	// RunsWASM says this document instantiates WebAssembly, which the content
+	// security policy refuses by default: 'self' and a nonce speak about where a
+	// script came from, and a module built from bytes came from nowhere. The
+	// adapter declares it for this response only (httpx.AllowWASM), which adds
+	// 'wasm-unsafe-eval' to its script-src — an image editor or a trace view is
+	// such a page, and a page that said nothing is served today's policy.
+	// It says nothing about the markup: the body of a view that declares it and
+	// the body of one that does not are the same bytes.
+	RunsWASM bool
+	Head     []g.Node
+	Body     []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
