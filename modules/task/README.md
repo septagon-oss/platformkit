@@ -84,3 +84,30 @@ and the `hints.<module>/<entity>.<aspect>` grammar itself: any module that
 declares a reading word gets it served in the request's language with no new
 plumbing, and `apps/platformkit/reference_reading_test.go` is the pattern its
 next delivery copies.
+
+## Reading
+
+The words this module says about itself, where it says them, the key a
+translation is written under, and who reads them. The key is derived from the
+declaration's own address — `hints.<module>/<entity>.<aspect>`
+([`kit/entity/README.md`](../../kit/entity/README.md)) — so it appears here and
+in the module's `messages/pt-PT.json`, and nowhere in Go.
+
+| The words | Declared at | Copy key | Read by |
+|---|---|---|---|
+| `task`, `tasks` | `Spec.Present` in `module.go` | `hints.task/task.singular`, `hints.task/task.plural` | `GET /api/v1/app/resources`, which is where a shell that is not a browser learns them |
+| `Work` | the same literal's `Group` | `hints.task/task.group.work` | the nav entry's group heading, on the document and on the page |
+| `Due`, `Response due`, `Response overdue`, `Resolved` | the `ui:"label:…"` tag on each field in `contracts/task.go` | `hints.task/task.field.<name>.label` | the column header, the control's label and the record's term — one string, three places |
+| `Assignee` | the same tag on `assigneeId` | `hints.task/task.field.assigneeId.label` | as above, plus the reference target the picker names |
+| `Assign`, `Resolve` | `rest.CommandOptions.Present` in `module.go` | `hints.task/task.command.<verb>.label` | the button on the command's form |
+| the `Assignee` the assign form asks for | that command's argument field | `hints.task/task.command.assign.field.assigneeId.label` | that one control's label — a column and an argument are two strings a translator may want to choose differently, which is what the `command.<verb>.` prefix is for |
+
+Two absences belong in the table, because an absent declaration is what decides
+what a screen falls back to. `status` and `priority` declare `enumTones` and no
+`enumLabels`, so their words are `display.EnumWord`'s humanizing of `in_progress`
+and no key exists to translate until the module writes the map. And `Task`
+declares no `help:` anywhere: the line under one of its controls is that field's
+`doc:` sentence, which is a developer's sentence rather than a hint string and so
+carries no key — the difference between the two only shows in a language other
+than English, which is why `apps/platformkit/help_language_test.go` asks it of
+`content`, which declares one.
