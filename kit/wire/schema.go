@@ -52,9 +52,11 @@ var authMembers = []string{"kind", "permission", "feature"}
 // sane — a sixth kind, a malformed permission or a feature nobody sells is compared
 // here and refused at boot by kit/httpx, which owns what may be declared.
 //
-// Values that do not read as one word are quoted, so two declarations cannot share a
-// spelling: {"kind":"x permission=y"} is `kind="x permission=y"`, which is not the
-// `kind=x permission=y` two members spell. A declaration that is not an object keeps its
+// Keys and values that do not read as one member are quoted, so two declarations cannot
+// share a spelling: {"kind":"x permission=y"} is `kind="x permission=y"`, which is not the
+// `kind=x permission=y` two members spell, and {"a=b":"c"} is `"a=b"=c`, which is not the
+// `a=b=c` that {"a":"b=c"} spells — an unquoted key runs to its first `=`, which is why a
+// key carrying one cannot be read as a pair. A declaration that is not an object keeps its
 // value under `value=`, because a comparator that read it as absent would accept a
 // document whose door nobody can name.
 func wireAuth(route map[string]any) string {
@@ -92,7 +94,19 @@ func wireAuthMember(key string, value any) (string, bool) {
 	if text, isString := value.(string); isString && text == "" {
 		return "", false
 	}
-	return key + "=" + wireValueText(value), true
+	return wireAuthKey(key) + "=" + wireValueText(value), true
+}
+
+// wireAuthKey is a declaration member's name as one segment can hold it: verbatim when it
+// reads as a name, quoted when it holds a space, a tab, a newline, a quote or an `=`,
+// because an unquoted key is the text up to the first `=`. kit/httpx marshals three fixed
+// names, so nothing this kernel emits is ever quoted here; a hand-written or third-party
+// document can name a member otherwise, and its name has to survive the spelling.
+func wireAuthKey(key string) string {
+	if strings.ContainsAny(key, " \t\n\"=") {
+		return strconv.Quote(key)
+	}
+	return key
 }
 
 // wireValueText is a declaration value as one segment can hold it: verbatim when it

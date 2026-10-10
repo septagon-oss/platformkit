@@ -411,6 +411,7 @@ func TestAuthorizationIdentitySpellings(t *testing.T) {
 		{"a value that holds a space is quoted", `{"feature":"pro","kind":"permission","permission":"a:b"}`, `{"feature":"pro plan","kind":"permission","permission":"a:b"}`, `B6 (breaking): GET /items (list) is authorized kind=permission permission=a:b feature="pro plan" where it was kind=permission permission=a:b feature=pro`},
 		{"one member cannot carry another member's text", `{"kind":"x permission=y"}`, `{"kind":"x","permission":"y"}`, `B6 (breaking): GET /items (list) is authorized kind=x permission=y where it was kind="x permission=y"`},
 		{"a declaration that is not an object keeps its value", `{"kind":"public"}`, `"public"`, `B6 (breaking): GET /items (list) is authorized value="public" where it was kind=public`},
+		{"a member key that holds the spelling of another pair is quoted", `{"kind":"x","a=b":"c"}`, `{"kind":"x","a":"b=c"}`, `B6 (breaking): GET /items (list) is authorized kind=x a=b=c where it was kind=x "a=b"=c`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			breaks := wire.Compare(declaring(tc.golden), declaring(tc.current))
