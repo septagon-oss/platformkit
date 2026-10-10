@@ -91,10 +91,10 @@ func (s Spec[T]) mountTranslationDoors(surfaces httpx.Surfaces) {
 		nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in translateBody) (T, error) {
 			return s.translateRow(ctx, tx, id, in)
-		}, CommandOptions{MapArgs: map[string]crud.MapArg{
+		}, CommandOptions{MapArgs: &MapArgs{Args: map[string]crud.MapArg{
 			"values":   {Elem: crud.TypeString, Keys: values},
 			"expected": {Elem: crud.TypeInt, Keys: expected},
-		}})
+		}}})
 	Command(surfaces, s, "review-translation",
 		"Mark a "+s.Entity+"'s translation reviewed",
 		"Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused.",

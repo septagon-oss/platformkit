@@ -665,16 +665,20 @@ type CommandOptions struct {
 
 	// MapArgs declares, by argument name, the map-valued arguments the schema
 	// derives no field for — because a map column belongs to no screen and no
-	// filter, so `derive` leaves maps out of a struct altogether.
+	// filter, `derive` leaves maps out of a struct altogether. A command that takes
+	// one value per field of the record it acts on therefore arrives at the catalog
+	// and at every generated form with *nothing* beside its language: `translate`
+	// offers a `values` map keyed by field name, and no reading of
+	// `map[string]string` can learn that this entity has a title and a body.
+	// Declaring the argument is what turns a form that can only refuse an editor
+	// into one that offers a box per field, and a name that is no map argument of
+	// this command refuses to mount.
 	//
-	// A command that takes one value per field of the record it acts on therefore
-	// arrives at the catalog and at every generated form with *nothing* beside its
-	// language: `translate` offers a `values` map keyed by field name, and no
-	// reading of `map[string]string` can learn that this entity has a title and a
-	// body. Declaring the argument is what turns a form that can only refuse an
-	// editor into one that offers a box per field. A name that is no map argument
-	// of this command refuses to mount.
-	MapArgs map[string]crud.MapArg
+	// It travels by pointer because `CommandOptions` is comparable as published —
+	// apidiff names it — and a struct holding a map is not: the map would have taken
+	// `opts == other` away from every consumer of a type that has nothing to do with
+	// maps. nil says what the zero value always said.
+	MapArgs *MapArgs
 
 	// Collection mounts the command on the collection rather than on a row —
 	// POST {Path}/{verb} — and run is handed uuid.Nil.
@@ -810,12 +814,24 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	}, OperationOptions{})
 }
 
+// MapArgs is a command's map-valued arguments, keyed by the JSON name the body uses
+// for them, and declared by whoever owns the command.
+type MapArgs struct {
+	// Args is one declaration per argument: the shape Go cannot state (what each
+	// key's value is) and the keys no reflection can discover.
+	Args map[string]crud.MapArg
+}
+
 // declareMapArgs puts each declared map argument in beside the fields the schema
 // derived, in the order the argument struct declares them, and refuses a
 // declaration describing an argument that is not a map keyed by a string: a key
 // list beside an argument that would ignore it is the bug this option exists to
 // cure, and a mount-time refusal is the only answer that cannot ship.
-func declareMapArgs(in reflect.Type, fields []crud.Field, args map[string]crud.MapArg) ([]crud.Field, error) {
+func declareMapArgs(in reflect.Type, fields []crud.Field, declared *MapArgs) ([]crud.Field, error) {
+	var args map[string]crud.MapArg
+	if declared != nil {
+		args = declared.Args
+	}
 	if len(args) == 0 {
 		return fields, nil
 	}
