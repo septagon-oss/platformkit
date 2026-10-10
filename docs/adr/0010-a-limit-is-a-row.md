@@ -55,7 +55,14 @@ there is no read-then-write for either of them to lose. Around it:
   must never be the thing that holds a request open.
 - **A limiter that cannot be reached allows the attempt, and says so.** That is
   right for a lockout and would be wrong for a paywall, so the failure is an
-  error the caller decides about rather than a silent allowance.
+  error the caller decides about rather than a silent allowance. *Cannot be
+  reached* means the store answered — with "I cannot serve this statement", or by
+  refusing the conversation. A statement that spent its budget waiting for its own
+  key was never an unreachable store: it is a refusal, and it travels as one, with
+  no error for a caller to fail open on. A loaded runner told the two worlds apart
+  wrong (75 same-key submissions, all admitted) and that is why the distinction is
+  in the answer rather than in a comment: `kit/limit/README.md` owns the four
+  outcomes and the two budgets, and one of them is this bullet.
 - **`Count` records nothing.** The auth lockout has three answers — allow, delay
   and refuse — so it has to be read before the attempt it is about; a read that
   counted would make every successful sign-in an attempt against the lockout.

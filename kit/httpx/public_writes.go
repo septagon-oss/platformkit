@@ -43,6 +43,12 @@ import (
 //     stops working, and the honest failure mode of a limit is the traffic it
 //     lets through, not the traffic it invents refusals for.
 //
+// That is row four, and the only world it applies in. An attempt the counter did
+// not record — because this key's row was still busy, or because the wall ran out
+// first — arrives as ok false with no error at all, and is refused below like any
+// other spent window. kit/limit/README.md owns the four outcomes; this comment no
+// longer restates them.
+//
 // The refusal is answered through refuse, because the caller this limit exists
 // for has no account to be locked out of and no terminal to read a code in: they
 // are at a form in a browser, and the answer they are given is a page that says
