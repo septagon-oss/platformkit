@@ -317,6 +317,9 @@ func Gallery() []Example {
 						components.ButtonProps{Label: "Create", Type: "submit"}, components.ButtonSlots{}, components.ButtonWithSlots).Node,
 				}, components.FormActions).Node,
 			}, components.Form),
+		ExampleOf(info("pk-ui.component.form-sentence/default", "Frame", "Form sentence"),
+			components.FormSentenceProps{Text: "This row stops being served. You can publish it again later."},
+			components.FormSentence),
 		// Media is where a picture says what it is doing instead of failing silently.
 		// The five states are shown together, in this order, because the interesting
 		// question is not what a picture looks like — it is whether a stranger can
