@@ -72,7 +72,7 @@ fi
 
 read -r goos goarch goversion modcache gocache <<<"$(go env GOOS GOARCH GOVERSION GOMODCACHE GOCACHE | tr '\n' ' ')"
 # A channel suffix must not reach a key nothing will match later: a devel host answers
-# `go1.27.1-X:nodwarf5`, a CI toolchain answers `go1.27.1`, and a colon in a key is a name no
+# `go1.27.1-X:nodwarf5`, a CI toolchain answers `go1.27.2`, and a colon in a key is a name no
 # restore key ever repeats.
 goversion="$(printf '%s\n' "$goversion" | sed -E 's#^(go[0-9]+(\.[0-9]+){0,2}).*#\1#')"
 
