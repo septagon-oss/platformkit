@@ -66,6 +66,23 @@ Rows two and three are one answer because they are one fact about the attempt: i
 was not recorded, and there is no evidence about the window. Row four is the only
 world ADR 0010's fail-open was ever about.
 
+**A bare `driver.ErrBadConn` ahead of the wall is a discarded connection, and the
+attempt is asked again.** The pool discards a connection as it hands it over — the
+session already closed, or left inside a transaction by an earlier attempt whose wall
+expired mid-statement, or a session ping that did not come back — and after
+`database/sql`'s own two retries it gives up and answers `driver: bad connection`
+with no deadline attached. The store never answered *that* attempt. A burst makes
+those discarded connections itself: the attempts whose wall expires mid-statement hand
+their sessions back still open, and the next borrower is told the connection is no good.
+Measured on a loaded runner the week this was written, one in twenty bursts of 75
+attempts came back with one such error — one attempt out of thousands, and every
+fail-open composer admits the whole burst on it. `run` therefore re-asks, up to
+`poolTries` times, an attempt that was refused a connection while its wall stands, and
+never one that already stood inside a transaction: an attempt that reached the row may
+have written, and a counter that counted one attempt twice refuses an attempt nobody
+made. A store that is genuinely down answers, at once and with its own error, to every
+one of those tries, so row four survives the retry.
+
 **Row four's action belongs to the composer, and two composers do not fail open.**
 The column above says what most of them do; handing the decision over with the
 error is the point of row four. `kit/httpx`'s ask-for-access counter (`access.go`'s

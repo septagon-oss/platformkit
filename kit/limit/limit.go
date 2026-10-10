@@ -84,6 +84,14 @@ const (
 	// TestTheLimitersQueueBudgetFitsInsideItsWall, and README.md names both.
 	queueBudget = 1 * time.Second
 
+	// poolTries is how many times run asks the store on behalf of one attempt
+	// when the answer comes back as the pool's driver throwing a connection
+	// away. It bounds the asking, not the waiting: every try shares the one
+	// `budget` deadline the attempt opened, so the promise ADR 0010 makes — this
+	// much, and then an answer — holds across all of them, and a try that runs out
+	// of wall is answered as the unserved attempt it was. See discarded.
+	poolTries = 3
+
 	// keep is how long a row outlives its window before Purge deletes it. A
 	// day is far longer than any window a caller here uses and short enough
 	// that the table is bounded by one day of distinct keys.
@@ -241,7 +249,9 @@ func (p postgres) scan(ctx context.Context, query string, args ...any) (int, tim
 // WithoutCancel, so a caller who hung up is still counted; and bounded, because
 // neither of those may turn a database that has stopped answering into a request
 // that never ends. The two waits inside that wall are told apart here, which is
-// the whole of this package's cure: see classified.
+// the whole of this package's cure: see classified. An answer that says no
+// connection was ever handed over is asked again, within that same wall: see
+// discarded.
 func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 	conn, ok := p.conns(ctx)
 	if !ok {
@@ -249,16 +259,50 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 	}
 	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), budget)
 	defer cancel()
-	err := db.RunSystem(detached, conn, systemToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		// is_local, so the budget belongs to this transaction and dies with it
-		// rather than riding the pooled connection to somebody else's statement.
-		if err := tx.DB().Exec("SELECT set_config('lock_timeout', ?, true)",
-			strconv.FormatInt(queueBudget.Milliseconds(), 10)).Error; err != nil {
-			return err
+	// began says whether this attempt ever stood inside a transaction, which is
+	// what makes asking again safe. An attempt that reached one may have written:
+	// a counter that counted the same attempt twice refuses an attempt nobody made
+	// — the last allowance is the one thing this package must not spend twice. An
+	// attempt that never began a transaction cannot have.
+	for try := 1; ; try++ {
+		began := false
+		err := db.RunSystem(detached, conn, systemToken, func(ctx context.Context, tx db.Tx[db.System]) error {
+			began = true
+			// is_local, so the budget belongs to this transaction and dies with it
+			// rather than riding the pooled connection to somebody else's statement.
+			if err := tx.DB().Exec("SELECT set_config('lock_timeout', ?, true)",
+				strconv.FormatInt(queueBudget.Milliseconds(), 10)).Error; err != nil {
+				return err
+			}
+			return fn(ctx, tx)
+		})
+		if err == nil || began || try == poolTries || !discarded(err, detached) {
+			return classified(err, detached)
 		}
-		return fn(ctx, tx)
-	})
-	return classified(err, detached)
+	}
+}
+
+// discarded reports the one answer that says no connection was ever handed to
+// this attempt, as opposed to a store that answered: the pool's driver throwing a
+// connection away — closed, or left inside the transaction an earlier attempt's
+// expired wall abandoned, or a session ping that did not come back — and running
+// out of the retries database/sql makes before it tells its caller "driver: bad
+// connection". It says nothing about the store. pgx answers this way only ahead
+// of a request: Conn.ExecContext and Conn.QueryContext reach driver.ErrBadConn
+// only through pgconn.SafeToRetry, which is set when the query never left, and
+// the check that fires here, Conn.ResetSession, runs while the connection is
+// still being acquired. So the attempt is asked again rather than answered as an
+// outage — and the outage stays intact where it is one, because a store that is
+// down answers, at once and with its own error, to every one of these tries.
+//
+// The attempt's wall belongs to the reading: a bare driver.ErrBadConn arriving
+// after the budget expired is the pool still hunting for a connection when the
+// wall came down, which classified already answers as unserved. Ahead of the
+// wall it is this package's own traffic polluting the pool — the queue of attempts
+// whose wall expired mid-statement handed their sessions back still open — and
+// the attempt that borrows one of them reached nothing.
+func discarded(err error, attempt context.Context) bool {
+	return errors.Is(err, driver.ErrBadConn) && !wallPassed(attempt)
 }
 
 // classified is the one place this package says which world an attempt just
