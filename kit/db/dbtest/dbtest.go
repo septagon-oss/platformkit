@@ -14,6 +14,7 @@ package dbtest
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math/rand/v2"
 	"net/url"
 	"os"
@@ -89,7 +90,7 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	t.Helper()
 	adminURL, appURL := URLs(t)
 	sources := append([]db.MigrationSource{migrations.Source}, extra...)
-	if err := db.Migrate(t.Context(), adminURL, sources...); err != nil {
+	if err := migrate(t, t.Context(), adminURL, sources...); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)
@@ -99,6 +100,63 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	}
 	t.Cleanup(func() { _ = app.Close() })
 	return admin, app
+}
+
+// migrateTries and migratePause are this fixture's patience with a migration that
+// was refused rather than one that failed: see migrate.
+const (
+	migrateTries = 4
+	migratePause = time.Second
+)
+
+// migrate applies the sources to the schema URLs just made, taking the re-run that a
+// contended refusal offers.
+//
+// One database serves every package of the suite, and a migration of one test's own
+// namespace can still be refused a lock inside its budget: measured on CI's `make check`
+// of 2026-10-09, `000003_handled.up.sql` answered SQLSTATE 55P03 at the run's five-second
+// lock budget while the same runner applied the file before it in 1.8s instead of 13ms.
+// The refusal says what it did not do — nothing the run had not already applied was
+// applied, and it may be run again — and an installation answers that by handing the
+// decision to the operator standing in front of the database (apps/platformkit migrate).
+// A fixture has no operator and no replica queued behind it, so it answers the way the
+// refusal asks: run it again, a bounded number of times.
+//
+// The bound is what keeps this from becoming the wait the runner refuses to take. A
+// migration that fails — a file that is wrong, a checksum that moved — is refused on the
+// first answer, unchanged: retrying it would hide the failure behind a delay. And when the
+// tries run out, the error a person reads is the runner's own sentence, budgets and all.
+func migrate(t testing.TB, ctx context.Context, adminURL string, sources ...db.MigrationSource) error {
+	t.Helper()
+	try := 0
+	return pastContention(ctx, migrateTries, migratePause, func(ctx context.Context) error {
+		try++
+		if try > 1 {
+			t.Logf("dbtest: the migration was refused by a lock, running it again: attempt %d of %d", try, migrateTries)
+		}
+		return db.Migrate(ctx, adminURL, sources...)
+	})
+}
+
+// pastContention runs attempt until it answers something other than db.ErrContended,
+// the tries run out, or ctx ends. Anything else the attempt answers — success, or a
+// migration that really failed — is returned at once and untouched.
+func pastContention(ctx context.Context, tries int, pause time.Duration, attempt func(context.Context) error) error {
+	var err error
+	for try := 1; try <= tries; try++ {
+		if err = attempt(ctx); err == nil || !errors.Is(err, db.ErrContended) {
+			return err
+		}
+		if try == tries {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(pause):
+		}
+	}
+	return err
 }
 
 // DeploymentSchema is the namespace an unqualified statement in this session
