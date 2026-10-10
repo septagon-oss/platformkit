@@ -1,6 +1,7 @@
 -- The trail says what caused an event when the cause was no person.
 --
--- The outbox has carried attribution since 000048: which kind of cause wrote the
+-- The outbox has carried attribution since
+-- migrations/000052_outbox_attribution.up.sql: which kind of cause wrote the
 -- row, which file and line asked for it, and on whose behalf. This trail is the
 -- outbox's history — modules/audit subscribes to every event every module
 -- declares — and until now it copied one column out of that attribution, `actor`,
@@ -28,6 +29,15 @@
 --
 -- This is an expand: nothing had to stop writing anything for it to land, and a
 -- rollback of the code loses four unread columns and no data.
+--
+-- One duty comes with it for a deployment that grants the trail's append by column
+-- rather than by table — `GRANT INSERT (tenant_id, occurred_at, …) ON audit_events`
+-- is the shape a least-privilege writer is handed. A column list that does not name
+-- these four refuses the application's whole INSERT, attribution included, so the
+-- grant has to be widened to `actor_kind, source_file, source_line, initiator`
+-- before this release can append through it. Nothing in this file can see or repair
+-- that: the grant is the deployment's, and the failure it produces is a refusal, not
+-- a silent gap.
 ALTER TABLE audit_events
 	ADD COLUMN IF NOT EXISTS actor_kind  text CHECK (actor_kind IS NULL OR actor_kind IN ('user', 'system', 'seed', 'job')),
 	ADD COLUMN IF NOT EXISTS source_file text CHECK (source_file IS NULL OR (source_file <> '' AND length(source_file) <= 512)),
