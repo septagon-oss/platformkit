@@ -29,15 +29,17 @@ if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	exit 1
 fi
 race="$(ci_line check-race 'go test')"
-# The race line's bound is asked for by the same reasoning the line above asks for `check`'s: the
-# fresh race run is a line, and a line that lost its clock is a line that answers to go test's
-# ten-minute default. It is matched at the foot of the package list because that is where the Makefile
-# puts it — the prefix this case matches on is the fresh gate's own, and a clock inserted before the
-# packages would move it out from under both this file and scripts/check_architecture_test.sh.
-if [[ "$race" != 'go test -race -count=1 ./'*-timeout=30m ]]; then
-	printf 'FAIL: make check-race without TEST_COUNT is not the fresh race line CI depends on:\n%s\n' "$race" >&2
-	exit 1
-fi
+# The race line carries a bound beside its count, and it is pinned here for the reason written at
+# `check`'s line above: go test's ten-minute default is what stopped a working apps/platformkit four
+# times on 2026-10-10 (runs 57644, 57686, 57718 and 57727, each panic naming whichever case happened
+# to be open at the tenth minute). The count, the bound and the package list the bound precedes are
+# the three parts a later edit may not drop; what it may change is everything around them.
+case "$race" in
+	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	*)
+		printf 'FAIL: make check-race without TEST_COUNT is not the fresh, bounded race line CI depends on:\n%s\n' "$race" >&2
+		exit 1 ;;
+esac
 if grep -rn 'TEST_COUNT' "$root/.gitea" >&2; then
 	echo 'FAIL: a workflow names TEST_COUNT; CI must take the Makefile default' >&2
 	exit 1

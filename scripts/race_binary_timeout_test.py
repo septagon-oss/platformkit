@@ -1,6 +1,7 @@
 """The race recipe's stated bound reaches Go's test binary, after flag parsing."""
 import os
 import pathlib
+import re
 import shlex
 import subprocess
 import tempfile
@@ -51,8 +52,14 @@ class RaceBinaryTimeout(unittest.TestCase):
     def test_removing_the_bound_restores_gos_ten_minute_default(self):
         with tempfile.TemporaryDirectory() as directory:
             makefile = pathlib.Path(directory, "Makefile")
-            makefile.write_text((ROOT / "Makefile").read_text().replace(
-                "$(RACE_PACKAGES) -timeout=30m", "$(RACE_PACKAGES)"))
+            # The bound is dropped from the race recipe wherever the recipe writes it: where the
+            # clock sits on that line is the three text guards' concern, and this case is only
+            # ever about whether the recipe states one at all. A mutation that matched nothing
+            # leaves the stated clock in place, which the assertion below cannot miss.
+            text = re.sub(r"(?m)^\tgo test -race \$\(TEST_COUNT\) -timeout=30m\b",
+                          "\tgo test -race $(TEST_COUNT)", (ROOT / "Makefile").read_text(), count=1)
+            self.assertNotEqual(text, (ROOT / "Makefile").read_text())
+            makefile.write_text(text)
             arguments = self.binary_arguments(makefile)
             self.assertIn("-test.count=1", arguments)
             self.assertIn("-test.timeout=10m0s", arguments)

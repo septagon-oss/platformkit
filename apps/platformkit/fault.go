@@ -109,7 +109,10 @@ const (
 // four lines.
 func faultChrome() page.Chrome {
 	return page.Chrome{
-		Brand:      "PlatformKit",
+		// The installation's own word, the same constant the workspace's face
+		// falls back to: this file composes pages of this application and has no
+		// business spelling its own name twice.
+		Brand:      brandName,
 		Assets:     pinnedAssets,
 		Stylesheet: ui.Compose(design.Default()),
 		SignIn:     pinnedSignIn,
@@ -246,6 +249,22 @@ func (g *referenceGate) check(resources []httpx.Resource) error {
 		}
 	})
 	return g.fault
+}
+
+// workspaceFace mounts every module-less route this product owns on the workspace
+// surface. app.Options.WorkspaceCatalog is the only seam that hands a composition
+// the *httpx.API of /api/v1/app/… — no module may compose that prefix, and kit may
+// not import ui — and it takes an arbitrary mount function, so a second such route
+// needs no new kernel seam, only this line. The field's name is now narrower than
+// what runs through it: the catalogue and the connection document are both mounted
+// here, and both are the composition's because both addresses are the kernel's and
+// both bodies are ui's.
+func workspaceFace(routes ...func(api *httpx.API)) func(api *httpx.API) {
+	return func(api *httpx.API) {
+		for _, mount := range routes {
+			mount(api)
+		}
+	}
 }
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the

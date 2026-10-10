@@ -279,24 +279,32 @@ fmt-check: ## Fail when any file is not gofmt'd
 # the subject is, and two applies of two proposals over one subject settle by that
 # order. An author who cannot run the two commands concurrently cannot tell a lock
 # that works from a lock that is merely written down.
-#
-# A stated per-package bound, the same number `check` states for the same reason. This goal stated
-# none, so it inherited go test's ten-minute default, and CI run 57644's `check` job killed
-# `apps/platformkit` at 600.283s with one case five seconds into itself and the rest parked — no
-# race reported, a clock arrived at. `make check` states 30m for this package and this reason; the
-# same forge measured that package at 448.473s under the detector two runs earlier (run 57557, job
-# 58278), so the goal had been finishing with a fifth of an unchosen budget spare. It is not a looser
-# standard: a hang still stops, and a suite that grows past a clock nobody chose stops too. The bound
-# sits after the packages rather than after the count because three cases read this line — two of them
-# by the prefix the fresh count puts first (scripts/check_architecture_test.sh,
-# scripts/make_check_count_default_test.sh) and one by where $(TEST_COUNT) sits after the option
-# separator (scripts/ci_go_cache_test.sh) — and a clock at the foot of the line moves none of them,
-# while a clock before the packages would move all three.
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
+# The same stated per-package bound `check` carries, for the same reason and against the same
+# measurement: go test's ten-minute default is not a decision this repository made, and
+# apps/platformkit has grown up to it. The package's own wall clock under -race on CI's runner, read
+# out of four logs where the step passed: 438.9s (run 57363), 448.5s (57557), 462.1s (57497),
+# 484.3s (57383), 489.8s (57488). Read out of four more where it did not: `panic: test timed out
+# after 10m0s`, at 57644 (parked in TestASetPasswordLinkOpensOneSessionInItsOwnTenant, 5s in), 57686
+# (TestTheCompositionMountsTheCatalogItsContractIsGeneratedFrom, 1s in), 57718
+# (TestTheCatalogNamesWhereTheWritesOfAResourceAre, 2s in) and 57727
+# (TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP, 3s in). Four different tests, none of
+# them hung, each of them simply the one that was open when the tenth minute arrived on a box doing
+# other work. A bound that the suite passes on a quiet runner and the same suite misses on a busy
+# one is not a bound; it is a coin toss reported as a defect — which is why `check` already says 30m
+# beside its count rather than trusting the default. Thirty minutes is also the smaller of the two
+# numbers this file can name: -race roughly doubles the suite, so the race run of the package that
+# needs 30m without it cannot promise less with it, and the job that runs both steps gives itself 75
+# minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
+# as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
+# directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES) -timeout=30m
+	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a

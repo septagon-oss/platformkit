@@ -3,6 +3,7 @@ package site_test
 import (
 	"context"
 	"log/slog"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -90,17 +92,90 @@ func TestTheSiteIsReadAndPutAndNothingElse(t *testing.T) {
 	}
 
 	code, body = send(t, router, http.MethodPut, settings,
-		`{"title":"Acme","tagline":"We make things","theme":"dark","primaryColor":"#FF8800","nav":[{"label":"About","path":"/about-us"}]}`, true)
+		`{"title":"Acme","tagline":"We make things","theme":"dark","primaryColor":"#B45309","nav":[{"label":"About","path":"/about-us"}]}`, true)
 	if code != http.StatusOK {
 		t.Fatalf("PUT %s = %d %s, want 200", settings, code, body)
 	}
-	if !strings.Contains(body, `"primaryColor":"#ff8800"`) {
+	if !strings.Contains(body, `"primaryColor":"#b45309"`) {
 		t.Errorf("the colour was stored as %s; it is lower-cased so a theme has one spelling to read", body)
 	}
 	if code, body = send(t, router, http.MethodPut, settings, `{"title":"Acme","primaryColor":"nope"}`, true); code != http.StatusUnprocessableEntity {
 		t.Errorf("PUT with a colour that is not one = %d %s, want 422", code, body)
 	}
+	// The syntax and the reading are two refusals, and the second names the two
+	// numbers and the two canvases, because the person on the other end of it has
+	// to be able to pick another colour without a colour chart.
+	if code, body = send(t, router, http.MethodPut, settings, `{"title":"Acme","primaryColor":"#ff8800"}`, true); code != http.StatusUnprocessableEntity {
+		t.Errorf("PUT with an accent that vanishes into the light canvas = %d %s, want 422", code, body)
+	}
+	for _, want := range []string{"2.08", "7.67", "#f2efe7", "#0e1614"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("the refusal of #ff8800 does not say %s: %s", want, body)
+		}
+	}
 }
+
+// TestTheCanvasesAreTheKitsOwn is what makes the two hex values in
+// contracts/contrast.go honest rather than a second palette registry: they are
+// design's own surfaces, written out because a module's contracts/ names no theme
+// and no stylesheet, and checked here, in the one package of this module allowed
+// to import design. A theme that moves turns this red naming both spellings.
+func TestTheCanvasesAreTheKitsOwn(t *testing.T) {
+	t.Parallel()
+	if got, want := contracts.CanvasLight, design.Light().SurfaceCanvas; got != want {
+		t.Errorf("contracts.CanvasLight is %s and design.Light().SurfaceCanvas is %s: one canvas, two spellings, and the accent rule is measuring the wrong one", got, want)
+	}
+	if got, want := contracts.CanvasDark, design.Dark().SurfaceCanvas; got != want {
+		t.Errorf("contracts.CanvasDark is %s and design.Dark().SurfaceCanvas is %s: one canvas, two spellings, and the accent rule is measuring the wrong one", got, want)
+	}
+}
+
+// TestTheAccentRatiosAreTheOnesTheRuleCompared is the measured table, so that a
+// change to the arithmetic fails here with numbers beside it rather than in
+// whoever's browser. The two numbers are the ratios against the light canvas and
+// the dark one; whether the pair clears MinAccentRatio is the case in
+// sitetest/conformance.go, which is run against the database as well as the fake.
+func TestTheAccentRatiosAreTheOnesTheRuleCompared(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		colour      string
+		light, dark float64
+	}{
+		{"#2563eb", 4.50, 3.55}, // the kit's own default
+		{"#b45309", 4.37, 3.66},
+		{"#0f766e", 4.76, 3.36},
+		{"#7c3aed", 4.96, 3.22},
+		{"#7f7f7f", 3.48, 4.59},
+		{"#8a8a8a", 3.00, 5.32}, // 3.0044 rounded — the nearest colour above the band's edge
+		{"#8b8b8b", 2.97, 5.39}, // one step lighter and under it
+		{"#1d4ed8", 5.83, 2.74}, // reads on paper, not in the dark
+		{"#ff8800", 2.08, 7.67}, // and the other way round
+		{"#c0ffee", 1.03, 16.42},
+		{"#ffffff", 1.15, 18.36},
+		{"#0e1614", 15.98, 1.00},
+	} {
+		light, dark, ok := contracts.AccentRatios(tc.colour)
+		switch {
+		case !ok:
+			t.Errorf("AccentRatios(%q): not a colour", tc.colour)
+		case light != tc.light || dark != tc.dark:
+			t.Errorf("%q reads %.2f / %.2f, want %.2f / %.2f", tc.colour, light, dark, tc.light, tc.dark)
+		}
+		// The ratio is symmetric, which is the only check that the arithmetic is
+		// the standard's and not a formula that happens to agree in one direction.
+		if r, err := contracts.ContrastRatio(tc.colour, contracts.CanvasLight); err != nil || round2(r) != tc.light {
+			t.Errorf("ContrastRatio(%q, light) = %v, %v", tc.colour, r, err)
+		}
+		if r, err := contracts.ContrastRatio(contracts.CanvasLight, tc.colour); err != nil || round2(r) != tc.light {
+			t.Errorf("ContrastRatio(light, %q) = %v, %v: a ratio is the same either way round", tc.colour, r, err)
+		}
+	}
+	if _, err := contracts.ContrastRatio("#2563eb", "canvas"); err == nil {
+		t.Error("ContrastRatio answered for a canvas that is not a colour")
+	}
+}
+
+func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 // TestThePublicRouteCarriesWhatAThemeNeedsAndNothingElse: a visitor with no
 // session reads the name, the navigation and the colour scheme. The home slug

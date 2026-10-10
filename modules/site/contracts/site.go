@@ -211,6 +211,22 @@ func (s *SiteSettings) Validate(context.Context) error {
 		return fmt.Errorf("theme %q is not one of %v", s.Theme, themes)
 	case !hexColor.MatchString(s.PrimaryColor):
 		return fmt.Errorf("%q is not a colour; a primary colour is #rrggbb", s.PrimaryColor)
+	// The accent is drawn on the kit's two canvases, and a colour that vanishes
+	// into one of them is a site whose buttons nobody can find. Both canvases,
+	// whichever theme this tenant chose: `system` means the visitor may be on
+	// either, and a rule that branched on the theme would let a light-only colour
+	// ride into a site that follows the operating system into the dark one.
+	//
+	// Refused, never adjusted: an adjusted colour would make the stored row and the
+	// served one disagree, would put a value nobody typed into the diff the trail
+	// keeps forever, and would leave the generated form's `pattern` saying
+	// `#rrggbb` while the truth were narrower. The sentence names both ratios and
+	// both canvases, because the person on the other end of it can pick another
+	// colour and that is the whole of the fix.
+	case !readsOnBothCanvases(s.PrimaryColor):
+		light, dark, _ := AccentRatios(s.PrimaryColor)
+		return fmt.Errorf("%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)",
+			s.PrimaryColor, light, dark, MinAccentRatio, CanvasLight, CanvasDark)
 	case len(s.Nav) > MaxNav:
 		return fmt.Errorf("a navigation is at most %d links", MaxNav)
 	}
