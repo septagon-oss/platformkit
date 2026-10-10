@@ -228,6 +228,7 @@ test('the device keeps the passkey the browser made for the host that asked, and
 });
 
 test('a passkey the browser enrolled answers its owner\u2019s password and opens the session', async ({ page, browser }) => {
+  test.slow(); // Three round trips and a platform prompt, below; see the wait on the finish leg.
   // The brief's journey, in the order the person does it: enrol, sign out, sign
   // in again with the password refused as half a sign-in, the passkey answering
   // the other half, and the application served to the session that opened.
@@ -269,7 +270,21 @@ test('a passkey the browser enrolled answers its owner\u2019s password and opens
   // synthesised: the page's own fetch legs run against the real routes.
   await person.goto('/app/auth/sessions');
   await person.getByLabel('What this device is called').fill('Playwright laptop');
+  // The wait is placed on the ceremony's last leg, not on a clock. One click runs
+  // three: the begin fetch, the platform's answer, the finish fetch, and the page
+  // only speaks when the last one comes back. The run of 2026-10-10 (run 57108, step
+  // `make e2e`) measured this case at 26.1s where the base run (56924) measured it at
+  // 2.4s — the runner had taken on another run's whole `check` job one minute
+  // before (run 57177 started 01:25:35) and every journey that reached the server in
+  // that window took 3.5–18× its idle time. A fixed 10 s expectation refuses a
+  // passkey that had merely not finished answering; this waits for the answer, and
+  // reads what it answered, before asking the page to show it.
+  const enrolled = person.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/auth/factors/passkey/finish'
+      && response.request().method() === 'POST', { timeout: 30_000 });
   await person.getByRole('button', { name: 'Add a passkey' }).click();
+  const finished = await enrolled;
+  expect(finished.status(), await finished.text()).toBe(201);
   await expect(person.locator('[data-auth-message]')).toBeVisible();
   const listed = await (await person.request.get('/api/v1/auth/factors')).json();
   const kinds = ((listed?.items ?? listed) as { kind: string }[]).map(factor => factor.kind);
