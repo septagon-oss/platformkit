@@ -65,11 +65,15 @@ func RunService(t *testing.T, h Harness) {
 	}
 }
 
-// acme is a site somebody has configured.
+// acme is a site somebody has configured. Its accent is inside the band the
+// contrast rule keeps — #b45309 reads 4.37:1 on the light canvas and 3.66:1 on the
+// dark one — because this fixture is the input every accepted case saves, and the
+// colour the kit used to ship, #ff8800, is now a refusal input and stays in this
+// file as one.
 func acme() *contracts.SiteSettings {
 	return &contracts.SiteSettings{
 		Title: "Acme", Tagline: "We make things", HomeSlug: "welcome",
-		Theme: contracts.ThemeDark, PrimaryColor: "#ff8800",
+		Theme: contracts.ThemeDark, PrimaryColor: "#b45309",
 		Nav: contracts.Nav{{Label: "About", Path: "/about-us"}, {Label: "Blog", Path: "/blog"}},
 	}
 }
@@ -117,7 +121,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			switch {
 			case got.Title != "Acme" || got.Tagline != "We make things" || got.HomeSlug != "welcome":
 				t.Errorf("the settings read back as %+v", got)
-			case got.Theme != contracts.ThemeDark || got.PrimaryColor != "#ff8800":
+			case got.Theme != contracts.ThemeDark || got.PrimaryColor != "#b45309":
 				t.Errorf("the look reads back as %q/%q", got.Theme, got.PrimaryColor)
 			case len(got.Nav) != 2 || got.Nav[0].Label != "About" || got.Nav[1].Path != "/blog":
 				t.Errorf("the navigation reads back as %+v, and its order is the order it was written in", got.Nav)
@@ -149,6 +153,9 @@ func cases() map[string]func(*testing.T, Fixture) {
 			// path as well as the create one: the two used to answer with
 			// different errors, which is a 500 where a 422 belongs.
 			save(t, f, acme())
+			// Every colour here is refused for its *spelling*, which is why none of
+			// them is a colour the contrast rule could be accused of refusing: a
+			// #rrggbb that reads badly is refused by the case below, by name.
 			for _, bad := range []*contracts.SiteSettings{
 				{Title: "Acme", PrimaryColor: "red"},
 				{Title: "Acme", PrimaryColor: "#fff"},
@@ -157,6 +164,105 @@ func cases() map[string]func(*testing.T, Fixture) {
 			} {
 				_, err := f.Service.Save(f.Ctx, f.Tx, bad)
 				mustBe(t, err, crud.ErrInvalid)
+			}
+		},
+
+		// The contrast rule, in one case, run by both implementations through the
+		// same Save: the fake validates with the entity's own Validate and so does
+		// the SQL service, so a rule branched on Theme, or run only on the create
+		// path, or run only inside internal/, turns red here rather than passing in
+		// one implementation and refusing in the other.
+		//
+		// Every number beside these colours is the WCAG ratio measured against the
+		// kit's two canvases; TestTheAccentRatiosAreTheOnesTheRuleCompared prints
+		// them from the same arithmetic the rule used.
+		"an accent must read against both canvases": func(t *testing.T, f Fixture) {
+			save(t, f, acme())
+			for _, colour := range []string{
+				"#ff8800", // 2.08 light — the colour this suite used to configure
+				"#c0ffee", // 1.03 light — mint on paper
+				"#ffffff", // 1.15 light — paper on paper
+				"#0e1614", // 1.00 dark — and the dark canvas on itself
+				"#1d4ed8", // 2.74 dark — a blue that only works in the light
+				"#8b8b8b", // 2.97 light — the grey a hair below the threshold
+			} {
+				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: colour}); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("saving %q: error is %v, want crud.ErrInvalid: it reads under %g:1 against one of the two canvases",
+						colour, err, contracts.MinAccentRatio)
+				}
+			}
+			for _, colour := range []string{
+				"#2563eb", // 4.50 / 3.55 — the kit's own default, so the band holds it
+				"#b45309", // 4.37 / 3.66
+				"#0f766e", // 4.76 / 3.36
+				"#7c3aed", // 4.96 / 3.22
+				"#7f7f7f", // 3.48 / 4.59 — a mid grey clears both by a wider margin than either extreme
+				"#8a8a8a", // 3.0044 / 5.32 — the nearest colour above the band's edge
+			} {
+				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: colour}); err != nil {
+					t.Errorf("saving %q: %v: a colour that reads at least %g:1 against both canvases is accepted", colour, err, contracts.MinAccentRatio)
+				}
+			}
+		},
+
+		// Where the band's edge sits, named rather than rounded away: two greys one
+		// step apart, #8a8a8a at 3.0044:1 against the light canvas and #8b8b8b at
+		// 2.9651:1. The rule accepts the first and refuses the second, so the edge
+		// lies between them. What this case does is pin the band's neighbourhood — no
+		// #rrggbb colour reads exactly 3.0 against these two canvases, so it cannot
+		// tell `>=` from `>`, and it does not claim to. A comparison made on rounded
+		// ratios, though, refuses #8a8a8a, and that is a mutation this order kills.
+		"the band's edge sits between #8b8b8b and #8a8a8a": func(t *testing.T, f Fixture) {
+			save(t, f, acme())
+			if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#8a8a8a"}); err != nil {
+				t.Errorf("#8a8a8a reads 3.0044:1 against the light canvas and is refused: %v", err)
+			}
+			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#8b8b8b"})
+			mustBe(t, err, crud.ErrInvalid)
+		},
+
+		// A colour is compared, not guessed: the trim and the lower-case happen
+		// first, so the same colour typed two ways is stored one way.
+		"a colour typed with room and case is the colour it means": func(t *testing.T, f Fixture) {
+			out := save(t, f, &contracts.SiteSettings{Title: "Acme", PrimaryColor: " #2563EB "})
+			if out.PrimaryColor != "#2563eb" {
+				t.Errorf("the stored colour is %q, want %q", out.PrimaryColor, "#2563eb")
+			}
+			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#2563E b"})
+			mustBe(t, err, crud.ErrInvalid)
+		},
+
+		// The defaults are not caught by the rule they now have to satisfy: an
+		// untouched tenant reads the kit's own accent, and saving that value back
+		// is silent, which is what refuses a threshold of 4.5 and a rule that ran
+		// before Validate filled the default in.
+		"the defaults pass the rule and re-save silently": func(t *testing.T, f Fixture) {
+			got, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			if got.PrimaryColor != contracts.DefaultPrimaryColor {
+				t.Fatalf("the default colour is %q, want %q", got.PrimaryColor, contracts.DefaultPrimaryColor)
+			}
+			if light, dark, ok := contracts.AccentRatios(got.PrimaryColor); !ok || light < contracts.MinAccentRatio || dark < contracts.MinAccentRatio {
+				t.Errorf("the kit's own default reads %v:1 / %v:1 and the rule would refuse it", light, dark)
+			}
+			f.one(t, "the first save of the defaults", func() { save(t, f, got) })
+			f.silent(t, "saving the defaults back", func() { save(t, f, got) })
+		},
+
+		// The two numbers a shell is told are the two the rule compared — same
+		// arithmetic, same rounding, one implementation.
+		"the ratio the document quotes is the ratio the rule used": func(t *testing.T, f Fixture) {
+			light, dark, ok := contracts.AccentRatios("#2563eb")
+			if !ok {
+				t.Fatal("AccentRatios cannot read the kit's own default colour")
+			}
+			if light != 4.50 || dark != 3.55 {
+				t.Errorf("#2563eb reads %.2f / %.2f, want 4.50 / 3.55", light, dark)
+			}
+			if _, err := contracts.ContrastRatio("mint", contracts.CanvasLight); err == nil || !strings.Contains(err.Error(), "mint") {
+				t.Errorf("ContrastRatio(%q, …) = %v, want an error naming the value", "mint", err)
 			}
 		},
 

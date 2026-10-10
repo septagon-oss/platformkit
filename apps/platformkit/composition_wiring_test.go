@@ -33,10 +33,10 @@ import (
 )
 
 // sentencesOf is the application's sentence with only its app in hand, for a
-// case that asks the resolver a question and reads nothing else. The three values
+// case that asks the resolver a question and reads nothing else. The four values
 // sentences also returns belong to the composition's own chrome.
 func sentencesOf(cfg config.Config, without ...string) *pkit.App {
-	a, _, _, _ := sentences(cfg, without...)
+	a, _, _, _, _ := sentences(cfg, without...)
 	return a
 }
 

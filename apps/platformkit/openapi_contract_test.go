@@ -70,6 +70,11 @@ var deviceContractPaths = []struct {
 	{operation: "auth-me", method: http.MethodGet, path: "/api/v1/auth/me"},
 	{operation: "auth-logout", method: http.MethodPost, path: "/api/v1/auth/logout"},
 	{operation: "app-resources", method: http.MethodGet, path: "/api/v1/app/resources"},
+	// The workspace's face, which a shell reads *before* it can authenticate: it is
+	// the one address in this list a caller reaches with no credential at all, and
+	// it joined in the round that mounted it rather than the round that documented
+	// it, which is what keeps the list a gate.
+	{operation: "app-connection", method: http.MethodGet, path: "/api/v1/app/connection", anonymous: true},
 	{operation: "audit-event-list", method: http.MethodGet, path: "/api/v1/audit/events"},
 	// The bearer key a shell presents instead of a session cookie. It joined this
 	// list in the round that mounted its door (T-0117's auth-token-issue): a device

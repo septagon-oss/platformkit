@@ -27,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -47,6 +48,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -82,9 +84,25 @@ type composition struct {
 	contents contentcontracts.Service
 	tasks    taskcontracts.Service
 	sites    sitecontracts.Service
-	access   httpx.AskForAccess
-	granter  page.Granter
-	messages xtext.Catalog
+	// The three values the workspace's own face is read from, and the two facts
+	// about the installation that no module owns: whether it mounted a password
+	// door at all, and whether a mail could leave it. See connection.go.
+	passkeys     authcontracts.PasskeyDoor
+	links        webcontracts.Links
+	signin       admincontracts.Signin
+	recoveryMail bool
+	// connection is the face this composition mounts at /api/v1/app/connection,
+	// filled below for the same reason `ask` and `shell` are: the mount is written
+	// in the sentence, and the answers come out of the plan.
+	connection *connectionFace
+	// passwordDoor is whether this installation mounted a password door at all,
+	// which is a fact about the composition and not about a tenant: a workspace
+	// with no door cannot be signed in to with a password whatever its person's
+	// account says.
+	passwordDoor bool
+	access       httpx.AskForAccess
+	granter      page.Granter
+	messages     xtext.Catalog
 }
 
 // reference is the application, its deployment, and the composition it resolved.
@@ -115,7 +133,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell, provision := sentences(cfg)
+	a, ask, shell, provision, face := sentences(cfg)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -134,38 +152,53 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		access:   ask,
 		// The words a refusal is allowed to use: the label of the grant that
 		// gates role management, read off the manifest that defines it.
-		granter: refusalGrant(p.Skin()),
+		granter:      refusalGrant(p.Skin()),
+		passkeys:     auth.NewPasskeyDoor(),
+		links:        value[webcontracts.Links](p),
+		signin:       value[admincontracts.Signin](p),
+		recoveryMail: cfg.Mail.Enabled(),
+		connection:   face,
 	}
+	// Whether a password door stands here at all is read off the plan the sentence
+	// resolved and not written as a constant: a composition that took auth out
+	// would otherwise keep advertising a door it stopped mounting, which is the
+	// same lie the ask above is built to avoid.
+	c.passwordDoor = c.auth != nil
 	*shell = faultShell(c.messages, c.granter)
 	// The seed's tenant-creation hook, filled from the plan the sentence resolved
-	// to. It is the third value this file fills after the resolution, beside the
-	// shell above and the reach the access module fills, and it is the one that
-	// cannot be a declared need: the hook is contributed to the tenant module, and
-	// the owners it writes through — task's lifecycle service, the auth service —
-	// are built after the tenant module needs them, so a module that declared both
-	// is the cycle pkit names (`seed → task → tenant → seed`). See seeding's comment
-	// in seed.go. Until this line the hook has no owners, and it says so rather
-	// than writing a half-filled tenant's content.
+	// to. It is another of the values this file fills after the resolution, beside
+	// the shell above, the face below and the reach the access module fills, and it
+	// is the one that cannot be a declared need: the hook is contributed to the
+	// tenant module, and the owners it writes through — task's lifecycle service,
+	// the auth service — are built after the tenant module needs them, so a module
+	// that declared both is the cycle pkit names (`seed → task → tenant → seed`).
+	// See seeding's comment in seed.go. Until this line the hook has no owners, and
+	// it says so rather than writing a half-filled tenant's content.
 	*provision = seedProvisioner{
 		users: c.users, contents: c.contents, sites: c.sites, tasks: c.tasks,
 		files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
 	}
+	// The face, filled from the composition the plan answered. The mount was
+	// written into the sentence with an empty holder beside it, because a mount is
+	// part of the sentence and the answers are not.
+	*face = connectionFace{describe: c.describe}
 	return reference{app: a, once: once, composition: c}
 }
 
-// sentences is the one statement of this application's composition, and the three
+// sentences is the one statement of this application's composition, and the four
 // values its own chrome reads: the reach an ask has here, which the access module
 // fills once the services it joins exist, the shell of the ask's two pages, which
-// is drawn from the skin the resolved composition answered with, and the seed's
+// is drawn from the skin the resolved composition answered with, the seed's
 // tenant-creation hook, which composeReference fills from the resolved plan for
-// the reason seeding gives.
+// the reason seeding gives, and the workspace's own face, whose mount is part of
+// the sentence below while the answers it serves come out of the plan.
 // that boots the reference application goes through it: `run` and `start`, which
 // hand the whole thing to pkit, and appOptions, which is what a test in this
 // repository boots the same composition with when it wants the handler rather
 // than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner) {
-	ask, shell, provision := &accessReach{}, &page.Shell{}, &seedProvisioner{}
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+	ask, shell, provision, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &connectionFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg),
@@ -192,8 +225,8 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceCatalog())
-	return a, ask, shell, provision
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
+	return a, ask, shell, provision, face
 }
 
 // omitted takes the names a case asked to leave out of the list. It exists for
