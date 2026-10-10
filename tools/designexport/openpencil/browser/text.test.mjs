@@ -105,12 +105,15 @@ test('gallery construction coverage is explicit under the supplied-font comparis
   // Alert now contains a dormant, uncaptured close-control boundary; its exact
   // refusal is pinned below rather than flattening that source-owned content.
   //
-  // 812 and 767 are this tree's run of this file, not arithmetic: the merge onto
-  // main adds Prose, whose own example the design tool refuses to construct for
-  // the named reason below, so the catalog gains one example and one refusal. The
-  // accepted list and the two capture refusals are unchanged, verified against the
-  // same run's diagnostic rather than carried over.
-  assert.equal(snapshot.examples.length, 812)
+  // 813 and 767 are this tree's run of this file, not arithmetic. The previous
+  // numbers, 812 and 767, were main's: this change adds one shared component, the
+  // sentence a command form prints about its own consequence, and a Gallery example
+  // to go with it. That example constructs — it is a paragraph of text at a bounded
+  // measure, which is a shape the adapter already reproduces — so the catalog gains
+  // one example and one acceptance and no refusal. Measured here, not inferred: the
+  // diagnostic this same run prints holds 44 accepted, 767 refused and the same two
+  // capture refusals, and the accepted list below is that run's, entry for entry.
+  assert.equal(snapshot.examples.length, 813)
   assert.deepEqual(accepted, [
     'pk-ui.component.alert/bordered', 'pk-ui.component.alert/compact', 'pk-ui.component.alert/danger',
     'pk-ui.component.alert/info', 'pk-ui.component.alert/success',
@@ -119,7 +122,8 @@ test('gallery construction coverage is explicit under the supplied-font comparis
     'pk-ui.component.button/disabled-link', 'pk-ui.component.button/ghost', 'pk-ui.component.button/info',
     'pk-ui.component.button/link', 'pk-ui.component.button/primary', 'pk-ui.component.button/secondary',
     'pk-ui.component.button/success', 'pk-ui.component.button/warning', 'pk-ui.component.button/with-icon',
-    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form/default', 'pk-ui.component.grid/default',
+    'pk-ui.component.button/with-leading-icon', 'pk-ui.component.form-sentence/default',
+    'pk-ui.component.form/default', 'pk-ui.component.grid/default',
     'pk-ui.component.input/bare', 'pk-ui.component.input/invalid', 'pk-ui.component.input/read-only',
     'pk-ui.component.media/failed', 'pk-ui.component.media/refused',
     'pk-ui.component.notice/offline-en', 'pk-ui.component.notice/offline-pt-PT',
