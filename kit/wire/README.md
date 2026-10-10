@@ -47,8 +47,11 @@ An operation's declaration is the whole object the server writes under
 `x-platformkit-auth`: `kind`, the `permission`, the plan feature such a door names
 with `.Needing`, and any other member it carries. The identity is all of it, spelled
 `kind` then `permission` then `feature` then the rest by name, with an absent, null or
-empty member contributing nothing. Adding, removing or renaming any member is therefore a
-B6 change, and a permission that stayed put does not make a moved feature not-a-change. A
+empty member contributing nothing. A name or a value that does not read as one member is
+quoted, so one member cannot carry another's text: `"a=b": "c"` spells `"a=b"=c`, which is
+not the `a=b=c` that `"a": "b=c"` spells. Adding, removing or renaming any member is
+therefore a B6 change, and a permission that stayed put does not make a moved feature
+not-a-change. A
 pair is exact over that spelling: the reference allowance above covers a widening where
 neither side names a feature, and a transition that also moves a feature needs its own
 reviewed pair with the feature spelled on both sides — which the refusal prints, because
@@ -76,9 +79,12 @@ onto a list of key names cannot say what a door is once the door carries a plan 
 never learned to read.
 **Made reusable** — one standard-library-only comparator and golden helper, with
 independent fixtures and dependency enforcement in
-[check_packages.sh](../../scripts/check_packages.sh), and a mutation table over an
-authorization declaration — added, removed, renamed, reordered — that any composition can
-run its own golden through.
+[check_packages.sh](../../scripts/check_packages.sh). The mutation table over an
+authorization declaration — added, removed, renamed, reordered — is a pattern the
+[reference contract test](../../kit/wire/wire_test.go) shows rather than a table another
+tree can import: it lives in a `wire_test` test file, so a composition that wants it writes
+its own rows over its own golden, as the
+[reference caller](../../apps/platformkit/wire_compatibility_test.go) does.
 
 The application now keeps its renderer/setup and fixture inspection assertions;
 it delegates all compatibility decisions and both file update paths to this
