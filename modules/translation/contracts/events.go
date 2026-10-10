@@ -42,6 +42,20 @@ type Updated struct {
 	Revision   int64      `json:"revision"`
 	Translator uuid.UUID  `json:"translator,omitempty" format:"uuid"`
 	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
+
+	// Changes is what this write replaced, in the member names above: value,
+	// status and reviewedAt, each with the half it was and the half it became.
+	// It is the emitting module's half of "every audited change carries what
+	// changed" (kit/events/change.go), and the trail stores it verbatim, so a
+	// reader of the history of one paragraph's Portuguese sees the paragraph
+	// and not only the row that survived.
+	//
+	// hidden, and not readOnly: the sentence is kit/events/change.go's — no REST
+	// response body holds a diff, because the door sets it beside the publish and
+	// clears it after — and an event does carry it. The row itself is not what is
+	// diffed here: revision, translator and sourceHash describe the write, and a
+	// diff of them would be a fourth account of the same write.
+	Changes []events.Change `json:"changes,omitempty" hidden:"true"`
 }
 
 // Events is every event this module emits, for the manifest. kit/app refuses a

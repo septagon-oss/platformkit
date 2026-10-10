@@ -312,7 +312,7 @@ func (s *Service) Save(ctx context.Context, tx db.Tx[db.Tenant], q rest.SaveQuer
 				return err
 			}
 		}
-		if err := s.publish(ctx, tx, q.Module, q.Entity, q.RecordID, field, q.Locale, &next); err != nil {
+		if err := s.publish(ctx, tx, q.Module, q.Entity, q.RecordID, field, q.Locale, row, &next); err != nil {
 			return err
 		}
 	}
@@ -425,6 +425,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.Review
 			continue
 		}
 		reviewed := s.now()
+		prior := *row
 		row.ReviewedAt = &reviewed
 		row.Status = contracts.StatusOf(row.Origin, true, false)
 		row.Revision++
@@ -435,7 +436,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], q rest.Review
 		if err := s.rewrite(ctx, tx, row); err != nil {
 			return err
 		}
-		if err := s.publish(ctx, tx, row.Module, row.Entity, row.RecordID, row.Field, row.Locale, row); err != nil {
+		if err := s.publish(ctx, tx, row.Module, row.Entity, row.RecordID, row.Field, row.Locale, &prior, row); err != nil {
 			return err
 		}
 	}
@@ -561,7 +562,7 @@ func (s *Service) Untranslate(ctx context.Context, tx db.Tx[db.Tenant], q rest.R
 		removed := *row
 		removed.Status = rest.FallbackRemoved
 		removed.Revision = row.Revision + 1
-		if err := s.publish(ctx, tx, row.Module, row.Entity, row.RecordID, row.Field, row.Locale, &removed); err != nil {
+		if err := s.publish(ctx, tx, row.Module, row.Entity, row.RecordID, row.Field, row.Locale, row, &removed); err != nil {
 			return err
 		}
 	}
@@ -592,7 +593,7 @@ func (s *Service) ForgetRecord(ctx context.Context, tx db.Tx[db.Tenant], module,
 		removed := row
 		removed.Status = rest.FallbackRemoved
 		removed.Revision = row.Revision + 1
-		if err := s.publish(ctx, tx, module, entity, recordID, row.Field, row.Locale, &removed); err != nil {
+		if err := s.publish(ctx, tx, module, entity, recordID, row.Field, row.Locale, &row, &removed); err != nil {
 			return err
 		}
 	}
@@ -752,12 +753,50 @@ func (s *Service) judge(ctx context.Context, tx db.Tx[db.Tenant], q rest.Overvie
 // audit module directly: modules/audit subscribes to every declared event, so
 // emitting this one is what puts a row in the trail, with the actor, the
 // request id and the trace parent the envelope already carries.
-func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], module, entity string, recordID uuid.UUID, field, locale string, row *Row) error {
+func (s *Service) publish(ctx context.Context, tx db.Tx[db.Tenant], module, entity string, recordID uuid.UUID, field, locale string, before, row *Row) error {
+	changes, err := rowChanges(before, row)
+	if err != nil {
+		return err
+	}
 	return events.Publish(ctx, tx, contracts.EventUpdated, &contracts.Updated{
 		Module: module, Entity: entity, RecordID: recordID, Field: field, Locale: locale,
 		Value: row.Value, Status: row.Status, Origin: row.Origin, SourceHash: row.SourceHash,
 		Revision: row.Revision, Translator: row.TranslatorID, ReviewedAt: row.ReviewedAt,
+		Changes: changes,
 	})
+}
+
+// rowState is the three members of a translation row that carry its text and its
+// standing, named as contracts.Updated names them — value, status, reviewedAt —
+// because a diff whose names are the row's Go names is a history a reader cannot
+// join to the payload beside it.
+type rowState struct {
+	Value      string     `json:"value"`
+	Status     string     `json:"status"`
+	ReviewedAt *time.Time `json:"reviewedAt,omitempty"`
+}
+
+func stateOf(row *Row) *rowState {
+	if row == nil {
+		return nil
+	}
+	// A removed row holds no text. The copy a caller hands here is the row as it
+	// was a moment ago, and leaving that text in would report a paragraph
+	// surviving in a row the transaction has just deleted: the diff's after half
+	// is the empty string, and the status beside it says why.
+	if row.Status == rest.FallbackRemoved {
+		return &rowState{Status: row.Status}
+	}
+	return &rowState{Value: row.Value, Status: row.Status, ReviewedAt: row.ReviewedAt}
+}
+
+// rowChanges is one write's pair of halves, asked of kit/events' own diff so the
+// rules over there — json equality, a create with no before half, a name the type
+// does not carry refused rather than skipped — are one rule and not two.
+//
+// before is nil for a create, which is the only write with no halves to compare.
+func rowChanges(before, after *Row) ([]events.Change, error) {
+	return events.Changes(stateOf(before), stateOf(after), "value", "status", "reviewedAt")
 }
 
 // MarkOutdated is the other half of the same rule, and the half a source write
@@ -793,7 +832,7 @@ func (s *Service) MarkOutdated(ctx context.Context, tx db.Tx[db.Tenant], module,
 		}
 		marked := row
 		marked.Status = rest.FallbackOutdated
-		if err := s.publish(ctx, tx, module, entity, recordID, field, row.Locale, &marked); err != nil {
+		if err := s.publish(ctx, tx, module, entity, recordID, field, row.Locale, &row, &marked); err != nil {
 			return err
 		}
 	}
