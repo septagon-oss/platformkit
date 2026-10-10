@@ -74,10 +74,10 @@ with no field, face or permission the seed opened.
 
 `platformkit seed` is a command the operator runs against a database they already
 hold; it is not reachable from a tenant session, because nothing in this delivery
-listens on a port. It authenticates no caller of its own — the composition's own
-authorizer is the boundary — and the original trace's separate permit type and
-`--as` grant check beyond that authorizer are listed under Limits as undelivered
-rather than claimed.
+listens on a port. The kernel authenticates nobody — `kit/seed` asks the authorizer
+the composition resolved — while the command proves an operator the way a request is
+proved: a credential, `tenant:manage` in the installation tenant, and `--as` read as
+an active person of the target. The trace's separate permit type stays undelivered.
 
 
 ### Provisioning
