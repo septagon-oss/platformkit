@@ -805,7 +805,10 @@ echo 'test feedback: local selectors preserve fresh full checks in either goal o
 # than a count. The expected line below therefore carries `-timeout=30m` after the count leaves, and two
 # spaces where the count was, because make substitutes nothing for an empty $(TEST_COUNT) and leaves the
 # separator on both sides. The `test` goal's own line above is pinned the same way, with its gotestsum
-# options empty.
+# options empty. Both shapes of the race goal carry a clock of their own below, beside the count where
+# the Makefile writes it: a race suite that states no bound answers to go test's ten-minute default,
+# and CI runs 57644, 57686, 57718 and 57727 killed a working apps/platformkit that way. Losing that
+# clock is losing the run, so the two race patterns ask for it.
 if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
 	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
 	exit 1
@@ -820,8 +823,8 @@ case "$(race_commands -count=1 check-race)" in
 esac
 empty_race="$(race_commands '' check-race)"
 case "$empty_race" in
-	'go test -race '*'./apps/platformkit') ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
+	'go test -race '*'-timeout=30m '*'./apps/platformkit') ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race, its packages or its stated bound:\n%s\n' "$empty_race" >&2; exit 1 ;;
 esac
 if [[ "$empty_race" == *-count* ]]; then
 	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2

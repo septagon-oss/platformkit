@@ -361,7 +361,9 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
 # as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
 # directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
-# hold byte copies of the line that result, in CI's expansion and with the count emptied.
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
 	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
