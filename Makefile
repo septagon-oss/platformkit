@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down
+.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -249,6 +249,40 @@ check-rehearse: ## Apply this tree's pending migrations to a copy of the previou
 check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
 	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
 
+# The tiers decision 0088 rules, as goals beside `check` rather than as a narrowing of it.
+#
+# `check` stays what a pull request must pass and stays the sum of the tiers, byte for byte where
+# three scripts pin it; what changes is who runs it. A push runs `check-push`: the contracts and the
+# behaviour of the packages the diff reaches, and nothing that opens a database — the selector
+# refuses a selection that does, so the promise is structural rather than careful. A merge (a push
+# to main, which is where a pull request lands) runs `check`, which is the whole suite plus the
+# rehearsal, and the nightly runs the journeys and publishes the two reports the inventory's empty
+# `duration` and flake columns are waiting for.
+#
+# The figures, on this host at this revision: `make check` finishes 5 574 tests in 294 s of suite
+# plus the build, and the forge's median `check` job on main is 2 468 s (tests/inventory.json
+# summary.check_job_seconds_median, 13 samples). `make check-push` for a diff that touches one
+# package runs that package's cases and the same static lines: measured below in the commit that
+# wires it.
+check-test-inventory: ## Re-check tests/inventory.json against the tests the tree holds
+	./scripts/check_test_inventory.sh
+
+check-push: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+	./scripts/check_push_tier.sh
+
+check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+
+check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
+	$(MAKE) e2e
+	$(MAKE) mobile-e2e
+	$(MAKE) flakes
+
+# One selection, one runner: the list comes out of tests/inventory.json, which is the same table a
+# person ratified, so a package cannot be in the push tier by one rule and out of it by another.
+FLAKE_RUNS ?= 5
+flakes: ## Run the whole push tier FLAKE_RUNS times and print the per-test flake rate and the slowest tests
+	./scripts/check_flake_report.sh $(FLAKE_RUNS)
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -388,7 +422,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an

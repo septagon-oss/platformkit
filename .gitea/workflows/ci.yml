@@ -409,6 +409,14 @@ jobs:
       # A consumer's own CI refuses a pin that cannot name one
       # (scripts/PIN-REHEARSAL.md).
       - name: Migration rehearsal (make check-rehearse)
+        # The merge tier (0088). The rehearsal copies the previous release's
+        # database and applies this tree's pending migrations to it — the one gate
+        # here that needs a populated database rather than an empty one, and the
+        # push tier's promise is that it opens none. `make check-rehearse` is still
+        # a `check:` prerequisite, so nothing is lost by a pull request that does
+        # not reach it: the push to main that merges it runs `make check`, and
+        # `make check-merge` names the pair.
+        if: github.event_name != 'pull_request'
         env:
           REHEARSE_RECEIPT: ${{ runner.temp }}/rehearsal.json
         run: |
@@ -419,7 +427,24 @@ jobs:
         run: make check-apidiff
 
       - name: make check
+        if: github.event_name != 'pull_request'
         run: make check
+
+      # The push tier (decision 0088): the contracts, and the behaviour of the
+      # packages this diff reaches, with the selection read out of tests/inventory.json and refused
+      # if it reaches a package that opens a stack. A pull request that changes one package's
+      # formatter runs that package and not the 5 574-case suite: what it proves is the same, and
+      # what it waits for is a build rather than a database, a heavy slot and 40 minutes.
+      #
+      # This is not a narrower standard than `make check`: every line below and above the split —
+      # govulncheck, the browser journey, the budget verdict, the editor suite — still runs here,
+      # and the whole suite runs on the push to main that merges the pull request. `make check`
+      # remains the sum of the tiers, byte for byte where three scripts pin its suite line.
+      - name: Push tier (make check-push)
+        if: github.event_name == 'pull_request'
+        env:
+          PKIT_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: make check-push
 
       # Second, and load-bearing: the outbox, the request transaction, the advisory
       # locks over a tenant's administration, the limit counters and the router under
@@ -431,6 +456,7 @@ jobs:
       # are the Makefile's standing RACE_PACKAGES list, widened by the commit that put
       # advisory locks in modules/auth and modules/user.
       - name: make check-race
+        if: github.event_name != 'pull_request'
         run: make check-race
 
       - name: govulncheck
