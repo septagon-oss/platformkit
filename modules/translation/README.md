@@ -74,8 +74,9 @@ Portuguese, which nothing downstream would ever notice.
 
 ## Reads, writes, refusals
 
-These are the port's commands. Both doors exist in `kit/rest`; the module is
-composed by nothing yet, which is what Limits says plainly.
+These are the port's commands. Both doors exist in `kit/rest`, and the reference
+application composes this module beside the content Spec whose fields are tagged —
+what is not composed is the machine provider, which Limits names.
 
 | Door | What it does |
 | --- | --- |
@@ -174,7 +175,8 @@ fallback named in `_i18n`, `Content-Language` the tag asked for. Withheld from a
 public reader: anything a machine wrote that no person has reviewed — the source
 and a `withheld` status answer instead. The site's public page answers the same
 question through `rest.ServeTranslated` and names its alternates; the generated
-record screen shows each language's completeness and nothing beyond it.
+record screen shows each language's completeness and the word it is behind by, and
+nothing beyond that.
 
 ### The operator boundary
 
@@ -229,14 +231,36 @@ question it cannot answer from its own table" without importing that module; and
 `kit/richtext.Paragraphs` is the canonical block list any paragraph-aligned
 feature (compare, diff, chunk for search) now has one owner for.
 
+## Verification
+
+What decides this module's rules, in the order a change should re-run them:
+
+- `go test ./modules/translation/...` — `translationtest.RunService` over the fake
+  and the SQL service alike, the state derivation and the paragraph diff;
+- `go test ./kit/entity -count=1` — the fold from those counts to the one word a
+  record wears, and that the word and the share cannot disagree;
+- `go test ./kit/rest ./modules/web/internal ./ui/resource ./ui/screens -count=1` —
+  the doors, the one read behind them, and the strip that draws it;
+- `go test ./apps/platformkit -count=1` — the reference composition end to end: a
+  page published, translated, read in both languages, and withdrawn from badge,
+  public text and alternates when its source moves;
+- `make check` for everything above plus the architecture, budget and UI-layer gates.
+
+No browser journey walks a translator's flow, because no translator's flow exists
+yet; nothing here claims one ran.
+
 ## Limits
 
-- The translator's own screens are not delivered, with one number excepted: the
-  record screen of a translatable entity shows how much of the record exists in
-  each language besides the tenant's own (`rest.LocaleStates`, drawn by
-  `ui/resource`). The switcher, the side-by-side editor, the stale-field
-  highlight and the overview are still the next slice, and `Overview` exists for
-  them with nothing rendering it.
+- The translator's own screens are not delivered, with one badge strip excepted:
+  the record screen of a translatable entity shows how much of the record exists in
+  each language besides the tenant's own and names what that language is behind by —
+  `missing`, `outdated`, `machine` or `complete`, folded by `entity.LocaleState.State`
+  from the counts `rest.LocaleStates` reads, and drawn by `ui/resource`. The
+  switcher as a control, the side-by-side editor, the stale-field highlight and the
+  overview are still the next slice, and `Overview` exists for them with nothing
+  rendering it. Of the four words, `machine` is the one no installation in this
+  repository can currently reach: composing a `locale.Translator` is the door a
+  draft arrives through.
 - A tag that is asked for is honoured, and a reader who named none is negotiated
   for: `kit/rest`'s `negotiateLang` reads the workspace's `lang` cookie and the
   caller's own `Accept-Language`, `ui/page` hands the site's pages the result and

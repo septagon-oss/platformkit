@@ -117,6 +117,13 @@ type recordText struct {
 	// language is in this record, which is a fact a reader is shown as the source
 	// and a translator is shown as nothing translated yet.
 	reviewed map[string]map[string]string
+	// held is, for each language, the fields that have a row and are not that
+	// language's own text, valued with the status the port answered: outdated for a
+	// source that moved under a reviewed translation, withheld for a machine draft
+	// nobody has read. A field with no row is absent, which is missing's answer, and
+	// the two tallies are what the record's switcher names its state with — a share
+	// says how far behind, these say in what way.
+	held map[string]map[string]string
 }
 
 // readRecordText lifts one record's source text and asks the port for it in every
@@ -150,7 +157,8 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 		return recordText{}, crud.ErrNotFound
 	}
 	rec := recordText{source: source, declared: declared, fields: src.Fields(), own: rows[0].Values,
-		reviewed: make(map[string]map[string]string, len(declared))}
+		reviewed: make(map[string]map[string]string, len(declared)),
+		held:     make(map[string]map[string]string, len(declared))}
 	rich := src.RichText()
 	for _, locale := range declared {
 		if locale == source {
@@ -168,12 +176,23 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 			continue
 		}
 		text := make(map[string]string, len(rec.fields))
+		held := make(map[string]string, len(rec.fields))
 		for _, name := range rec.fields {
 			f, ok := records[0].Fields[name]
-			if !ok || f.Status != "" {
+			if !ok {
+				continue
+			}
+			if f.Status != "" {
+				held[name] = f.Status
 				continue
 			}
 			text[name] = f.Value
+		}
+		// Both halves are kept whatever the record is reviewed in: a language with
+		// nothing servable still has a state to name, and the rows it holds are the
+		// difference between a translation nobody started and one that went stale.
+		if len(held) > 0 {
+			rec.held[locale] = held
 		}
 		if len(text) == 0 {
 			continue
@@ -246,6 +265,12 @@ func ServeTranslated(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSo
 // answered with zero and not with silence, because an untranslated language is the
 // case the badge exists to point at.
 //
+// Behind and Drafted come from the same answer as Reviewed — the withheld machine
+// draft and the row whose source moved are both reads this function already made —
+// so the state word a record wears and the text a reader is served cannot disagree
+// about which rows exist. What is not in any of the three counts is a field with no
+// row, which is the state called missing.
+//
 // It is the read the generated record screen makes for itself: the same rows, the
 // same withholding and the same staleness rule the public read answers with, so a
 // screen cannot report a translation a public reader would never be given.
@@ -260,8 +285,20 @@ func LocaleStates(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSourc
 		if locale == rec.source {
 			continue
 		}
-		out = append(out, entity.LocaleState{Locale: locale, Reviewed: len(rec.reviewed[locale]),
-			Fields: len(rec.fields)})
+		state := entity.LocaleState{Locale: locale, Reviewed: len(rec.reviewed[locale]),
+			Fields: len(rec.fields)}
+		for _, status := range rec.held[locale] {
+			switch status {
+			case FallbackOutdated:
+				state.Behind++
+			case FallbackMachine, FallbackWithheld:
+				// A withheld row is by definition an unreviewed machine draft seen from a
+				// public door, which is the door this read asks through: the withholding
+				// is the reason the draft is invisible, not a third kind of row.
+				state.Drafted++
+			}
+		}
+		out = append(out, state)
 	}
 	return out, nil
 }

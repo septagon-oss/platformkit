@@ -34,8 +34,25 @@ type Fallback struct {
 	Status string `json:"status"`
 }
 
+// The four words one language's standing on one record can be named by — the
+// closed set of LocaleState.State, and the set a record's locale switcher wears.
+// They are the per-field states of Fallback folded up to the record: three of them
+// are those same words, because a record is behind by the state its worst field is
+// in. LocaleComplete is the fourth, and the only one a per-field vocabulary has no
+// word for.
+const (
+	LocaleMissing  = "missing"
+	LocaleOutdated = "outdated"
+	LocaleMachine  = "machine"
+	// LocaleComplete is every field this language's own. It is not spelled with one
+	// of the five Fallback states because it is not a statement about a field: no
+	// field fell back, which is the one standing a fallback constant cannot name.
+	LocaleComplete = "complete"
+)
+
 // LocaleState is one language's standing on one record: how many of its
-// translatable fields the record is reviewed in, out of how many it has.
+// translatable fields the record is reviewed in, out of how many it has, and what
+// stands in the way of the rest.
 //
 // It carries the two numbers rather than a percentage because they answer
 // different questions: "8 of 9" names the field a translator still owes, and any
@@ -43,6 +60,12 @@ type Fallback struct {
 // so that language is never behind and is never answered here at all — a badge
 // saying the source is 100% translated is a badge that can never be wrong, which is
 // the same thing as a badge that says nothing.
+//
+// A share alone cannot say *why* it is short, and the two shortfalls a translator
+// can act on are different jobs: Behind is reviewed text the source moved under,
+// which nobody wrote and everybody trusted, and Drafted is a machine's answer
+// nobody has read. A percentage that counts both as "not 100" makes the first look
+// like the second, which is the reason State exists beside Percent.
 type LocaleState struct {
 	// Locale is the tag as this tenant declared it.
 	Locale string `json:"locale"`
@@ -50,8 +73,41 @@ type LocaleState struct {
 	// be served in this language: reviewed, and measured against a source that
 	// still matches. A machine draft nobody signed off is not one.
 	Reviewed int `json:"reviewed"`
+	// Behind counts the fields whose translation exists, was reviewed, and has a
+	// source that no longer matches it. It is not counted in Reviewed.
+	Behind int `json:"behind"`
+	// Drafted counts the fields whose only text is a machine draft no person has
+	// reviewed. It is not counted in Reviewed.
+	Drafted int `json:"drafted"`
 	// Fields is how many translatable fields the record has at all.
 	Fields int `json:"fields"`
+}
+
+// State is the word this language is behind by, which is the one thing Percent
+// cannot say. The order is the urgency rather than a tally:
+//
+//   - LocaleComplete: every field is this language's own. A record with no
+//     translatable field is complete in every language, which is the same answer
+//     Percent gives and the only case where that claim is not a lie;
+//   - LocaleOutdated: a field a person already reviewed has a source that moved
+//     under it. This outranks the two below because it is the shortfall that
+//     arrived by itself — nobody had to open the record for it to exist — and the
+//     one a public reader is being kept away from while the workspace still quotes
+//     the number it used to be;
+//   - LocaleMachine: nothing is stale, but some field has only a draft nobody read;
+//   - LocaleMissing: what is short is a field with no row at all — the outstanding
+//     work a switcher points a translator at.
+func (l LocaleState) State() string {
+	switch {
+	case l.Reviewed >= l.Fields:
+		return LocaleComplete
+	case l.Behind > 0:
+		return LocaleOutdated
+	case l.Drafted > 0:
+		return LocaleMachine
+	default:
+		return LocaleMissing
+	}
 }
 
 // Percent is the reviewed share of this record in this language — the number a

@@ -398,13 +398,22 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 }
 
 // localeStrip is the record's translation standing: one badge per language this
-// tenant speaks besides its own, each saying how much of this record exists in it.
+// tenant speaks besides its own, each naming how much of this record exists in it
+// and what it is behind by.
 //
 // It is the first thing a translator needs on a record — what is reviewed and what
 // somebody still owes — and the numbers come from the same read a public page
 // answers with, so the badge cannot report a translation a reader would never be
 // served. A language nobody has touched reads 0% rather than disappearing: the
 // language that needs work is the one worth naming.
+//
+// The word beside the number is the point of the badge. "50%" asks the reader to
+// work out whether somebody owes a first translation or owes a second look at one
+// that went stale, and those are different jobs; "50% · Outdated" answers it. The
+// tone stays the one the strip has always worn — success when the language is whole,
+// warning when it is not — because the word, not the colour, carries which of the
+// two it is, and a badge that meant "stale" one release and "never started" the
+// next by colour alone would be a colour doing a word's work.
 //
 // Nothing at all when there is no language to report — an entity with no
 // translatable field, or a tenant served in one language — because a badge about a
@@ -421,8 +430,9 @@ func localeStrip(locales []entity.LocaleState) g.Node {
 			tone = "success"
 		}
 		badges = append(badges, components.Badge(components.BadgeProps{
-			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "%",
-			Tone:  tone, Size: "sm",
+			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "% · " +
+				display.Humanize(state.State()),
+			Tone: tone, Size: "sm",
 		}))
 	}
 	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
