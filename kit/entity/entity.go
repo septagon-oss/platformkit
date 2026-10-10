@@ -81,6 +81,12 @@ type LocaleState struct {
 	Drafted int `json:"drafted"`
 	// Fields is how many translatable fields the record has at all.
 	Fields int `json:"fields"`
+	// Revisions is each field's translation revision as this read made it, keyed
+	// by field name; a field with no row is absent, which is the revision a first
+	// translation expects. It is here because the screen that shows a translator
+	// what is owed is the screen that holds what is stored, and a write door that
+	// cannot be told "I read revision 3" is a write door that overwrites blind.
+	Revisions map[string]int64 `json:"revisions,omitempty"`
 }
 
 // State is the word this language is behind by, which is the one thing Percent

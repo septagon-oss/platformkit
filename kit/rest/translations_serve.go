@@ -124,6 +124,11 @@ type recordText struct {
 	// the two tallies are what the record's switcher names its state with — a share
 	// says how far behind, these say in what way.
 	held map[string]map[string]string
+	// revisions is, for each language, the revision of every field that has a row,
+	// including the held ones — a stale translation is the text a translator is
+	// about to correct, and the number that lets them save it. A field with no row
+	// is absent, which is the revision a first translation expects: 0.
+	revisions map[string]map[string]int64
 }
 
 // readRecordText lifts one record's source text and asks the port for it in every
@@ -157,8 +162,9 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 		return recordText{}, crud.ErrNotFound
 	}
 	rec := recordText{source: source, declared: declared, fields: src.Fields(), own: rows[0].Values,
-		reviewed: make(map[string]map[string]string, len(declared)),
-		held:     make(map[string]map[string]string, len(declared))}
+		reviewed:  make(map[string]map[string]string, len(declared)),
+		held:      make(map[string]map[string]string, len(declared)),
+		revisions: make(map[string]map[string]int64, len(declared))}
 	rich := src.RichText()
 	for _, locale := range declared {
 		if locale == source {
@@ -177,11 +183,13 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 		}
 		text := make(map[string]string, len(rec.fields))
 		held := make(map[string]string, len(rec.fields))
+		revs := make(map[string]int64, len(rec.fields))
 		for _, name := range rec.fields {
 			f, ok := records[0].Fields[name]
 			if !ok {
 				continue
 			}
+			revs[name] = f.Revision
 			if f.Status != "" {
 				held[name] = f.Status
 				continue
@@ -193,6 +201,12 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 		// difference between a translation nobody started and one that went stale.
 		if len(held) > 0 {
 			rec.held[locale] = held
+		}
+		if len(revs) > 0 {
+			rec.revisions[locale] = revs
+		}
+		if len(revs) > 0 {
+			rec.revisions[locale] = revs
 		}
 		if len(text) == 0 {
 			continue
@@ -286,7 +300,7 @@ func LocaleStates(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSourc
 			continue
 		}
 		state := entity.LocaleState{Locale: locale, Reviewed: len(rec.reviewed[locale]),
-			Fields: len(rec.fields)}
+			Fields: len(rec.fields), Revisions: rec.revisions[locale]}
 		for _, status := range rec.held[locale] {
 			switch status {
 			case FallbackOutdated:

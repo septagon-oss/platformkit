@@ -245,6 +245,32 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 		if slices.Contains(refuse, f.Name) {
 			continue
 		}
+		if f.Type == crud.TypeMap {
+			// A map argument arrives as one control per declared key — `values[title]`.
+			// A key posted blank is a key left out of the body rather than one written
+			// blank: a translation of nothing is a refusal, and the person who left six
+			// boxes empty meant to do none of them.
+			keyed := map[string]any{}
+			for _, k := range f.Keys {
+				raw, sent := form[f.Name+"["+k.Name+"]"]
+				if !sent {
+					continue
+				}
+				text := strings.TrimSpace(raw[0])
+				if text == "" {
+					continue
+				}
+				typed, err := coerce(crud.Field{Name: f.Name + " " + k.Name, Type: f.Elem}, text)
+				if err != nil {
+					return nil, err
+				}
+				keyed[k.Name] = typed
+			}
+			if len(keyed) > 0 {
+				out[f.Name] = keyed
+			}
+			continue
+		}
 		raw, sent := form[f.Name]
 		if f.Type == crud.TypeBool {
 			// An unticked checkbox sends nothing at all, which is the one case

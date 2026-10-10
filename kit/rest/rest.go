@@ -15,6 +15,7 @@
 package rest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -662,6 +663,19 @@ type CommandOptions struct {
 	// second permission every tenant would have to grant to every shopper.
 	Auth httpx.Auth
 
+	// MapArgs declares, by argument name, the map-valued arguments the schema
+	// derives no field for — because a map column belongs to no screen and no
+	// filter, so `derive` leaves maps out of a struct altogether.
+	//
+	// A command that takes one value per field of the record it acts on therefore
+	// arrives at the catalog and at every generated form with *nothing* beside its
+	// language: `translate` offers a `values` map keyed by field name, and no
+	// reading of `map[string]string` can learn that this entity has a title and a
+	// body. Declaring the argument is what turns a form that can only refuse an
+	// editor into one that offers a box per field. A name that is no map argument
+	// of this command refuses to mount.
+	MapArgs map[string]crud.MapArg
+
 	// Collection mounts the command on the collection rather than on a row —
 	// POST {Path}/{verb} — and run is handed uuid.Nil.
 	//
@@ -744,6 +758,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
+	fields, err := declareMapArgs(reflect.TypeFor[I](), fields, opts.MapArgs)
+	if err != nil {
+		panic("rest: " + err.Error())
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -790,6 +808,67 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
 		return answer(ctx, tx, in.ID, in.Body)
 	}, OperationOptions{})
+}
+
+// declareMapArgs puts each declared map argument in beside the fields the schema
+// derived, in the order the argument struct declares them, and refuses a
+// declaration describing an argument that is not a map keyed by a string: a key
+// list beside an argument that would ignore it is the bug this option exists to
+// cure, and a mount-time refusal is the only answer that cannot ship.
+func declareMapArgs(in reflect.Type, fields []crud.Field, args map[string]crud.MapArg) ([]crud.Field, error) {
+	if len(args) == 0 {
+		return fields, nil
+	}
+	if in.Kind() == reflect.Pointer {
+		in = in.Elem()
+	}
+	seen := map[string]bool{}
+	for _, sf := range reflect.VisibleFields(in) {
+		declared, ok := args[jsonNameOf(sf)]
+		if !ok {
+			continue
+		}
+		seen[jsonNameOf(sf)] = true
+		t := sf.Type
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		if t.Kind() != reflect.Map || t.Key().Kind() != reflect.String {
+			return nil, fmt.Errorf("command argument %q is declared as a map of %s and is %s",
+				jsonNameOf(sf), declared.Elem, sf.Type)
+		}
+		fields = append(fields, crud.Field{
+			Name: jsonNameOf(sf), Type: crud.TypeMap, Elem: declared.Elem,
+			Doc: cmp.Or(declared.Doc, sf.Tag.Get("doc")), Keys: slices.Clone(declared.Keys),
+			Index: sf.Index,
+		})
+	}
+	if len(args) > 0 {
+		leftover := make([]string, 0, len(args))
+		for name := range args {
+			if !seen[name] {
+				leftover = append(leftover, name)
+			}
+		}
+		if len(leftover) == 0 {
+			return fields, nil
+		}
+		slices.Sort(leftover)
+		return nil, fmt.Errorf("command declares map arguments %s and takes none of them",
+			strings.Join(leftover, ", "))
+	}
+	return fields, nil
+}
+
+// jsonNameOf is the name a struct field is addressed by, which is its json tag and
+// otherwise its Go name — the same rule entity/jsonName reads, asked of a field
+// that is deliberately absent from the derived schema.
+func jsonNameOf(sf reflect.StructField) string {
+	name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+	if name == "" {
+		return sf.Name
+	}
+	return name
 }
 
 // commandInput is a command's path id and its body. The body is a pointer

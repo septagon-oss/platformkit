@@ -21,6 +21,14 @@ const (
 	TypeTime   = entity.TypeTime
 	TypeUUID   = entity.TypeUUID
 	TypeList   = entity.TypeList
+	TypeMap    = entity.TypeMap
+)
+
+// MapKey is one key a map-valued command argument takes, and MapArg is that
+// argument as its owner declares it.
+type (
+	MapKey = entity.MapKey
+	MapArg = entity.MapArg
 )
 
 // Field is the existing entity metadata, shared with kit/entity consumers.

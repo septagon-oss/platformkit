@@ -210,7 +210,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, r.Commands, item, false)...)
+	body = append(body, commandFormsIn(o, r.Commands, item, false, locales)...)
 	return document.View{Title: named, Body: body}
 }
 

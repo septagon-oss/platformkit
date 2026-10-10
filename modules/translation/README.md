@@ -243,7 +243,9 @@ What decides this module's rules, in the order a change should re-run them:
   the doors, the one read behind them, and the strip that draws it;
 - `go test ./apps/platformkit -count=1` — the reference composition end to end: a
   page published, translated, read in both languages, and withdrawn from badge,
-  public text and alternates when its source moves;
+  public text and alternates when its source moves, and the record's own form posted
+  as a browser posts it — the typed field saved, the same body refused a second time
+  as a stale revision, and the refused save left one copy of the text;
 - `make check` for everything above plus the architecture, budget and UI-layer gates.
 
 No browser journey walks a translator's flow, because no translator's flow exists
@@ -251,14 +253,21 @@ yet; nothing here claims one ran.
 
 ## Limits
 
-- The translator's own screens are not delivered, with one badge strip excepted:
-  the record screen of a translatable entity shows how much of the record exists in
-  each language besides the tenant's own and names what that language is behind by —
-  `missing`, `outdated`, `machine` or `complete`, folded by `entity.LocaleState.State`
-  from the counts `rest.LocaleStates` reads, and drawn by `ui/resource`. The
-  switcher as a control, the side-by-side editor, the stale-field highlight and the
-  overview are still the next slice, and `Overview` exists for them with nothing
-  rendering it. Of the four words, `machine` is the one no installation in this
+- The translator's own screens are not delivered, with the record screen excepted: it
+  shows how much of the record exists in each language besides the tenant's own and names
+  what that language is behind by — `missing`, `outdated`, `machine` or `complete`, folded
+  by `entity.LocaleState.State` from the counts `rest.LocaleStates` reads — and its
+  translate form asks for one box per translatable field, in that language, carrying the
+  revision the screen read as `expected[<field>]` so the save is the optimistic check and
+  not a blind overwrite. The form arrives at `POST …/translate` with the record's own
+  field names in it because the command declares its map arguments (`CommandOptions.MapArgs`,
+  `entity.MapArg`): a `map[string]string` says "text, keyed by a string" and can never say
+  that this entity has a title and a body, so a form built from the derived schema alone
+  offered a language and no text — a door that could only refuse the person who walked
+  through it. An empty box writes nothing for that field, which is why the boxes start
+  empty: what the editor did not retype is left exactly as it was, and the current text
+  beside the source — the side-by-side editor, with its stale-field highlight — is still
+  the next slice, with `Overview` there for it and nothing rendering it. Of the four words, `machine` is the one no installation in this
   repository can currently reach: composing a `locale.Translator` is the door a
   draft arrives through.
 - A tag that is asked for is honoured, and a reader who named none is negotiated

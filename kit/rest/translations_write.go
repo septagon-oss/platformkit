@@ -38,6 +38,8 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 )
@@ -81,13 +83,18 @@ type translationFieldsBody struct {
 // promised an event it does not itself publish is the lie the boot gate exists to
 // catch.
 func (s Spec[T]) mountTranslationDoors(surfaces httpx.Surfaces) {
+	rich := (&specSource[T]{spec: s}).RichText()
+	values, expected := s.translationKeys(rich)
 	Command(surfaces, s, "translate",
 		"Translate a "+s.Entity,
 		"Writes this language's text of the named fields, stamped as typed by a person. The record's own fields are untouched.",
 		nil,
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in translateBody) (T, error) {
 			return s.translateRow(ctx, tx, id, in)
-		}, CommandOptions{})
+		}, CommandOptions{MapArgs: map[string]crud.MapArg{
+			"values":   {Elem: crud.TypeString, Keys: values},
+			"expected": {Elem: crud.TypeInt, Keys: expected},
+		}})
 	Command(surfaces, s, "review-translation",
 		"Mark a "+s.Entity+"'s translation reviewed",
 		"Names the fields a person has checked against the source. A field whose source has moved since it was translated is refused.",
@@ -149,6 +156,36 @@ func (s Spec[T]) translationDoor(ctx context.Context, tx db.Tx[db.Tenant], id uu
 			crud.ErrInvalid, lang, s.Entity)
 	}
 	return e, src, nil
+}
+
+// translationKeys declares the keys the translate body's two maps take: one per
+// field this entity says in another language, in the order its own schema
+// declares them.
+//
+// Nothing else could. `Values map[string]string` says "text, keyed by a string"
+// and no reflection over that type can ever learn that this entity has a title
+// and a body — so the argument's schema, derived from the Go type, offered a
+// shell a map with no keys, which is a form with nothing to fill in and a person
+// who can only watch it refuse them. The keys come from the entity instead,
+// beside the one fact a form needs from the field's own schema: a richtext body
+// is typed into a prose box and a title into a line.
+//
+// `Expected` carries the same keys as hidden revision carriers, because a form
+// that cannot say which revision it read is a form whose every second save is a
+// lost update or a 409 — and the screen does know: it read each field's revision
+// to draw the record at all (see entity.LocaleState.Revisions).
+func (s Spec[T]) translationKeys(rich map[string]bool) (values, expected []crud.MapKey) {
+	for _, f := range translatableFields[T]() {
+		widget := "text"
+		if rich[f.Name] {
+			widget = "textarea"
+		}
+		values = append(values, crud.MapKey{Name: f.Name, Label: display.FieldLabel(f), Widget: widget})
+		expected = append(expected, crud.MapKey{
+			Name: f.Name, Label: display.FieldLabel(f), Widget: "hidden", From: entity.KeyFromRevision,
+		})
+	}
+	return values, expected
 }
 
 func (s Spec[T]) translateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in translateBody) (T, error) {
