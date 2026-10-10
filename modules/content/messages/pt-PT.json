@@ -3,9 +3,9 @@
     "references": [
       "modules/content/module.go"
     ],
-    "translation": "Ela deixa de ser exibida. Você pode publicá-la de novo mais tarde.",
+    "translation": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde.",
     "plural": {
-      "": "Ela deixa de ser exibida. Você pode publicá-la de novo mais tarde."
+      "": "Deixa de ser exibida. Pode voltar a publicá-la mais tarde."
     }
   },
   "hints.content/content.command.archive.confirmation.confirmLabel": {
