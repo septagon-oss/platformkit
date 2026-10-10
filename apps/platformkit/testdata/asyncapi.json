@@ -3237,6 +3237,22 @@
           "name": "translation.updated",
           "payload": {
             "properties": {
+              "changes": {
+                "items": {
+                  "properties": {
+                    "after": {},
+                    "before": {},
+                    "field": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
               "entity": {
                 "type": "string"
               },
