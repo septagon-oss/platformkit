@@ -28,6 +28,17 @@
       ]
     },
     {
+      "name": "seed",
+      "contributes": [
+        {
+          "contract": "tenantcontracts.Hook",
+          "to": [
+            "tenant"
+          ]
+        }
+      ]
+    },
+    {
       "name": "user",
       "provides": [
         "usercontracts.Service",
@@ -91,13 +102,15 @@
         {
           "contract": "tenantcontracts.Hook",
           "from": [
-            "product"
+            "product",
+            "seed"
           ]
         }
       ],
       "after": [
         "product",
-        "user"
+        "user",
+        "seed"
       ],
       "reads": [
         "config.NATS",
