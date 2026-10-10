@@ -426,6 +426,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
+	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
+	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
+	# default when the same recipe loses it. A bound that stops at the recipe would satisfy all three
+	# guards above and still leave the suite answering to a clock nobody chose, which is the failure this
+	# repository already paid for once. Half a second, nothing compiled, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
