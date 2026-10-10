@@ -84,11 +84,13 @@ func required2(component map[string]any) []string { return wireStringList(compon
 // for a `reference`: a hint naming a module this installation did not compose is
 // a composition mistake, and the served catalogue is where it would be published.
 func TestEveryDeclaredReferenceResolvesInTheReferenceComposition(t *testing.T) {
-	// The composition's own boot runs rest.CheckReferences over exactly the
-	// resources it registered — see fault.go's workspaceCatalog — so a product
-	// that started is a product whose references resolve. What is asserted here
-	// is the gate itself, both ways, because "nothing was declared" is the shape
-	// a vacuous pass hides behind.
+	// The reference gate runs once per composition, at the first build of the
+	// document — see fault.go's referenceGate for why the answer is remembered per
+	// mount and not per process, and TestADanglingReferenceRefusesItsOwnComposition
+	// FirstDocument for the refusal itself. So a product that serves a document is
+	// a product whose references resolve. What is asserted here is the gate itself,
+	// both ways, because "nothing was declared" is the shape a vacuous pass hides
+	// behind.
 	resources := []httpx.Resource{
 		{Module: "task", Entity: "task", Schema: entity.Schema{Fields: []entity.Field{
 			{Name: "assigneeId", Type: entity.TypeUUID,
@@ -112,5 +114,25 @@ func TestEveryDeclaredReferenceResolvesInTheReferenceComposition(t *testing.T) {
 		if !strings.Contains(bad, needle) {
 			t.Errorf("the refusal does not name %q: %s", needle, bad)
 		}
+	}
+	// The same question asked of the declarations this application actually ships,
+	// not of a pair written here: `assigneeId` and `author` reach for `user/user`,
+	// and the logo field deliberately reaches for nothing (its target, `file/file`,
+	// is a resource no composition registers). Counted, because "they all resolve"
+	// is worth nothing if nothing was declared.
+	real := referenceResources(t)
+	declared := 0
+	for _, r := range real {
+		for _, f := range r.Schema.Fields {
+			if f.Presentation.Reference != nil {
+				declared++
+			}
+		}
+	}
+	if declared == 0 {
+		t.Fatal("the reference composition declares no `reference:` at all, so the gate above checks nothing here")
+	}
+	if bad := rest.CheckReferences(real); bad != "" {
+		t.Errorf("the reference composition's own declarations do not resolve: %s", bad)
 	}
 }

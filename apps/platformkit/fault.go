@@ -167,6 +167,16 @@ func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 // carried on the call, so the OpenAPI document names the fields a shell parses
 // rather than an empty object — see app.WorkspaceCatalogRoute.
 func workspaceCatalog() func(api *httpx.API) {
+	// The gate is built here, one per composition, and not at file scope: see
+	// referenceGate.
+	return app.WorkspaceCatalogRoute(documentBuilder(new(referenceGate)))
+}
+
+// documentBuilder is the body of that mount: the same catalogues read once, the
+// same gate, and the resources the request's caller may reach. It is a function
+// of its gate because the one thing about this handler that is not a translation
+// is a refusal, and a refusal nobody can call is a refusal nobody tests.
+func documentBuilder(gate *referenceGate) func(context.Context, []httpx.Resource) (*screens.Catalog, error) {
 	// The catalogues this composition answers in. The document is read by a shell
 	// that is not a browser, and every word in it is one a person will read, so it
 	// is negotiated the same way the page beside it is — the request's own
@@ -175,7 +185,7 @@ func workspaceCatalog() func(api *httpx.API) {
 	// would answer a pt-only tenant in English from this address while the screen
 	// one click away spoke Portuguese.
 	messages := catalogues()
-	mount := app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+	return func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
 		// A reading hint that names a module this installation did not compose is
 		// a composition mistake rather than a module's, and the document is the
 		// thing the promise is made in, so the check is made once, here, against
@@ -184,14 +194,14 @@ func workspaceCatalog() func(api *httpx.API) {
 		// see one made after the mount: a worker process registers only the
 		// resources its jobs read, so the list standing at boot is not the list a
 		// shell would be served — which is why this rides the first build of the
-		// document rather than the mount.
-		checked.Do(func() {
-			if bad := rest.CheckReferences(resources); bad != "" {
-				referenceFault = errors.New("apps/platformkit: " + bad)
-			}
-		})
-		if referenceFault != nil {
-			return nil, referenceFault
+		// document rather than the mount. What the answer costs is the document
+		// and nothing else: every entry in it is a reference a shell would follow,
+		// so the composition that cannot answer the question refuses to publish an
+		// answer rather than publishing a half of one. Boot stays up: every route
+		// this process mounted resolves its own references at its own mount, and
+		// the document is the only thing this refusal can name.
+		if err := gate.check(resources); err != nil {
+			return nil, err
 		}
 		var preferences []string
 		if r, ok := httpx.RequestFrom(ctx); ok {
@@ -208,17 +218,35 @@ func workspaceCatalog() func(api *httpx.API) {
 		}
 		document := screens.DescribeLanguage(ctx, resources, text)
 		return &document, nil
-	})
-	return mount
+	}
 }
 
-// checked and err are the reference gate's once-and-its-result: the question is
-// about the composition, which does not change after boot, and asking it per
-// request would be a walk of every schema on somebody's page load.
-var (
-	checked        sync.Once
-	referenceFault error
-)
+// referenceGate is the reference check's once-and-its-result. The once is there
+// because the question is about the composition, which does not change after
+// boot, and asking it per request would be a walk of every schema on somebody's
+// page load. It is held by one mount rather than by the process because a
+// process composes several applications — every test binary in this repository
+// boots the reference composition more than once — and a process-wide once lets
+// the first build of a document decide for every later one: a second
+// composition's dangling reference would go unchecked, and a correct
+// composition behind a broken one would serve nothing but 500s. The question
+// each composition asks is about the list *it* registered.
+type referenceGate struct {
+	once  sync.Once
+	fault error
+}
+
+// check asks the question the first time it is called and remembers the answer.
+// sync.Once is the synchronisation: a reader here is a goroutine that has just
+// returned from Do, which happens after the answer was written.
+func (g *referenceGate) check(resources []httpx.Resource) error {
+	g.once.Do(func() {
+		if bad := rest.CheckReferences(resources); bad != "" {
+			g.fault = errors.New("apps/platformkit: " + bad)
+		}
+	})
+	return g.fault
+}
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once
