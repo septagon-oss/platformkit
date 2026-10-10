@@ -1,28 +1,28 @@
 # Test inventory and verdicts — platformkit (decision 0088)
 
-One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2315 rows over 1008 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
+One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2321 rows over 1011 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
 
 ## Scale
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2315 | one per Go test function, Playwright test, Maestro flow, pin script |
-| files | 1008 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*` |
-| Go test functions | 2226 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 2321 | one per Go test function, Playwright test, Maestro flow, pin script |
+| files | 1011 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*` |
+| Go test functions | 2231 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 214 | filename prefix |
 | rows inside them | 346 | same walk |
-| Playwright specs / Maestro flows / `scripts/` pins | 53 / 1 / 35 | same walk |
+| Playwright specs / Maestro flows / `scripts/` pins | 53 / 1 / 36 | same walk |
 
 ## Layers and tiers
 
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 19 | push, first | asserts a golden or the published API set |
-| behaviour | 2087 | push or merge | one package's rules; push when the package opens no stack |
-| composition | 155 | merge | package `main` of the reference app: it boots the composition |
+| behaviour | 2091 | push or merge | one package's rules; push when the package opens no stack |
+| composition | 157 | merge | package `main` of the reference app: it boots the composition |
 | journey | 54 | nightly | `e2e/`: browser or device |
 
-Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 834 rows sit in packages that open nothing, 1427 in packages that do, 54 in the browser.
+Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 835 rows sit in packages that open nothing, 1432 in packages that do, 54 in the browser.
 
 Wall clock today, read from the forge: the `check` job of the last 13 completed runs on main (runs 408–578) — median 2468s, p90 2718s, slowest 3070s. Per-package timings exist for 17 packages only, because no CI step writes gotestsum's JSON report today (`Makefile:90-92` names the file in a comment and nothing writes it): the `duration` column is therefore empty per test, and wiring that report is implement-deliverable 5.
 
@@ -44,7 +44,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 794 | 1969 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 797 | 1975 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 69 | 131 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 145 | 215 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
@@ -123,18 +123,18 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 
 | rule | journey | status at this revision |
 |---|---|---|
-| a tenant this composition does not serve is refused | `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go` | new — `cross_tenant_proposal_test.go` proves row isolation inside a served tenant, not a tenant the plan refuses |
+| a tenant this composition does not serve is refused | `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go` | **written at this revision** — `cross_tenant_proposal_test.go` proved row isolation inside a served tenant; this walks the refusal and the working side of one door with two tenants in one installation |
 | a duplicate delivery is idempotent | `apps/platformkit/billing_the_same_period_charged_twice_takes_the_money_once_test.go` | new — `Idempotency` exists only in `modules/billing` (contracts + provider); the mounted app never presents the key twice |
 | a populated database upgrades | `make check-rehearse` (`scripts/rehearse_migrations.sh` + `scripts/testdata/rehearse/seed.sql`) | exists at the wrong tier: it is a `check:` prerequisite (`Makefile:372`), so it runs on every push instead of on merge |
-| a plan-gated door closes | `apps/platformkit/entitlement_a_feature_the_plan_does_not_open_closes_the_door_test.go` | new — composition-plan refusals exist (`composition_missing_module_names_its_needers_test.go`); nothing boots the app and watches the door refuse |
+| a plan-gated door closes | the last third of `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go` | one file, not two: the tenant that buys nothing is still refused at the door *after* its neighbour buys the plan that opens it, in the same boot — a second file would boot an installation to re-ask what this one answers |
 
 ## Ratchets this prune leaves behind
 
 | ratchet | today | measured by |
 |---|---|---|
-| round-named test files | 214 before the prune | new `scripts/check_round_named_count.sh`, ceiling = the post-prune count, `--write` lowers it, a rise refused outside a `build(budget):` commit |
+| round-named test files | 214 before the prune | `summary.round_named_ceiling` in `inventory.json`, re-checked by `scripts/check_test_inventory.sh`: `--write --ceiling N` lowers it, and a rise is refused by the same line that prints the count |
 | `go_test` lines | 134 204 against the 134 013 ceiling | `go run ./tools/locbudget --check` |
-| inventory rows | 2315 | `scripts/check_test_inventory.sh` re-derives them from the tree |
+| inventory rows | 2321 | `scripts/check_test_inventory.sh` re-derives them from the tree |
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 ## What CI re-checks, after the tiers
