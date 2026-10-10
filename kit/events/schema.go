@@ -153,14 +153,25 @@ func project(t reflect.Type) *Schema {
 			if name == "-" || !f.IsExported() {
 				continue
 			}
-			if f.Tag.Get("hidden") == "true" {
-				// hidden is huma's own tag, the one that keeps a member out of
-				// the OpenAPI document, and this projection honours it for the
-				// same reason: a machine-readable contract describes what
-				// crosses the boundary, and a member the kernel fills in on one
-				// read path is not part of the promise a publisher makes. It
-				// stays marshalled — encoding/json never reads this tag, so a
-				// payload that carries it is still accepted, because
+			if f.Tag.Get("hidden") == "true" && f.Tag.Get("readOnly") == "true" {
+				// The pair, and not hidden alone. hidden is huma's own tag, the
+				// one that keeps a member out of the OpenAPI document; readOnly
+				// is the one that says no caller's body ever writes it either.
+				// Together they name a member the kernel fills in on a read path
+				// — entity.Base's `_i18n` — which is text no publisher ever
+				// promises, and a projection that read only `json:` would put it
+				// into the payload schema of every event whose payload embeds an
+				// entity.
+				//
+				// hidden alone does not say that, and the diff member proves it:
+				// `changes` is hidden because no REST response body ever holds
+				// it (kit/events/change.go's Recorder), and the CRUD door does
+				// write it into the payload it publishes, so a projection that
+				// dropped every hidden member would take a promise the
+				// integration contract already makes. See hidden_field_test.go.
+				//
+				// What is skipped stays marshalled: encoding/json reads no such
+				// tag, so a payload that carries the member is still accepted —
 				// additionalProperties is open — it is simply not promised.
 				continue
 			}
