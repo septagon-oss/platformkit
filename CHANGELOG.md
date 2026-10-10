@@ -11,7 +11,9 @@ the feature out, so on a document whose only other member had moved, dropping a 
 adding one to a door that named none, or renaming one were accepted with zero breaks — and
 `UPDATE_GOLDEN=1` then rewrote the reviewed artefact over a plan gate the runtime still
 enforces. The identity is now the whole emitted declaration, spelled `kind`, `permission`,
-`feature`, then any other member by name, so all three are B6 refusals naming the operation
+`feature`, then any other member by name, with a name or a value that does not read as one
+member quoted so one member cannot be read as another pair, so all three are B6 refusals
+naming the operation
 and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
 `kind=any_credential`) covers no feature it does not spell on both sides. A pair written
 against a declaration with no feature keeps matching exactly what it matched, which is why
