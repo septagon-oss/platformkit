@@ -125,7 +125,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 |---|---|---|
 | a tenant this composition does not serve is refused | `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go` | **written at this revision** — `cross_tenant_proposal_test.go` proved row isolation inside a served tenant; this walks the refusal and the working side of one door with two tenants in one installation |
 | a duplicate delivery is idempotent | `apps/platformkit/billing_the_same_period_charged_twice_takes_the_money_once_test.go` | new — `Idempotency` exists only in `modules/billing` (contracts + provider); the mounted app never presents the key twice |
-| a populated database upgrades | `make check-rehearse` (`scripts/rehearse_migrations.sh` + `scripts/testdata/rehearse/seed.sql`) | exists at the wrong tier: it is a `check:` prerequisite (`Makefile:372`), so it runs on every push instead of on merge |
+| a populated database upgrades | `make check-rehearse` (`scripts/rehearse_migrations.sh` + `scripts/testdata/rehearse/seed.sql`), still a `check:` prerequisite and now one of `check-merge:` too | moved to the merge tier at this revision: the step in `.gitea/workflows/ci.yml` is gated `github.event_name != 'pull_request'`, so a push job runs no rehearsal and the push to main that merges runs it |
 | a plan-gated door closes | the last third of `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go` | one file, not two: the tenant that buys nothing is still refused at the door *after* its neighbour buys the plan that opens it, in the same boot — a second file would boot an installation to re-ask what this one answers |
 
 ## Ratchets this prune leaves behind
