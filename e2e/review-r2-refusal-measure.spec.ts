@@ -82,7 +82,18 @@ test('the page that says an access request was sent keeps its sentences to a rea
   const refusal = await person.goto('/app/task/tasks');
   expect(refusal?.status(), 'the member was not refused, so this journey has no start').toBe(403);
 
+  // The wait is on the ask door's own answer. The click POSTs, the door redirects,
+  // and the browser only names the new address once both have happened; on a busy
+  // runner the address it holds while it waits is the form's own. This case measured
+  // 24.0s in run 57108 where the base run (56924) measured 1.8s — the runner took on
+  // another run's whole `check` job at 01:25:35, and the server-bound cases in that
+  // window took 3.5–18× their idle time. So: wait for the answer, read that it is the
+  // redirect the door promises, then ask the browser where it landed.
+  const asked = person.waitForResponse(response =>
+    new URL(response.url()).pathname === '/app/access-request'
+      && response.request().method() === 'POST', { timeout: 30_000 });
   await person.locator('form[action="/app/access-request"] button[type="submit"]').click();
+  expect((await asked).status(), 'the ask did not redirect to its confirmation').toBe(303);
   await expect(person).toHaveURL(/\/app\/access-request\/sent$/);
 
   const wide = await wideLines(person);
