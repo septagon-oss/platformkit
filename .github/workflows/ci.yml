@@ -106,8 +106,20 @@ jobs:
           done
           echo "the mail catcher did not become available" >&2; docker logs mailpit; exit 1
 
+      # The tiers decision 0088 rules, mirrored from .gitea/workflows/ci.yml,
+      # which is the file this repository's runner executes: a pull request runs
+      # the tier that opens no stack, and the push that merges it runs the whole
+      # suite. `make check` is still the sum of the tiers, and its suite line is
+      # byte-pinned in the Makefile, so the two files differ in one condition.
       - name: make check
+        if: github.event_name != 'pull_request'
         run: make check
+
+      - name: Push tier (make check-push)
+        if: github.event_name == 'pull_request'
+        env:
+          PKIT_BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: make check-push
 
       # The dependencies, against the Go vulnerability database. It is a step
       # rather than a gate in the Makefile because it needs the network and a

@@ -1,0 +1,63 @@
+# The nightly tier of decision 0088: the reports no other tier can produce.
+#
+# tests/inventory.json carries a `duration` column and a flake column that say
+# `unmeasured`. They are not empty because nobody asked: no step in this
+# repository ever wrote the report those columns read, so the forge answers job
+# clocks and nothing finer, and "flaky" has meant "the job for a run that failed"
+# — which includes every run whose own change was broken. A repeated run of one
+# revision is the only thing that separates the two, and a repeated run of the
+# whole suite is not something to ask of a pull request.
+#
+# So it runs here, on a schedule, over the packages that open no stack — every
+# one of them, five times over, in one `go` invocation, with gotestsum's JSON
+# report under reports/ as the artifact a later inventory round re-reads.
+#
+# What is NOT here, said plainly: the browser and device journeys. 0088 puts them
+# in this tier, and they still run on the pull-request job in ci.yml, because
+# `make e2e` needs the Postgres, NATS, object store and mail catcher containers
+# that job starts by hand — named, labelled and swept, which is what
+# scripts/ci_container_leak_test.sh refuses a job for losing. Copying those steps
+# here is the change that moves the journeys; it is a copy of ~150 lines and its
+# own sweep step, and it is not something to write beside a first tier wiring.
+name: nightly
+
+on:
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  reports:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: pkit-ci-linux-amd64
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      # No database, no broker, no cache key: the selection this report runs is
+      # the tier that opens no stack, which is why a scheduled job can ask for it
+      # five times instead of queueing behind a heavy slot.
+      - name: Flake rate and slowest cases (make flakes)
+        run: make flakes FLAKE_RUNS=5
+
+      - name: The inventory, re-checked against this tree
+        run: make check-test-inventory
+
+      - name: The reports, in the job's own log
+        if: always()
+        run: |
+          ls -l reports/ 2>/dev/null || echo 'no reports/ directory: the run died before gotestsum wrote one'
+          head -c 4000 reports/push-tier.jsonl 2>/dev/null || true

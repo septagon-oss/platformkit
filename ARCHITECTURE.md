@@ -1311,9 +1311,14 @@ and a generated CRUD journey in a browser.
 [loc-budget.json](loc-budget.json) and
 [packages-budget.json](packages-budget.json) hold current ceilings. Do not copy
 their numbers into prose; run `make check-loc` and `make check-packages`.
-[The verification workflow](.gitea/workflows/ci.yml) is the one that runs: `make
-check`, then `make check-race`, `govulncheck`, the native editor and browser
-checks, `make e2e`, and the budget ratchet last. It is Gitea's because GitHub
+[The verification workflow](.gitea/workflows/ci.yml) is the one that runs, in the
+tiers decision 0088 rules: a pull request runs `make check-push` — the contracts
+and the behaviour of the packages its diff reaches, and nothing that opens a stack
+— and the push to main that merges it runs `make check-rehearse`, `make check` and
+`make check-race`, then `govulncheck`, the native editor and browser checks,
+`make e2e`, and the budget ratchet last. [`tests/inventory.json`](tests/inventory.json)
+is the table that says which case belongs to which tier, and
+`make check-test-inventory` refuses one the tree no longer answers. It is Gitea's because GitHub
 Actions is disabled for this repository; [the retained GitHub
 workflows](.github/workflows/ci.yml) copy its steps onto a runner destroyed with the job and do not run
 merely because their files exist, exactly as [RELEASE.md](RELEASE.md) says of the
