@@ -57,9 +57,9 @@
     "references": [
       "modules/billing/module.go"
     ],
-    "translation": "Faturamento",
+    "translation": "Faturação",
     "plural": {
-      "": "Faturamento"
+      "": "Faturação"
     }
   },
   "hints.billing/plan.plural": {
