@@ -2,7 +2,8 @@
 # The push tier's selection, run (decision 0088).
 #
 # Which packages a push runs is not a list somebody keeps: it is the packages the diff reaches —
-# directly or through `go list`'s dependency graph — that have a case and open no stack. The answer
+# directly, through `go list`'s dependency graph, or through the imports that exist only inside a
+# package's test binary — that have a case and open no stack. The answer
 # comes out of tests/inventory.json, the same table a person ratified, so a package cannot be in the
 # tier by the selector's rule and out of it by the table's column.
 #

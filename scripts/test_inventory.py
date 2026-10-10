@@ -504,8 +504,9 @@ def asked(cmd, where):
 
 def tier_selection(tier, base):
     """The packages the named tier runs, for the directories a diff reaches. Selection is a pure
-    function of the diff: `go list` gives the dependency graph, its inverse gives the consumers,
-    and a package with no test row is not scheduled. Push refuses a selection that opens a stack."""
+    function of the diff: `go list` gives the dependency graph, its inverse gives the consumers —
+    the packages that import a changed one and the packages whose test binary compiles it — and a
+    package with no test row is not scheduled. Push refuses a selection that opens a stack."""
     doc = load(os.path.join(root, "tests", "inventory.json"))
     pkgs = {}
     for r in doc["rows"]:
@@ -547,7 +548,14 @@ def tier_selection(tier, base):
     if code:
         return None, code
 
-    graph, code = asked(("go", "list", "-f", "{{.ImportPath}} {{join .Deps \" \"}}", "./..."), root)
+    # Three columns out of one `go list`: the production dependency graph, and the two columns of
+    # imports that exist only inside a package's test binary. `.Deps` is transitive, so one pass
+    # over it names every production consumer; `TestImports` (the `package foo` test files) and
+    # `XTestImports` (the `package foo_test` files beside them) are direct, and are read after that
+    # pass, against the set the pass completed.
+    graph, code = asked(("go", "list", "-f",
+                         "{{.ImportPath}}|{{join .Deps \" \"}}|{{join .TestImports \" \"}}|{{join .XTestImports \" \"}}",
+                         "./..."), root)
     if code:
         return None, code
     listing, code = asked(("go", "list", "-f", "{{.ImportPath}}|{{.Dir}}", "./..."), root)
@@ -562,11 +570,22 @@ def tier_selection(tier, base):
         # reached its consumer on a push (review 1, finding 1).
         import_dir[os.path.relpath(d, root)] = path
     reached = {import_dir[d] for d in dirs if d in import_dir}
+    tested = []
     for line in graph.splitlines():
-        name, _, deps = line.partition(" ")
+        name, _, rest = line.partition("|")
+        deps, _, test_deps = rest.partition("|")
+        internal, _, external = test_deps.partition("|")
+        tested.append((name, (internal + " " + external).split()))
         if any(dep in reached for dep in deps.split()):
             reached.add(name)
-    out = choose(reached)
+    # A package that compiles the change into its test binary consumes it, whether the test file
+    # sits in the package or in a `package foo_test` beside it — review 1 finding 1 reached only
+    # production importers, so a package with no test of its own could change, break the test that
+    # imports it, and leave the selector answering an empty list a caller read as "nothing to run".
+    # Nothing travels onward through these edges: a consumer of such a package compiles the package,
+    # not its test files, which is why `reached` is the set the production pass completed and the
+    # test columns are asked against it once, not folded into it.
+    out = choose(reached | {name for name, imports in tested if any(dep in reached for dep in imports)})
     code = opens_stack(out)
     if code:
         return None, code
