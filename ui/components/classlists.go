@@ -619,6 +619,18 @@ var (
 			Bg(style.ColorTransparent).Border(style.Border0).Cursor(style.CursorPointer).
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgPrimary) }).
 			Merge(clFocusRing)
+	// clTableRowLink sizes the link that is a generated row's way in.
+	//
+	// Its target comes from this rule and not from how its label happens to wrap.
+	// An inline box ignores min-height, so the anchor used to be exactly as tall as
+	// one line of text: on the task list the same link measured 60px beside a title
+	// that wrapped and 20px beside one that did not, and the 24px the audit in
+	// e2e/design-audit.spec.ts enforces was satisfied by the accident of a long
+	// name. inline-block is the smallest display that lets the floor apply while
+	// still shrinking to the label, so the target stays around the name rather than
+	// swallowing the cell; S6 is 1.5rem, the audit's floor in a unit that grows
+	// with the person's text size.
+	clTableRowLink   = clLink.Merge(style.New().Display(style.DisplayInlineBlock).MinHeight(style.S6))
 	clTableRowAlt    = style.New().Bg(style.SurfaceSecondary)
 	clTableTdStrong  = style.New().FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
 	clTableSelection = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
@@ -943,7 +955,7 @@ func ShellClassLists() []style.ClassList {
 		clHeadingBase, clSpinner, clVideo, clProse,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
-		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
