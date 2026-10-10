@@ -31,9 +31,11 @@ type Connection struct {
 	Name string `json:"name" doc:"What this workspace calls itself" example:"Acme"`
 	// LogoURL is the mark, as an absolute path on this server with no host in it,
 	// exactly like every other address in this document: a device fills in the
-	// server it was told about. Omitted when this workspace has no mark — never an
-	// empty string, because an empty src is a request against the document's own
-	// address.
+	// server it was told about. Omitted when this workspace has no mark, and when
+	// the mark it stored is not a file this server would hand to a caller with no
+	// session — an address that answers 404 is worse than no address to a shell that
+	// draws what it is told. Never an empty string, because an empty src is a request
+	// against the document's own address.
 	LogoURL string `json:"logoUrl,omitempty" doc:"Path of this workspace's mark, when it has one" example:"/api/v1/public/file/files/6f2b3a1e-1c3a-4a51-9d1a-2f0f3c4b5a69"`
 	// Accent is the workspace's colour, #rrggbb, byte-for-byte the value the web
 	// page pins as --pk-color-accent-default. Never a corrected value: a colour

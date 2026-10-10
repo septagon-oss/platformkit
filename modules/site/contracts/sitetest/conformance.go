@@ -197,7 +197,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 				"#0f766e", // 4.76 / 3.36
 				"#7c3aed", // 4.96 / 3.22
 				"#7f7f7f", // 3.48 / 4.59 — a mid grey clears both by a wider margin than either extreme
-				"#8a8a8a", // 3.00 / 5.32 — and exactly at the threshold is accepted, not refused
+				"#8a8a8a", // 3.0044 / 5.32 — the nearest colour above the band's edge
 			} {
 				if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: colour}); err != nil {
 					t.Errorf("saving %q: %v: a colour that reads at least %g:1 against both canvases is accepted", colour, err, contracts.MinAccentRatio)
@@ -205,15 +205,17 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 		},
 
-		// The rule's own boundary, named rather than rounded away: two greys one
-		// step apart, one side of 3:1 and one side of it. #8a8a8a reads 3.0044:1
-		// against the light canvas and is accepted; #8b8b8b reads 2.9651:1 and is
-		// refused. A `>` where the rule says `>=`, or a comparison made on rounded
-		// ratios, cannot tell them apart in this order.
-		"the threshold is >=, and these two greys straddle it": func(t *testing.T, f Fixture) {
+		// Where the band's edge sits, named rather than rounded away: two greys one
+		// step apart, #8a8a8a at 3.0044:1 against the light canvas and #8b8b8b at
+		// 2.9651:1. The rule accepts the first and refuses the second, so the edge
+		// lies between them. What this case does is pin the band's neighbourhood — no
+		// #rrggbb colour reads exactly 3.0 against these two canvases, so it cannot
+		// tell `>=` from `>`, and it does not claim to. A comparison made on rounded
+		// ratios, though, refuses #8a8a8a, and that is a mutation this order kills.
+		"the band's edge sits between #8b8b8b and #8a8a8a": func(t *testing.T, f Fixture) {
 			save(t, f, acme())
 			if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#8a8a8a"}); err != nil {
-				t.Errorf("#8a8a8a reads 3.00:1 against the light canvas and is refused: %v", err)
+				t.Errorf("#8a8a8a reads 3.0044:1 against the light canvas and is refused: %v", err)
 			}
 			_, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#8b8b8b"})
 			mustBe(t, err, crud.ErrInvalid)

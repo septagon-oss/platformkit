@@ -68,5 +68,9 @@ conformance harness, whose fake shares the rule by calling `Validate`.
 **Added** — `CanvasLight`, `CanvasDark`, `MinAccentRatio`, `ContrastRatio`,
 `AccentRatios` and the clause in `Validate`: no package here computed a contrast
 ratio, so nothing existing carried the judgement.
-**Made reusable** — `ContrastRatio(a, b)` and the pinned-canvas test, which any
-future theme check can call instead of re-deriving luminance a second time.
+**Made reusable** — `ContrastRatio(a, b)` and `AccentRatios`, exported from
+`contracts/`, which any future theme check can call instead of re-deriving
+luminance a second time; and the pattern of `TestTheCanvasesAreTheKitsOwn`, which
+pins a duplicated theme value to its owner rather than to a comment. The test
+itself lives in the module's external test package and nothing can import it — the
+shape is what is reusable, not the function.

@@ -146,7 +146,7 @@ func TestTheAccentRatiosAreTheOnesTheRuleCompared(t *testing.T) {
 		{"#0f766e", 4.76, 3.36},
 		{"#7c3aed", 4.96, 3.22},
 		{"#7f7f7f", 3.48, 4.59},
-		{"#8a8a8a", 3.00, 5.32}, // at the threshold, which is `>=`
+		{"#8a8a8a", 3.00, 5.32}, // 3.0044 rounded — the nearest colour above the band's edge
 		{"#8b8b8b", 2.97, 5.39}, // one step lighter and under it
 		{"#1d4ed8", 5.83, 2.74}, // reads on paper, not in the dark
 		{"#ff8800", 2.08, 7.67}, // and the other way round

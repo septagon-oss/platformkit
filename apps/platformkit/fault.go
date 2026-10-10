@@ -106,7 +106,10 @@ const (
 // four lines.
 func faultChrome() page.Chrome {
 	return page.Chrome{
-		Brand:      "PlatformKit",
+		// The installation's own word, the same constant the workspace's face
+		// falls back to: this file composes pages of this application and has no
+		// business spelling its own name twice.
+		Brand:      brandName,
 		Assets:     pinnedAssets,
 		Stylesheet: ui.Compose(design.Default()),
 		SignIn:     pinnedSignIn,

@@ -15,10 +15,10 @@ import (
 // (it is the boundary rule the whole of contracts/ lives by: importing design
 // would put a stylesheet in the closure of every module that imports these
 // contracts). What keeps the duplication honest is not a comment:
-// TestTheCanvasesAreTheKit'sOwn asks, package by package, that both values still
-// equal design.Light().SurfaceCanvas and design.Dark().SurfaceCanvas, so a theme
-// that moves turns a test red naming both spellings rather than leaving a second,
-// quieter palette registry behind it.
+// TestTheCanvasesAreTheKitsOwn, in modules/site/module_test.go, asks package by
+// package that both values still equal design.Light().SurfaceCanvas and
+// design.Dark().SurfaceCanvas, so a theme that moves turns a test red naming both
+// spellings rather than leaving a second, quieter palette registry behind it.
 const (
 	CanvasLight = "#f2efe7"
 	CanvasDark  = "#0e1614"
@@ -83,6 +83,10 @@ func AccentRatios(colour string) (light, dark float64, ok bool) {
 // readsOnBothCanvases is the whole of the new rule: does this colour read at
 // least MinAccentRatio against the light canvas and against the dark one? The
 // comparison is unrounded — a rule that rounded first would let a 2.994 through.
+// It is `>=`, so a colour landing exactly on the threshold is inside the band;
+// no #rrggbb colour lands exactly there against these two canvases, and the
+// conformance case pins the pair the edge sits between rather than the boundary
+// itself (see sitetest: "the band's edge sits between #8b8b8b and #8a8a8a").
 //
 // It is unexported because it is not a thing a caller decides: Validate runs it,
 // which is the one place the SQL service, the change apply and the conformance

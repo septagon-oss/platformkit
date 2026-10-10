@@ -22,10 +22,15 @@ package main
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/crud"
+	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -34,9 +39,14 @@ import (
 )
 
 // brandName is the installation's own word for itself, and the last name a
-// workspace falls back to — the same word modules/web's `brand` falls back to, and
-// TestTheInstallationNamesItselfTheSameWayEverywhere asks that the two agree,
-// because two fallbacks spelling two names is a product with two names.
+// workspace falls back to. It is the composition's only spelling of it: the chrome
+// faultChrome draws wears this constant, and TestTheInstallationNamesItselfTheSameWay-
+// Everywhere reads the word back off the running installation — the word a visitor
+// actually sees in the public page's footer, which is modules/web's own `brand`
+// rendered — and asks that it is this one, because two fallbacks spelling two names
+// is a product with two names. The web module's literal stays where it is (this file
+// may not import modules/web/internal, and a module's fallback word is its own);
+// what the test buys is that the two cannot drift quietly.
 const brandName = "PlatformKit"
 
 // connectionFace is the composition's answer about itself. Its one field is filled
@@ -137,7 +147,7 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 	// shell that wants to warn somebody reads light < 3 here.
 	light, dark, _ := sitecontracts.AccentRatios(settings.PrimaryColor)
 	out := &screens.Connection{
-		Name:        workspaceName(settings, ctx),
+		Name:        workspaceName(ctx, settings),
 		Accent:      settings.PrimaryColor,
 		AccentRatio: screens.AccentRatio{Light: light, Dark: dark},
 		Theme:       settings.Theme,
@@ -154,12 +164,15 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 		SignIn:   screens.SignInDoor{Address: c.signin.Address},
 		Recovery: screens.RecoveryAvailability{Available: c.passwordDoor && c.recoveryMail},
 	}
-	if settings.LogoFileID != nil {
-		// The same builder the web header composes its <img src> with, so the
-		// answer is an address this installation serves rather than one this file
-		// invented. A logo whose file has gone is no logoUrl at all: the id carries
-		// no foreign key by decision, and a dangling one is a workspace shown
-		// without a mark — not a 404 of the whole document and not a 500.
+	// The same builder the web header composes its <img src> with, so the answer is
+	// an address this installation serves rather than one this file invented — and
+	// only when the door that address leads to would answer this caller. A mark
+	// saved as a private file, or one whose file is gone, is no logoUrl at all: the
+	// id carries no foreign key by decision, and a shell that is handed an address
+	// which 404s draws a broken mark on the first screen and has no way to undo it.
+	// The web page's <img> has the same shape today; a browser shows nothing and a
+	// person never notices, which is not what a device does with it.
+	if settings.LogoFileID != nil && c.markReachable(ctx, tx, *settings.LogoFileID) {
 		out.LogoURL = c.links.PublicFile(settings.LogoFileID.String())
 	}
 	if c.signin.Registration != nil {
@@ -179,7 +192,41 @@ func (c composition) describe(ctx context.Context) (*screens.Connection, error) 
 // the reference tenant answer with a name on the day it is created, before anybody
 // has configured a site, which is the difference between a first screen and a
 // blank one.
-func workspaceName(settings *sitecontracts.SiteSettings, ctx context.Context) string {
+// markReachable asks the file module the one question this document cannot answer
+// from its own knowledge: would the door an anonymous caller stands outside serve
+// these bytes? It asks it the way that door serves — `Open` with anonymous set —
+// rather than reading the visibility column here, because "public" is the file
+// module's decision and a second place that decides it is a second place to get
+// wrong. The bytes are closed unread: this is the row's answer, not the body's.
+//
+// Any refusal ends the same way, with no mark named: a private file and a gone one
+// are the answer that door already gives a caller who is not signed in, and a store
+// that will not answer is no reason to withhold a workspace's name, colour and
+// sign-in doors — which is all a shell needs to draw the screen this document is
+// for. A name with no mark is a first screen; a 500 is not.
+func (c composition) markReachable(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) bool {
+	if c.files == nil {
+		// No file service means no public file door mounted either, so there is no
+		// address this could name that would answer.
+		return false
+	}
+	_, body, err := c.files.Open(ctx, tx, id, true)
+	if err != nil {
+		if !errors.Is(err, crud.ErrNotFound) {
+			// The caller is told nothing about it — a workspace is not a store
+			// outage — but the operator is told which file would not open.
+			slog.WarnContext(ctx, "connection: this workspace's mark is not readable",
+				"file", id.String(), "error", err)
+		}
+		return false
+	}
+	if body != nil {
+		_ = body.Close()
+	}
+	return true
+}
+
+func workspaceName(ctx context.Context, settings *sitecontracts.SiteSettings) string {
 	if settings.Title != "" {
 		return settings.Title
 	}
