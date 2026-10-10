@@ -22,9 +22,15 @@ address (`hints.<module>/<entity>.<aspect>`), so no author keeps a second list o
 keys, and the resolver is one file (`ui/resource/hints.go`) read by the catalogue
 document and the generated screens alike. Two readings become honest: a declared
 `enumLabels` map is now drawn (`display.EnumWord`), and a field declared `hidden`
-is no longer offered by a generated form.
-`apps/platformkit/reference_reading_test.go` holds the golden entry in `en` and
-`pt-PT` and the rule that no hint string is ever served empty.
+is no longer offered by a generated form. The line a declared `help:` writes under
+a control arrives in the request's language beside its label — the two words are
+read by one projection, so a Portuguese form no longer asks in Portuguese and
+explains in English. `apps/platformkit/reference_reading_test.go` holds the golden
+entry in `en` and `pt-PT`, the rule that no hint string is ever served empty, and
+the rule that both happen on a drawn screen and not only in the document;
+`apps/platformkit/portuguese_completeness_test.go` holds the rule that every key
+the resolver derives has its Portuguese copy, which the loader's own parity check
+cannot see because each of these modules ships one translated file.
 
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
