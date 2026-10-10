@@ -20,6 +20,12 @@ Three modes, one implementation of each decision behind a figure:
                    refuses a selection that opens a stack: its promise is "no database", and no
                    flag opens that door.
 
+A test is a file one of this repository's own runners executes, and the table lists every shape of it:
+a `*_test.go` beside the package it tests, a Playwright spec or Maestro flow under `e2e/`, a
+`*_test.sh` or `*_test.py` pin under `scripts/`, and a `*.test.js` / `*.test.mjs` / `*.test.ts` case
+the design tooling runs with `node --test` and the `editor` job runs on every pull request. A row is
+one Go test function, or one file where the file is the whole test.
+
 The exit status is part of the answer, not a courtesy: 0 for "the tree answers the table", 1 for a
 refused --check, 2 for a --ceiling that would rise, 3 for a push selection that opens a stack, 4 for
 a tool the selector could not ask (a failed `git diff` or `go list`, which is not the same empty
@@ -57,6 +63,10 @@ TIERS = ("push", "merge", "nightly")
 # review round left behind, and on nothing else.
 ROUND_PREFIX = re.compile(r"^(review|round\d*|probe)")
 GO_FUNC = re.compile(r"^func\s+(Test|Benchmark|Fuzz|Example)([A-Za-z0-9_]*)\s*\(", re.M)
+# A `node --test` case is one `test('…', …)` call; the file is the test the table lists, so the
+# first title names the row the way a Playwright spec's first `test(` names its row.
+NODE_TEST = re.compile(r"\.test\.(?:js|mjs|ts)$")
+JS_TITLE = re.compile(r"\b(?:test|it)\(\s*['\"`]([^'\"`\n]{3,})")
 GO_IMPORT = re.compile(r'^\s*(?:(\w+)\s+)?"' + re.escape(MODULE) + r'/([\w./-]+)"', re.M)
 GO_SELECT = re.compile(r"\b([a-z]\w*)\.([A-Z]\w*)")
 GO_CALL = re.compile(r"\b([A-Z][A-Za-z0-9_]+)\s*[({]")
@@ -236,6 +246,8 @@ def proposal(path, text, rows_of_package, sym, needs_stack):
 
 
 def kind_of(path):
+    if NODE_TEST.search(path):
+        return "node"
     if path.endswith(".ts"):
         return "playwright"
     if path.endswith(".yaml"):
@@ -268,6 +280,10 @@ def walk():
         rows.append(proposal_named(p, "e2e/maestro", "journey", "nightly", os.path.basename(p), True))
     for p in tracked("scripts/*_test.sh", "scripts/*_test.py"):
         rows.append(proposal_named(p, "scripts", "composition", "push", os.path.basename(p), False))
+    for p in node_tests():
+        title = JS_TITLE.search(read(p))
+        rows.append(proposal_named(p, os.path.dirname(p), layer_of(p), "push",
+                                    title.group(1).strip() if title else os.path.basename(p), False))
     out = []
     for r in rows:
         names = r.pop("funcs", None)
@@ -279,6 +295,20 @@ def walk():
             row["name"] = name
             row["id"] = r["file"] + "#" + name
             out.append(row)
+    return out
+
+
+def node_tests():
+    """Tracked `node --test` cases. They are tests the tree holds and the `editor` job runs (`npm
+    test`, `npm run test:browser`), so they are the tree's own: an inventory that walked only `go
+    test` files would hold no row for them, their round-named count would escape the ratchet, and a
+    prune reading the table would never consider them. Under `e2e/` a `.ts` file is a Playwright
+    spec's home, which that walk already lists, and under `node_modules/` the copy is a dependency's
+    test, not this repository's."""
+    out = []
+    for p in tracked("*.test.js", "*.test.mjs", "*.test.ts"):
+        if NODE_TEST.search(p) and not p.startswith("e2e/") and "node_modules/" not in p:
+            out.append(p)
     return out
 
 
@@ -402,10 +432,9 @@ def expected_figures(rows, summary):
         ("Scale", "files"): [summary["files"]],
         ("Scale", "Go test functions"): [kinds["go"]],
         ("Scale", "files named for a round (review, round, probe)"): [summary["round_named_files"]],
-        ("Scale", "Playwright specs / Maestro flows / scripts/ pins"): [kinds["playwright"], kinds["maestro"], kinds["shell_pin"]],
-
         ("Scale", "rows inside them"): [sum(1 for r in rows if r["round_named"])],
-        ("Scale", "Playwright specs / Maestro flows / scripts/ pins"): [kinds["playwright"], kinds["maestro"], kinds["shell_pin"]],
+        ("Scale", "Playwright specs / Maestro flows / scripts/ pins / node tests"):
+            [kinds["playwright"], kinds["maestro"], kinds["shell_pin"], kinds["node"]],
         ("Layers and tiers", "contract"): [summary["layers"]["contract"]],
         ("Layers and tiers", "behaviour"): [summary["layers"]["behaviour"]],
         ("Layers and tiers", "composition"): [summary["layers"]["composition"]],
@@ -502,11 +531,29 @@ def asked(cmd, where):
     return run.stdout, 0
 
 
+def owning_package(path, ownable):
+    """The package directory a changed file is input to: the nearest ancestor directory that holds a
+    package. This is how a golden under `pkg/testdata/` and an entry under a `go:embed` directory
+    reach the package whose test binary reads them — keying only the directory `git diff` named
+    matched nothing for those, the selection came back empty, and the change was caught by the full
+    suite after it had merged. `ownable` is `go list`'s package directories plus the table's own: the
+    go command ignores `testdata/`, so the walk passes over a fixture tree of `.go` files nobody
+    compiles to the package above, while a fixture package with rows of its own stays reachable."""
+    d = os.path.dirname(path)
+    while d and d != ".":
+        if d in ownable:
+            return d
+        d = os.path.dirname(d)
+    return ""
+
+
 def tier_selection(tier, base):
-    """The packages the named tier runs, for the directories a diff reaches. Selection is a pure
-    function of the diff: `go list` gives the dependency graph, its inverse gives the consumers —
-    the packages that import a changed one and the packages whose test binary compiles it — and a
-    package with no test row is not scheduled. Push refuses a selection that opens a stack."""
+    """The packages the named tier runs, for the files a diff reaches. Selection is a pure function
+    of the diff: a changed file is resolved to the package that owns it (`owning_package`, which is
+    what reaches a package through its `testdata/` or its embedded catalogue); `go list` gives the
+    dependency graph, its inverse gives the consumers — the packages that import a changed one and
+    the packages whose test binary compiles it — and a package with no test row is not scheduled.
+    Push refuses a selection that opens a stack."""
     doc = load(os.path.join(root, "tests", "inventory.json"))
     pkgs = {}
     for r in doc["rows"]:
@@ -520,13 +567,13 @@ def tier_selection(tier, base):
         changed += git("ls-files", "--others", "--exclude-standard")
     else:
         changed = tracked("*")
-    dirs = {os.path.dirname(p) for p in changed if os.path.dirname(p)}
+    touched = {os.path.dirname(p) for p in changed if os.path.dirname(p)}
 
-    def choose(reached):
+    def choose(reached, owners):
         """The tier's own packages among the directories the selection reaches — a package with no
         test row is not scheduled, and a package whose rows sit in another tier is not this one's."""
         prefix = MODULE + "/"
-        selected = {p[len(prefix):] for p in reached if p.startswith(prefix)} | {d for d in dirs if d in pkgs}
+        selected = {p[len(prefix):] for p in reached if p.startswith(prefix)} | {d for d in owners if d in pkgs}
         return sorted(p for p in selected if p in pkgs and pkgs[p] == tier)
 
     def opens_stack(selected):
@@ -544,7 +591,7 @@ def tier_selection(tier, base):
     # caller that touched a package opening a stack has already earned, and it is answered whatever
     # `go list` does next — including on a tree `go list` cannot read, where the refusal a caller
     # earned must not be replaced by the selector's own complaint about its tool.
-    code = opens_stack(choose(set()))
+    code = opens_stack(choose(set(), touched))
     if code:
         return None, code
 
@@ -569,7 +616,13 @@ def tier_selection(tier, base):
         # nothing: the selection was only the directories the diff touched, so no package ever
         # reached its consumer on a push (review 1, finding 1).
         import_dir[os.path.relpath(d, root)] = path
-    reached = {import_dir[d] for d in dirs if d in import_dir}
+    # Which package each changed file belongs to, and so which import paths the graph is walked
+    # from. A directory the table holds rows for is ownable even when `go list` will not name it,
+    # so this reaches no further than the selector did before, and further where a changed file
+    # sits in a directory of its own that the package above reads.
+    ownable = set(import_dir) | set(pkgs)
+    owners = {owning_package(p, ownable) for p in changed}
+    reached = {import_dir[d] for d in owners if d in import_dir}
     tested = []
     for line in graph.splitlines():
         name, _, rest = line.partition("|")
@@ -585,7 +638,7 @@ def tier_selection(tier, base):
     # Nothing travels onward through these edges: a consumer of such a package compiles the package,
     # not its test files, which is why `reached` is the set the production pass completed and the
     # test columns are asked against it once, not folded into it.
-    out = choose(reached | {name for name, imports in tested if any(dep in reached for dep in imports)})
+    out = choose(reached | {name for name, imports in tested if any(dep in reached for dep in imports)}, owners)
     code = opens_stack(out)
     if code:
         return None, code
