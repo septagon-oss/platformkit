@@ -30,7 +30,13 @@ entry in `en` and `pt-PT`, the rule that no hint string is ever served empty, an
 the rule that both happen on a drawn screen and not only in the document;
 `apps/platformkit/portuguese_completeness_test.go` holds the rule that every key
 the resolver derives has its Portuguese copy, which the loader's own parity check
-cannot see because each of these modules ships one translated file.
+cannot see because each of these modules ships one translated file. The same
+change hides the assignee column from a task list, which lets a title fit one
+line — and the link that is a row's way in was exactly as tall as one line of
+text, so hiding a column took its hit target from 60px to 20px. It is a target of
+its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
+floor, so the 24px the browser audit enforces comes from the rule and not from
+whether the person's title happened to wrap.
 
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
