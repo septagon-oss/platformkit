@@ -17,16 +17,26 @@ import (
 // a page that renders a broken image and forgets which files it showed. A composition with no file storage composes richtext.RejectImages
 // and every image reference is refused on write, which is the same answer the
 // empty Deps field gave.
+//
+// The third is the port its own translatable fields write through. The title and
+// the body carry `i18n:"translatable"`, and a Spec that declares them with no port
+// to answer `?lang=` is refused at mount — so this need says in the resolver's
+// words what that check says at boot: a page store with translatable text is built
+// after the module that holds the other languages, and an application that names
+// content and no translation is refused by name rather than mounting a record
+// screen whose Translate form has nowhere to write.
 var Module = pkit.NewModule("content", wire,
 	pkit.Needs[richtext.Files](),
 	pkit.Needs[rest.FileUses](),
+	pkit.Needs[rest.Translations](),
 	pkit.Provides[contentcontracts.Service](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
 	svc, manifest := New(Deps{
-		Files: pkit.Get[richtext.Files](w),
-		Uses:  pkit.Get[rest.FileUses](w),
+		Files:        pkit.Get[richtext.Files](w),
+		Uses:         pkit.Get[rest.FileUses](w),
+		Translations: pkit.Get[rest.Translations](w),
 	})
 	pkit.Put(w, svc)
 	return manifest, nil

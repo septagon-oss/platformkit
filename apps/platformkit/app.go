@@ -44,6 +44,7 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/modules/translation"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
@@ -157,6 +158,12 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			file.Module,
 			task.Module,
 			billing.Module,
+			// The translations of the module below: one table, no routes and no
+			// permissions of its own. It is named before content because content
+			// needs the port it provides — a page store whose title and body
+			// declare themselves translatable is built after the module that
+			// holds the other languages.
+			translation.Module,
 			content.Module,
 			site.Module,
 			web.Module,

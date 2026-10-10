@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 16 modules · role `all`.
+App `platformkit` · environment `development` · 17 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 16 modules.
+pkit: platformkit in development builds 17 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
@@ -18,6 +18,9 @@ pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
 pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: translation.Module is built after product.Module.
+pkit: translation.Module needs rest.TranslationSource from product.Module.
+pkit: translation.Module emits translation.updated.
 pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
 pkit: site.Module defines the permission site:manage.
@@ -86,20 +89,23 @@ pkit: access.Module needs notificationcontracts.Service from notification.Module
 pkit: access.Module needs sitecontracts.Service from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
 pkit: access.Module contributes one changecontracts.SubjectBinding to change.Module.
-pkit: content.Module is built after file.Module.
+pkit: content.Module is built after file.Module and translation.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
+pkit: content.Module needs rest.Translations from translation.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: change.Module is built after access.Module.
 pkit: change.Module takes every changecontracts.SubjectBinding from access.Module.
 pkit: change.Module defines the permission change:read, change:propose and change:decide.
 pkit: change.Module emits change.proposal_proposed, change.proposal_reviewed, change.proposal_applied and change.proposal_withdrawn.
-pkit: web.Module is built after product.Module, file.Module, content.Module and site.Module.
+pkit: web.Module is built after product.Module, file.Module, translation.Module, content.Module and site.Module.
 pkit: web.Module needs sitecontracts.Service from site.Module.
 pkit: web.Module needs contentcontracts.Service from content.Module.
 pkit: web.Module needs richtext.Files from file.Module.
 pkit: web.Module uses webcontracts.Links from product.Module.
+pkit: web.Module uses rest.Translations from translation.Module.
+pkit: web.Module uses rest.TranslationSource from product.Module.
 pkit: admin.Module needs authcontracts.Auth from auth.Module.
 pkit: admin.Module needs tenantcontracts.Service from tenant.Module.
 pkit: admin.Module uses admincontracts.Signin from product.Module.

@@ -2,6 +2,7 @@ package web
 
 import (
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -22,11 +23,18 @@ import (
 // The two addresses it links and does not serve are an Optional Links: a
 // composition with no shell composes no provider and gets a site with no
 // sign-in link, which is what a headless storefront wants.
+//
+// So is the pair that makes a page answer in a language other than the one it was
+// authored in: a site whose application names no translation module is a
+// monolingual site, and it says so in its `lang` attribute rather than promising
+// an alternate it cannot serve.
 var Module = pkit.NewModule("web", wire,
 	pkit.Needs[sitecontracts.Service](),
 	pkit.Needs[contentcontracts.Service](),
 	pkit.Needs[richtext.Files](),
 	pkit.Optional[webcontracts.Links](),
+	pkit.Optional[rest.Translations](),
+	pkit.Optional[rest.TranslationSource](),
 )
 
 func wire(w *pkit.Wiring) (module.Module, error) {
@@ -44,5 +52,14 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Messages:      skin.Copy,
 		SignInPath:    links.SignIn,
 		PublicFileURL: links.PublicFile,
+		// The page's other languages, or nothing. Both come from the same
+		// composition — the port that holds the text and the row set that says
+		// which entity is a page — and a site handed one without the other
+		// renders monolingual rather than guessing, which is what Site.serve
+		// checks. An installation with no translation module composed gets
+		// exactly the site it had: every page in the language it was authored
+		// in, no `hreflang`, no claims.
+		Translations: pkit.Get[rest.Translations](w),
+		ContentRows:  pkit.Get[rest.TranslationSource](w),
 	}), nil
 }

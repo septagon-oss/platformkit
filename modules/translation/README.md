@@ -75,8 +75,9 @@ Portuguese, which nothing downstream would ever notice.
 ## Reads, writes, refusals
 
 These are the port's commands. Both doors exist in `kit/rest`, and the reference
-application composes this module beside the content Spec whose fields are tagged —
-what is not composed is the machine provider, which Limits names.
+application names this module in `Use`, before the content module whose fields are
+tagged, and names whose records may be translated in `product.go` — what is not
+composed is the machine provider, which Limits names.
 
 | Door | What it does |
 | --- | --- |
@@ -278,8 +279,9 @@ yet; nothing here claims one ran.
 - Still missing: the machine adapter behind `locale.Translator` — no provider's
   URL, model or price lives in this repository, so nothing here pretends to be
   one — and the Playwright+axe journeys, which need the screens above to exist
-  before anybody can walk them. This module is composed: `apps/platformkit/modules.go`
-  names it, content's `title` and `body` are tagged, and the reference
+  before anybody can walk them. This module is composed: `apps/platformkit/app.go`
+  names it in `Use`, `apps/platformkit/product.go` names the entity whose records
+  the public site renders, content's `title` and `body` are tagged, and the reference
   application's own tests publish a page, translate it and read it in both
   languages. What is absent here is the translator's side of it, not the wiring.
 - The tenant's declared languages are a parameter of the caller, never stored

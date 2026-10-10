@@ -20,6 +20,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
@@ -55,14 +56,15 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 	// what is composed, and nothing is found that Use does not name.
 	for _, name := range []string{
 		"product", "user", "tenant", "notification", "auth", "emailregistration", "file",
-		"task", "billing", "content", "site", "web", "audit", "change", "access", "admin",
+		"task", "billing", "translation", "content", "site", "web", "audit", "change",
+		"access", "admin",
 	} {
 		if !namesAModule(r.modules, name) {
 			t.Errorf("%s.Module is named in Use and answers no manifest in the resolved composition", name)
 		}
 	}
-	if len(r.modules) != 16 {
-		t.Errorf("the composition resolved to %d modules, want the 16 the sentence names: %v", len(r.modules), moduleNames(r.modules))
+	if len(r.modules) != 17 {
+		t.Errorf("the composition resolved to %d modules, want the 17 the sentence names: %v", len(r.modules), moduleNames(r.modules))
 	}
 	// The shell is last, and for the same kind of reason audit is next to last:
 	// it generates a screen for every resource the modules above it mounted.
@@ -86,6 +88,10 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 		"taskcontracts.Service":                         holds(p, func() bool { v, ok := pkit.Value[taskcontracts.Service](p); return ok && v != nil }),
 		"richtext.Files (what file hands content)":      holds(p, func() bool { v, ok := pkit.Value[richtext.Files](p); return ok && v != nil }),
 		"jobs.TenantLister (what tenant hands a sweep)": holds(p, func() bool { v, ok := pkit.Value[jobs.TenantLister](p); return ok && v != nil }),
+		"rest.Translations (what translation hands a translatable record's Spec)": holds(p, func() bool {
+			v, ok := pkit.Value[rest.Translations](p)
+			return ok && v != nil
+		}),
 	}
 	for contract, filled := range holders {
 		if !filled {

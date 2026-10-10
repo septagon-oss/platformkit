@@ -42,12 +42,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/kit/tenancy/providers/opa"
 	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	auditcontracts "github.com/septagon-oss/platformkit/modules/audit/contracts"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
+	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -78,6 +80,7 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Provides[tenancy.Policy](),
 		pkit.Provides[sitecontracts.WriteGate](),
 		pkit.Provides[webcontracts.Links](),
+		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
@@ -138,6 +141,17 @@ func product(cfg config.Config) *pkit.Module {
 			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
 		})
+		// Which entity's records this product's public site renders, as the
+		// translation port has to be handed it. It is a value and not a call: the
+		// row set is derived from the entity's own schema tags, so naming it here
+		// builds nothing and needs nobody — which is why this is the one edge the
+		// sentence cannot draw between two modules. content needs the port that
+		// holds the other languages, translation needs to know which table has
+		// fields worth holding them for, and an edge in either direction between
+		// the two is a cycle the resolver would refuse. So the application names
+		// the entity — the same line this composition wrote by hand before the
+		// resolver existed, now said in a place the graph can read.
+		pkit.Put[rest.TranslationSource](w, content.TranslationSource())
 		// The form on the shell's login page posts to the auth module's door, and
 		// the link to the registration form is the same value, so neither half can
 		// offer what the other did not mount. The address is the public door as the

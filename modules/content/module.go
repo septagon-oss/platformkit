@@ -43,6 +43,15 @@ type Deps struct {
 	Translations rest.Translations
 }
 
+// TranslationSource is the content entity's row set as the translation module
+// has to be handed it: the module may not reach into this table, so the
+// composition carries the pair — content names the port it writes to, and the
+// translation module names the rows it may be given. It asks nothing of the
+// mounted Spec but its two names and its entity, which is why a mounted Spec
+// and this are the same answer.
+func TranslationSource() rest.TranslationSource {
+	return rest.TranslationSourceOf(rest.Spec[*contracts.Content]{Module: "content", Entity: "content"})
+}
 
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.

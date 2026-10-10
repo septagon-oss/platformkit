@@ -45,11 +45,15 @@ type Deps struct {
 	Translator locale.Translator
 }
 
-// Module is the manifest: the SQL, the one declared event, and the service a
+// New is the manifest: the SQL, the one declared event, and the service a
 // mounting Spec is handed. It declares no permission and mounts no route, and
 // the paragraph above says why; it emits one event, and modules/audit's
 // SubscribeAll is why no audit call appears anywhere in this module.
-func Module(deps Deps) (contracts.Service, module.Module) {
+//
+// The name is the one every module's constructor carries since the resolver
+// arrived, because `Module` is the provider value beside this function — the
+// declaration an application names in Use.
+func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.Sources, deps.Translator)
 	return svc, module.Module{
 		Name:          "translation",
