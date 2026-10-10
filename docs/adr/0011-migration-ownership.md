@@ -127,7 +127,17 @@ so the run puts the lock down for that one statement and takes it back for the h
 row, which is inserted `ON CONFLICT DO NOTHING`: two replicas may then both reach a
 statement the rule table already requires to be re-runnable, and the one that loses the
 race learns the file applied rather than failing its boot for a benign race. A statement
-that failed writes no row either way.
+that failed writes no row either way. The ledger row is the half of that race the history
+can settle; the *object* the statement built is the half it cannot, because two boots
+dropping and rebuilding one half-built index answer each other with a cycle the deadlock
+detector picks one of and with a catalog tuple updated underneath them. So the file takes
+an advisory lock of its own — the two-key form, one namespace per `owner/version` where
+the composition lock is one for the run — and holds it across the statement and its
+certification, asked for with `pg_try_advisory_lock` and re-asked with the session idle
+between asks, because a lock queue is a running transaction and a concurrent build waits
+for the transactions already in the database: to queue inside the holder's critical
+section is to join the cycle the release exists to leave (`kit/db/certify.go`,
+`kit/db/concurrent_index_replicas_test.go`, `kit/db/concurrent_index_turn_test.go`).
 
 What the budgets bound is the statement itself, and a `CONCURRENTLY` build that runs out
 of `lock_timeout` mid-way leaves the half-built object behind under the name it was
