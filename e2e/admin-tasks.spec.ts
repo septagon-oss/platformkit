@@ -84,7 +84,11 @@ test('an empty generated list keeps its message within the visible page', async 
   await page.setViewportSize({ width: 390, height: 900 });
   const response = await page.goto('/app/content/contents');
   expect(response?.status()).toBe(200);
-  const message = page.getByText('No contents yet.', { exact: true });
+  // The words are the naming rule's, not this file's: `Content` is a set the
+  // catalogue already wrote, so display.Plural keeps it whole and the empty state
+  // says "No content yet." (kit/entity/display, pinned by ui/resource/naming_test.go).
+  // The heading, the count and this sentence are the same noun in three places.
+  const message = page.getByText('No content yet.', { exact: true });
   await expect(message).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const text = await message.evaluate(element => {
