@@ -137,7 +137,8 @@ pattern for pinning a checker, `gotest.tools/gotestsum`'s `--jsonfile` and `tool
 slowest` as already pinned in [go.mod](go.mod), `apps/platformkit`'s own harness
 (`configure`/`install`/`compose`/`appOptions`/`start`/`signIn`/`do`) and
 `trailIncluded` for the new journey, and `go list`'s dependency graph for the
-diff's consumers. **Added** — `scripts/test_inventory.py`, because the tree holds
+diff's consumers — production importers and, since review 2, the packages whose
+test binary compiles the change. **Added** — `scripts/test_inventory.py`, because the tree holds
 no test register of any kind and 0088 asks for one CI can re-check; and
 `apps/platformkit/tenancy_a_write_for_a_tenant_the_plan_does_not_open_is_refused_test.go`,
 because the composition refused a plan-gated tenant only in prose until two tenants
