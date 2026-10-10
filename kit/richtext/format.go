@@ -170,8 +170,16 @@ var (
 	}{
 		{regexp.MustCompile(`\[\^[^]]+\]`), "footnote"},
 		{regexp.MustCompile(`^\s*:\s+\S`), "definition list"},
-		{regexp.MustCompile(`\$[^\s$][^$]*\$`), "math"},
-		{regexp.MustCompile(`:[a-z][a-z0-9_+-]+:`), "emoji shortcode"},
+		// These two match the construct rather than its character, because
+		// ordinary business prose carries both of its characters: "Tickets cost $5
+		// and $8." names two prices and "see note:todo: later" names a label, so a
+		// refusal there names a construct the author never wrote, in words they
+		// cannot act on. A $ span is math only when it reads as TeX — written with
+		// $$ on both sides, or holding at least one of the TeX marks \ ^ _ { } —
+		// and a :shortcode: is one only at a word boundary, with neither colon
+		// inside a word.
+		{regexp.MustCompile(`\$\$[^\s$][^$]*\$\$|\$(?:[\^_{}\\]|[^\s$][^$]*[\^_{}\\])[^$]*\$`), "math"},
+		{regexp.MustCompile(`(?:^|[^0-9A-Za-z_:]):[a-z][a-z0-9_+-]+:(?:[^0-9A-Za-z_:]|$)`), "emoji shortcode"},
 	}
 )
 
