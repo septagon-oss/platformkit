@@ -90,6 +90,42 @@ const theCred = "aW1hZ2luYXJ5LWNyZWRlbnRpYWw"
 
 func passkeyCases() map[string]func(*testing.T, PasskeyFixture) {
 	return map[string]func(*testing.T, PasskeyFixture){
+		// The tenant's passkey door, read rather than refused. It is the read a
+		// sign-in screen makes before it decides what to offer, so the case that
+		// matters is not the boolean but its agreement with the door: the answer
+		// must be the one BeginPasskeySignIn is about to act on.
+		//
+		// There is no second field on this fixture for it, on purpose: the read
+		// is taken from the same object the ceremony runs on, which is the only
+		// way this case can refuse an implementation that answers the door from
+		// somewhere other than the row the door reads.
+		"the tenant's passkey door answers what the door itself acts on": func(t *testing.T, f PasskeyFixture) {
+			door, ok := f.Passkeys.(contracts.PasskeyDoor)
+			if !ok {
+				t.Fatal("this implementation of Passkeys does not answer PasskeySignInEnabled, so a sign-in screen cannot ask what it will refuse")
+			}
+			want := []bool{false, true, false}
+			for _, enabled := range want {
+				f.EnablePasskeySignIn(enabled)
+				got, err := door.PasskeySignInEnabled(f.Ctx, f.Tx)
+				if err != nil {
+					t.Fatalf("PasskeySignInEnabled: %v", err)
+				}
+				if got != enabled {
+					t.Errorf("the door says %v after it was set to %v", got, enabled)
+				}
+				// The half that keeps the read from disagreeing with the door:
+				// begun, or refused with the reason, exactly as the answer says.
+				_, err = f.Passkeys.BeginPasskeySignIn(f.Ctx, f.Tx)
+				if enabled && err != nil {
+					t.Errorf("BeginPasskeySignIn with the door on: %v", err)
+				}
+				if !enabled && !errors.Is(err, contracts.ErrPasskeySignInOff) {
+					t.Errorf("BeginPasskeySignIn with the door off = %v, want ErrPasskeySignInOff", err)
+				}
+			}
+		},
+
 		"a passkey is listed beside a totp, with its name and no material": func(t *testing.T, f PasskeyFixture) {
 			ada := f.User("ada@acme.example.com", Password, contracts.RoleAdmin)
 			f.AddFactor(ada, FactorTOTP, "", "totp-secret")

@@ -113,6 +113,16 @@ func (f *Fake) BeginPasskeyAssertion(_ context.Context, _ db.Tx[db.Tenant], _ st
 	return f.begin(contracts.PasskeyCeremonySecondFactor, uuid.Nil), nil
 }
 
+// PasskeySignInEnabled is contracts.PasskeyDoor, answered from the one boolean
+// SetPasskeySignIn already writes: the fake gains no state, because the read and
+// the refusal at the door are the same fact and were always going to be held in
+// the same place.
+func (f *Fake) PasskeySignInEnabled(_ context.Context, _ db.Tx[db.Tenant]) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.passkeySignIn, nil
+}
+
 // BeginPasskeySignIn is the usernameless door, including the one thing it refuses
 // on its own: this tenant's row.
 func (f *Fake) BeginPasskeySignIn(_ context.Context, _ db.Tx[db.Tenant]) (*contracts.PasskeyChallenge, error) {

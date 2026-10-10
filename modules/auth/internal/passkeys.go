@@ -738,6 +738,31 @@ func (s *Service) lockedPasskeySignIn(_ context.Context, tx db.Tx[db.Tenant]) (b
 	return len(rows) > 0 && rows[0].SignIn, nil
 }
 
+// NewPasskeyDoor returns the reader of a tenant's usernameless door.
+//
+// It is a Service with nothing in it, and that is sound rather than sloppy: the
+// one method it answers reads a single row of the tenant the transaction already
+// resolved, and touches no user lookup, no notice and no counter — which is
+// everything a built Service holds. It is deliberately not NewService with nils
+// handed to it, because that constructor also installs the shared rate counters,
+// and a door that consulted them would be a door with a limit on it.
+func NewPasskeyDoor() contracts.PasskeyDoor { return &Service{} }
+
+var _ contracts.PasskeyDoor = NewPasskeyDoor()
+
+// PasskeySignInEnabled is contracts.PasskeyDoor: the same read the two ceremony
+// doors make of their own row, offered to a caller that is describing how this
+// tenant signs in rather than signing in.
+//
+// It is exported as a method and reached through a constructor of its own
+// (modules/auth.NewPasskeyDoor) for the reason site.NewLockedReader gives: adding
+// it to contracts.Passkeys or contracts.Auth would be a method added to an
+// exported interface, which the exported-API gate refuses as a break to anything
+// outside this repository that implements them.
+func (s *Service) PasskeySignInEnabled(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error) {
+	return s.passkeySignInEnabled(ctx, tx)
+}
+
 // passkeySignInEnabled reads the tenant this request resolved to: may a passkey
 // be the whole sign-in here? No row is "off", because a row exists only because
 // somebody turned the door on, so a tenant that never asked for usernameless
