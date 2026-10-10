@@ -16,7 +16,8 @@ component, named after it, so a reader looking for `Card` opens
 helpers more than one family needs. The files that hold a group rather than one
 component say so — [sections.go](sections.go) (section headers, sections, heroes),
 [layouts.go](layouts.go) (stacks, flex, grids, containers), [shell.go](shell.go)
-(the application frame and the confirm dialog), [skeleton.go](skeleton.go)
+(the application frame, the form it posts, the sentence a form states above its
+button and the confirm dialog), [skeleton.go](skeleton.go)
 (loading states) and [video.go](video.go). [props.go](props.go) holds the original Props contracts; the larger shared
 families keep their contracts beside their renderers. [classlists.go](classlists.go) holds the class lists a renderer may
 emit, and [layout_description.go](layout_description.go) what a layout

@@ -37,9 +37,14 @@ import (
 // The declared literal is always the fallback, which is why no `en.json` exists
 // anywhere: the sentence the code author wrote is the English (decision 0012 rule
 // 2, the same rule `ui/page`'s fault copy and every module's permission label
-// follow). A translation is therefore only ever written for the second language,
-// and `xtext`'s own parity gate is what makes writing half of one a refusal at
-// composition rather than a screen drawn in two languages.
+// follow). A translation is therefore only ever written for the second language.
+// What refuses a declaration shipped without that half is not the loader: an
+// `xtext` parity gate compares the locales one source file carries, and a module
+// that ships one translated file has no second locale to be compared with. Here
+// the completeness check belongs to the composition that reads the table —
+// `TestEveryDeclaredHintStringIsAnsweredInPortuguese` in `apps/platformkit`
+// resolves every key this scheme can derive against `pt-PT` — so a missing answer
+// fails that test rather than arriving as a screen drawn in two languages.
 
 // Text is the seam a declared string is resolved through: the same shape
 // Options.Text already is, seen from the side that has a schema and no
