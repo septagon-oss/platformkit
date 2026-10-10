@@ -205,9 +205,6 @@ func readRecordText(ctx context.Context, tx db.Tx[db.Tenant], src TranslationSou
 		if len(revs) > 0 {
 			rec.revisions[locale] = revs
 		}
-		if len(revs) > 0 {
-			rec.revisions[locale] = revs
-		}
 		if len(text) == 0 {
 			continue
 		}
