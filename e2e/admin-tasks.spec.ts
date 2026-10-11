@@ -36,7 +36,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
-  await page.getByLabel('Due At').fill('2026-12-01T14:30');
+  await page.getByLabel('Due', { exact: true }).fill('2026-12-01T14:30');
   await page.getByRole('button', { name: 'Save' }).click();
 
   // The write redirects to the row it created.
@@ -51,16 +51,16 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   // Edit.
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('Inspect the supply hose');
-  await expect(page.getByLabel('Due At')).not.toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).not.toHaveValue('');
   await page.getByLabel('Title').fill(renamed);
   await page.getByLabel('Description').fill('');
-  await page.getByLabel('Due At').fill('');
+  await page.getByLabel('Due', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(row);
   await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('');
-  await expect(page.getByLabel('Due At')).toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).toHaveValue('');
   await page.goto(row);
 
   // Delete, through the confirm dialog the shell puts on every page.

@@ -73,6 +73,16 @@ serialises exactly as it did before these types existed — `Field.Presentation`
 `omitzero`, and `ui/screens` prints a `presentation` key only for a hint somebody
 wrote.
 
+A declared word is translated without being keyed twice. The copy key is
+*derived* from the declaration's own address — `hints.<module>/<entity>.<aspect>`
+(`hints.task/task.field.dueAt.label`, `hints.task/task.command.assign.label`) —
+and the literal in the tag or the `Present:` struct is its own English fallback,
+so no `en.json` exists anywhere and no author writes a key beside a sentence they
+already wrote. The resolver is `ui/resource/hints.go`, shared by the catalogue
+document and the generated screens; the vocabulary names an icon, a tone, a
+visibility or a field name are never resolved, because they are drawn and not
+read. Write a label only where it differs from `Humanize(name)`.
+
 Two declarations can name one column's place on a list: `ui:"hide:list"` and
 `visibility`. `Field.OnList` is the one place they resolve, and it resolves them
 by precedence rather than by refusal — an explicit `visibility` is the narrower

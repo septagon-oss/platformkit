@@ -117,6 +117,42 @@ and an edit that arrived after the row moved; `modules/task/migrations/000050_ta
 gives the task one. Nothing the server owns is drawn as a control, so no form asks a
 person to type a number that would move the row to it.
 
+**The reference resources read well, in the person's language.** The five
+resources the reference application shows — tasks, content, people, plans and
+site settings — now declare how they read: the words a person is shown
+(`task`/`tarefa`, `Assignee`, `Due`, `Response due`, `Response overdue`,
+`Billing period`, `Username`, `Includes`), which field names a row and which two
+say what it costs to wait, which integration columns are kept off every screen
+(`source`, `sourceRef`) and which are answered on the record and not the row
+(`assigneeId`, `author`, `roles`, `currency`, `code`), the tone of every status
+and priority, and the short verb on a command's button (`Assign`, `Resolve`,
+`Archive`, `Deactivate`) with the consequence a person reads before an archive or
+a deactivation runs. `check-sla` is declared `system`, so no screen offers a
+sweep's work while its JSON route keeps its guard unchanged. Every declared word
+is served in the request's language: `GET /api/v1/app/resources` negotiates
+`Accept-Language` through the tenant's own declared set, answers `Vary:
+Accept-Language`, and falls back to the English the code author wrote — which is
+why no layer ships an `en.json`. The key is derived from the declaration's own
+address (`hints.<module>/<entity>.<aspect>`), so no author keeps a second list of
+keys, and the resolver is one file (`ui/resource/hints.go`) read by the catalogue
+document and the generated screens alike. Two readings become honest: a declared
+`enumLabels` map is now drawn (`display.EnumWord`), and a field declared `hidden`
+is no longer offered by a generated form. The line a declared `help:` writes under
+a control arrives in the request's language beside its label — the two words are
+read by one projection, so a Portuguese form no longer asks in Portuguese and
+explains in English. `apps/platformkit/reference_reading_test.go` holds the golden
+entry in `en` and `pt-PT`, the rule that no hint string is ever served empty, and
+the rule that both happen on a drawn screen and not only in the document;
+`apps/platformkit/portuguese_completeness_test.go` holds the rule that every key
+the resolver derives has its Portuguese copy, which the loader's own parity check
+cannot see because each of these modules ships one translated file. The same
+change hides the assignee column from a task list, which lets a title fit one
+line — and the link that is a row's way in was exactly as tall as one line of
+text, so hiding a column took its hit target from 60px to 20px. It is a target of
+its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
+floor, so the 24px the browser audit enforces comes from the rule and not from
+whether the person's title happened to wrap.
+
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
 presented — the words a person is shown, which field names a row, which block a

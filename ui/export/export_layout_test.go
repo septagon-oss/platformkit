@@ -198,7 +198,19 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
-	if legacy.SHA256 != "6f102a89a2217b98e60e68a1d89a9c74138b8645a1bfbe08f1e917de89d020b0" {
+	// A confirmation body drawn into a command form is a sentence of the form's own
+	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
+	// and the confirm dialog's message — the same sentence, read inside a frame
+	// already narrowed to 24rem — now wears that one list. Measured by exporting this
+	// tree and the same tree without the change and walking both documents leaf by
+	// leaf: 99,892 leaves become 99,906. The 14 added leaves are the new Gallery
+	// example's own (id, name, group, props, schema and html); of the 2 changed, one
+	// is /sha256 and the other is pk-ui.component.confirmdialog/default's html, which
+	// gains max-w-sm on the message paragraph and paints the same box. No leaf is
+	// removed; CSS, schema, notices, themes, icons and font policy are identical.
+	// The digest below is that measurement of this tree, printed by the refusal above
+	// the re-measure and copied from it.
+	if legacy.SHA256 != "b51d21dec00319b066ddb3b154ae1cbf7776d3fe1aa44f329433f81b4dbb4bf4" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
