@@ -34,7 +34,7 @@ func TestEveryCarriedChannelIgnoresACommittedEventReplay(t *testing.T) {
 			if channel != contracts.ChannelEmail {
 				deps.Providers = contracts.Providers{channel: carrier}
 			}
-			svc, mod := notification.Module(deps)
+			svc, mod := notification.New(deps)
 			sub := subscriptionNamed(t, contracts.RequestedEvent[channel], mod.Subscriptions)
 			ctx := tenancy.WithTenant(t.Context(), acme)
 			var noticeID uuid.UUID

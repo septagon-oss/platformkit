@@ -70,7 +70,7 @@ func subscriptionNames(subs []events.Subscription) []string {
 func TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
 	carrier := &carries{}
-	svc, mod := notification.Module(notification.Deps{
+	svc, mod := notification.New(notification.Deps{
 		Recipients: directory{},
 		Mailer:     notification.NewMailbox(),
 		Providers:  contracts.Providers{contracts.ChannelPush: carrier},

@@ -15,7 +15,7 @@ import (
 
 func TestAnAbsentProviderClosesItsChannelAsSuppressed(t *testing.T) {
 	_, conn := dbtest.Schema(t, notification.Migrations)
-	svc, mod := notification.Module(notification.Deps{
+	svc, mod := notification.New(notification.Deps{
 		Recipients: directory{}, Mailer: notification.NewMailbox(),
 		Providers: contracts.Providers{contracts.ChannelPush: nil},
 	})
