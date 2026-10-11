@@ -39,6 +39,8 @@
     "@open-pencil/fig": "0.14.0",
     "@open-pencil/kiwi": "0.14.0",
     "@open-pencil/pen": "0.14.0",
-    "@open-pencil/scene-graph": "0.14.0"
+    "@open-pencil/scene-graph": "0.14.0",
+    "dompurify": "3.4.16",
+    "source-map-js": "1.2.2"
   }
 }

@@ -59,8 +59,14 @@ func TestTheConnectionDocumentAnswersBeforeSignIn(t *testing.T) {
 	if document["theme"] != "system" {
 		t.Errorf("the theme is %v, want system", document["theme"])
 	}
-	if document["revision"] != float64(0) {
-		t.Errorf("revision is %v for a tenant that never saved its site", document["revision"])
+	if document["revision"] != float64(1) {
+		// The site row exists from the moment the tenant was created: this
+		// composition's own tenant-creation hook writes the starter site through
+		// the site module's Save, and a row counts its own writes from 1
+		// (modules/site/contracts/site.go). "No row yet" is not a state this
+		// composition can be in, so the number below moved with it; what the case
+		// pins is that the face answers the row's counter rather than a constant.
+		t.Errorf("revision is %v for a tenant whose one site write is the starter seed's", document["revision"])
 	}
 	// The door the installation mounted, verbatim, and the four methods.
 	if signin, _ := document["signIn"].(map[string]any); signin["address"] != pinnedSignInAPI {
@@ -103,8 +109,8 @@ func TestTheConnectionDocumentAnswersBeforeSignIn(t *testing.T) {
 	if ratio["light"] != 4.37 || ratio["dark"] != 3.66 {
 		t.Errorf("accentRatio = %v, want 4.37 and 3.66", ratio)
 	}
-	if document["revision"] != float64(1) {
-		t.Errorf("revision is %v after one save: the row counts its own writes", document["revision"])
+	if document["revision"] != float64(2) {
+		t.Errorf("revision is %v after one save over the seeded row: the row counts its own writes", document["revision"])
 	}
 	// The tagline a browser may already read is not in a document nothing reads
 	// it from yet — rule 7, and the key set above is where that is enforced.

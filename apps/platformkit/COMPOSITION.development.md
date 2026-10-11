@@ -4,15 +4,17 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 16 modules · role `all`.
+App `platformkit` · environment `development` · 17 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 16 modules.
+pkit: platformkit in development builds 17 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.
 pkit: product.Module contributes one tenantcontracts.Hook to tenant.Module.
+pkit: seed.Module needs no other module.
+pkit: seed.Module contributes one tenantcontracts.Hook to tenant.Module.
 pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
@@ -22,9 +24,9 @@ pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
 pkit: site.Module defines the permission site:manage.
 pkit: site.Module emits site.settings_updated.
-pkit: tenant.Module is built after product.Module and user.Module.
+pkit: tenant.Module is built after product.Module, user.Module and seed.Module.
 pkit: tenant.Module needs tenantcontracts.Inviter from user.Module.
-pkit: tenant.Module takes every tenantcontracts.Hook from product.Module.
+pkit: tenant.Module takes every tenantcontracts.Hook from product.Module and seed.Module.
 pkit: tenant.Module uses tenantcontracts.Languages from product.Module.
 pkit: tenant.Module reads config.NATS.
 pkit: tenant.Module reads config.Server.
