@@ -98,6 +98,7 @@ pkit: access.Module is built after product.Module, user.Module, notification.Mod
 pkit: access.Module needs usercontracts.Service from user.Module.
 pkit: access.Module needs notificationcontracts.Service from notification.Module.
 pkit: access.Module needs sitecontracts.Service from site.Module.
+pkit: access.Module needs sitecontracts.LockedReader from site.Module.
 pkit: access.Module needs usercontracts.Granting from product.Module.
 pkit: access.Module needs authcontracts.Auth from auth.Module.
 pkit: access.Module contributes one changecontracts.SubjectBinding to change.Module.
