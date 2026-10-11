@@ -121,3 +121,34 @@ the fake, the SQL service and the paint's tests all read the same way; and the p
 of `TestTheCanvasesAreTheKitsOwn`, which pins a duplicated theme value to its owner
 rather than to a comment. The test itself lives in the module's external test package
 and nothing can import it — the shape is what is reusable, not the function.
+
+## Limits
+
+The door back to "none" is an omitted field. The published `pattern` admits no empty
+string, so `PUT {"primaryColor":""}` is refused at the wire and moves nothing; a body
+that sends no `primaryColor` at all decodes to the empty colour, which `Validate`
+accepts as the absence of one, and so returns a tenant that had chosen a colour to the
+installation's accent. The generated form always sends the field, which makes this a
+door an API caller walks through rather than one a person can open from the screen.
+Whether returning to the palette is a command of its own, or a field the `PUT` should
+require, is the composition's to decide and nothing in this module branches on the answer.
+
+Recognition is by value, not by intent. A colour somebody types that happens to equal
+either of the installation's two accents is stored as the absence of one, because a row
+that held the palette's own value would stop following the palette the day it moved —
+and the column cannot tell the two readings apart. Both of the reference application's
+accents fail the legibility band (`TestTheAccentRatiosAreTheOnesTheRuleCompared`), so no
+colour a hand can type here collides with one today; an installation whose own accent
+*does* clear the band turns every typed choice of that colour into a follow, silently.
+A product shipping such a palette decides knowingly.
+
+A `system` row resolves against the light accent when a caller needs one colour, because
+`Resolve` answers a colour and not a stylesheet; a `system` *page* is answered by the
+visitor, since `modules/web` writes both accents and lets the browser choose. And a
+composition that names no `Palette` answers the empty colour, which the paint drops — an
+installation with no accent of its own has no accent, and no write is allowed or refused
+by that absence.
+
+`000054` moves the column's default and runs no `UPDATE`: a migration cannot tell the
+colour somebody typed from the one the column used to fill in on every write, so an
+existing row keeps its colour and only a row written after the move can say "none".

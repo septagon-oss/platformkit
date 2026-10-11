@@ -292,6 +292,13 @@ type Service interface {
 	// stored, and what the event and the trail report, is the stored value: the
 	// installation's accent is nobody's edit.
 	//
+	// A body that names no colour is that absence as well. The published pattern
+	// admits no empty string, so the empty colour arrives only as a field nobody
+	// sent: a PUT that omits `primaryColor` returns a site that had chosen one to
+	// the installation's accent, at the revision that PUT moves. A caller that means
+	// to keep a colour sends it. Whether that door stays open on PUT is the
+	// composition's — see the module README's Limits.
+	//
 	// It is the door an approved proposal comes through, and it is not gated: the
 	// gate in Deps stands on the route a person types into, not here. Refusing the
 	// apply as well would make a proposal impossible to apply.
