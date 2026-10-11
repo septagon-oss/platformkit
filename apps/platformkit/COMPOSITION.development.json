@@ -17,7 +17,8 @@
         "webcontracts.Links",
         "admincontracts.Signin",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "authcontracts.ConfirmationChrome"
       ],
       "contributes": [
         {
@@ -165,7 +166,8 @@
         "config.Server"
       ],
       "implementation": {
-        "name": "mailbox"
+        "name": "mailbox",
+        "simulated": true
       }
     },
     {
@@ -309,6 +311,10 @@
         {
           "contract": "authcontracts.RegistrationMode",
           "from": "emailregistration"
+        },
+        {
+          "contract": "authcontracts.ConfirmationChrome",
+          "from": "product"
         }
       ],
       "after": [
