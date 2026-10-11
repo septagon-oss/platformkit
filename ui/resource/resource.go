@@ -245,13 +245,30 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	fields := make([]forms.Field, 0, len(r.Schema.Fields))
+	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
 	for _, field := range r.Schema.Fields {
 		fields = append(fields, formField(field))
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
 		values[name] = display.Text(value)
+	}
+	// An edit carries the row's write count back as a hidden value, so the write it
+	// posts can be refused against a row that moved since the person read it. It is a
+	// hidden value and not a control for two reasons that are one: nobody may type the
+	// number of a row's writes (kit/rest refuses a body that names the field), and a
+	// form whose hidden machinery is drawn as a control is a form that invites people to
+	// break its own safety. A create quotes nothing: there is no row to have read.
+	//
+	// The value is the number as the row has it, which is also what a refused write gives
+	// back — the person who is told their deadline is invalid resubmits against the
+	// revision they were already quoting, not against one they never saw.
+	if condition, quoted := revisionCondition(r, row, create); quoted {
+		fields = append(fields, forms.Field{Definition: entity.Field{
+			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
+			Doc: "The revision this form was drawn from. The write is refused if the row has moved.",
+		}})
+		values[entity.RevisionCondition] = condition
 	}
 	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
@@ -265,6 +282,36 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 			return o.Locale.Text(key, fallback)
 		},
 	})
+}
+
+// revisionCondition is the edit form's condition on the write: the row's own write count,
+// and whether this form may quote one at all. A resource whose entity keeps no count,
+// and a form that is not editing a row it read, quote nothing — and the door they post to
+// writes as plainly as it always did. A singleton is the second case by declaration: its
+// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
+// alone), so its screen carries a condition its route would not honour.
+func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
+	if create || r.Singleton || row == nil {
+		return "", false
+	}
+	counts := false
+	for _, f := range r.Schema.Fields {
+		if f.Name == entity.RevisionField && f.Type == entity.TypeInt {
+			counts = true
+		}
+	}
+	if !counts {
+		// A row that arrived with a revision no field of this schema declares is not this
+		// renderer's to speak for; it quotes nothing, and the write is the plain one.
+		return "", false
+	}
+	if count, has := row[entity.RevisionField]; has {
+		return display.Text(count), true
+	}
+	if carried, has := row[entity.RevisionCondition]; has {
+		return display.Text(carried), true
+	}
+	return "", false
 }
 
 // Control adapts an entity field to the portable form control, preserving the
