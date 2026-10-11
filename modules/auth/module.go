@@ -223,6 +223,10 @@ func New(deps Deps) (contracts.Auth, module.Module) {
 			personaldata.Table{Name: "recovery_codes", Person: "user_id"},
 			personaldata.Table{Name: "api_tokens", Person: "user_id", About: []string{"created_by"}, Text: []string{"name"}},
 			personaldata.Table{Name: "first_factor_proofs", Person: "user_id"},
+			// A passkey is a person's own credential: the challenge row is about the
+			// account being signed into, and the credential row is the person's key.
+			personaldata.Table{Name: "passkey_challenges", Person: "user_id"},
+			personaldata.Table{Name: "passkey_credentials", Person: "user_id"},
 		),
 		Permissions: permissions,
 		Declared:    contracts.Events,

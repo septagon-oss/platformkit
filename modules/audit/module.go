@@ -93,8 +93,12 @@ func New(deps Deps) module.Module {
 		// inside `payload` — an address verbatim today — so the payload is filed as
 		// text an erasure has to scrub and not as a column that names nobody.
 		PersonalData: personaldata.Implements(personaldata.Table{
-			Name:      "audit_events",
-			Person:    "actor",
+			Name:   "audit_events",
+			Person: "actor",
+			// The person a run served without signing in: a uuid that names a
+			// person the trail is about, and an erasure that left it behind would
+			// keep pointing at the person it says it forgot.
+			About:     []string{"initiator"},
 			Text:      []string{"payload"},
 			NotPerson: []string{"event_id", "records"},
 		}),
