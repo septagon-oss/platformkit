@@ -63,7 +63,6 @@ its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
 floor, so the 24px the browser audit enforces comes from the rule and not from
 whether the person's title happened to wrap.
 
-||||||| ae1ca6a
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
 presented — the words a person is shown, which field names a row, which block a
