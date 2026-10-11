@@ -201,7 +201,8 @@ func (f *Fake) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userID, 
 // Precheck mirrors internal.Service.Precheck: the limiter's verdict, from the
 // same limiter the real one keeps, over kit/limit's memory store.
 func (f *Fake) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return f.limiter.Check(ctx, email, ip)
+	verdict, _ := f.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk mirrors internal.Service.MayAsk.
@@ -381,10 +382,13 @@ func (f *Fake) Purge(_ context.Context, _ db.Tx[db.Tenant]) (int64, error) {
 	return gone, nil
 }
 
-// Login mirrors internal.Service.Login, including the dummy hash on the path
-// where no user was found.
+// Login mirrors internal.Service.Login, including the dummy hash on the path where no
+// user was found. What it does not mirror is the lockout's rate fields: those are the
+// real service stating the counter it read on the answer it is writing, and a fake that
+// wrote response headers would be a fake with an HTTP server in it.
 func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password string, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
-	if f.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, _ := f.limiter.Check(ctx, email, from.IP)
+	if verdict == contracts.Refuse {
 		f.record(contracts.EventLoginFailed)
 		return nil, nil, contracts.ErrTooManyAttempts
 	}

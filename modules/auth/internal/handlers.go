@@ -51,6 +51,34 @@ func asked(ctx context.Context, d contracts.Decision, sentence string) error {
 	return problem.New(http.StatusTooManyRequests, sentence)
 }
 
+// sayLockout puts the lockout on the answer it decided, and is the same rule as asked
+// spent on the two mail caps: a refusal this module counted has to name the counter it
+// counted, the quota left under it and the wait before either moves, because a 429 that
+// says none of those leaves the caller to retry on a guess.
+//
+// It is called by the command rather than by the route, because the command is where
+// the counter is read: the route sees ErrTooManyAttempts and nothing else, and a
+// reading taken after that answer is a second look at a window other attempts have
+// moved since. Both of this module's password doors — the sign-in and the second-factor
+// leg — spend the one counter and so state the one policy.
+//
+// A counter that could not be read reports no Decision and this says nothing at all:
+// the attempt was allowed on Limiter's stated failure mode, and the only numbers on
+// offer are ones nobody read.
+func sayLockout(ctx context.Context, d contracts.Decision, refused bool) {
+	if !d.Decided() {
+		return
+	}
+	httpx.SayCounted(ctx, httpx.Counted{
+		Name:      d.Policy.Name,
+		Quota:     d.Policy.Quota,
+		Window:    d.Policy.Window,
+		Remaining: d.Remaining,
+		Left:      d.Left,
+		Refused:   refused,
+	})
+}
+
 func handleLogin(svc contracts.Service, cookies Cookies) func(context.Context, *loginInput) (*sessionOutput, error) {
 	return func(ctx context.Context, in *loginInput) (*sessionOutput, error) {
 		// The verdict first, the sleep second, the transaction third, and that

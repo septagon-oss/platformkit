@@ -184,24 +184,48 @@ const (
 	Refuse
 )
 
-// Check is what the limiter says about an attempt on this address from this
-// one. It reads and does not record; Failed and Succeeded are the writes.
-func (l *Limiter) Check(ctx context.Context, email, ip string) Verdict {
-	if l.count(ctx, accountKey(email)) >= MaxAttempts {
+// Check is what the limiter says about an attempt on this address from this one, and
+// the account's own counter as the read that decided it described it: the quota, what
+// is left under it, and what is left of the window. It reads and does not record;
+// Failed and Succeeded are the writes.
+//
+// The numbers come back with the verdict for the same reason kit/limit answers a
+// Reserve in one call: an answer refused on this counter has to name it, and a reading
+// taken after the refusal is a second look at a row somebody else has moved. A counter
+// that could not be read decides Allow and reports no Decision at all, which is
+// Limiter's stated failure mode rather than a new one.
+//
+// What is named is the account's counter, and only that one. The per-address and
+// per-account-source counters are what tell a person from a botnet, and an answer that
+// named them would tell whoever is running the botnet how much of it is left to spend:
+// they decide quietly, and the Delay they earn is the whole of what a caller hears
+// about them.
+func (l *Limiter) Check(ctx context.Context, email, ip string) (Verdict, Decision) {
+	attempts, left, counted := l.read(ctx, accountKey(email))
+	verdict := Allow
+	switch {
+	case attempts >= MaxAttempts:
 		if l.count(ctx, sourcesKey(email)) > MaxSources {
-			// Locked, but by a crowd: this is somebody trying to lock the
-			// account's owner out, and answering "too many attempts" is doing
-			// it for them.
-			return Delay
+			// Locked, but by a crowd: this is somebody trying to lock the account's
+			// owner out, and answering "too many attempts" is doing it for them.
+			verdict = Delay
+		} else {
+			verdict = Refuse
 		}
-		return Refuse
-	}
-	if ip != "" && l.count(ctx, sourceKey(ip)) >= SourceAttempts {
+	case ip != "" && l.count(ctx, sourceKey(ip)) >= SourceAttempts:
 		// One machine working through a list of addresses. Each account's own
 		// counter is untouched, so this is the only thing that sees it.
-		return Delay
+		verdict = Delay
 	}
-	return Allow
+	if !counted {
+		return verdict, Decision{}
+	}
+	return verdict, Decision{
+		Policy:    Policy{Name: LoginAttemptsPolicyName, Quota: MaxAttempts, Window: AttemptWindow},
+		Allowed:   verdict != Refuse,
+		Remaining: max(MaxAttempts-attempts, 0),
+		Left:      left,
+	}
 }
 
 // Failed records one failure, from one address, against one account.
@@ -271,12 +295,21 @@ func (l *Limiter) Noted(ctx context.Context, email, ip string) bool {
 // cannot be reached: a limiter that refused what it could not count would make
 // an unreachable table an installation nobody can sign in to.
 func (l *Limiter) count(ctx context.Context, key string) int {
-	n, _, err := l.store.Count(ctx, key, AttemptWindow)
+	n, _, _ := l.read(ctx, key)
+	return n
+}
+
+// read is a window's own account of itself: how many events it holds, how long it has
+// left, and whether the counter answered at all. Every caller of this is a check on a
+// limit, and a check that could not be made decides nothing and states nothing — which
+// is the zero of every number here, not a count of zero events.
+func (l *Limiter) read(ctx context.Context, key string) (int, time.Duration, bool) {
+	n, left, err := l.store.Count(ctx, key, AttemptWindow)
 	if err != nil {
 		slog.ErrorContext(ctx, "auth: the limiter could not be read; the attempt is allowed", "key", key, "error", err)
-		return 0
+		return 0, 0, false
 	}
-	return n
+	return n, left, true
 }
 
 // within records one event and reports whether the key is still inside max. The
@@ -363,4 +396,10 @@ func EmailKey(email string) string { return strings.ToLower(strings.TrimSpace(em
 const (
 	AccountRequestsPolicyName  = "auth-account-requests"
 	ResetRedemptionsPolicyName = "auth-reset-redemptions"
+	// LoginAttemptsPolicyName is the lockout itself: MaxAttempts failures against one
+	// account inside AttemptWindow. It is one name for the two doors that spend it —
+	// the password check and the second-factor leg, which are the same account under
+	// the same script — and the address's own counters are named nowhere, because an
+	// answer that stated them would state how much of an attack is still affordable.
+	LoginAttemptsPolicyName = "auth-login-attempts"
 )

@@ -319,7 +319,9 @@ func (s *Service) RequireFirstFactorProof(ctx context.Context, tx db.Tx[db.Tenan
 	// and it reaches the same ten-in-a-quarter-hour before it is refused. A
 	// second counter for this door would be two knobs for one policy and a
 	// stranger who only has to switch doors.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		if s.limiter.Noted(ctx, email, from.IP) {
 			s.recordFailure(ctx, email, from, true)
 		}

@@ -63,12 +63,30 @@ type Scope struct {
 // on. Which names are worth keeping is nobody's business here — this package
 // holds what it is given, verbatim, and kit/httpx decides what an answer
 // consists of. It is the same division that keeps the body opaque: the memory
-// does not read what it remembers.
+// does not read what it remembers. Limits are held the same way, and for the same
+// reason, with one difference worth naming: they are held as the numbers a counter
+// reported rather than as the headers those numbers were rendered into, because two
+// of them are a countdown, and a countdown is restated rather than repeated.
 type Answer struct {
 	Status      int
 	ContentType string
 	Body        []byte
 	Headers     []Header
+	Limits      []Limit
+}
+
+// Limit is one ceiling an answer was decided under, as the counter that decided it
+// described it: a name, a quota, what was left under it when the answer was given,
+// the span the quota is measured over, and the instant the window it landed in
+// closes. Only the window moves by being waited out, so it is the one number a
+// replay works out again; the rest of an answer says what the first attempt was
+// told.
+type Limit struct {
+	Name      string        `json:"n"`
+	Quota     int           `json:"q"`
+	Remaining int           `json:"r"`
+	Window    time.Duration `json:"w"`
+	ResetsAt  time.Time     `json:"c"`
 }
 
 // Header is one response header kept with an answer, name and value exactly as
@@ -265,7 +283,7 @@ func (p postgres) Claim(ctx context.Context, s Scope, at time.Time) (Verdict, er
 	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		res := tx.DB().Exec(`UPDATE `+table+` SET claim = ?, claimed_at = ?, fingerprint = ?,
 				completed_at = NULL, recorded = FALSE, status = NULL, content_type = NULL, body = NULL,
-				headers = NULL, began = FALSE
+				headers = NULL, limits = NULL, began = FALSE
 			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
 			  AND (claimed_at <= ? OR (completed_at IS NULL AND began = FALSE AND claimed_at <= ?))`,
 			claim, at, s.Fingerprint[:],
@@ -319,12 +337,16 @@ func (p postgres) Complete(ctx context.Context, s Scope, claim uuid.UUID, a Answ
 		// remember: the status alone would be replayed as the whole of it.
 		return fmt.Errorf("idempotency: complete: %w", err)
 	}
+	counted, err := encodeLimits(a.Limits)
+	if err != nil {
+		return fmt.Errorf("idempotency: complete: %w", err)
+	}
 	err = p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		res := tx.DB().Exec(`UPDATE `+table+`
-			SET completed_at = ?, recorded = ?, status = ?, content_type = ?, body = ?, headers = ?
+			SET completed_at = ?, recorded = ?, status = ?, content_type = ?, body = ?, headers = ?, limits = ?
 			WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?
 			  AND claim = ? AND completed_at IS NULL`,
-			at, recorded, a.Status, a.ContentType, answerBody(a), answerHeaders(a, headers),
+			at, recorded, a.Status, a.ContentType, answerBody(a), answerHeaders(a, headers), answerLimits(a, counted),
 			s.Tenant, s.Caller, s.Method, s.Route, s.Key, claim)
 		if res.Error != nil {
 			return res.Error
@@ -348,7 +370,7 @@ func (p postgres) read(ctx context.Context, s Scope) (*row, bool, error) {
 	)
 	err := p.run(ctx, func(_ context.Context, tx db.Tx[db.System]) error {
 		rows, err := tx.DB().Raw(`SELECT fingerprint, claim, claimed_at, completed_at IS NOT NULL, recorded,
-			COALESCE(status, 0), COALESCE(content_type, ''), body, headers, began
+			COALESCE(status, 0), COALESCE(content_type, ''), body, headers, limits, began
 			FROM `+table+` WHERE tenant = ? AND caller = ? AND method = ? AND route = ? AND `+keyColumn+` = ?`,
 			s.Tenant, s.Caller, s.Method, s.Route, s.Key).Rows()
 		if err != nil {
@@ -359,14 +381,17 @@ func (p postgres) read(ctx context.Context, s Scope) (*row, bool, error) {
 			return rows.Err()
 		}
 		got = true
-		var fp, kept []byte
-		if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &body, &kept, &r.began); err != nil {
+		var fp, kept, counted []byte
+		if err := rows.Scan(&fp, &r.claim, &r.claimedAt, &r.completed, &r.recorded, &r.answer.Status, &r.answer.ContentType, &body, &kept, &counted, &r.began); err != nil {
 			return err
 		}
 		copy(r.fingerprint[:], fp)
 		r.answer.Body = body
 		r.answer.Headers, err = decodeHeaders(kept)
 		if err != nil {
+			return err
+		}
+		if r.answer.Limits, err = decodeLimits(counted); err != nil {
 			return err
 		}
 		return rows.Err()
@@ -521,6 +546,16 @@ func answerHeaders(a Answer, encoded []byte) []byte {
 	return encoded
 }
 
+// answerLimits is that rule for the ceilings, which belong to the answer for the
+// same reason the headers do: a 429 replayed without the limit that decided it
+// states a refusal the caller cannot act on.
+func answerLimits(a Answer, encoded []byte) []byte {
+	if a.Status == 0 {
+		return nil
+	}
+	return encoded
+}
+
 // encodeHeaders is the row's own spelling of a kept header list: JSON in a bytea,
 // which is how the body is already held, so neither column is parsed by anything
 // but this package and a name kept is a name replayed verbatim. A list rather
@@ -541,4 +576,25 @@ func decodeHeaders(kept []byte) ([]Header, error) {
 		return nil, err
 	}
 	return h, nil
+}
+
+// encodeLimits is the same spelling for the same reason: JSON in a bytea, held by a
+// package that never reads it — the names, the windows and the reading are
+// kit/httpx's, and the row is the memory that has to survive a deploy.
+func encodeLimits(l []Limit) ([]byte, error) {
+	if len(l) == 0 {
+		return nil, nil
+	}
+	return json.Marshal(l)
+}
+
+func decodeLimits(counted []byte) ([]Limit, error) {
+	if len(counted) == 0 {
+		return nil, nil
+	}
+	var l []Limit
+	if err := json.Unmarshal(counted, &l); err != nil {
+		return nil, err
+	}
+	return l, nil
 }

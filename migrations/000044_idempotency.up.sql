@@ -62,6 +62,15 @@ CREATE TABLE platformkit_idempotency (
 	-- kit/httpx's decision (idempotency.go's keptHeaders); this row holds verbatim
 	-- what it is handed, the same way it holds the body.
 	headers      bytea,
+	-- The ceilings the answer was decided under, in the same shape for the same
+	-- reason: name, quota, the reading the counter gave, the window it was taken
+	-- over, and when that window closes. They are held as numbers rather than as the
+	-- rendered `RateLimit` line because two of them count down: a refusal replayed
+	-- after its window had partly elapsed would otherwise tell the caller to sit out
+	-- a wait that has since shortened, or outlast a window that has already closed.
+	-- Which ceilings an answer is decided under is kit/httpx's decision, as it is for
+	-- the headers beside this column.
+	limits       bytea,
 	PRIMARY KEY (tenant, caller, method, route, key)
 );
 

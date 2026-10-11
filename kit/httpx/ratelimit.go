@@ -24,11 +24,14 @@ package httpx
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/septagon-oss/platformkit/kit/idempotency"
 )
 
 // The three fields, spelled once: here, at the writers, and in the README.
@@ -124,9 +127,15 @@ func sayPolicy(ctx huma.Context, policies ...limitPolicy) {
 // sayAnswer writes `RateLimit` from what a counter reported on this answer, and writes
 // nothing when no reading came back: a rate line carrying a number this package made
 // up is worse than no rate line.
+//
+// The reading is kept on the held response as well as written to it, because a keyed
+// write is answered again from the record and not from this call stack: see sayRecorded.
 func sayAnswer(ctx huma.Context, got ...measured) {
 	if len(got) == 0 {
 		return
+	}
+	if b, held := bufferFrom(ctx.Context()); held {
+		noteCounted(b, got...)
 	}
 	ctx.SetHeader(RateLimitHeader, answerField(got...))
 }
@@ -178,17 +187,85 @@ type Counted struct {
 // the kernel's and the module's, and a caller told one of them has been told a limit it
 // is not under. The order is the order they were consulted, which is the order
 // `RateLimit-Policy` asks for.
+//
+// The reading is written down beside the response, and not only rendered on it, so a
+// keyed write that is replayed later can state this counter again as of the moment that
+// replay is answered at: see sayRecorded.
 func SayCounted(ctx context.Context, c Counted) {
 	b, held := bufferFrom(ctx)
 	if !held || c.Name == "" {
 		return
 	}
-	p := limitPolicy{name: c.Name, quota: c.Quota, window: c.Window}
-	h := b.Header()
-	h.Set(RateLimitPolicyHeader, appendItem(h.Get(RateLimitPolicyHeader), p.item()))
-	h.Set(RateLimitHeader, appendItem(h.Get(RateLimitHeader), p.answer(c.Remaining, c.Left)))
-	if c.Refused {
-		h.Set(RetryAfterHeader, secondsUp(c.Left, 1))
+	m := measured{
+		policy:    limitPolicy{name: c.Name, quota: c.Quota, window: c.Window},
+		remaining: c.Remaining,
+		left:      c.Left,
+	}
+	noteCounted(b, m)
+	sayCountedOnto(b.Header(), m, c.Refused)
+}
+
+// sayCountedOnto writes one counter's numbers onto a response's headers. It is the
+// rendering half of both doors: SayCounted's, and the answer's own list, which is
+// appended to rather than replaced for the reason SayCounted spells.
+func sayCountedOnto(h http.Header, m measured, refused bool) {
+	h.Set(RateLimitPolicyHeader, appendItem(h.Get(RateLimitPolicyHeader), m.policy.item()))
+	h.Set(RateLimitHeader, appendItem(h.Get(RateLimitHeader), m.policy.answer(m.remaining, m.left)))
+	if refused {
+		h.Set(RetryAfterHeader, secondsUp(m.left, 1))
+	}
+}
+
+// recorded is the answer's own account of the ceilings it was decided under, at the
+// moment it was given: the same readings, in the same order, with each window's
+// closing worked out from the instant it was read. This is what a replay restates, and
+// the reason the numbers are kept rather than the rendered lines.
+func recorded(got []measured, at time.Time) []idempotency.Limit {
+	if len(got) == 0 {
+		return nil
+	}
+	out := make([]idempotency.Limit, 0, len(got))
+	for _, m := range got {
+		out = append(out, idempotency.Limit{
+			Name: m.policy.name, Quota: m.policy.quota, Remaining: m.remaining,
+			Window: m.policy.window, ResetsAt: at.Add(m.left),
+		})
+	}
+	return out
+}
+
+// sayRecorded restates the ceilings a remembered answer was decided under on the
+// reply to the attempt that is asking again.
+//
+// The policy line is the easy half: a name, a quota and a window are the same on every
+// answer under them, which is the property draft-ietf-httpapi-ratelimit-headers asks
+// that field to keep. The reading is the harder one, and the reason the numbers are
+// stored rather than the rendered lines: what is left of a quota and what is left of a
+// window both shrink while a record sits in it, so a replay that restated the stored
+// figures would report a wait that has partly elapsed, or outlast a window that has
+// closed. `t` and `Retry-After` therefore come from the window's own ending, and the
+// quota is restated as the counter reported it — the ceiling a caller was told at the
+// moment it was decided has not changed; only the clock has moved.
+//
+// A refusal names the longest of the waits that still run: an answer under two counters
+// is not free to retry until the later of them opens, and a caller told the shorter has
+// been told to come back to a refusal.
+func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now time.Time) {
+	if len(limits) == 0 {
+		return
+	}
+	left := time.Duration(0)
+	for _, l := range limits {
+		// What is left of the window is worked out again; what was left of the quota is
+		// restated. A replay consults no counter — consulting one would be spending the
+		// attempt over again — so the quota line can only be the reading the first
+		// attempt was given, and `t` is the field that says how long that reading held.
+		got := max(l.ResetsAt.Sub(now), 0)
+		sayCountedOnto(h, measured{policy: limitPolicy{name: l.Name, quota: l.Quota, window: l.Window}, remaining: l.Remaining, left: got}, false)
+		left = max(left, got)
+	}
+	if refused {
+		h.Set(RetryAfterHeader, secondsUp(left, 1))
 	}
 }
 

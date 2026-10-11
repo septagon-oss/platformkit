@@ -194,7 +194,11 @@ func fingerprint(method, route, path, rawQuery, contentType string, body []byte)
 // answer, not a draft of one.
 func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 	store := a.opts.Idempotency
-	if store == nil || !keyedSurface(ctx.Context()) || !keyedMethod(ctx.Method()) {
+	if store == nil || !keyedSurface(ctx.Context()) || !keyedMethod(ctx.Method()) || mintsACredential(ctx.Operation()) {
+		// The same three facts the document reads, read here: a route the document
+		// says nothing about and a route the guard ignores are one mistake made twice,
+		// and the third of them — a route whose answer is a credential it minted —
+		// cannot be answered from a memory at all. See CredentialExtension.
 		next(ctx)
 		return
 	}
@@ -329,7 +333,10 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // What does travel, besides the body, is whatever keptHeaders names: the headers
 // the answer cannot be without. A redirect is a functional answer — the write is
 // done and the caller is being sent somewhere — and the retry of one that dropped
-// its destination is a caller left at a status with no page to go to.
+// its destination is a caller left at a status with no page to go to. And what
+// travels beside them, in a shape of its own rather than as a rendered header, are
+// the limits the answer was decided under: see sayRecorded, which restates them
+// against the moment the replay is being answered at.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
@@ -341,6 +348,13 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	for _, h := range stored.Headers {
 		w.Header().Add(h.Name, h.Value)
 	}
+	// The ceilings the write was refused under go on the replay too, with the one
+	// number that ages worked out again. A policy line costs nothing to restate and
+	// names the limit the caller is under; the reading is the one the deciding counter
+	// gave, and the wait is what is left of the window that refusal landed in. A replay
+	// that said nothing let respond.go's floor stand in — a minute for a window of an
+	// hour — which is a guess where the answer had a number.
+	sayRecorded(w.Header(), stored.Limits, stored.Status == http.StatusTooManyRequests, time.Now().UTC())
 	// Both places, as declared does: the writer holds the answer, and the huma
 	// context holds the verdict the transaction middleware commits or rolls back on.
 	// A replay runs no handler and writes nothing either way, and committing the
@@ -402,12 +416,18 @@ func withClaim(ctx context.Context) context.Context {
 // chooses between them by the request in front of it), so a keyed form post that
 // answered by sending the caller to the page its write finished at still sends
 // them there on the retry. Every other header is deliberately absent:
-// `Set-Cookie` is withheld by the public surface's own promise and by
-// buffer.go's writer, `Cache-Control` and `Vary` describe this exchange rather
-// than the answer, and `Content-Type` has its own field because it is the one
-// the row is read into. A header not on this list is a header a replay answers
-// without, which is the trade the memory makes on purpose: keep what the answer
-// does, not how it was transported.
+// `Set-Cookie` is a credential minted for one exchange, and a remembered one would
+// be a live session key sitting in a row for a day and a dead one the moment the
+// session behind it was revoked — which is why a route whose answer is a credential
+// declares that it takes no key at all (CredentialExtension) rather than promising a
+// replay that cannot sign anybody in. `Cache-Control` and `Vary` describe this
+// exchange rather than the answer. The three rate fields are absent from this list
+// and present on a replay all the same, because they are kept as the numbers the
+// counters reported rather than as the lines those numbers render to: two of them
+// count down, and a countdown is restated rather than repeated (sayRecorded).
+// `Content-Type` has its own field because it is the one the row is read into. A
+// header not on this list is a header a replay answers without, which is the trade
+// the memory makes on purpose: keep what the answer does, not how it was carried.
 var keptHeaders = []string{"Location", "HX-Redirect"}
 
 // keepHeaders reads the headers worth keeping out of the response the caller was
@@ -451,7 +471,7 @@ const completeBudget = 5 * time.Second
 // that hung up nor the transaction that closed underneath this defer can un-remember
 // an answer the caller received — and the caller who retries is precisely the caller
 // this row is for.
-func (a *API) complete(ctx context.Context, n *claimNote, status int, header http.Header, body []byte, held bool) {
+func (a *API) complete(ctx context.Context, n *claimNote, status int, header http.Header, body []byte, held bool, counted []measured) {
 	if n == nil || n.store == nil || n.claim == uuid.Nil {
 		return
 	}
@@ -459,7 +479,14 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, header htt
 	if now == nil {
 		now = ctx
 	}
-	answer := idempotency.Answer{Status: status, ContentType: header.Get("Content-Type"), Body: body, Headers: keepHeaders(header)}
+	// One reading of the clock, for the record's own moment and for the instant each
+	// window it names closes: the two are read together or a replay reports a wait
+	// counted from the wrong minute.
+	at := time.Now().UTC()
+	answer := idempotency.Answer{
+		Status: status, ContentType: header.Get("Content-Type"), Body: body,
+		Headers: keepHeaders(header), Limits: recorded(counted, at),
+	}
 	if !held || len(answer.Body) > maxRecordedAnswer {
 		// The bytes were already on the wire, or they are too large to hold: the
 		// write is remembered as spent, which costs the caller a 409 and never a
@@ -471,7 +498,7 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, header htt
 	}
 	detached, cancel := context.WithTimeout(context.WithoutCancel(now), completeBudget)
 	defer cancel()
-	err := n.store.Complete(detached, n.scope, n.claim, answer, time.Now().UTC())
+	err := n.store.Complete(detached, n.scope, n.claim, answer, at)
 	if err == nil {
 		return
 	}
@@ -509,7 +536,48 @@ func declaresKey(op *huma.Operation) bool {
 	default:
 		return false
 	}
-	return declaresIdempotencySurface(op)
+	return declaresIdempotencySurface(op) && !mintsACredential(op)
+}
+
+// CredentialExtension marks an operation whose answer *is* a credential the caller
+// can only use by receiving it: the session a sign-in opens, the key a mint hands
+// out. Such a route is not a keyed write, and the document says nothing about the
+// header on it.
+//
+// The reason is the same promise the header is bought for. A remembered answer is
+// replayed, and a credential cannot be: either the row holds the cookie, which puts a
+// live bearer token in a table for the day the record lives and hands it back after
+// the session behind it may have been revoked — modules/auth keeps a hash of a session
+// id for exactly that reason, and a replayed credential that no longer opens anything
+// is the same false sign-in by another route — or the row holds nothing, and the
+// replay answers a sign-in with a body that says who the caller is and no way to act
+// as them. Neither is a promise worth keeping, and the direction that cannot break
+// either one is the direction that makes the route honest about what it is: a sign-in
+// retried is a sign-in attempted again, the credentials re-checked, a session minted
+// again, and the caller signed in.
+//
+// It is an extension on the operation and not a rule the middleware infers from a
+// response, because the kernel must not know which module owns a route, and because
+// the alternative — claiming the key, running the write, discovering a Set-Cookie and
+// forgetting the record — would make every route that ever sets a cookie free to run
+// twice. A route that mints a credential and does an unguarded write behind it would
+// be the second write the header exists to prevent.
+const CredentialExtension = "x-platformkit-mints-a-credential"
+
+// MintsACredential is what a route whose answer is a credential it just made puts in
+// its Extensions, beside EventsExtension: the answer is spendable only by the exchange
+// that received it, so no retry of it is answerable from a memory and none is promised.
+func MintsACredential() (string, any) { return CredentialExtension, true }
+
+// mintsACredential reads that declaration back, and is the one answer to the question
+// for both sides of it: declaresKey asks it of the document, and the guard asks it of
+// the request, so the promise and the wire cannot disagree.
+func mintsACredential(op *huma.Operation) bool {
+	if op == nil || op.Extensions == nil {
+		return false
+	}
+	_, mints := op.Extensions[CredentialExtension]
+	return mints
 }
 
 // declaresIdempotencySurface is the surface half of the declaration: the control

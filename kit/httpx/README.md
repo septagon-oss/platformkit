@@ -168,7 +168,13 @@ them lives in [../idempotency](../idempotency), and the counter behind the other
 body and the same caller get the first attempt's status, `Content-Type`, the
 navigation it sent the caller to (`Location`, or `HX-Redirect` for the request htmx
 made — html.go's `Redirect` picks between them) and body, and the handler does not
-run. A 303 replayed without its `Location` is a status with nothing to act on, so the
+run. The ceilings it was decided under go with it too: the record holds the reading each
+counter gave, and a replay writes `RateLimit-Policy`, `RateLimit` and `Retry-After` from
+them — the policy and the quota as they were decided, and what is left of the window
+worked out against the moment the replay is answered at, because a refusal that restated
+a stored wait would tell a caller to sit out a window that had already closed.
+
+A 303 replayed without its `Location` is a status with nothing to act on, so the
 destination is part of the answer and not a header beside it. "The same write" is
 digested over the method, the mounted
 pattern, the path *as it arrived* — chi routes on `RawPath`, so `/records/a%2Fb/c` and
@@ -191,13 +197,39 @@ gate](httpx.go) and never has to buffer a request to fingerprint it.
 | same key, same body | the first attempt's answer | no |
 | same key, another body | 422 `IDEMPOTENCY_KEY_IN_USE` | no |
 | same key, first still running | 409 `IDEMPOTENCY_IN_FLIGHT` | no |
+| a write whose answer is a credential it minted | whatever the route decides | yes |
 | no key at all | whatever the route decides | yes |
+
+**The write that cannot be replayed.** A route whose answer *is* a credential —
+[modules/auth](../../modules/auth)'s sign-in, its set-password link, its second-factor
+leg — declares `MintsACredential` and is not keyed: the document says nothing about the
+header there and the guard asks that same question of the request. A remembered answer is
+restated, and a minted credential cannot be. Keeping the cookie in the row would put a
+live bearer token in a table for the day the record lives, where
+[the module that owns a session](../../modules/auth/internal/kernel.go) keeps its hash
+and nothing else, and it would hand back a credential whose session was revoked in the
+meantime — the same false sign-in, one logout later. So a sign-in whose answer was lost
+is signed in again: the password checked a second time, the session minted a second time,
+which is the thing the caller wanted. The legs behind it answer what a spent link and a
+spent step already answer. What that costs is one `auth.logged_in` event per attempt that
+presented the password, and it is the alternative to a credential at rest.
+
+**What a record cannot hold.** An answer larger than `maxRecordedAnswer` — a quarter of
+a megabyte, past every document this API answers with and below the 2 MiB a held response
+may already reach — is remembered as *spent* rather than replayable: the retry of it is
+refused 409 `IDEMPOTENCY_SPENT` and the write is never run again, because losing an
+answer may cost a caller a retry while forgetting a record costs them the second write the
+header exists to prevent. A claim the handler never entered stays takeable, so an outage
+cannot burn a key that demonstrably did no work. The retention is the day the header
+promises, the lease on an unanswered claim is five minutes, and neither is a setting: the
+clock they are measured against is the transport's own, not `Options.Clock`.
 
 It is declared on the operation, through [the table](surfaces.go), so the document and
 the guard cannot say two things — the same reason `x-platformkit-surface` and
-`x-platformkit-streams-body` are in that table. The one exception is in one sentence: the control
-plane's writes are skipped, because this task's brief keys the app and public surfaces
-and leaves the operator console's to the product. The route that reads its own request
+`x-platformkit-streams-body` are in that table. Two exceptions, each in one sentence:
+the control plane's writes are skipped, because this task's brief keys the app and public
+surfaces and leaves the operator console's to the product; and a route whose answer is a
+credential it minted is skipped for the reason above it. The route that reads its own request
 — `kit/rest`'s streamed upload — is *not* an exception, and the reason it is not is that
 a key the guard ignored was a promise the document made and the wire broke: that body is
 digested under the same ceiling every keyed write has (`MaxBodyBytes`, said in the
@@ -229,8 +261,9 @@ name belongs to a counter, and a route that spends one states *that* counter's n
 through `SayCounted` — which is how [modules/auth](../../modules/auth)'s own caps
 (password reminders, link redemption) come to state the limit that decides them rather
 than leaving the kernel's anonymous-write policy to speak for a counter it never
-consulted. Two counters on one reply is two items in one list, in the order they were
-consulted; one is one. The port is one method wide, `Reserve`, which
+consulted — including the lockout, which is counted inside the sign-in command rather
+than at its route and so states itself from there. Two counters on one reply is two items
+in one list, in the order they were consulted; one is one. The port is one method wide, `Reserve`, which
 answers the decision, the quota left and the window left from a single statement; it
 replaced `Allow`+`Count` rather than sitting beside them, because two calls are two
 readings of a row that had other writers between them. That widens `kit/limit`'s
@@ -307,6 +340,6 @@ executes SQL of its own — resource registration reads `entity.Schema` and
 [ui/resource](../../ui/resource/resource.go); this package renders nothing.
 
 Prerequisites: a `db.Conn`, a `TenantLoader`, an `Authorizer` and the
-authenticate hook; [apps/platformkit](../../apps/platformkit/modules.go) is the
+authenticate hook; [apps/platformkit](../../apps/platformkit/app.go) is the
 composition to copy. Tests run against the development database: `make up`,
 then `make test TEST_PACKAGES=./kit/httpx`.

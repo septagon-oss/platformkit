@@ -86,7 +86,12 @@ func NewService(users contracts.Users, notify contracts.Notifier, mail Delivery)
 // Precheck is the limiter's verdict, read from the shared counters. See
 // contracts.Service.
 func (s *Service) Precheck(ctx context.Context, email, ip string) contracts.Verdict {
-	return s.limiter.Check(ctx, email, ip)
+	// The verdict alone, and the numbers with it dropped: Precheck decides whether to
+	// pause, and the answer that goes on the wire is decided by Login, which asks its
+	// own question of the same counter. Two readings stating themselves on one answer
+	// would be two rate lines for one attempt.
+	verdict, _ := s.limiter.Check(ctx, email, ip)
+	return verdict
 }
 
 // MayAsk counts one forgotten-password request from an address. See
@@ -115,7 +120,9 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 	// Precheck — a two-second sleep here holds one of sixteen pool connections,
 	// and twenty-four of them at once took a replica to twenty-nine seconds of
 	// latency for every other request. See contracts.Service.Precheck.
-	if s.limiter.Check(ctx, email, from.IP) == contracts.Refuse {
+	verdict, counted := s.limiter.Check(ctx, email, from.IP)
+	sayLockout(ctx, counted, verdict == contracts.Refuse)
+	if verdict == contracts.Refuse {
 		// Once per account per address per window. The refusal happens before
 		// anything is checked, so a script against a locked account produces
 		// one of these a millisecond; the first says the account is under
@@ -499,7 +506,8 @@ func (s *Service) identify(ctx context.Context, tx db.Tx[db.Tenant], user *userc
 // fail records one failure and returns the one answer a failed login gets.
 func (s *Service) fail(ctx context.Context, email string, from contracts.Client) error {
 	s.limiter.Failed(ctx, email, from.IP)
-	s.recordFailure(ctx, email, from, s.limiter.Check(ctx, email, from.IP) == contracts.Refuse)
+	verdict, _ := s.limiter.Check(ctx, email, from.IP)
+	s.recordFailure(ctx, email, from, verdict == contracts.Refuse)
 	return contracts.ErrCredentials
 }
 
