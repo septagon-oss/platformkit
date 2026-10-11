@@ -3231,6 +3231,37 @@
       "summary": "Every tenant's delivery of user.password_set.",
       "title": "user.password_set"
     },
+    "user.reactivated": {
+      "address": "platformkit.*.user.reactivated",
+      "description": "Published at platformkit.{tenantId}.user.reactivated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "user.reactivated": {
+          "contentType": "application/json",
+          "name": "user.reactivated",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "userId": {
+                "format": "uuid",
+                "type": "string"
+              }
+            },
+            "required": [
+              "userId",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "user — user.reactivated",
+          "title": "user.reactivated"
+        }
+      },
+      "summary": "Every tenant's delivery of user.reactivated.",
+      "title": "user.reactivated"
+    },
     "user.registration_approved": {
       "address": "platformkit.*.user.registration_approved",
       "description": "Published at platformkit.{tenantId}.user.registration_approved; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
@@ -4761,6 +4792,23 @@
         }
       ],
       "summary": "The user module publishes user.password_set.",
+      "tags": [
+        {
+          "name": "user"
+        }
+      ]
+    },
+    "user.reactivated": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/user.reactivated"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/user.reactivated/messages/user.reactivated"
+        }
+      ],
+      "summary": "The user module publishes user.reactivated.",
       "tags": [
         {
           "name": "user"

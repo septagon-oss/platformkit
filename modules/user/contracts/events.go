@@ -21,6 +21,7 @@ const (
 	EventRolesSet    = "user.roles_set"
 	EventHandleSet   = "user.handle_set"
 	EventDeactivated = "user.deactivated"
+	EventReactivated = "user.reactivated"
 )
 
 // Invited is the payload of EventInvited: a user account now exists in this
@@ -79,6 +80,15 @@ type HandleSet struct {
 // Deactivated is the payload of EventDeactivated: this person can no longer
 // sign in.
 type Deactivated struct {
+	UserID uuid.UUID `json:"userId"`
+	At     time.Time `json:"at"`
+}
+
+// Reactivated is the payload of EventReactivated: this person can sign in again.
+// It is a name of its own rather than the absence of a deactivation because the
+// two doors that close a person are not the doors that open them, and an audit
+// of who could sign in needs to say which of them opened it.
+type Reactivated struct {
 	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
 }
