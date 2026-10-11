@@ -163,7 +163,14 @@ check-race: ## Run the concurrency kernel under -race
 
 check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-plurals ## Everything a pull request must pass
 	go mod tidy -diff
-	go tool gotestsum --packages='./...' -- -count=1
+	# A stated per-package bound, because go test's ten-minute default is not a
+	# decision this repository ever made and the suite grew past it:
+	# apps/platformkit's cases each migrate an installation into a schema of their
+	# own, so a run on a host serving several suites at once reaches the watchdog
+	# while it is still working, with no assertion failed. This is the bound
+	# origin/main's check goal carries; the count stays written out because this
+	# tree's local `test` goal keeps its own cache-reusing flags.
+	go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	bash scripts/check_architecture_test.sh
 	bash scripts/check_budget_ratchet_test.sh
 	./scripts/check_imports.sh
