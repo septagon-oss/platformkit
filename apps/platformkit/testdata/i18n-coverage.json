@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "measured_utc": "2026-10-06T10:08:02Z",
+  "measured_utc": "2026-10-11T10:38:57Z",
   "pages": {
     "FAULT 404": {
       "wrapped": 5,
@@ -12,11 +12,11 @@
     },
     "GET /": {
       "wrapped": 0,
-      "readable": 6
+      "readable": 7
     },
     "GET /app": {
       "wrapped": 0,
-      "readable": 56
+      "readable": 58
     },
     "GET /app/access-request/sent": {
       "wrapped": 4,
@@ -24,15 +24,15 @@
     },
     "GET /app/admin/_gallery": {
       "wrapped": 0,
-      "readable": 220
+      "readable": 911
     },
     "GET /app/admin/health": {
       "wrapped": 0,
-      "readable": 49
+      "readable": 51
     },
     "GET /app/admin/login": {
-      "wrapped": 9,
-      "readable": 19
+      "wrapped": 11,
+      "readable": 21
     },
     "GET /app/admin/login/forgot": {
       "wrapped": 8,
@@ -48,11 +48,11 @@
     },
     "GET /app/auth/roles": {
       "wrapped": 0,
-      "readable": 77
+      "readable": 79
     },
     "GET /app/auth/sessions": {
       "wrapped": 0,
-      "readable": 60
+      "readable": 68
     },
     "GET /app/auth/verify-email": {
       "wrapped": 6,
@@ -60,39 +60,43 @@
     },
     "GET /app/billing/plans": {
       "wrapped": 2,
-      "readable": 59
+      "readable": 62
     },
     "GET /app/billing/plans/new": {
       "wrapped": 5,
-      "readable": 68
+      "readable": 70
     },
     "GET /app/billing/plans/{id}": {
       "wrapped": 4,
-      "readable": 64
+      "readable": 66
     },
     "GET /app/billing/plans/{id}/edit": {
       "wrapped": 5,
-      "readable": 68
+      "readable": 70
+    },
+    "GET /app/change/proposals": {
+      "wrapped": 0,
+      "readable": 5
     },
     "GET /app/content/contents": {
       "wrapped": 2,
-      "readable": 56
+      "readable": 65
     },
     "GET /app/content/contents/new": {
       "wrapped": 14,
-      "readable": 71
+      "readable": 73
     },
     "GET /app/content/contents/{id}": {
       "wrapped": 4,
-      "readable": 66
+      "readable": 68
     },
     "GET /app/content/contents/{id}/edit": {
       "wrapped": 14,
-      "readable": 81
+      "readable": 83
     },
     "GET /app/site/settings": {
       "wrapped": 2,
-      "readable": 61
+      "readable": 60
     },
     "GET /app/site/settings/edit": {
       "wrapped": 5,
@@ -100,55 +104,59 @@
     },
     "GET /app/task/tasks": {
       "wrapped": 2,
-      "readable": 59
+      "readable": 63
     },
     "GET /app/task/tasks/new": {
       "wrapped": 5,
-      "readable": 78
+      "readable": 80
     },
     "GET /app/task/tasks/{id}": {
       "wrapped": 4,
-      "readable": 76
+      "readable": 79
     },
     "GET /app/task/tasks/{id}/edit": {
       "wrapped": 5,
-      "readable": 86
+      "readable": 90
     },
     "GET /app/tenant/tenants": {
       "wrapped": 0,
-      "readable": 51
+      "readable": 53
     },
     "GET /app/user/users": {
       "wrapped": 2,
-      "readable": 56
+      "readable": 59
     },
     "GET /app/user/users/new": {
       "wrapped": 5,
-      "readable": 55
+      "readable": 57
     },
     "GET /app/user/users/{id}": {
       "wrapped": 4,
-      "readable": 74
+      "readable": 76
     },
     "GET /app/user/users/{id}/edit": {
       "wrapped": 5,
-      "readable": 67
+      "readable": 69
+    },
+    "GET /{slug}": {
+      "wrapped": 0,
+      "readable": 7
     },
     "POST /app/billing/plans": {
       "wrapped": 5,
-      "readable": 71
+      "readable": 73
     },
     "POST /app/content/contents": {
       "wrapped": 14,
-      "readable": 74
+      "readable": 76
     },
     "POST /app/task/tasks": {
       "wrapped": 5,
-      "readable": 81
+      "readable": 83
     },
     "POST /app/user/users": {
       "wrapped": 5,
-      "readable": 58
+      "readable": 60
     },
     "PUBLIC 404": {
       "wrapped": 3,

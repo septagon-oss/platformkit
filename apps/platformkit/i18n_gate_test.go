@@ -591,10 +591,17 @@ func seedRecords(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 	out.ids["/app/content/contents/"] = content
 	if content != "" {
 		// The public site answers a page only once it is published, and publishing is
-		// the module's own verb door.
+		// the module's own verb door — a door the module separates by hand: the person
+		// who wrote a page is not the person who decides it goes live
+		// (contentcontracts.Content.PublishBy). This seed writes as the one person the
+		// bootstrap created, so its own page stays a draft, and the document at
+		// /{slug} is measured over a page the tenant really has published — the
+		// starter seed's, written through content's own command door.
 		if code, answer := do(t, cfg, admin, http.MethodPost, acmeHost,
 			contentPath+"/"+content+"/publish", `{}`); code != http.StatusOK {
-			t.Logf("publish = %d %s", code, answer)
+			t.Logf("publish = %d %s; measuring the page the starter seed published instead",
+				code, answer)
+			out.slug = publishedSlug(t, cfg, admin)
 		} else {
 			out.slug = seededPageSlug
 		}
@@ -617,7 +624,37 @@ func seedRecords(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 	// name as untranslated English on every page it serves.
 	out.typed = []string{seededTaskTitle, seededPlanName, seededPageSlug, seededPageTitle,
 		seededPageBody, acmeName}
+	if out.slug != "" && out.slug != seededPageSlug {
+		out.typed = append(out.typed, out.slug)
+	}
 	return out
+}
+
+// publishedSlug answers the slug of a page this tenant has published, read off the
+// content list the way the screen reads it. "" means none, which is a page the
+// gate reports as skipped rather than one it invents an id for.
+func publishedSlug(t *testing.T, cfg config.Config, admin *http.Client) string {
+	t.Helper()
+	code, answer := do(t, cfg, admin, http.MethodGet, acmeHost, contentPath, "")
+	if code != http.StatusOK {
+		t.Logf("list %s = %d %s", contentPath, code, answer)
+		return ""
+	}
+	var list struct {
+		Items []struct {
+			Slug   string `json:"slug"`
+			Status string `json:"status"`
+		} `json:"items"`
+	}
+	if json.Unmarshal([]byte(answer), &list) != nil {
+		return ""
+	}
+	for _, item := range list.Items {
+		if item.Status == "published" {
+			return item.Slug
+		}
+	}
+	return ""
 }
 
 func readFloor(t *testing.T) report {
