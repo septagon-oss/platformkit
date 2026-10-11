@@ -54,9 +54,9 @@ beyond the reviewed list is a gate on this change rather than a report about las
 week, and the weekly schedule stopped being the only thing that ran it.
 
 It resolves published revisions, so it needs the network and a supported tag. That
-is the price, taken deliberately: a run that cannot reach the proxy fails the gate
-and says so rather than skipping, because a gate that quietly does nothing offline
-is the instruction that "ran when a person remembered" with a name like a check.
+is the price, taken deliberately: a run the proxy will not answer, even after two
+retries, fails the gate and says so rather than skipping, because a gate that
+quietly does nothing offline is a gate that "ran when a person remembered".
 What this does not do is close the [release decision](../RELEASE.md#choose-the-compatible-release-line):
 publishing a stable release ends a baseline, and the `/v2` migration is still owed.
 Do not suppress the expected report to make a step pass.

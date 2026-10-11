@@ -14,9 +14,11 @@ var schema embed.FS
 // composes the schema it needs beside the foundation: dbtest.Schema(t, audit.Migrations).
 //
 // The files keep the version numbers they had when the foundation applied
-// them under its own name, so an installation migrated before this module
+// them under their own name, so an installation migrated before this module
 // owned its SQL is adopted by checksum rather than migrated again (see
-// db.Adoption and docs/adr/0011). New files continue from the highest number.
+// db.Adoption and docs/adr/0011). New files continue from the highest number,
+// above anything the foundation shipped alone, so they are new rows and are not
+// in the adoption list.
 var Migrations = db.MigrationSource{
 	Owner:  "audit",
 	Files:  db.Sub(schema, "migrations"),

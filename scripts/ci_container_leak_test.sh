@@ -299,9 +299,13 @@ CASES = [
     ("a sweep no longer the job's first step", "ci.yml",
      "      - name: Remove containers a killed job left on this runner",
      "      - name: A step that starts no container\n        run: true\n      - name: Remove containers a killed job left on this runner"),
+    # The locator is the object store's own line, not that line together with the one after it: the
+    # editor's steps stand in a job of their own, so `EDITOR_NAME` belongs to that job's `always()`
+    # step and `S3_NAME` to `check`'s, and the two are no longer neighbours in this file. The mutant
+    # is the same leak in the same step — a job's `always()` step left without the handle for a
+    # container it can start — and it is still refused by the same sentence about the object store.
     ("an always() step told about no object store", "ci.yml",
-     "          S3_NAME: platformkit-${{ github.run_id }}-s3\n          EDITOR_NAME",
-     "          EDITOR_NAME"),
+     "          S3_NAME: platformkit-${{ github.run_id }}-s3\n", ""),
     ("one preview profile the always() step does not name", "ci.yml",
      'drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME-complete"',
      'drop "$COMPLETE_PREVIEW_CONTAINER" "$PREVIEW_NAME"'),

@@ -30,7 +30,7 @@ func Migrate(ctx context.Context, cfg config.Config, mods []module.Module) error
 		return err
 	}
 	// After the walk, because the walk may hold this release's own placement file:
-	// that file is the first run of the same function (migrations/000045) and it
+	// that file is the first run of the same function (migrations/000055) and it
 	// refuses what it cannot place, and a step that placed first would answer that
 	// file's operator a different question than the file asks. See placement.go.
 	return placeTenants(ctx, cfg)

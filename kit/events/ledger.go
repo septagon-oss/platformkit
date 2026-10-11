@@ -185,7 +185,7 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 	err := db.RunSystem(ctx, conn, ledgerToken, func(ctx context.Context, tx db.Tx[db.System]) error {
 		// The tenants first, before any name is read: a claim declares its tenant
 		// busy for its whole transaction, whether or not any row under that durable
-		// has ever committed (migrations/000044). See holdTenants for why the
+		// has ever committed (migrations/000054). See holdTenants for why the
 		// durable list below cannot be the whole question.
 		if err := holdTenants(tx, app); err != nil {
 			return err
@@ -239,7 +239,7 @@ func MoveLedger(ctx context.Context, conn *db.Conn, app appname.Name, requestedB
 		// because it did not exist when the entry read ran and was named anyway: the row it
 		// writes is unscoped, its claims arrive under a name its consumer is about to
 		// subscribe under, and the second handling has no other witness. The walk that names
-		// an app now declares the tenant's own key before it writes (migrations/000047), so a
+		// an app now declares the tenant's own key before it writes (migrations/000057), so a
 		// placement can no longer commit between this transaction's reads — refused over by
 		// the entry lock if it came first, serialized behind it if it came after, and owing
 		// the move its own boot runs next. Refusing is the whole remedy: nothing moved,
@@ -295,12 +295,12 @@ const notASlug = "it is not an app name: no durable can be formed from it, so no
 // text itself is the key, hashed into the 64-bit advisory space with the same
 // call modules/auth uses for its own keys: two durables that collide answer with
 // a refusal that writes nothing and is retried, which is the cheap direction for a
-// hash to be wrong in. The text is hashed by migrations/000044's trigger too: the
+// hash to be wrong in. The text is hashed by migrations/000054's trigger too: the
 // claim that takes the matching share lock and the move that asks for this one are
 // two halves of one key, and only this function states it in Go.
 func durableLock(durable string) string { return "events ledger " + durable }
 
-// tenantLockKey is the expression the claim trigger hashes: migrations/000044's text,
+// tenantLockKey is the expression the claim trigger hashes: migrations/000054's text,
 // spelled here so the move that asks this key for an app and the claim that takes its
 // share are two halves of one key and cannot drift — a move that asks the wrong key
 // excludes nothing and reports a safe refusal it never made. It is the first key the
@@ -333,7 +333,7 @@ func tenantLock(tenantID uuid.UUID) string { return "events ledger tenant " + te
 // placement can overtake is what makes that read an answer the move has to respect: from
 // this statement to the end of the transaction, the move of this tenant refuses. The
 // placement declares the same key before its own write, for the same reason and with the
-// same lifetime (migrations/000047), and that is the half that made this one enough: the
+// same lifetime (migrations/000057), and that is the half that made this one enough: the
 // two writers that can change what a move is renaming are the claim and the naming, and
 // both are now visible from before the statement that decides to write.
 //
@@ -349,7 +349,7 @@ func declareTenant(gdb *gorm.DB, tenantID uuid.UUID) error {
 }
 
 // unscopedDurable is Go's reading of the move's `unscoped` predicate and of
-// migrations/000044's WHEN clause, so a writer of a claim and the trigger that locks it
+// migrations/000054's WHEN clause, so a writer of a claim and the trigger that locks it
 // cannot disagree about which rows the tenant key is for: '+' is appJoin, in none of the
 // three grammars an app, a module or an event name is written in.
 func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+") }
@@ -359,7 +359,7 @@ func unscopedDurable(durable string) bool { return !strings.Contains(durable, "+
 // act that names one. See holdTenants for why the move locks both halves. The set is
 // closed from both sides now: the move holds the key of every tenant the predicate names,
 // and the walk that turns an empty app into a slug declares that key before it writes
-// (migrations/000047), so membership cannot move underneath a running move at all.
+// (migrations/000057), so membership cannot move underneath a running move at all.
 const placeable = "app = ? OR app = ''"
 
 // holdTenants takes the move's lock over every tenant that could still be this app's
@@ -399,7 +399,7 @@ const placeable = "app = ? OR app = ''"
 // its consumer will never subscribe under. The hazard is a claim in a tenant that *becomes*
 // this app's during the move, so the lock set has to be the set that can become this app's,
 // and the placement's own rule says that set: an app, once written onto a row, never moves
-// and never changes (migrations/000043, and 000045's write checks `app = ”` at the write
+// and never changes (migrations/000043, and 000055's write checks `app = ”` at the write
 // itself), so the only tenants that can join this app are the empty ones. A claim in one of
 // them is refused over with the app's own, which is the same refusal, written down where the
 // membership is what is in the way.
@@ -411,7 +411,7 @@ const placeable = "app = ? OR app = ''"
 // be gone before the move's final read, which answered false because the tenant was still
 // empty when it asked, and the move committed its success over a ledger it had never read.
 // The other half is the placement declaring this key before it names the row
-// (migrations/000047's trigger, the same expression as tenantLockKey below): the walk
+// (migrations/000057's trigger, the same expression as tenantLockKey below): the walk
 // either holds the key when the move asks, and the move refuses over it, or waits and
 // lands after the move committed — the order that owes a move, which is the order a boot
 // that places before it opens its scoped consumers actually pays.

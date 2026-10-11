@@ -1,5 +1,7 @@
 package components
 
+import "time"
+
 // Props are the typed inputs to the component constructors in this package.
 // Example captures those same inputs and derives portable property schemas;
 // screens.FormExample uses that path for generated entity forms, and export.Export
@@ -88,8 +90,10 @@ type AlertProps struct {
 	Dismissible bool   `json:"dismissible,omitempty"`
 	// DismissLabel names the dismiss control. Empty keeps "Dismiss notification".
 	DismissLabel string `json:"dismissLabel,omitempty"`
-	Bordered     bool   `json:"bordered,omitempty"`
-	Compact      bool   `json:"compact,omitempty"`
+	// Live overrides the legacy tone-based announcement. off is a non-live note.
+	Live     string `json:"live,omitempty" enum:",polite,assertive,off"`
+	Bordered bool   `json:"bordered,omitempty"`
+	Compact  bool   `json:"compact,omitempty"`
 }
 
 // InputProps defines the platform-agnostic properties for an Input component.
@@ -293,8 +297,24 @@ type EmptyStateProps struct {
 
 	Title       string `json:"title,omitempty"`
 	Description string `json:"description,omitempty"`
-	Compact     bool   `json:"compact,omitempty"`
-	Bordered    bool   `json:"bordered,omitempty"`
+	// Text takes precedence over Description; Action and the Actions slot are exclusive.
+	Text     string       `json:"text,omitempty"`
+	Action   *ButtonProps `json:"action,omitempty"`
+	Compact  bool         `json:"compact,omitempty"`
+	Bordered bool         `json:"bordered,omitempty"`
+}
+
+// NoticeProps supplies localized copy and an optional native recovery action.
+// Dismissal is local to the rendered notice; it never changes a saved result.
+type NoticeProps struct {
+	ComponentProps
+	Title        string       `json:"title,omitempty"`
+	Text         string       `json:"text"`
+	Tone         string       `json:"tone,omitempty" enum:",danger,warning,info,ok"`
+	Action       *ButtonProps `json:"action,omitempty"`
+	Dismissible  bool         `json:"dismissible,omitzero"`
+	DismissLabel string       `json:"dismissLabel,omitempty"`
+	Live         string       `json:"live,omitempty" enum:",polite,assertive,off"`
 }
 
 // SkeletonProps defines properties for a loading placeholder. A skeleton is
@@ -375,18 +395,92 @@ type TableProps struct {
 
 // TableColumn defines a table column.
 type TableColumn struct {
-	Key      string `json:"key"`
-	Label    string `json:"label"`
-	Sortable bool   `json:"sortable,omitempty"`
-	Primary  bool   `json:"primary,omitempty"` // emphasized identity cell
-	Width    string `json:"width,omitempty"`
-	Align    string `json:"align,omitempty"` // left, center, right
+	RowHeader bool   `json:"rowHeader,omitzero"`
+	Key       string `json:"key"`
+	Label     string `json:"label"`
+	Sortable  bool   `json:"sortable,omitempty"`
+	Primary   bool   `json:"primary,omitempty"` // emphasized identity cell
+	Width     string `json:"width,omitempty"`
+	Align     string `json:"align,omitempty"` // left, center, right
 }
 
 // TableRow represents a table data row.
 type TableRow struct {
 	ID    string         `json:"id,omitempty"`
 	Cells map[string]any `json:"cells"`
+}
+
+// ContentState describes an authorized read; it never infers connectivity or access.
+type ContentState struct {
+	Status       MediaStatus `json:"status,omitempty" enum:",ready,loading,empty,failed,refused"`
+	Title        string      `json:"title,omitempty"`
+	Text         string      `json:"text,omitempty"`
+	LoadingLabel string      `json:"loadingLabel,omitempty"`
+	Offline      bool        `json:"offline,omitzero"`
+	OfflineText  string      `json:"offlineText,omitempty"`
+}
+
+// ChoiceLink is caller-owned navigation; a key never becomes a URL.
+type ChoiceLink struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Href        string `json:"href,omitempty"`
+	Selected    bool   `json:"selected,omitzero"`
+	Disabled    bool   `json:"disabled,omitzero"`
+	RemoveHref  string `json:"removeHref,omitempty"`
+	RemoveLabel string `json:"removeLabel,omitempty"`
+}
+
+// DataRow retains Table's value projection and supplies optional native controls.
+type DataRow struct {
+	TableRow
+	Href           string `json:"href,omitempty"`
+	Selectable     bool   `json:"selectable,omitzero"`
+	SelectionLabel string `json:"selectionLabel,omitempty"`
+	Revision       string `json:"revision,omitempty"` // passed to the caller's RowActions; never interpreted
+	StatusLabel    string `json:"statusLabel,omitempty"`
+	Tone           string `json:"tone,omitempty"`
+}
+
+// DataGroup's CountText is the supplied total, not the number of loaded rows.
+type DataGroup struct {
+	Key         string    `json:"key"`
+	Title       string    `json:"title,omitempty"`
+	CountText   string    `json:"countText,omitempty"`
+	Rows        []DataRow `json:"rows,omitempty"`
+	Collapsible bool      `json:"collapsible,omitzero"`
+	Collapsed   bool      `json:"collapsed,omitzero"`
+}
+
+// DataListProps composes tables without owning queries, saved views or bulk writes.
+// DataListLoading describes public geometry without retaining a previous result.
+type DataListLoading struct {
+	Rows         int  `json:"rows"`
+	GroupHeading bool `json:"groupHeading,omitzero"`
+	BulkAction   bool `json:"bulkAction,omitzero"`
+}
+
+type DataListProps struct {
+	ComponentProps
+	HTMXProps
+	Label                string           `json:"label"`
+	State                ContentState     `json:"state,omitzero"`
+	Columns              []TableColumn    `json:"columns,omitempty"`
+	Groups               []DataGroup      `json:"groups,omitempty"`
+	Filters              []ChoiceLink     `json:"filters,omitempty"`
+	SortChoices          []ChoiceLink     `json:"sortChoices,omitempty"`
+	Views                []ChoiceLink     `json:"views,omitempty"`
+	ResultKey            string           `json:"resultKey,omitempty"`
+	SelectedIDs          []string         `json:"selectedIDs,omitempty"`
+	SelectionName        string           `json:"selectionName,omitempty"`
+	FormID               string           `json:"formID,omitempty"`
+	SelectAllLabel       string           `json:"selectAllLabel,omitempty"`
+	ClearSelectionLabel  string           `json:"clearSelectionLabel,omitempty"`
+	SelectionCountLabels []string         `json:"selectionCountLabels,omitempty"`
+	ResultCountText      string           `json:"resultCountText,omitempty"`
+	Compact              bool             `json:"compact,omitzero"`
+	Pagination           *PaginationProps `json:"pagination,omitempty"`
+	LoadingLayout        *DataListLoading `json:"loadingLayout,omitempty"`
 }
 
 // DetailListProps defines a compact semantic description list. Title and
@@ -428,7 +522,69 @@ type CardProps struct {
 	Href          string `json:"href,omitempty"`
 }
 
-// ModalProps defines platform-agnostic properties for a Modal component.
+// DetailPanelProps carries an authorized item snapshot or a cleared ContentState.
+type DetailPanelProps struct {
+	ComponentProps
+	ItemID      string       `json:"itemID,omitempty"`
+	Title       string       `json:"title,omitempty"`
+	Description string       `json:"description,omitempty"`
+	Label       string       `json:"label"`
+	State       ContentState `json:"state"`
+	CloseLabel  string       `json:"closeLabel"`
+	ReturnHref  string       `json:"returnHref"`
+	Size        string       `json:"size,omitempty"`
+	Busy        bool         `json:"busy,omitzero"`
+}
+
+// TimeText keeps the machine instant separate from caller-localized display copy.
+type TimeText struct {
+	AtUTC time.Time `json:"atUTC"`
+	Text  string    `json:"text"`
+}
+
+type Change struct {
+	Label        string `json:"label"`
+	BeforeText   string `json:"beforeText,omitempty"`
+	AfterText    string `json:"afterText,omitempty"`
+	Redacted     bool   `json:"redacted,omitzero"`
+	RedactedText string `json:"redactedText,omitempty"`
+}
+
+type TimelineItem struct {
+	ID          string       `json:"id"`
+	ActorText   string       `json:"actorText"`
+	ActorAvatar *AvatarProps `json:"actorAvatar,omitempty"`
+	Time        TimeText     `json:"time"`
+	Summary     string       `json:"summary"`
+	StatusLabel string       `json:"statusLabel,omitempty"`
+	Tone        string       `json:"tone,omitempty"`
+	Changes     []Change     `json:"changes,omitempty"`
+	DetailsHref string       `json:"detailsHref,omitempty"`
+}
+
+type TimelineProps struct {
+	ComponentProps
+	Label        string         `json:"label"`
+	State        ContentState   `json:"state"`
+	Items        []TimelineItem `json:"items,omitempty"`
+	Layout       string         `json:"layout,omitempty"`
+	BeforeLabel  string         `json:"beforeLabel"`
+	AfterLabel   string         `json:"afterLabel"`
+	ActorLabel   string         `json:"actorLabel"`
+	TimeLabel    string         `json:"timeLabel"`
+	DetailsLabel string         `json:"detailsLabel"`
+	More         *ChoiceLink    `json:"more,omitempty"`
+}
+
+type DetailSheetProps struct {
+	DetailPanelProps
+	Open           bool   `json:"open,omitzero"`
+	Placement      string `json:"placement,omitempty"`
+	CloseOnOverlay *bool  `json:"closeOnOverlay,omitempty"`
+	CloseOnEscape  *bool  `json:"closeOnEscape,omitempty"`
+}
+
+// ModalProps retains its centered behavior unless Placement names a sheet.
 type ModalProps struct {
 	ComponentProps
 
@@ -438,7 +594,8 @@ type ModalProps struct {
 	Footer      string `json:"footer,omitempty"`
 	AriaLabel   string `json:"ariaLabel,omitempty"`
 	CloseLabel  string `json:"closeLabel,omitempty"`
-	Size        string `json:"size,omitempty"` // small, medium, large, xl, full
+	Size        string `json:"size,omitempty"`      // small, medium, large, xl, full
+	Placement   string `json:"placement,omitempty"` // bottom, end, auto; empty preserves Centered
 
 	// Pointer booleans preserve the intended default-true behavior while still
 	// allowing portable clients to explicitly disable an affordance.
@@ -566,6 +723,8 @@ type PaginationProps struct {
 // TableSkeletonProps defines the loading rendering of a Table: the same wrap,
 // header, and cell classes with pulsing placeholders where data will land.
 type TableSkeletonProps struct {
+	// Interactive reserves native 44px controls in headers and rows.
+	Interactive bool `json:"interactive,omitzero"`
 	ComponentProps
 
 	Columns int  `json:"columns,omitempty"` // header/cell count (default 4)

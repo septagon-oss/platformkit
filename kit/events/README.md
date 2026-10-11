@@ -155,14 +155,14 @@ deployment ever earned sits on the far side of the rename: the same event, handl
 already, answered again as a first delivery. The drain is one transaction under its own
 system capability: a lock on each durable whose rows it is about to rename — a claim
 written at an unscoped durable takes the matching shared advisory lock in the schema
-itself (migrations/000044), and the move asks for the exclusive one and refuses rather
+itself (migrations/000054), and the move asks for the exclusive one and refuses rather
 than waiting — and a lock over every tenant that could still be the app's by
 the end of the move — its own, and the ones no app is placed under, because a
 placement is what turns an empty app into a slug and a slug never moves again —
 taken before a row is read. The set that can join the app, and not the set that
 already did, is the one a claim can be open in and still land inside it. A lock set over
 a set others can join is only half of it: the walk that joins them declares the same
-tenant key before it writes the row (migrations/000047), so a placement is either refused
+tenant key before it writes the row (migrations/000057), so a placement is either refused
 over by the move or serialized behind it, and no tenant arrives inside an app whose move
 is past its final read.
 The tenant's key is not reach beyond the harm: the durables to lock are discovered from

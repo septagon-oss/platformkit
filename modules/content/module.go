@@ -30,11 +30,21 @@ import (
 // and the author comes off the request's own context. It is a struct rather
 // than no parameter so that the day it needs something, every call site gains a
 // named field instead of a new argument.
-type Deps struct{ Files richtext.Files }
+type Deps struct {
+	Files richtext.Files
+	// Uses records which file a body of this resource references, in the
+	// transaction that writes the body. Unwired, nothing is recorded and mount
+	// says so in the log: rest.RecordNoUses is that answer, and it is safe only
+	// for as long as no sweep releases a file nobody reads.
+	Uses rest.FileUses
+}
 
-// spec is the entity's presence in the application: five routes, two
-// permissions, three events and the schema a generated screen reads.
-var spec = rest.Spec[*contracts.Content]{
+// Spec is the entity's presence in the application: five routes, two
+// permissions, three events and the schema a generated screen reads. It is
+// exported because the write it describes is the one write path content has: an
+// application that seeds a page, or writes one from a process that is not a
+// person's request, goes through it rather than through a copy of what it does.
+var Spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
 	Path:       "/contents",
@@ -67,8 +77,13 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if files == nil {
 		files = richtext.RejectImages{}
 	}
-	resource := spec
+	uses := deps.Uses
+	if uses == nil {
+		uses = rest.RecordNoUses{}
+	}
+	resource := Spec
 	resource.RichTextFiles = files
+	resource.FileUses = uses
 	svc := internal.NewService()
 	return svc, module.Module{
 		Name:        "content",

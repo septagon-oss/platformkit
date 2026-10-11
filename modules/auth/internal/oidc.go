@@ -334,7 +334,7 @@ func RegisterOIDCRoutes(surfaces httpx.Surfaces, svc contracts.Service, users co
 		if user, err = users.ConfirmAddress(ctx, tx, user.ID, email); err != nil {
 			return nil, refusedAtTheDoor(err)
 		}
-		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r))
+		session, _, err := svc.Open(ctx, tx, user.ID, ClientOf(r), contracts.ViaOIDC)
 		if err != nil {
 			return nil, refusedAtTheDoor(err)
 		}
@@ -444,7 +444,7 @@ func refusedAtTheDoor(err error) error {
 		// they did not type. The provider confirmed the address; the account says
 		// one confirmation is half. Which half is missing, and the address that
 		// finishes it, are both in the sentence.
-		return problem.New(http.StatusUnauthorized,
+		return secondFactorRefusal(
 			"this account also answers with a second factor, which this sign-in did not carry; answer it at /challenge/verify")
 	}
 	return refusal(err)

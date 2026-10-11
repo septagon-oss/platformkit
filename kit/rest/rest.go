@@ -19,8 +19,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,6 +40,23 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
+// FileUses rewrites the file references one richtext field makes, inside the
+// transaction that writes the field. kit/rest declares it rather than importing
+// a file module: the kit may not know what a file is, and the composition wires
+// the one implementation the application has. It is the same shape as
+// richtext.Files beside it, for the same reason.
+type FileUses interface {
+	SetUses(ctx context.Context, tx db.Tx[db.Tenant], in UsesInput) error
+}
+
+// UsesInput names one field of one record, in one locale, and the files it shows
+// in document order. Repeats collapse to one use at the far end.
+type UsesInput struct {
+	Module, Entity, Field, Locale string
+	Record                        uuid.UUID
+	Files                         []uuid.UUID
+}
+
 // Spec is one entity's presence in the application: five routes, two
 // permissions, three events and a schema. A module writes one of these and
 // mounts it; everything below is the same for every entity, which is why it is
@@ -45,6 +64,15 @@ import (
 type Spec[T crud.Entity] struct {
 	// RichTextFiles resolves richtext image references in the request transaction.
 	RichTextFiles richtext.Files
+	// FileUses records which file a richtext field of this resource references,
+	// in the same transaction that writes the field. It is what a file module
+	// keeps so that it can answer "is anything showing this" at all. A Spec with
+	// a richtext field and no FileUses is not refused: it takes RecordNoUses,
+	// which writes every body and keeps no ledger, and mount logs that once —
+	// the day a release sweep exists to delete a file nobody reads, a resource on
+	// that default is a resource whose images the sweep is entitled to delete
+	// under a published page, which is when this becomes a mount-time refusal.
+	FileUses FileUses
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -135,6 +163,15 @@ type Spec[T crud.Entity] struct {
 	// so a misspelled one panics where it is written instead of silently
 	// guarding nothing.
 	Immutable []string
+
+	// Present is how this resource reads: the words a person is shown, which field
+	// names a row, which block a field belongs to, which fields a column may be
+	// ordered by. Every part is optional and the zero value is every resource
+	// written before it existed — the served catalogue prints no `presentation`
+	// key for an entry nobody hinted, so no shell already installed reads a
+	// different document. kit/rest refuses the declaration at mount, not the
+	// request: a hint that names no field is a wiring mistake.
+	Present entity.EntryHints
 
 	// HookEvents names the events the hooks below publish. They are appended
 	// to the create, update and delete operations' x-platformkit-events, so
@@ -358,9 +395,27 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 // JSON routes and in-process resources share their write orchestration.
 func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
 	crud.Reset(e) // IDs, tenancy and timestamps belong to the server at both doors.
+	// The record has to be itself before its own body can be filed. What a body
+	// shows is recorded in prepareRichText below, and a use names the record that
+	// shows the file — an id stamped by crud.Create one step later would be filed
+	// under nil, which is the row nobody can link back to or sweep forward. So
+	// the id is chosen here, and Create keeps the id it finds rather than making
+	// another one. Reset already dereferenced the entity, so there is nothing
+	// between these two lines that a nil body could have reached.
+	entity.BaseOf(e).ID = uuid.New()
 	if err := s.prepareRichText(ctx, tx, e, nil); err != nil {
 		return e, err
 	}
+	// The trail's field is discarded here for the same reason the id is chosen here:
+	// the caller does not get to write it. A create replaces no row, so there is no
+	// before half for anybody to supply, and a body that named one was writing the
+	// history of a save that never happened. The create door decodes straight into
+	// the entity, so hidden:"true" buys it nothing — that tag is the REST document's,
+	// and a document that does not offer a member is not a decoder that refuses one.
+	// The patch needs no such line because merge reads the body as a map of schema
+	// fields, and the diff is no field: it answers `{"changes":[…]}` with "there is no
+	// field \"changes\"", which is the same refusal in the other door's words.
+	discardDiff(e)
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
@@ -375,6 +430,12 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return e, err
 	}
+	// The row as this transaction locked it, copied before merge touches anything. It
+	// is the before half of the diff this save reports: taken after the write there is
+	// nothing to diff, and taken unlocked it is the value some other save already
+	// replaced — history that did not happen, in the one table whose job is to have
+	// happened. See reportDiff.
+	before := rowCopy(e)
 	columns, err := merge(e, fields, s.Immutable, values)
 	if err != nil {
 		return e, err
@@ -398,11 +459,87 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	// Write only the submitted columns and timestamp. Untouched fields retain
-	// the preceding committed values used by validation and the emitted event.
+	// the preceding committed values used for validation and the emitted event.
 	if err := crud.Update(ctx, tx, e, append(columns, "updated_at")...); err != nil {
 		return e, err
 	}
+	// The diff is computed after that write and before the event, because crud.Update
+	// runs the entity's own Validate, and Validate normalises: a task trims its title,
+	// so the body's "  second  " and the row's "second" are two answers to what the
+	// save moved, and only one of them is in the database. Diffing the merged body
+	// instead — which this did until the review of 2026-10-06 (F3) — records an ordinary
+	// valid save as a change to a value nothing ever held, beside a payload that says
+	// the other half. See reportDiff.
+	done, err := reportDiff(before, e, values)
+	if err != nil {
+		return e, err
+	}
+	defer done()
 	return e, s.emit(ctx, tx, Updated, e, nil)
+}
+
+// rowCopy is the shallow copy of a locked row: the values it held when the transaction
+// locked it, kept while the caller merges a body into the original. Shallow is enough
+// because merge assigns whole fields through the entity's own reflect.Value and never
+// writes through a pointer or extends a slice, so nothing a merge does to the original
+// reaches the copy. It answers any, because the door that asks is generic over the
+// entity and cannot name it; kit/events' ChangesOf takes the two rows as values and
+// refuses a pair that turns out to be two different types.
+func rowCopy[T any](e T) any {
+	v := reflect.ValueOf(e)
+	if v.Kind() != reflect.Pointer || v.IsNil() {
+		return nil
+	}
+	c := reflect.New(v.Elem().Type())
+	c.Elem().Set(v.Elem())
+	return c.Interface()
+}
+
+// reportDiff hands an entity the diff of the save that is about to publish, when the
+// entity carries one at all (events.Recorder). The names are the body's own keys — the
+// fields merge accepted, in the spelling the caller used — sorted, so two identical saves
+// publish the same list in the same order.
+//
+// It runs after the UPDATE that wrote the normalised row and before the event that says
+// the save happened, so its after half is the value the database holds. A diff that
+// cannot be computed still fails the request: the handler's error reaches
+// db.Pending.Close(false), the transaction rolls back, and the UPDATE above is undone
+// with everything else in it, including the outbox row this door would have written.
+// Nothing is left half-written, and nothing is left described. A module that fences a
+// field out of the trail with audit:"-" has to refuse it at its own door, because the
+// kernel cannot diff what the trail may not hold and stay honest about the gap.
+//
+// What it returns is the way out: the set is cleared on the way here, so the row a caller
+// reads back is the row and not the diff. The changes member belongs to the event, and no
+// response body holds it.
+// discardDiff is the create door's half of the same rule: the changes member is the
+// kernel's to write, so whatever arrived for it is cleared before the row is written and
+// before the payload is stamped. Clearing and not refusing is crud.Reset's convention
+// for a member the server owns outright — a caller that sent an id was not reaching for
+// a door of its own, and a caller that sent a diff for a create was describing a save
+// that has no before half to describe.
+func discardDiff(e any) {
+	if rec, ok := e.(events.Recorder); ok {
+		rec.SetChanges(nil)
+	}
+}
+
+func reportDiff(before any, e any, values map[string]any) (func(), error) {
+	rec, ok := e.(events.Recorder)
+	if !ok {
+		return func() {}, nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	changes, err := events.ChangesOf(before, e, names...)
+	if err != nil {
+		return nil, err
+	}
+	rec.SetChanges(changes)
+	return func() { rec.SetChanges(nil) }, nil
 }
 
 func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
@@ -418,10 +555,43 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.RecheckTenant(tx, e); err != nil {
 		return e, err
 	}
+	// A record that stops existing shows nothing, so its uses end in the same
+	// transaction that removes its row. A ledger row that outlived its record is a
+	// file panel that links to a record no route answers, and — once the release
+	// sweep exists — a file that can never be released because something that no
+	// longer exists is said to be reading it.
+	if err := s.clearRichTextUses(ctx, tx, e); err != nil {
+		return e, err
+	}
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
 		return e, err
 	}
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
+}
+
+// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
+// the door an in-process caller stands at. The JSON routes and the generated
+// screens go through the same three bodies; a seed writer, or any composition-time
+// caller that is not a person's request, stands here. The reason they are
+// exported and not copied is that the three things a write must never skip are
+// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
+// row-level security alone, and the event that announces the change — and a
+// second spelling of them in an application is a spelling that can drift.
+// Authorization is not one of them: a route asks httpx, a seed run asks its
+// Authorizer, and neither answer belongs in this file.
+func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	return s.createRow(ctx, tx, e)
+}
+
+// UpdateRow patches the columns `values` names, of this Spec's own schema, and
+// is the one door that keeps a caller from writing a field the Spec declared
+// immutable: the check is inside the merge those columns go through.
+func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	return s.updateRow(ctx, tx, id, crud.Fields[T](), values)
+}
+
+func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return s.deleteRow(ctx, tx, id)
 }
 
 // CommandOptions is what a command may differ from its Spec in. It is a struct
@@ -446,6 +616,13 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// Present is this command as its author describes it: the word on the button,
+	// whether it is the one action a view should offer, whether it costs
+	// something, what a person reads before it runs and what they are told after.
+	// A command no person is offered says `System: true`, and ui/screens mounts no
+	// browser route for it — the JSON route keeps its guard unchanged.
+	Present entity.CommandHints
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -469,6 +646,13 @@ type CommandOptions struct {
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	// A command's hints are checked here rather than in Spec.check because this is
+	// the one site with the verb, the options, the entity's schema and the
+	// argument's fields all in hand at once — and before any route is mounted, so
+	// a refused declaration leaves no half-described resource behind it.
+	if bad := commandFault(verb, opts.Present, crud.FieldsOf(reflect.TypeFor[I]())); bad != "" {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
+	}
 	path := spec.item() + "/" + verb
 	if opts.Collection {
 		path = strings.TrimSuffix(spec.Path, "/") + "/" + verb
@@ -511,7 +695,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields,
+		Fields:   fields, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -719,10 +903,31 @@ func (s Spec[T]) check() {
 				bad = fmt.Sprintf("richtext field %q needs a Files port", field.Name)
 				break
 			}
+			// A nil FileUses is not refused at mount the way a nil Files port
+			// is, and the difference is deliberate: a resource that resolves no
+			// image cannot write any body with an image in it, while a resource
+			// that records no uses writes every body it is given and simply does
+			// not keep the ledger. The zero value is therefore the port that
+			// records nothing, named for what it does, and mount says the
+			// consequence out loud once. SPECIFY.md §4.4 asks for a refusal here
+			// instead; it becomes one with the release sweep, in the commit that
+			// could otherwise delete a published page's image. See RecordNoUses.
+			if s.FileUses == nil {
+				slog.Warn("rest: "+s.Module+"."+s.Entity+" has a richtext field and no FileUses port; "+
+					"it will record no use, so nothing can ask which record shows its files",
+					"module", s.Module, "entity", s.Entity)
+				s.FileUses = RecordNoUses{}
+			}
 		}
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.entryHintFault()
+	}
+	if bad == "" {
+		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())

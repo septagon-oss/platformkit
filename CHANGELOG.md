@@ -8,7 +8,7 @@ installation that sets `nats.app` after running without one finds every claim it
 side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
 is the drain for those two tables. It locks the durables it is about to rename and every tenant that could still be the app's by the end of the move, its own and the ones no app is placed under —
 an INSERT of a claim at an unscoped durable takes its own tenant's shared advisory lock and only then that
-durable's in the schema itself (`migrations/000044_ledger_claim_durable_lock`), and the move asks for the
+durable's in the schema itself (`migrations/000054_ledger_claim_durable_lock`), and the move asks for the
 exclusive ones in the same order and refuses rather than queueing; the tenant's key is what catches the first
 claim of a subscription, which is the one no committed ledger row names a durable from, and taking the two in
 that order is what lets it catch anything at all, because a claim that reached for its durable first can be
@@ -43,8 +43,8 @@ something other than the tenant, which is why this is a drain its owner owns in 
 **Naming an app places the tenants that already exist.** An app-less boot stamped `tenants.app` with the empty
 slug — 000043's own default for a session that named no app — and the file that proved the NULLs is applied,
 checksummed and immutable, so an operator who sets `nats.app` and `app.hosts` afterwards holds a database of
-tenants nobody placed and a release that runs nothing for them. `migrations/000045_tenant_app_refusal` and
-`migrations/000046_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
+tenants nobody placed and a release that runs nothing for them. `migrations/000055_tenant_app_refusal` and
+`migrations/000056_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
 app whose declared hosts cover every host it holds, and a tenant neither speaks for stops a boot that named
 itself, by name and having written nothing, so that operator's corrected retry is the same walk. A boot that
 named no app is not stopped, and that half is the line `make check`'s rehearsal drew (v1.1.0 to this tree,
@@ -62,7 +62,7 @@ nothing — which is where 000043's "a tenant does not move between apps" is mad
 consumer and control-plane scope can reach a tenant follows from that one column. A placement that loses the
 row this way is not refused and does not report the tenant as unplaced: it has an app, and the late
 declaration is the one that is wrong about the row. That write now declares the tenant's
-ledger key too (000047), the key an unscoped claim takes and a ledger move asks for
+ledger key too (000057), the key an unscoped claim takes and a ledger move asks for
 exclusively, so a placement either stands in front of a move as its contention refusal or
 lands behind it and owes the move its own boot runs next. Nor is a tenant that joins behind a move which already
 read its ledger a second handling waiting to happen: the mark sits under the durable this tenant's ledger held before the placement, and `events.claim` asks a delivery's own history under both spellings of one subscription's name, so the rename that follows is tidiness and audit and not what the refusal waits on. The declaration has to be on the session that drains, not the one that migrated, so
@@ -90,6 +90,65 @@ carrying somebody else's token. That costs a real deployment something, and the 
 `kit/appname`: a process must not start naming an app while a process still publishing at the app-less addresses
 is alive, because from that moment its own older traffic is unreadable to it. A scoped address is not a scoped
 ledger, which is what the move above is for; the two are one decision read at two moments.
+
+
+**The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
+`rest.CommandOptions` now carry an optional declaration of how a resource is
+presented — the words a person is shown, which field names a row, which block a
+field belongs to, which columns a header may order by, what a command's button
+says and what a person reads before it runs — and `GET /api/v1/app/resources`
+publishes it as a `presentation` object on the entry, on each field and on each
+command. The four vocabularies it is declared in are frozen in `kit/entity`
+(`Icons`, `Tones`, `Formats`, `Visibilities`) and bound to what draws them by
+tests inside `ui/`, because a kernel below the presentation layer cannot import
+the renderer it must check against. Anything the gate can name refuses at boot —
+a field, section, icon, tone, reference or sortable field that does not exist, a
+money format on a column that holds no minor units, a command that is both the
+primary action and the destructive one — with a message naming the offender and
+the list that refused (`kit/rest/hints.go`). The change is additive on the wire:
+a key is printed only for a hint somebody declared, so an entry nobody hinted
+serialises byte for byte as it did before, `catalogVersion` stays 2, and the
+committed catalogue golden is unchanged by this release. Adopting a hint on a
+real resource, and translating one, are not part of it.
+
+**A limiter whose counter is queued is not a limiter whose store is down.**
+`kit/limit` gave one two-second wall to a connection, `BEGIN`, the wait behind the
+row's own lock and `COMMIT`, and answered any of them with an error — which every
+caller of a limiter is told to fail open on. A same-key burst is one queue behind
+one row, so on a loaded runner the tail of it spent its budget waiting and was
+admitted: 75 anonymous submissions at an allowance of 60, none refused. The
+counter's transaction now names its own lock budget (`lock_timeout`, one second,
+transaction-local), so the server stops that wait and says it did, and an attempt
+that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
+whole window, and **no error**, because a refusal that travels as an error is a
+refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
+refuse with, answer `ErrBusy` rather than a number nobody read. A store that
+answers it cannot serve still fails open exactly as ADR 0010 said; a store that
+answers nothing at all is this attempt's own wall expiring, which is a refusal.
+`kit/limit/README.md` now states the four outcomes and the two budgets for every
+composer of them.
+
+**A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
+routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
+composition that can resolve a tenant's identity provider, and `modules/tenant` carries
+that provider as six columns an operator sets with
+`POST /api/v1/ops/tenant/tenants/{id}/saml` and clears with `…/saml/clear`, publishing
+`tenant.saml_set` and `tenant.saml_cleared`. The service provider is built per request
+from the row the `Host` resolved, so two tenants on one installation verify against two
+IdPs at two assertion consumer URLs. The callback requires an assertion signed in its own
+right, addressed to this tenant's entity ID (an assertion that names no audience names
+nobody), bound in the bearer method, current, and answering a request the same browser
+started; it then spends the assertion id in the transaction that opens the session, so a
+sign-in that is refused leaves the assertion presentable and one that succeeds spends it
+exactly once. An address may present sixty assertions a minute and no more: the leg is mounted on
+the app surface, past the kernel's Public-only write limit, so it carries its own bound,
+refused ahead of the document rather than after it. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+(`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
+add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
+are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to
+v1.6.1, the XML-signature verifier an assertion is checked with, whose previous version
+carries a known signature bypass (GO-2026-4753), and `golang.org/x/net` to v0.60.0 with
+the 2026-10-08 Go security release (GO-2026-6617 and four beside it).
 
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,

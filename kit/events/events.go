@@ -103,26 +103,46 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	if err != nil {
 		return fmt.Errorf("events: %s: marshal the payload: %w", name, err)
 	}
-	// The promise the emitting module made in its manifest is checked here, at
-	// the one door, before anything is written. Whose promise it is, is which app
-	// holds the tenant this row belongs to: one process may hold two compositions,
-	// and the check academy's boot declared must not be the one acme's event is
-	// measured against, nor acme's be missing when academy's own event is written.
-	// The read is asked only when some app typed this event — an event no app
-	// described has no contract to consult in any app — so an unchecked publish
-	// still costs exactly the INSERT it always cost. See catalog.go.
+	// The two promises the emitting module made in its manifest, checked here at
+	// the one door before anything is written: that the name is one somebody
+	// declared, and that the payload is the shape declared for it. Whose promise
+	// it is, is which app holds the tenant this row belongs to: one process may
+	// hold two compositions, and the check academy's boot declared must not be the
+	// one acme's event is measured against, nor acme's be missing when academy's
+	// own event is written. The read is asked only when some app typed this event —
+	// an event no app described has no contract to consult in any app, and no app
+	// to ask about it either, so for one of those the write asks the cheaper
+	// question the process answers without a read. An unchecked publish still costs
+	// exactly the INSERT it always cost. See catalog.go.
 	if payloadTyped(name) {
 		app, err := appOfTenant(gdb, tenantID)
 		if err != nil {
 			return fmt.Errorf("events: %s: %w", name, err)
 		}
+		if err := checkDeclared(app, name); err != nil {
+			return err
+		}
 		if err := checkPayload(app, name, body); err != nil {
 			return err
 		}
+	} else if err := checkDeclared("", name); err != nil {
+		return err
+	}
+	// An attribution says the cause was not a session. The person on the context
+	// then belongs in `initiator`, not `actor`: a seed run names whom it served,
+	// and nobody signed in as them. With no attribution the actor is the signed-in
+	// person, exactly as it was before this column existed.
+	attr, hasAttr := AttributionFrom(ctx)
+	if hasAttr && !attr.Valid() {
+		return fmt.Errorf("events: %s: attribution %q is not a kind, file and line this kernel can store", name, attr.ActorKind)
 	}
 	var actor any
-	if id, ok := tenancy.ActorFrom(ctx); ok {
+	if id, ok := tenancy.ActorFrom(ctx); ok && (!hasAttr || attr.ActorKind == ActorUser) {
 		actor = id
+	}
+	kind, file, line, initiator := any(nil), any(nil), any(nil), any(nil)
+	if hasAttr {
+		kind, file, line, initiator = attr.ActorKind, nilIfEmpty(attr.SourceFile), nilIfZero(attr.SourceLine), nilUUID(attr.InitiatorID)
 	}
 	// The trace context is stored beside the actor for the same reason the actor
 	// is: the relay publishes later, in a transaction of its own and with no
@@ -147,15 +167,27 @@ func write(ctx context.Context, gdb *gorm.DB, tenantID uuid.UUID, name string, p
 	parent, state, correlation := carriedContext(ctx)
 	req, _ := request.From(ctx)
 	if err := gdb.Exec(
-		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip)"+
-			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet)",
+		"INSERT INTO "+table+" (id, tenant_id, name, payload, actor, traceparent, tracestate, baggage, request_id, client_ip,"+
+			" actor_kind, source_file, source_line, initiator)"+
+			" VALUES (?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?)",
 		uuid.New(), tenantID, name, string(body), actor,
 		nilIfEmpty(parent), nilIfEmpty(state), nilIfEmpty(correlation),
 		nilIfEmpty(req.ID), req.ClientAddr,
+		kind, file, line, initiator,
 	).Error; err != nil {
 		return fmt.Errorf("events: %s: %w", name, err)
 	}
 	return nil
+}
+
+// nilIfZero stores a count that did not happen as NULL rather than 0, for the
+// same reason nilIfEmpty stores an absent string as NULL: two words for one fact
+// is one word too many, and the column's CHECK refuses a source line of 0.
+func nilIfZero(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
 }
 
 // nilIfEmpty stores an absent value as NULL rather than the empty string: the
@@ -293,7 +325,7 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					// The same question again, of the transaction that is about to mark
 					// the work done — and only of a subscription naming no app, because
 					// that is the only subscription whose answer moves. A tenant does not
-					// leave an app (migrations/000043, and 000045 writes an app onto a row
+					// leave an app (migrations/000043, and 000055 writes an app onto a row
 					// that is still empty), so a scoped delivery that passed holdsTenant
 					// cannot be told otherwise; an app-less one can, because the placement
 					// is exactly the act that turns its answer into somebody else's. See
@@ -458,7 +490,7 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 // durable is written only while its tenant names no app — holdsUnscoped re-reads
 // that inside the claim's own transaction and refuses the mark once one is named —
 // and a tenant's app, once written, is never rewritten or moved (migrations/000043,
-// and 000045 checks `app = ”` at the write itself). So an older-spelling mark in this
+// and 000055 checks `app = ”` at the write itself). So an older-spelling mark in this
 // tenant is this subscription's own history, in this tenant, and no other app's.
 // The same holds of the terminal record beside it: a refusal to run a handler an
 // operator already ended is that refusal, seen under the name it was written at.
@@ -467,7 +499,7 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 // naming rather than dressing: two spellings are two primary keys, so an app-less
 // delivery still open across the placement is not serialized against this one the way
 // two deliveries under one name are. It is the window the move's own tenant key exists
-// to make rare (migrations/000047), it needs an app-less consumer still running in a
+// to make rare (migrations/000057), it needs an app-less consumer still running in a
 // tenant that has just been placed, and this package's README names what closing it
 // would cost.
 func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, error) {

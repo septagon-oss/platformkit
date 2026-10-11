@@ -31,6 +31,7 @@ type Fake struct {
 	tenants map[uuid.UUID]contracts.Tenant
 	hosts   map[string]uuid.UUID
 	oidc    map[uuid.UUID]contracts.OIDCSettings
+	saml    map[uuid.UUID]contracts.SAMLSettings
 	log     []publication
 
 	// Hooks are what Create runs, the same list the real module takes in Deps.
@@ -181,6 +182,7 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 		// json:"-" on the request type, so the only caller that can set it is the
 		// fixture or a Bootstrap — which is the same rule the real create keeps.
 		Operator: in.Operator, Hosts: []string{host}, DefaultLocale: start,
+		Demo:      in.Demo,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	f.tenants[t.ID], f.hosts[host] = t, t.ID
