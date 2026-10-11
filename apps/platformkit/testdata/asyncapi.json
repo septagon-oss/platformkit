@@ -135,7 +135,7 @@
     },
     "auth.factor_suspect": {
       "address": "platformkit.*.auth.factor_suspect",
-      "description": "Published at platformkit.{tenantId}.auth.factor_suspect; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.auth.factor_suspect; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "auth.factor_suspect": {
           "contentType": "application/json",
@@ -183,7 +183,7 @@
     },
     "auth.factor_used": {
       "address": "platformkit.*.auth.factor_used",
-      "description": "Published at platformkit.{tenantId}.auth.factor_used; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.auth.factor_used; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "auth.factor_used": {
           "contentType": "application/json",
@@ -385,7 +385,7 @@
     },
     "auth.passkey_sign_in_set": {
       "address": "platformkit.*.auth.passkey_sign_in_set",
-      "description": "Published at platformkit.{tenantId}.auth.passkey_sign_in_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.auth.passkey_sign_in_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "auth.passkey_sign_in_set": {
           "contentType": "application/json",
@@ -3102,7 +3102,7 @@
     },
     "tenant.saml_cleared": {
       "address": "platformkit.*.tenant.saml_cleared",
-      "description": "Published at platformkit.{tenantId}.tenant.saml_cleared; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_cleared; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "tenant.saml_cleared": {
           "contentType": "application/json",
@@ -3137,7 +3137,7 @@
     },
     "tenant.saml_set": {
       "address": "platformkit.*.tenant.saml_set",
-      "description": "Published at platformkit.{tenantId}.tenant.saml_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.tenant.saml_set; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "tenant.saml_set": {
           "contentType": "application/json",
