@@ -158,3 +158,28 @@ type Passkeys interface {
 	// session and publishes nothing.
 	FinishPasskeyAssertion(ctx context.Context, tx db.Tx[db.Tenant], ceremony uuid.UUID, response json.RawMessage, from Client) (*Session, *Identity, error)
 }
+
+// PasskeyDoor is the one read a caller about to describe how this tenant signs in
+// needs: whether the usernameless door stands open here.
+//
+// It is its own interface, and a constructor of its own, rather than a fifth
+// method on Passkeys for the reason site.LockedReader is: adding a method to an
+// exported interface is a break to anything outside this repository that
+// implements it, and the exported-API gate refuses that break rather than treating
+// it as a detail — so the split costs one interface and one function and buys an
+// unchanged contract. modules/site/contracts/site.go carries the same split beside
+// the same reason.
+//
+// Nothing outside auth imported contracts.Passkeys before this existed, because
+// there was nothing to import: SetPasskeySignIn writes the tenant's row and
+// ErrPasskeySignInOff is the only way its state ever surfaced — at the door, after
+// a person had already tapped. A sign-in screen that has to say *before* they tap
+// what this tenant allows is the consumer this read was written for.
+type PasskeyDoor interface {
+	// PasskeySignInEnabled answers what passkey_settings.sign_in says for the
+	// tenant the transaction belongs to, and false — not an error — for a tenant
+	// with no row, which is every tenant that never turned the door on. That is
+	// the same answer BeginPasskeySignIn and FinishPasskeyAssertion act on, so a
+	// screen that read this cannot offer a door the ceremony then refuses.
+	PasskeySignInEnabled(ctx context.Context, tx db.Tx[db.Tenant]) (bool, error)
+}
