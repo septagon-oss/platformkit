@@ -542,6 +542,12 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# the workflows stay as committed. What it buys is the difference between a guard that is read and a
 	# guard that can be broken, for the four dry runs it names and no database.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_boundary_guard_test.py
+	# scripts/race_guard_check_recipe_test.py asks that the line above stays a line the goal runs. It
+	# expands this goal and asks for exactly one executable mention of that guard — not a comment, not a
+	# recipe line ending in `|| true` — beside the inventory row that still files it as a `scripts/` pin
+	# at the push tier. A line commented out keeps the file, the comment above it and the log's silence,
+	# and loses the refusal, which is the difference this case draws.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_guard_check_recipe_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
