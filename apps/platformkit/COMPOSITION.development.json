@@ -13,6 +13,7 @@
         "auditcontracts.Plan",
         "tenancy.Policy",
         "sitecontracts.WriteGate",
+        "rest.Gate",
         "webcontracts.Links",
         "rest.TranslationSource",
         "admincontracts.Signin",
@@ -24,6 +25,12 @@
           "contract": "tenantcontracts.Hook",
           "to": [
             "tenant"
+          ]
+        },
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "to": [
+            "change"
           ]
         }
       ]
@@ -217,6 +224,10 @@
         {
           "contract": "tenancy.Policy",
           "from": "product"
+        },
+        {
+          "contract": "rest.Gate",
+          "from": "product"
         }
       ],
       "after": [
@@ -329,41 +340,6 @@
       ]
     },
     {
-      "name": "access",
-      "needs": [
-        {
-          "contract": "usercontracts.Service",
-          "from": "user"
-        },
-        {
-          "contract": "notificationcontracts.Service",
-          "from": "notification"
-        },
-        {
-          "contract": "sitecontracts.Service",
-          "from": "site"
-        },
-        {
-          "contract": "usercontracts.Granting",
-          "from": "product"
-        }
-      ],
-      "contributes": [
-        {
-          "contract": "changecontracts.SubjectBinding",
-          "to": [
-            "change"
-          ]
-        }
-      ],
-      "after": [
-        "product",
-        "user",
-        "notification",
-        "site"
-      ]
-    },
-    {
       "name": "content",
       "provides": [
         "contentcontracts.Service"
@@ -388,20 +364,48 @@
       ]
     },
     {
-      "name": "change",
+      "name": "access",
       "provides": [
-        "changecontracts.Service"
+        "changecontracts.Notifier",
+        "changecontracts.ProposalPage",
+        "*change.ReviewChrome"
       ],
-      "takes": [
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        },
+        {
+          "contract": "notificationcontracts.Service",
+          "from": "notification"
+        },
+        {
+          "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "usercontracts.Granting",
+          "from": "product"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
+        }
+      ],
+      "contributes": [
         {
           "contract": "changecontracts.SubjectBinding",
-          "from": [
-            "access"
+          "to": [
+            "change"
           ]
         }
       ],
       "after": [
-        "access"
+        "product",
+        "user",
+        "notification",
+        "auth",
+        "site"
       ]
     },
     {
@@ -440,6 +444,39 @@
         "translation",
         "content",
         "site"
+      ]
+    },
+    {
+      "name": "change",
+      "provides": [
+        "changecontracts.Service"
+      ],
+      "uses": [
+        {
+          "contract": "changecontracts.Notifier",
+          "from": "access"
+        },
+        {
+          "contract": "changecontracts.ProposalPage",
+          "from": "access"
+        },
+        {
+          "contract": "*change.ReviewChrome",
+          "from": "access"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "from": [
+            "product",
+            "access"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "access"
       ]
     },
     {

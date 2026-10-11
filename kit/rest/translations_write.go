@@ -274,6 +274,11 @@ type translatedPatchInput struct {
 	ID   uuid.UUID      `path:"id" format:"uuid" doc:"The row's id"`
 	Lang string         `query:"lang" doc:"Write this language's translation of the body's fields instead of the record itself; the tenant's own language, or none, writes the record"`
 	Body map[string]any `doc:"The translatable fields to write in that language"`
+	// IfMatch is the row's ETag as the caller read it, honoured by both halves of
+	// this door: it conditions the write of the record, and it conditions the write
+	// of a translation, because a translation is measured against the source its
+	// author read. Same rule, same refusal, as the plain PATCH's parameter.
+	IfMatch string `header:"If-Match" doc:"The row's ETag, as read; a tag the row has passed refuses the write with 412. A resource whose entity carries no write count answers 422."`
 }
 
 // localePatch is the PATCH of a body that is somebody's Portuguese, not the
@@ -287,10 +292,19 @@ type translatedPatchInput struct {
 // A locale write carries no expected revisions — the body is the field map, not
 // the translate body's three-part shape — so it creates a translation, and a
 // field that already has one is the 409 that points at /translate, which names
-// the revision it overwrites.
-func (s Spec[T]) localePatch(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, lang string, body map[string]any) (T, error) {
+// the revision it overwrites. The row's own tag is the one condition it does
+// carry: the source this text was drafted against is the row the tag names, and a
+// row that moved since is a source the caller never held.
+func (s Spec[T]) localePatch(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, lang string, body map[string]any, ifMatch string) (T, error) {
 	e, src, err := s.translationDoor(ctx, tx, id, lang)
 	if err != nil {
+		return e, err
+	}
+	// Asked after the language question and before one word of the body is read:
+	// a body in a language this tenant is not served in is the caller's mistake to
+	// fix, and a 412 about a revision would send them to re-read a row they were
+	// never allowed to translate.
+	if err := refuseStaleTag(ifMatch, s.revisionOf(crud.Fields[T](), e)); err != nil {
 		return e, err
 	}
 	if len(body) == 0 {

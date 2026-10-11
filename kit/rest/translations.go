@@ -437,6 +437,12 @@ type TranslatedItem[T any] struct {
 	// ContentLanguage is the language the rows in this response are written in,
 	// which is the tag that was asked for when the tenant speaks it.
 	ContentLanguage string `header:"Content-Language"`
+	// ETag is the row's own write count, as the plain read sends it: the record
+	// behind a translated read is the same row, counted the same way, and the two
+	// write doors of this resource — the PATCH of the record and the `?lang=` PATCH
+	// of a translation of it — both honour the quote. A read that showed the body
+	// and withheld the number would leave the condition askable and unanswerable.
+	ETag string `header:"ETag" doc:"This row's own write count, as quoted by If-Match"`
 }
 
 type TranslatedPage[T any] struct {
@@ -513,6 +519,9 @@ func (s Spec[T]) itemRow(ctx context.Context, id uuid.UUID, lang string) (*Trans
 	if err != nil {
 		return nil, "", err
 	}
+	// The overlay replaces field values, never the row's own count, so the tag it
+	// quotes is the one a write against this row takes.
+	out.ETag = s.revisionTag(crud.Fields[T](), e)
 	return out, served, nil
 }
 
