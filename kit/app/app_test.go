@@ -372,29 +372,121 @@ func TestMigrationSourcesFollowComposition(t *testing.T) {
 	}
 }
 
-// waitFor returns once the address answers, and gives up only when the app itself says it will
-// never answer or the test ends. What it waits for is a boot, and a boot migrates: `db.Migrate`
-// queues on an advisory lock that covers the whole database, so every package in the suite that
-// migrates is ahead of it. A fixed twenty seconds is a budget the machine spends — in the
-// full-suite run where this case failed, the log shows the app still applying migrations at the
-// moment the wait gave up, and nothing was wrong with the app. Watching `stopped`, which every
-// caller already has, is what keeps the wait honest: an app that is going to fail to listen is
-// refused the instant it says so, in far less time than any clock would have waited.
-func waitFor(t *testing.T, addr string, stopped <-chan error) {
+// The 120 s this bound first carried was itself exceeded on 2026-10-06 — `nothing is listening on
+// 127.0.0.1:43281 after 2m0s` — by a migration the host did not reach in two minutes while eight of
+// this program's suites ran beside it. It is five minutes now, the same room kit/db's bounded tick
+// gives itself: still a sixth of the package's own bound, so a boot that never listens fails the run
+// rather than outliving it, and a boot that is only slow on somebody else's machine stops being the
+// finding. The base this branch was replayed onto fixed the same wait its own way (c439d23, at 3 m)
+// and its run is carried here rather than dropped by the replay: 20 s refused
+// `TestTheWorkerAnswersTheSameProbeShapeAsTheWeb` at head `bfd1681` on 2026-10-06, inside a suite of
+// 129 packages each booting a schema of its own, over a boot whose eighteen migrations had cost 98 ms
+// to 5.620 s apiece. Two machines measured one conclusion; the replay keeps the larger of the two
+// numbers.
+
+// bootWait is how long a fixture waits for a process it started to answer. The
+// number is the machine's, not the kernel's: Run migrates a whole installation
+// before it listens, and a migration of thirty files measured 2.8 s when this
+// package ran alone and over 20 s with three database packages sharing one
+// Postgres — which is why a bound sized for the quiet case reads "nothing is
+// listening" for a process that was still working. Every wall-clock bound in
+// this suite is stated as a constant for the same reason: a wait nobody named is
+// a wait nobody can size, and one that is too small reports the machine rather
+// than the code.
+const bootWait = 5 * time.Minute
+
+// slowBoot is when a wait starts saying something: a boot that takes a tenth of
+// the bound is the machine being asked for more than it can do at once, and the
+// next red run should say how long a green one took.
+const slowBoot = bootWait / 10
+
+// waitFor returns when addr answers. A caller that has a Run channel passes it: a process that has
+// already stopped is not a process that is still booting, and without that channel this helper would
+// sit out its whole bound and then print "nothing is listening" over the error that says why nothing
+// ever would. The channel goes back the way it came before this helper fails: the caller's cleanup
+// reads it to find out what Run said, and a value taken here would leave that read waiting forever —
+// a fixture that turns a failure into a hang is the failure this file exists to stop.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	for {
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "nothing has answered yet"
+	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it listened on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		if c, err := net.DialTimeout("tcp", addr, time.Second); err == nil {
 			_ = c.Close()
+			if took := time.Since(started); took > slowBoot {
+				t.Logf("listening after %s: this machine was busy", took.Round(time.Millisecond))
+			}
 			return
 		}
-		select {
-		case err := <-stopped:
-			t.Fatalf("the app returned %v before anything was listening on %s", err, addr)
-		case <-t.Context().Done():
-			t.Fatalf("nothing is listening on %s while the app still runs", addr)
-		case <-time.After(20 * time.Millisecond):
-		}
+		time.Sleep(20 * time.Millisecond)
 	}
+	t.Fatalf("nothing is listening on %s after %s (%s): the process is still migrating, or never started",
+		addr, time.Since(started).Round(time.Second), last)
+}
+
+// waitServed is waitFor for a test that goes on to stop the boot it waited for,
+// and the difference matters. freeAddr releases the port it reserves and Run binds
+// it later, so another process can bind it in between and a dial then reports that
+// stranger as this composition having come up. Cancelling on that word stops a boot
+// still queued for the migration advisory lock — a wait bounded only by its own
+// context, by design (kit/db's holdCompositionLock) — and the test reads back
+// `Run: db: migrate: lock: context canceled` from a composition that never got to
+// serve. So wait for an answer only this composition can give: one of its own
+// routes at one of the hosts it resolves. A 404 is a stranger that never mounted
+// it, a refused connection is a boot that has not arrived, and both keep waiting
+// for the 20s the dial is given. Which answer arrives is not this test's question —
+// today the route refuses the anonymous caller this file configures with a 403, and
+// asserting that is the route's own tests' business, not the boot gate's. Like
+// waitFor it takes the caller's Run channel, and for the same reason: a boot that
+// has already stopped is not a boot that is still about to answer, and it is the
+// caller's cleanup that reads what Run said.
+func waitServed(t *testing.T, addr, host, path string, stopped ...chan error) {
+	t.Helper()
+	started := time.Now()
+	deadline := started.Add(bootWait)
+	last := "no answer yet"
+	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // one slot was just freed by the read above, so this cannot block
+				t.Fatalf("the process stopped before it served %s at %s (%s): %v",
+					path, addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
+		req, err := http.NewRequest(http.MethodGet, "http://"+addr+path, nil)
+		if err != nil {
+			t.Fatalf("request: %v", err)
+		}
+		req.Host = host
+		res, err := http.DefaultClient.Do(req)
+		if err != nil {
+			last = err.Error()
+		} else {
+			_ = res.Body.Close()
+			if res.StatusCode != http.StatusNotFound {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("serving after %s: this machine was busy", took.Round(time.Millisecond))
+				}
+				return
+			}
+			last = fmt.Sprintf("%d", res.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("nothing served %s at %s within %s (last answer: %s)",
+		path, host, time.Since(started).Round(time.Second), last)
 }
 
 func get(t *testing.T, addr, host, path string) (int, string) {
@@ -455,7 +547,9 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 		}
 	}
 
-	// Declaring them is all it takes, and then the composition boots.
+	// Declaring them is all it takes, and then the composition boots — and what
+	// says it booted is this composition answering one of its own routes, not a
+	// socket at its address opening (see waitServed).
 	cfg, opts = compose(t)
 	declared := shop(rest.Spec[*Widget]{Module: "shop", Entity: "widget"}.Declared())
 	a, err = New(t.Context(), cfg, []module.Module{declared}, opts)
@@ -465,7 +559,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	stopped := make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run: %v", err)
@@ -485,7 +579,7 @@ func TestBootRefusesAnEventNoModulePromised(t *testing.T) {
 	ctx, cancel = context.WithCancel(t.Context())
 	stopped = make(chan error, 1)
 	go func() { stopped <- a.Run(ctx) }()
-	waitFor(t, cfg.Server.Addr, stopped)
+	waitServed(t, cfg.Server.Addr, tenantHost, "/api/v1/shop/widgets", stopped)
 	cancel()
 	if err := <-stopped; err != nil {
 		t.Fatalf("Run with a name-only manifest: %v", err)

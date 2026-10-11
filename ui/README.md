@@ -82,6 +82,47 @@ review reads:
   beside `components.ClassLists()`, which the class vocabulary is computed from
   rather than copied out of a rendered sheet.
 
+## The frame's floor
+
+The four refusals every client's design gate reported on every generated page
+were drawn here, so the cure is here too.
+
+- **Reused** — `style.FgOnInverse`/`style.FgPrimary` chosen by the flavour the
+  sidebar already branches on, `style.MaxWScaled(style.MaxWSM)` (the bound
+  `document.Bare` and the reference app's fault page already chose),
+  `components.Text`'s own size vocabulary, and the gate's own probe as
+  `e2e/review-r3-refusal-floor.spec.ts` transcribes it. That bound is carried by
+  the two sentences under a control (`clHelp`, `clFieldErr`) and by the wrapper
+  inside the footer — never by the field's own flex column (`clFieldWrap`),
+  because the design tool projects no composition whose sizing is constrained of
+  its own accord: a max-width there took every client's Input, Select, Textarea,
+  Checkbox and Form out of their design document — 44 refusals in the tool's own
+  suite at the refused head, and 74 more for text that broke mid-word, below.
+  An unbounded help line measured
+  189ch on every generated record page that documents a field; a paragraph is
+  what the floor measures and what the projection carries.
+- **Added** — `BreakAnywhere` (`overflow-wrap: anywhere`), which the vocabulary
+  lacked and `break-words` is not: it is the value that takes part in intrinsic
+  min-content sizing, so a name that is one token stops setting the width of the
+  column it sits in. It sits on the frame's content region (`clShellMain`), and
+  inherits to every heading, breadcrumb and cell below it, rather than on the
+  Heading or Breadcrumb component: the tool builds text only where the element
+  itself computes ordinary line breaking, so the rule belongs to the page, which
+  is the thing that was scrolling sideways. `BreakNormal` is its opt-out, and one
+  region takes it: the table. A cell that broke anywhere let the longest token in
+  any column set how narrow every other column became — on a generated list at
+  320px the row link's target fell to an 18px band, under the 24px the
+  accessibility audit enforces — and a table too wide for the page is already
+  reached by scrolling its own named region. And one `sm` step for everything the
+  frame draws outside `<main>`, because a page is allowed two body sizes and the
+  chrome took three.
+- **Made reusable** — `e2e/design_floor.ts`: the floor's eight rules, the
+  chrome's `<p>` set (header and footer, found from `main`'s parent, no
+  data-attribute invented for the shell), the brand link's own contrast and a
+  diagnostic that names the element behind a refusal, for every spec written from
+  now on; and `ui:"display"`, the field tag by which an entity says what its rows
+  are called, read by `ui/resource` and refused at mount by `kit/rest`.
+
 ## Next action
 
 To serve a page, compose the stylesheet once with `ui.Compose`, mount

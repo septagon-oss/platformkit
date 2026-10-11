@@ -262,6 +262,23 @@ type (
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //
+// SignInMethod names the door a session was opened through, and is the value
+// contracts.LoggedIn.Method carries. Two of the three are this module's own doing —
+// a password it checked itself — and the third is a provider's, which is why Open
+// asks for it instead of deciding it: a session opened at a SAML door that the trail
+// called "oidc" is a trail that sends whoever is reading it to the wrong log, at the
+// wrong provider, about the person it is asking about.
+type SignInMethod string
+
+const (
+	// ViaPassword is a session this module opened from credentials it checked itself.
+	ViaPassword SignInMethod = "password"
+	// ViaOIDC is a session opened for an address an OpenID Connect provider verified.
+	ViaOIDC SignInMethod = "oidc"
+	// ViaSAML is a session opened for an address a SAML 2.0 assertion verified.
+	ViaSAML SignInMethod = "saml"
+)
+
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
@@ -319,10 +336,17 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the provider did the verifying,
-	// and what is left is the session this module issues for a password — asked
-	// of the account first, second factor and all, whichever half came through.
-	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
+	// other way. The OIDC and SAML callbacks are its callers: the provider did the
+	// verifying, and what is left is the session this module issues for a password —
+	// asked of the account first, second factor and all, whichever half came through.
+	//
+	// `via` names which provider did the verifying, and it is asked for rather than
+	// assumed because the trail this writes says how somebody got in: a session
+	// opened through a SAML assertion that the log called "oidc" would be a log that
+	// blames the wrong door — and the question "did anyone sign in with a password
+	// after we turned single sign-on on" is answered out of that one field. See
+	// contracts.LoggedIn.
+	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client, via SignInMethod) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role
@@ -404,14 +428,29 @@ type Service interface {
 	// message, not in the mechanism.
 	Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) error
 
-	// Reset consumes a token, sets the password and ends every session that
-	// user has — including the one asking, because whoever is resetting a
-	// password is not relying on a session and whoever else held one may be the
-	// reason it is being reset. It publishes auth.password_reset.
+	// Reset consumes a token, sets the password, ends every session that user has
+	// — including the one asking, because whoever is resetting a password is not
+	// relying on a session and whoever else held one may be the reason it is being
+	// reset — and opens a new session for the browser that spent the link. It
+	// publishes auth.password_reset and, when a session opened, auth.logged_in.
+	//
+	// The session is the point of the link. An invitation that set a password and
+	// then asked for one was half a door: the person who proved their mailbox and
+	// chose the credential was standing outside it, so this returns the session to
+	// put in a cookie. `from` is the client the link was spent by — address and
+	// user agent — because the session row records the machine that opened it.
+	//
+	// nil session and nil error is the one account left signed out: a person who
+	// enrolled a second factor. Their password changed and their other sessions
+	// ended, and the first half of a sign-in still opens nothing on an account that
+	// answers with two. Every implementation is expected to keep those three facts
+	// in that order — sweep, then open — so that the session it hands back cannot be
+	// one the sweep removed.
 	//
 	// A token that is unknown, spent or expired is ErrCredentials, and the
 	// three are one answer for the reason Login's three are.
-	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error
+	Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+		from Client) (*Session, error)
 
 	// Roles is every role in this tenant, by name.
 	Roles(ctx context.Context, tx db.Tx[db.Tenant]) ([]*Role, error)

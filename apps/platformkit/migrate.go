@@ -25,6 +25,8 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
+
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // migrate is every role's boot migration over the same composition, sources,
@@ -42,6 +44,7 @@ func migrate(args []string) error {
 	fs := flag.NewFlagSet("migrate", flag.ContinueOnError)
 	path := fs.String("config", "config.yaml", "Path to the configuration file")
 	drain := fs.Bool("drain", false, "Finish any backfill the migration left half-done, then migrate again")
+	env := fs.String("environment", string(pkit.Production), "development, staging, or production")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -52,7 +55,11 @@ func migrate(args []string) error {
 	logger(cfg.Log.Level)
 
 	ctx := context.Background()
-	modules := compose(cfg).modules
+	// The migration is the composition's own effect, so the composition is
+	// answered first: app.go's sentences resolve, their refusals come back, and
+	// only then does anything reach the database. The module list is what
+	// kit/app migrates over, read off the plan rather than from a second list.
+	modules := composeReference(cfg, environment(*env)).plan().Modules()
 	if err := app.Migrate(ctx, cfg, modules); err != nil {
 		return err
 	}

@@ -41,6 +41,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // The first tenant. The host is what the browser types, and .localhost
@@ -87,12 +88,12 @@ func startApp(args []string) error {
 		return err
 	}
 
-	c := compose(cfg)
+	c := composeReference(cfg, pkit.Development)
 	password, err := generatePassword()
 	if err != nil {
 		return err
 	}
-	err = app.Bootstrap(ctx, cfg, c.modules, func(ctx context.Context, tx db.Tx[db.System]) error {
+	err = app.Bootstrap(ctx, cfg, c.plan().Modules(), func(ctx context.Context, tx db.Tx[db.System]) error {
 		t, err := tenant.Bootstrap(ctx, tx, c.tenants, tenantcontracts.NewTenant{
 			Slug: startTenant, Name: "PlatformKit", Host: startHost,
 		})
@@ -114,12 +115,8 @@ func startApp(args []string) error {
 		return err
 	}
 
-	a, err := app.New(ctx, cfg, c.modules, appOptions(cfg, c, app.All))
-	if err != nil {
-		return err
-	}
 	fmt.Fprintf(os.Stderr, "  site   http://%s/\n  admin  http://%s/app/admin/login\n  api    http://%s/docs\n\n", cfg.Server.PublicHost, cfg.Server.PublicHost, cfg.Server.PublicHost)
-	return a.Run(ctx)
+	return c.app.Run(ctx, c.once, app.All)
 }
 
 // startConfig is the development configuration with the database's port in

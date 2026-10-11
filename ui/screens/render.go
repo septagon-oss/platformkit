@@ -22,6 +22,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -44,7 +45,7 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords()}
+		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present}
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
@@ -76,9 +77,24 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 		if c.Run == nil {
 			continue
 		}
+		// A `system` command is one no person is offered, so no browser route is
+		// mounted for it. The JSON route keeps its guard unchanged — this narrows
+		// availability, never authority — and a page that offered it would be
+		// offering an action its author said belongs to an operator.
+		if c.Present.System {
+			continue
+		}
+		label := c.Present.Label
+		if label == "" {
+			// The Summary is the label because nothing else was ever offered:
+			// the button word and the API document's own sentence have always
+			// been one string here, and an author who wants them to differ now
+			// has somewhere to say so.
+			label = c.Summary
+		}
 		out = append(out, resource.Command{
-			Verb: c.Verb, Label: c.Summary, Description: c.Description,
-			Fields: c.Fields, Collection: c.Collection, Base: at,
+			Verb: c.Verb, Label: label, Description: c.Description,
+			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
 		})
 	}
 	return out
@@ -92,8 +108,28 @@ func listView(r httpx.Resource, ctx context.Context, o Options, at string, rows 
 	return resource.List(view(r, ctx, at), o, rows, total, pageNo, sort, writable)
 }
 
-func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any, writable bool) page.View {
-	return resource.Detail(view(r, ctx, at), o, row, writable)
+func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row map[string]any, writable bool) (page.View, error) {
+	rendered := map[string]string{}
+	for _, field := range r.Schema.Fields {
+		if field.Widget != "richtext" {
+			continue
+		}
+		tx, ok := httpx.TxFrom(ctx)
+		if !ok {
+			return page.View{}, richtext.ErrMissing
+		}
+		source, _ := row[field.Name].(string)
+		doc, err := richtext.Parse(source)
+		if err != nil {
+			return page.View{}, err
+		}
+		html, err := richtext.Render(ctx, tx, doc, r.RichTextFiles, richtext.Workspace)
+		if err != nil {
+			return page.View{}, err
+		}
+		rendered[field.Name] = html
+	}
+	return resource.DetailRichText(view(r, ctx, at), o, row, writable, rendered), nil
 }
 
 // List is the list screen of a registered resource. See resource.List.

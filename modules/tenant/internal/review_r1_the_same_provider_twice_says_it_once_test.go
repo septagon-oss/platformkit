@@ -36,7 +36,7 @@ import (
 func TestWritingTheSameProviderTwiceSaysItOnce(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	acme, _ := twoTenants(t, conn)
-	svc := internal.NewService(nil, tenanttest.InstallationLanguages())
+	svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
 
 	// The write that adds nothing: the tenant's own settings, handed back to it
 	// unchanged, twice more.

@@ -14,7 +14,7 @@ package app
 // (`grep -rn "jobs.Job{" modules/*/*.go modules/*/internal/*.go`: file-reconcile,
 // auth-sweep, billing-renew, task's SLA sweep, audit-retention). This package adds
 // four of its own to the scheduler — `work` builds the list as
-// `append(kernelJobs(transport), a.drainMigrations())` and then appends the
+// `append(kernelJobs(transport, app), a.drainMigrations())` and then appends the
 // modules' — and a run of each of those four opens one span whose attributes come
 // from a context that holds no tenant, because a purge is the same cross-tenant
 // question `file-reconcile` is. So the sentence counts what the composition
@@ -33,6 +33,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/jobs"
 )
@@ -42,7 +43,7 @@ import (
 // reader of this file hopes it schedules.
 func composedKernelJobs(t *testing.T) []jobs.Job {
 	t.Helper()
-	list := append(kernelJobs(memory.New()), (&App{}).drainMigrations())
+	list := append(kernelJobs(memory.New(), appname.Name("")), (&App{}).drainMigrations())
 	return list
 }
 

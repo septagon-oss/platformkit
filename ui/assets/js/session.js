@@ -7,6 +7,9 @@
 // email-verification lifecycle. The composed auth API owns the signup policy.
 (function () {
   const signin = document.documentElement.getAttribute("data-signin");
+  // Whose session this page was rendered into, and "" for nobody: the same value
+  // the document publishes as data-principal for its controllers.
+  const principal = document.documentElement.getAttribute("data-principal") || "";
   const sessionError = document.querySelector("[data-session-error]");
   const pending = new WeakSet();
 
@@ -91,7 +94,16 @@
             }
           }
           if (["login", "reset", "verify-email"].includes(kind)) {
-            const next = local(form.getAttribute("data-next"));
+            let next = local(form.getAttribute("data-next"));
+            // A destination is written for the person the page was rendered to.
+            // The sign-in form can answer with somebody else — a second tab
+            // switching account is that case — and then the address under it
+            // belongs to the person who just lost their session, so it goes with
+            // them and the switch lands on the shell's own home instead.
+            if (kind === "login" && principal) {
+              const answered = await response.json().catch(() => null);
+              if (answered?.userId && answered.userId !== principal) next = local(form.getAttribute("data-home"));
+            }
             window.location.assign(next?.href || (["reset", "verify-email"].includes(kind) && local(signin)?.href) || "/");
           } else {
             announce(message, success || "If this address can receive an account email, a link will be sent. Check your inbox.");
@@ -99,6 +111,15 @@
           return;
         }
         const problem = await response.json().catch(() => ({}));
+        // The refusal is this form's business only insofar as the form has to say
+        // it out loud. What the refusal names — a type, a status — may be answered
+        // by a control elsewhere on the page, so the page is told in the words the
+        // server used rather than in a paraphrase this file would have to keep
+        // up to date: the problem document is passed through unchanged, and this
+        // controller decides nothing about what any listener does with it.
+        form.dispatchEvent(new CustomEvent("auth-refused", {
+          bubbles: true, detail: { kind, status: response.status, problem },
+        }));
         announce(error, typeof problem?.detail === "string" && problem.detail.trim() ? problem.detail : "The request could not be completed. Please try again.");
       } catch {
         // A lost response does not establish whether a write committed. Never

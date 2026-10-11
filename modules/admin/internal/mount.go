@@ -24,8 +24,48 @@ import (
 	"github.com/septagon-oss/platformkit/ui/screens"
 )
 
+// Registration is the way in for somebody the tenant has no account for yet:
+// which form the shell renders and the door that form posts to. Only the
+// composition knows it wired a registration service, so only the composition
+// names this — the same reason it names SignIn rather than writing the auth
+// module's address down here.
+type Registration struct {
+	// Kind is which of the two forms the page renders.
+	Kind RegistrationKind
+	// Address is the composed door the form posts to.
+	Address string
+}
+
+// RegistrationKind is which registration form the shell renders. The two are
+// what ui/assets/js/session.js already distinguishes by name.
+type RegistrationKind int
+
+const (
+	// RegistrationKindEmail asks for an address alone: the tenant then invites
+	// the person, who chooses a password from the mail.
+	RegistrationKindEmail RegistrationKind = iota + 1
+	// RegistrationKindPassword takes a password and its confirmation, and the
+	// account waits for the mailbox link before it can sign in.
+	RegistrationKindPassword
+)
+
+// form is the name the session controller selects this form by.
+func (k RegistrationKind) form() string {
+	if k == RegistrationKindPassword {
+		return "register-password"
+	}
+	return "register"
+}
+
 // brand is what the shell calls itself when the tenant has no name.
 const brand = "PlatformKit"
+
+// chromeTextSize is the one body step the frame's own text takes: the tenant name, the caller and the
+// build stamp are the chrome, and the design floor allows a page two body sizes in total — so three
+// sizes in the chrome alone leaves the page's own copy nothing. `sm` is what two of the three already
+// took, and it is the sidebar's own nav step, which leaves `base` free for the page inside <main>.
+// See modules/admin/internal/frame_chrome_text_test.go.
+const chromeTextSize = "sm"
 
 // Shell is what the manifest hands the implementation.
 type Shell struct {
@@ -48,6 +88,10 @@ type Shell struct {
 	// SignIn is the auth module's session route, which the sign-in form posts
 	// to. The composition names it; this module only fills the form's action.
 	SignIn string
+	// Registration is the composition saying a stranger may make an account
+	// here. Nil offers no way in but the password, which is the answer for
+	// every composition that wired no registration service.
+	Registration *Registration
 	// Theme is the installation's two palettes: the one thing about the look of
 	// this shell that belongs to whoever runs it. See design.Pair.
 	Theme     design.Pair
@@ -84,6 +128,14 @@ type addresses struct {
 	// namespace, because that is where the workspace puts a module's screens.
 	tenants route
 	roles   route
+	// forgot is this shell's own page — it is the way in, and the way in is the
+	// shell's — and reset belongs to auth, whose link the person arrived by.
+	forgot route
+	reset  route
+	// verify is the other half of a sign-up: the link the confirmation mail
+	// carries. register is the shell's own page — the way in is the shell's.
+	verify   route
+	register route
 	// sessions is another module's screen again, for the same reason: the auth
 	// module names it in its nav, and this is the module that can draw it.
 	sessions      route
@@ -137,6 +189,10 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		gallery:       at(app, "/_gallery"),
 		tenants:       inNamespace(app, "tenant", "/tenants"),
 		roles:         inNamespace(app, "auth", "/roles"),
+		forgot:        at(app, "/login/forgot"),
+		reset:         inNamespace(app, "auth", "/reset"),
+		verify:        inNamespace(app, "auth", "/verify-email"),
+		register:      at(app, "/register"),
 		sessions:      inNamespace(app, "auth", "/sessions"),
 		sessionRevoke: inNamespace(app, "auth", "/sessions/revoke"),
 		sessionsRest:  inNamespace(app, "auth", "/sessions/revoke-rest"),
@@ -163,6 +219,17 @@ func Mount(s httpx.Surfaces, sh Shell) {
 		}
 	}
 	served = append(served, a.dashboard.at, a.login.at, a.health.at, a.gallery.at, a.tenants.at)
+	if app.Known("auth") {
+		// Both are served only when the auth module is composed: a forgot page
+		// that posts to a route nobody mounted is a door painted on a wall, and
+		// the composition that has no auth module has no password to forget.
+		served = append(served, a.forgot.at, a.reset.at, a.verify.at)
+	}
+	if sh.Registration != nil {
+		// The page is served only where the composition offers a door it posts
+		// to, which is the same rule that keeps the link off the sign-in card.
+		served = append(served, a.register.at)
+	}
 	if sh.Roles != nil {
 		served = append(served, a.roles.at)
 	}
@@ -213,7 +280,7 @@ func Mount(s httpx.Surfaces, sh Shell) {
 	// this module is composed last and it is therefore complete. The roles
 	// screen offers it as checkboxes; auth checks a write against it. The route
 	// itself is the composition's — see app.Options.WorkspaceCatalog.
-	pages{Shell: sh, shell: shell, at: a, resources: resources, declared: s.Permissions()}.mount(s, home, app)
+	pages{Shell: sh, shell: shell, at: a, nav: nav, resources: resources, declared: s.Permissions()}.mount(s, home, app)
 }
 
 // frame is the admin's arrangement: the sidebar the caller may follow, the
@@ -243,7 +310,7 @@ func frame(a addresses, nav page.Navigation, authorize httpx.Authorizer, storybo
 				Header:  header(r, navigation),
 				Main:    body,
 				Footer: []g.Node{components.Text(components.TextProps{
-					Content: brand + " " + version(), Size: "xs", Color: "muted"})},
+					Content: brand + " " + version(), Size: chromeTextSize, Color: "muted"})},
 			}),
 			components.ConfirmDialog(components.ConfirmDialogProps{Title: "Are you sure?"}),
 		})
@@ -288,7 +355,7 @@ func header(r page.Request, navigation components.SidebarProps) []g.Node {
 		right = append([]g.Node{
 			components.Text(components.TextProps{
 				Content: short(r.Principal.UserID.String()) + " · " + fallback(strings.Join(r.Principal.Roles, ", "), "no roles"),
-				Size:    "sm", Color: "muted"}),
+				Size:    chromeTextSize, Color: "muted"}),
 		}, right...)
 		right = append(right, components.Button(components.ButtonProps{
 			ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-sign-out": ""}},
@@ -298,7 +365,8 @@ func header(r page.Request, navigation components.SidebarProps) []g.Node {
 	return []g.Node{
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"},
 			components.SidebarDisclosure(navigation),
-			components.Text(components.TextProps{Content: fallback(r.Tenant.Name, brand), Weight: "semibold"})),
+			components.Text(components.TextProps{
+				Content: fallback(r.Tenant.Name, brand), Weight: "semibold", Size: chromeTextSize})),
 		components.Flex(components.FlexProps{Direction: "row", Align: "center", Gap: "3"}, right...),
 	}
 }

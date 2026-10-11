@@ -232,8 +232,8 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	// to mount into, and the screen would fall back to the shell's own.
 	rolesModule := module.Module{
 		Name:        "auth",
-		Permissions: []module.Permission{{Key: "auth:manage", Label: "manage authentication"}},
-		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "auth:manage"}},
+		Permissions: []module.Permission{{Key: "role:manage", Label: "manage roles"}},
+		Nav:         []module.NavEntry{{Label: "Roles", Screen: "auth/roles", Permission: "role:manage"}},
 	}
 	deps := admin.Deps{
 		Modules: []module.Module{notes, catalogue, rolesModule}, Authorize: authorize,
@@ -242,7 +242,7 @@ func mountWithAPI(t *testing.T, authorize httpx.Authorizer, configure ...func(*a
 	for _, apply := range configure {
 		apply(&deps)
 	}
-	shell := admin.Module(deps)
+	shell := admin.New(deps)
 	if err := module.Validate([]module.Module{notes, catalogue, rolesModule, shell}); err != nil {
 		t.Fatalf("the composition is invalid: %v", err)
 	}
@@ -949,3 +949,161 @@ func TestTheCatalogIsTheSameKnowledgeAsJSON(t *testing.T) {
 // way a composition names them at mount. The test keeps the *httpx.API
 // separately, because validating the composition is the composition's job and
 // holding a *Router would be holding one door of three.
+
+// TestTheDoorsBesideSignInAnswer is rule 2's page half. The sign-in card is not
+// the only way in: a person whose password is not right, who was invited and has
+// not chosen one, or whose address nobody has, is sent by the refusal itself to
+// "Forgot your password?", and that link has to lead to a page that asks for the
+// address and posts to the auth module's own request route. The set-password page
+// is the other end — the address the auth module mails — and it is mounted in
+// auth's namespace because it is where the workspace puts that module's screens.
+//
+// The two pages answer anonymously: a person with no session is exactly who they
+// are for.
+//
+// Each `action` is the address that answers, asked of the surface auth mounts that
+// door on: the set-password door sits on the workspace, the other two on the public
+// face. The workspace spelling of a public door is an alias row that answers 307, and
+// ui/assets/js/session.js posts with redirect: "error" — a form pointed at an alias is
+// a button that tells the person the outcome is unknown and sends nothing, which no
+// assertion about the page alone can see. apps/platformkit's
+// TestEveryAccountDoorPostsToAnAddressThatAnswers asks the running application the
+// other half of this table.
+func TestTheDoorsBesideSignInAnswer(t *testing.T) {
+	router := mount(t)
+	for _, door := range []struct{ path, form, action string }{
+		{"/app/admin/login/forgot", "forgot", "/api/v1/public/auth/password/forgot"},
+		{"/app/auth/reset", "reset", "/api/v1/auth/password/reset"},
+		{"/app/auth/verify-email", "verify-email", "/api/v1/public/auth/verify-email"},
+	} {
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+door.path, nil))
+		if w.Code != http.StatusOK {
+			t.Fatalf("%s = %d, want the page for a person with no session: %s", door.path, w.Code, w.Body.String())
+		}
+		body := w.Body.String()
+		if !strings.Contains(body, `data-auth-form="`+door.form+`"`) {
+			t.Errorf("%s renders no %s form; ui/assets/js/session.js posts the JSON and the page is the only thing that can ask for the fields: %s",
+				door.path, door.form, body)
+		}
+		if got := attribute(body, "action"); got != door.action {
+			t.Errorf("%s posts to %q, want the auth module's own route %q", door.path, got, door.action)
+		}
+	}
+
+	// And the sign-in card names the first of them, in the same breath as the
+	// button: a link that exists at an address nobody can reach is no way in.
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "http://"+host+"/app/admin/login", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("the sign-in page = %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), `href="/app/admin/login/forgot"`) {
+		t.Errorf("the sign-in card names no way to be sent a link:\n%s", w.Body.String())
+	}
+}
+
+// TestTheSignInCardSendsAPersonToTheShellsOwnHome is the door, pinned. The four
+// specs e2e/review-r2-refusal-measure, review-r3-refusal-floor,
+// review-r4-refusal-floor-pt and review-r5-one_notice_per_holder sign in and pin
+// toHaveURL(/\/app$/): one of them pins it for a person holding exactly
+// audit:read, one for a person holding exactly role:manage, one for a plain
+// member and one for the tenant's administrator. Those four cover every shape of
+// caller, so no landing rule that moves a person off the root *when the sign-in
+// answers them* can pass the suite that is pinned, and the root is where a person
+// who signs in is sent. What the walkthrough's zero scores were about is answered
+// on that page — see TestTheDashboardNamesTheScreensThisCallersRoleOpens — not
+// behind a redirect.
+//
+// One caller is not pinned anywhere, and it is the one this page can only get
+// wrong: a person who is *already* signed in and opens the sign-in address. For
+// them the form asks for a credential they do not need, so its destination is the
+// first screen their role opens — TestASignedInPersonLandsOnTheFirstScreenTheirRoleOpens
+// is that promise, and the rule is in login. Whether the first-pinned caller above
+// should be moved there too is a question with two owners and neither is this
+// delivery's: the specs that pin it are review's, so it is root's to settle.
+func TestTheSignInCardSendsAPersonToTheShellsOwnHome(t *testing.T) {
+	// Anonymous: nobody is signed in, so the destination is the shell's own home.
+	_, page, _ := callAnon(t, mount(t), http.MethodGet, "/app/admin/login", "")
+	if got := attribute(page, "data-next"); got != "/app" {
+		t.Errorf("the sign-in form's default next is %q, want the shell's own home", got)
+	}
+	// Signed in, and holding one screen: that screen, because a second sign-in is
+	// not what this person needs.
+	_, page, _ = call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())),
+		http.MethodGet, "/app/admin/login", "")
+	if got := attribute(page, "data-next"); got != "/app/auth/roles" {
+		t.Errorf("a signed-in person's destination is %q, want the screen their role opens", got)
+	}
+	// An explicit next wins over both: somebody pushed off a specific screen
+	// goes back to that screen.
+	_, page, _ = callAnon(t, mount(t), http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
+	if got := attribute(page, "data-next"); got != "/app/note/notes" {
+		t.Errorf("an explicit next was not honoured: %q", got)
+	}
+	_, page, _ = call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())),
+		http.MethodGet, "/app/admin/login?next="+url.QueryEscape("/app/note/notes"), "")
+	if got := attribute(page, "data-next"); got != "/app/note/notes" {
+		t.Errorf("an explicit next was not honoured for a signed-in person: %q", got)
+	}
+}
+
+// callAnon is call without the session cookie, which is what leaves the caller
+// anonymous: the identity hook is only reached for a request that carries one.
+func callAnon(t *testing.T, r http.Handler, method, path, body string) (int, string, string) {
+	t.Helper()
+	req := httptest.NewRequest(method, "http://"+host+path, strings.NewReader(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w.Code, w.Body.String(), w.Header().Get("Location")
+}
+
+// TestTheDashboardNamesTheScreensThisCallersRoleOpens is rule 5 of the front door
+// delivered on the page a person actually arrives at. Twelve of the eighteen apps
+// in the walkthrough of record scored nothing there: signed in, they were shown a
+// heading, an alert and a grid with no card in it, whose only other link was
+// Health. The cards are the tenant's contents and a caller who may read none of
+// them gets no card — which is right, and was the whole of the page.
+//
+// What their role opens is a different question, answered by
+// page.Navigation.Visible: the list the sidebar renders, which asks the same
+// Authorizer the routes enforce with and covers the screens a module writes by
+// hand, like the role list, that carry no count to draw. So the page names those
+// screens, and cannot name one it would refuse. A role that opens nothing is told
+// so, in words, because "your role opens no page, an administrator can change
+// that" is a fact a person can act on and an empty grid is not.
+func TestTheDashboardNamesTheScreensThisCallersRoleOpens(t *testing.T) {
+	// Counted nothing, opens one screen: the hand-written one, named and linked.
+	_, body, _ := call(t, mountAs(t, member{"role:manage": true}, withRoles(seeded())), http.MethodGet, "/app", "")
+	if strings.Contains(body, "In note") {
+		t.Error("the dashboard drew a count for a caller who may not read it")
+	}
+	if !strings.Contains(body, "What your role opens") {
+		t.Error("the dashboard names no screen for a role that opens one")
+	}
+	if !strings.Contains(body, `href="/app/auth/roles"`) {
+		t.Error("the dashboard does not link the screen this role opens")
+	}
+	if strings.Contains(body, `href="/app/note/notes"`) {
+		t.Error("the dashboard names a screen this caller is refused")
+	}
+
+	// Counted nothing, opens nothing: the page says which of the two it is.
+	_, body, _ = call(t, mountAs(t, member{}), http.MethodGet, "/app", "")
+	if !strings.Contains(body, "No screens open yet") {
+		t.Error("the dashboard leaves a caller who may reach nothing with an empty grid")
+	}
+	if strings.Contains(body, "What your role opens") {
+		t.Error("the dashboard names screens for a role that opens none")
+	}
+
+	// And the page that has counts keeps drawing them: this page's first answer
+	// is still the tenant's contents, not a panel about the caller's role.
+	_, body, _ = call(t, mountAs(t, member{"note:read": true}), http.MethodGet, "/app", "")
+	if !strings.Contains(body, "0 Notes") {
+		t.Error("the dashboard lost its counts for a caller who may read them")
+	}
+	if strings.Contains(body, "What your role opens") || strings.Contains(body, "No screens open yet") {
+		t.Error("the dashboard speaks about the caller's role where it has counts to show")
+	}
+}

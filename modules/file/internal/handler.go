@@ -128,6 +128,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 			}
 			up.Visibility = in.Visibility
 			up.Kind = in.Kind
+			up.Image = in.Image
 			// transaction and not transaction(ctx): the per-request transaction
 			// is lazy, and this route is the one that must not open it before
 			// the body has arrived. See contracts.Tx.
@@ -219,6 +220,30 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc contracts.Service) {
 				return nil, fault(err)
 			}
 			return &rest.Item[*contracts.Grant]{Body: grant}, nil
+		})
+
+	// Who reads this file. The ids are read back through the same policy that
+	// decided the file was readable at all, so an answer here is scoped to the
+	// caller by the database and not by a filter this handler wrote.
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-uses",
+		Method:      http.MethodGet,
+		Path:        path + "/{id}/uses",
+		Summary:     "List the records that reference a file",
+		Description: "Which record's field, in which locale, shows this file's image — the records a library's details panel links to. A file nobody shows answers an empty list; a file this caller may not read answers 404.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *idInput) (*rest.Item[[]contracts.UseRow], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			uses, err := svc.Uses(ctx, tx, in.ID)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[[]contracts.UseRow]{Body: uses}, nil
 		})
 
 	httpx.Register(app, huma.Operation{
@@ -390,6 +415,14 @@ func fault(err error) error {
 	switch {
 	case errors.Is(err, contracts.ErrTooLarge), errors.Is(err, contracts.ErrQuota):
 		return problem.New(http.StatusRequestEntityTooLarge, err.Error())
+	// A frame over the pixel ceiling is the same remedy as a file over the byte
+	// limit — send something smaller — so it joins the 413 above rather than
+	// inventing a status this route has never declared. A file offered as an
+	// image that no decoder reads is the request's to fix, which is what 422
+	// means; 415 would be truer to the media type and less true to the answer,
+	// because the bytes are fine as the document they were not offered as.
+	case errors.Is(err, contracts.ErrTooManyPixels), errors.Is(err, contracts.ErrNotImage):
+		return problem.New(http.StatusUnprocessableEntity, err.Error())
 	// A caller asked for an expiry this module will not sign, or a grant for a
 	// file anybody can already read. Both are the request's to fix, which is
 	// what 422 means, and rest.Fault has no way to know that a sentinel this
@@ -479,4 +512,9 @@ type uploadInput struct {
 	// before the bytes are stored. An empty kind means no class, and a file with
 	// no class is never swept.
 	Kind string `query:"kind" default:"" maxLength:"32" doc:"Retention class, as the product names it"`
+	// Image is the caller saying this part is an image: the media library and
+	// the editor's image field set it, and it is what turns a file no decoder
+	// reads into a refusal rather than an attachment. It is a query parameter
+	// for the same reason the two above are.
+	Image bool `query:"image" default:"false" doc:"Treat these bytes as an image: measure the frame, and refuse what no decoder reads"`
 }

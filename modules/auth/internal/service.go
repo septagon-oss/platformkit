@@ -193,7 +193,7 @@ func (s *Service) Login(ctx context.Context, tx db.Tx[db.Tenant], email, passwor
 // and reading a permission nobody wrote would be inventing it. The declaration
 // the brief's "where the tenant allows" asks for is named as unbuilt in the
 // module's README; until somebody writes it, the account decides at both doors.
-func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, via contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := s.users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err
@@ -214,7 +214,7 @@ func (s *Service) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, f
 		s.markFirstFactorProved(ctx, user.ID)
 		return nil, nil, contracts.ErrFactorRequired
 	}
-	return s.open(ctx, tx, user, from, "oidc")
+	return s.open(ctx, tx, user, from, string(via))
 }
 
 // open writes the session row and its event in the caller's transaction.
@@ -282,6 +282,19 @@ func (s *Service) Identify(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 
 // detachedWriteBudget bounds auth writes that must survive a refused request.
 // A busy or unreachable database must not keep that request open indefinitely.
+//
+// Two seconds, and the number is a tested contract rather than a guess:
+// TestDetachedAuthWritesBoundPoolWait exhausts a one-connection pool and fails
+// a detached write that still has not given up after three, because holding the
+// pool is how every other request on this process dies. Round 15 raised this to
+// 10s to stop a loaded box being read as somebody's broken passkey (see
+// e2e/passkey-second-tenant.spec.ts, refused by `make e2e` on 2026-10-08: a
+// ceremony 358ms old answered 401 after 2244.95ms, which is this budget with a
+// pool wait inside it) and `make check` answered with that test in three places.
+// It came back down, and the lesson is the shape of the problem: giving up is
+// the designed answer, so the cure is a sign-in that does not need a second
+// connection to answer a passkey, or a connection reserved for the writes that
+// must outlive a refusal — not a longer wait. Both are named in IMPLEMENT.md.
 const detachedWriteBudget = 2 * time.Second
 
 // forget deletes one expired session, in a transaction of its own.
@@ -393,6 +406,16 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if codes.Error != nil {
 		return 0, fmt.Errorf("auth: purge the spent recovery codes: %w", codes.Error)
 	}
+	// A spent assertion id protects nothing past the moment the library would refuse
+	// the assertion anyway — NotOnOrAfter plus its clock skew, which is what the
+	// claim wrote into expires_at. Deleting by expiry, bounded by the same batch, with
+	// the index migrations/000047 put on that column for exactly this statement.
+	replays := tx.DB().Exec(
+		"DELETE FROM saml_assertion_replays WHERE assertion_id IN ("+
+			"SELECT assertion_id FROM saml_assertion_replays WHERE expires_at < now() LIMIT ?)", purgeBatch)
+	if replays.Error != nil {
+		return 0, fmt.Errorf("auth: purge the spent assertions: %w", replays.Error)
+	}
 	// A key that has been dead for a month is no longer a fact anybody reads: the
 	// revocation is on the trail with its name, its scope and its last use, which
 	// is what an incident review asks. The month is the difference between
@@ -415,8 +438,19 @@ func (s *Service) Purge(_ context.Context, tx db.Tx[db.Tenant]) (int64, error) {
 	if proofs.Error != nil {
 		return 0, fmt.Errorf("auth: purge the spent first-factor proofs: %w", proofs.Error)
 	}
+	// A passkey prompt nobody answered is a nonce with a two-minute expiry and a
+	// stranger's request behind it: the begin legs are public, they each write one
+	// row, and the answer that would have deleted it may never arrive. The window is
+	// short enough that a tenant's live count is the number of people mid-ceremony,
+	// so this is the ordinary case rather than a sweep of anybody's history.
+	ceremonies := tx.DB().Exec(
+		"DELETE FROM passkey_challenges WHERE id IN ("+
+			"SELECT id FROM passkey_challenges WHERE expires_at <= now() LIMIT ?)", purgeBatch)
+	if ceremonies.Error != nil {
+		return 0, fmt.Errorf("auth: purge the unanswered passkey prompts: %w", ceremonies.Error)
+	}
 	return sessions.RowsAffected + tokens.RowsAffected + verifications.RowsAffected +
-		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected, nil
+		codes.RowsAffected + keys.RowsAffected + proofs.RowsAffected + ceremonies.RowsAffected, nil
 }
 
 // The purge's two constants. A thousand rows per transaction, for the reason

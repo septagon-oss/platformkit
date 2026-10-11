@@ -121,7 +121,7 @@ func authCleanupFixture(t *testing.T, maxOpen int) (*sql.DB, *db.Conn, context.C
 	// Granting is this harness's yes: it seeds a person with the user module
 	// before any service exists to ask, and the door itself is covered by the
 	// conformance suite in modules/user (see usercontracts.Granting).
-	users, _ := user.Module(user.Deps{
+	users, _ := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: AdministeringRoles},
 		Granting:       &usercontracts.GrantingFunc{Ask: func(context.Context, db.Tx[db.Tenant]) (bool, error) { return true, nil }},
 	})

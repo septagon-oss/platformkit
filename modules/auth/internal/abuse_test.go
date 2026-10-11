@@ -146,7 +146,7 @@ func TestTheResetTokenIsInTheMailAndInNoRow(t *testing.T) {
 	// trail among them, so the audit module's schema is composed as well.
 	admin, conn := dbtest.Schema(t, user.Migrations, notification.Migrations, auth.Migrations, audit.Migrations)
 	users := realUsers()
-	notify, _ := notification.Module(notification.Deps{Mailer: notification.NewMailbox()})
+	notify, _ := notification.New(notification.Deps{Mailer: notification.NewMailbox()})
 	box := &authtest.Mailbox{}
 	svc := internal.NewService(users, notify, delivery(box))
 	seed(t, conn, acme)

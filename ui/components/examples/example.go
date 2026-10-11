@@ -18,6 +18,7 @@ import (
 	"io"
 	"reflect"
 	"slices"
+	"time"
 
 	g "maragu.dev/gomponents"
 
@@ -180,7 +181,7 @@ func (e Example) WithProps(patch json.RawMessage) (Example, error) {
 		if err := field.validateChoice(raw); err != nil {
 			return Example{}, err
 		}
-		value, err := decodeExampleValue(raw, field.typ)
+		value, err := field.decode(raw)
 		if err != nil {
 			return Example{}, fmt.Errorf("property %q: %w", name, err)
 		}
@@ -349,6 +350,9 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 		}
 		return out, err
 	}
+	if typ == reflect.TypeFor[time.Time]() {
+		return out, json.Unmarshal(raw, out.Addr().Interface())
+	}
 	if typ.Kind() == reflect.Struct {
 		fields, err := exampleFields(typ)
 		if err != nil {
@@ -366,7 +370,7 @@ func decodeExampleValue(raw []byte, typ reflect.Type) (reflect.Value, error) {
 			if err := fields[i].validateChoice(data); err != nil {
 				return out, err
 			}
-			value, err := decodeExampleValue(data, fields[i].typ)
+			value, err := fields[i].decode(data)
 			if err != nil {
 				return out, err
 			}

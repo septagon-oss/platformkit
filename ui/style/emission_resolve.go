@@ -539,6 +539,8 @@ var fixedClasses = map[string][]decl{
 	"whitespace-nowrap":   {{"white-space", "nowrap"}},
 	"whitespace-pre-wrap": {{"white-space", "pre-wrap"}},
 	"break-all":           {{"word-break", "break-all"}}, "break-words": {{"overflow-wrap", "break-word"}},
+	"break-anywhere": {{"overflow-wrap", "anywhere"}},
+	"break-normal":   {{"overflow-wrap", "normal"}},
 
 	// Visual toggles.
 	"sr-only": {
