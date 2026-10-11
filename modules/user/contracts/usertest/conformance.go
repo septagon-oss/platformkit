@@ -211,8 +211,10 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if err := f.Delete(ada.ID); !errors.Is(err, crud.ErrInvalid) {
 				t.Fatalf("deleting the last administrator = %v, want ErrInvalid", err)
 			}
-			// Both refusals left the row alone, and said nothing: a write that
-			// did not happen is not an event somebody has to explain.
+			// Both refusals left the row alone. What they did not leave unsaid is
+			// the attempt: each refused door is one record on the trail, and the
+			// write behind it is not there, because a write that did not happen is
+			// not an event anybody has to explain — the refusal is.
 			got, err := f.Service.Get(f.Ctx, f.Tx, ada.ID)
 			if err != nil {
 				t.Fatalf("Get: %v", err)
@@ -220,7 +222,9 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if !got.Administers([]string{Administering}) {
 				t.Errorf("after two refused writes ada is %q holding %v", got.Status, got.Roles)
 			}
-			published(t, f, contracts.EventInvited, contracts.EventPasswordSet, contracts.EventRolesSet)
+			published(t, f, contracts.EventInvited, contracts.EventPasswordSet, contracts.EventRolesSet,
+				contracts.EventAdministrationRefused, contracts.EventAdministrationRefused,
+				contracts.EventAdministrationRefused)
 		},
 
 		"a second administrator makes the first one ordinary again": func(t *testing.T, f Fixture) {

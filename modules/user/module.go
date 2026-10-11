@@ -165,6 +165,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
 			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
 			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
+			events.Declare[contracts.AdministrationRefused](contracts.EventAdministrationRefused),
 			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),
 			events.Declare[contracts.RegistrationApproved](contracts.EventRegistrationApproved),
 			events.Declare[contracts.RegistrationUnverified](contracts.EventRegistrationUnverified),
