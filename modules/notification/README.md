@@ -113,7 +113,7 @@ lives in `gomail_test.go`: a testing approach to copy, not an API to import).
 
 ### Permissions
 
-One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines.
+One key: `sender:manage` (`contracts.PermissionSenderManage`, declared in `permissions` in `modules/notification/module.go`). It is the tenant's own sending address — `Put`, `Verify` and `Delete` in `internal/senders.go` — and it is defined here rather than beside a route because `kit/app` refuses a route whose permission no manifest defines. Its `Label` — `manage the tenant's sending address` — is the grant in words, which is what a refusal reads out and what `kit/module.Validate` refuses a permission for lacking.
 The key is checked inside the transaction, not only at a route: `Senders.administered` asks the composition's `contracts.GrantChecker` whether the caller's roles grant it, and refuses when the deployment wires no checker to answer. A deployment that grants it to nobody therefore has working sender commands refused, which is the failure it will notice.
 No nav entry names it: a nav entry decides who sees a link, and this key guards a mail identity, not a page.
 The module's two routes stay outside it, guarded by `httpx.SignedIn()` in `modules/notification/internal/handler.go`: `GET /notifications` (`notification-notification-list`) and `POST /notifications/{id}/read` (`notification-notification-read`) — both are about the caller, and a permission every signed-in person must hold decides nothing.

@@ -83,7 +83,7 @@ type Deps struct {
 // Put, Verify or Delete is somebody the transaction names, and the route a
 // product composes over that face guards it with this key, which kit/app refuses
 // to start unless the manifest that defines it says so.
-var permissions = []module.Permission{{Key: contracts.PermissionSenderManage}}
+var permissions = []module.Permission{{Key: contracts.PermissionSenderManage, Label: "manage the tenant's sending address"}}
 
 // subscriptions is the manifest's list of who does this module's asynchronous
 // work: the mail this module sends itself, and one carrier per provider the
