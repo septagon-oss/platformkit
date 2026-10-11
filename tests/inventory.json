@@ -4505,6 +4505,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/served_task_catalogue_test.go",
+   "id": "apps/platformkit/served_task_catalogue_test.go#TestTheShippedTaskCatalogueMatchesBothLanguageGoldens",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheShippedTaskCatalogueMatchesBothLanguageGoldens",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/set_password_link_session_bounds_test.go",
    "id": "apps/platformkit/set_password_link_session_bounds_test.go#TestASetPasswordLinkOpensOneSessionInItsOwnTenant",
    "kind": "go",
@@ -50098,7 +50117,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1189,
+  "files": 1190,
   "forge_runs": [
    408,
    413,
@@ -50133,7 +50152,7 @@
   ],
   "layers": {
    "behaviour": 2212,
-   "composition": 233,
+   "composition": 234,
    "contract": 19,
    "journey": 58
   },
@@ -50151,9 +50170,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2522,
+  "rows": 2523,
   "tiers": {
-   "merge": 1527,
+   "merge": 1528,
    "nightly": 58,
    "push": 937
   },
@@ -50161,13 +50180,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 974,
+   "keep": 975,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2175,
+   "keep": 2176,
    "keep-rewrite": 132,
    "merge": 215
   }
