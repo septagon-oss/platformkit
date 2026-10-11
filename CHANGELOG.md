@@ -92,6 +92,40 @@ is alive, because from that moment its own older traffic is unreadable to it. A 
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
 
+**Any declared field of a record can be said in the tenant's other languages.**
+`modules/translation` holds the saying, not the text: one `translations` table
+whose identity is `(tenant_id, module, entity, record_id, field, locale)` —
+`translations_identity` in
+`modules/translation/migrations/000043_translation.up.sql`, with `ENABLE` and
+`FORCE ROW LEVEL SECURITY` around the policy that matches
+`platformkit_tenant_match` — where a row is one field of one record in one
+language and is never a record, a lifecycle or a list of its own. A field declares
+itself once, `i18n:"translatable"` beside its own `json` and `ui` tags, and no
+second list of translatable names exists anywhere: the read overlay, the generated
+form, the write body's description and the record screen's per-language badges are
+all read from that declaration. The module declares no permission and mounts no
+route (`Permissions: nil`, `Routes: nil`), because the record is the door —
+`kit/rest` mounts `GET …?lang=`, `POST …/translate`, `…/review-translation`,
+`…/suggest-translation` and `…/untranslate` beside the record's own `PATCH`, behind
+that `Spec`'s own read and write grants — so a caller translates a record exactly
+as far as they may write it, and a key meaning "may translate" could only open a
+row its holder cannot read. A read answers the locale's rows with every field that
+fell back named in `_i18n` and why (`missing`, `outdated`, `machine`, `withheld`),
+and a machine draft no person has reviewed never reaches a public reader. A
+translation remembers the source it was made from: `source_text` and `source_hash`
+are written inside the source row's own `FOR UPDATE` and are not re-based when the
+source moves again, because the stale pair is what a side-by-side review exists to
+show. Each write carries the expected revision of each field it names, checked
+over every field before any is written, so a save that loses on one of six writes
+none of them, publishes nothing and returns no stale row; `translation.updated` is
+the module's only event, committed beside the rows it describes, and there is no
+`audit.Record` call in this module because the trail subscribes to that event.
+Neither a machine translator nor its price is composed here — the provider's
+address, key and price are an installation's facts (`translation.Deps.Translator`),
+and where none is configured `Suggest` refuses and writes nothing — and which
+records a translator may work on is the product's line, written in
+`apps/platformkit/product.go`.
+
 **A change to somebody else's row is proposed, decided and applied through four
 commands.** `modules/change` holds a proposal over another account's row: the
  digest of the bytes a verdict was made about, the state machine that makes a
