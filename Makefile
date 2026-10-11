@@ -534,6 +534,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# scripts/race_boundary_guard_test.py asks whether the case above could still refuse. It copies the
+	# committed Makefile and that guard into a directory of its own, takes one part out of the race goal
+	# at a time — the detector, the fresh count, the stated bound — and asks four things: that the pair as
+	# committed answers, and that each of the three stripped of one part refuses at the race line and
+	# nowhere else. No file in the tree is touched: the mutation lives in the copy, and the Makefile and
+	# the workflows stay as committed. What it buys is the difference between a guard that is read and a
+	# guard that can be broken, for the four dry runs it names and no database.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_boundary_guard_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
