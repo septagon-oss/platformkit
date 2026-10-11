@@ -3,6 +3,7 @@ package internal_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -98,6 +99,103 @@ func TestTheTrailIsTenantOwned(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("list in globex: %v", err)
+	}
+}
+
+// TestTheTrailKeepsWhatCausedTheEvent: the attribution the outbox carried reaches
+// the trail row, and reaches it read back rather than merely stored. The relay
+// deletes a published outbox row once its retention window passes, so this row is
+// the last place the installation can say what wrote it — and the shape of a
+// cause has three parts, so three cases: a seed that cited its file and line, a
+// cause that named only its kind, and a person's own request, which keeps all
+// four NULL because the actor already names who it was.
+func TestTheTrailKeepsWhatCausedTheEvent(t *testing.T) {
+	_, conn := dbtest.Schema(t, audit.Migrations)
+	svc := internal.NewService()
+	seeded := uuid.New()
+	kindOnly := uuid.New()
+	signedIn := uuid.New()
+	initiator := uuid.New()
+	person := uuid.New()
+	record := func(ev events.Event) {
+		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			return svc.Record(ctx, tx, ev)
+		})
+		if err != nil {
+			t.Fatalf("record %s: %v", ev.Name, err)
+		}
+	}
+	record(events.Event{ID: seeded, Name: "content.content.created", At: db.Now(),
+		Payload: []byte(`{"slug":"home"}`), ActorKind: "seed",
+		SourceFile: "seed/starter/contents.yaml", SourceLine: 12, Initiator: initiator})
+	record(events.Event{ID: kindOnly, Name: "content.content.created", At: db.Now(),
+		Payload: []byte(`{"slug":"about"}`), ActorKind: "job"})
+	record(events.Event{ID: signedIn, Name: "task.task.created", At: db.Now(),
+		Payload: []byte(`{"title":"chiller"}`), Actor: person})
+
+	var rows []*contracts.Event
+	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+		var total int64
+		var err error
+		rows, total, err = svc.List(ctx, tx, contracts.Query{Limit: 10})
+		if err == nil && total != 3 {
+			err = fmt.Errorf("the tenant's trail holds %d rows, want 3", total)
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("list the trail: %v", err)
+	}
+	byID := map[uuid.UUID]*contracts.Event{}
+	for _, row := range rows {
+		byID[row.EventID] = row
+	}
+	if len(byID) != 3 {
+		t.Fatalf("the trail returned rows for %d of the three events", len(byID))
+	}
+	// Get reads the four the way the read route does, and a row whose kind the
+	// trail kept is the row the API may answer with.
+	if row := byID[seeded]; row != nil {
+		err = db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			got, err := svc.Get(ctx, tx, row.ID)
+			if err != nil {
+				return err
+			}
+			if got.ActorKind == nil || *got.ActorKind != "seed" || got.SourceLine == nil || *got.SourceLine != 12 {
+				return fmt.Errorf("Get answered %v %v for the seeded row", got.ActorKind, got.SourceLine)
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("read the seeded row back: %v", err)
+		}
+	}
+	// The seeded write: its kind, its file, its line, and the person the run served
+	// — and no actor, because nobody signed in to write it.
+	if row := byID[seeded]; row == nil {
+		t.Error("the seeded write reached no trail row")
+	} else if row.ActorKind == nil || *row.ActorKind != "seed" ||
+		row.SourceFile == nil || *row.SourceFile != "seed/starter/contents.yaml" ||
+		row.SourceLine == nil || *row.SourceLine != 12 ||
+		row.Initiator == nil || *row.Initiator != initiator || row.Actor != nil {
+		t.Errorf("the seeded row names %v %v %v %v with actor %v, want seed, seed/starter/contents.yaml, 12, %s and no actor",
+			row.ActorKind, row.SourceFile, row.SourceLine, row.Initiator, row.Actor, initiator)
+	}
+	// A kind with no citation keeps the kind and cites nothing: a line is a place.
+	if row := byID[kindOnly]; row == nil {
+		t.Error("the job's write reached no trail row")
+	} else if row.ActorKind == nil || *row.ActorKind != "job" ||
+		row.SourceFile != nil || row.SourceLine != nil || row.Initiator != nil {
+		t.Errorf("the job's row names %v %v %v %v, want the kind alone",
+			row.ActorKind, row.SourceFile, row.SourceLine, row.Initiator)
+	}
+	// A person's own request says nothing about a cause beside the actor.
+	if row := byID[signedIn]; row == nil {
+		t.Error("the person's write reached no trail row")
+	} else if row.Actor == nil || *row.Actor != person ||
+		row.ActorKind != nil || row.SourceFile != nil || row.SourceLine != nil || row.Initiator != nil {
+		t.Errorf("the person's row names actor %v and %v %v %v %v, want the person and nothing else",
+			row.Actor, row.ActorKind, row.SourceFile, row.SourceLine, row.Initiator)
 	}
 }
 

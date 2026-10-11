@@ -109,7 +109,7 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	ctx := t.Context()
 	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
 		Title: "Acme Journal", Tagline: "Notes from the workshop", HomeSlug: "welcome",
-		Theme: "dark", PrimaryColor: "#c0ffee",
+		Theme: "dark", PrimaryColor: "#b45309",
 		Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -124,7 +124,7 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 		t.Fatalf("status %d: %s", status, body)
 	}
 	for _, want := range []string{
-		`data-theme="dark"`, `--pk-color-accent-default:#c0ffee`, "Acme Journal", "Notes from the workshop",
+		`data-theme="dark"`, `--pk-color-accent-default:#b45309`, "Acme Journal", "Notes from the workshop",
 		`href="/about"`, "Welcome home", "<strong>home</strong>", "<code>code</code>", `<title>Welcome home · Acme</title>`,
 	} {
 		if !strings.Contains(body, want) {

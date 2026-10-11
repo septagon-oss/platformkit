@@ -14,7 +14,7 @@
 # asking git about the first parent directory with a .git of its own instead, which
 # stamps another repository's revision into the binary or fails the build outright.
 export GOTOOLCHAIN := $(shell sed -n 's/^toolchain //p' go.mod)
-.PHONY: help build test vet run e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-versions check-e2e-guards check-pillars fmt-check check fmt image up trace down
+.PHONY: help build test vet run seed e2e mobile-e2e rehearse backup restore-drill load-test check check-race check-loc check-packages check-gucs check-fixtures check-e2e-guards check-pillars check-versions fmt-check check fmt image up trace down check-test-inventory check-push check-merge check-nightly flakes cover
 
 # Tests talk to a real Postgres, as two roles: the owner runs migrations, the
 # app role is subject to row-level security so the isolation tests mean
@@ -127,6 +127,19 @@ run: config.yaml ## Run the reference app; a missing config.yaml is created from
 # config.yaml is never overwritten, whatever the example's timestamp says.
 config.yaml:
 	cp config.example.yaml config.yaml
+
+# The reference application's own seed, applied through the write path each
+# resource already has: a page through content's, a person through the user
+# module's invitation. Two names are enough to say which run this is — the tenant
+# by its slug and the person by their address, whose roles answer for every write.
+# Whether the demo records are in scope is the tenant's own row's answer, not
+# DEMO's: seed refuses for a tenant whose row says false. DRY=1 prints the plan and
+# writes nothing; the plan it prints is the one a real run would have decided.
+SEED_TENANT ?=
+SEED_AS ?=
+seed: config.yaml ## Seed one tenant from this tree's seed files; SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]
+	@test -n '$(SEED_TENANT)' -a -n '$(SEED_AS)' || { echo 'usage: make seed SEED_TENANT=<slug> SEED_AS=<email> [DEMO=1] [DRY=1]' >&2; exit 2; }
+	cd apps/platformkit && go run . seed --config ../../config.yaml --tenant '$(SEED_TENANT)' --as '$(SEED_AS)' $(if $(DEMO),--demo,) $(if $(DRY),--dry-run,)
 
 e2e: ## Gate 10: boot the app on a database of its own and drive it with a browser
 	./scripts/e2e.sh
@@ -249,6 +262,54 @@ check-rehearse: ## Apply this tree's pending migrations to a copy of the previou
 check-apidiff: ## Fail on an exported API change beyond the reviewed baseline
 	python3 scripts/check_public_api.py $(REHEARSE_BASE) HEAD --baseline $(APIDIFF_BASELINE)
 
+# The tiers decision 0088 rules, as goals beside `check` rather than as a narrowing of it.
+#
+# `check` stays what a pull request must pass and stays the sum of the tiers, byte for byte where
+# three scripts pin it; what changes is who runs it. A push runs `check-push`: the contracts and the
+# behaviour of the packages the diff reaches, and nothing that opens a database — the selector
+# refuses a selection that does, so the promise is structural rather than careful. A merge (a push
+# to main, which is where a pull request lands) runs `check`, which is the whole suite plus the
+# rehearsal, and the nightly runs the journeys and publishes the two reports the inventory's empty
+# `duration` and flake columns are waiting for.
+#
+# The figures, on this host at this revision: `make check` finishes 5 574 tests in 294 s of suite
+# plus the build, and the forge's median `check` job on main is 2 468 s (tests/inventory.json
+# summary.check_job_seconds_median, 13 samples). `make check-push` for a diff that touches one
+# package runs that package's cases and the same static lines: measured below in the commit that
+# wires it.
+check-test-inventory: ## Re-check tests/inventory.json against the tests the tree holds
+	./scripts/check_test_inventory.sh
+
+check-push: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-test-inventory ## The push tier: contract and behaviour of the packages the diff reaches, no stack
+	./scripts/check_push_tier.sh
+
+check-merge: check-rehearse check ## The merge tier: the whole suite, the rehearsal against a populated database, the journeys in the suite
+
+check-nightly: ## The nightly tier: the journeys, and the reports the inventory's duration and flake columns read
+	$(MAKE) e2e
+	$(MAKE) mobile-e2e
+	$(MAKE) flakes
+
+# One selection, one runner: the list comes out of tests/inventory.json, which is the same table a
+# person ratified, so a package cannot be in the push tier by one rule and out of it by another.
+FLAKE_RUNS ?= 5
+flakes: ## Run the whole push tier FLAKE_RUNS times and print the per-test flake rate and the slowest tests
+	./scripts/check_flake_report.sh $(FLAKE_RUNS)
+
+# The instrument 0088's acceptance line needs a "before" for: "coverage not lower" is
+# uncheckable in a tree that never measures it — `-coverprofile` appears nowhere in this
+# repository, and the inventory's `unique_lines` column exists only for the 36 files the
+# specify round measured one at a time. This goal runs the suite once with the mode the
+# delta needs (`set`, not `count`: the prune asks whether a line is reached, not how often)
+# and leaves the answer in reports/ as a named path — the figure a prune commit refuses to
+# fall below, read with `go tool cover -func`. It is a goal and not a `check:` line because
+# instrumenting every package costs real time, and a gate that is slow for a number nobody
+# reads tomorrow gets switched off.
+cover: ## Record this tree's statement coverage in reports/coverage.out and coverage.txt
+	mkdir -p reports
+	go test -count=1 -timeout=30m -covermode=set -coverprofile=reports/coverage.out $(TEST_PACKAGES) | tee reports/coverage.txt
+	go tool cover -func=reports/coverage.out | tail -1
+
 fmt-check: ## Fail when any file is not gofmt'd
 	@goroot="$$(go env GOROOT)" || exit $$?; \
 	out="$$("$$goroot/bin/gofmt" -l .)" || exit $$?; \
@@ -282,8 +343,27 @@ fmt-check: ## Fail when any file is not gofmt'd
 RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/httpx \
 	./modules/auth/internal/... ./modules/user/internal/... ./modules/admin/... \
 	./modules/change/... ./apps/platformkit
+# The same stated per-package bound `check` carries, for the same reason and against the same
+# measurement: go test's ten-minute default is not a decision this repository made, and
+# apps/platformkit has grown up to it. The package's own wall clock under -race on CI's runner, read
+# out of four logs where the step passed: 438.9s (run 57363), 448.5s (57557), 462.1s (57497),
+# 484.3s (57383), 489.8s (57488). Read out of four more where it did not: `panic: test timed out
+# after 10m0s`, at 57644 (parked in TestASetPasswordLinkOpensOneSessionInItsOwnTenant, 5s in), 57686
+# (TestTheCompositionMountsTheCatalogItsContractIsGeneratedFrom, 1s in), 57718
+# (TestTheCatalogNamesWhereTheWritesOfAResourceAre, 2s in) and 57727
+# (TestAnApprovedProposalDoesNotAnswerASecondVerdictOverHTTP, 3s in). Four different tests, none of
+# them hung, each of them simply the one that was open when the tenth minute arrived on a box doing
+# other work. A bound that the suite passes on a quiet runner and the same suite misses on a busy
+# one is not a bound; it is a coin toss reported as a defect — which is why `check` already says 30m
+# beside its count rather than trusting the default. Thirty minutes is also the smaller of the two
+# numbers this file can name: -race roughly doubles the suite, so the race run of the package that
+# needs 30m without it cannot promise less with it, and the job that runs both steps gives itself 75
+# minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
+# as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
+# directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
+# hold byte copies of the line that result, in CI's expansion and with the count emptied.
 check-race: ## Run the concurrency kernel under -race
-	go test -race $(TEST_COUNT) $(RACE_PACKAGES)
+	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
 # Gate 10 never drives an application it did not start. The two cases below answer
 # that question of scripts/e2e.sh and scripts/mobile_e2e.sh without a database, a
@@ -369,7 +449,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -510,6 +590,33 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# subprocess calls answered from memory, so they need no network and no second tree.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/check_public_api_retry_test.py
 	bash scripts/e2e_guards_run_before_the_gate_test.sh
+	# scripts/test_inventory.py feeds two gates — `check-test-inventory` above and the push tier's
+	# selection in scripts/check_push_tier.sh — and until review 1 neither could fail, because the
+	# tool returned its refusal and the script discarded it. The six cases below are what keeps that
+	# shape now: scripts/test_inventory_test.sh pins the eight refusals and the exit status of each,
+	# against a fixture tree in a temporary directory; scripts/a_refused_inventory_check_exits_nonzero_
+	# test.sh asks the status of a removed row and of a push selection that opens a stack;
+	# scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh asks that a change to a
+	# package selects the package that imports it — a selector that keyed `go list`'s absolute
+	# directories against the diff's relative ones matched nothing, so no push ever ran a consumer;
+	# scripts/push_tier_reaches_test_imports_test.sh asks the same of a consumer that exists only
+	# in a `*_test.go` file, internal and external package alike — `.Deps` alone names no such edge,
+	# so a package with no test of its own could change, break the test that imports it, and leave the
+	# selector answering an empty list a push job read as "nothing to run";
+	# scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh asks it of a change that is
+	# not a Go file at all — a golden under `testdata/` and a catalogue under `go:embed` are read by
+	# the package's own test binary, and a selector that resolved only the directory `git diff` named
+	# ran no case for either, so the pull request went green and the push to main was the first red;
+	# and scripts/the_inventory_lists_a_javascript_test_test.sh asks the table for the shape of test no
+	# Go walk sees — a `node --test` case the editor job runs — whose round-named sibling otherwise
+	# counts against no ceiling and whose absence from the table is the drift 0088 exists to refuse.
+	# None of the six opens a stack; together they cost a few seconds.
+	bash scripts/test_inventory_test.sh
+	bash scripts/a_refused_inventory_check_exits_nonzero_test.sh
+	bash scripts/push_tier_reaches_the_consumers_of_a_changed_package_test.sh
+	bash scripts/push_tier_reaches_test_imports_test.sh
+	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
+	bash scripts/the_inventory_lists_a_javascript_test_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

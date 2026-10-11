@@ -320,7 +320,8 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title, 
 	v := page.View{Title: title, Revalidate: true, Language: language, Body: []g.Node{
 		s.header(settings, r, language),
 		h.Main(h.ID("content"), h.Class(clMain.Compile()),
-			components.Container(components.ContainerProps{MaxWidth: "3xl"}, main...)),
+			components.Container(components.ContainerProps{MaxWidth: "3xl"},
+				h.Div(h.Class(clMeasure.Compile()), g.Group(main)))),
 		footer(settings, r, language),
 	}}
 	if settings.Theme == "light" || settings.Theme == "dark" {
@@ -363,9 +364,18 @@ func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request, langu
 	if settings.Tagline != "" {
 		mark = append(mark, components.Text(components.TextProps{Content: settings.Tagline, Size: "sm", Color: "muted"}))
 	}
-	links := make([]g.Node, 0, len(settings.Nav))
+	links := make([]g.Node, 0, len(settings.Nav)+1)
 	for _, item := range settings.Nav {
 		links = append(links, components.Link(components.LinkProps{Label: item.Label, Href: item.Path}))
+	}
+	// Decision 0020: the public frame enters the workspace at its root, and on
+	// every page — not only on the two empty states below, which is where the link
+	// lived until a tenant published a home page and found that a site with
+	// content offered a visitor less than an empty one. The address is the
+	// composition's (webcontracts.Links.SignIn through web.Deps.SignInPath) and the
+	// label is the one those empty states already use, so the door has one name.
+	if s.SignIn != "" {
+		links = append(links, components.Link(components.LinkProps{Label: "Sign in to the admin", Href: s.SignIn}))
 	}
 	return h.Header(h.Class(clHeader.Compile()), foreign(language),
 		h.Div(h.Class(clBrand.Compile()), g.Group(mark)),
