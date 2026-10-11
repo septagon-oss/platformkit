@@ -167,6 +167,16 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 		// can call in a loop needs a limit whether or not the thing it checks is
 		// hard to guess.
 		r, _ := httpx.RequestFrom(ctx)
+		// The same question the sign-in route asks, for the same reason, and it is
+		// asked here rather than not at all because this route now hands out the
+		// cookie too. A page on another site cannot mint a session here without a
+		// token it cannot get, but it can spend one a visitor already has open in a
+		// tab — and a forced sign-in that leaves the visitor somebody else is the
+		// attack the check exists for. See handleLogin for the whole of it.
+		if !httpx.SameSite(r) {
+			return nil, problem.New(http.StatusForbidden,
+				"this request came from another site; set the password from the page itself")
+		}
 		if !svc.MayRedeem(ctx, ClientOf(r).IP) {
 			return nil, problem.New(http.StatusTooManyRequests,
 				"too many reset attempts from this address; wait and try again")
@@ -175,14 +185,26 @@ func handleResetPassword(svc contracts.Service, cookies Cookies) func(context.Co
 		if err != nil {
 			return nil, err
 		}
-		if err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New); err != nil {
+		session, err := svc.Reset(ctx, tx, in.Body.Token, in.Body.New, ClientOf(r))
+		if err != nil {
 			return nil, refusal(err)
 		}
-		// The cookie goes too. Every session ended, so one left in the browser
-		// is a credential that names nothing, and clearing it is what makes the
-		// next page load a sign-in rather than a silent 403.
-		out := &clearOutput{SetCookie: cookies.Clear()}
+		out := &clearOutput{}
+		// Every session this person held before the link was spent is gone, in
+		// both answers: that is what spending the link does, and it is what
+		// signedOut has always reported here.
 		out.Body.SignedOut = true
+		if session == nil {
+			// The password is set and every session this person held is gone, and
+			// this browser holds none: the account also answers with a second
+			// factor, which a mailed link does not supply. The cookie goes, because
+			// one left behind names a session that no longer exists, and the page
+			// sends the person to the sign-in form to finish the sign-in there.
+			out.SetCookie = cookies.Clear()
+			return out, nil
+		}
+		out.SetCookie = cookies.Session(session.ID, session.ExpiresAt)
+		out.Body.SignedIn = true
 		return out, nil
 	}
 }

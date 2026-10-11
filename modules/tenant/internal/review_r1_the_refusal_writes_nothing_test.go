@@ -40,7 +40,7 @@ import (
 
 func TestARefusedRemoveHostWritesNoHostRow(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	ctx := trace.With(t.Context(), trace.New())
 
 	var customer uuid.UUID

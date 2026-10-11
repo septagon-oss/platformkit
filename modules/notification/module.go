@@ -63,7 +63,7 @@ type Deps struct {
 // must hold is a permission that decides nothing.
 var permissions []module.Permission
 
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
 	// dereference in the worker an hour later.
 	if deps.Mailer == nil {

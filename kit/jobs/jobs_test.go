@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -75,7 +76,7 @@ func TestBothKindsOfScheduleFire(t *testing.T) {
 			return nil
 		}
 	}
-	s := NewScheduler(conn, quiet(),
+	s := NewScheduler(conn, quiet(), appname.Name(""),
 		Job{Name: unique("fast"), Every: 5 * time.Minute, Run: record("fast")},
 		Job{Name: unique("hourly"), Cron: "0 * * * *", Run: record("hourly")},
 	)
@@ -122,8 +123,8 @@ func TestOnlyOneSchedulerRunsAJob(t *testing.T) {
 		return nil
 	}}
 
-	first := NewScheduler(conn, quiet(), job)
-	second := NewScheduler(conn, quiet(), job)
+	first := NewScheduler(conn, quiet(), appname.Name(""), job)
+	second := NewScheduler(conn, quiet(), appname.Name(""), job)
 
 	runs.Add(1)
 	go func() {
@@ -325,10 +326,10 @@ func TestAParallelJobTakesNoLock(t *testing.T) {
 		mu.Unlock()
 		return nil
 	}}
-	first, second := NewScheduler(conn, quiet(), job), NewScheduler(conn, quiet(), job)
+	first, second := NewScheduler(conn, quiet(), appname.Name(""), job), NewScheduler(conn, quiet(), appname.Name(""), job)
 
 	// A lock held by somebody else, which a locked job would wait behind.
-	unlock, ok, err := db.TryLock(t.Context(), conn, "job:"+name)
+	unlock, ok, err := db.TryLock(t.Context(), conn, appname.JobLock("", name))
 	if err != nil || !ok {
 		t.Fatalf("TryLock = %v, %v", ok, err)
 	}

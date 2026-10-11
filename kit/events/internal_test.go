@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"os"
 	"slices"
 	"strings"
@@ -121,7 +122,7 @@ func TestJetStreamStopsRedeliveringAPoisonEvent(t *testing.T) {
 	// other run.
 	seed := "test_" + strings.ReplaceAll(uuid.NewString()[:8], "-", "")
 	name, warmup := seed+".happened", seed+".warmed"
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream: %v", err)
 	}
@@ -357,7 +358,7 @@ func jetstreamForTest(t *testing.T) (Transport, nats.JetStreamContext) {
 	if url == "" {
 		t.Fatal("PLATFORMKIT_TEST_NATS_URL is unset; start the stack with `make up`")
 	}
-	transport, err := provider.JetStream(url)
+	transport, err := provider.JetStream(appname.Name(""), url)
 	if err != nil {
 		t.Fatalf("JetStream(%s): %v", url, err)
 	}

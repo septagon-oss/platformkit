@@ -49,6 +49,7 @@ var drawnWidgets = map[string]struct{ tag, typeAttr string }{
 	"tel":           {"input", "tel"},
 	"text":          {"input", "text"},
 	"textarea":      {"textarea", ""},
+	"richtext":      {"textarea", ""},
 	"time":          {"input", "time"},
 	"url":           {"input", "url"},
 	"week":          {"input", "week"},

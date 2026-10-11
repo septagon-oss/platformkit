@@ -85,6 +85,13 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // the loaded value. The database is empty: no tables, no ledger, nothing.
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
+	// The seed command's operator proves themselves the way every deployment
+	// does — through the environment, never argv — and the person they prove they
+	// are is the administrator install below creates, in the installation tenant
+	// this configuration names at acme's host. The case that checks the refusal of
+	// an absent credential empties both variables for itself.
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_EMAIL", adminEmail)
+	t.Setenv("PLATFORMKIT_SEED_OPERATOR_PASSWORD", adminPass)
 	migrateURL, appURL := dbtest.URLs(t)
 	path := t.TempDir() + "/config.yaml"
 	// The file module keeps its bytes under a directory of this test's own, so
@@ -163,7 +170,7 @@ func start(t *testing.T, cfg config.Config, mods []module.Module, opts app.Optio
 			t.Errorf("Run: %v", err)
 		}
 	})
-	waitFor(t, cfg.Server.Addr)
+	waitFor(t, cfg.Server.Addr, stopped)
 }
 
 // TestAnEmptyDatabaseBecomesAWorkingInstallation is the README's five commands
@@ -287,11 +294,14 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// the trail this test already read is something its plan includes.
 	//
 	// Content: written, published, and then read at the same host by a caller
-	// with no session at all — which is what publishing means. The script in
-	// the body is not in the page: the renderer leaves raw HTML out and the
-	// sanitizer refuses what is left.
+	// with no session at all — which is what publishing means. Raw HTML is
+	// refused on write, before it can become a published page.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
+		`{"slug":"unsafe","title":"Unsafe","body":"<script>alert(1)</script>"}`); code != http.StatusUnprocessableEntity || !strings.Contains(body, "raw HTML") {
+		t.Fatalf("unsafe content = %d %s, want a raw HTML refusal", code, body)
+	}
 	code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath,
-		`{"slug":"About Us","title":"About Acme","kind":"page","body":"# About\n\n<script>alert(1)</script>\n\nWe make **things**."}`)
+		`{"slug":"About Us","title":"About Acme","kind":"page","body":"## About\n\nWe make **things**."}`)
 	if code != http.StatusCreated {
 		t.Fatalf("POST %s = %d %s, want 201", contentPath, code, body)
 	}
@@ -299,7 +309,16 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	if code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", ""); code != http.StatusNotFound {
 		t.Errorf("an unpublished page = %d %s, want 404", code, body)
 	}
-	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
+	// The author is not the publisher: the module refuses the person who wrote the
+	// page, by name, and the page goes live when a second holder of the permission
+	// asks for it. The installation invites that person here for the same reason it
+	// invites everybody else later.
+	if code, body = do(t, cfg, admin, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusConflict ||
+		!strings.Contains(body, "author") {
+		t.Fatalf("self-publication = %d %s, want a 409 naming authorship", code, body)
+	}
+	publisher := signIn(t, cfg, acmeHost, publisherIn(t, cfg, admin, "publisher@acme.localhost"), publisherPass)
+	if code, body = do(t, cfg, publisher, http.MethodPost, acmeHost, contentPath+"/"+pageID+"/publish", ""); code != http.StatusOK {
 		t.Fatalf("publish = %d %s, want 200", code, body)
 	}
 	code, body = do(t, cfg, nil, http.MethodGet, acmeHost, "/api/v1/content/public/about-us", "")
@@ -307,7 +326,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 		t.Fatalf("the published page = %d %s", code, body)
 	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "alert(1)") {
-		t.Errorf("the published page carries the script somebody typed into it:\n%s", body)
+		t.Errorf("the published page carries unsafe markup:\n%s", body)
 	}
 
 	// Site: what a theme reads, saved by an administrator and read by nobody
@@ -476,7 +495,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	})
 	// On initech's own host, not acme's and not the application's: the operator
 	// invited them from acme's host, and the link they follow is theirs.
-	if !strings.Contains(first, "http://"+initechHost+"/auth/reset") {
+	if !strings.Contains(first, "http://"+initechHost+"/app/auth/reset") {
 		t.Errorf("the first administrator's link is not initech's own host:\n%s", first)
 	}
 	// No password crossed the control plane: the operator chose none, and this
@@ -518,7 +537,7 @@ func TestAnEmptyDatabaseBecomesAWorkingInstallation(t *testing.T) {
 	// every tenant is reached at its own name, so a link built from
 	// server.public_host would send one customer's people to a front door that
 	// is not theirs — and to a sign-in page their session does not answer at.
-	if !strings.Contains(link, "http://"+acmeHost+"/auth/reset") {
+	if !strings.Contains(link, "http://"+acmeHost+"/app/auth/reset") {
 		t.Errorf("the invitation link is not acme's own host:\n%s", link)
 	}
 	if strings.Contains(link, cfg.Server.PublicHost) {
@@ -804,7 +823,7 @@ func TestTheWorkerRoleSweepsEveryTenant(t *testing.T) {
 
 	// A sweep every 200ms, so two ticks are half a second rather than two
 	// minutes. Everything else about the job is what production runs.
-	mods := []module.Module{task.Module(task.Deps{
+	mods := []module.Module{task.New(task.Deps{
 		Tenants: tenantcontracts.Active{Service: c.tenants}, SweepEvery: 200 * time.Millisecond,
 	})}
 	start(t, cfg, mods, app.Options{
@@ -1086,13 +1105,23 @@ func signIn(t *testing.T, cfg config.Config, host, email, password string) *http
 // GET /health is what the wait ends on instead: both roles serve it (kit/health
 // and app.work), it runs no check of its own, so 200 says this application is up
 // and nothing else can. Anything that answers it with something else is whoever
-// holds the port, and the case says so in a second rather than after thirty of
-// waiting and one request that was never going to be answered here.
-func waitFor(t *testing.T, addr string) {
+// holds the port, and the case says so at once rather than after the whole bound
+// of waiting and one request that was never going to be answered here.
+func waitFor(t *testing.T, addr string, stopped ...chan error) {
 	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
+	started := time.Now()
+	deadline := started.Add(bootWait)
 	last := "nothing has answered yet"
 	for time.Now().Before(deadline) {
+		if len(stopped) > 0 {
+			select {
+			case err := <-stopped[0]:
+				stopped[0] <- err // the read above freed the slot, so this cannot block
+				t.Fatalf("the application stopped before it answered GET /health on %s (%s): %v",
+					addr, time.Since(started).Round(time.Millisecond), err)
+			default:
+			}
+		}
 		res, err := http.Get("http://" + addr + "/health")
 		if err != nil {
 			// Nobody is home, which is what it looks like while the application is
@@ -1102,6 +1131,9 @@ func waitFor(t *testing.T, addr string) {
 			body, _ := io.ReadAll(res.Body)
 			_ = res.Body.Close()
 			if res.StatusCode == http.StatusOK {
+				if took := time.Since(started); took > slowBoot {
+					t.Logf("answered GET /health after %s: this machine was busy", took.Round(time.Millisecond))
+				}
 				return
 			}
 			// /health is liveness: it runs no check, and this process answers it with
@@ -1114,8 +1146,25 @@ func waitFor(t *testing.T, addr string) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("the application at %s never answered GET /health: %s", addr, last)
+	t.Fatalf("the application at %s never answered GET /health in %s: %s", addr,
+		time.Since(started).Round(time.Second), last)
 }
+
+// bootWait is how long a fixture waits for an application it started to answer.
+// Run migrates a whole installation before it listens, and the same boot that
+// answers in a couple of seconds when one package runs costs an order of
+// magnitude more when every database package in the repository migrates into one
+// Postgres at once. A bound sized for the quiet case reports a working machine as
+// a broken application, so it is sized for the loaded one and stated here rather
+// than left as a literal inside the loop; slowBoot is when a green wait starts
+// saying how long it took, which is what the next red run reads.
+const (
+	// Five minutes, the same room as kit/app's bootWait and for the same measured reason: a migration
+	// of the whole installation crossed 120 s on 2026-10-06 with eight of this program's suites
+	// running beside it, and a boot that is only slow on somebody else's machine is not a fault here.
+	bootWait = 5 * time.Minute
+	slowBoot = bootWait / 10
+)
 
 // The band freeAddr picks from. The kernel allocates nothing below
 // ip_local_port_range — an :0 bind and the source port of an outbound
@@ -1477,11 +1526,13 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	t.Helper()
 	all := fstest.MapFS{}
 	// An installation from before the split applied the files that existed then,
-	// which is everything up to the highest file the foundation itself shipped:
-	// the split moved those files to their modules, it did not add any. A file
-	// above that number postdates the release, so the ledger must not claim it was
-	// applied — there would be no row to re-own and kit/db would be right to call
-	// an applied file that no release ships a contradiction
+	// which is every version up to the one the foundation held when each module
+	// took its own SQL: 000026_module_schema is that move and 000030_tenant_oidc
+	// the last file numbered up to it. The split moved those files to their
+	// modules, it did not add any. A file above the boundary postdates the release,
+	// so the ledger must not claim it was applied — there would be no row to
+	// re-own and kit/db would be right to call an applied file that no release
+	// ships a contradiction
 	// (migrate.go, "was applied but is missing from this release"). This is what
 	// lets a module ship a version above the kernel's highest without rewriting
 	// this fixture every time it does: a file that postdates the split lands here
@@ -1493,7 +1544,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 	// (docs/adr/0011), so the ceiling is the highest version any owner adopts back,
 	// and modules/auth's 31, 32 and 33 are inside the old ledger because auth names
 	// them. Had the ceiling been the foundation's own highest file, this delivery's
-	// migrations/000041_outbox_baggage would have pushed it to 41, dragged
+	// migrations/000043_tenant_app would have pushed it to 43, dragged
 	// modules/audit's 35 to 37, modules/change's 38, modules/site's 39 and
 	// modules/file's 40 inside the pre-split ledger — where no adoption exists to
 	// re-own them — and kit/db would be right to call an applied file that no
@@ -1596,6 +1647,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	ledger(before, "SELECT version, applied_at::text FROM schema_migrations")
+	// The number is the point of the assertion: an upgrade fixture that silently
+	// stopped counting a migration would pass while upgrading a real installation
+	// past a file it should have applied, so the files the release holds have to
+	// arrive here and say so.
+	//
 	// 24 became 25 when modules/user/000025 added the handle column, 25 became 26
 	// when the kernel added 000026_module_schema, 26 became 27 when
 	// modules/notification/000027 added the delivery ledger, 27 became 28 when the
@@ -1609,56 +1665,79 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// files under one owner, so two files at one version are one INSERT past the
 	// ledger's PRIMARY KEY (owner, version) — and kit/db refuses a repeated version
 	// in a source before that (migration_files.go, "invalid or repeated version").
+	// Every version is one file across the composition, kernel and modules alike.
 	// A new file continues past the highest number anywhere in the composition,
 	// whichever owner ships it: modules/file's retention hold and erasure proof is
-	// 000034 for that reason, and not the 30 it was written as when no owner held
+	// 000040 for that reason, and not the 30 it was written as when no owner held
 	// it — the kernel then shipped 000030_tenant_oidc, and this fixture would have
-	// flattened two files at one version into one ledger row. This delivery's own
-	// 000041_outbox_baggage is the same event one more time: it was written as 29,
-	// held 31 and then 36 on its own branch, and 000041 is the first number no other
-	// owner had taken by the time this branch reached main.
-	// The number is the point of the assertion: an upgrade fixture that silently
-	// stopped counting a migration would pass while upgrading a real installation
-	// past a file it should have applied, so a new migration has to arrive here and
-	// say so.
-	//
-	// 29 became 34 when the kernel added migrations/000034_outbox_request, which
-	// gives the outbox the request id and the client address the audit trail keeps.
-	// It is 34 rather than the 30 the file was written as because every number to
-	// 33 was taken while this branch was still open — 000030 is migrations/
-	// 000030_tenant_oidc and 000031 to 000033 are modules/auth's factors, API
-	// tokens and first-factor proofs — and modules/audit's three files, the columns
-	// behind those two questions and the two indexes that answer them, continue at
-	// 35 for the same reason and not at the 24 its own sequence had reached: this
-	// fixture flattens every owner's files under one owner, and 000024 is
-	// modules/auth's email_verification.
+	// flattened two files at one version into one ledger row. The kernel's own
+	// 000041_outbox_baggage is that event one more time: it was written as 29, held
+	// 31 and then 36 on its own branch, and 000041 is the first number no other owner
+	// had taken by the time that branch reached main. This branch's
+	// 000043_tenant_app is that event twice over: it numbered itself past that 41
+	// rather than onto it, and then past modules/content's 000042, which main took
+	// while this branch was still open — the same reason it took itself past 31, 32
+	// and 33, which modules/auth took while it was in review.
 	//
 	// The same flattening is why modules/file's retention file is 000040 here and
 	// not the 000034 it was merged as: the kernel's own 000034 moves preSplitTop
 	// to 34, so a second 34 would arrive in this ledger under the same name, and
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
-	// It is also why this delivery's outbox baggage file is 000041: it held 36 on its
-	// own branch, and the merge with main gave 36 to modules/audit's request index.
-	// Because it is the kernel's own file above every module's, it also sits above
-	// preSplitTop, which is why the ceiling below is the highest adopted version and
-	// not the foundation's highest file — see legacyLayout.
+	//
+	// 33 stays 33 for those files and for the twenty-one above the ceiling, because the
+	// ceiling is the highest version an owner adopts back rather than the
+	// foundation's highest file — see legacyLayout for why a derivation off the
+	// kernel's own top stopped working once the modules numbered past it. A file
+	// above the ceiling is not absent from this test: it is the new row the upgrade
+	// below has to produce, and the two counts below compare the ledger against
+	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 41 — fifteen under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41) and twenty-six under modules/*/migrations/ (4, 7, 8,
-	// 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32, 33, 35, 36, 37,
-	// 38, 39, 40), all at distinct versions. The release this fixture is applied from
-	// shipped 33 of them: the thirteen under migrations/ up to the adopted ceiling
-	// (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a module adopts
-	// back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 27, 31, 32,
-	// 33), which is every version to modules/auth's 33, the highest number any owner
-	// names. The eight above it — the kernel's own 34 and 41, modules/audit's 35, 36
-	// and 37, modules/change's 38, modules/site's 39 and modules/file's 40 — postdate
-	// that release, are not in the old installation's ledger, and legacyLayout leaves
-	// them out; the upgrade below applies them under the owner that ships them and
-	// counts them as new rows. Each continues past the highest number anywhere in the
-	// composition, which is the rule this fixture exists to enforce.
+	// this head prints 54 — twenty under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52) and thirty-four under
+	// modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24,
+	// 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 53).
+	// Every version to 33 is one file, and the only repeat anywhere in the release is
+	// 35 — modules/audit's audit_context and modules/auth's passkeys — which is above
+	// the ceiling, so the flattening below never meets it. The release this fixture is
+	// applied from shipped 33 of them: the thirteen under migrations/ up to the
+	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
+	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
+	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
+	// any owner names. The twenty-one above it — the kernel's own 34, 41, 43, 46, 50,
+	// 51 and 52, modules/audit's 35, 36, 37, 48, 49 and 53, modules/auth's 35 and 47,
+	// modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45 and
+	// modules/content's 42 — postdate that release, are not in the old installation's
+	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
+	// the owner that ships them and counts them as new rows. Each continues past the
+	// highest number anywhere in the composition at the time it was written, which is
+	// the rule this fixture exists to enforce — and it is a rule with teeth rather
+	// than tidiness, because
+	// kit/db reads a repeated version only inside one owner: the kernel's
+	// 000034_outbox_request and a modules/auth file numbered 34 apply side by side
+	// under two owners, and the only thing that says so is the one map below that
+	// counts every shipped file under one key. modules/audit's 48 and 49 are this
+	// rule's newest customer: the append-only trail and its retention marks were
+	// numbered 41 and 42 while the branch was open, and main took 41 for the kernel's
+	// own outbox baggage and 42 for modules/content's body characters underneath it.
+	//
+	// modules/content's body-character file is 000042 and not the 000035 it was first
+	// merged as, for the reason this paragraph has now recorded six times: this fixture
+	// flattens every owner's files under one owner, and every number from 35 to 45 was
+	// taken on main while another branch was still open — 000035 is modules/audit's
+	// audit_context, 000041 is the kernel's own outbox baggage, and 000044 and 000045 are
+	// modules/file's image dimensions and file uses. One version, one row. This
+	// delivery's own four arrived as 000035, 000036, 000037 and modules/audit's 000038,
+	// then as 000044, 000045, 000046 and modules/audit's 000047, then as 000046, 000047,
+	// 000048 and modules/audit's 000049, and are 000050 (the tenant's demo marker),
+	// 000051 (the seed's provenance keys), 000052 (the attribution columns beside each
+	// outbox row) and modules/audit's 000053 (those four copied into the trail) for
+	// that one reason: while this branch was open main took 000046 for its own SAML
+	// provider columns, 000047 for modules/auth's replay table and 000048 and 000049
+	// for modules/audit's append-only trail and its retention marks — and two files at
+	// one version under the one owner `audit` is a refusal in kit/db before it is ever
+	// a ledger row.
 	if len(before) != 33 {
 		t.Fatalf("the old layout applied %d files, want 33", len(before))
 	}
@@ -1682,10 +1761,13 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the eight files above the
-	// adopted ceiling of 33 (the kernel's own 34 and 41, modules/audit 35, 36 and 37,
-	// modules/change 38, modules/site 39 and modules/file 40, all absent from the old
-	// ledger) have to be accounted for: 41 files in the release, 41 rows.
+	// release ships is in the ledger, which is where the twenty-one files above the
+	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51 and 52,
+	// modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47, modules/change
+	// 38, modules/site 39, modules/file 40, 44 and 45 and modules/content 42, all
+	// absent from the old ledger) have to be accounted for:
+	// 54 files in the release, 54 rows — one fewer key than rows in the two maps
+	// below, because the two 35s are one version held by two owners.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")

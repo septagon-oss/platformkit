@@ -121,6 +121,65 @@ func TestTenantIsolationIsEnforcedByPostgres(t *testing.T) {
 	}
 }
 
+func TestSystemProvisioningBridgeKeepsOneTransactionAndTenantRLS(t *testing.T) {
+	ctx := t.Context()
+	admin, app := dbtest.Schema(t)
+	createThings(t, ctx, admin)
+	first, second := newTenant("first"), newTenant("second")
+	token := syscap.NewSystemToken("kit/db test: provision one tenant")
+	err := db.RunSystem(ctx, app, token, func(ctx context.Context, system db.Tx[db.System]) error {
+		if err := db.InTenant(ctx, system, first, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+			if got := db.TenantOf(tx).ID; got != first.ID {
+				t.Errorf("bridged tenant = %s, want %s", got, first.ID)
+			}
+			if err := insert(tx.DB(), first.ID, "one"); err != nil {
+				return err
+			}
+			if err := insert(tx.DB(), second.ID, "foreign"); err == nil {
+				t.Error("tenant bridge wrote a foreign tenant row")
+				return errors.New("foreign write accepted")
+			}
+			return errors.New("rollback failed foreign write")
+		}); err == nil {
+			t.Error("bridge accepted a failed callback")
+		}
+		// A failed callback cannot be ignored: the outer system transaction
+		// must refuse a commit even if this caller returns nil.
+		return nil
+	})
+	if err == nil {
+		t.Fatal("failed bridge committed")
+	}
+	if n := countAs(t, tenancy.WithTenant(ctx, first), app); n != 0 {
+		t.Fatalf("failed bridge kept %d rows", n)
+	}
+	err = db.RunSystem(ctx, app, token, func(ctx context.Context, system db.Tx[db.System]) error {
+		for _, tenant := range []tenancy.Tenant{first, second} {
+			if err := db.InTenant(ctx, system, tenant, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
+				if n := count(t, tx.DB()); n != 0 {
+					t.Errorf("%s sees %d rows from the other tenant", tenant.Slug, n)
+				}
+				return insert(tx.DB(), tenant.ID, tenant.Slug)
+			}); err != nil {
+				return err
+			}
+		}
+		if n := count(t, system.DB()); n != 2 {
+			t.Errorf("restored system scope sees %d rows, want 2", n)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := countAs(t, tenancy.WithTenant(ctx, first), app); n != 1 {
+		t.Errorf("first tenant sees %d rows, want 1", n)
+	}
+	if n := countAs(t, tenancy.WithTenant(ctx, second), app); n != 1 {
+		t.Errorf("second tenant sees %d rows, want 1", n)
+	}
+}
+
 // TestATransactionThatRewritesItsOwnSettingsIsRolledBack.
 //
 // platformkit.tenant_id and platformkit.system_access are placeholder GUCs, and

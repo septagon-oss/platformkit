@@ -53,7 +53,7 @@ var everyCommand = []writeCommand{
 		[]string{usercontracts.EventPasswordSet, contracts.EventSessionRevoked}},
 	{"auth-password-reset", "Every session this person had ends",
 		[]string{contracts.EventPasswordReset, usercontracts.EventPasswordSet,
-			contracts.EventSessionRevoked}},
+			contracts.EventSessionRevoked, contracts.EventLoggedIn}},
 	{"auth-session-revoke", "Ends the session this person names by its ref",
 		[]string{contracts.EventSessionRevoked}},
 	{"auth-session-revoke-all", "Ends every session this person has",

@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
@@ -54,8 +55,9 @@ func (s *Service) ChangePassword(ctx context.Context, tx db.Tx[db.Tenant], userI
 // mistypes their own address is told nothing, and the mail that does not arrive
 // is the message.
 func (s *Service) Forget(ctx context.Context, tx db.Tx[db.Tenant], email string) error {
+	r, _ := httpx.RequestFrom(ctx)
 	return events.Publish(ctx, tx, contracts.EventResetRequested, contracts.ResetRequested{
-		Email: contracts.EmailKey(email), At: db.Now(),
+		Email: contracts.EmailKey(email), At: db.Now(), Served: httpx.ServedAuthority(r),
 	})
 }
 
@@ -201,7 +203,15 @@ func (s *Service) baseURL(ctx context.Context, tx db.Tx[db.Tenant]) (string, err
 	if s.mail.Secure {
 		scheme = "https"
 	}
-	return scheme + "://" + host, nil
+	base := scheme + "://" + host
+	// The port the request that raised this link was served at, when there was one
+	// and when it is a port on this host of record: a development installation
+	// serves a tenant at its name and a port, and a link that drops the port opens
+	// a different server, or none. See served.go.
+	if port := servedPort(ctx, host); port != "" {
+		base += ":" + port
+	}
+	return base, nil
 }
 
 // recent reports whether this person was sent a link inside ResetInterval.
@@ -228,17 +238,35 @@ func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 // purge's maxAge already uses.
 var resetInterval = fmt.Sprintf("%d seconds", int(contracts.ResetInterval.Seconds()))
 
-// Reset consumes a token, sets the password and ends every session.
+// Reset consumes a token, sets the password, ends every session, and lets the
+// browser that spent the link in.
 //
-// Every one, including any the caller holds: whoever is resetting a password
-// has already shown they were not relying on a session, and whoever else held
-// one may be the reason it is being reset. The row is deleted rather than
-// flagged, so "used once" is the row being gone — two requests racing on one
-// token is one DELETE returning a row and one returning none, decided by
-// Postgres rather than by a read and a write this code would have to get right.
-func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Every session that existed when the link was spent ends, including any the
+// caller holds: whoever is resetting a password has already shown they were not
+// relying on a session, and whoever else held one may be the reason it is being
+// reset. The row is deleted rather than flagged, so "used once" is the row being
+// gone — two requests racing on one token is one DELETE returning a row and one
+// returning none, decided by Postgres rather than by a read and a write this code
+// would have to get right.
+//
+// The session that comes back is opened after that sweep rather than before it,
+// which is the order the whole answer depends on: opening one first would have it
+// deleted by the revocation that follows, and a link that set a password and then
+// signed nobody in is the half-journey the front door was scored zero on — the
+// invited person who chose a password in the page the mail opened and then had to
+// sign in anyway. The method it records is "reset", not "password": what this
+// person spent was a token, and the trail says what was spent.
+//
+// nil and no error is the one account this leaves signed out: a person who
+// enrolled a second factor. Their password is still set and their other sessions
+// still ended — a dead phone must not lock anybody out of their own account — but
+// the first half of a sign-in does not open a session on an account that answers
+// with two, and a mailed link is a weaker first half than a password. They are
+// sent to the sign-in page to finish the sign-in the way the account asks for.
+func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	if token == "" {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	// The lookup is by the hash of what was presented, which is a primary-key
 	// probe on a value an attacker cannot steer: the token is 256 bits of
@@ -253,19 +281,34 @@ func (s *Service) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, passwor
 	case errors.Is(err, sql.ErrNoRows), errors.Is(err, gorm.ErrRecordNotFound):
 		// An unknown token, a spent one and an expired one are one answer, for
 		// the reason Login's three refusals are one answer.
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	case err != nil:
-		return fmt.Errorf("auth: consume a password token: %w", err)
+		return nil, fmt.Errorf("auth: consume a password token: %w", err)
 	}
 	if err := s.users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := s.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
-	return events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
+	if err := events.Publish(ctx, tx, contracts.EventPasswordReset, contracts.PasswordReset{
 		UserID: userID, At: db.Now(),
-	})
+	}); err != nil {
+		return nil, err
+	}
+	answersWith, err := s.factorEnrolled(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if answersWith {
+		return nil, nil
+	}
+	person, err := s.users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := s.open(ctx, tx, person, from, "reset")
+	return session, err
 }
 
 // The two messages. They are here rather than in a template because the
@@ -278,10 +321,23 @@ const (
 	resetBody     = "Somebody asked to reset the password for this address. If it was not you, ignore this message and nothing changes."
 )
 
-// ResetPath is where the link points. It is a path within the application, so a
-// notice can never send a tenant's people somewhere else, and the host the mail
-// turns it into is that tenant's own.
-const ResetPath = "/auth/reset"
+// ResetPath is where the link points, and it is the workspace address rather than
+// a bare path: the page that reads the token lives under the workspace prefix the
+// kernel composes (httpx.Workspace), in the namespace this module's screens are
+// mounted at. The bare "/auth/reset" this constant used to carry was an address no
+// route answered — the API sits at /api/v1/auth/password/reset and the shell served
+// no page at all — so an invitation mail and a reset mail each carried a link that
+// opened nothing, which is the academy finding in one line. The host in front of it
+// is still the tenant's own, from the host of record, never a configured port.
+var ResetPath = httpx.Workspace("/auth/reset")
+
+// VerifyEmailPath is the confirmation link a sign-up mail carries, and it is the
+// workspace screen the shell mounts for it — the same correction ResetPath got.
+// The bare "/auth/verify-email" this used to be an address no route answered:
+// the API door is /api/v1/public/auth/verify-email and the page sits under the
+// workspace prefix, so a person who signed up was mailed a link to a 404 and
+// could not activate the account they had just made.
+var VerifyEmailPath = httpx.Workspace("/auth/verify-email")
 
 // secret is 32 bytes of crypto/rand, base64url. It only has to be unguessable
 // and unique, and it is never stored: the row holds its hash.

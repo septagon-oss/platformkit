@@ -229,18 +229,28 @@ func TestTheHealthPageNamesEachCheckAndItsState(t *testing.T) {
 // and the authored English when none is composed.
 func TestTheSignInPageSpeaksTheRequestLanguage(t *testing.T) {
 	t.Parallel()
-	english := render(t, g.Group(login(context.Background(), nil, "/app", "/api/v1/auth/login").Body))
+	// No register address: this composition wired no registration service, and
+	// the case below is the language of the card, not which ways in it offers.
+	english := render(t, g.Group(pages{}.login(context.Background(), page.Request{}, "/app", "/api/v1/auth/login", "/app/login/forgot", "").Body))
 	if !strings.Contains(english, ">Sign in<") || !strings.Contains(english, `data-next="/app"`) {
 		t.Fatalf("english sign-in:\n%s", english)
 	}
 	pt := &page.Locale{Language: "pt-PT", Formatter: words{"admin.login.title": "Iniciar sessão", "admin.login.password": "Palavra-passe"}}
-	view := login(context.Background(), pt, "/app", "/api/v1/auth/login")
+	view := pages{}.login(context.Background(), page.Request{Locale: pt}, "/app", "/api/v1/auth/login", "/app/login/forgot", "")
 	body := render(t, g.Group(view.Body))
 	if view.Title != "Iniciar sessão" || !strings.Contains(body, "Palavra-passe") || !strings.Contains(body, ">Email<") {
 		t.Fatalf("localized sign-in lost a translation or its fallback:\n%s", body)
 	}
 	if raw, _ := json.Marshal(view.Title); string(raw) != `"Iniciar sessão"` {
 		t.Error("the title is not the catalog's text")
+	}
+	// The way in for a person the password did not answer is on the card in both
+	// languages: forgetting a password is not something a composition opts out of,
+	// and the refusal at the door tells the reader to use this link.
+	for _, body := range []string{english, body} {
+		if !strings.Contains(body, `href="/app/login/forgot"`) || !strings.Contains(body, "Forgot your password?") {
+			t.Errorf("the sign-in card names no way to be sent a link:\n%s", body)
+		}
 	}
 }
 

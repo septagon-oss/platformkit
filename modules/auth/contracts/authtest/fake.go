@@ -12,12 +12,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/limit"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/auth/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 )
+
+// resetPage is the set-password screen internal.ResetPath points its link at.
+// Asked of the kernel rather than written out, because the workspace prefix is
+// the kernel's to own.
+var resetPage = httpx.Workspace("/auth/reset")
 
 // Fake is contracts.Service over two maps: the same rules, no database, no
 // transaction. A consumer that wants to test what it does for a signed-in
@@ -54,21 +60,38 @@ type Fake struct {
 	// password_tokens.created_at.
 	offered   map[uuid.UUID]time.Time
 	published []string
+
+	// The second factor's two maps, and the tenant's own row about the
+	// usernameless door. See passkeys.go for what the fake decides about them
+	// and what it deliberately does not.
+	factors       map[uuid.UUID]*fakeFactor
+	ceremonies    map[uuid.UUID]*fakeCeremony
+	passkeySignIn bool
+
+	// proofs is the first-factor window: the address /login refused to finish,
+	// and when. See RequireFirstFactorProof.
+	proofs map[string]time.Time
 }
 
 // NewFake returns a fake signing people in from users.
 func NewFake(users contracts.Users) *Fake {
 	return &Fake{
-		Users:    users,
-		limiter:  contracts.NewLimiter(limit.Memory()),
-		sessions: map[uuid.UUID]contracts.Session{},
-		roles:    map[string]contracts.Permissions{},
-		offered:  map[uuid.UUID]time.Time{},
-		tokens:   map[string]uuid.UUID{},
+		Users:      users,
+		limiter:    contracts.NewLimiter(limit.Memory()),
+		sessions:   map[uuid.UUID]contracts.Session{},
+		roles:      map[string]contracts.Permissions{},
+		offered:    map[uuid.UUID]time.Time{},
+		tokens:     map[string]uuid.UUID{},
+		factors:    map[uuid.UUID]*fakeFactor{},
+		ceremonies: map[uuid.UUID]*fakeCeremony{},
+		proofs:     map[string]time.Time{},
 	}
 }
 
-var _ contracts.Service = (*Fake)(nil)
+var (
+	_ contracts.Service  = (*Fake)(nil)
+	_ contracts.Passkeys = (*Fake)(nil)
+)
 
 // Published is the names of the events the fake would have emitted, in order.
 func (f *Fake) Published() []string {
@@ -262,7 +285,10 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 		// The path and no query: the notice is what a person sees in the
 		// application and it is not a credential.
 		_, err := f.Notify.Notify(ctx, tx, notificationcontracts.Notice{
-			Recipient: user.ID, Title: "Set your password", Link: "/auth/reset",
+			// The workspace address the real service links — httpx.Workspace of the
+			// same screen the auth module mails — so a consumer that reads a link
+			// out of this fake reads the address its pages answer at.
+			Recipient: user.ID, Title: "Set your password", Link: resetPage,
 		})
 		if err != nil {
 			return err
@@ -270,27 +296,35 @@ func (f *Fake) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontrac
 	}
 	return f.Mailer.Send(ctx, notificationcontracts.Message{
 		To: user.Email, Subject: "Set your password",
-		Body: "Follow the link\n\nhttps://acme.example.com/auth/reset?token=" + token,
+		Body: "Follow the link\n\nhttps://acme.example.com" + resetPage + "?token=" + token,
 	})
 }
 
-// Reset mirrors internal.Service.Reset: one use, every session ended, one event.
-func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string) error {
+// Reset mirrors internal.Service.Reset: one use, every session that existed ended,
+// one opened for the browser that spent the link, two events. The fake keeps no
+// second factors, so the account that would be left signed out has no shape here.
+func (f *Fake) Reset(ctx context.Context, tx db.Tx[db.Tenant], token, password string,
+	from contracts.Client) (*contracts.Session, error) {
 	f.mu.Lock()
 	userID, ok := f.tokens[token]
 	delete(f.tokens, token)
 	f.mu.Unlock()
 	if !ok {
-		return contracts.ErrCredentials
+		return nil, contracts.ErrCredentials
 	}
 	if err := f.Users.SetPassword(ctx, tx, userID, password); err != nil {
-		return err
+		return nil, err
 	}
 	if err := f.RevokeSessions(ctx, tx, userID, uuid.Nil); err != nil {
-		return err
+		return nil, err
 	}
 	f.record(contracts.EventPasswordReset)
-	return nil
+	user, err := f.Users.Get(ctx, tx, userID)
+	if err != nil {
+		return nil, err
+	}
+	session, _, err := f.open(ctx, tx, user, from)
+	return session, err
 }
 
 // Roles mirrors internal.Service.Roles.
@@ -357,6 +391,20 @@ func (f *Fake) Purge(_ context.Context, _ db.Tx[db.Tenant]) (int64, error) {
 			gone++
 		}
 	}
+	// A ceremony the person never answered is the row the real Purge sweeps
+	// first, and the fake's map is the same shape of nothing: a begun prompt is
+	// not state anybody should have to keep.
+	for id, ceremony := range f.ceremonies {
+		if !ceremony.expire.After(db.Now()) {
+			delete(f.ceremonies, id)
+			gone++
+		}
+	}
+	for address, at := range f.proofs {
+		if !at.Add(contracts.FirstFactorProofWindow).After(db.Now()) {
+			delete(f.proofs, address)
+		}
+	}
 	return gone, nil
 }
 
@@ -381,11 +429,30 @@ func (f *Fake) Login(ctx context.Context, tx db.Tx[db.Tenant], email, password s
 		return nil, nil, f.fail(ctx, email, from.IP)
 	}
 	f.limiter.Succeeded(ctx, email)
+	// The person who holds a factor is held at the door. This is where the
+	// window that makes the other half answerable is minted, and it is the
+	// reason a code — a thing a person may have written down somewhere — is
+	// never on its own the account. Nothing is published for the refusal: it is
+	// an outcome and not a fault, and no session is opened by it.
+	//
+	// Open, the provider's door, is the fake's known gap: it opens the session
+	// whatever the person holds. Closing it would change what every consumer's
+	// signed-in test sees through a door this module has never gated in here.
+	if f.holds(user.ID) {
+		f.mu.Lock()
+		f.proofs[strings.ToLower(strings.TrimSpace(email))] = db.Now()
+		f.mu.Unlock()
+		return nil, nil, contracts.ErrFactorRequired
+	}
 	return f.open(ctx, tx, user, from)
 }
 
-// Open mirrors internal.Service.Open.
-func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client) (*contracts.Session, *contracts.Identity, error) {
+// Open mirrors internal.Service.Open. It takes the sign-in method and does not
+// record it: this double publishes event names and no payloads, so the field that
+// carries the method in the real trail has nothing to be wrong about here. What it
+// does mirror is the door in front of the session — a user who is not active is
+// refused, whichever provider verified them.
+func (f *Fake) Open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, from contracts.Client, _ contracts.SignInMethod) (*contracts.Session, *contracts.Identity, error) {
 	user, err := f.Users.Get(ctx, tx, id)
 	if err != nil {
 		return nil, nil, err

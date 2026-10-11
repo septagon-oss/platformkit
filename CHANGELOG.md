@@ -2,6 +2,160 @@
 
 ## Unreleased
 
+**A change to somebody else's row is proposed, decided and applied through four
+commands.** `modules/change` holds a proposal over another account's row: the
+ digest of the bytes a verdict was made about, the state machine that makes a
+`decision one-way` (`proposed → approved → applied`, `proposed → declined`,
+`proposed|approved → withdrawn`, one outbox event per transition), the actor rule
+that an author can neither decide nor apply their own change, and an apply that
+writes once at the revision it was reviewed at or not at all.
+`change-proposal-propose`, `-review`, `-apply` and `-withdraw` are its only writes,
+under `change:read`, `change:propose` and `change:decide`, and
+`modules/change/migrations/000038_change.up.sql` (owner `change`) keeps the rows
+under forced row-level security with a partial unique index over tenant, subject
+and diff digest — which is what makes a second submit of the same diff the same
+proposal rather than a race. Which writes need it is not the module's fact: it
+reads one switch a composition hands it and declares no `rest.Spec`, catalog
+resource or job. The reference application puts two subjects behind that switch, a
+task and a site's settings row, with a review queue and a proposal page whose
+refusals speak `modules/change/messages/pt-PT.json`.
+
+**A row's write count belongs to the server.** `kit/entity` names it and `kit/rest`
+refuses a body that writes it, a conditional write whose quoted revision is stale
+(`If-Match` on the API, the form's own revision condition on the generated screen)
+and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
+gives the task one. Nothing the server owns is drawn as a control, so no form asks a
+person to type a number that would move the row to it.
+
+**The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
+`rest.CommandOptions` now carry an optional declaration of how a resource is
+presented — the words a person is shown, which field names a row, which block a
+field belongs to, which columns a header may order by, what a command's button
+says and what a person reads before it runs — and `GET /api/v1/app/resources`
+publishes it as a `presentation` object on the entry, on each field and on each
+command. The four vocabularies it is declared in are frozen in `kit/entity`
+(`Icons`, `Tones`, `Formats`, `Visibilities`) and bound to what draws them by
+tests inside `ui/`, because a kernel below the presentation layer cannot import
+the renderer it must check against. Anything the gate can name refuses at boot —
+a field, section, icon, tone, reference or sortable field that does not exist, a
+money format on a column that holds no minor units, a command that is both the
+primary action and the destructive one — with a message naming the offender and
+the list that refused (`kit/rest/hints.go`). The change is additive on the wire:
+a key is printed only for a hint somebody declared, so an entry nobody hinted
+serialises byte for byte as it did before, `catalogVersion` stays 2, and the
+committed catalogue golden is unchanged by this release. Adopting a hint on a
+real resource, and translating one, are not part of it.
+
+**A limiter whose counter is queued is not a limiter whose store is down.**
+`kit/limit` gave one two-second wall to a connection, `BEGIN`, the wait behind the
+row's own lock and `COMMIT`, and answered any of them with an error — which every
+caller of a limiter is told to fail open on. A same-key burst is one queue behind
+one row, so on a loaded runner the tail of it spent its budget waiting and was
+admitted: 75 anonymous submissions at an allowance of 60, none refused. The
+counter's transaction now names its own lock budget (`lock_timeout`, one second,
+transaction-local), so the server stops that wait and says it did, and an attempt
+that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
+whole window, and **no error**, because a refusal that travels as an error is a
+refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
+refuse with, answer `ErrBusy` rather than a number nobody read. A store that
+answers it cannot serve still fails open exactly as ADR 0010 said; a store that
+answers nothing at all is this attempt's own wall expiring, which is a refusal.
+`kit/limit/README.md` now states the four outcomes and the two budgets for every
+composer of them.
+
+**A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
+routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
+composition that can resolve a tenant's identity provider, and `modules/tenant` carries
+that provider as six columns an operator sets with
+`POST /api/v1/ops/tenant/tenants/{id}/saml` and clears with `…/saml/clear`, publishing
+`tenant.saml_set` and `tenant.saml_cleared`. The service provider is built per request
+from the row the `Host` resolved, so two tenants on one installation verify against two
+IdPs at two assertion consumer URLs. The callback requires an assertion signed in its own
+right, addressed to this tenant's entity ID (an assertion that names no audience names
+nobody), bound in the bearer method, current, and answering a request the same browser
+started; it then spends the assertion id in the transaction that opens the session, so a
+sign-in that is refused leaves the assertion presentable and one that succeeds spends it
+exactly once. An address may present sixty assertions a minute and no more: the leg is mounted on
+the app surface, past the kernel's Public-only write limit, so it carries its own bound,
+refused ahead of the document rather than after it. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+(`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
+add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
+are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to
+v1.6.1, the XML-signature verifier an assertion is checked with, whose previous version
+carries a known signature bypass (GO-2026-4753), and `golang.org/x/net` to v0.60.0 with
+the 2026-10-08 Go security release (GO-2026-6617 and four beside it).
+
+**A kernel module names itself, and the app names it.** Every module of the kernel
+now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
+`admin.Module` — declaring the contracts it needs and provides, the contributions it
+takes, the phase it runs in and the configuration section it reads, and building
+itself from the wiring. An application's composition is one list:
+`pkit.NewApp("acme").Use(user.Module, audit.Module, admin.Module)`. The constructors
+keep their behaviour under the one name free in every package, `New`, which is a
+**breaking rename** for any caller that wrote `user.Module(deps)`: the field list is
+unchanged, only the name it is called by. Two configuration sections are read by the
+kernel now: `deployment.mail.method` (`smtp` or `mailbox`) and
+`deployment.payments.method` (`manual`), each refused before any module builds when
+the deployment leaves it ambiguous.
+
+**A shared name carries the app.** `kit/appname` is now the one place a name two apps could share is formed:
+the event subject and filter, the durable consumer, the job's advisory lock, the session cookie, a rate-limit
+key, a stored file's physical path, the CloudEvents `source` and the broker connection name. A server hosts many
+apps over one database and one broker (decision 0074 §6), and inside one app the tenant is the boundary — between
+two apps a tenant id is only a label, because both sides name their modules with the same vocabulary. The name is
+a validated slug rather than a string, and a census test scans the tree for any shared name spelled inline, so the
+door cannot be bypassed by a caller who found it slower than writing the string. Every site the census named is now
+behind a constructor: the transport, the relay's address, the scheduler's lock, the cookie, the limiter, the local
+file store and the AsyncAPI document each take the app rather than forming a name. The slug arrives as one
+configuration key, `nats.app`, and an unset one is the single-app deployment, which keeps every name it already
+has. The delivery boundary reads the app back twice. `transport.AddressMismatch` takes the app, and an app that
+names itself now answers only at its own scoped address — a message routed at the previous build's address names
+no app, so it cannot be shown to be this app's, and is terminated rather than opened — and `events.Consume` then
+reads `tenants.app` for the tenant the document names and refuses a delivery whose tenant another app holds,
+before the handler's transaction opens: an address says only what its publisher claimed, and past that
+transaction row-level security is the other app's. A refusal runs no handler and writes no claim, so the event
+stays replayable for the app that does hold the tenant. The composition names every consumer it starts:
+`kit/app` stamps `Subscription.App` with the composition's own app — `Options.App`, or the `nats.app` slug
+when it names itself no other way, and the one value `kit/app.New` resolves is written back to the
+configuration its transport constructor and its migration read, so whichever key spoke, the subjects, the
+placement of this boot's tenants, the payload contract, the relay's claim, the durables and the job lock all
+name that app — so two compositions of one module do not bind one JetStream consumer, one queue group and one
+handled-ledger key. And a stored file sits under the tenant whose
+request wrote it — `modules/file`'s local store writes `<app>/<tenant>/<key>` and refuses a write whose call
+names no tenant, because the key is a UUID and the path is the only thing that says whose bytes they are. The
+rollout filter stays wide on purpose and the check is what decides. An unset slug keeps both older addresses, as
+it always did.
+**A tenant belongs to one app, and the control plane answers inside that app.** `tenants` gained a
+non-null `app` column (`migrations/000043_tenant_app`), stamped when the composition creates a tenant and
+never rewritten: lookup by host, the active-tenant list, `Get`, `List` and the operator routes over them
+all filter on it, the installation a verb audits into included, and `tenants_operator` is unique per app rather than per database. The back-fill proves
+its input or refuses. A tenant already in the table joins this app when every host it holds is one the
+boot declares in `app.hosts`, or when an operator named it in `app.tenant_apps`; anything else is listed
+by slug and the migration writes nothing. `db.MigrateDeclaring` is the one door a boot has for a fact the
+database does not hold, checked before a connection opens. A deployment that says nothing about itself
+may still migrate a database with nothing to place — which is every fresh installation — and may not
+migrate one with something to place and nothing to say about it.
+**A durable is shaped so that its own rename is expressible.** A durable is half of the
+primary key of `platformkit_handled` and `platformkit_dead_letters`, so a deployment that
+starts naming its app leaves every row it wrote under a key its own subscription will never
+ask for again: `DeliverAll` redelivers what the transport holds, the claim misses, and a
+handler that already ran runs again — and a targeted replay deletes by the exact durable, so
+the dead letters go invisible to the one command that reads them. `Durable` now forms
+`<app>+<module>-<event>`: the app joins with `+`, which is in no app slug, module name or
+event name, so `acme` + `billing` + `billing.plan.created` and `acme-billing` + `billing` +
+`plan.created` are two consumers rather than one — and the join behind the app stays the dash
+it always carried, so the scoped name is the unscoped one with a prefix, which is the only
+move a ledger row allows (the table holds a durable and nothing else to rebuild it from).
+Moving the rows is still owed, and the reason it is owed rather than done is now measured: a
+`.up.sql` that writes across tenants writes nothing at the migrate role a real deployment
+names, because the policies on `tenants` and both ledgers answer a schema file with an empty
+set; the kernel's door for a migration write is a `phase=data` drain, which `tenants` can
+have and neither ledger can, because a drain windows over the table's single-column primary
+key and both are keyed by `(event_id, durable)`; and `scripts/check_gucs.sh` refuses the
+shortcut a reader might reach for — the file raising the runner's own system-access marker.
+T-0228; that move, the envelope's `app` field, the installation-scope control plane and the
+reference composition's own slug are listed under *Limits* in `kit/appname/README.md`.
+
 **A lifecycle verb answers at its own door, and both sides of the act keep a row.** Four were missing:
 `POST /api/v1/ops/tenant/tenants/{id}/rename`, `…/reactivate`, `DELETE …/hosts/{host}` and
 `POST …/delete` — until them a suspended customer had no way back, a wrong name could not be corrected,
@@ -9,7 +163,7 @@ a name a tenant answers at could not be taken away, and ending a customer was no
 plane offered. Each publishes its own event (`tenant.renamed`, `tenant.reactivated`,
 `tenant.host_removed`, `tenant.deleted`), and each of the seven verbs that move a lifecycle now writes
 *two* audit rows in the transaction that wrote the column: one in the customer's own trail and one
-`tenant.lifecycle_recorded` mirror in the installation's, so "who suspended Acme, and when" is answered
+`tenant.lifecycle_recorded` mirror in the writing app's own installation, so "who suspended Acme, and when" is answered
 without reading a tenant's rows. `audit_events.traceparent` carries the request's W3C trace into both
 (`modules/audit`'s `000035_audit_context.up.sql` — expand-only, nullable, no backfill),
 which is what makes them one act rather than two rows that happen to share a second. A refusal writes
@@ -733,6 +887,18 @@ copy that could not be dropped is named as
 `LEFT BEHIND`. A rehearsal that could not run exits non-zero rather than passing
 quietly.
 
+**The migration lock belongs to one application's namespace, not to one database.**
+`db.Migrate` holds its advisory lock for the namespace it is about to write: the key
+carries the OID of `current_schema()` beside its own constant, because the ledger it
+protects — `schema_migrations`, and every table an applied file creates — lands wherever
+that run's `search_path` resolves. Two applications that share one Postgres database in
+separate namespaces therefore apply their own files while one another migrates; two
+replicas of one application still reach one namespace through one URL and still queue,
+so ADR 0005's boot where one process migrates and the rest wait and find nothing to do
+is the same guarantee it was. A run whose path resolves to no namespace at all is refused
+rather than locked around, because `pg_advisory_lock(key, NULL)` answers NULL without
+taking the lock, and that would be a run that set out believing it was alone.
+
 **The user screen cannot take away a tenant's administration.** Setting the sole
 administrator's roles to none, deactivating them and deleting them each answered 2xx,
 and each left a tenant where nobody inside it could change a role again: whoever was
@@ -1036,6 +1202,31 @@ module, which the compiler and `./scripts/check_imports.sh` both refuse. So
 nothing here is a gate that now passes. What moves is adoption: the
 alias has a value package wrapping the owner rather than only a name, and a
 downstream consumer's value package does the same when its pin moves.
+
+**The development stack runs a mail catcher, and the browser journeys read the link they
+were sent.** An empty `mail.host` — the default, and what an installation without a relay
+has — records every notification and sends none of the ones marked for email. That is safe,
+and it leaves a development machine unable to finish the one journey that needs a link: an
+invitation nobody can open is the walkthrough the front door was written against. So
+[compose.yaml](compose.yaml) composes `mailpit` (SMTP on 1025, its API on 8025, both
+overridable the way the stack's other ports are), [scripts/e2e.sh](scripts/e2e.sh) writes the
+`mail:` block of the configuration it generates and refuses a run whose catcher is not
+answering before it builds anything, and every job that runs `make e2e` (both check
+jobs, and the release job) starts the same image, by container name where it can. `e2e/invitation-mail.spec.ts` and `e2e/mailed-links.spec.ts` then search the
+catcher by recipient for each of the four account links this application mails — an
+invitation, a sign-up confirmation, a resent confirmation and a forgotten-password reset —
+and assert what the delivered message says: that its link carries the address and port the
+tenant is served at, and that the person it was addressed to can open it and be signed in by
+choosing a password there. Two defects came out of writing it. The sign-up's event carried
+no served address, so its confirmation link was built from the tenant's name alone and
+opened port 80 rather than the port the sign-up was answered on — `user.registration_unverified`
+now carries `served`, the way `user.invited` and the two password events already did. And the
+forgot page, the confirmation page and the reset page are mounted on two different surfaces,
+because that is where auth mounts the three doors: asking the workspace router for a public
+door names an alias row that answers 307, which `ui/assets/js/session.js` refuses to follow
+by design, so the button told the person the outcome was unknown and sent nothing —
+`TestEveryAccountDoorPostsToAnAddressThatAnswers` now reads each page's own `action` and asks
+the running application what it says.
 
 ## [1.1.1] - 2026-09-18
 

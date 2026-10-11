@@ -36,7 +36,7 @@ func mountedWithStorage(t *testing.T, storage contracts.Storage) http.Handler {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, m := file.Module(file.Deps{Storage: storage, MaxBytes: filetest.Limit})
+	_, m := file.New(file.Deps{Storage: storage, MaxBytes: filetest.Limit})
 	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)

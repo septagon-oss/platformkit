@@ -151,7 +151,7 @@ func TestTheRouteStampsTheCatalogVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"catalogVersion":1`) {
+	if !strings.Contains(string(body), `"catalogVersion":2`) {
 		t.Errorf("the served document does not carry the catalog version: %s", body)
 	}
 }

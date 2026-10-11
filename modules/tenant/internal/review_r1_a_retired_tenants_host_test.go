@@ -36,7 +36,7 @@ import (
 
 func TestARetiredTenantsHostIsServableAgain(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil, nil)
+	svc := internal.NewService(nil, nil, "")
 	ctx := trace.With(t.Context(), trace.New())
 
 	var acme uuid.UUID

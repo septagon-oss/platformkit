@@ -30,6 +30,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
@@ -77,7 +78,7 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 	// Pass one: a full batch — the drained series' row and 99 rows of the series the
 	// second worker will hold — so both are in the ledger and the queue still holds a
 	// row of the held series.
-	if n, err := relayBatch(t.Context(), conn, memory.New()); err != nil || n != batch {
+	if n, err := relayBatch(t.Context(), conn, memory.New(), appname.Name("")); err != nil || n != batch {
 		t.Fatalf("first relay pass: moved %d rows, err %v, want a full batch of %d: without a ledger "+
 			"grown by a real pass there is no earlier reading for the correction to be owed", n, err, batch)
 	}
@@ -117,7 +118,7 @@ func TestASeriesAnotherWorkerHoldsIsNeverOwedAZero(t *testing.T) {
 	// Pass two, while those locks are held: it skips the locked rows, finds five of the
 	// short series, and so is the pass that finds the queue's end and asks it the
 	// correction's question.
-	n, err := relayBatch(t.Context(), conn, memory.New())
+	n, err := relayBatch(t.Context(), conn, memory.New(), appname.Name(""))
 	if err != nil {
 		t.Fatalf("relay pass while another worker holds rows: %v: the correction's read runs before the "+
 			"publish, so a locked row must not be able to refuse the pass", err)
