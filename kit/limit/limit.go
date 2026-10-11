@@ -270,7 +270,9 @@ func (p postgres) scan(ctx context.Context, query string, args ...any) (int, tim
 // One answer is asked again before it is classified at all: the bare
 // bad-connection sentinel arriving while the wall still stands (see
 // askedAgain). That retry cannot double-count, and the wall bounds it — the
-// loop is out of wall time the moment the wall is behind the attempt.
+// loop is out of wall time the moment the wall is behind the attempt. The ask
+// is withheld from an attempt that ever stood inside its transaction, which is
+// the one state in which a counter could already have been spent.
 func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 	conn, ok := p.conns(ctx)
 	if !ok {
@@ -286,8 +288,16 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 		attempt = queueRun
 	}
 	for {
-		err := attempt(detached, conn, fn)
-		if !askedAgain(err, detached) {
+		// entered says whether this attempt ever stood inside a transaction.
+		// Nothing else in the answer can say it: kit/db hands back the callback's
+		// error unwrapped, so a statement that failed after the transaction opened
+		// can look exactly like the pool's ask.
+		entered := false
+		err := attempt(detached, conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			entered = true
+			return fn(ctx, tx)
+		})
+		if entered || !askedAgain(err, detached) {
 			return classified(err, detached)
 		}
 		// driver.ErrBadConn is the driver's promise that nothing reached the

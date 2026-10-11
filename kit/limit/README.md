@@ -77,7 +77,10 @@ their sessions back still open, and the next borrower is told the connection is 
 Measured on a loaded runner, one in twenty bursts of 75 attempts came back with one such
 error — one attempt out of thousands, and every fail-open composer admits the whole burst
 on it. `run` therefore opens such an attempt again while its wall stands — the wall, not
-a try count, bounds the asking, so ADR 0010's promise of one wall per attempt holds. A store that is genuinely down answers, at once and with its own error, which is
+a try count, bounds the asking, so ADR 0010's promise of one wall per attempt holds — and
+never one that already stood inside a transaction: an attempt that reached the row may
+have written, and a counter that counted one attempt twice refuses an attempt nobody
+made. A store that is genuinely down answers, at once and with its own error, which is
 neither the bare sentinel nor a wait, so row four survives the retry.
 
 **Row four's action belongs to the composer, and two composers do not fail open.**
