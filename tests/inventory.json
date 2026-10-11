@@ -8585,6 +8585,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/db/composition_lock_observation_scope_test.go",
+   "id": "kit/db/composition_lock_observation_scope_test.go#TestLockObservationExcludesOtherSchemas",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestLockObservationExcludesOtherSchemas",
+   "needs_db": true,
+   "pkg": "kit/db",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/db/composition_lock_observation_test.go",
    "id": "kit/db/composition_lock_observation_test.go#TestCancellationObservationSeesTheHeldNamespaceLock",
    "kind": "go",
@@ -51122,7 +51141,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1229,
+  "files": 1230,
   "forge_runs": [
    408,
    413,
@@ -51156,7 +51175,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2256,
+   "behaviour": 2257,
    "composition": 244,
    "contract": 19,
    "journey": 57
@@ -51175,9 +51194,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2576,
+  "rows": 2577,
   "tiers": {
-   "merge": 1588,
+   "merge": 1589,
    "nightly": 57,
    "push": 931
   },
@@ -51185,13 +51204,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1014,
+   "keep": 1015,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2229,
+   "keep": 2230,
    "keep-rewrite": 132,
    "merge": 215
   }
