@@ -167,6 +167,17 @@ type Deps struct {
 	PublicHost string
 }
 
+// NewPasskeyDoor returns the one read of a tenant's usernameless door, as
+// contracts.PasskeyDoor (contracts/passkeys.go says why that is a second interface
+// and not a method on Passkeys).
+//
+// It is a second value and not a second return of New because New is what every
+// composition already calls and a door it may not have is a field nothing reads.
+// The answer comes from the same row, by the same method, that BeginPasskeySignIn
+// and FinishPasskeyAssertion act on, so a screen that asked here cannot be shown
+// a door the ceremony then refuses.
+func NewPasskeyDoor() contracts.PasskeyDoor { return internal.NewPasskeyDoor() }
+
 // Module is the manifest, and the service it is built on: main hands the same
 // value to kit/app as the authorizer and the identity hook.
 func New(deps Deps) (contracts.Auth, module.Module) {

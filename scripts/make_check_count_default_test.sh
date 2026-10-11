@@ -32,19 +32,18 @@ if [[ "$suite" != "go tool gotestsum --packages='./...' -- -count=1 -timeout=30m
 	exit 1
 fi
 race="$(ci_line check-race 'go test')"
-# The race goal carries the same two parts the goal above does, and for the same two reasons: the count
-# because CI must never read a verdict the commit did not run, the bound because go test's ten-minute
-# per-package default is a clock nobody here chose. Forge runs 521 and 519 each killed
-# `apps/platformkit` at that default — 600.295s and 603.370s, under `panic: test timed out after 10m0s`
-# with one case two seconds into its own start and the rest of the package parked in t.Parallel — over
-# against 421.7s, 426.4s and 438.0s for the same package on the three race runs before them. The number
-# and the measurements behind it are written above the line in the Makefile; what this case asks is that
-# CI's own expansion carry both parts, so a goal that keeps the count and loses the bound, or the bound
-# and the count, is refused here rather than in the race step at 20:00:43Z.
-if [[ "$race" != 'go test -race -count=1 -timeout=30m ./'* ]]; then
-	printf 'FAIL: make check-race without TEST_COUNT is not the fresh, bounded race line CI depends on:\n%s\n' "$race" >&2
-	exit 1
-fi
+# The race line carries a bound beside its count, and it is pinned here for the reason written at
+# `check`'s line above: go test's ten-minute default is what stopped a working apps/platformkit four
+# times on 2026-10-10 (runs 57644, 57686, 57718 and 57727, each panic naming whichever case happened
+# to be open at the tenth minute). The count, the bound and the package list the bound precedes are
+# the three parts a later edit may not drop; what it may change is everything around them — the number
+# itself included, which is why the bound is matched as a stated minutes value and not as 30m.
+case "$race" in
+	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	*)
+		printf 'FAIL: make check-race without TEST_COUNT is not the fresh, bounded race line CI depends on:\n%s\n' "$race" >&2
+		exit 1 ;;
+esac
 if grep -rn 'TEST_COUNT' "$root/.gitea" >&2; then
 	echo 'FAIL: a workflow names TEST_COUNT; CI must take the Makefile default' >&2
 	exit 1

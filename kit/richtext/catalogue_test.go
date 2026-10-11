@@ -44,7 +44,7 @@ func TestEveryRefusalNamesItsOwnKey(t *testing.T) {
 	for _, source := range []string{
 		"# Title", "\n<script>alert(1)</script>", "[x](javascript:alert(1))", "![x](https://x.test/a.png)",
 		"a ![x](https://x.test/a.png) b", "| a |\n| - |\n| ![x](https://x.test/a.png) |",
-		"- a\n  - b\n    - c\n      - d", "[^n]", ":smile:", "$x$", ": a",
+		"- a\n  - b\n    - c\n      - d", "[^n]", ":smile:", "$x^{2}$", ": a",
 	} {
 		_, err := richtext.Normalise(source)
 		refused, ok := errors.AsType[*richtext.Refused](err)

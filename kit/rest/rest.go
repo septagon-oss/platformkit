@@ -164,6 +164,15 @@ type Spec[T crud.Entity] struct {
 	// guarding nothing.
 	Immutable []string
 
+	// Present is how this resource reads: the words a person is shown, which field
+	// names a row, which block a field belongs to, which fields a column may be
+	// ordered by. Every part is optional and the zero value is every resource
+	// written before it existed — the served catalogue prints no `presentation`
+	// key for an entry nobody hinted, so no shell already installed reads a
+	// different document. kit/rest refuses the declaration at mount, not the
+	// request: a hint that names no field is a wiring mistake.
+	Present entity.EntryHints
+
 	// HookEvents names the events the hooks below publish. They are appended
 	// to the create, update and delete operations' x-platformkit-events, so
 	// the OpenAPI document says what a write can emit and kit/app's boot gate
@@ -560,6 +569,31 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
+// CreateRow, UpdateRow and DeleteRow are this resource's write orchestration at
+// the door an in-process caller stands at. The JSON routes and the generated
+// screens go through the same three bodies; a seed writer, or any composition-time
+// caller that is not a person's request, stands here. The reason they are
+// exported and not copied is that the three things a write must never skip are
+// inside those bodies — the row lock, the tenant recheck a DELETE cannot get from
+// row-level security alone, and the event that announces the change — and a
+// second spelling of them in an application is a spelling that can drift.
+// Authorization is not one of them: a route asks httpx, a seed run asks its
+// Authorizer, and neither answer belongs in this file.
+func (s Spec[T]) CreateRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, error) {
+	return s.createRow(ctx, tx, e)
+}
+
+// UpdateRow patches the columns `values` names, of this Spec's own schema, and
+// is the one door that keeps a caller from writing a field the Spec declared
+// immutable: the check is inside the merge those columns go through.
+func (s Spec[T]) UpdateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, values map[string]any) (T, error) {
+	return s.updateRow(ctx, tx, id, crud.Fields[T](), values)
+}
+
+func (s Spec[T]) DeleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (T, error) {
+	return s.deleteRow(ctx, tx, id)
+}
+
 // CommandOptions is what a command may differ from its Spec in. It is a struct
 // and not two more parameters because a command that differs in nothing has to
 // be able to say so in one word: rest.CommandOptions{}.
@@ -582,6 +616,13 @@ type CommandOptions struct {
 	// caller knows the code and not the row it belongs to, so {id} in the path
 	// would be asking them for the answer.
 	Collection bool
+
+	// Present is this command as its author describes it: the word on the button,
+	// whether it is the one action a view should offer, whether it costs
+	// something, what a person reads before it runs and what they are told after.
+	// A command no person is offered says `System: true`, and ui/screens mounts no
+	// browser route for it — the JSON route keeps its guard unchanged.
+	Present entity.CommandHints
 }
 
 // Command registers one lifecycle route on a Spec: POST {Path}/{id}/{verb}, or
@@ -605,6 +646,13 @@ type CommandOptions struct {
 func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, summary, description string, events []string,
 	run func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in I) (T, error), opts CommandOptions,
 ) {
+	// A command's hints are checked here rather than in Spec.check because this is
+	// the one site with the verb, the options, the entity's schema and the
+	// argument's fields all in hand at once — and before any route is mounted, so
+	// a refused declaration leaves no half-described resource behind it.
+	if bad := commandFault(verb, opts.Present, crud.FieldsOf(reflect.TypeFor[I]())); bad != "" {
+		panic("rest: command " + verb + " on " + spec.Module + "." + spec.Entity + ": " + bad)
+	}
 	path := spec.item() + "/" + verb
 	if opts.Collection {
 		path = strings.TrimSuffix(spec.Path, "/") + "/" + verb
@@ -647,7 +695,7 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 		Verb: verb, Summary: summary, Description: description,
 		Collection: opts.Collection, Auth: auth,
 		Endpoint: router.Prefix() + path,
-		Fields:   fields,
+		Fields:   fields, Present: opts.Present,
 		Run: func(ctx context.Context, id uuid.UUID, values map[string]any) error {
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -874,6 +922,12 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.entryHintFault()
+	}
+	if bad == "" {
+		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())

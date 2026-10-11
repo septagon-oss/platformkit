@@ -41,6 +41,18 @@ type Catalog struct {
 // `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
+	// Presentation is this resource as its author said it reads — the words, the
+	// icon, the group, which field names a row and which block each field belongs
+	// to. It is declared here, immediately after the embedded schema and before
+	// Screen, because encoding/json hoists an embedded struct's keys at the
+	// embed's position and writes fields in declaration order: this is where the
+	// entry's `presentation` block comes from, which is also why it goes last on
+	// Command below.
+	//
+	// An entry nobody hinted has no `presentation` key at all, so every shell
+	// already installed reads what it read before this field existed and
+	// CatalogVersion stays where it is.
+	Presentation *EntryPresentation `json:"presentation,omitempty"`
 	// Screen is the workspace address of the generated screen — /app/task/tasks
 	// — stated because the kernel composed it and a shell cannot derive it any
 	// more. It used to derive the screen's path from the API's, by cutting
@@ -98,6 +110,11 @@ type Command struct {
 	Collection  bool           `json:"collection,omitempty"`
 	Path        string         `json:"path,omitempty"`
 	Fields      []entity.Field `json:"fields,omitempty"`
+	// Presentation is this command as its author described it: the word on the
+	// button, whether it is the action to offer, what a person reads before it
+	// runs. It sits last so the six keys a shell has always read keep their
+	// positions, and it is absent for every command nobody described.
+	Presentation *CommandPresentation `json:"presentation,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
@@ -128,8 +145,9 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 func Describe1(r httpx.Resource, writable bool) Entry {
 	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
 		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
-	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable,
-		Singleton: r.Singleton, Operations: r.OperationWords()}
+	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present), Screen: r.Screen,
+		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
+		Operations: r.OperationWords()}
 	if writable {
 		e.WritePath = r.WritePath
 	}
@@ -137,6 +155,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
+			Presentation: commandDeviations(c.Present),
 		})
 	}
 	return e
