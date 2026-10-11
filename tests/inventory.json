@@ -838,6 +838,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/a_record_written_without_a_translation_port_test.go",
+   "id": "apps/platformkit/a_record_written_without_a_translation_port_test.go#TestARecordWrittenThroughASpecWithNoPortIsWrittenAndRemoved",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestARecordWrittenThroughASpecWithNoPortIsWrittenAndRemoved",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/access_refusal_test.go",
    "id": "apps/platformkit/access_refusal_test.go#TestARefusedPersonSeesWhatIsMissingWhoCanGrantItAsksAndIsGranted",
    "kind": "go",
@@ -50956,7 +50975,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1219,
+  "files": 1220,
   "forge_runs": [
    408,
    413,
@@ -50991,7 +51010,7 @@
   ],
   "layers": {
    "behaviour": 2258,
-   "composition": 232,
+   "composition": 233,
    "contract": 19,
    "journey": 57
   },
@@ -51009,9 +51028,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2566,
+  "rows": 2567,
   "tiers": {
-   "merge": 1575,
+   "merge": 1576,
    "nightly": 57,
    "push": 934
   },
@@ -51019,13 +51038,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1004,
+   "keep": 1005,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2219,
+   "keep": 2220,
    "keep-rewrite": 132,
    "merge": 215
   }
