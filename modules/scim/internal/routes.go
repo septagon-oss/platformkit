@@ -2,7 +2,9 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -41,7 +43,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, _ *struct{}) (*document[contracts.ProviderConfig], error) {
 		cfg, err := svc.ProviderConfig(ctx)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*cfg), nil
 	})
@@ -52,7 +54,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, _ *struct{}) (*document[contracts.ResourceTypeList], error) {
 		types, err := svc.ResourceTypes(ctx)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(types), nil
 	})
@@ -63,7 +65,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *nameInput) (*document[contracts.ResourceType], error) {
 		rt, err := svc.ResourceType(ctx, in.Name)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*rt), nil
 	})
@@ -74,7 +76,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, _ *struct{}) (*document[contracts.SchemaList], error) {
 		list, err := svc.Schemas(ctx)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(list), nil
 	})
@@ -86,7 +88,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 	}, httpx.Permission(contracts.PermissionProvision), func(ctx context.Context, in *schemaInput) (*document[contracts.Schema], error) {
 		schema, err := svc.Schema(ctx, in.ID)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*schema), nil
 	})
@@ -103,7 +105,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		list, err := svc.ListUsers(ctx, tx, in.query())
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		_ = done
 		return answered(*list), nil
@@ -124,7 +126,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		u, err := svc.CreateUser(ctx, tx, in.Body)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*u), nil
 	})
@@ -139,7 +141,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		u, err := svc.GetUser(ctx, tx, in.ID)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*u), nil
 	})
@@ -159,7 +161,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		u, err := svc.ReplaceUser(ctx, tx, in.ID, in.Body)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*u), nil
 	})
@@ -179,7 +181,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		u, err := svc.PatchUser(ctx, tx, in.ID, in.Body.Operations)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*u), nil
 	})
@@ -199,7 +201,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 			return nil, err
 		}
 		if err := svc.DeactivateUser(ctx, tx, in.ID); err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return &empty{}, nil
 	})
@@ -215,7 +217,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		list, err := svc.ListGroups(ctx, tx, in.query())
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*list), nil
 	})
@@ -235,7 +237,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		g, err := svc.CreateGroup(ctx, tx, in.Body)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*g), nil
 	})
@@ -250,7 +252,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		g, err := svc.GetGroup(ctx, tx, in.ID)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*g), nil
 	})
@@ -270,7 +272,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		g, err := svc.ReplaceGroup(ctx, tx, in.ID, in.Body)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*g), nil
 	})
@@ -290,7 +292,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		g, err := svc.PatchGroup(ctx, tx, in.ID, in.Body.Operations)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*g), nil
 	})
@@ -309,7 +311,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 			return nil, err
 		}
 		if err := svc.DeleteGroup(ctx, tx, in.ID); err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return &empty{}, nil
 	})
@@ -328,7 +330,7 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		list, err := svc.GroupMappings(ctx, tx)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(list), nil
 	})
@@ -345,10 +347,54 @@ func RegisterRoutes(s httpx.Surfaces, svc contracts.Service) {
 		}
 		m, err := svc.MapGroup(ctx, tx, in.Body.Group, in.Body.Role)
 		if err != nil {
-			return nil, rest.Fault(err)
+			return nil, faulted(err)
 		}
 		return answered(*m), nil
 	})
+}
+
+// refusal is one of this door's refusals, in the document the protocol names.
+//
+// It is the platform's verdict wearing the protocol's shape, and not a second
+// verdict: the status and the sentence come from rest.Fault, the same mapping every
+// other door in this application answers from. What changes is the body, because a
+// SCIM client decodes a refusal into the Error document (RFC 7644 §3.12) and a body
+// it cannot decode is an unknown failure to that client, however exactly this server
+// named it. It carries huma's status so the write that answers it is one write, with
+// one status, and not a body that disagrees with the line above it.
+type refusal struct {
+	contracts.ErrorResponse
+	code int
+}
+
+// GetStatus is the half of huma.StatusError that is not Error: the status the
+// refusal carries is the status the response answers with.
+func (r *refusal) GetStatus() int { return r.code }
+
+func (r *refusal) Error() string { return r.Detail }
+
+// faulted turns what a service call returned into the answer this door owes. A
+// verdict the platform can name is dressed in the protocol's error document; a
+// failure it cannot name is left alone, because the kernel's own 500 is the one
+// answer that carries no message the log has not already carried, and a protocol
+// body would be a place to put one.
+func faulted(err error) error {
+	verdict, ok := errors.AsType[*problem.Problem](rest.Fault(err))
+	if !ok {
+		return err
+	}
+	detail := verdict.Detail
+	if detail == "" {
+		detail = strings.Join(verdict.Errors, "; ")
+	}
+	return &refusal{
+		ErrorResponse: contracts.ErrorResponse{
+			Schemas: []string{contracts.SchemaError},
+			Detail:  detail,
+			Status:  strconv.Itoa(verdict.Status),
+		},
+		code: verdict.Status,
+	}
 }
 
 // document is the protocol's envelope for a body that names its own media type.
@@ -408,9 +454,9 @@ func unconditional(ifMatch string) error {
 	if strings.TrimSpace(ifMatch) == "" {
 		return nil
 	}
-	return problem.New(http.StatusPreconditionFailed,
+	return faulted(problem.New(http.StatusPreconditionFailed,
 		"this service issues no resource version, so it cannot evaluate an If-Match and will not write as though it had; "+
-			"send the write with no condition, or compare meta.version yourself before sending it")
+			"send the write with no condition, or compare meta.version yourself before sending it"))
 }
 
 // working takes the request's own transaction. Its absence is not a caller's
@@ -419,7 +465,7 @@ func unconditional(ifMatch string) error {
 func working(ctx context.Context) (db.Tx[db.Tenant], func(), error) {
 	tx, ok := httpx.TxFrom(ctx)
 	if !ok {
-		return noTx, nil, problem.New(http.StatusServiceUnavailable, "the database is not reachable right now")
+		return noTx, nil, faulted(problem.New(http.StatusServiceUnavailable, "the database is not reachable right now"))
 	}
 	return tx, func() {}, nil
 }

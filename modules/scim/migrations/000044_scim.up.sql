@@ -60,13 +60,21 @@ CREATE TABLE scim_group_mappings (
 	deleted_at timestamptz
 );
 
--- The identifier the provider calls a person by. Keyed by the person, because
--- a connector that sends a different externalId for the same person is
--- describing the same person twice, and the answer is the row, not a new one.
+-- The identifier the provider calls a person by, and the one fact about a person
+-- that no other module can hold: whether this door is the one that stopped them
+-- signing in. Keyed by the person, because a connector that sends a different
+-- externalId for the same person is describing the same person twice, and the
+-- answer is the row, not a new one.
+--
+-- provider_deactivated is read by exactly one rule: an identity provider that says
+-- a person is active may stand back up the person this door stood down, and nobody
+-- else. The person's own status is modules/user's column, and the reason a
+-- connector is asking for it back is this module's fact, so the fact lives here.
 CREATE TABLE scim_user_external (
 	tenant_id   uuid NOT NULL,
 	user_id     uuid NOT NULL PRIMARY KEY,
-	external_id text NOT NULL DEFAULT ''
+	external_id text NOT NULL DEFAULT '',
+	provider_deactivated boolean NOT NULL DEFAULT false
 );
 
 -- One provider identifier per tenant, when it has one: two people with the

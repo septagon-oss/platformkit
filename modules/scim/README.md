@@ -75,7 +75,10 @@ connector handed everybody when it asked for a subset will go on to act on every
 it meant to spare. A `PATCH` reads the attribute named in `path` and, as Okta sends
 it, the attributes named inside a pathless `replace`'s value — so the two spellings
 of "this person has left" both stop them signing in, and the same two spellings of
-"this person is active" both let them back in. One member is selected by
+"this person is active" both let them back in — the person this door stopped, which
+is the connector's to bring back, and nobody else's: a person the tenant stopped at
+its own screen stays stopped, because the credential is a key for mirroring a
+directory and not a way to overrule the tenant that reads it. One member is selected by
 `members[value eq "<id>"]`, which is how RFC 7644 and Microsoft's provisioning guide
 send it; read as plain `members` it would answer the standard request by emptying the
 group. The discovery documents answer at the addresses they name: a schema is read by
@@ -257,13 +260,15 @@ naming is the claim, so the list is the acceptance trace rather than a summary.
 | --- | --- |
 | a provider vouching for an address is what makes a person able to sign in, and neither half sets a password | `TestTheProviderVouchingForAnAddressIsWhatMakesAPersonAbleToSignIn` |
 | every attribute write is auditable in the transaction that wrote it, and a restatement writes nothing | `TestEveryUserAttributeWriteLeavesATransactionalAuditEvent`, `TestAPersonWriteThatChangedNothingLeavesNoAuditLine` |
-| `PUT` and `PATCH` both honour `active`, in both directions | `TestReplacingAnInvitedUserHonoursTheActiveAttribute`, `TestConnectorDeactivationShapesStopThePerson` |
+| `PUT` and `PATCH` both honour `active`, in both directions, and a returning person comes back through the door that closed them | `TestReplacingAnInvitedUserHonoursTheActiveAttribute`, `TestConnectorDeactivationShapesStopThePerson`, `TestAConnectorCanReactivateThePersonItDeactivated` |
+| every command rechecks who is asking, so a caller that reached it by name is held to the scope the door would have held it to | `TestGroupCommandsRefuseAnActorWithoutProvisioningAuthority` |
 | the collection carries its role onto its members and takes it back off, through one member, one leaver and a concurrent delete | `TestAGroupCarriesItsRoleOntoItsMembersAndTakesItBackOff`, `TestFilteredMemberRemovalPreservesOtherMembers`, `TestMembershipCannotCommitBehindAConcurrentGroupDeletion`, `TestConcurrentGroupRemovalsRevokeBothRoles` |
 | no group write, from no door, writes the tenant's binding — and the binding's own command refuses a caller whose credential or whose roles do not carry it | `TestNoGroupCommandWritesTheTenantsRoleMapping`, `TestProvisioningCannotChooseTheTenantRoleMapping`, `TestMappingCommandRefusesAProvisionOnlyActor`, `TestMappingCommandRefusesASessionWithoutRoles`, `TestAMappingWrittenByACredentialThatCarriesUserManage` |
 | a refused write changes nothing, emits nothing and returns no row, including when the role directory is unreachable and when the caller's own condition names an older version | `TestWithdrawingAMappingRevokesTheRoleItGranted`, `TestAMappingToARoleNobodyDeclaredIsRefusedAndWritesNothing`, `TestRoleDirectoryFailureDoesNotCommitAMapping`, `TestConditionalUserWritesCannotOverwriteANewerPerson` |
 | a tenant cannot see, change or be affected by another tenant's provisioning | `TestForeignTenantCannotMutateOrReadProvisionedState` |
 | the last administrator survives every SCIM write, and the connector's deactivation is the one that stops them signing in | `TestSCIMRefusesTheLastAdministratorWithoutChangingState`, `TestConnectorDeactivationShapesStopThePerson` |
-| the discovery documents describe the door that answered them, at addresses that answer, in the envelope a client decodes | `TestTheDiscoveryDocumentsAnswerForThemselves`, `TestEveryAdvertisedSchemaCanBeReadByItsIdentifier`, `TestDiscoveryCollectionsUseTheSCIMListEnvelope`, `TestTheSCIMDoorAnswersAtTheAddressTheProtocolNames` (in `apps/platformkit`) |
+| the discovery documents describe the door that answered them, at addresses that answer, in the envelope and the schema a client decodes | `TestTheDiscoveryDocumentsAnswerForThemselves`, `TestEveryAdvertisedSchemaCanBeReadByItsIdentifier`, `TestDiscoveryCollectionsUseTheSCIMListEnvelope`, `TestProviderConfigurationUsesTheSCIMDiscoverySchema`, `TestTheSCIMDoorAnswersAtTheAddressTheProtocolNames` (in `apps/platformkit`) |
+| a refusal is a document a SCIM client can decode, and it carries the status in the field the protocol names | `TestAProtocolRefusalCanBeDecodedAsASCIMError` |
 | an anonymous caller and a key scoped to the wrong door meet a refusal that wrote nothing | `TestProvisioningCannotChooseTheTenantRoleMapping`, and the kernel's own `kit/httpx` refusal cases |
 
 Not verified by anything here, and not claimed: a live Entra or Okta tenant, the

@@ -303,6 +303,9 @@ func readUser(tx db.Tx[db.Tenant], id uuid.UUID) (userRow, error) {
 // and an integration that could hand over a password would be a second door into
 // an account the tenant did not choose the key for.
 func (s *Service) CreateUser(ctx context.Context, tx db.Tx[db.Tenant], in contracts.UserDraft) (*contracts.UserResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := refused(in); err != nil {
 		return nil, err
 	}
@@ -352,6 +355,9 @@ func (s *Service) CreateUser(ctx context.Context, tx db.Tx[db.Tenant], in contra
 // in while returning 200 would be a door that tells a connector its write landed
 // when it did not, and Okta's documented update path is a PUT.
 func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in contracts.UserDraft) (*contracts.UserResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := refused(in); err != nil {
 		return nil, err
 	}
@@ -373,17 +379,16 @@ func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 	}
 	if in.Active != nil {
 		if !*in.Active {
-			if _, err := s.users.Deactivate(ctx, tx, id); err != nil {
+			if err := s.close(ctx, tx, row); err != nil {
 				return nil, err
 			}
 		} else if row.Status != usercontracts.StatusActive {
-			// The one activation door reachable from here, and the same refusal PATCH
-			// makes: a closed account or one awaiting a person's own approval is not
-			// reopened by an integration, because the approval is a person's act. Both
-			// halves of `active` are published by modules/user under their own names —
-			// user.email_verified and user.deactivated — so neither is added to the
-			// list below: one fact, one event, whoever opened the door.
-			if _, err := s.users.ConfirmAddress(ctx, tx, id, row.Email); err != nil {
+			// The one activation door reachable from here, and the same judgement PATCH
+			// makes. Both halves of `active` are published by modules/user under their own
+			// names — user.email_verified, user.reactivated and user.deactivated — so
+			// neither is added to the list below: one fact, one event, whoever opened the
+			// door.
+			if err := s.open(ctx, tx, row); err != nil {
 				return nil, err
 			}
 		}
@@ -408,6 +413,9 @@ func (s *Service) ReplaceUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.
 // request, and a partial application would leave the connector's idea of the
 // person and this tenant's two different things with no record of the difference.
 func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ops []contracts.Operation) (*contracts.UserResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	row, err := readUser(tx, id)
 	if err != nil {
 		return nil, err
@@ -460,15 +468,11 @@ func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 	}
 	if wroteActive {
 		if !*active {
-			if _, err := s.users.Deactivate(ctx, tx, id); err != nil {
+			if err := s.close(ctx, tx, row); err != nil {
 				return nil, err
 			}
 		} else if row.Status != usercontracts.StatusActive {
-			// An identity provider that says this person is active is saying it has
-			// the mailbox. That is ConfirmAddress's fact, and it is refused for a
-			// person whose account is closed or awaiting a person's own approval —
-			// an approval is a person's act, and no integration performs it.
-			if _, err := s.users.ConfirmAddress(ctx, tx, id, row.Email); err != nil {
+			if err := s.open(ctx, tx, row); err != nil {
 				return nil, err
 			}
 		}
@@ -497,11 +501,110 @@ func (s *Service) PatchUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UU
 // reserved, and the history stays. A connector that reprovisions them later finds
 // the same person back rather than a second one.
 func (s *Service) DeactivateUser(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
-	if _, err := readUser(tx, id); err != nil {
+	if err := s.mayProvision(ctx, tx); err != nil {
 		return err
 	}
-	_, err := s.users.Deactivate(ctx, tx, id)
-	return err
+	row, err := readUser(tx, id)
+	if err != nil {
+		return err
+	}
+	return s.close(ctx, tx, row)
+}
+
+// close stops a person signing in, and remembers that this door is the one that
+// did it. The memory is what lets open below answer a returning person: a
+// connector that stood somebody down because they left, and then found their
+// account back in the directory, is the ordinary case, and a door that could close
+// a person but never reopen them would send that person to an administrator for
+// what the connector did to them. An already-closed person is not adopted here:
+// whoever closed them did it somewhere else, and this door does not acquire the
+// right to undo a decision it did not make.
+func (s *Service) close(ctx context.Context, tx db.Tx[db.Tenant], row userRow) error {
+	if _, err := s.users.Deactivate(ctx, tx, row.ID); err != nil {
+		return err
+	}
+	if row.Status == usercontracts.StatusInactive {
+		return nil
+	}
+	return rememberClosedByProvider(tx, row.ID, true)
+}
+
+// open answers an identity provider that says this person is active.
+//
+// Two states are `active` at this door and they are not the same fact. An invited
+// or unverified person has not been reached at their address yet; ConfirmAddress is
+// the command the user module owns for a provider that vouches for it, and it
+// refuses the states it refuses — an approval that belongs to a person is not
+// performed by an integration.
+//
+// An inactive person was stood down, and whether this door may stand them back up
+// depends on who stood them down. Its own deactivations are reversible here, which
+// is what makes PATCH the round trip the protocol means it to be; a person closed
+// at the tenant's own screen stays closed, because a credential the tenant handed
+// to somebody else's directory is a key for mirroring it, not a way to overrule
+// the tenant. Nothing outside this module can tell the two closed states apart,
+// so this module keeps the one fact it needs about the people it closed — see
+// rememberClosedByProvider.
+func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], row userRow) error {
+	if row.Status != usercontracts.StatusInactive {
+		_, err := s.users.ConfirmAddress(ctx, tx, row.ID, row.Email)
+		return err
+	}
+	closed, err := closedByProvider(tx, row.ID)
+	if err != nil {
+		return err
+	}
+	if !closed {
+		return fmt.Errorf("%w: this person was stopped signing in at the tenant's own door, which is the door that lets them back in",
+			crud.ErrConflict)
+	}
+	if _, err := s.users.Reactivate(ctx, tx, row.ID); err != nil {
+		return err
+	}
+	// The memory is spent: a second connector, or an administrator's stand-down
+	// the day after this one, is not covered by a deactivation this door already
+	// undid.
+	return rememberClosedByProvider(tx, row.ID, false)
+}
+
+// closedByProvider reads the door's memory of a person. No row is the answer for
+// everybody this door never closed, and it is the same answer as a row that says
+// nothing happened.
+func closedByProvider(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
+	var held struct {
+		ProviderDeactivated bool `gorm:"column:provider_deactivated"`
+	}
+	err := tx.DB().Table("scim_user_external").Select("provider_deactivated").
+		Where("user_id = ? AND tenant_id = ?", userID, db.TenantOf(tx).ID).Take(&held).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("scim: read who closed this person: %w", err)
+	}
+	return held.ProviderDeactivated, nil
+}
+
+// rememberClosedByProvider writes that memory, and the lack of it. It is the one
+// module that can: the person's status is modules/user's column, and the reason a
+// connector is asking for it back is this module's fact.
+//
+// Clearing never creates a row. A person this door never closed has no memory to
+// forget, and a table of rows recording that nothing happened is a table nothing
+// reads.
+func rememberClosedByProvider(tx db.Tx[db.Tenant], userID uuid.UUID, closed bool) error {
+	tenant := db.TenantOf(tx).ID
+	if !closed {
+		return tx.DB().Table("scim_user_external").
+			Where("user_id = ? AND tenant_id = ?", userID, tenant).
+			Update("provider_deactivated", false).Error
+	}
+	return tx.DB().Table("scim_user_external").Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.Assignments(map[string]any{"provider_deactivated": true}),
+	}).Create(map[string]any{
+		"tenant_id": tenant, "user_id": userID, "provider_deactivated": true,
+	}).Error
 }
 
 // rename writes the one name this platform keeps, and only when it changed. The
@@ -719,6 +822,9 @@ func lockGroup(tx db.Tx[db.Tenant], id uuid.UUID) error {
 // (see refusedGroup) and is written by MapGroup, so a provisioning credential can
 // mirror a directory but cannot decide what mirroring it grants.
 func (s *Service) CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in contracts.GroupDraft) (*contracts.GroupResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := refusedGroup(in); err != nil {
 		return nil, err
 	}
@@ -750,6 +856,9 @@ func (s *Service) CreateGroup(ctx context.Context, tx db.Tx[db.Tenant], in contr
 // are the explicit act, and they are both refused while the group has members, so
 // a rename has to be decided rather than performed by accident.
 func (s *Service) ReplaceGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, in contracts.GroupDraft) (*contracts.GroupResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	if err := refusedGroup(in); err != nil {
 		return nil, err
 	}
@@ -780,6 +889,9 @@ func (s *Service) ReplaceGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid
 // one person named in a valuePath. The role extension is not one of the paths —
 // see refusedGroup for why the door refuses it whoever sends it.
 func (s *Service) PatchGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, ops []contracts.Operation) (*contracts.GroupResource, error) {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return nil, err
+	}
 	g, err := readGroupForUpdate(tx, id)
 	if err != nil {
 		return nil, err
@@ -819,6 +931,9 @@ func (s *Service) PatchGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.U
 // members: membership has one door, and a connector that deleted a group out from
 // under people would silently take their role with it.
 func (s *Service) DeleteGroup(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) error {
+	if err := s.mayProvision(ctx, tx); err != nil {
+		return err
+	}
 	g, err := readGroupForUpdate(tx, id)
 	if err != nil {
 		return err
@@ -920,49 +1035,107 @@ func (s *Service) MapGroup(ctx context.Context, tx db.Tx[db.Tenant], group, role
 // that holds only for whoever happens to enter through the HTTP door is that rule
 // with a hole in the shape of every other caller.
 //
-// Two shapes of caller arrive, and this module decides one of them for itself.
-// tenancy.Principal.Permissions is the authority a credential carries, and a
-// non-nil list is a ceiling and never an addition — a caller whose credential
-// carries one is held to it here, by exact name, whoever it is and however it
-// reached this function. A refusal reads nothing, writes nothing, publishes
-// nothing and returns no row, and it arrives as the kernel's own 403 for a caller
-// that reached it through a request.
-//
-// The other shape is a session, which carries no list of its own: what its roles
-// grant is two other modules' rows, and reading them from here would be the same
-// mistake as reading the role definitions for HasRole. So the question goes to the
-// composition's Authority, which answers it over those rows and answers it the same
-// way the guard on the module's own route does — which is the point of the port
-// rather than a comment on it: a caller who walked past the guard is refused by the
-// same rule the guard applied, not by a weaker copy of it written here.
-//
-// A caller with no principal at all is refused with the rest. It is the shape a
-// background job wears, and a job has no authority of its own to spend on which
-// role a person's membership means; admitting it would leave the bypass one
-// forgotten context value deep, which is exactly the hole this function exists to
-// close.
+// See callerHolds for how a caller is read and answered. A refusal reads nothing,
+// writes nothing, publishes nothing and returns no row, and it arrives as the
+// kernel's own 403 for a caller that reached it through a request. Unlike
+// mayProvision, this one refuses a write that names no caller at all: binding a
+// collection to a role is a grant decided in advance for people the caller may
+// never mirror, and a rule with a bypass one forgotten context value deep is the
+// hole this function exists to close.
 func mayBindMapping(ctx context.Context, tx db.Tx[db.Tenant], authority contracts.Authority) error {
-	p, ok := tenancy.PrincipalFrom(ctx)
-	if !ok || p.UserID == uuid.Nil {
-		return fmt.Errorf("%w: binding a group to a role is %s work, and this write names no caller who holds it",
-			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
-	}
-	if p.Permissions != nil {
-		if slices.Contains(p.Permissions, usercontracts.PermissionUserManage) {
-			return nil
-		}
-		return fmt.Errorf("%w: binding a group to a role is %s work, and this credential carries its own scope without it",
-			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
-	}
-	held, err := authority.Holds(ctx, tx, usercontracts.PermissionUserManage)
+	held, shape, err := callerHolds(ctx, tx, authority, usercontracts.PermissionUserManage)
 	if err != nil {
 		return fmt.Errorf("scim: cannot tell whether this caller holds %s: %w", usercontracts.PermissionUserManage, err)
 	}
-	if !held {
-		return fmt.Errorf("%w: binding a group to a role is %s work, and the roles this caller signs with do not grant it",
+	if held {
+		return nil
+	}
+	if shape == noCaller {
+		return fmt.Errorf("%w: binding a group to a role is %s work, and this write names no caller who holds it",
 			tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage)
 	}
-	return nil
+	return fmt.Errorf("%w: binding a group to a role is %s work, and this caller %s",
+		tenancy.ErrPolicyDenied, usercontracts.PermissionUserManage, lacksGrant(shape))
+}
+
+// mayProvision is the same recheck at the module's own door: every write of a
+// collection, and every write of a person, asks it before it reads a row.
+//
+// A membership is the reason it exists. PatchGroup does not only record that a
+// person is in a collection — it recomputes what the tenant's own mapping says that
+// membership grants, and calls SetRoles with the answer. So a caller that reached
+// these commands by name, past the guard on the HTTP door, would be handing out
+// roles with a credential the tenant issued for mirroring names, and the trail
+// would show the connector's own actor id doing it. `scim:provision` is the
+// permission the tenant grants to its identity provider and to nothing else; a
+// caller that carries a narrower scope than that is refused here, by name, in the
+// transaction the write would have committed in.
+//
+// One shape is answered differently from mayBindMapping, and the difference is the
+// grant at stake rather than the rule: a caller with no actor on the other side of
+// its context is this process's own code, and no actor anywhere was refused or
+// allowed by it. Binding a collection to a role is a grant decided in advance for
+// people the caller may never mirror, and that one is refused to a nameless write
+// whatever it is. Mirroring a collection is what this module exists to be asked;
+// the module declares no job and subscribes to no event today, so nothing reaches
+// these commands without an actor, and the case is allowed rather than refused so
+// that the day a background writer arrives it arrives at a comment that says the
+// decision was made here and not discovered.
+func (s *Service) mayProvision(ctx context.Context, tx db.Tx[db.Tenant]) error {
+	held, shape, err := callerHolds(ctx, tx, s.authority, contracts.PermissionProvision)
+	if err != nil {
+		return fmt.Errorf("scim: cannot tell whether this caller holds %s: %w", contracts.PermissionProvision, err)
+	}
+	if held || shape == noCaller {
+		return nil
+	}
+	return fmt.Errorf("%w: provisioning through this door is %s work, and this caller %s",
+		tenancy.ErrPolicyDenied, contracts.PermissionProvision, lacksGrant(shape))
+}
+
+// callerShape is how the caller of a write arrived, which decides who can say what
+// it holds.
+type callerShape int
+
+const (
+	// noCaller is a write with nobody on the other side of it.
+	noCaller callerShape = iota
+	// scopedCaller is a credential that carries its own list of grants.
+	scopedCaller
+	// signedInCaller is a session, whose list is two other modules' rows.
+	signedInCaller
+)
+
+// callerHolds answers whether the caller holds permission, and says which shape
+// asked, so the refusal can name the reason a caller was refused rather than
+// describing a shape it was not.
+//
+// A credential's own list is a ceiling and never an addition, so a caller that
+// carries one is answered from it by exact name, whoever it is and however it
+// reached this function. A session carries no list: what its roles grant is read
+// from rows this module does not own, so the question goes to the composition's
+// Authority, which answers it the way the guard on the module's own route does —
+// which is the point of the port rather than a comment on it: a caller who walked
+// past the guard is refused by the same rule the guard applied, not by a weaker
+// copy of it written here.
+func callerHolds(ctx context.Context, tx db.Tx[db.Tenant], authority contracts.Authority, permission string) (bool, callerShape, error) {
+	p, ok := tenancy.PrincipalFrom(ctx)
+	if !ok || p.UserID == uuid.Nil {
+		return false, noCaller, nil
+	}
+	if p.Permissions != nil {
+		return slices.Contains(p.Permissions, permission), scopedCaller, nil
+	}
+	held, err := authority.Holds(ctx, tx, permission)
+	return held, signedInCaller, err
+}
+
+// lacksGrant is the half of the refusal sentence that depends on the shape.
+func lacksGrant(shape callerShape) string {
+	if shape == scopedCaller {
+		return "carries its own scope without it"
+	}
+	return "signs in with roles that do not grant it"
 }
 
 // mapGroup is the one write of the mapping table, from whichever door asked. It

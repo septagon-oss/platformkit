@@ -36,8 +36,9 @@ type Deps struct {
 	// composition answers it — see contracts.RoleDirectory.
 	Roles contracts.RoleDirectory
 
-	// Authority answers whether the caller of a mapping write holds the permission
-	// that decides what a membership grants. Which roles a person holds is
+	// Authority answers whether the caller of a write holds the permission that
+	// command names: the provisioning door's own, for a person or a collection, and
+	// user:manage for the binding that decides what a membership grants. Which roles a person holds is
 	// modules/user's column and what those roles grant is the auth module's table;
 	// this module reads neither, so the composition answers the joined question —
 	// see contracts.Authority.
@@ -72,7 +73,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		panic("scim.Module: Deps.Roles is required; wire contracts.RoleDirectory over whatever owns the tenant's role names, or a group can be bound to a role that does not exist")
 	}
 	if deps.Authority == nil {
-		panic("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or MapGroup's command-level recheck has nothing to ask")
+		panic("scim.Module: Deps.Authority is required; wire contracts.Authority over whoever resolves a caller's roles into permissions, or a command's recheck of who is asking has nothing to ask")
 	}
 	svc := internal.NewService(deps.Users, deps.Roles, deps.Authority)
 	return svc, module.Module{

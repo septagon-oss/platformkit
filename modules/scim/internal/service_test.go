@@ -618,7 +618,7 @@ func TestTheDiscoveryDocumentsAnswerForThemselves(t *testing.T) {
 		}
 		// The document and the router have to agree, because a client configures
 		// itself from the document: bulk is off and no /Bulk door is mounted.
-		if cfg.Bulk.Supported || cfg.ChangePassword.Supported || cfg.Sort.Supported || cfg.SupportingETag {
+		if cfg.Bulk.Supported || cfg.ChangePassword.Supported || cfg.Sort.Supported || cfg.ETag.Supported {
 			t.Errorf("the document promises a capability the service does not implement: %+v", cfg)
 		}
 		if !cfg.Patch.Supported || !cfg.Filter.Supported {

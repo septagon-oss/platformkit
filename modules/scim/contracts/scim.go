@@ -51,6 +51,14 @@ const (
 	SchemaGroup = "urn:ietf:params:scim:schemas:core:2.0:Group"
 	// SchemaListResponse is the urn a list result names.
 	SchemaListResponse = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
+	// SchemaProviderConfig is the urn the service's own account of itself names.
+	// RFC 7644 §5 names it as the document's identity, and a client that configures
+	// itself from the answer reads it before it reads a single field.
+	SchemaProviderConfig = "urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig"
+	// SchemaError is the urn every refusal at this door names. RFC 7644 §3.12 gives
+	// a protocol client one document to decode whatever went wrong, and a refusal
+	// in another shape is a body it has to guess at.
+	SchemaError = "urn:ietf:params:scim:api:messages:2.0:Error"
 	// SchemaPatchOp is the urn a PATCH body names.
 	SchemaPatchOp = "urn:ietf:params:scim:api:messages:2.0:PatchOp"
 	// ResourceTypeUser and ResourceTypeGroup name the two types this module
@@ -246,8 +254,12 @@ type GroupList struct {
 // client must not try. It is a document rather than configuration — every field
 // answers a question about this module's code, which is the only honest source.
 type ProviderConfig struct {
-	Schemas               []string      `json:"schemas"`
-	SupportingETag        bool          `json:"supportETag"`
+	Schemas []string `json:"schemas"`
+	// ETag is the protocol's own declaration of whether this service issues a
+	// resource version it would honour back (RFC 7643 §5). It is an object with a
+	// `supported` inside, and this one says no: see the note at Meta.Version and
+	// the door's refusal of an If-Match it cannot evaluate.
+	ETag                  ConfigFeature `json:"etag"`
 	Filter                ConfigFeature `json:"filter"`
 	ChangePassword        ConfigFeature `json:"changePassword"`
 	Sort                  ConfigFeature `json:"sort"`
@@ -255,6 +267,17 @@ type ProviderConfig struct {
 	AuthenticationSchemes []AuthScheme  `json:"authenticationSchemes,omitempty"`
 	Patch                 ConfigFeature `json:"patch"`
 	Meta                  Meta          `json:"meta"`
+}
+
+// ErrorResponse is the document RFC 7644 §3.12 requires at every refusal. It is
+// the protocol's shape and not this server's: a client that speaks SCIM decodes a
+// refusal into it, and `status` is a string because the specification writes it as
+// one — a number in that field is a document the client cannot finish parsing, and
+// the reason a refusal is never a bare status.
+type ErrorResponse struct {
+	Schemas []string `json:"schemas"`
+	Detail  string   `json:"detail,omitempty"`
+	Status  string   `json:"status"`
 }
 
 // ConfigFeature is one yes-or-no capability, with the number behind a yes that
@@ -321,7 +344,7 @@ type SchemaAttribute struct {
 // Concurrency: this service issues no resource version it can compare a write
 // against, so it accepts no conditional write: the protocol door refuses a request
 // that carries If-Match before it reaches any of the commands below (see
-// Service.ProviderConfig, which says `supportETag: false`, and the note at
+// Service.ProviderConfig, which says `etag.supported: false`, and the note at
 // Meta.Version, which is an answer and not a demand). What a command does check is
 // the state it is about to change. Every write it performs is a
 // command on modules/user that rechecks its own state inside its own transaction
@@ -341,13 +364,17 @@ type SchemaAttribute struct {
 // held and not before it — otherwise the second writer restores a role the first
 // one had just taken away, which is a revoked grant that outlives the revocation.
 //
-// Authority: no group command writes the tenant's role mapping. The protocol
-// carries no such field (see GroupDraft.Role), and the binding is written by
-// MapGroup alone, which rechecks the caller's authority inside its transaction
-// before it writes: the guard on the door is not the whole rule, because MapGroup
-// is exported and any module may call it. The recheck asks Authority, which the
-// composition answers from the two tables that decide it, so no caller is refused
-// by a list this module keeps and none is admitted by the absence of one.
+// Authority: every write of this service — of a person and of a collection —
+// rechecks who is asking inside the transaction it would write in, against
+// `scim:provision`: the guard on the door is not the whole rule, because these
+// commands are exported and any module may call them, and PatchGroup spends what
+// the tenant's own binding says a membership grants. No group command writes the
+// tenant's role mapping at all. The protocol carries no such field (see
+// GroupDraft.Role), and the binding is written by MapGroup alone, which asks the
+// same question about `user:manage`, the permission that decides what a membership
+// means. Both ask Authority, which the composition answers from the two tables that
+// decide it, so no caller is refused by a list this module keeps and none is
+// admitted by the absence of one.
 type Service interface {
 	// ProviderConfig, ResourceTypes, ResourceType, Schemas and Schema are the
 	// discovery documents. They take no transaction because they read no rows:

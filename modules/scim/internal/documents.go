@@ -21,11 +21,17 @@ import (
 // providerConfig is the service's own account of itself. Every yes is a route
 // that exists, and every no is one that does not: bulk is false and no /Bulk is
 // mounted, so a client that reads the document and a client that probes the
-// address get the same answer.
+// address get the same answer. The document is what the protocol's schema says it
+// is, urn and all — a client that cannot name the document cannot read the nos in
+// it, and a no it cannot read is a client that keeps asking.
 func (s *Service) ProviderConfig(_ context.Context) (*contracts.ProviderConfig, error) {
 	return &contracts.ProviderConfig{
-		Schemas:        []string{contracts.SchemaUser, contracts.SchemaGroup},
-		SupportingETag: false,
+		// The document names itself. RFC 7643 §5 gives it that urn, and a client
+		// that configures itself from this answer matches on it before it reads a
+		// field: the two resource schemas below are what the door serves, and are
+		// not what this document is.
+		Schemas: []string{contracts.SchemaProviderConfig},
+		ETag:    contracts.ConfigFeature{Supported: false},
 		Filter: contracts.ConfigFeature{
 			Supported: true,
 		},
