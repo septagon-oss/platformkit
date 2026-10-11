@@ -54,7 +54,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, contents := content.Module(content.Deps{})
+	_, contents := content.New(content.Deps{})
 	contents.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)

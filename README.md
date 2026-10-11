@@ -46,8 +46,10 @@ describes the available settings; its defaults are for local development.
 ## Build your application
 
 Use PlatformKit as a versioned Go dependency and compose it with your own modules.
-[The reference application](apps/platformkit/modules.go) shows how to connect
-module constructors and their typed dependencies. Start with
+[The reference application](apps/platformkit/app.go) shows how to name the
+modules you use and let them wire themselves by contract, and
+[apps/platformkit/product.go](apps/platformkit/product.go) shows the share an
+application owns: the values no module may decide. Start with
 [the task module](modules/task/) when adding a capability: its public contracts
 describe the behavior, while its implementation stays behind that boundary.
 
@@ -90,11 +92,24 @@ return app.Run(ctx, deployment, app.All)
     or migrates anything, and gives back what its own boot declared when its `Runtime`
     closes — or when a refusal of its routes leaves no `Runtime` to close. A refused
     build changes nothing in the process, nor the database it named.
+  - **Added** — `App.Describe`, the same resolved plan as `Explain` rendered as
+    a versioned document (`platformkit.composition.v1`): the build order, who
+    supplies whose need, what `Choose` settled over whom, the implementation the
+    deployment picked, the configuration section *names* each module read, and the
+    problems a composition that does not resolve is refused for. It carries names
+    only — no configuration value, no deployment input, no credential, no tenant
+    row — and a refused composition describes no modules at all. It is a reading of
+    your own composition, not a sandbox: the modules' trusted build functions run
+    during it, as they do for `Validate` and `Explain`.
   - **Made reusable** — the reference application is composed this way in
     [apps/platformkit/app.go](apps/platformkit/app.go), and what it resolves to is
     committed as [COMPOSITION.development.md](apps/platformkit/COMPOSITION.development.md)
     and [COMPOSITION.production.md](apps/platformkit/COMPOSITION.production.md),
-    written by `pkit.Server.Explain` and refused when it drifts.
+    written by `pkit.Server.Explain` and refused when it drifts, and beside them
+    as [COMPOSITION.development.json](apps/platformkit/COMPOSITION.development.json)
+    and [COMPOSITION.production.json](apps/platformkit/COMPOSITION.production.json),
+    written by `pkit.App.Describe` on the same drift discipline: a composition
+    changed in either encoding and not described fails a check.
 
 ## Build a screen
 

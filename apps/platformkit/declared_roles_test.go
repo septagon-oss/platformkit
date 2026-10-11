@@ -8,6 +8,8 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events/providers/memory"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/module"
+	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 )
 
 // TestEveryDeclaredRoleReachesTheScreensItsModuleOwns is rule 3's other half, read
@@ -107,4 +109,44 @@ func brief(body string) string {
 		return string(r)
 	}
 	return string(r[:200]) + "…"
+}
+
+// declaredRoles is every role every composed module declares, in composition
+// order, in the shape auth.SeedRoles writes. It used to be production code:
+// compose filled the personas from it, because the task desk's coordinator is the
+// task module's fact. The list somebody wrote down is roles.go's now, and this is
+// the census that keeps the two the same answer — the assertion the derivation
+// used to make, made over the resolved composition instead of a slice a
+// composition function happened to fill.
+func declaredRoles(mods []module.Module) []authcontracts.Role {
+	var out []authcontracts.Role
+	for _, m := range mods {
+		for _, r := range m.Roles {
+			out = append(out, authcontracts.Role{Name: r.Name, Grants: authcontracts.Permissions(r.Grants)})
+		}
+	}
+	return out
+}
+
+// TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds is the other
+// half of that: a module that declares a role this list omits is a role a tenant
+// is never seeded with, and the roles screen would offer a tick that changes
+// nothing for a person who was never given it.
+func TestEveryRoleEveryComposedModuleDeclaresIsOneThisApplicationSeeds(t *testing.T) {
+	_, cfg := configure(t)
+	c := compose(cfg)
+	seeded := map[string]authcontracts.Permissions{}
+	for _, r := range personas {
+		seeded[r.Name] = r.Grants
+	}
+	for _, r := range declaredRoles(c.modules) {
+		got, ok := seeded[r.Name]
+		if !ok {
+			t.Errorf("%s declares the %s role, which no persona this application seeds holds: the grant is a tick that changes nothing", r.Name, r.Name)
+			continue
+		}
+		if strings.Join(got, ",") != strings.Join(r.Grants, ",") {
+			t.Errorf("the %s role is seeded with %v and its module declares %v", r.Name, got, r.Grants)
+		}
+	}
 }

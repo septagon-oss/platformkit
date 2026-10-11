@@ -21,18 +21,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"sync"
 
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/app"
-	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/httpx"
+	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/screens"
-
-	"github.com/septagon-oss/platformkit/pkit"
 )
 
 // faultPage renders the refusal for this application's shell.
@@ -108,7 +109,10 @@ const (
 // four lines.
 func faultChrome() page.Chrome {
 	return page.Chrome{
-		Brand:      "PlatformKit",
+		// The installation's own word, the same constant the workspace's face
+		// falls back to: this file composes pages of this application and has no
+		// business spelling its own name twice.
+		Brand:      brandName,
 		Assets:     pinnedAssets,
 		Stylesheet: ui.Compose(design.Default()),
 		SignIn:     pinnedSignIn,
@@ -131,8 +135,7 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
-func faultPage(c composition) httpx.Fault {
-	messages := c.messages
+func faultPage(messages page.Messages, granter page.Granter) httpx.Fault {
 	return page.FaultHandler(page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
@@ -141,7 +144,7 @@ func faultPage(c composition) httpx.Fault {
 		// Who may hand out what the page refused, as a role and never as a name:
 		// the grant that gates role management is the auth module's fact, and its
 		// label is that module's words, read off the manifest that defines it.
-		Granter: c.granter,
+		Granter: granter,
 		// The ask door exists in this composition, so the refusal page may offer
 		// it. A product that wired no AskForAccess leaves this empty and the page
 		// draws no button — the kernel never offers a door it has not mounted.
@@ -167,49 +170,115 @@ func faultPage(c composition) httpx.Fault {
 // carried on the call, so the OpenAPI document names the fields a shell parses
 // rather than an empty object — see app.WorkspaceCatalogRoute.
 func workspaceCatalog() func(api *httpx.API) {
-	return app.WorkspaceCatalogRoute(func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
-		document := screens.Describe(ctx, resources)
-		return &document, nil
-	})
+	// The gate is built here, one per composition, and not at file scope: see
+	// referenceGate.
+	return app.WorkspaceCatalogRoute(documentBuilder(new(referenceGate)))
 }
 
-// appOptions is the same composition app.go sentences, read as app.Options: the
-// in-process answer for a test that wants the handler rather than a process, and
-// the reason the two cannot disagree about who provides what. The four fields
-// that belong to a process rather than to a composition — the role, the
-// transports, the stores, the installation's host — are filled here, because pkit
-// leaves them to whoever is starting something.
-func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
-	p, err := sentences(cfg, c).Plan(pkit.Deployment{Environment: pkit.Development, Config: cfg})
-	if err != nil {
-		panic("platformkit: " + err.Error())
+// documentBuilder is the body of that mount: the same catalogues read once, the
+// same gate, and the resources the request's caller may reach. It is a function
+// of its gate because the one thing about this handler that is not a translation
+// is a refusal, and a refusal nobody can call is a refusal nobody tests.
+func documentBuilder(gate *referenceGate) func(context.Context, []httpx.Resource) (*screens.Catalog, error) {
+	// The catalogues this composition answers in. The document is read by a shell
+	// that is not a browser, and every word in it is one a person will read, so it
+	// is negotiated the same way the page beside it is — the request's own
+	// Accept-Language, restricted to the languages the tenant it resolved to is
+	// served in, that tenant's default behind them. A handler that negotiated less
+	// would answer a pt-only tenant in English from this address while the screen
+	// one click away spoke Portuguese.
+	messages := catalogues()
+	return func(ctx context.Context, resources []httpx.Resource) (*screens.Catalog, error) {
+		// A reading hint that names a module this installation did not compose is
+		// a composition mistake rather than a module's, and the document is the
+		// thing the promise is made in, so the check is made once, here, against
+		// the list this process actually registered. A Spec's own mount check
+		// cannot see a registration made after it, and a mount-time check cannot
+		// see one made after the mount: a worker process registers only the
+		// resources its jobs read, so the list standing at boot is not the list a
+		// shell would be served — which is why this rides the first build of the
+		// document rather than the mount. What the answer costs is the document
+		// and nothing else: every entry in it is a reference a shell would follow,
+		// so the composition that cannot answer the question refuses to publish an
+		// answer rather than publishing a half of one. Boot stays up: every route
+		// this process mounted resolves its own references at its own mount, and
+		// the document is the only thing this refusal can name.
+		if err := gate.check(resources); err != nil {
+			return nil, err
+		}
+		var preferences []string
+		if r, ok := httpx.RequestFrom(ctx); ok {
+			preferences = append(preferences, r.Header.Get("Accept-Language"))
+		}
+		if tenant, ok := tenancy.FromContext(ctx); ok {
+			preferences = page.TenantPreferences(page.Request{Tenant: tenant}, preferences...)
+		}
+		selected := page.SelectLocale(messages, preferences...)
+		// One formatter, no arguments: no hint in this contract takes a verb, so the
+		// document asks for a key and its fallback and nothing else.
+		var text screens.Text = func(key, fallback string) string {
+			return selected.Formatter.Text(key, fallback)
+		}
+		document := screens.DescribeLanguage(ctx, resources, text)
+		return &document, nil
 	}
-	opts := p.Options()
-	opts.Role = role
-	// The four fields pkit leaves to whoever is starting something. Transports and
-	// Caches are not decoration: kit/app refuses a role whose mode has no
-	// constructor and a composition whose cache.adapter names a store it never
-	// learned to reach, so a test that lost these lines fails in app.New with a
-	// message about memory and jetstream, or about Caches.Valkey, rather than
-	// booting the wrong thing.
-	opts.Transports = transports()
-	opts.Caches = caches()
-	opts.Installation = app.Installation{Host: cfg.Server.InstallationHost}
-	return opts
+}
+
+// referenceGate is the reference check's once-and-its-result. The once is there
+// because the question is about the composition, which does not change after
+// boot, and asking it per request would be a walk of every schema on somebody's
+// page load. It is held by one mount rather than by the process because a
+// process composes several applications — every test binary in this repository
+// boots the reference composition more than once — and a process-wide once lets
+// the first build of a document decide for every later one: a second
+// composition's dangling reference would go unchecked, and a correct
+// composition behind a broken one would serve nothing but 500s. The question
+// each composition asks is about the list *it* registered.
+type referenceGate struct {
+	once  sync.Once
+	fault error
+}
+
+// check asks the question the first time it is called and remembers the answer.
+// sync.Once is the synchronisation: a reader here is a goroutine that has just
+// returned from Do, which happens after the answer was written.
+func (g *referenceGate) check(resources []httpx.Resource) error {
+	g.once.Do(func() {
+		if bad := rest.CheckReferences(resources); bad != "" {
+			g.fault = errors.New("apps/platformkit: " + bad)
+		}
+	})
+	return g.fault
+}
+
+// workspaceFace mounts every module-less route this product owns on the workspace
+// surface. app.Options.WorkspaceCatalog is the only seam that hands a composition
+// the *httpx.API of /api/v1/app/… — no module may compose that prefix, and kit may
+// not import ui — and it takes an arbitrary mount function, so a second such route
+// needs no new kernel seam, only this line. The field's name is now narrower than
+// what runs through it: the catalogue and the connection document are both mounted
+// here, and both are the composition's because both addresses are the kernel's and
+// both bodies are ui's.
+func workspaceFace(routes ...func(api *httpx.API)) func(api *httpx.API) {
+	return func(api *httpx.API) {
+		for _, mount := range routes {
+			mount(api)
+		}
+	}
 }
 
 // faultShell is the chrome the two ask pages are drawn with: the same frame, the
 // same catalogue and the same way on as the refusal page they follow, built once
 // per composition. One page per shell, and the shell is this file's to build —
 // the admin module builds its own, for the screens it mounts.
-func faultShell(c composition) page.Shell {
+func faultShell(messages page.Messages, granter page.Granter) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		Granter:   c.granter,
+		Granter:   granter,
 		Ask:       pinnedAsk,
-		Messages:  c.messages,
+		Messages:  messages,
 	}
 }

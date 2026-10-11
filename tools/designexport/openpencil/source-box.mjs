@@ -8,6 +8,7 @@ const requireBox = (condition, message) => { if (!condition) throw new Error(`Na
 // https://drafts.csswg.org/css-overflow-3/#corner-clipping
 export function planSourceBox(node, borders) {
   const style = node.style, box = { version: 1 }
+  if (node.sizing?.width === '100%') box.width = '100%'
   if (style['overflow-x'] === 'hidden' || style['overflow-y'] === 'hidden') {
     requireBox(style['overflow-x'] === 'hidden' && style['overflow-y'] === 'hidden', 'requires matching hidden overflow axes')
     box.overflow = borders

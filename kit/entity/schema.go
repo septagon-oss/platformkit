@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"maps"
 	"reflect"
 	"slices"
 	"strconv"
@@ -19,6 +20,38 @@ type Schema struct {
 	Entity string  `json:"entity"`
 	Path   string  `json:"path"`
 	Fields []Field `json:"fields"`
+}
+
+// RevisionField is the json name of a row's own write counter: the number a
+// stale-base refusal quotes, and the only thing on a row that counts its writes.
+// A Spec that carries it moves it itself, in the same UPDATE as the write that
+// moved anything else (kit/rest), and a caller may read it and may not name it.
+const RevisionField = "revision"
+
+// RevisionCondition is the name a generated edit form posts the row's write count back
+// under: the number the form was drawn from, carried so the write can be refused against
+// a row that has moved since the person read it.
+//
+// It is deliberately not RevisionField. A body's "revision" is a value to store, which
+// every write door refuses — a number a caller can set is no use for refusing a stale
+// write — while this is a condition on the write and writes nothing itself. Two names,
+// because the two questions differ; one owner, because the door that draws the form and
+// the door that reads it may not then disagree about what the form carried.
+const RevisionCondition = "expectedRevision"
+
+// ServerOwned reports whether a field belongs to the server at a write door.
+//
+// There are two kinds. Base's, which ReadOnly already names: the id, the tenant
+// and the two timestamps. And the row's own write counter, which an entity writes
+// beside them and which is nobody's else to set: a number a caller can type is not
+// a number a stale write can be refused with, and the two facts — the document says
+// readOnly, the kernel moves it — are one rule seen from either side.
+//
+// A door that took either from a body stored what was sent and lost the record it
+// was meant to be keeping, so every write door refuses or discards them together,
+// asked through this one question rather than a second list somebody maintains.
+func ServerOwned(f Field) bool {
+	return f.ReadOnly || (f.Name == RevisionField && f.Type == TypeInt)
 }
 
 // FieldType is the closed set of shapes a screen knows how to render and a
@@ -104,6 +137,18 @@ type Field struct {
 	// control. It is a description and not a label: the entities here write
 	// "Short summary of the task", which reads under an input and not on it.
 	Doc string `json:"doc,omitempty"`
+
+	// Presentation is how a read names, groups, colours and shows this field,
+	// from the `ui:` directives of §2.3 and the `enumLabels`/`enumTones` tags.
+	// It is a value and not a pointer because the zero FieldHints is exactly "no
+	// body said anything about this field" and omitzero prints no key for it; a
+	// pointer would give the same nothing two shapes, one of which a shell would
+	// have to nil-check for every field of every entity.
+	//
+	// It sits beside Widget, Present and Display rather than replacing any of
+	// them: what to type into, how to read and how much to show are three
+	// questions with three answers.
+	Presentation FieldHints `json:"presentation,omitzero"`
 
 	// Index locates the field in the struct. It is exported for one caller,
 	// kit/rest's PATCH merge, which decodes a body into the field this names;
@@ -208,6 +253,19 @@ func copyFields(fields []Field) []Field {
 	for i := range out {
 		out[i].Enum = slices.Clone(out[i].Enum)
 		out[i].Index = slices.Clone(out[i].Index)
+		// The two hint maps are the new way to break the promise Fields makes
+		// above — a caller may customise this metadata — so they are cloned with
+		// the slices, or one consumer's label becomes the next caller's schema.
+		out[i].Presentation.EnumLabels = maps.Clone(out[i].Presentation.EnumLabels)
+		out[i].Presentation.EnumTones = maps.Clone(out[i].Presentation.EnumTones)
+		if m := out[i].Presentation.Money; m != nil {
+			money := *m
+			out[i].Presentation.Money = &money
+		}
+		if ref := out[i].Presentation.Reference; ref != nil {
+			reference := *ref
+			out[i].Presentation.Reference = &reference
+		}
 	}
 	return out
 }
@@ -274,6 +332,53 @@ func derive(t reflect.Type) []Field {
 				// No value is read: `ui:"display:yes"` sets the same flag as `ui:"display"`, and a value
 				// would be a second shape nothing renders.
 				f.Display = true
+			case "label":
+				f.Presentation.Label = value
+			case "help":
+				f.Presentation.Help = value
+			case "section":
+				f.Presentation.Section = value
+			case "visibility":
+				// A bare `visibility:` sets the empty string, which is "not declared"
+				// and so refuses at mount rather than silently meaning "shown".
+				f.Presentation.Visibility = value
+			case "format":
+				f.Presentation.Format = value
+			case "reference":
+				f.Presentation.Reference = &FieldReference{Resource: value}
+			case "currency", "scale":
+				// Two flat directives, one object on the wire. The grammar has no
+				// nested value syntax, and inventing one here for two keys would be
+				// a second parser; the mount gate refuses the half of the pair that
+				// arrives alone (V26).
+				if f.Presentation.Money == nil {
+					f.Presentation.Money = &FieldMoney{}
+				}
+				if key == "currency" {
+					f.Presentation.Money.CurrencyField = value
+				} else {
+					f.Presentation.Money.Scale, _ = strconv.Atoi(value)
+				}
+			}
+		}
+		for _, tag := range []struct {
+			name string
+			into *map[string]string
+		}{
+			{"enumLabels", &f.Presentation.EnumLabels},
+			{"enumTones", &f.Presentation.EnumTones},
+		} {
+			// Their own tags, not `ui:` directives: the entity tag `enum:"open,done"`
+			// is the closed set of values, and a directive named `enum:` one
+			// character from it. A value may therefore not contain a comma — V25
+			// refuses it rather than let this parser drop the rest of the map.
+			if raw := sf.Tag.Get(tag.name); raw != "" {
+				into := make(map[string]string)
+				for _, pair := range strings.Split(raw, ",") {
+					key, value, _ := strings.Cut(pair, "=")
+					into[key] = value
+				}
+				*tag.into = into
 			}
 		}
 		out = append(out, f)

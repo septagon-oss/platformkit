@@ -3,7 +3,7 @@ package httpx_test
 // The effect marker is the one kernel table a tenant transaction writes, and it is
 // written by necessity: a marker that sat outside the transaction it describes would
 // say nothing about whether that transaction committed. The widening is real — see
-// migrations/000045_command_effect.up.sql for what it costs and for what a forged row
+// migrations/000055_command_effect.up.sql for what it costs and for what a forged row
 // can buy — and this file is its two bounds. A tenant's transaction may place a marker
 // for its own tenant's keys and can neither read nor place one for another tenant's;
 // and the marker is inside the transaction, which means a command the database rolled

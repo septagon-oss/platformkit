@@ -89,7 +89,7 @@ func mountConfigured(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration b
 func mountRecorded(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration bool, configure ...func(*auth.Deps)) (chi.Router, *db.Conn, contracts.Auth, *httpx.API) {
 	t.Helper()
 	mailbox, notices = &authtest.Mailbox{}, &authtest.Notices{}
-	users, userModule := user.Module(user.Deps{
+	users, userModule := user.New(user.Deps{
 		Administration: &usercontracts.AdministrationFunc{Ask: auth.AdministeringRoles},
 		Granting:       allowGranting,
 	})
@@ -104,7 +104,7 @@ func mountRecorded(t *testing.T, conn *db.Conn, oidc auth.OIDC, registration boo
 	for _, change := range configure {
 		change(&deps)
 	}
-	svc, authModule := auth.Module(deps)
+	svc, authModule := auth.New(deps)
 	subs = authModule.Subscriptions
 	seed(t, conn, acme)
 

@@ -43,7 +43,11 @@ Each surface has its own chain, and the difference is not cosmetic:
   size, and a 500 with the body discarded wherever a response is still there to
   discard), caches a safe 2xx for sixty seconds, and puts a limit on an anonymous
   write because it is the one surface with no account to lock out
-  (`Options.WriteLimiter`, counted by tenant, route and address).
+  (`Options.WriteLimiter`, counted by tenant, route and address). A refusal from
+  that counter is a 429 whatever the counter's own reason was — a spent window and
+  an attempt the counter could not record are refused here, and only a store that
+  cannot be reached at all is the outage this kernel fails open on
+  ([kit/limit/README.md](../limit/README.md) owns the four).
 - **App** recognises the caller, refuses an anonymous caller except at a route
   that declares `Public()` — and `AnonymousDoors` lists those, because "the
   workspace admits nobody by default" is only checkable once you can see who it
@@ -211,7 +215,7 @@ absent, so the claim keeps its key for the rest of the day it was written for, h
 the answer the handler wrote beside a mark that says the answer is held and not owed.
 The next press with that key resolves the mark rather than guessing at it: every keyed
 command writes a marker row into `platformkit_command_effect` inside its own transaction
-(`markCommandEffect`, migration `000045`) and takes an advisory lock named after that
+(`markCommandEffect`, migration `000055`) and takes an advisory lock named after that
 row before it writes, so the marker is in the database exactly when the command's effect
 is, and the press reads the marker only after it has taken that same lock. A COMMIT
 still executing holds the lock and shows no marker yet, so the press that finds the lock
@@ -241,8 +245,8 @@ already refused the only declaration that could reach that state on purpose, so 
 that lost its principal on the way is a route that cannot keep the promise the header
 advertises, and running the command would be a 200 promising an answer nothing recorded.
 
-The rows live in `platformkit_idempotency` (migration `000044`) and their effect markers
-in `platformkit_command_effect` (migration `000045`), keyed by tenant,
+The rows live in `platformkit_idempotency` (migration `000054`) and their effect markers
+in `platformkit_command_effect` (migration `000055`), keyed by tenant,
 caller, operation and key, written only by this package under its own system token,
 held for a day after the answer and emptied by the `idempotency-purge` job
 (`httpx.PurgeIdempotency`, scheduled by `kit/app`). The marker table is the one thing
@@ -297,7 +301,7 @@ detached write, its budget and its purge are the shape `kit/limit` wrote for
 the `[data-request-notice]` nodes `ui/document` already renders and the `Ext` prop
 `ui/components` already emits; `kit/app` schedules the purge in `kernelJobs`.
 
-**Added.** `kit/httpx/idempotency.go`, migration `000044`, `ui/assets/js/command.js`
+**Added.** `kit/httpx/idempotency.go`, migration `000054`, `ui/assets/js/command.js`
 and three declaration fields. Nothing existing could carry this: `kit/limit` counts a
 window under a key and has no response to replay; `modules/audit`'s
 `(tenant_id, event_id)` deduplication happens downstream of the decision, so it cannot

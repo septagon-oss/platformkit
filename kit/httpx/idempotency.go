@@ -96,14 +96,14 @@ const IdempotencyReplayHeader = "Idempotency-Replay"
 // other means never send it again.
 const IdempotencyRefusalHeader = "Idempotency-Refusal"
 
-// idempotencyTable is the one this package owns. See migrations/000044_idempotency.
+// idempotencyTable is the one this package owns. See migrations/000054_idempotency.
 const idempotencyTable = "platformkit_idempotency"
 
 // effectTable is the marker a keyed command writes inside its own transaction, so that
 // the marker is in the database exactly when the command's effect is and nowhere when
 // it is not. It is the one statement in the kernel that can say which way a COMMIT
 // nobody read went, and the only thing read out of it is whether a row is there and
-// which request wrote it. See migrations/000045_command_effect.
+// which request wrote it. See migrations/000055_command_effect.
 const effectTable = "platformkit_command_effect"
 
 const (
@@ -151,7 +151,7 @@ const (
 // domain rows and refused the response leaves exactly this row behind. That is why
 // the state below settles a key rather than releasing it. What resolves such a claim
 // is the effect marker the command's own transaction wrote (platformkit_command_effect,
-// migrations/000045): a request whose COMMIT was never acknowledged leaves `unconfirmed`
+// migrations/000055): a request whose COMMIT was never acknowledged leaves `unconfirmed`
 // beside the answer it did get, and the next press with that key reads the marker — the
 // command ran if the marker is there and ran nowhere if it is not.
 const outcomeUncertainSQL = "NOT settled AND expires_at < now()" +

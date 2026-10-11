@@ -81,6 +81,49 @@ const (
 	// first attempt fails validation, and an office behind one NAT is several
 	// of them at once.
 	ResetRedemptions = 20
+
+	// AssertionsPerAddress is how many SAML assertions one address may present
+	// at the assertion consumer service inside AssertionWindow.
+	//
+	// The ACS is the only anonymous POST this module serves, and it is the one
+	// sign-in leg the kernel's own limit does not reach: `kit/httpx`'s write
+	// limiter runs on the Public surface and this leg is mounted on the app
+	// surface beside the OIDC legs, so nothing counted it and every POST bought
+	// an XML parse and an RSA verification. Sixty a minute is the bound the
+	// kernel sets for the public forms it does count (`kit/httpx/surfaces.go`
+	// `publicWriteLimit`, `publicWriteWindow`), taken rather than invented: the
+	// same shape of caller, the same "an office behind one NAT is several people
+	// at once" that made ten and twenty the numbers above, and a number that is
+	// not this module's own to argue about.
+	//
+	// It is a bound on cost, not on trust: a spent assertion is refused by its
+	// own row whatever the counter says, and a person who presents one after
+	// being refused here presents it again a minute later and gets in.
+	AssertionsPerAddress = 60
+
+	// AssertionWindow is the minute those sixty assertions are counted over —
+	// the window of the bound above, and deliberately not AttemptWindow: sixty
+	// presentations spread over fifteen minutes is a Monday morning at one
+	// company's front door, not an attack.
+	AssertionWindow = time.Minute
+
+	// PasskeyPrompts is how many passkey ceremonies one address may begin inside
+	// a window.
+	//
+	// Every one of these legs is public and every one writes a row: the nonce a
+	// signature has to match. Uncapped, a stranger with a browser grew the table
+	// one row per request, and the second-factor leg did the password hashing for
+	// an address nobody knows on top of it. The row is swept once its two-minute
+	// window closes (Service.Purge), which bounds the damage a limited run does;
+	// the cap is what stops the run.
+	//
+	// Twenty, for the same two reasons as ResetRedemptions: a person who cannot
+	// get their phone to answer begins again, and one office address is several
+	// people. That is also the residual, stated: a large office behind one NAT
+	// signing everybody in with a passkey at nine in the morning will find this
+	// cap, and the answer is the deployment counting the real client address
+	// rather than the proxy's, which is what ClientOf documents.
+	PasskeyPrompts = 20
 )
 
 // Limiter counts failed logins, per account and per source address, in the one
@@ -122,7 +165,10 @@ const (
 // log. It is the right way for this one to fail: the alternative is an
 // installation nobody can sign in to because a counter table is unreachable,
 // and every refusal this makes is a refusal the password check would make
-// anyway.
+// anyway. Which stores those are is stated once, in kit/limit/README.md: an
+// attempt the counter did not record, because the key's row was still busy with
+// it, arrives as a refusal carrying no error, and a refusal is never allowed
+// here.
 //
 // It lives in contracts rather than in internal/ because the lockout is part of
 // what Login promises, so the fake keeps it too and the conformance suite can
@@ -150,6 +196,35 @@ func pairKey(email, ip string) string  { return "auth/pair/" + emailHash(email) 
 func forgotKey(ip string) string       { return "auth/forgot/" + ip }
 func redeemKey(ip string) string       { return "auth/redeem/" + ip }
 func notedKey(email, ip string) string { return "auth/noted/" + emailHash(email) + " " + ip }
+func promptKey(ip string) string       { return "auth/passkey-prompt/" + ip }
+
+// acsKey is one address knocking on the assertion consumer service. The assertion
+// itself never enters the key: it is somebody else's credential, its id is a value that
+// appears in a log line elsewhere, and a counter keyed by it would be a list of every
+// assertion ever presented here.
+func acsKey(ip string) string { return "auth/saml-acs/" + ip }
+
+// AssertionPresented counts one assertion presented from this address at the assertion
+// consumer service and reports whether it is within AssertionsPerAddress. It runs ahead
+// of the parse and the signature, which is the whole of its point: the refusal has to
+// cost less than the thing it is refusing.
+//
+// The address is the one asking and no identity is consulted, because there is none yet —
+// which is also why an address that cannot be trusted is not: `ClientOf` takes the peer
+// address and no forwarded header, for the reason it gives.
+//
+// A counter that cannot be read allows the presentation and says so, which is the answer
+// every other limiter here gives: an installation nobody can sign in to because a counter
+// table blinked is a worse failure than traffic this limit would not have stopped.
+func (l *Limiter) AssertionPresented(ctx context.Context, ip string) bool {
+	ok, _, err := l.store.Allow(ctx, acsKey(ip), AssertionsPerAddress, AssertionWindow)
+	if err != nil {
+		slog.ErrorContext(ctx, "auth: the assertion limit could not be read; the presentation is allowed",
+			"error", err)
+		return true
+	}
+	return ok
+}
 
 // emailHash is the address as a key: SHA-256 of EmailKey, in hex.
 //
@@ -254,6 +329,15 @@ func (l *Limiter) VerificationMail(ctx context.Context, email string) (bool, err
 // question about it.
 func (l *Limiter) Redeemed(ctx context.Context, ip string) bool {
 	return l.within(ctx, redeemKey(ip), ResetRedemptions)
+}
+
+// Prompted counts one passkey ceremony begun from an address and reports whether
+// it is within PasskeyPrompts for this window. It counts the address that asked
+// for the prompt and never the address the prompt was asked about: the second of
+// the two would turn the cap into the account-enumeration question the ceremony's
+// begin leg exists not to answer.
+func (l *Limiter) Prompted(ctx context.Context, ip string) bool {
+	return l.within(ctx, promptKey(ip), PasskeyPrompts)
 }
 
 // Noted reports whether a refusal for this account from this address is worth

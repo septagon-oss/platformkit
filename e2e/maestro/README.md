@@ -7,11 +7,11 @@ the document at [testdata/openapi.json](../../apps/platformkit/testdata/openapi.
 gated by [openapi_contract_test.go](../../apps/platformkit/openapi_contract_test.go).
 
 ```sh
-make mobile-e2e                  # needs a device, the shell's pinned APK, and the tools below
-PK_MOBILE_APK=https://…/shell.apk \
-PK_MOBILE_APK_SHA256=<64 hex> \
-PK_MOBILE_AVD=<avd name> \
-make mobile-e2e
+# The forge answers an anonymous release download with its sign-in page and a 200, so the
+# pin comes down with a token and reaches the harness as a file:// URL, as the job's
+# "Fetch the pinned shell build" step does.
+curl -fsSL -H "Authorization: token $FORGE_TOKEN" -o shell.apk https://…/shell.apk
+PK_MOBILE_APK="file://$PWD/shell.apk" PK_MOBILE_APK_SHA256=<64 hex> PK_MOBILE_AVD=<avd name> make mobile-e2e
 ```
 
 `PK_MOBILE_APK` and `PK_MOBILE_APK_SHA256` are both required: the kernel does not build
@@ -109,13 +109,13 @@ so they survive its next merge.
 ## Reused, added, made reusable
 
 **Reused** — `apps/platformkit/asyncapi_test.go`'s golden-and-ratio shape,
-`ui/screens.Describe` as the body of the address the flow taps, and the shell's own
-`testID`s, unmodified, at its pinned revision. **Copied, not sourced** — `scripts/e2e.sh`'s
-fixture (its own database, `bootstrap --tenant e2e --host localhost --language pt-PT`,
-the built binary on a port, a trap that tears down whichever step failed) is
-re-implemented in `scripts/mobile_e2e.sh`: 56 identical non-comment lines, and neither
-script sources the other, so the next change to that boot sequence is a change in two
-files until somebody lifts it into an owner of its own. **Added** — one flow of our own, because
+`ui/screens.Describe` as the body of the address the flow taps, and the shell's own `testID`s,
+unmodified, at its pinned revision. **Copied, not sourced** — `scripts/e2e.sh`'s fixture (its own
+database, `bootstrap --tenant e2e --host localhost --language pt-PT`, the built binary on a port,
+a trap that tears down whichever step failed) is re-implemented in `scripts/mobile_e2e.sh`: 47
+identical non-comment lines (52 before the readiness wait became a `serving` call of its own, 56
+before `run_app` took a password), and neither script sources the other, so a change to that boot
+is a change in two files until somebody lifts it into an owner of its own. **Added** — one flow of our own, because
 no unit in either repository could state the claim that a device which signed in can
 read this catalog and draw the screen its entry named: the shell's four flows exercise
 the shell, and this repository had no device, no flow and no runner step at all. **Made

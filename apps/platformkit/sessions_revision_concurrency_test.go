@@ -53,7 +53,7 @@ func TestASessionCreatedAfterTheRevisionReadMakesTheRevocationRefuse(t *testing.
 	defer finish()
 	// Replace only the shell's session dependency with the scheduling decorator.
 	mods := c.modules[:len(c.modules)-1]
-	c.modules[len(c.modules)-1] = admin.Module(admin.Deps{
+	c.modules[len(c.modules)-1] = admin.New(admin.Deps{
 		Modules: mods, Authorize: c.auth, Tenants: c.tenants, Roles: c.auth, Sessions: sessions,
 		Theme: design.Default(), Messages: c.messages, SignIn: pinnedSignInAPI,
 	})

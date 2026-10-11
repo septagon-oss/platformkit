@@ -230,9 +230,28 @@ func refusal(err error) error {
 		// one more thing is missing. It is not 403, which here means "you got in
 		// and may not do that", and it is not 403 with a reset hint, which would
 		// send a person whose phone is dead down a path that cannot help them.
-		return problem.New(http.StatusUnauthorized, "that password is right; this account also answers with a second factor")
+		//
+		// The type names the same fact the detail explains, because the detail
+		// belongs to the person and is answered in their language, while the
+		// control that answers the factor is chosen by a page: contracts names
+		// the type so that a page reads this module's contract rather than its
+		// prose. See contracts.ProblemSecondFactorRequired.
+		refused := secondFactorRefusal("that password is right; this account also answers with a second factor")
+		return refused
 	}
 	return rest.Fault(err)
+}
+
+// secondFactorRefusal is the answer both sign-in doors give when the first proof
+// arrived and the second did not: 401, this leg's own sentence, and the type
+// contracts names. The sentence differs between the doors — a person who came
+// through a provider is told nothing about a password they did not type — and the
+// type does not, because the thing that is true is the same at both: a control
+// answering the factor belongs on whatever page this refusal reached.
+func secondFactorRefusal(detail string) *problem.Problem {
+	refused := problem.New(http.StatusUnauthorized, detail)
+	refused.Type = contracts.ProblemSecondFactorRequired
+	return refused
 }
 
 // transaction is the request's, or a 503 saying why there is none.

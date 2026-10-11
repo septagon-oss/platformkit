@@ -137,7 +137,7 @@ const PermissionGalleryRead = "gallery:read"
 // switcher's and the roles screen's included, which is what keeps a screen and
 // its module's API refusing the same callers. It declares neither events nor a
 // navigation entry of its own.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	return module.Module{
 		Name:          "admin",
 		Permissions:   []module.Permission{{Key: PermissionGalleryRead, Label: "read the component gallery"}},

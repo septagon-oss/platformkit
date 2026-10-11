@@ -37,17 +37,23 @@ import (
 // appFile is the file under test, by the name the ledger carries.
 const appFile = "000043_tenant_app.up.sql"
 
-// beforeApp is the kernel's own history with that one file taken out: the state of
-// an installation on the day the release that carries it boots.
+// appVersion is that file's ledger number, read off its own name so the two cannot
+// drift: every file from here on postdates the installation this fixture plants.
+var appVersion, _ = fileVersion(appFile)
+
+// beforeApp is the kernel's own history with that one file — and every file
+// appended after it — taken out: the state of an installation on the day the
+// release that carries it boots.
 //
-// The cut is by version rather than by name. This file was written when 000043 was
-// the kernel's head, so dropping that one name left everything below it — and the
-// fixture still meant "the version before". 000044_idempotency now sits above it, and
-// a fixture that hands the runner a history holding 44 and then asks it to apply 43 is
-// answered by the append rule — "000043_tenant_app.up.sql precedes applied version 44;
-// append a new version" — which is the runner being right about an installation the test
-// never described. Keeping every file under appFile's own number says the same thing the
-// name said, and keeps saying it as the kernel ships past it.
+// The files after it belong in the removal for the same reason 000043 does, and
+// leaving them in refuses this fixture for a reason it does not ask about: an
+// installation that predates the release predates everything appended since, so a
+// fixture that applied 000046 first would have the ledger read 46, and kit/db would
+// answer the second run below with "000043 precedes applied version 46; append a new
+// version" — an ordering refusal, reached before the back-fill, and every assertion
+// here would be reading the wrong error. The higher files are absent from the
+// fixture rather than skipped after the fact: the point of the run is the state of
+// an installation, not a list of names.
 type beforeApp struct{ inner fs.FS }
 
 func (b beforeApp) Open(name string) (fs.File, error) { return b.inner.Open(name) }
@@ -59,20 +65,26 @@ func (b beforeApp) ReadDir(name string) ([]fs.DirEntry, error) {
 	}
 	out := rows[:0:0]
 	for _, row := range rows {
-		if versionOf(row.Name()) < versionOf(appFile) {
-			out = append(out, row)
+		if version, numbered := fileVersion(row.Name()); numbered && version >= appVersion {
+			continue
 		}
+		out = append(out, row)
 	}
 	return out, nil
 }
 
-// versionOf reads the number a migration file's name carries, which is the whole of its
-// name's meaning to a runner. Anything that carries none is version 0 and sorts below
-// every file: it is a file the runner refuses by name, not a fixture's ceiling.
-func versionOf(name string) int64 {
-	digits, _, _ := strings.Cut(name, "_")
-	version, _ := strconv.ParseInt(digits, 10, 64)
-	return version
+// fileVersion is the ledger number a migration file carries, and whether it carries
+// one at all. The number is the part before the first underscore — the same split
+// kit/db and every ledger count in this repository make — and it is read as a number
+// because the four digits are a filename convention, not the ledger: 000043 and 43
+// name one file to kit/db, and a fixture that compared text would place 1000043
+// below 21.
+func fileVersion(name string) (int, bool) {
+	if !strings.HasSuffix(name, ".up.sql") {
+		return 0, false
+	}
+	n, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
+	return n, err == nil
 }
 
 func TestTheTenantAppColumnIsPlacedOnProofAndRefusedWithoutIt(t *testing.T) {

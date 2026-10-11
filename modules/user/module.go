@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -55,11 +56,26 @@ type Deps struct {
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
 var spec = rest.Spec[*contracts.User]{
-	Module:     "user",
-	Entity:     "user",
-	Path:       "/users",
-	Read:       contracts.PermissionUserRead,
-	Write:      contracts.PermissionUserManage,
+	Module: "user",
+	Entity: "user",
+	Path:   "/users",
+	Read:   contracts.PermissionUserRead,
+	Write:  contracts.PermissionUserManage,
+	// Present is how a person reads. `primaryField` is the address and not
+	// displayName: displayName defaults to empty, so the documented default would
+	// name an invited person "Untitled person", and an email is required, unique
+	// per tenant and never blank. `summaryFields` is written nowhere: the status is
+	// already the row's pill, and a summary that repeats it is the fault the mount
+	// gate refuses.
+	Present: entity.EntryHints{
+		Singular:     "person",
+		Plural:       "people",
+		Icon:         "people",
+		Group:        &entity.ResourceGroup{Key: "people", Label: "People"},
+		PrimaryField: "email",
+		StatusField:  "status",
+		Sortable:     []string{"email", "displayName", "updatedAt"},
+	},
 	SoftDelete: true,
 	// The two fields a command owns. Lifecycle commands move status, and
 	// roles are changed by SetRoles, which publishes
@@ -106,7 +122,7 @@ var permissions = []module.Permission{
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Administration == nil {
 		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}
@@ -124,12 +140,19 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if deps.Granting == nil {
 		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
 	}
-	// An adapter with nothing behind it answers "nobody may promote anybody",
-	// which reads as a working door and locks every promotion in every tenant
-	// this composition serves.
-	if asked, ok := deps.Granting.(*contracts.GrantingFunc); ok && (asked == nil || asked.Ask == nil) {
-		panic("user.Module: Deps.Granting is an adapter with no Ask; wire the authorizer, do not hand the door an empty adapter")
-	}
+	// An empty GrantingFunc is the one adapter this module accepts unwired, and
+	// the reason is the shape of the answer. Who may hand out an administering
+	// role is the authentication service's, and the authentication service is
+	// built after this module — it looks people up here — so the holder arrives
+	// empty and the auth module fills its Ask in its own build. Refusing an empty
+	// holder at this line would refuse the only wiring that is not a cycle.
+	//
+	// What is not refused is what stays refused: an adapter with no Ask answers
+	// the error contracts.GrantingFunc.May carries, so a composition whose auth
+	// module never ran fails the roles write — no row, no event, no stale read —
+	// rather than answering "nobody may promote anybody" and reading as a door
+	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
+	// case, not by this line.
 	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate

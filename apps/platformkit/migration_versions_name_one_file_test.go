@@ -27,9 +27,11 @@ import (
 // boots by migrating refuses to boot. Nothing a fresh database does discovers it, because
 // a fresh database applies every file in the order its own release lists.
 //
-// This is how this delivery's idempotency claims arrived at 000044: the file was written
-// as 000042, and main took 42 for modules/content's body characters and 43 for the
-// kernel's own tenant placement while it was in review.
+// This is how this delivery's idempotency claims ended up above every version this
+// release ships: the claim file was written as 000042, and main took 42 for modules/
+// content's body characters, 43 for the kernel's own tenant placement, and 44 and 45 for
+// modules/file's image dimensions and file uses while this branch was still open. The
+// claims are 000054 and the effect marker 000055.
 //
 // The versions a release carries are a fact of its file names, so the question is asked
 // of the composed sources and of nothing else — no migration runs, and the answer a

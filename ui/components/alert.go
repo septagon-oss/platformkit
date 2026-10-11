@@ -3,6 +3,7 @@ package components
 // alert.go renders the alert, its dismissal and the icon each tone defaults to.
 
 import (
+	"io"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -22,6 +23,13 @@ type AlertSlots struct {
 
 // AlertWithSlots retains the same status semantics and dismissal behavior as Alert.
 func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
+	return alertWithSlots(p, slots, "message")
+}
+
+func alertWithSlots(p AlertProps, slots AlertSlots, textRegion string) g.Node {
+	if err := validateLive(p.Live); err != nil {
+		return g.NodeFunc(func(io.Writer) error { return err })
+	}
 	iconStart, actions := slots.IconStart, slots.Actions
 	tone := p.Tone
 	if tone == "" {
@@ -42,6 +50,14 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 		role = "alert"
 		live = "assertive"
 	}
+	switch p.Live {
+	case "polite":
+		role, live = "status", "polite"
+	case "assertive":
+		role, live = "alert", "assertive"
+	case "off":
+		role, live = "note", "off"
+	}
 	body := []g.Node{h.Class(clAlertBody.Compile())}
 	if p.Title != "" {
 		body = append(body, h.P(h.Class(clAlertTitle.Compile()), g.Raw("<!--pk-text:title-->"), g.Text(p.Title), g.Raw("<!--/pk-text:title-->")))
@@ -49,10 +65,11 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 	// The message paragraph is the part a script writes a result into: the command
 	// controller (ui/assets/js/command.js) puts a keyed refusal's sentence here, in
 	// the outcome region the page rendered for that one form. The hook is in the
-	// list this package keeps of the parts it emits, and the text markers stay for
-	// the catalogue's replacement reader, which reads markup rather than a DOM.
+	// list this package keeps of the parts it emits, and the text markers name the
+	// region this alert was built for, which the catalogue's replacement reader reads
+	// out of the markup rather than out of a DOM.
 	body = append(body, h.P(h.Class(clAlertMessage.Compile()), g.Attr("data-alert-message", ""),
-		g.Raw("<!--pk-text:message-->"), g.Text(p.Message), g.Raw("<!--/pk-text:message-->")))
+		g.Raw("<!--pk-text:"+textRegion+"-->"), g.Text(p.Message), g.Raw("<!--/pk-text:"+textRegion+"-->")))
 
 	var children []g.Node
 	children = append(children, baseAttrs(p.ComponentProps)...)
@@ -97,6 +114,9 @@ func AlertWithSlots(p AlertProps, slots AlertSlots) g.Node {
 	if p.Dismissible {
 		children = append(children, h.Button(
 			h.Type("button"),
+			h.Hidden(""), // Shared enhancement reveals dismissal only when it can work.
+			g.Attr("data-component", "alert-close"),
+			g.If(p.Disabled, h.Disabled()),
 			h.Class(clAlertClose.Compile()),
 			g.Attr("data-action", "click->alert#dismiss"),
 			g.Attr("data-alert-close", ""),
