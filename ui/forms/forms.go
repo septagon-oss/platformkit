@@ -23,7 +23,15 @@ import (
 type Field struct {
 	Definition entity.Field
 	Label      string
-	Options    []components.SelectOption
+	// Help is the line under the control: what resource.Words.FieldHelp answers for
+	// the field — the author's declared `help:` when they wrote one, in the
+	// request's language, the field's Doc when they did not. Empty falls back to
+	// Doc, so a caller that projects no reading words at the control (a design
+	// export, a test) reads what it always read. The label beside it and this line
+	// are the same request's two words: a caller that translates one translates
+	// both.
+	Help    string
+	Options []components.SelectOption
 }
 
 // Model contains a form's already-read values and already-decided field errors.
@@ -162,7 +170,11 @@ func example(id string, model Model, options Options) examples.Example {
 	for _, field := range model.Fields {
 		f := field.Definition
 		immutable := slices.Contains(model.Immutable, f.Name)
-		if f.ReadOnly || (model.Create && immutable) {
+		// Nothing the server owns renders a control. Base's four because a form
+		// cannot name them, and the row's own write count because a control that
+		// posted back the number it rendered would move the row to that number —
+		// which is the one thing the stale-write refusal is built on.
+		if entity.ServerOwned(f) || (model.Create && immutable) {
 			continue
 		}
 		value, present := model.Values[f.Name]
@@ -208,7 +220,7 @@ func example(id string, model Model, options Options) examples.Example {
 func rendersFile(model Model) bool {
 	for _, field := range model.Fields {
 		f := field.Definition
-		if f.ReadOnly || (model.Create && slices.Contains(model.Immutable, f.Name)) {
+		if entity.ServerOwned(f) || (model.Create && slices.Contains(model.Immutable, f.Name)) {
 			continue
 		}
 		if f.Widget == "file" {
