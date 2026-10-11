@@ -57,7 +57,7 @@ The code has no rule tying an assignee or resolver to the task's creator. That k
 ### The write counter, and the door in front of a protected field
 
 Every write of a task row moves `Task.Revision` (the column
-`migrations/000050_task_revision.up.sql` adds, the same shape `modules/site` grew for the same
+`migrations/000056_task_revision.up.sql` adds, the same shape `modules/site` grew for the same
 reason). The three commands move it in the `UPDATE` each already makes, `Writer.Save` moves it,
 and a `rest.Spec` whose entity carries `revision` moves it inside `kit/rest`'s own `UPDATE` —
 so no writer moves it twice and none of them moves it by hand. The number exists so a diff can

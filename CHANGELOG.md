@@ -23,7 +23,7 @@ refusals speak `modules/change/messages/pt-PT.json`.
 **A row's write count belongs to the server.** `kit/entity` names it and `kit/rest`
 refuses a body that writes it, a conditional write whose quoted revision is stale
 (`If-Match` on the API, the form's own revision condition on the generated screen)
-and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
+and an edit that arrived after the row moved; `modules/task/migrations/000056_task_revision.up.sql`
 gives the task one. Nothing the server owns is drawn as a control, so no form asks a
 person to type a number that would move the row to it.
 

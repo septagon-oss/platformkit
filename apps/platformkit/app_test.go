@@ -1685,7 +1685,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the twenty-three above the ceiling, because the
+	// 33 stays 33 for those files and for the twenty-four above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1694,22 +1694,23 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// every file the release ships.
 	//
 	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 56 — twenty-two under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52, 54, 55) and thirty-four under
+	// this head prints 57 — twenty-two under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
+	// 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52, 54, 55) and thirty-five under
 	// modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24,
-	// 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 53).
-	// Every version to 33 is one file, and the only repeat anywhere in the release is
-	// 35 — modules/audit's audit_context and modules/auth's passkeys — which is above
-	// the ceiling, so the flattening below never meets it. The release this fixture is
+	// 25, 27, 31, 32, 33, 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 53, 56,
+	// 57). Every version in the release names one file: no two owners ship the same
+	// number, so neither the flattening below nor the ledger beside it can meet a
+	// version with two files in it. The release this fixture is
 	// applied from shipped 33 of them: the thirteen under migrations/ up to the
 	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
 	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
 	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The twenty-three above it — the kernel's own 34, 41, 43, 46, 50,
-	// 51, 52, 54 and 55, modules/audit's 35, 36, 37, 48, 49 and 53, modules/auth's 35
-	// and 47, modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45 and
-	// modules/content's 42 — postdate that release, are not in the old installation's
-	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
+	// any owner names. The twenty-four above it — the kernel's own 34, 41, 43, 46, 50,
+	// 51, 52, 54 and 55, modules/audit's 35, 36, 37, 48, 49 and 53, modules/auth's 47
+	// and 57, modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45,
+	// modules/content's 42 and modules/task's 56 — postdate that release, are not in
+	// the old installation's ledger, and legacyLayout leaves them out; the upgrade below
+	// applies them under
 	// the owner that ships them and counts them as new rows. Each continues past the
 	// highest number anywhere in the composition at the time it was written, which is
 	// the rule this fixture exists to enforce — and it is a rule with teeth rather
@@ -1770,13 +1771,13 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the twenty-three files above the
+	// release ships is in the ledger, which is where the twenty-four files above the
 	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51, 52, 54 and 55,
-	// modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47, modules/change
-	// 38, modules/site 39, modules/file 40, 44 and 45 and modules/content 42, all
-	// absent from the old ledger) have to be accounted for:
-	// 56 files in the release, 56 rows — one fewer key than rows in the two maps
-	// below, because the two 35s are one version held by two owners.
+	// modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 47 and 57, modules/change
+	// 38, modules/site 39, modules/file 40, 44 and 45, modules/content 42 and
+	// modules/task 56, all absent from the old ledger) have to be accounted for:
+	// 57 files in the release, 57 rows, and the same 57 keys in the two maps below —
+	// one version, one file, one row.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
