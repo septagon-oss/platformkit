@@ -46,7 +46,8 @@ func TestConcurrentIndexRepairRebuildsAfterACancelledBuild(t *testing.T) {
 RETURNS bigint LANGUAGE plpgsql IMMUTABLE AS $$
 BEGIN
   IF EXISTS (SELECT 1 FROM pg_locks WHERE pid = pg_backend_pid()
-             AND locktype = 'advisory' AND classid = 0 AND objid = %d AND granted) THEN
+             AND locktype = 'advisory' AND classid = %d
+             AND objid = current_schema()::regnamespace::oid AND granted) THEN
     RAISE EXCEPTION 'index repair holds an advisory lock' USING ERRCODE = 'P0001';
   END IF;
   IF nextval('repair_attempts') <= %d THEN
