@@ -395,6 +395,16 @@ func download(ctx context.Context, svc contracts.Opener, id uuid.UUID, anonymous
 	if err != nil {
 		return nil, fault(err)
 	}
+	if f.Sealed {
+		// Refused after the read, which costs one store GET and is the cheaper of the
+		// two ways to get this right: the other is a second read of the row ahead of
+		// every Open, including the one the owning module makes to serve the file it
+		// is entitled to serve. The answer is the one a stranger gets, because a
+		// sealed file's existence is its owning module's to confirm and not this
+		// door's.
+		_ = body.Close()
+		return nil, problem.NotFound("nothing is served at this address")
+	}
 	r, _ := httpx.RequestFrom(ctx)
 	return contracts.ContentResponse(r, f, body, contracts.Inline), nil
 }

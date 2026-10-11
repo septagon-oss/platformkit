@@ -142,7 +142,7 @@ func (s *Service) Upload(ctx context.Context, open contracts.Tx, up contracts.Up
 	}
 
 	f := &contracts.File{
-		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind,
+		Name: up.Name, ContentType: contentType, Visibility: up.Visibility, Kind: up.Kind, Sealed: up.Sealed,
 		Size: size, SHA256: digestHex, StorageKey: key.String(), Width: width, Height: height,
 	}
 	if err := crud.Create(ctx, tx, f); err != nil {
@@ -359,6 +359,13 @@ func (s *Service) Grant(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 	}
 	if f.Public() {
 		return nil, fmt.Errorf("%w: %s is public and is served at its public URL", contracts.ErrPublicFile, id)
+	}
+	if f.Sealed {
+		// A presigned URL is the content route with the signature done by the store:
+		// handing one out for a sealed file would be this module opening the door it
+		// just refused to open, and for longer than any request lives. The module
+		// that sealed the bytes mints its own door.
+		return nil, crud.ErrNotFound
 	}
 	signer, ok := s.storage.(contracts.Signer)
 	if !ok {

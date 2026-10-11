@@ -65,10 +65,17 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	return NewWith(deps), nil
 }
 
-// bundles stores a person's bundle through the file module: private, and held against the
-// retention sweep for exactly as long as the link to it lives. The hold is not optional —
+// bundles stores a person's bundle through the file module: sealed against its
+// ordinary doors, and held against the retention sweep for exactly as long as the
+// link to it lives. The hold is not optional —
 // a sweep that removed the bytes under an open link would leave a person with a link that
 // 404s and no way to ask for the copy they were owed.
+//
+// The Sealed flag is what matters: a private file is what `file:read` hands out, and the tenant's ordinary file reader is not the person
+// the export is about. Sealed leaves the row in the tenant's list of what it holds and takes
+// away the door beside it — no content route of the file module streams such a row, and no
+// presigned URL is minted for one — so the bytes answer at this module's own address, to
+// whoever spent the link (ADR 0020 §6).
 type bundles struct{ files filecontracts.Service }
 
 func (b bundles) Put(ctx context.Context, tx subjectcontracts.Tx, name string, body []byte) (uuid.UUID, error) {
@@ -84,13 +91,14 @@ func (b bundles) Put(ctx context.Context, tx subjectcontracts.Tx, name string, b
 	}
 	f, err := b.files.Upload(ctx, func(context.Context) (db.Tx[db.Tenant], error) { return open, nil },
 		filecontracts.Upload{
-			// Private, a zip, and no retention class: the class is the product's token to
+			// Sealed, a zip, and no retention class: the class is the product's token to
 			// invent (modules/file matches it against the deployment's own table and deletes
 			// nothing it does not find there), and a bundle's life is its hold, which the
 			// line below places and Mint moves. Naming a class from here would be the
 			// module naming a deployment's retention policy, and the reference application
 			// answers it with `"subject.export" is not a retention class`.
 			Name: name, ContentType: "application/zip", Visibility: filecontracts.VisibilityPrivate,
+			Sealed: true,
 			Declared: int64(len(body)), Body: bytes.NewReader(body),
 		})
 	if err != nil {

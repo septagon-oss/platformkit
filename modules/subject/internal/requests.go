@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
@@ -41,6 +42,39 @@ const requestPath = "/api/v1/subject/exports/"
 // reason, as modules/task's sweep.
 const walkLimit = 50
 
+// ceiling asks, inside the transaction that is about to write, whose credential this is and
+// what it carries. A route that checked the caller on the way in is not a command that may
+// assume it: another module that composes these commands reaches them with no route at all.
+//
+// The credential is what a command can read — the actor the transaction attributes its work
+// to, and the ceiling on `tenancy.Principal.Permissions`, which narrows and never adds. A
+// credential that carries one is held to it here as kit/httpx holds it to the route's
+// declaration, so a key scoped to one read cannot reach a person's copy or their erasure by
+// calling the command directly. A credential with no ceiling — a session whose authority is
+// its roles — is asked nothing here that only the authorizer can answer: re-asking the role
+// question from a module would be a second answer to it, one no composition declared. So the
+// roles stay the route's question and the ceiling becomes the command's.
+//
+// No principal at all is a runner inside the installation — the export walk, a module that
+// resolved the person itself. It has no credential to be held to, and is held to the actor it
+// names and the tenant the transaction is bound to.
+func ceiling(ctx context.Context, actor uuid.UUID, permission string) error {
+	p, ok := tenancy.PrincipalFrom(ctx)
+	if !ok {
+		return nil
+	}
+	if p.UserID != actor {
+		return fmt.Errorf("subject: the transaction acts as %s and its credential is %s: %w", actor, p.UserID, contracts.ErrDenied)
+	}
+	if permission == "" || p.Permissions == nil {
+		return nil
+	}
+	if !slices.Contains(p.Permissions, permission) {
+		return fmt.Errorf("subject: %s: %w", permission, contracts.ErrDenied)
+	}
+	return nil
+}
+
 // RequestExport files the ask and publishes the fact, in one transaction.
 func (s *service) RequestExport(ctx context.Context, tx db.Tx[db.Tenant], in contracts.RequestExportInput) (*contracts.Request, error) {
 	if len(in.Reason) > contracts.MaxReason {
@@ -53,6 +87,16 @@ func (s *service) RequestExport(ctx context.Context, tx db.Tx[db.Tenant], in con
 	// The person has to be here. The alternative is a `requested` row for an id that
 	// resolves to nobody, which the worker will fail forever and no screen will explain.
 	if _, err := s.person(ctx, tx, in.Subject); err != nil {
+		return nil, err
+	}
+	// A person's own copy asks no grant — Article 15 is a right, and a right that needed a
+	// key is a favour (ADR 0020 §7). Anybody else's copy is `subject:export`'s, and the
+	// command asks that of its own accord rather than trusting the door that reached it.
+	permission := ""
+	if in.Subject != actor {
+		permission = contracts.PermissionExport
+	}
+	if err := ceiling(ctx, actor, permission); err != nil {
 		return nil, err
 	}
 	return s.file(ctx, tx, contracts.Request{
@@ -71,6 +115,12 @@ func (s *service) RequestErase(ctx context.Context, tx db.Tx[db.Tenant], in cont
 	actor, ok := tenancy.ActorFrom(ctx)
 	if !ok {
 		return nil, nil, fmt.Errorf("subject: an erasure names the person who asked: %w", crud.ErrInvalid)
+	}
+	// The irreversible door asks its grant of every caller, the person's own included: an
+	// erasure is not a right someone can be handed by a role they happen to hold, and the
+	// route declares `subject:erase` for both doors, so the command must too.
+	if err := ceiling(ctx, actor, contracts.PermissionErase); err != nil {
+		return nil, nil, err
 	}
 	row, err := s.file(ctx, tx, contracts.Request{
 		Subject: in.Subject, Requester: actor, Kind: contracts.KindErase,
@@ -479,7 +529,14 @@ func (s *service) claim(ctx context.Context, conn *db.Conn) ([]uuid.UUID, error)
 func (s *service) runOne(ctx context.Context, conn *db.Conn, id uuid.UUID) error {
 	err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		row := &contracts.Request{}
-		if err := tx.DB().WithContext(ctx).Where("id = ?", id).First(row).Error; err != nil {
+		// Locked for the length of the walk, which is the whole of the concurrency control
+		// here: an erasure of this person that arrives while the bundle is being collected
+		// (`retire` locks the same rows) waits for this transaction instead of slipping between
+		// the read and the write, and the request it waits behind is the one it then ends. What
+		// must not happen is the other order — a bundle filed, a person notified and a ready
+		// event published for a request the erasure had already closed.
+		if err := tx.DB().WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", id).First(row).Error; err != nil {
 			return crud.Classify(err)
 		}
 		if row.State != contracts.StateRunning || row.Kind != contracts.KindExport {
@@ -508,14 +565,22 @@ func (s *service) runOne(ctx context.Context, conn *db.Conn, id uuid.UUID) error
 		if err := s.notify(ctx, tx, row, expires); err != nil {
 			return err
 		}
-		if err := tx.DB().WithContext(ctx).Model(&contracts.Request{}).
+		res := tx.DB().WithContext(ctx).Model(&contracts.Request{}).
 			Where("id = ? AND revision = ?", row.ID, row.Revision).
 			UpdateColumns(map[string]any{
 				"state": contracts.StateReady, "bundle_file_id": fileID,
 				"bundle_digest": bundle.Digest, "detail": "", "updated_at": at,
 				"revision": row.Revision + 1,
-			}).Error; err != nil {
-			return err
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		// The row that no longer matches is the row somebody else closed, and an UPDATE that
+		// affected nothing is that answer rather than a success: the bundle, the notice and the
+		// ready event all go back with it, because a consumer told "ready" about a request the
+		// erasure ended is the failure this transaction exists to make impossible.
+		if res.RowsAffected != 1 {
+			return fmt.Errorf("subject: request %s moved while its bundle was made: %w", id, crud.ErrConflict)
 		}
 		return events.Publish(ctx, tx, contracts.EventExportReady, contracts.ExportReady{
 			Request: row.ID, Subject: row.Subject, Bundle: fileID,
