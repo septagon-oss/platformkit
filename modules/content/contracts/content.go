@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -142,6 +143,22 @@ type Content struct {
 	// something a body can claim; the Spec names it Immutable, so no patch
 	// rewrites a byline.
 	AuthorID uuid.UUID `json:"author,omitempty" gorm:"column:author_id;type:uuid" format:"uuid" ui:"hide:list" doc:"The user who created this" readOnly:"true"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// content.content.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (c *Content) SetChanges(changes []events.Change) {
+	c.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000017 agree.

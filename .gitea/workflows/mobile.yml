@@ -80,6 +80,48 @@ jobs:
           --health-timeout 5s
           --health-retries 10
     steps:
+      # First, and on purpose. A job this runner kills - a cancelled run, a ceiling reached, the
+      # lost-execution shape the header of this file describes - never reaches the `if: always()`
+      # cleanup at the end, so the containers it started stay on that host holding memory, and a
+      # runner holding a running container never reads idle. 2026-10-06 counted 13 SeaweedFS
+      # containers between the three kernel runners, some 19 hours old, each from a job that had
+      # ended long before; the ones over three hours old were removed by hand, and while they stood,
+      # the runners could not be restarted for reading busy.
+      #
+      # Every container this program starts by hand carries `--label pkit.ci.run=<run id>`, so this
+      # step finds them with `docker ps -aq --filter label=pkit.ci.run`. `-a`, not `-q`: the
+      # running-only filter does not see a stopped container, and a SeaweedFS whose process died is
+      # stopped, still on disk, still holding the memory its data directory took. Measured on this
+      # host's daemon (Docker 29.8.2) with two labelled containers, one created and never started
+      # and one started and let exit: `docker ps -q --filter label=pkit.ci.run` listed neither once
+      # both had stopped, `docker ps -aq --filter label=pkit.ci.run` listed both.
+      #
+      # The age bound is more than twice this job's own 40-minute ceiling, so no live job's container is in range. The
+      # label is a namespace the whole program shares, and a sweep here reaches every container on
+      # this daemon that carries it, including another repository's CI started with the same label;
+      # the bound is what makes that safe, and it holds only while every job that uses the label has
+      # a ceiling below half of it. `docker inspect -f '{{.Created}}'` is UTC to the nanosecond and
+      # GNU `date -u -d` parses it.
+      #
+      # Best-effort, and it never fails the job: a container that vanishes between the listing and
+      # the removal, or one another job is winning the race for, is not this job's failure, and a
+      # runner with nothing to sweep is the normal case, not a finding.
+      - name: Remove containers a killed job left on this runner
+        env:
+          SWEEP_OLDER_THAN: '10800'
+        run: |
+          cutoff=$(( $(date -u +%s) - SWEEP_OLDER_THAN ))
+          swept=0
+          for id in $(docker ps -aq --filter label=pkit.ci.run); do
+            created=$(docker inspect -f '{{.Created}}' "$id" 2>/dev/null) || continue
+            epoch=$(date -u -d "$created" +%s 2>/dev/null) || continue
+            [ "$epoch" -le "$cutoff" ] || continue
+            docker rm -f "$id" >/dev/null 2>&1 || continue
+            echo "swept $id created $created"
+            swept=$(( swept + 1 ))
+          done
+          echo "removed $swept container(s) created more than ${SWEEP_OLDER_THAN}s ago"
+
       # One commit, for the reason ci.yml's `design` job now gives at length: this job's steps are apt,
       # docker, an emulator and one goal, `make mobile-e2e`, which is one line calling
       # scripts/mobile_e2e.sh, and that script names no git object (grep -rnwi git answers 0 lines).
@@ -155,9 +197,14 @@ jobs:
         id: nats
         env:
           JOB_NETWORK: ${{ job.container.network }}
+          # Named after the run, as ci.yml's services are: this job's cleanup reads
+          # steps.nats.outputs.container, which is exactly the handle a job cut off mid-step never
+          # writes, and the journey's ceiling is 40 minutes of emulator.
+          CONTAINER_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           test -n "$JOB_NETWORK"
-          container=$(docker run -d --network "$JOB_NETWORK" --network-alias nats \
+          docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
+          container=$(docker run -d --name "$CONTAINER_NAME" --label pkit.ci.run=${{ github.run_id }} --network "$JOB_NETWORK" --network-alias nats \
             nats:2-alpine@sha256:ad7a43eb7e3337c3c38ce5d784d1461791f95f730f252d2b25eee699752a0ca3 \
             --jetstream --http_port 8222)
           echo "container=$container" >> "$GITHUB_OUTPUT"
@@ -237,9 +284,16 @@ jobs:
         env:
           EMULATOR_PID: ${{ steps.emulator.outputs.pid }}
           NATS_CONTAINER: ${{ steps.nats.outputs.container }}
+          NATS_NAME: platformkit-${{ github.run_id }}-nats
         run: |
           status=0
           if [ -n "$EMULATOR_PID" ]; then kill "$EMULATOR_PID" 2>/dev/null || true; fi
-          if [ -n "$NATS_CONTAINER" ]; then docker rm -f "$NATS_CONTAINER" || status=1; fi
+          # Both handles reach the same container: the id this job's step recorded, when it finished
+          # writing it, and the name the run cannot lose. The step output alone was the leak.
+          for handle in "$NATS_CONTAINER" "$NATS_NAME"; do
+            [ -n "$handle" ] || continue
+            docker inspect "$handle" >/dev/null 2>&1 || continue
+            docker rm -f "$handle" || status=1
+          done
           pkill -f 'emulator -avd' 2>/dev/null || true
           exit "$status"

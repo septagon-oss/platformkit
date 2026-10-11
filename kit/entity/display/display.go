@@ -112,7 +112,18 @@ func Humanize(name string) string {
 // sites. Field.Doc is not that name: the entities in this repository write a
 // sentence there — "Short summary of the task" — which is a description and
 // belongs under the control, not on it. See Field.Doc.
-func FieldLabel(f entity.Field) string { return Humanize(f.Name) }
+func FieldLabel(f entity.Field) string {
+	if f.Presentation.Label != "" {
+		return f.Presentation.Label
+	}
+	return Humanize(f.Name)
+}
 
-// FieldHelp is the note under a control: the field's own Doc, when it has one.
-func FieldHelp(f entity.Field) string { return f.Doc }
+// FieldHelp is the note under a control: the line the author wrote for this
+// field when they wrote one, and the field's own Doc otherwise.
+func FieldHelp(f entity.Field) string {
+	if f.Presentation.Help != "" {
+		return f.Presentation.Help
+	}
+	return f.Doc
+}

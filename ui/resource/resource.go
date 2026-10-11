@@ -38,6 +38,13 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// Present is how this resource's author said it reads. The renderer consults
+	// three parts of it and no others: `visibility`, which keeps a field off the
+	// list and off the record; `section`, which groups the record; and
+	// `sortable`, which names the columns a header may be clicked on. The words,
+	// the icon and the tones are the document's, and the web screen keeps drawing
+	// what it drew until the design decides how they are read.
+	Present entity.EntryHints
 	// Screen is the workspace address of this resource's collection screen:
 	// /app/<module>/<entity>, composed by the kernel at registration. Every
 	// link a renderer writes is built from it, which is the whole reason the
@@ -139,20 +146,21 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 	if writable && r.offers("create") {
 		actions = []g.Node{components.Button(components.ButtonProps{Label: o.Text("screens.new", "New %s", r.Schema.Entity), Href: at + "/new"})}
 	}
-	body := []g.Node{
-		components.Toolbar(components.ToolbarProps{Title: title, Subtitle: o.count(total, one)}, actions...),
-		table(o, r, at, title, rows, sort),
-	}
-	// A command over the whole collection posts beside the list it acts on, and
-	// above the pager so a person who changes page has not lost the door.
-	body = append(body, commandForms(o, r.Commands, at, true)...)
-	body = append(body, components.Pagination(components.PaginationProps{
+	pager := components.PaginationProps{
 		HTMXProps:   components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
 		CurrentPage: pageNo, TotalPages: pages(total), BaseURL: at + "?sort=" + sort,
-		NavigationLabel: o.Text("screens.pagination", "Pagination"),
-		PreviousLabel:   o.Text("screens.previous", "Previous page"),
-		NextLabel:       o.Text("screens.next", "Next page"),
-	}))
+		NavigationLabel:  o.Text("screens.pagination", "Pagination"),
+		PreviousLabel:    o.Text("screens.previous", "Previous page"),
+		NextLabel:        o.Text("screens.next", "Next page"),
+		PageLabel:        o.Text("screens.page", "Go to page %s", "%d"),
+		CurrentPageLabel: o.Text("screens.current_page", "Page %s, current page", "%d"),
+	}
+	body := []g.Node{table(o, r, at, title, rows, sort, o.count(total, one), &pager, components.DataListSlots{
+		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
+		// Collection commands retain their native forms and precede the pager.
+		// Generated CRUD does not gain selected-row writes from a UI control.
+		Footer: commandForms(o, r.Commands, at, true),
+	})}
 	return document.View{Title: title, Body: body}
 }
 
@@ -174,7 +182,7 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	if !r.Singleton {
 		item = at + "/" + display.Text(row["id"])
 	}
-	named := label(row, r.Schema.Fields)
+	named := label(row, readable(r.Schema.Fields))
 	var actions []g.Node
 	if writable {
 		if r.offers("update") {
@@ -237,13 +245,30 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
-	fields := make([]forms.Field, 0, len(r.Schema.Fields))
+	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
 	for _, field := range r.Schema.Fields {
 		fields = append(fields, formField(field))
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
 		values[name] = display.Text(value)
+	}
+	// An edit carries the row's write count back as a hidden value, so the write it
+	// posts can be refused against a row that moved since the person read it. It is a
+	// hidden value and not a control for two reasons that are one: nobody may type the
+	// number of a row's writes (kit/rest refuses a body that names the field), and a
+	// form whose hidden machinery is drawn as a control is a form that invites people to
+	// break its own safety. A create quotes nothing: there is no row to have read.
+	//
+	// The value is the number as the row has it, which is also what a refused write gives
+	// back — the person who is told their deadline is invalid resubmits against the
+	// revision they were already quoting, not against one they never saw.
+	if condition, quoted := revisionCondition(r, row, create); quoted {
+		fields = append(fields, forms.Field{Definition: entity.Field{
+			Name: entity.RevisionCondition, Type: entity.TypeString, Widget: "hidden",
+			Doc: "The revision this form was drawn from. The write is refused if the row has moved.",
+		}})
+		values[entity.RevisionCondition] = condition
 	}
 	return forms.MustExample(id, forms.Model{Fields: fields, Values: values, Errors: errs,
 		Immutable: r.Immutable, Detail: detail, Create: create}, forms.Options{
@@ -257,6 +282,36 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 			return o.Locale.Text(key, fallback)
 		},
 	})
+}
+
+// revisionCondition is the edit form's condition on the write: the row's own write count,
+// and whether this form may quote one at all. A resource whose entity keeps no count,
+// and a form that is not editing a row it read, quote nothing — and the door they post to
+// writes as plainly as it always did. A singleton is the second case by declaration: its
+// API is a PUT with no tag to quote (kit/rest carries If-Match on the patch and the delete
+// alone), so its screen carries a condition its route would not honour.
+func revisionCondition(r Resource, row map[string]any, create bool) (string, bool) {
+	if create || r.Singleton || row == nil {
+		return "", false
+	}
+	counts := false
+	for _, f := range r.Schema.Fields {
+		if f.Name == entity.RevisionField && f.Type == entity.TypeInt {
+			counts = true
+		}
+	}
+	if !counts {
+		// A row that arrived with a revision no field of this schema declares is not this
+		// renderer's to speak for; it quotes nothing, and the write is the plain one.
+		return "", false
+	}
+	if count, has := row[entity.RevisionField]; has {
+		return display.Text(count), true
+	}
+	if carried, has := row[entity.RevisionCondition]; has {
+		return display.Text(carried), true
+	}
+	return "", false
 }
 
 // Control adapts an entity field to the portable form control, preserving the
@@ -285,11 +340,20 @@ func listName(one string) string { return one + "s" }
 //
 // The id is not a column. It is the row's identity and it is already the link's
 // href; a table that leads with a UUID is a table nobody can read.
-func table(o Options, r Resource, at, title string, rows []map[string]any, sort string) g.Node {
-	primary := known(r.Schema.Fields)
+func table(o Options, r Resource, at, title string, rows []map[string]any, sort, count string, pager *components.PaginationProps, slots components.DataListSlots) g.Node {
+	// The identity column is chosen from the fields this list shows, not from the
+	// schema: `known` answers without any declaration, so the gate that refuses an
+	// author pointing `primaryField` at hidden plumbing says nothing about this path,
+	// and a table that led with a value its author kept off every row would put that
+	// value back through the one column every row links on.
+	listed := onList(r.Schema.Fields)
+	primary := known(listed)
 	shown := []entity.Field{primary}
-	for _, f := range r.Schema.Fields {
-		if f.HideList || f.Name == primary.Name || f.Name == "id" {
+	for _, f := range listed {
+		// `hidden` is off every screen and `detail` is off this one; both keep
+		// their value in the schema, the PATCH and the JSON, because what a person
+		// is shown and what a caller may read are two questions.
+		if f.Name == primary.Name || f.Name == "id" {
 			continue
 		}
 		shown = append(shown, f)
@@ -297,10 +361,10 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 	columns := make([]components.TableColumn, 0, len(shown))
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: display.FieldLabel(f), Sortable: f.Type != entity.TypeList, Primary: i == 0,
+			Key: f.Name, Label: display.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
 		})
 	}
-	out := make([]components.TableRow, 0, len(rows))
+	out := make([]components.DataRow, 0, len(rows))
 	// named is what a row whose leading column is blank is called by, kept beside the cells
 	// rather than written into them: a cell is a field's own value, and the presentation a
 	// field names composes from it (see compose) — borrowing another field's value would put
@@ -319,18 +383,23 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 		// row, not off the cell above: display.Display spells "nothing" as a dash, and a dash is
 		// not empty, so a cell tested here could never fall back.
 		if display.Text(row[primary.Name]) == "" {
-			if name := label(row, r.Schema.Fields); name != "" {
+			if name := label(row, listed); name != "" {
 				named[display.Text(row["id"])] = name
 			}
 		}
-		out = append(out, components.TableRow{ID: display.Text(row["id"]), Cells: cells})
+		out = append(out, components.DataRow{TableRow: components.TableRow{ID: display.Text(row["id"]), Cells: cells}})
 	}
-	return components.TableWithSlots(components.TableProps{
+	state := components.ContentState{}
+	groups := []components.DataGroup{{Key: "rows", Rows: out}}
+	if len(rows) == 0 {
+		state = components.ContentState{Status: components.MediaEmpty, Title: title, Text: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity)}
+		groups = nil
+	}
+	p := components.DataListProps{
 		HTMXProps: components.HTMXProps{Target: "body", Swap: "outerHTML", PushURL: "true"},
-		Sortable:  true, Columns: columns, Rows: out,
-		Label:     title,
-		EmptyText: o.Text("screens.empty", "No %ss yet.", r.Schema.Entity),
-	}, components.TableSlots{
+		Columns:   columns, Groups: groups, Label: title, State: state, ResultCountText: count, Pagination: pager,
+	}
+	slots.TableSlots = components.TableSlots{
 		// Sorting is a link the server answers, not a script that reorders what
 		// is on the page: page two of a table sorted in the browser is page two
 		// of the wrong order.
@@ -366,17 +435,24 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort 
 			}
 			return components.Link(components.LinkProps{Label: text, Href: at + "/" + row.ID})
 		},
-	})
+	}
+	return components.DataListWithSlots(p, slots)
 }
 
-// details is the detail screen: every field, in schema order, as a description
-// list. There is no hiding here — hide:list is about a table being readable,
-// not about a field being secret, and a field a caller may not see is a field
-// the entity's JSON does not carry.
+// details is the detail screen: every field the author kept on a record, in schema
+// order, as a description list. `hide:list` hides nothing here — it is about a table
+// being readable, not about a field being secret — and `visibility:hidden` is the one
+// declaration that is off this screen too, which readable applies.
 func details(r Resource, row map[string]any, rendered map[string]string) g.Node {
-	items := make([]components.DetailItem, 0, len(r.Schema.Fields))
+	// One pass, in schema order: richtext becomes a prose section as it always
+	// did, and every other readable field becomes a term beside its value.
 	var prose []g.Node
-	for _, f := range r.Schema.Fields {
+	type read struct {
+		field entity.Field
+		item  components.DetailItem
+	}
+	var reads []read
+	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
 				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
@@ -385,9 +461,45 @@ func details(r Resource, row map[string]any, rendered map[string]string) g.Node 
 			}
 			continue
 		}
-		items = append(items, components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])})
+		reads = append(reads, read{field: f,
+			item: components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])}})
 	}
-	return g.Group{components.DetailList(components.DetailListProps{Items: items}), g.Group(prose)}
+	list := func(items []components.DetailItem) g.Node {
+		return components.DetailList(components.DetailListProps{Items: items})
+	}
+	if len(r.Present.Sections) == 0 {
+		all := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			all = append(all, r.item)
+		}
+		return g.Group{list(all), g.Group(prose)}
+	}
+	// Declared sections are the blocks of the record screen, in the order the
+	// author named them. A field naming none is drawn after every one of them, in
+	// schema order: an undeclared field that drifted between two blocks somebody
+	// placed would be the section list losing an argument it never entered.
+	out := make([]g.Node, 0, len(r.Present.Sections)+1)
+	taken := map[string]bool{}
+	for _, sec := range r.Present.Sections {
+		items := make([]components.DetailItem, 0, len(reads))
+		for _, r := range reads {
+			if r.field.Presentation.Section == sec.Key {
+				items = append(items, r.item)
+				taken[r.field.Name] = true
+			}
+		}
+		out = append(out, h.Section(h.H2(g.Text(sec.Label)), list(items)))
+	}
+	rest := make([]components.DetailItem, 0, len(reads))
+	for _, r := range reads {
+		if !taken[r.field.Name] {
+			rest = append(rest, r.item)
+		}
+	}
+	if len(rest) > 0 {
+		out = append(out, list(rest))
+	}
+	return g.Group{g.Group(out), g.Group(prose)}
 }
 
 // deleteForm is the destructive action: a real form, so it works without
@@ -436,12 +548,35 @@ func direction(sort string) string {
 	return "asc"
 }
 
+// sortable reports whether this column's header offers an order. When the entry
+// names its sortable fields, that list is the answer and nothing outside it is
+// clickable; when it names none, every field that is not a list is, which is what
+// every resource drawn before the declaration existed gets.
+func (r Resource) sortable(f entity.Field) bool {
+	if f.Type == entity.TypeList {
+		return false
+	}
+	if len(r.Present.Sortable) == 0 {
+		return true
+	}
+	for _, name := range r.Present.Sortable {
+		if name == f.Name {
+			return true
+		}
+	}
+	return false
+}
+
 // known is the field a row is recognised by, for the whole table at once: the field the entity marked
 // `ui:"display"` if it declared one, and otherwise the first writable text-shaped field it declares.
 //
 // A `text` column counts beside a `string` one: both hold a name, and the reference app's own users
 // are a `text` table — an entity of text columns that has not marked a field used to answer its own
 // heading and its row's only link with a UUID. The mark still wins when both apply; see candidates.
+//
+// It reads the fields the asking screen shows, which is what callers pass it: an identity selection
+// over a whole schema would pick a field that screen does not draw, and the value would come back on
+// the screen anyway — in the leading cell, the row's link and the tab title.
 func known(fields []entity.Field) entity.Field {
 	if c := candidates(fields); len(c) > 0 {
 		return c[0]
@@ -468,6 +603,34 @@ func candidates(fields []entity.Field) []entity.Field {
 			continue // the marked ones are already at the head, and a caller may not write this one
 		}
 		if f.Type == entity.TypeString || f.Type == entity.TypeText {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// onList is the schema as a list of rows reads it: every field whose reading puts it on a row, in
+// schema order. entity.Field.OnList resolves the two tags that say so (`visibility`, and the older
+// `hide:list` a declared visibility overrides); this is where the list asks, once, so the columns it
+// draws and the field it leads with cannot disagree about which fields a row has.
+func onList(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if f.OnList() {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+// readable is the schema as the record reads it: `hidden` is the only visibility off this screen,
+// `detail` being the field a record answers and a row does not need. A field that is not drawn here
+// cannot name the row here either — the record's title is its toolbar, its breadcrumb and the browser
+// tab a person bookmarks.
+func readable(fields []entity.Field) []entity.Field {
+	out := make([]entity.Field, 0, len(fields))
+	for _, f := range fields {
+		if !f.Presentation.Hidden() {
 			out = append(out, f)
 		}
 	}

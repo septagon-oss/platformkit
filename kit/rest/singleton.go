@@ -19,6 +19,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -66,6 +67,13 @@ type Singleton[T crud.Entity] struct {
 	// Event is what the PUT declares it publishes. Save is what publishes it;
 	// this is the declaration kit/app's boot gate reads.
 	Event string
+
+	// Present is how this row reads — the same declaration a Spec carries, for
+	// the resource a tenant has exactly one of. It is here because a settings row
+	// reaches the catalogue through this path and no other, and a hint a Spec
+	// could declare and a Singleton could not would be a contract with a hole in
+	// the shape of the module that needed it.
+	Present entity.EntryHints
 
 	// Load is the tenant's row. Save writes it and returns what was stored.
 	Load func(ctx context.Context, tx db.Tx[db.Tenant]) (T, error)
@@ -190,7 +198,7 @@ func (s Singleton[T]) resource() httpx.Resource {
 		return problem.Conflict("a tenant has one " + s.Entity + ", and it is neither created nor removed")
 	}
 	return httpx.Resource{
-		Module: s.Module, Entity: s.Entity, Path: s.Path, Singleton: true,
+		Module: s.Module, Entity: s.Entity, Path: s.Path, Singleton: true, Present: s.Present,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
 		Schema: crud.Schema{
 			Module: s.Module, Entity: s.Entity, Path: s.Path, Fields: crud.Fields[T](),
@@ -253,6 +261,12 @@ func (s Singleton[T]) check() {
 	}
 	if bad == "" {
 		bad = presentationFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = entryHintsFault(s.Entity, s.Present, crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = fieldHintFault(s.Entity, crud.Fields[T](), s.Present)
 	}
 	if bad == "" {
 		bad = displayFieldFault(crud.Fields[T]())
