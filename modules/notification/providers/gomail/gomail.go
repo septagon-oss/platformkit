@@ -3,10 +3,10 @@
 //
 // It is a package of its own, outside the module's internal/, for the same
 // reason kit/events/providers/{memory,nats} are: the SDK belongs to the carrier,
-// not to the module. Nothing in modules/notification imports this package — the
-// composition does, and hands it over as a contracts.Mailer — so a deployment
-// that sends no mail links no SMTP client, and the module's own tests stay about
-// decisions rather than about a third party's wire format.
+// not to the module. Nothing under contracts/ or internal/ names a driver or a
+// wire format, so the module's own tests stay about decisions rather than about
+// a third party's protocol; the one importer inside the module is the pick in
+// provider.go, which builds this only for a deployment that names it.
 //
 // It replaces the stdlib net/smtp sender this module shipped with. The reason is
 // the brief's ("go-mail, the standard the register names") and it buys three

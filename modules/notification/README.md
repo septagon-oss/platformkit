@@ -102,8 +102,8 @@ closed delivery, because "a tenant sends from its own name" and "a suppressed no
 row saying so" are both facts about the send and no existing unit reached the send.
 
 **Made reusable** — `providers/` as the place a carrier lives outside `internal/` (the
-`kit/events/providers/{memory,nats}` pattern, one package per SDK, so the module links no
-vendor library and a deployment that sends nothing imports nothing), `contracts.Permanent`
+`kit/events/providers/{memory,nats}` pattern, one package per SDK, so nothing in
+`contracts/` or `internal/` names one), `contracts.Permanent`
 as the one error a provider returns when another attempt would say the same thing, and
 and the shape of a provider test — an in-process relay in the carrier's own package that
 asserts what went on the wire rather than what a mock said (`providers/gomail`, whose relay
