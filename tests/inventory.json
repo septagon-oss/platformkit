@@ -47488,6 +47488,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/kernel-form-date-step.spec.ts",
+   "id": "e2e/kernel-form-date-step.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "kernel form steps save the task target separately from its response deadline",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/kernel-session-form-steps.spec.ts",
    "id": "e2e/kernel-session-form-steps.spec.ts",
    "kind": "playwright",
@@ -51253,7 +51273,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1238,
+  "files": 1239,
   "forge_runs": [
    408,
    413,
@@ -51290,7 +51310,7 @@
    "behaviour": 2226,
    "composition": 272,
    "contract": 19,
-   "journey": 65
+   "journey": 66
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -51306,23 +51326,23 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2582,
+  "rows": 2583,
   "tiers": {
    "merge": 1573,
-   "nightly": 65,
+   "nightly": 66,
    "push": 944
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1023,
+   "keep": 1024,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2235,
+   "keep": 2236,
    "keep-rewrite": 132,
    "merge": 215
   }
