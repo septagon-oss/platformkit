@@ -139,7 +139,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | ratchet | today | measured by |
 |---|---|---|
 | round-named test files | 215 before the prune | `summary.round_named_ceiling` in `inventory.json`, re-checked by `scripts/check_test_inventory.sh`: `--write --ceiling N` lowers it, and a rise is refused by the same line that prints the count |
-| `go_test` lines | 144 948 against the 144 948 ceiling | `go run ./tools/locbudget --check` |
+| `go_test` lines | 149 046 against the 149 100 ceiling | `go run ./tools/locbudget --check` |
 | inventory rows | 2613 | `scripts/check_test_inventory.sh` re-derives them from the tree |
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
