@@ -37,11 +37,13 @@ type Connection struct {
 	// draws what it is told. Never an empty string, because an empty src is a request
 	// against the document's own address.
 	LogoURL string `json:"logoUrl,omitempty" doc:"Path of this workspace's mark, when it has one" example:"/api/v1/public/file/files/6f2b3a1e-1c3a-4a51-9d1a-2f0f3c4b5a69"`
-	// Accent is the workspace's colour, #rrggbb, byte-for-byte the value the web
-	// page pins as --pk-color-accent-default. Never a corrected value: a colour
-	// that reads badly is refused at the write, and what is stored is what is
-	// served (see modules/site/contracts/contrast.go for the rule and why it
-	// rejects rather than adjusts).
+	// Accent is the workspace's colour, #rrggbb — the colour the web page pins as
+	// --pk-color-accent-default, which is what is stored when a tenant chose one and,
+	// when none was ever chosen, the installation's own accent. Never a corrected
+	// value: a colour that reads badly is refused at the write, and a read resolves
+	// rather than fills (see modules/site/contracts/contrast.go for the rule and why
+	// it rejects rather than adjusts, and modules/site/contracts/accent.go for the
+	// resolution).
 	Accent string `json:"accent" doc:"Brand accent, #rrggbb" example:"#2563eb"`
 	// AccentRatio quotes how that colour reads against the kit's two canvases, in
 	// hundredths. A shell is told the number rather than computing it per platform,
