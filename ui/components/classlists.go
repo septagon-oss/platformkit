@@ -76,11 +76,26 @@ var (
 	clForm           = style.New().Display(style.DisplayFlex).FlexDir(style.FlexCol).Gap(style.S4)
 	clFormActions    = style.New().Display(style.DisplayFlex).Items(style.ItemsCenter).
 				Justify(style.JustifyEnd).Gap(style.S2).PaddingTop(style.S2)
+	// clFormSentence is a sentence of the form's own copy — what pressing the
+	// button costs, said above the button — at the form's text scale. It carries
+	// the measure every other sentence on a generated page carries, the one clHelp,
+	// clFieldErr and clShellFooterMeasure take: the design floor divides a
+	// paragraph's box by half its font size and refuses anything above 75
+	// characters, and a consequence written into a form with no class of its own
+	// measured 142ch at 1440px on a generated record page while adding a third body
+	// size beside the 12px help and 14px label. The measure sits on the paragraph
+	// and never on the column above it — see the note over clFieldWrap, where a
+	// measure on a flex column took every control out of the design projection.
+	clFormSentence = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary).
+			MaxWScaled(style.MaxWSM)
 	clConfirmDialog = style.New().MaxWScaled(style.MaxWSM).Rounded(style.RadiusLG).
 			Border(style.Border1).BorderColor(style.BorderPrimary).Bg(style.SurfacePrimary).
 			TextColor(style.FgPrimary).Padding(style.S6).SpaceY(style.S3).Shadow(style.ShadowLG)
-	clConfirmTitle   = style.New().FontSize(style.TextLG).FontWeight(style.FontSemibold)
-	clConfirmMessage = style.New().FontSize(style.TextSM).TextColor(style.FgSecondary)
+	clConfirmTitle = style.New().FontSize(style.TextLG).FontWeight(style.FontSemibold)
+	// The dialog's message is the same sentence, read inside a frame already
+	// narrowed to 24rem: it wears clFormSentence, so the one consequence a person
+	// reads is one sentence wherever it is written.
+	clConfirmMessage = clFormSentence
 	// Shared fragments.
 	clIcon     = style.New().Display(style.DisplayInlineBlock).FlexShrink0()
 	clIconSize = map[string]style.ClassList{
@@ -604,6 +619,18 @@ var (
 			Bg(style.ColorTransparent).Border(style.Border0).Cursor(style.CursorPointer).
 			On(style.StateHover, func(c style.ClassList) style.ClassList { return c.TextColor(style.FgPrimary) }).
 			Merge(clFocusRing)
+	// clTableRowLink sizes the link that is a generated row's way in.
+	//
+	// Its target comes from this rule and not from how its label happens to wrap.
+	// An inline box ignores min-height, so the anchor used to be exactly as tall as
+	// one line of text: on the task list the same link measured 60px beside a title
+	// that wrapped and 20px beside one that did not, and the 24px the audit in
+	// e2e/design-audit.spec.ts enforces was satisfied by the accident of a long
+	// name. inline-block is the smallest display that lets the floor apply while
+	// still shrinking to the label, so the target stays around the name rather than
+	// swallowing the cell; S6 is 1.5rem, the audit's floor in a unit that grows
+	// with the person's text size.
+	clTableRowLink   = clLink.Merge(style.New().Display(style.DisplayInlineBlock).MinHeight(style.S6))
 	clTableRowAlt    = style.New().Bg(style.SurfaceSecondary)
 	clTableTdStrong  = style.New().FontWeight(style.FontSemibold).TextColor(style.FgPrimary)
 	clTableSelection = style.New().Display(style.DisplayInlineFlex).Items(style.ItemsCenter).Justify(style.JustifyCenter).
@@ -906,7 +933,7 @@ func ShellClassLists() []style.ClassList {
 	out := []style.ClassList{
 		clShell, clShellColumn, clShellHeader, clShellMain, clShellFooter, clShellFooterMeasure,
 		clSkipLink,
-		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions,
+		clToolbar, clToolbarCopy, clToolbarActions, clForm, clFormActions, clFormSentence,
 		clConfirmDialog, clConfirmTitle, clConfirmMessage,
 		clIcon, clFocusRing, clButtonBase, clButtonFull, clButtonIconOnly, clButtonDisabledLink,
 		// A person, as read by the generated list: ui/resource composes a cell out of
@@ -928,7 +955,7 @@ func ShellClassLists() []style.ClassList {
 		clHeadingBase, clSpinner, clVideo, clProse,
 		clLink, clTextItalic, clTextUnderline, clTextNoWrap, clTruncate,
 		clFlex, clGrid, clContainer, clTableWrap, clTable, clTableHead, clTableThBase, clTableTh, clTableTd, clTableRow, clTableTdC,
-		clTableThSort, clTableSortBtn, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
+		clTableThSort, clTableSortBtn, clTableRowLink, clTableRowAlt, clTableTdStrong, clTableSelection, clDataList, clDataCount, clDataHeading, clDataDisclosure,
 		// Generated lists compose DataList, including its empty and loading states.
 		clEmpty, clEmptyPad, clEmptyBordered, clEmptyCompact, clEmptyTitle, clEmptyDesc,
 		clSkeleton, clSkeletonText, clSkeletonLine, clSkeletonLineLast,
