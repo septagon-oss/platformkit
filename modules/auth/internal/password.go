@@ -158,6 +158,17 @@ func (s *Service) Offer(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UU
 // a row whose mail never reached the transport — this function retracts it, or
 // the process died before the send — holds nobody's cooldown down and is offered
 // again.
+//
+// # The one offer this ordering cannot make
+//
+// A rotation of a link this person was already sent turns the rule over. There
+// the row is not an offer of a credential but the credential somebody holds and
+// may be opening while this delivery runs, and a write that precedes the send
+// would destroy it on a transport that refuses the replacement: a dead link in
+// the inbox, and no live one anywhere. That offer mails first and writes once
+// the transport has taken the message — see rotate — which keeps one rule intact
+// in both directions: the write that ends a delivered credential happens only
+// when a replacement is on its way to the person who holds it.
 func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User, title, body string) error {
 	if !contracts.MailDeliverable(s.mail.Mailer) {
 		// A composition with no mailer writes no token either: a link nobody is
@@ -170,6 +181,13 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 	}
 	recent, err := s.recent(tx, user.ID)
 	if err != nil || recent {
+		return err
+	}
+	// Whether this person holds a link that still works is the other half of what
+	// the cooldown asked, and it decides where the replacement is written: see
+	// rotate.
+	held, err := s.held(tx, user.ID)
+	if err != nil {
 		return err
 	}
 	// Read before anything is written: a tenant served at no host of record mails
@@ -192,6 +210,9 @@ func (s *Service) offer(ctx context.Context, tx db.Tx[db.Tenant], user *usercont
 		}
 	}
 	token, at := secret(), db.Now()
+	if held {
+		return s.rotate(ctx, tx, user, title, body, base, token, at)
+	}
 	ahead, err := s.postOffer(ctx, tx, user.ID, token, at)
 	if err != nil {
 		return err
@@ -243,6 +264,53 @@ const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user
 	" VALUES (?, ?, ?, ?, ?, %s) ON CONFLICT (tenant_id, user_id) DO UPDATE SET" +
 	" token_hash = EXCLUDED.token_hash, created_at = EXCLUDED.created_at," +
 	" expires_at = EXCLUDED.expires_at, sent_at = EXCLUDED.sent_at"
+
+// rotate replaces a link this person was already sent: the message goes first,
+// and the credential it names is written only once the transport has taken it.
+//
+// This is offer's ordering reversed, for the one case where the row under the
+// write is not an offer but somebody's working credential. Writing ahead of the
+// send would make a refused transport the author of that person's bad hour: the
+// unexpired link in their mailbox answers "those credentials are not right", the
+// replacement never left, and the cooldown holds the next attempt off for five
+// minutes more. Mailed first, a rotation supersedes the link it replaces only
+// once the replacement has arrived, and a refusal writes nothing at all — the old
+// row, its expiry and its spendability untouched.
+//
+// The window it accepts is the short one: between the transport's answer and this
+// write the new mail names a link the table does not hold yet, and a person
+// reading that fast finds the old link, which still works.
+func (s *Service) rotate(ctx context.Context, tx db.Tx[db.Tenant], user *usercontracts.User,
+	title, body, base, token string, at time.Time) error {
+	if err := s.send(ctx, user, title, body, base, token); err != nil {
+		// Nothing was written, so nothing needs withdrawing. A transport may quote
+		// its input in an error and the outbox retains handler errors, so the
+		// mailer's text — which carries the link nobody holds — never travels.
+		return errors.New("auth: set-password email delivery failed")
+	}
+	return s.commitDelivered(ctx, tx, user.ID, token, at)
+}
+
+// commitDelivered writes a credential whose email the transport already took, in
+// the same write as the mark that says it went out. Row and delivery stand or
+// fall together, which is what sent_at beside the insert already describes (see
+// offerStatement): an event that rolls back after an accepted send leaves the
+// link a mailbox holds spendable, and honouring the cooldown that send earned.
+func (s *Service) commitDelivered(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID,
+	token string, at time.Time) error {
+	if _, pooled := httpx.ConnFrom(ctx); !pooled {
+		// A caller that holds the send inside its own transaction can hold the row
+		// there and no further: whoever can be rotating a delivered link is a
+		// person that transaction can already see, so the foreign key postOffer
+		// asks about has nothing left to refuse.
+		return s.writeOfferIn(tx, userID, token, at)
+	}
+	return s.writeCredential(ctx, "commit", "set-password", func(ahead db.Tx[db.Tenant]) error {
+		return ahead.DB().Exec(fmt.Sprintf(offerStatement, "clock_timestamp()"),
+			contracts.Hash(token), db.TenantOf(ahead).ID, userID, at,
+			at.Add(contracts.TokenLifetime)).Error
+	})
+}
 
 // postOffer puts one set-password credential where the person reading the mail
 // will look for it, and says whether it got a commit of its own.
@@ -400,6 +468,24 @@ func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 		Count(&n).Error
 	if err != nil {
 		return false, fmt.Errorf("auth: read the pending password token of %s: %w", userID, err)
+	}
+	return n > 0, nil
+}
+
+// held reports whether this person was sent a link that still works.
+//
+// It is asked beside the cooldown and answers a different question from it: the
+// cooldown counts links sent inside ResetInterval, so a link older than that has
+// stopped limiting requests while it goes on working for another hour. The answer
+// moves exactly one write — ahead of the send, or after it (see rotate) — and it
+// is read off the same one row per person the offer itself writes.
+func (s *Service) held(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
+	var n int64
+	err := tx.DB().Table("password_tokens").
+		Where("user_id = ? AND sent_at IS NOT NULL AND expires_at > now()", userID).
+		Count(&n).Error
+	if err != nil {
+		return false, fmt.Errorf("auth: read the delivered password token of %s: %w", userID, err)
 	}
 	return n > 0, nil
 }
