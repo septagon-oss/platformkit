@@ -46,6 +46,23 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Seed is what the seed command cannot decide for itself: the operator who
+	// ran it. `--as` names the person a write belongs to, which is attribution
+	// and not permission — a target tenant's admin address is somebody else's
+	// answer. The credential below is the permission side: it is checked against
+	// the installation tenant's own people, and the operator must hold
+	// tenant:manage there, before the command enters the tenant it was pointed
+	// at. Both arrive through the environment like every other secret, because
+	// argv is in the process table and in shell history.
+	//
+	// Empty means nobody proved who they are, and the command refuses rather
+	// than seeding as the database account it happens to be pointed at.
+	Seed Seed `yaml:"seed"`
+	// Demo is read by the seed alone. A demonstration needs people a person can
+	// sign in as, and the password they sign in with is a deployment's answer,
+	// not a fact in a file: nothing under seed/ holds a secret, and the loader
+	// refuses a field that looks like one.
+	Demo Demo `yaml:"demo"`
 	// App is what this composition declares about itself to the things that run
 	// before a request does. The slug lives in nats.app, where kit/appname's
 	// grammar guards it and every name is already formed from it; what is here is
@@ -68,6 +85,20 @@ type Config struct {
 	// break it is (`old is comparable, new is not`). An installation that says
 	// nothing about flags has none, which is a nil pointer and not an empty map.
 	Flags *Flags `yaml:"flags"`
+}
+
+// Seed is the seed command's operator credential. See the field on Config.
+type Seed struct {
+	OperatorEmail    string `yaml:"operator_email"`
+	OperatorPassword string `yaml:"operator_password"`
+}
+
+// Demo is what the demo seed cannot decide for itself: the one password every
+// demo person signs in with. Empty means the seed generates a password per
+// person and prints each once, the way bootstrap does with the administrator's.
+// Supply PLATFORMKIT_DEMO_PASSWORD.
+type Demo struct {
+	Password string `yaml:"password"`
 }
 
 // App is the composition's own declaration, read at the migrating boot and put on
@@ -501,6 +532,12 @@ var keys = []key{
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
+	{"demo.password", "PLATFORMKIT_DEMO_PASSWORD", func(c *Config) *string { return &c.Demo.Password }, false},
+	// The seed command's operator, for the same reason as the other three: a
+	// credential is not a flag. Neither is required by the loader, because the
+	// server reads neither and the command refuses an empty pair itself.
+	{"seed.operator_email", "PLATFORMKIT_SEED_OPERATOR_EMAIL", func(c *Config) *string { return &c.Seed.OperatorEmail }, false},
+	{"seed.operator_password", "PLATFORMKIT_SEED_OPERATOR_PASSWORD", func(c *Config) *string { return &c.Seed.OperatorPassword }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.

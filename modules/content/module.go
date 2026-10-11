@@ -39,9 +39,12 @@ type Deps struct {
 	Uses rest.FileUses
 }
 
-// spec is the entity's presence in the application: five routes, two
-// permissions, three events and the schema a generated screen reads.
-var spec = rest.Spec[*contracts.Content]{
+// Spec is the entity's presence in the application: five routes, two
+// permissions, three events and the schema a generated screen reads. It is
+// exported because the write it describes is the one write path content has: an
+// application that seeds a page, or writes one from a process that is not a
+// person's request, goes through it rather than through a copy of what it does.
+var Spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
 	Path:       "/contents",
@@ -78,7 +81,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if uses == nil {
 		uses = rest.RecordNoUses{}
 	}
-	resource := spec
+	resource := Spec
 	resource.RichTextFiles = files
 	resource.FileUses = uses
 	svc := internal.NewService()
