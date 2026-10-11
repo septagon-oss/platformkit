@@ -135,19 +135,43 @@ var ErrBusy = errors.New("limit: the counter was still busy with this key, and t
 type Connections func(context.Context) (*db.Conn, bool)
 
 // Postgres returns the limiter every replica shares.
-func Postgres(conns Connections) Limiter { return postgres{conns: conns} }
+func Postgres(conns Connections) Limiter { return postgres{conns: conns, attempt: queueRun} }
 
 // PostgresOf is Postgres for a deployment that names its app: every bucket key
 // begins with the slug, so two apps that count the same-named bucket of the same
 // tenant id spend one another's allowance. With no slug set the key is the one the
 // counters in the field already hold.
 func PostgresOf(app appname.Name, conns Connections) Limiter {
-	return postgres{conns: conns, app: app}
+	return postgres{conns: conns, app: app, attempt: queueRun}
 }
 
 type postgres struct {
 	conns Connections
 	app   appname.Name
+	// attempt opens one try of this attempt's counter transaction and answers
+	// for what happened in it. queueRun is the attempt every deployment writes
+	// and the answer of the zero value; the field is the seam an internal test
+	// answers the pool through, because the pool's bare bad-connection sentinel
+	// is not a shape a real Postgres can be made to hold on demand (see
+	// askedAgain, and the burst case's CI note beside it).
+	attempt counterRun
+}
+
+// counterRun is queueRun's shape: open one try, answer for it.
+type counterRun = func(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error
+
+// queueRun is the real counterRun: the counter's own cross-tenant transaction,
+// with the queue's wait written into it.
+func queueRun(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error {
+	return db.RunSystem(ctx, conn, systemToken, func(ctx context.Context, tx db.Tx[db.System]) error {
+		// is_local, so the budget belongs to this transaction and dies with it
+		// rather than riding the pooled connection to somebody else's statement.
+		if err := tx.DB().Exec("SELECT set_config('lock_timeout', ?, true)",
+			strconv.FormatInt(queueBudget.Milliseconds(), 10)).Error; err != nil {
+			return err
+		}
+		return fn(ctx, tx)
+	})
 }
 
 func (p postgres) Allow(ctx context.Context, key string, limit int, window time.Duration) (bool, time.Duration, error) {
@@ -242,6 +266,11 @@ func (p postgres) scan(ctx context.Context, query string, args ...any) (int, tim
 // neither of those may turn a database that has stopped answering into a request
 // that never ends. The two waits inside that wall are told apart here, which is
 // the whole of this package's cure: see classified.
+//
+// One answer is asked again before it is classified at all: the bare
+// bad-connection sentinel arriving while the wall still stands (see
+// askedAgain). That retry cannot double-count, and the wall bounds it — the
+// loop is out of wall time the moment the wall is behind the attempt.
 func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.System]) error) error {
 	conn, ok := p.conns(ctx)
 	if !ok {
@@ -249,16 +278,47 @@ func (p postgres) run(ctx context.Context, fn func(context.Context, db.Tx[db.Sys
 	}
 	detached, cancel := context.WithTimeout(db.Detached(context.WithoutCancel(ctx)), budget)
 	defer cancel()
-	err := db.RunSystem(detached, conn, systemToken, func(ctx context.Context, tx db.Tx[db.System]) error {
-		// is_local, so the budget belongs to this transaction and dies with it
-		// rather than riding the pooled connection to somebody else's statement.
-		if err := tx.DB().Exec("SELECT set_config('lock_timeout', ?, true)",
-			strconv.FormatInt(queueBudget.Milliseconds(), 10)).Error; err != nil {
-			return err
+	attempt := p.attempt
+	if attempt == nil {
+		// The zero postgres is a limiter: one assembled without naming its
+		// attempt — as every internal case that goes to a real store builds
+		// one — gets the attempt every deployment writes.
+		attempt = queueRun
+	}
+	for {
+		err := attempt(detached, conn, fn)
+		if !askedAgain(err, detached) {
+			return classified(err, detached)
 		}
-		return fn(ctx, tx)
-	})
-	return classified(err, detached)
+		// driver.ErrBadConn is the driver's promise that nothing reached the
+		// server — it lets that sentinel escape only once its own retries and a
+		// fresh connection have come back the same way — so this attempt is no
+		// more counted than it was a breath ago, and the wait for a usable
+		// connection is the same wait this wall already buys. Asking again is
+		// what keeps a pool storm off the fail-open path: classified reads a
+		// bad connection inside a standing wall as an outage, and every caller
+		// in the field admits an outage.
+	}
+}
+
+// askedAgain reports the one answer that is nobody's verdict: the bare
+// driver.ErrBadConn — that error and no other in its chain, with nothing
+// wrapping it — arriving with the attempt's wall still standing. The bare
+// form is the sql layer's own giving-up signal, its words for "no connection
+// ever took this statement; a fresh one might"; an error that reaches the
+// sentinel through somebody's wrapper is kit/db answering with a bad
+// connection from inside a transaction it opened, which is the store's own
+// verdict and keeps its error while the wall stands (the pair of cases in
+// attempt_wall_internal_test.go). It is the same answer a pool with nothing
+// free gives one step later than the wait for the row's lock, and the timing
+// the burst case carries from CI says it arrives both sides of the wall —
+// measured behind it (see wallPassed and wall_deadline_internal_test.go) and,
+// on a starved runner, two milliseconds ahead of it. A store that is down
+// answers this wait in kind and at once — a refused connect, a closed
+// database — and none of those errors is the sentinel, so they keep their
+// error while the wall stands, exactly as before.
+func askedAgain(err error, attempt context.Context) bool {
+	return errors.Is(err, driver.ErrBadConn) && errors.Unwrap(err) == nil && !wallPassed(attempt)
 }
 
 // classified is the one place this package says which world an attempt just
