@@ -10,8 +10,8 @@ package main
 // the address already carried.
 //
 // What is pinned here is that fix and no more: the committed contract and the
-// address it publishes agree on one name. TestTheOpenAPIDocumentIsTheComposition
-// Served is what says the committed contract is the document the composition serves,
+// address it publishes agree on one name. TestTheOpenAPIDocumentIsTheCompositionServed
+// is what says the committed contract is the document the composition serves,
 // and kit/wire owns the comparison rules, so nothing here restates them.
 
 import (
