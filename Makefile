@@ -361,7 +361,9 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
 # as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
 # directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
-# hold byte copies of the line that result, in CI's expansion and with the count emptied.
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
 	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
@@ -503,6 +505,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
+	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
+	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
+	# default when the same recipe loses it. A bound that stops at the recipe would satisfy all three
+	# guards above and still leave the suite answering to a clock nobody chose, which is the failure this
+	# repository already paid for once. Half a second, nothing compiled, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
