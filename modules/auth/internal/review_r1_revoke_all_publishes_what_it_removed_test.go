@@ -56,7 +56,7 @@ func TestRevokeAllPublishesOnlyTheSessionsItRemoved(t *testing.T) {
 		_, person = sessionOfPerson(t, ctx, tx, svc, users, "ada@acme.example.com")
 		// Two more machines, so the loser has more than one row to misreport.
 		for _, agent := range []string{"Firefox on Linux", "Safari on iPad"} {
-			_, _, err := svc.Open(ctx, tx, person, contracts.Client{UserAgent: agent, IP: "203.0.113.2"})
+			_, _, err := svc.Open(ctx, tx, person, contracts.Client{UserAgent: agent, IP: "203.0.113.2"}, contracts.ViaOIDC)
 			if err != nil {
 				return err
 			}

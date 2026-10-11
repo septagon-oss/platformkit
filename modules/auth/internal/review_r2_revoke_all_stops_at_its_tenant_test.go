@@ -36,7 +36,7 @@ func TestRevokeAllEndsOnlyWhatItsOwnStatementRemoved(t *testing.T) {
 	err := db.Run(acmeCtx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, ada = sessionOfPerson(t, ctx, tx, svc, users, "ada@acme.example.com")
 		for _, agent := range []string{"Firefox", "Safari"} {
-			_, _, err := svc.Open(ctx, tx, ada, contracts.Client{UserAgent: agent})
+			_, _, err := svc.Open(ctx, tx, ada, contracts.Client{UserAgent: agent}, contracts.ViaOIDC)
 			if err != nil {
 				return err
 			}

@@ -815,8 +815,8 @@ if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -
 	exit 1
 fi
 case "$(race_commands -count=1 check-race)" in
-	'go test -race -count=1 ./'*) ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"
 case "$empty_race" in

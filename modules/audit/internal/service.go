@@ -50,6 +50,24 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	if ev.Actor != uuid.Nil {
 		actor = ev.Actor
 	}
+	// The rest of what caused the event, copied rather than derived. The outbox row
+	// the relay deleted is the only other place these four were ever written, so a
+	// trail that leaves them out loses the cause for good: `actor` NULL says nobody
+	// signed in and nothing about what did. A kind may stand alone; a source is a
+	// place, so it is cited in whole — the pair rule kit/events owns and the outbox
+	// column enforces, kept here because this table holds no constraint of its own
+	// on the pair. See modules/audit/migrations/000053_audit_attribution.up.sql.
+	var kind, file, line, initiator any
+	if ev.ActorKind != "" {
+		kind = ev.ActorKind
+		if ev.SourceFile != "" {
+			file, line = ev.SourceFile, ev.SourceLine
+		}
+	}
+	if ev.Initiator != uuid.Nil {
+		initiator = ev.Initiator
+	}
+
 	// The call that caused the event, from the event: this transaction is the
 	// relay's, not the request's, and the three facts stopped being readable when
 	// the request ended. kit/events carried them off kit/request into the outbox
@@ -65,11 +83,13 @@ func (s *Service) Record(_ context.Context, tx db.Tx[db.Tenant], ev events.Event
 	// one row's trail is an index lookup rather than a scan of the tenant's.
 	// See migrations/000023 and List.
 	err := tx.DB().Exec("INSERT INTO "+table+
-		" (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent)"+
-		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?)"+
+		" (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent,"+
+		" actor_kind, source_file, source_line, initiator)"+
+		" VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?, NULLIF(?, '')::inet, ?, ?, ?, ?, ?)"+
 		" ON CONFLICT (tenant_id, event_id) DO NOTHING",
 		db.TenantOf(tx).ID, ev.At, ev.Name, actor, ev.ID, string(ev.Payload),
-		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent)).Error
+		pq.Array(mentioned(ev.Payload)), nilIfEmpty(ev.RequestID), ev.ClientIP, nilIfEmpty(ev.TraceParent),
+		kind, file, line, initiator).Error
 	if err != nil {
 		return fmt.Errorf("audit: record %s: %w", ev.Name, err)
 	}

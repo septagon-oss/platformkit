@@ -45,7 +45,7 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords()}
+		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present}
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
@@ -77,9 +77,24 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 		if c.Run == nil {
 			continue
 		}
+		// A `system` command is one no person is offered, so no browser route is
+		// mounted for it. The JSON route keeps its guard unchanged — this narrows
+		// availability, never authority — and a page that offered it would be
+		// offering an action its author said belongs to an operator.
+		if c.Present.System {
+			continue
+		}
+		label := c.Present.Label
+		if label == "" {
+			// The Summary is the label because nothing else was ever offered:
+			// the button word and the API document's own sentence have always
+			// been one string here, and an author who wants them to differ now
+			// has somewhere to say so.
+			label = c.Summary
+		}
 		out = append(out, resource.Command{
-			Verb: c.Verb, Label: c.Summary, Description: c.Description,
-			Fields: c.Fields, Collection: c.Collection, Base: at,
+			Verb: c.Verb, Label: label, Description: c.Description,
+			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
 		})
 	}
 	return out
