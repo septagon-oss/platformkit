@@ -38,7 +38,6 @@ const (
 	VisibilityPublic  = "public"
 )
 
-
 // MaxName is the longest file name kept. A name is a label a person reads, and
 // the bytes are found by a uuid, so nothing depends on it being long.
 //

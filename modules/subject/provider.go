@@ -98,7 +98,7 @@ func (b bundles) Put(ctx context.Context, tx subjectcontracts.Tx, name string, b
 			// module naming a deployment's retention policy, and the reference application
 			// answers it with `"subject.export" is not a retention class`.
 			Name: name, ContentType: "application/zip", Visibility: filecontracts.VisibilityPrivate,
-			Sealed: true,
+			Sealed:   true,
 			Declared: int64(len(body)), Body: bytes.NewReader(body),
 		})
 	if err != nil {
