@@ -103,25 +103,32 @@ type SiteSettings struct {
 	crud.Base
 
 	// Title is the site's name, and Tagline the line under it.
-	Title   string `json:"title,omitempty" gorm:"type:varchar(120);not null;default:''" maxLength:"120" doc:"The site's name" example:"Acme"`
+	Title   string `json:"title,omitempty" ui:"label:Site name" gorm:"type:varchar(120);not null;default:''" maxLength:"120" doc:"The site's name" example:"Acme"`
 	Tagline string `json:"tagline,omitempty" gorm:"type:varchar(200);not null;default:''" maxLength:"200" doc:"The line under the name" example:"We make things"`
 
 	// HomeSlug is the content served at the site's root. It is a slug and not
 	// an id because a page can be rewritten and replaced and still be the home
 	// page; it is empty until somebody chooses one.
-	HomeSlug string `json:"homeSlug,omitempty" gorm:"type:varchar(200);not null;default:''" maxLength:"200" doc:"Slug of the content served at /" example:"welcome"`
+	HomeSlug string `json:"homeSlug,omitempty" gorm:"type:varchar(200);not null;default:''" maxLength:"200" ui:"label:Home page;help:Which page is served at the site root" doc:"Slug of the content served at /" example:"welcome"`
 
 	// Theme and PrimaryColor are the whole of what a tenant may say about how
 	// their site looks. A theme that needed more would be a theme with a
 	// stylesheet editor in it.
-	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
-	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#2563eb'" pattern:"^#[0-9a-fA-F]{6}$" doc:"Brand colour, #rrggbb" default:"#2563eb" required:"false" example:"#2563eb"`
+	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select;label:Colour scheme" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
+	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#2563eb'" pattern:"^#[0-9a-fA-F]{6}$" ui:"label:Brand colour" doc:"Brand colour, #rrggbb" default:"#2563eb" required:"false" example:"#2563eb"`
 
 	// LogoFileID is a file id with no foreign key behind it, which is what
 	// "cross-module dependencies are Go interfaces" costs at the database: this
 	// module never names modules/file, and a logo that has been deleted is a
 	// site that renders without one.
-	LogoFileID *uuid.UUID `json:"logoFileId,omitempty" gorm:"type:uuid" format:"uuid" doc:"File id of the logo"`
+	//
+	// It is labelled "Logo" and declares no `reference:`. A reference names a
+	// *resource address*, and `file` registers no resource of its own: its routes
+	// are its own operations on `/api/v1/file/files`, so `file/file` is not a
+	// composition's promise and `rest.CheckReferences` would refuse the boot of
+	// every installation that mounts this module. The label is the reading; the
+	// address has to exist before it can be pointed at.
+	LogoFileID *uuid.UUID `json:"logoFileId,omitempty" gorm:"type:uuid" format:"uuid" ui:"label:Logo" doc:"File id of the logo"`
 
 	// Nav is the navigation, in the order it is shown. There is no Order field
 	// on an item for the same reason module.NavEntry has none: the order is the
@@ -135,7 +142,7 @@ type SiteSettings struct {
 	// WriteGate and the subject binding apps/platformkit writes for it.
 	// readOnly because the count belongs to the row: a body that sent one would be
 	// a caller choosing how many times it had been saved.
-	Revision int64 `json:"revision" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
+	Revision int64 `json:"revision" ui:"visibility:hidden" readOnly:"true" required:"false" doc:"This row's own write count, from 1"`
 }
 
 // LockedReader is the one read a caller about to write needs: the settings with
