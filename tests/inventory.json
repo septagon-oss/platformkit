@@ -48659,6 +48659,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/journey_inventory_entries_test.sh",
+   "id": "scripts/journey_inventory_entries_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "journey_inventory_entries_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/journey_wiring_guard_recipe_test.sh",
    "id": "scripts/journey_wiring_guard_recipe_test.sh",
    "kind": "shell_pin",
@@ -50794,7 +50814,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1221,
+  "files": 1222,
   "forge_runs": [
    408,
    413,
@@ -50829,7 +50849,7 @@
   ],
   "layers": {
    "behaviour": 2219,
-   "composition": 256,
+   "composition": 257,
    "contract": 19,
    "journey": 64
   },
@@ -50847,23 +50867,23 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2558,
+  "rows": 2559,
   "tiers": {
    "merge": 1559,
    "nightly": 64,
-   "push": 935
+   "push": 936
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1006,
+   "keep": 1007,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2211,
+   "keep": 2212,
    "keep-rewrite": 132,
    "merge": 215
   }
