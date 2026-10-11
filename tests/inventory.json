@@ -1916,6 +1916,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/mail_ledger_description_test.go",
+   "id": "apps/platformkit/mail_ledger_description_test.go#TestCompositionDescriptionNamesTheMailLedgerProvider",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestCompositionDescriptionNamesTheMailLedgerProvider",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/mailed_link_served_address_test.go",
    "id": "apps/platformkit/mailed_link_served_address_test.go#TestAMailedLinkCarriesTheAddressTheTenantIsServedAt",
    "kind": "go",
@@ -50135,7 +50154,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1191,
+  "files": 1192,
   "forge_runs": [
    408,
    413,
@@ -50170,7 +50189,7 @@
   ],
   "layers": {
    "behaviour": 2226,
-   "composition": 221,
+   "composition": 222,
    "contract": 19,
    "journey": 58
   },
@@ -50188,9 +50207,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2524,
+  "rows": 2525,
   "tiers": {
-   "merge": 1535,
+   "merge": 1536,
    "nightly": 58,
    "push": 931
   },
@@ -50198,13 +50217,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 976,
+   "keep": 977,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2177,
+   "keep": 2178,
    "keep-rewrite": 132,
    "merge": 215
   }
