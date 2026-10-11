@@ -66,6 +66,7 @@
     "./modules/notification/contracts.MailLedger.MailOutcome: added",
     "./modules/notification/contracts.MailLedger.RecordMail: added",
     "./modules/site.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/site/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
+    "./modules/site/contracts.DefaultPrimaryColor: value changed from \"#2563eb\" to \"\"",
     "./modules/site/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/site/contracts.SettingsUpdated: old is comparable, new is not",
     "./modules/task.Module: changed from func(Deps) github.com/septagon-oss/platformkit/kit/module.Module to *github.com/septagon-oss/platformkit/pkit.Module",
