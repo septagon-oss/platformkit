@@ -526,8 +526,8 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// overview counts and the audit trail quotes, and a source write that left it
 	// alone would leave every one of those saying "up to date" about a paragraph
 	// that has since been rewritten.
-	if fields := translatableFields[T](); len(fields) > 0 {
-		for _, field := range fields {
+	if s.tracksTranslations() {
+		for _, field := range translatableFields[T]() {
 			if !slices.Contains(columns, field.Column) {
 				continue
 			}
@@ -644,7 +644,7 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	// live in modules/translation's migration, not this one's — so the promise
 	// this call is what keeps, and the alternative is a table of translations of
 	// records that no longer exist, which no screen can name and no cleanup finds.
-	if len(translatableFields[T]()) > 0 {
+	if s.tracksTranslations() {
 		if err := s.Translations.ForgetRecord(ctx, tx, s.Module, s.Entity, id); err != nil {
 			return e, err
 		}

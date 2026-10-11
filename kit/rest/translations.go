@@ -335,6 +335,17 @@ func (s Spec[T]) translationFault() string {
 	return ""
 }
 
+// tracksTranslations reports the pair a translation write needs in front of it: the
+// entity declares text worth another language, and this Spec was handed the port to
+// ask about it. translationFault refuses the two mismatches at mount, so a Spec
+// mounted by a composition answers this the same way for both halves; what it filters
+// here is a Spec no composition mounted — the package-level declaration a seed command
+// or a case writes to directly — whose write is its own and reaches no translation it
+// was never given a way to name.
+func (s Spec[T]) tracksTranslations() bool {
+	return s.Translations != nil && len(translatableFields[T]()) > 0
+}
+
 // SourceRow is one live row of the entity, with the current text of each of its
 // translatable fields. UpdatedAt is the source row's own, which is the date the
 // banner shows — "Source changed on 1 Oct" names when the source moved, and the
