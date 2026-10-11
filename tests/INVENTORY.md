@@ -112,7 +112,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 ### Round-named verdicts by area
 
 | area | files | keep-rewrite | merge | delete |
-|---|---|---|---|
+|---|---|---|---|---|
 | kit | 371 | 66 | 111 | 0 |
 | modules | 249 | 7 | 31 | 0 |
 | apps | 164 | 23 | 18 | 0 |
