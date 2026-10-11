@@ -4,11 +4,11 @@ Written by `pkit.Server.Explain` and the server's host claims. Do not edit:
 apps/platformkit's TestTheCompositionFileIsCommittedForEachEnvironment refuses a
 missing one, and `pkit.Server.Explain` is what writes the text.
 
-App `platformkit` · environment `development` · 17 modules · role `all`.
+App `platformkit` · environment `development` · 18 modules · role `all`.
 
 ## Composition
 
-pkit: platformkit in development builds 17 modules.
+pkit: platformkit in development builds 18 modules.
 pkit: a tenant of platformkit begins as coordinator, holding task:read and task:update.
 pkit: a tenant of platformkit begins as observer, holding task:read.
 pkit: product.Module needs no other module.

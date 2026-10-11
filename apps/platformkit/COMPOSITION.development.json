@@ -17,7 +17,8 @@
         "webcontracts.Links",
         "admincontracts.Signin",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -258,6 +259,32 @@
       "reads": [
         "config.Audit",
         "config.Database"
+      ]
+    },
+    {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
       ]
     },
     {

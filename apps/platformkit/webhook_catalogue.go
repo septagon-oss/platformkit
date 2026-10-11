@@ -43,6 +43,8 @@ var webhookCatalogue = emittedEvents{
 	authcontracts.EventRecoveryCodesIssued, authcontracts.EventRecoveryCodeUsed,
 	authcontracts.EventAPITokenIssued, authcontracts.EventAPITokenRevoked,
 	authcontracts.EventVerificationRequested, authcontracts.EventRegistrationRequested,
+	authcontracts.EventFactorUsed, authcontracts.EventFactorSuspect,
+	authcontracts.EventPasskeySignInSet,
 	// user, including the doors registration opened.
 	usercontracts.EventCreated, usercontracts.EventUpdated, usercontracts.EventDeleted,
 	usercontracts.EventInvited, usercontracts.EventPasswordSet, usercontracts.EventRolesSet,
@@ -54,6 +56,7 @@ var webhookCatalogue = emittedEvents{
 	tenantcontracts.EventHostRemoved, tenantcontracts.EventLocaleSet, tenantcontracts.EventRenamed,
 	tenantcontracts.EventReactivated, tenantcontracts.EventDeleted,
 	tenantcontracts.EventLifecycleRecorded, tenantcontracts.EventOIDCSet, tenantcontracts.EventOIDCCleared,
+	tenantcontracts.EventSAMLSet, tenantcontracts.EventSAMLCleared,
 	// notification, task, content, site, file, billing, change.
 	notificationcontracts.EventCreated, notificationcontracts.EventEmailRequested, notificationcontracts.EventRead,
 	taskcontracts.EventCreated, taskcontracts.EventUpdated, taskcontracts.EventDeleted,
