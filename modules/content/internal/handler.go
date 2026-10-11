@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -39,21 +40,29 @@ func RegisterRoutes(surfaces httpx.Surfaces, spec rest.Spec[*contracts.Content],
 		[]string{contracts.EventPublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Publish(ctx, tx, id)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Publish"}})
 
 	rest.Command(surfaces, spec, "unpublish",
 		"Unpublish content", "Takes it back to a draft, from published or from archived, and clears the publication time.",
 		[]string{contracts.EventUnpublished},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Unpublish(ctx, tx, id)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{Label: "Unpublish"}})
 
 	rest.Command(surfaces, spec, "archive",
 		"Archive content", "Keeps it and serves it to nobody. Archiving twice changes nothing.",
 		[]string{contracts.EventArchived},
 		func(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, _ struct{}) (*contracts.Content, error) {
 			return svc.Archive(ctx, tx, id)
-		}, rest.CommandOptions{})
+		}, rest.CommandOptions{Present: entity.CommandHints{
+			Label:       "Archive",
+			Destructive: true,
+			Confirmation: &entity.CommandConfirmation{
+				Title:        "Archive this page?",
+				Body:         "It stops being served. You can publish it again later.",
+				ConfirmLabel: "Archive",
+			},
+		}})
 
 	// The public site's one route. It is Public because the whole point of
 	// publishing is that a reader does not sign in, and it is safe to be

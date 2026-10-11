@@ -361,7 +361,9 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
 # as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
 # directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
-# hold byte copies of the line that result, in CI's expansion and with the count emptied.
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
 	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
@@ -548,6 +550,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	# at the push tier. A line commented out keeps the file, the comment above it and the log's silence,
 	# and loses the refusal, which is the difference this case draws.
 	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_guard_check_recipe_test.py
+	# The race guards above hold the recipe's bytes, break the guard that reads them, and ask that the
+	# breaking stays wired; this one runs the recipe and asks the binary. It dry-runs `make check-race`
+	# for one package, hands the command it prints back to go with `-n`, and asserts on the arguments the
+	# test binary receives after flag parsing: the stated clock there, go's ten-minute default when the
+	# same recipe loses it. A bound that stops at the recipe would satisfy every guard above and still
+	# leave the suite answering to a clock nobody chose, which is the failure this repository already
+	# paid for once. Half a second, nothing compiled, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe

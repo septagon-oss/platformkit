@@ -15,10 +15,10 @@ export async function fillContentForm(page: Page, fields: {
   kind?: 'page' | 'post';
 }) {
   await page.goto('/app/content/contents/new');
-  await page.getByLabel('Slug').fill(fields.slug);
+  await page.getByLabel('Address name').fill(fields.slug);
   await page.getByLabel('Title').fill(fields.title);
   if (fields.kind) {
-    await page.getByLabel('Kind').selectOption(fields.kind);
+    await page.getByLabel('Type').selectOption(fields.kind);
   }
   await page.getByLabel('Body').fill(fields.body);
 }
