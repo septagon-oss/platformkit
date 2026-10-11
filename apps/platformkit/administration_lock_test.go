@@ -14,6 +14,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"github.com/google/uuid"
 	"testing"
 	"time"
 
@@ -75,7 +76,22 @@ type administrationSessions struct {
 // request, so the two services see one customer whichever of them is asked.
 func (s administrationSessions) ctx(t *testing.T) context.Context {
 	t.Helper()
-	return httpx.WithConn(tenancy.WithTenant(t.Context(), s.tenant), s.conn)
+	// The principal is the bootstrap administrator once she has been read back,
+	// and nobody before that (the seeding below only reads, and installs through
+	// the system transaction, which is not a caller and is not guarded).
+	var acting uuid.UUID
+	if s.ada != nil {
+		acting = s.ada.ID
+	} else if s.bob != nil {
+		acting = s.bob.ID
+	}
+	// The principal is the bootstrap administrator. Two of these cases put an
+	// administering role back on a person, and that is a guarded act since this
+	// delivery (see usercontracts.Granting): a context with no caller on it is the
+	// composition acting, and the composition's answer to "may I promote somebody"
+	// is no — so a case that means to act as a person says who.
+	return httpx.WithConn(tenancy.WithPrincipal(tenancy.WithTenant(t.Context(), s.tenant),
+		tenancy.Principal{UserID: acting}), s.conn)
 }
 
 // oneHoldsTheOtherWaits runs hold in one session and follow in another and proves
@@ -311,9 +327,15 @@ func twoAdministrators(t *testing.T, cfg config.Config, c composition) administr
 // is never what a floor refuses, so this cannot be the write that fails.
 func (s administrationSessions) restore(t *testing.T) {
 	t.Helper()
-	err := db.Run(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		_, err := s.c.users.SetRoles(ctx, tx, s.ada.ID, []string{authcontracts.RoleAdmin})
-		return err
+	// The state a case starts from, written the way the seeding above writes it: a
+	// system transaction, the composition restoring a row and not a caller
+	// granting a role. SetRoles is now guarded (usercontracts.Granting), and after
+	// the first direction nobody in this tenant could grant anything — which is
+	// precisely what the guard is for, and nothing to do with the lock this case
+	// is about.
+	err := dbtest.System(s.ctx(t), s.conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		return tx.DB().Exec("UPDATE users SET roles = ?::text[] WHERE id = ?",
+			"{admin}", s.ada.ID).Error
 	})
 	if err != nil {
 		t.Fatalf("restore the bootstrap administrator: %v", err)

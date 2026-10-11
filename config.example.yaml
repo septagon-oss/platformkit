@@ -6,7 +6,12 @@ server:
   # Address the HTTP server listens on.
   addr: ":8080"
   # Host the app believes it is reached at. Absolute URLs and cookie scope are
-  # derived from it, and tenant subdomains are resolved against it.
+  # derived from it, and tenant subdomains are resolved against it. Its port, if
+  # it names one, is the port a person types — so an installation published on a
+  # port that is not the one addr listens on (docker run -p 38591:8080, a compose
+  # ports: entry) names its public port here, and every emailed link carries it;
+  # leave it off and a link falls back to the port a request arrived on, which is
+  # the port behind the mapping, and nobody outside it can reach that.
   public_host: "platformkit.localhost:8080"
   # The host the installation itself is reached at: the only address that
   # serves the control plane (/ops and /api/v1/ops/…). It is a host and not a
@@ -47,6 +52,13 @@ database:
   # Migrations connect as the owner, which holds the DDL rights.
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
+  # The role that may expire the audit trail and may not write it: SELECT and DELETE
+  # on audit_events, SELECT and INSERT on audit_retention_marks, and never SUPERUSER
+  # or BYPASSRLS, or kit/db refuses the connection. Empty means the trail never
+  # expires, and the audit-retention job says so at its first tick rather than
+  # deleting nothing. audit.retention_days below 365 is refused at boot.
+  retain_url: ""
+
   # Per-process pool limits; omitted values retain 16 open, 4 idle, 30m.
   # Account for every replica. All app roles require at least two connections:
   # HTTP detached transactions and job advisory locks need a second connection.
@@ -61,7 +73,12 @@ database:
   # time stops and says it is contended, and may be run again), and no bound on a
   # statement at all — a legitimate index build on a large table is the statement
   # a duration bound would kill. Set statement_timeout only where a bound on the
-  # longest statement is worth refusing a real build for.
+  # longest statement is worth refusing a real build for, and know what that
+  # refusal costs: a nontransactional file (-- pkit: autocommit=true) is the one
+  # file the lock budget does not cover, so this is the only bound its wait has,
+  # and a build this stops is left INVALID — the retry the refusal asks for says
+  # the file is applied and does not rebuild the index. kit/db/README.md carries
+  # both halves.
   # lock_timeout: 5s
   # statement_timeout: 0
 
@@ -81,9 +98,63 @@ nats:
   # Optional PEM trust roots for tls://; empty uses system trust roots.
   ca_cert: ""
 
+# Where a value that every replica must read is kept. An empty adapter is this
+# process's own memory: a complete deployment for one process, which kit/app says
+# once in a boot line, because forgetting a value there reaches only that process.
+cache:
+  # "" (the in-process store) | memory | valkey. The application supplies the
+  # constructor for the shared name (app.Caches), as it does for each transport.
+  adapter: ""
+  # The first segment of every key this installation writes. Required with
+  # valkey: two products behind one address have one keyspace.
+  app: ""
+  # redis://, rediss://, valkey:// or unix://, no path, no query. URL credentials
+  # are refused: put the secret in PLATFORMKIT_CACHE_PASSWORD.
+  url: ""
+  password: ""
+  # The store may never evict a key: the counter an invalidation raises has no TTL,
+  # and an evicted one reads back as generation 0, which believes again what the
+  # first invalidation closed. maxmemory-policy noeviction, or no maxmemory at all —
+  # docs/cache.md, and the store `make up` starts.
+
 log:
   # debug | info | warn | error
   level: "info"
+
+# Where spans and numbers go. Every key is optional and the empty default exports
+# nothing at all, which is a decision rather than an omission: a deployment that has
+# chosen no backend pays nothing for traces nobody will read, and it still propagates
+# the trace context it was handed and still leaves one on every outbox row it writes,
+# so a trace continues into a process that does export. One TracerProvider and one
+# MeterProvider live in kit/app; the vocabulary — the attribute keys and the three
+# instruments — is kit/telemetry, which holds no provider and so never reaches a
+# collector on its own. Traces are OTLP/gRPC, and the three numbers are
+# pkit.http.operation.duration, pkit.outbox.lag and pkit.http.refusals by class.
+telemetry:
+  # The collector's gRPC endpoint: "collector.example:4317", or a host:port on a
+  # network that needs no TLS. `make trace` starts one on localhost:4317 that prints
+  # whatever arrives to its own container log. An unreachable collector is never a
+  # failed boot: the
+  # exporter buffers, warns through OpenTelemetry's own error handler and keeps
+  # serving, and kit/health reports its last success as a reading an operator sees
+  # and that never moves the verdict. PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT.
+  otlp_endpoint: ""
+  # What the trace backend shows this process under. Every replica of one
+  # deployment answers the same name; empty means "platformkit" rather than the
+  # SDK's own "unknown_service:" plus the executable. PLATFORMKIT_TELEMETRY_SERVICE_NAME.
+  service_name: ""
+  # Names the client this installation serves, written on the resource of every
+  # span and metric. Empty is right for a shared installation — one process serving
+  # many tenants cannot name one client, which is the same reason the tenant is a
+  # span attribute and never a resource one. PLATFORMKIT_TELEMETRY_CLIENT.
+  client: ""
+  # Fraction of the traces this process *starts* that are kept, 0 to 1. A trace that
+  # arrives with a sampled parent stays kept whatever this says, so a worker handling
+  # an event stays inside the request that caused it. Omitted keeps every new trace —
+  # 0 is an answer and an omitted key is not, which is why it is commented rather than
+  # written as an empty value. This key is read from the file alone: no environment
+  # variable names it, because a sampling decision is reviewed with the file.
+  # sample_ratio: 1.0
 
 # The optional identity provider. An empty issuer — which is the default — means
 # there is none, and the two OIDC routes are not registered at all: a route that
@@ -101,11 +172,30 @@ auth:
     client_secret: ""
     redirect_path: "/api/v1/auth/oidc/callback"
 
+  # The key that seals a second factor's shared secret at rest. Empty — the
+  # default — offers no second factor at all: the enrolment routes are not
+  # mounted, so signing in stays password-only rather than opening a door that
+  # can only answer "unavailable". Set it in PLATFORMKIT_AUTH_FACTOR_KEY, never
+  # here: an attacker with a database copy and this key holds working second
+  # factors, and without it holds sealed bytes. Rotating it invalidates every
+  # enrolled factor, which is a decision to make having withdrawn them.
+  factor_key: ""
+
 # The one outgoing mail server. An empty host — which is the default — means
 # there is none: every notification is still recorded and the ones marked for
-# email are logged rather than sent, which is what a development machine wants
+# email are logged rather than sent, which is what a machine with no relay wants
 # and what a production one has to notice at boot. There is one sender and no
 # provider abstraction; SMTP is what every service worth naming speaks.
+#
+# `make up` composes a catcher for a development machine to point this at: compose.yaml's
+# mailpit service accepts on 1025 with no TLS and no credentials, and shows what it
+# caught at http://localhost:8025 — which is where scripts/e2e.sh and the journeys that
+# open a mailed link look. Put these three lines in config.yaml and a `make run` boot
+# sends its mail where you can read it:
+#
+#   host: "localhost"
+#   port: 1025
+#   from: "PlatformKit <platformkit@localhost>"
 #
 # The password belongs in PLATFORMKIT_MAIL_PASSWORD, not here.
 mail:
@@ -130,6 +220,16 @@ audit:
 bootstrap:
   password: ""
 
+# The password the demonstration people sign in with, read by the seed alone.
+# Empty means this installation offers no demo sign-in: the demo people are still
+# invited and given their roles, and the file's signIn record is neither asked for
+# nor compared. The password itself belongs in no seed file — nothing under
+# apps/platformkit/seed holds a secret, and the loader refuses a field named for
+# one — and belongs here the way every other secret does: in
+# PLATFORMKIT_DEMO_PASSWORD rather than in this file.
+demo:
+  password: ""
+
 # Where uploaded bytes go, how large one upload may be, and how much disk one
 # tenant may fill. They are the three things modules/file cannot decide for
 # itself: a directory is a deployment's disk, and both limits are how much of it
@@ -144,3 +244,55 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # The largest frame an uploaded image is decoded into: a file whose header
+  # claims more pixels is refused with the reason rather than allocated, which
+  # is the decompression bomb. It bounds a decode and not an upload — max_bytes
+  # is that — and zero means the module's own forty megapixels.
+  max_image_pixels: 40000000
+  # How long each retention class lives, keyed by the `kind` an upload carried.
+  # A kind this table does not name is never deleted, only logged, so the empty
+  # table below keeps everything and is the safe default for an example. A
+  # duration is Go's own spelling — "8760h", not "365d" — and a class name is the
+  # token the upload sent and not a word this repository invents: the application
+  # that stores invoices under kind invoice is the one that says how long one
+  # lives. An entry with no class name, or one that is not a positive duration,
+  # fails the load rather than quietly deleting nothing.
+  retention: {}
+
+# What this composition declares about itself, read at the migrating boot and put
+# on that session for migrations/000042_tenant_app to place tenants with. The slug
+# itself is nats.app, where kit/appname's grammar guards it and every shared name
+# is already formed from it; what is here is the two facts a migration needs and
+# the database cannot supply. Nothing at run time consults them.
+#
+# A fresh installation has nothing to place and needs neither key. An installation
+# that already holds tenants and declares nothing gets a refusal listing every
+# tenant by slug, which is the point: the alternative is one process's
+# configuration deciding that every tenant in the database was its own.
+app:
+  # Every host this app serves its tenants at. An existing tenant joins this app
+  # only when all of the hosts it holds are listed here; one host outside the list
+  # is evidence the tenant belongs to another composition sharing the database.
+  hosts: []
+  # The operator's explicit placement, tenant slug to app slug, for the tenants no
+  # host can place. Every value goes through the slug's grammar, and the mapping
+  # has to cover every tenant left over or the migration refuses the run.
+  tenant_apps: {}
+
+# Feature flags, under `values:` because the block is a pointer to the map and an
+# installation with no flags writes no `flags:` section at all. One boolean per
+# key, read the way every other value here is read: through kit/config, with an
+# environment override, and refused at load if
+# the key is spelled wrong. A flag never grants a permission, narrows a tenant's
+# scope or replaces a plan's entitlement (kit/flags/README.md); it switches an
+# optional product behaviour on or off for this installation.
+#
+# change.control.site-settings is the one this application reads. Off, the site
+# form writes the tenant's settings, which is what it has always done. On, that
+# door answers 409 and names the proposal address instead: the write goes in as a
+# proposal, and an account that did not put it forward applies it. The key is
+# named in apps/platformkit/change.go, beside the consumer that reads it, and an
+# absent key means off rather than whatever the loader's zero value happened to be.
+flags:
+  values:
+    change.control.site-settings: false

@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -31,6 +32,15 @@ const (
 	// every middleware chain.
 	assetPrefix = "/web/assets"
 	brand       = "PlatformKit"
+	// sourceLanguage is the language this module's copy is written in, said the
+	// way document.View.Language says it: the bar, the footer and the two empty
+	// states are Go strings here, and the tenant's own title, tagline, nav and
+	// page bodies arrive as they were authored. Composing Deps.Messages is what
+	// lets a refusal of this site answer in the reader's language; it says nothing
+	// about these words, and a page that declared Portuguese over them would be
+	// telling a screen reader to read English with a Portuguese voice — the same
+	// mistake modules/admin's dashboard made and unmade.
+	sourceLanguage = "en"
 )
 
 // slug is the content module's own grammar for a slug, so a path that is not
@@ -45,11 +55,15 @@ var colour = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 type Site struct {
 	Settings sitecontracts.Service
 	Content  contentcontracts.Service
+	Files    richtext.Files
 	Theme    design.Pair
 	// SignIn and File are addresses this site links and does not own: the
 	// composition supplies both, for the reason Deps names them.
 	SignIn string
 	File   func(id string) string
+	// Messages is the composition's merged catalogue, named by web.Deps. Nil keeps
+	// the site monolingual, as it was before any shell here was translated.
+	Messages page.Messages
 }
 
 // Mount composes the stylesheet once and serves the two routes through the
@@ -68,6 +82,7 @@ func Mount(surfaces httpx.Surfaces, s Site) {
 		Tag:       "web",
 		Back:      "/",
 		BackLabel: "Back to the site",
+		Messages:  s.Messages,
 	}
 	page.Serve(home, shell, page.Route{ID: "web-home", Method: http.MethodGet, Path: "/",
 		Summary: "The site's home page", Errors: []int{http.StatusNotFound, http.StatusServiceUnavailable}}, httpx.Public(), s.home)
@@ -96,7 +111,7 @@ func (s Site) home(ctx context.Context, r page.Request, _ *page.Empty) (page.Vie
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.article(settings, r, c)
+	return s.article(ctx, tx, settings, r, c)
 }
 
 // page is one published page by slug. A draft, an archived page and a slug
@@ -116,7 +131,7 @@ func (s Site) page(ctx context.Context, r page.Request, in *slugInput) (page.Vie
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.article(settings, r, c)
+	return s.article(ctx, tx, settings, r, c)
 }
 
 // settings reads the tenant's settings for this request. A host that resolves
@@ -137,14 +152,25 @@ func (s Site) settings(ctx context.Context) (*sitecontracts.SiteSettings, db.Tx[
 	return settings, tx, nil
 }
 
-func (s Site) article(settings *sitecontracts.SiteSettings, r page.Request, c *contentcontracts.Content) (page.View, error) {
-	html, err := contentcontracts.Render(c.Body)
+func (s Site) article(ctx context.Context, tx db.Tx[db.Tenant], settings *sitecontracts.SiteSettings, r page.Request, c *contentcontracts.Content) (page.View, error) {
+	doc, err := richtext.Parse(c.Body)
 	if err != nil {
 		return page.View{}, err
 	}
-	return s.view(settings, r, c.Title, []g.Node{h.Article(g.Attr("data-prose", ""),
+	html, err := richtext.Render(ctx, tx, doc, s.Files, richtext.Public)
+	if err != nil {
+		return page.View{}, err
+	}
+	v := s.view(settings, r, c.Title, []g.Node{h.Article(
 		components.Heading(components.HeadingProps{Text: c.Title, Level: 1}),
-		g.Raw(html))}), nil
+		h.Div(g.Attr("data-prose", ""), components.Prose(components.ProseProps{HTML: html})))})
+	v.Head = append(v.Head, h.Meta(h.Name("description"), h.Content(richtext.MetaDescription(doc, 160))))
+	if first, ok := richtext.FirstImage(doc); ok && s.Files != nil {
+		if image, err := s.Files.Resolve(ctx, tx, first.ID, richtext.Public); err == nil {
+			v.Head = append(v.Head, h.Meta(g.Attr("property", "og:image"), h.Content(image.Src)))
+		}
+	}
+	return v, nil
 }
 
 // view is every page of the site: the bar, the column, the footer, and the
@@ -153,15 +179,22 @@ func (s Site) article(settings *sitecontracts.SiteSettings, r page.Request, c *c
 // otherwise the minute in which their own publish looks lost — e2e/site.spec.ts is
 // that journey, and it failed until this line.
 func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title string, main []g.Node) page.View {
-	v := page.View{Title: title, Revalidate: true, Body: []g.Node{
+	v := page.View{Title: title, Revalidate: true, Language: sourceLanguage, Body: []g.Node{
 		s.header(settings, r),
 		h.Main(h.ID("content"), h.Class(clMain.Compile()),
-			components.Container(components.ContainerProps{MaxWidth: "3xl"}, main...)),
+			components.Container(components.ContainerProps{MaxWidth: "3xl"},
+				h.Div(h.Class(clMeasure.Compile()), g.Group(main)))),
 		footer(settings, r),
 	}}
 	if settings.Theme == "light" || settings.Theme == "dark" {
 		v.Theme = settings.Theme
 	}
+	// The tenant's accent is the one style this repository writes outside
+	// ui.Compose: the colour is a row, not a Go sheet, so no layer Compose emits
+	// can carry it. Unlayered is what lets a tenant palette outrank every layer,
+	// which is the point of a per-tenant colour, and the guard is the pattern —
+	// an inline declaration reaches the gate that refuses a consumer sheet a raw
+	// colour and the --pk- namespace. See refuseClientSheet.
 	if colour.MatchString(settings.PrimaryColor) {
 		v.Head = []g.Node{h.StyleEl(g.Raw(":root{--pk-color-accent-default:" + settings.PrimaryColor + "}"))}
 	}
@@ -193,9 +226,18 @@ func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request) g.Nod
 	if settings.Tagline != "" {
 		mark = append(mark, components.Text(components.TextProps{Content: settings.Tagline, Size: "sm", Color: "muted"}))
 	}
-	links := make([]g.Node, 0, len(settings.Nav))
+	links := make([]g.Node, 0, len(settings.Nav)+1)
 	for _, item := range settings.Nav {
 		links = append(links, components.Link(components.LinkProps{Label: item.Label, Href: item.Path}))
+	}
+	// Decision 0020: the public frame enters the workspace at its root, and on
+	// every page — not only on the two empty states below, which is where the link
+	// lived until a tenant published a home page and found that a site with
+	// content offered a visitor less than an empty one. The address is the
+	// composition's (webcontracts.Links.SignIn through web.Deps.SignInPath) and the
+	// label is the one those empty states already use, so the door has one name.
+	if s.SignIn != "" {
+		links = append(links, components.Link(components.LinkProps{Label: "Sign in to the admin", Href: s.SignIn}))
 	}
 	return h.Header(h.Class(clHeader.Compile()),
 		h.Div(h.Class(clBrand.Compile()), g.Group(mark)),
@@ -204,7 +246,8 @@ func (s Site) header(settings *sitecontracts.SiteSettings, r page.Request) g.Nod
 
 func footer(settings *sitecontracts.SiteSettings, r page.Request) g.Node {
 	return h.Footer(h.Class(clFooter.Compile()),
-		components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"}))
+		h.Div(h.Class(clFooterCopy.Compile()),
+			components.Text(components.TextProps{Content: name(settings, r) + " · " + brand, Size: "xs", Color: "muted"})))
 }
 
 func (s Site) nothingYet() []g.Node {

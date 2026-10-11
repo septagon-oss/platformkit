@@ -37,6 +37,7 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -51,6 +52,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/problem"
@@ -108,15 +110,20 @@ type Entitler interface {
 // word of the refusal's detail, the same machine-readable reason the response and
 // the log line carry, and RequestID joins it to both.
 type Denial struct {
-	Status    int
-	Code      string
-	Detail    string
-	Method    string
-	Path      string
-	Operation string
-	RequestID string
-	Tenant    tenancy.Tenant
-	Principal tenancy.Principal
+	Status int
+	Code   string
+	Detail string
+	Method string
+	Path   string
+	// Permission and Label are the grant that was missing, when the refusal was
+	// about a grant: the trail has to answer "which permission did they lack"
+	// without the request id and a log line.
+	Permission string
+	Label      string
+	Operation  string
+	RequestID  string
+	Tenant     tenancy.Tenant
+	Principal  tenancy.Principal
 }
 
 type Options struct {
@@ -137,7 +144,24 @@ type Options struct {
 	Tenants TenantLoader
 
 	// Conn is the application connection every request transaction opens on.
+	//
+	// It may be nil exactly when Unwired is set. Every other build of an API is a
+	// build that intends to serve, and serving without a connection is a request
+	// that panics instead of a composition that was refused. An unwired build that
+	// will serve gets its connection from Connect; one that will not is thrown away
+	// once the gates have answered.
 	Conn *db.Conn
+
+	// Unwired records that this API is built while the deployment has opened
+	// nothing: the routes are registered so the gates can read them, and the API is
+	// then either thrown away (a gate pass, see app.Declarations) or handed its
+	// connection and its store by Connect before anything can reach it (the build
+	// that will serve). What the flag buys is the thing it is there for: a build
+	// that answers a question about its own routes without a pool, a migration or a
+	// dial of the store the deployment named — and, for the build that serves, the
+	// same answer about the last registration of its routes rather than only the
+	// first three. Kit/app is the only caller that sets it.
+	Unwired bool
 
 	// Authorize answers the permission questions the declarations ask.
 	Authorize Authorizer
@@ -220,6 +244,29 @@ type Options struct {
 	// survive the refusal that followed it. That is the same argument the auth
 	// module makes for its lockout.
 	WriteLimiter WriteLimiter
+
+	// Access is the sequel to a refusal: who to tell when a person asks for the
+	// grant they were refused, and how. Nil draws no ask control on the refusal
+	// page and mounts no ask route — the reach is another module's rows, so a
+	// composition that wires none offers no door rather than one that 404s.
+	Access AskForAccess
+
+	// Accessed is the kernel's record of one ask, in the request's own transaction
+	// beside the notices it wrote: kit/app publishes the event, which is where the
+	// payload types and the module catalogue live. Its failure is the ask's failure —
+	// an event that did not commit rolls the notices back with it — so a composition
+	// that cannot write the trail refuses the ask rather than answering 202.
+	Accessed func(context.Context, AccessRecord) error
+
+	// Cache is where a resolved host is believed, and it is required: a belief this
+	// package holds about which tenant a host is, and that it can be told to stop
+	// holding (modules/tenant does exactly that when it suspends a customer), is not
+	// this process's own business. The in-process store is a complete answer for one
+	// process and the same adapter every test runs on — kit/app builds it when the
+	// deployment names no server — but it has to be named, because a shared value
+	// that silently became a map is a suspension that stops reaching the other
+	// replicas and nobody notices until a suspended customer is still serving.
+	Cache cache.Cache
 }
 
 // WriteLimiter is the counting this kernel asks for and nothing more: it is the
@@ -267,6 +314,9 @@ func StreamedBody() (string, any) { return StreamedBodyExtension, true }
 // API is the application's Huma API: the huma.API every registration goes
 // through, plus the recording that makes boot-time validation possible.
 type API struct {
+	// moved is this composition's own migration rows (API.Alias), asked after the
+	// kernel's table in aliases.go.
+	moved []struct{ from, to string }
 	// api is the recording huma.API. It is unexported because an exported one
 	// is a door: huma.Register(api.API, ...) used to reach the bare adapter,
 	// which the recording — and therefore the boot gate — never saw.
@@ -280,13 +330,16 @@ type API struct {
 	inner  *chi.Mux
 	opts   Options
 	log    *slog.Logger
-	hosts  *hostCache
 	token  tenancy.SystemToken
 	lazy   tenancy.SystemToken
 	system tenancy.SystemToken
 	// resolving collapses concurrent lookups of one host into one query, so a
 	// cold cache under load is one round trip and not one per request.
 	resolving singleflight.Group
+
+	// access is the ask-for-access door, built once from Options and put on every
+	// request's context by carry. Nil means this composition offers no way to ask.
+	access *accessDoor
 
 	mu       sync.Mutex
 	ops      []*huma.Operation
@@ -322,12 +375,14 @@ func New(cfg Options) (*API, *chi.Mux) {
 	switch {
 	case cfg.Tenants == nil:
 		panic("httpx.New: Options.Tenants is required; every request resolves a tenant from its host")
-	case cfg.Conn == nil:
-		panic("httpx.New: Options.Conn is required; every tenant request runs in a transaction")
+	case cfg.Conn == nil && !cfg.Unwired:
+		panic("httpx.New: Options.Conn is required, or Options.Unwired and a call to Connect; every tenant request runs in a transaction")
 	case cfg.Authorize == nil:
 		panic("httpx.New: Options.Authorize is required; Permission declarations have nothing to ask otherwise")
 	case cfg.Authenticate == nil:
 		panic("httpx.New: Options.Authenticate is required; SignedIn declarations have nobody to recognise otherwise")
+	case cfg.Cache == nil:
+		panic("httpx.New: Options.Cache is required; a host resolution cached here must be one every replica can forget")
 	}
 
 	// One error shape for the whole API, assigned where the API is built rather
@@ -352,10 +407,18 @@ func New(cfg Options) (*API, *chi.Mux) {
 		inner:  inner,
 		opts:   cfg,
 		log:    cfg.Log,
-		hosts:  &hostCache{hosts: map[string]hostEntry{}},
 		token:  syscap.NewSystemToken("tenant resolution"),
 		lazy:   syscap.NewSystemToken("request transaction"),
 		system: syscap.NewSystemToken("a module's control-plane routes"),
+	}
+	if cfg.Access != nil {
+		// One door, read per request off the context: the catalogue and the
+		// limiter belong to the API, the reach belongs to the composition, and the
+		// two page and JSON routes call the same command (docs/adr/0007).
+		a.access = &accessDoor{
+			ask: cfg.Access, limiter: cfg.WriteLimiter, record: cfg.Accessed,
+			catalogue: a.Permissions,
+		}
 	}
 	if a.log == nil {
 		a.log = slog.Default()
@@ -376,7 +439,7 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// answered ahead of the headers was distinguishable from an unmounted address
 	// by five response headers, which is the one fact it exists to hide. See
 	// surfaces.go and headers.go.
-	root.Use(a.requestID, a.surface, a.headers, a.address)
+	root.Use(tracing, a.requestID, a.surface, a.headers, a.address)
 
 	// What chi itself answers when nothing matched, or matched but not for this verb.
 	//
@@ -433,12 +496,48 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
 	root.Mount("/", inner)
 	return a, root
+}
+
+// Connect hands an unwired API the two things its deployment opens after its
+// routes are built: the connection every request transaction opens on, and the
+// store a resolved host is believed in. kit/app.Start is its only caller, and the
+// reason it exists is the ordering decision 0074 rule 1 makes: which routes the
+// modules mounted is the last thing a composition can get wrong for free, and the
+// pool and the shared store are the first things it spends. An API therefore
+// registers its routes and answers every gate over them before either is dialled,
+// and the connection arrives here, after the last registration and before anything
+// can listen.
+//
+// Nothing is re-mounted. Both values are read per request and neither while a
+// route is being mounted, so the middleware chain, every operation, every page and
+// every static tree is the one the gates read; the OpenAPI document is unchanged.
+// The in-process store the build was handed is left for its owner to close — it
+// belongs to the build, not to this API — and from this call every host resolution
+// is believed in the store every replica can forget, which is the store the
+// deployment named and not the one a build that might still be refused invented.
+//
+// A nil connection, a nil store and a second call on an API that already has a
+// connection are all refused: the first two describe an API that could only fail
+// closed on every request, and the third is two deployments' connections in one
+// router, one of which somebody closes while the other is still serving.
+func (a *API) Connect(conn *db.Conn, store cache.Cache) error {
+	switch {
+	case conn == nil:
+		return errors.New("httpx.Connect: the connection is required; a request transaction opens on it")
+	case store == nil:
+		return errors.New("httpx.Connect: the store is required; a host resolution this package holds has to be one every replica can forget")
+	case a.opts.Conn != nil:
+		return errors.New("httpx.Connect: this API already has a connection; a second one is a second deployment in one router")
+	}
+	a.opts.Conn = conn
+	a.opts.Cache = store
+	return nil
 }
 
 // methodNotAllowed answers an address that is served but does not take this

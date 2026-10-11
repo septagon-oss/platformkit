@@ -34,6 +34,16 @@ type Fixture struct {
 	// makes "an idempotent command says nothing" a thing the suite can check,
 	// rather than a claim the returned entity cannot support.
 	Published func() []string
+	// PublishedScopes and PublishedTraces answer the two questions a verb that
+	// audits both sides has to answer: which tenant's trail each row landed in,
+	// and which request both rows name. They are in the same order as Published.
+	PublishedScopes func() []uuid.UUID
+	PublishedTraces func() []string
+	// Operator is the installation's own tenant — the row Bootstrap creates and
+	// the scope every lifecycle verb mirrors its audit row into. The fixture
+	// carries one because every verb refuses without it: a control plane that
+	// cannot audit both sides of what it did writes neither.
+	Operator uuid.UUID
 }
 
 // Harness builds one Fixture and calls run with it. It is written this way
@@ -56,8 +66,24 @@ func acme() contracts.NewTenant {
 	return contracts.NewTenant{Slug: "acme", Name: "Acme Corporation", Host: "acme.example.com"}
 }
 
+// people is a provider somebody would actually configure: a realm issuer, the
+// installation's own client, and the *name* of the variable holding the secret.
+func people() contracts.OIDCSettings {
+	return contracts.OIDCSettings{
+		Issuer: "https://idp.acme.example/realms/people", ClientID: "platformkit",
+		SecretRef: "ACME_OIDC_SECRET", RedirectPath: "/oidc/callback",
+	}
+}
+
+// replaced is the same shape with a different door behind it.
+func replaced() contracts.OIDCSettings {
+	in := people()
+	in.Issuer = "https://login.acme.example"
+	return in
+}
+
 func cases() map[string]func(*testing.T, Fixture) {
-	return map[string]func(*testing.T, Fixture){
+	all := map[string]func(*testing.T, Fixture){
 		"create writes the tenant and its first host": func(t *testing.T, f Fixture) {
 			got, err := f.Service.Create(f.Ctx, f.Tx, acme())
 			if err != nil {
@@ -76,7 +102,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if resolved.ID != got.ID {
 				t.Errorf("ByHost resolved %s, want %s", resolved.ID, got.ID)
 			}
-			published(t, f, contracts.EventCreated)
+			published(t, f, audited(contracts.EventCreated)...)
 		},
 
 		"create normalises the slug and the host": func(t *testing.T, f Fixture) {
@@ -165,15 +191,19 @@ func cases() map[string]func(*testing.T, Fixture) {
 			}
 			// Still in the control plane's own list, which is the point of
 			// there being two questions.
+			// Counted against the fixture's own installation tenant: the control
+			// plane's list is every customer there is, and the case is about the one
+			// it just suspended.
 			all, err := f.Service.List(f.Ctx, f.Tx)
-			if err != nil || len(all) != 1 {
-				t.Fatalf("List = %d tenants, %v; want the suspended one", len(all), err)
+			if err != nil || len(others(all, f.Operator)) != 1 || !slices.ContainsFunc(others(all, f.Operator),
+				func(got *contracts.Tenant) bool { return got.Status == contracts.StatusSuspended }) {
+				t.Fatalf("List = %v, %v; want the suspended tenant still in it", names(all), err)
 			}
 			active, err := contracts.Active{Service: f.Service}.List(f.Ctx, f.Tx)
-			if err != nil || len(active) != 0 {
+			if err != nil || len(othersTenants(active, f.Operator)) != 0 {
 				t.Errorf("Active.List = %v, %v; a suspended tenant is not swept", active, err)
 			}
-			published(t, f, contracts.EventCreated, contracts.EventSuspended)
+			published(t, f, audited(contracts.EventCreated, contracts.EventSuspended)...)
 		},
 
 		"suspending twice says nothing the second time": func(t *testing.T, f Fixture) {
@@ -186,7 +216,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 					t.Fatalf("Suspend: %v", err)
 				}
 			}
-			published(t, f, contracts.EventCreated, contracts.EventSuspended)
+			published(t, f, audited(contracts.EventCreated, contracts.EventSuspended)...)
 		},
 
 		"another host resolves to the same tenant": func(t *testing.T, f Fixture) {
@@ -207,7 +237,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, "www.acme.example.com", false); err != nil {
 				t.Fatalf("AddHost again: %v", err)
 			}
-			published(t, f, contracts.EventCreated, contracts.EventHostAdded)
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded)...)
 		},
 
 		"the first host is the primary one, and stays it until somebody says otherwise": func(t *testing.T, f Fixture) {
@@ -242,8 +272,228 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if got := moved.Hosts; len(got) != 2 || got[0] != earlier {
 				t.Errorf("the hosts are %v after a promotion, want the promoted one first", got)
 			}
-			// Promoting a host that is already there is not a second addition.
-			published(t, f, contracts.EventCreated, contracts.EventHostAdded)
+			// Promoting a host that is already there is not a second addition, but
+			// it is a change: the name every absolute URL for this tenant is built on
+			// moved, so the verb says so in both trails.
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded,
+				contracts.EventHostAdded)...)
+			// Asking again for the name that is already primary is the same act, so
+			// the second call says nothing: an operator's retry never doubles an audit.
+			if _, err := f.Service.AddHost(f.Ctx, f.Tx, created.ID, earlier, true); err != nil {
+				t.Fatalf("AddHost promoting the primary again: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventHostAdded,
+				contracts.EventHostAdded)...)
+		},
+
+		"set-locale says what the tenant is served in": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			// What a tenant nobody chose a language for is served in, read the way a
+			// request reads it: exactly its default, and nothing else. The migration
+			// gives a tenant that predates the column the same single row, and this
+			// command is the only thing that adds a language, so a create that wrote
+			// a wider set would leave two identical tenants answering one browser in
+			// two different languages.
+			born, err := f.Service.ByHost(f.Ctx, f.Tx, "acme.example.com")
+			if err != nil {
+				t.Fatalf("ByHost: %v", err)
+			}
+			if created.DefaultLocale == "" {
+				t.Errorf("a new tenant named no default language, so every request to it falls back to nothing")
+			}
+			if len(created.Locales) != 0 {
+				t.Errorf("a new tenant was born served in %v beside its default %q; SetLocale is the command that says so",
+					created.Locales, created.DefaultLocale)
+			}
+			if born.Languages == nil || born.Languages.Default != created.DefaultLocale || len(born.Languages.Others) != 0 {
+				t.Errorf("resolving the tenant's own host offers %v, want the default %q alone",
+					born.Languages, created.DefaultLocale)
+			}
+			got, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, contracts.SetLocale{
+				Default:   "pt-PT",
+				Supported: []string{"en", "PT-pt", "pt-PT"},
+			})
+			if err != nil {
+				t.Fatalf("SetLocale: %v", err)
+			}
+			if got.DefaultLocale != "pt-PT" {
+				t.Errorf("default is %q, want pt-PT as a tag spells it", got.DefaultLocale)
+			}
+			// The set is sorted, deduplicated, and does not repeat the default: the
+			// case is normalised, so "PT-pt" is the same language as "pt-PT".
+			if want := []string{"en"}; !slices.Equal(got.Locales, want) {
+				t.Errorf("the set behind the default is %v, want %v", got.Locales, want)
+			}
+			resolved, err := f.Service.ByHost(f.Ctx, f.Tx, "acme.example.com")
+			if err != nil {
+				t.Fatalf("ByHost: %v", err)
+			}
+			// What the loader answers is what a page negotiates over, so this is the
+			// assertion that the tenant's own default is first: a list whose head is
+			// somebody else is a tenant answered in the wrong language.
+			if resolved.Languages == nil || resolved.Languages.Default != "pt-PT" ||
+				!slices.Equal(resolved.Languages.Others, []string{"en"}) {
+				t.Errorf("the loader carried %v, want pt-PT first with en behind it", resolved.Languages)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventLocaleSet)...)
+		},
+
+		"saying the same languages again changes nothing and says nothing": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			in := contracts.SetLocale{Default: "pt-PT", Supported: []string{"en"}}
+			if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, in); err != nil {
+				t.Fatalf("SetLocale: %v", err)
+			}
+			if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, in); err != nil {
+				t.Fatalf("SetLocale again: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventLocaleSet)...)
+		},
+
+		"a language that is not a tag is refused": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			for _, in := range []contracts.SetLocale{
+				{Default: "portuguese", Supported: []string{"en"}},
+				{Default: "pt-PT", Supported: []string{"english"}},
+				{Default: " ", Supported: nil},
+			} {
+				if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, in); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("SetLocale(%q, %v) = %v, want ErrInvalid", in.Default, in.Supported, err)
+				}
+			}
+			// Nothing was written by the refused calls: the tenant is still served in
+			// the language it was created with, and said nothing about it.
+			after, err := f.Service.Get(f.Ctx, f.Tx, created.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if after.DefaultLocale != created.DefaultLocale || len(after.Locales) != 0 {
+				t.Errorf("a refused SetLocale left %q with %v", after.DefaultLocale, after.Locales)
+			}
+			published(t, f, audited(contracts.EventCreated)...)
+		},
+
+		"a language the installation has no copy for is refused": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			// The installation names the languages its catalogues answer in, and a
+			// tenant cannot be served in one nobody wrote: the page would declare that
+			// language and show the source copy. InstallationLanguages is en and pt-PT
+			// for both implementations, so German is the one with no copy behind it.
+			for _, in := range []contracts.SetLocale{
+				{Default: "de-DE", Supported: nil},
+				{Default: "pt-PT", Supported: []string{"de-DE"}},
+			} {
+				if _, err := f.Service.SetLocale(f.Ctx, f.Tx, created.ID, in); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("SetLocale(%q, %v) = %v, want ErrInvalid: the installation has no copy in it",
+						in.Default, in.Supported, err)
+				}
+			}
+			after, err := f.Service.Get(f.Ctx, f.Tx, created.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if after.DefaultLocale != created.DefaultLocale || len(after.Locales) != 0 {
+				t.Errorf("a refused SetLocale left %q served in %v", after.DefaultLocale, after.Locales)
+			}
+			published(t, f, audited(contracts.EventCreated)...)
+		},
+
+		// The provider's four rules, run against the SQL service and the fake by
+		// the same table: a mode that is not one of three, half a provider, an
+		// issuer that is a sentence, a secret written where its name belongs.
+		"set-oidc says which provider a tenant's people sign in against": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+				t.Fatalf("SetOIDC: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventOIDCSet)...)
+		},
+
+		// Every one of these is a write that cannot be exercised: a redirect to a
+		// provider that will refuse the code, a door into a room with no roles, a
+		// secret in a column that is copied into the audit trail. Each refusal
+		// publishes nothing, which is the assertion that makes it a refusal.
+		"set-oidc refuses half a provider": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			broken := map[string]func(*contracts.OIDCSettings){
+				"no issuer":       func(in *contracts.OIDCSettings) { in.Issuer = "" },
+				"a plain host":    func(in *contracts.OIDCSettings) { in.Issuer = "idp acme" },
+				"not https":       func(in *contracts.OIDCSettings) { in.Issuer = "http://idp.acme.example" },
+				"a query":         func(in *contracts.OIDCSettings) { in.Issuer = "https://idp.acme.example?tenant=acme" },
+				"no client":       func(in *contracts.OIDCSettings) { in.ClientID = "" },
+				"a secret as ref": func(in *contracts.OIDCSettings) { in.SecretRef = "s3cr3t-value" },
+				"an unknown mode": func(in *contracts.OIDCSettings) { in.Registration = "auto" },
+				"provision, no role": func(in *contracts.OIDCSettings) {
+					in.Registration = contracts.RegistrationProvision
+					in.Roles = nil
+				},
+			}
+			for name, breakIt := range broken {
+				in := people()
+				breakIt(&in)
+				if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, in); !errors.Is(err, crud.ErrInvalid) {
+					t.Errorf("SetOIDC with %s = %v, want ErrInvalid", name, err)
+				}
+			}
+			published(t, f, audited(contracts.EventCreated)...)
+		},
+
+		// A retry is the same decision reported once. An operator who pressed save
+		// twice must not read as two changes in the trail a customer is billed on.
+		"the same provider twice changes nothing and says nothing": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			for range 2 {
+				if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+					t.Fatalf("SetOIDC: %v", err)
+				}
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventOIDCSet)...)
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, replaced()); err != nil {
+				t.Fatalf("SetOIDC with a different issuer: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventOIDCSet, contracts.EventOIDCSet)...)
+		},
+
+		"clearing a provider ends it once": func(t *testing.T, f Fixture) {
+			created, err := f.Service.Create(f.Ctx, f.Tx, acme())
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC of a tenant that never had one: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated)...)
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, created.ID, people()); err != nil {
+				t.Fatalf("SetOIDC: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC: %v", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, created.ID); err != nil {
+				t.Fatalf("ClearOIDC again: %v", err)
+			}
+			published(t, f, audited(contracts.EventCreated, contracts.EventOIDCSet, contracts.EventOIDCCleared)...)
 		},
 
 		"an unknown tenant is not found": func(t *testing.T, f Fixture) {
@@ -257,8 +507,75 @@ func cases() map[string]func(*testing.T, Fixture) {
 			if _, err := f.Service.AddHost(f.Ctx, f.Tx, id, "x.example.com", false); !errors.Is(err, crud.ErrNotFound) {
 				t.Errorf("AddHost on an unknown tenant = %v, want ErrNotFound", err)
 			}
+			if _, err := f.Service.SetOIDC(f.Ctx, f.Tx, id, people()); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("SetOIDC on an unknown tenant = %v, want ErrNotFound: a provider cannot be attached to nobody", err)
+			}
+			if _, err := f.Service.ClearOIDC(f.Ctx, f.Tx, id); !errors.Is(err, crud.ErrNotFound) {
+				t.Errorf("ClearOIDC on an unknown tenant = %v, want ErrNotFound", err)
+			}
 		},
 	}
+	for name, run := range lifecycleCases() {
+		all[name] = run
+	}
+	return all
+}
+
+// names is a tenant list as one line of failure output.
+func names(ts []*contracts.Tenant) []string {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, t.Slug+"/"+t.Status)
+	}
+	return out
+}
+
+// others is the customers of a list, the installation's own row left out: the
+// fixture bootstraps one, and a case about a customer counts customers.
+func others(ts []*contracts.Tenant, operator uuid.UUID) []*contracts.Tenant {
+	out := make([]*contracts.Tenant, 0, len(ts))
+	for _, t := range ts {
+		if t.ID != operator {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func othersTenants(ts []tenancy.Tenant, operator uuid.UUID) []tenancy.Tenant {
+	out := make([]tenancy.Tenant, 0, len(ts))
+	for _, t := range ts {
+		if t.ID != operator {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// audited is each verb event beside the operator's mirror of it — the two rows one
+// lifecycle command writes, in two trails, from one request.
+//
+// The three commands that are not lifecycle changes pass through without a mirror:
+// which language a tenant is served in, and which provider its people sign in
+// against, move no lifecycle fact about the customer. A function rather than a
+// constant, so the exception is somewhere a reader is told.
+func audited(names ...string) []string {
+	out := make([]string, 0, 2*len(names))
+	for _, name := range names {
+		out = append(out, name)
+		if !commandOnly(name) {
+			out = append(out, contracts.EventLifecycleRecorded)
+		}
+	}
+	return out
+}
+
+// commandOnly names the events a control-plane command publishes in its subject's
+// trail and nowhere else. Each is a decision *about* a customer that leaves the
+// customer served: the languages, and the identity provider.
+func commandOnly(name string) bool {
+	return name == contracts.EventLocaleSet ||
+		name == contracts.EventOIDCSet || name == contracts.EventOIDCCleared
 }
 
 // published asserts the exact sequence of events, which is how an idempotent

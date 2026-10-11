@@ -208,6 +208,11 @@ leave_or_drop() {
 # the unprivileged role row-level security binds, which is why kit/db refuses to open
 # a superuser's connection for it. The migration step opens no application connection
 # at all, so a --dump rehearsal needs only the owner URL.
+#
+# The fourth argument, when given, is appended verbatim. Only the candidate is handed
+# one: the base revision decodes its configuration with KnownFields on and would
+# refuse a key that release never had, so what this release declares stays out of
+# that file.
 write_config() {
 	cat >"$1" <<YAML
 server:
@@ -225,6 +230,9 @@ log:
   # info, which is where the runner says what it applied and how long it took.
   level: "info"
 YAML
+	if [ -n "${4:-}" ]; then
+		printf '%s\n' "$4" >>"$1"
+	fi
 }
 
 stamp="$(date +%s)_${RANDOM}_$$"
@@ -344,7 +352,14 @@ if [ -n "$base" ]; then
 	src="$work/base-tree"
 	mkdir -p "$src"
 	git archive "$ref" | tar -x -C "$src"
-	(cd "$src" && go build -o "$work/platformkit-base" ./apps/platformkit) ||
+	# -buildvcs=false, because the exported tree carries no .git of its own and Go's
+	# stamping step dies before the compiler starts: `git rev-parse --git-dir` in the
+	# copy answers "not a git repository" with 128, which `go build` reports as
+	# "error obtaining VCS status" and refuses (measured on v1.1.0 on this machine,
+	# 2026-10-01 — the step had never been reached outside a working tree). The base
+	# binary exists to migrate and bootstrap the copy with that release's own runner;
+	# a build stamp naming *this* checkout would misreport which release built it.
+	(cd "$src" && go build -buildvcs=false -o "$work/platformkit-base" ./apps/platformkit) ||
 		die 2 "the base revision does not build; the copy has to be made by that release's own code, not by this one's"
 	write_config "$work/base.yaml" "$(with_database "$app_url" "$base")" "$(with_database "$admin_url" "$base")"
 	# bootstrap migrates the whole ledger with that revision's runner and then
@@ -422,7 +437,16 @@ watch_started=$(now_ms)
 psql "$run_url" -At -o "$waits" -f "$watch_sql" >/dev/null 2>&1 &
 watcher=$!
 
-write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url"
+write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
+  # The declaration this release asks an installation for, written the way an
+  # operator writes it. The copy holds the one tenant the base revision bootstrapped,
+  # served at server.public_host above, and migrations/000043_tenant_app places an
+  # existing tenant under this app only when every host it holds is listed here —
+  # a boot that declares no hosts places nothing and then refuses, which is the
+  # refusal for an operator who has not written this line, not for this step. A
+  # --dump copy holding tenants served elsewhere still refuses, and names them.
+  hosts:
+    - "rehearse.localhost"'
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?
@@ -542,5 +566,37 @@ if [ "$code" -eq 0 ]; then
 	note "ok: ${applied} file(s) within ${max_file}s each and ${max_lock}ms of sampled lock waits, against a copy of ${base:-the dump}"
 else
 	note "failed: $findings finding(s); exit $code"
+fi
+
+# The receipt. A consumer that pins this module owes the rehearsal — its own
+# migrations run against its own data on this module's upgrade — and the one
+# fact it can hand its CI is that *this revision* was rehearsed. So the step
+# writes that fact where its caller can collect it, and writes it only on the
+# path where it is true. REHEARSE_RECEIPT is unset for a local run and an
+# artifact path in CI; scripts/check_pin_rehearsal.sh is the consumer's side of
+# the bargain and scripts/PIN-REHEARSAL.md is the document. No lock wait is
+# claimed per file, because none was measured per file: the watcher samples the
+# run, so max_lock_ms is the run's and it is named once.
+if [ "$code" -eq 0 ] && [ -n "${REHEARSE_RECEIPT:-}" ]; then
+	files=$(jq -R -r 'fromjson? // empty
+		| select(.msg == "db: applied migration" or .msg == "db: drained data migration")
+		| {owner: .owner, version: (.version | tostring), name: .name,
+		   phase: (.phase // "drain"), seconds: (.duration_ms / 1000)}' \
+		"$work/run.log" | jq -s .)
+	mkdir -p "$(dirname "$REHEARSE_RECEIPT")" || die 2 "cannot write the receipt directory for $REHEARSE_RECEIPT"
+	jq -n --arg base_ref "$ref" \
+		--arg base_commit "$(git rev-parse --verify --quiet "${ref}^{commit}" || true)" \
+		--arg candidate_commit "$(git rev-parse HEAD)" \
+		--arg seed "$seed" \
+		--argjson files "$files" \
+		--argjson max_lock_ms "$lock_ms" \
+		--argjson samples "$samples" \
+		'{base_ref: (if $base_ref == "" then null else $base_ref end),
+		  base_commit: (if $base_commit == "" then null else $base_commit end),
+		  candidate_commit: $candidate_commit, seed: $seed, files: $files,
+		  max_lock_ms: $max_lock_ms, lock_samples: $samples,
+		  tool: "scripts/rehearse_migrations.sh", exit: 0}' >"$REHEARSE_RECEIPT" ||
+		die 2 "the receipt could not be written to $REHEARSE_RECEIPT"
+	note "receipt: $REHEARSE_RECEIPT for $(git rev-parse --short HEAD)"
 fi
 exit "$code"

@@ -8,7 +8,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"io/fs"
+	"maps"
 	"net"
 	"net/mail"
 	"net/url"
@@ -29,17 +31,139 @@ type Config struct {
 	Server   Server   `yaml:"server"`
 	Database Database `yaml:"database"`
 	NATS     NATS     `yaml:"nats"`
+	Cache    Cache    `yaml:"cache"`
 	Log      Log      `yaml:"log"`
 	Auth     Auth     `yaml:"auth"`
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Telemetry is where spans and numbers go. Its zero value exports nothing,
+	// which is the default the runtime ships with: see Telemetry.
+	Telemetry Telemetry `yaml:"telemetry"`
 	// Bootstrap is read by `platformkit bootstrap` alone; the server never
 	// looks at it. It is in the configuration surface so the one secret the
 	// command takes arrives the way every other secret does, through kit/config
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Seed is what the seed command cannot decide for itself: the operator who
+	// ran it. `--as` names the person a write belongs to, which is attribution
+	// and not permission — a target tenant's admin address is somebody else's
+	// answer. The credential below is the permission side: it is checked against
+	// the installation tenant's own people, and the operator must hold
+	// tenant:manage there, before the command enters the tenant it was pointed
+	// at. Both arrive through the environment like every other secret, because
+	// argv is in the process table and in shell history.
+	//
+	// Empty means nobody proved who they are, and the command refuses rather
+	// than seeding as the database account it happens to be pointed at.
+	Seed Seed `yaml:"seed"`
+	// Demo is read by the seed alone. A demonstration needs people a person can
+	// sign in as, and the password they sign in with is a deployment's answer,
+	// not a fact in a file: nothing under seed/ holds a secret, and the loader
+	// refuses a field that looks like one.
+	Demo Demo `yaml:"demo"`
+	// App is what this composition declares about itself to the things that run
+	// before a request does. The slug lives in nats.app, where kit/appname's
+	// grammar guards it and every name is already formed from it; what is here is
+	// the two facts a migration needs and the database cannot supply.
+	App App `yaml:"app"`
+	// Flags are this installation's feature flags, by key. They are configuration
+	// rather than a flag service because that is the honest size of what the
+	// reference application needs: one boolean somebody can throw without a
+	// deployment, read the way every other value here is read.
+	//
+	// A flag never grants a permission, narrows a tenant's scope or replaces a
+	// subscription's entitlement (kit/flags says so of the contract this satisfies);
+	// it decides only whether an optional product behaviour runs. Which key means
+	// what is the consumer's fact, written beside the consumer —
+	// apps/platformkit/change.go names the one this application reads — and a key
+	// spelled wrong is refused at load rather than ignored (dec.KnownFields).
+	//
+	// A pointer, so that Config stays comparable: a map field would make the whole
+	// configuration incomparable, and the exported API gate refuses that as the
+	// break it is (`old is comparable, new is not`). An installation that says
+	// nothing about flags has none, which is a nil pointer and not an empty map.
+	Flags *Flags `yaml:"flags"`
+}
+
+// Seed is the seed command's operator credential. See the field on Config.
+type Seed struct {
+	OperatorEmail    string `yaml:"operator_email"`
+	OperatorPassword string `yaml:"operator_password"`
+}
+
+// Demo is what the demo seed cannot decide for itself: the one password every
+// demo person signs in with. Empty means the seed generates a password per
+// person and prints each once, the way bootstrap does with the administrator's.
+// Supply PLATFORMKIT_DEMO_PASSWORD.
+type Demo struct {
+	Password string `yaml:"password"`
+}
+
+// App is the composition's own declaration, read at the migrating boot and put on
+// that session by kit/db (db.MigrateDeclaring) for migrations/000043_tenant_app
+// to place tenants with. It is a declaration and not a request: nothing at run
+// time consults it, and a deployment that names no slug and no hosts is the
+// single-app deployment migrating a database that has no tenants to place.
+type App struct {
+	// Hosts are the hosts this app serves its tenants at. An existing tenant
+	// joins this app only when every host it holds is one of these; a tenant with
+	// a host outside the list belongs to another composition sharing the database.
+	Hosts []string `yaml:"hosts"`
+	// TenantApps is the operator's explicit placement, tenant slug to app slug,
+	// for the tenants no host can place. Its values go through the same grammar as
+	// nats.app, and a mapping that does not cover every tenant is refused by the
+	// migration rather than completed by a guess.
+	TenantApps map[string]string `yaml:"tenant_apps"`
+}
+
+// Flags is the flags block: one boolean per key. See Config.Flags for why the
+// block is a pointer and what a flag may and may not decide.
+type Flags struct {
+	// Values is the map itself, one level down so a deployment that names no flag
+	// writes no `flags:` block at all rather than an empty nested one.
+	Values map[string]bool `yaml:"values"`
+}
+
+// Telemetry is the measurement surface: one OTLP/gRPC collector, what this
+// process is called, and how much of what it starts is kept.
+//
+// Everything here is optional and the empty configuration exports nothing, which
+// is a decision rather than a default: a deployment that has not chosen a backend
+// pays nothing for spans it will never read, and still propagates a trace it was
+// handed and still leaves a trace context on every outbox row it writes, so the
+// trace continues into a process that does export. An unreachable collector, by
+// contrast, is never a failed boot: the exporter buffers, warns through
+// OpenTelemetry's own error handler and keeps serving.
+type Telemetry struct {
+	// OTLPEndpoint is the collector's URL — https://collector.example:4318, or a
+	// host:port for a collector on the same network with no TLS. Empty exports
+	// nothing.
+	OTLPEndpoint string `yaml:"otlp_endpoint"`
+	// ServiceName is what a trace backend shows this process under. Every replica
+	// of one deployment answers the same name; two deployments differ.
+	ServiceName string `yaml:"service_name"`
+	// Client names the client this installation serves, and is written on the
+	// resource of every span and metric. It is empty by default, and empty is
+	// right for a shared installation: one process serving many tenants cannot
+	// name one client, and a resource attribute is the process's own fact. See
+	// kit/telemetry for why the tenant is never a resource attribute.
+	Client string `yaml:"client"`
+	// SampleRatio is the fraction of the traces this process *starts* that are
+	// kept, 0 to 1. A trace that arrives with a sampled parent stays kept whatever
+	// this says, so an event handled in a worker remains part of the request that
+	// caused it. It is a pointer because 0 is an answer and an omitted key is not:
+	// omitting it keeps every new trace.
+	SampleRatio *float64 `yaml:"sample_ratio"`
+}
+
+// Ratio is the sampling fraction, 1 when the key was omitted.
+func (t Telemetry) Ratio() float64 {
+	if t.SampleRatio == nil {
+		return 1
+	}
+	return *t.SampleRatio
 }
 
 // Bootstrap is what the first-run command cannot decide for itself: the first
@@ -86,10 +210,21 @@ type Server struct {
 	ReadTimeout time.Duration `yaml:"read_timeout"`
 }
 
-// Database holds the two roles: the app connects as one, migrations as the other.
+// Database holds the three roles: the app appends as one, migrations run as
+// another, and expiring the audit trail happens as a third. The third is optional
+// and empty means the trail never expires — modules/audit's retention job refuses to
+// run rather than reaching for a role it was not handed, because the application role
+// cannot delete a trail row (migrations/000041_audit_history_append_only.up.sql fences it)
+// and the door that admits an expiry is a role that may delete and may not append.
+//
+// Which one does what: migrate_url migrates (and drains), url appends and reads,
+// retain_url expires. retain_url must not name a superuser or a BYPASSRLS role: the
+// job opens it with db.Open, which refuses such a role precisely because a trim run by
+// one would see every tenant's trail inside the first tenant's transaction.
 type Database struct {
 	URL        string `yaml:"url"`
 	MigrateURL string `yaml:"migrate_url"`
+	RetainURL  string `yaml:"retain_url"`
 	// Omitted values retain kit/db defaults; explicit zero idle/lifetime
 	// disables reuse/retirement. kit/app validates the resolved pool before IO.
 	MaxOpenConns    *int           `yaml:"max_open_conns"`
@@ -108,15 +243,41 @@ type Database struct {
 // stream and durable consumer names are shared within an account.
 type NATS struct {
 	Transport string `yaml:"transport"`
-	URL       string `yaml:"url"`
-	Username  string `yaml:"username"`
-	Password  string `yaml:"password"`
-	CACert    string `yaml:"ca_cert"`
+	// App is this deployment's own app slug — the name every shared name it forms
+	// carries, and the reason two apps on one broker and one database cannot read
+	// one another's work. Empty is the deployment of one app: it keeps the names
+	// this kernel formed before the app segment existed. kit/appname owns the
+	// grammar; Validate is what refuses a slug that could not be a subject token.
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Username string `yaml:"username"`
+	Password string `yaml:"password"`
+	CACert   string `yaml:"ca_cert"`
+}
+
+// AppName is the slug this process serves, as the type every name two apps could
+// share is formed from. The empty setting is the deployment of one app and answers
+// the zero Name, which is what every constructor of kit/appname reads as "keep the
+// name this kernel formed before the app segment existed"; a setting that is
+// present and broken is refused. One door, so that a reader of `nats.app` and the
+// transport that builds itself from it cannot disagree about what empty means.
+func (n NATS) AppName() (appname.Name, error) {
+	if n.App == "" {
+		return "", nil
+	}
+	app, err := appname.Parse(n.App)
+	if err != nil {
+		return "", fmt.Errorf("nats.app: %w", err)
+	}
+	return app, nil
 }
 
 // Validate checks settings without opening files or connecting to the broker.
 // Diagnostics name keys without echoing endpoints or credentials.
 func (n NATS) Validate() error {
+	if _, err := n.AppName(); err != nil {
+		return err
+	}
 	if n.Transport != "" && n.Transport != "memory" && n.Transport != "jetstream" {
 		return errors.New("nats.transport must be memory, jetstream or empty for the role default")
 	}
@@ -142,6 +303,68 @@ func (n NATS) Validate() error {
 	return nil
 }
 
+// Cache names where a value every replica must read is kept. Empty Adapter is the
+// in-process store: complete for one process, and it says so in one boot log line,
+// because forgetting a value there reaches only that process.
+type Cache struct {
+	Adapter  string `yaml:"adapter"`
+	App      string `yaml:"app"`
+	URL      string `yaml:"url"`
+	Password string `yaml:"password"`
+}
+
+// Validate checks the cache settings without opening a connection.
+//
+// app is required the moment a shared store is named: every key starts with the
+// application that wrote it, and two clients sharing one keyspace with no first
+// segment are two clients reading each other's entries. For the in-process store
+// the segment carries nothing, so it may stay empty there.
+func (c Cache) Validate() error {
+	switch c.Adapter {
+	case "", "memory", "valkey":
+	default:
+		return errors.New("cache.adapter must be memory, valkey or empty for the in-process store")
+	}
+	if c.Adapter != "valkey" && (c.URL != "" || c.Password != "") {
+		return errors.New("cache.url and cache.password belong to cache.adapter valkey")
+	}
+	if c.Adapter != "valkey" {
+		return nil
+	}
+	if c.App == "" {
+		return errors.New("cache.app is required with cache.adapter valkey: every shared key begins with the application that wrote it")
+	}
+	if c.URL == "" {
+		return errors.New("cache.url is required with cache.adapter valkey")
+	}
+	// One sentence for every address that is not one: the operator's fix is the
+	// same edit to the same line whichever way it was wrong.
+	bad := errors.New("cache.url must be redis://, valkey://, rediss:// or unix:// without credentials, paths or queries")
+	u, err := url.Parse(c.URL)
+	if err != nil || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return bad
+	}
+	// A unix socket's address is its path, so the two shapes are checked apart.
+	// redis.ParseURL accepts exactly these schemes; valkey:// is rewritten to
+	// redis:// by the provider, which is what a Valkey answers to.
+	switch u.Scheme {
+	case "redis", "rediss", "valkey":
+		if u.Host == "" || u.Path != "" {
+			return bad
+		}
+	case "unix":
+		if u.Host != "" || u.Path == "" {
+			return bad
+		}
+	default:
+		return bad
+	}
+	if u.User != nil {
+		return errors.New("cache.url cannot contain credentials; use cache.password and PLATFORMKIT_CACHE_PASSWORD instead")
+	}
+	return nil
+}
+
 // Log is the logging surface: one level.
 type Log struct {
 	Level string `yaml:"level"`
@@ -150,9 +373,16 @@ type Log struct {
 // Auth is what the auth module cannot decide for itself. Passwords and sessions
 // need no configuration — the parameters are constants in the module, because a
 // deployment that lowers them is a deployment that has weakened itself — so this
-// is one optional identity provider and nothing else.
+// is one optional identity provider and the key that seals a second factor.
 type Auth struct {
 	OIDC OIDC `yaml:"oidc"`
+	// FactorKey seals a second factor's shared secret at rest. Empty means no
+	// second factor is offered at all — the enrolment routes are not mounted, so
+	// there is no door that can only answer "unavailable". Like the two other
+	// secrets in this file it belongs in the environment and not in a committed
+	// file, and it is not required: a deployment that has not decided to offer a
+	// second factor is not broken, it is one that has not decided.
+	FactorKey string `yaml:"factor_key"`
 }
 
 // OIDC is one OpenID Connect provider. An empty issuer means there is none, and
@@ -215,6 +445,23 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// MaxImagePixels is the largest frame an uploaded image is decoded into: a
+	// file claiming more pixels is refused with the reason rather than
+	// allocated, which is the decompression bomb. Zero means the module's own
+	// default of forty megapixels; it bounds a decode and not an upload, so it
+	// says nothing about how large a file may be (max_bytes does that).
+	MaxImagePixels int `yaml:"max_image_pixels"`
+	// Retention is how long each class of file lives, keyed by the `kind` an
+	// upload carried. It is a table and not a column because a class is the
+	// product's word and a duration is the deployment's: this package parses the
+	// durations and modules/file matches one token against the other, and a kind
+	// the table does not name is never deleted, only logged.
+	//
+	// A duration is Go's own spelling — "720h", "45m" — the same one
+	// server.read_timeout is written in. There is no environment variable per
+	// class and no row in the kernel's key table: one class per line is a
+	// config-file thing, which is what modules/file.Deps.Retention says too.
+	Retention map[string]time.Duration `yaml:"retention"`
 }
 
 // The defaults. Twenty-five megabytes is what a mail attachment limit taught
@@ -224,6 +471,13 @@ const (
 	DefaultFilesDir      = "data/files"
 	DefaultFilesMaxBytes = 25 << 20
 )
+
+// DefaultServiceName is what a trace backend shows a process under when the
+// deployment says nothing. A name is the one attribute that tells one deployment's
+// spans from another's, so it is never left empty: the SDK's own default is
+// "unknown_service:" plus the executable, which is a name no operator reads as
+// this application.
+const DefaultServiceName = "platformkit"
 
 // DefaultReadTimeout is how long a client has to send a whole request when a
 // deployment says nothing. Thirty seconds is generous for every route this
@@ -253,25 +507,48 @@ var keys = []key{
 	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, false},
 	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
 	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
+	{"database.retain_url", "PLATFORMKIT_DATABASE_RETAIN_URL", func(c *Config) *string { return &c.Database.RetainURL }, false},
 	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
 	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, false},
 	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
 	{"nats.password", "PLATFORMKIT_NATS_PASSWORD", func(c *Config) *string { return &c.NATS.Password }, false},
 	{"nats.ca_cert", "PLATFORMKIT_NATS_CA_CERT", func(c *Config) *string { return &c.NATS.CACert }, false},
+	{"cache.adapter", "PLATFORMKIT_CACHE_ADAPTER", func(c *Config) *string { return &c.Cache.Adapter }, false},
+	{"cache.app", "PLATFORMKIT_CACHE_APP", func(c *Config) *string { return &c.Cache.App }, false},
+	{"cache.url", "PLATFORMKIT_CACHE_URL", func(c *Config) *string { return &c.Cache.URL }, false},
+	// A secret, so it earns an override for the reason rule 7 gives and earns no
+	// place in config.example.yaml with a value in it.
+	{"cache.password", "PLATFORMKIT_CACHE_PASSWORD", func(c *Config) *string { return &c.Cache.Password }, false},
 	{"log.level", "PLATFORMKIT_LOG_LEVEL", func(c *Config) *string { return &c.Log.Level }, true},
 	// The one secret in the surface with an override for a reason rather than
 	// for symmetry: rule 7 says never commit a secret, and config.yaml is a
 	// file somebody will commit.
 	{"auth.oidc.client_secret", "PLATFORMKIT_AUTH_OIDC_CLIENT_SECRET", func(c *Config) *string { return &c.Auth.OIDC.ClientSecret }, false},
 	// The second secret, for the same reason as the first.
+	// The factor key, for the same reason as the other three: it seals a
+	// credential, and config.yaml is a file somebody will commit.
+	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
+	{"demo.password", "PLATFORMKIT_DEMO_PASSWORD", func(c *Config) *string { return &c.Demo.Password }, false},
+	// The seed command's operator, for the same reason as the other three: a
+	// credential is not a flag. Neither is required by the loader, because the
+	// server reads neither and the command refuses an empty pair itself.
+	{"seed.operator_email", "PLATFORMKIT_SEED_OPERATOR_EMAIL", func(c *Config) *string { return &c.Seed.OperatorEmail }, false},
+	{"seed.operator_password", "PLATFORMKIT_SEED_OPERATOR_PASSWORD", func(c *Config) *string { return &c.Seed.OperatorPassword }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.
 	{"mail.from", "", func(c *Config) *string { return &c.Mail.From }, false},
+	// The collector is an endpoint, and an endpoint is a deployment's fact about
+	// its own network, which is what an environment variable is for.
+	{"telemetry.otlp_endpoint", "PLATFORMKIT_TELEMETRY_OTLP_ENDPOINT", func(c *Config) *string { return &c.Telemetry.OTLPEndpoint }, false},
+	{"telemetry.service_name", "PLATFORMKIT_TELEMETRY_SERVICE_NAME", func(c *Config) *string { return &c.Telemetry.ServiceName }, false},
+	// The fourth secret-shaped key, and not a secret: which customer a shared
+	// installation is serving is not sensitive, but a fleet sets it per deployment.
+	{"telemetry.client", "PLATFORMKIT_TELEMETRY_CLIENT", func(c *Config) *string { return &c.Telemetry.Client }, false},
 }
 
 // Override is one key a composition sets before the configuration is validated.
@@ -359,7 +636,7 @@ func Load(path string, overrides ...Override) (Config, error) {
 				path, h.key, h.value)
 		}
 	}
-	// Both URLs are parsed here rather than by the driver, so a typo is a
+	// All three DSNs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
 	for _, u := range []struct {
 		key   string
@@ -367,10 +644,17 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}{
 		{"database.url", c.Database.URL},
 		{"database.migrate_url", c.Database.MigrateURL},
+		// Optional, so an installation that never expires the trail can leave it
+		// empty; a value that is not a postgres URL is still a typo worth naming.
+		{"database.retain_url", c.Database.RetainURL},
 	} {
+		if u.value == "" {
+			// An optional key that is absent is absent, not malformed.
+			continue
+		}
 		parsed, err := url.Parse(u.value)
 		if err != nil {
-			return Config{}, fmt.Errorf("config %s: %s is not a URL: %w", path, u.key, err)
+			return Config{}, fmt.Errorf("config %s: %s is not a URL: %s", path, u.key, safeReason(u.key, u.value, err))
 		}
 		if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
@@ -379,17 +663,36 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if err := c.NATS.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
+	if err := c.Cache.Validate(); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
 	if err := c.Auth.OIDC.validate(path); err != nil {
 		return Config{}, err
 	}
 	if err := c.Mail.validate(path); err != nil {
 		return Config{}, err
 	}
+	if r := c.Telemetry.SampleRatio; r != nil && (*r < 0 || *r > 1) {
+		return Config{}, fmt.Errorf("config %s: telemetry.sample_ratio is %v; it is a fraction of the traces this process starts, so between 0 and 1", path, *r)
+	}
+	if c.Telemetry.ServiceName == "" {
+		c.Telemetry.ServiceName = DefaultServiceName
+	}
 	if c.Audit.RetentionDays == 0 {
 		c.Audit.RetentionDays = DefaultRetentionDays
 	}
+	// The floor is the trigger's, and the trigger cannot read this file: a shorter
+	// period configured is a job that would ask for deletes the database refuses, at
+	// three in the morning, forever. Saying so at boot is the correctable version of
+	// the same mistake — raise the period, or own a lower floor in a deployment
+	// migration that re-creates audit_events_expire_only_after and carries that
+	// decision in its own review.
 	if c.Audit.RetentionDays < 1 {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
+	if c.Audit.RetentionDays < DefaultRetentionDays {
+		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; the kernel's floor for forgetting audit history is %d days — modules/audit/migrations/000041_audit_history_append_only.up.sql refuses an earlier expiry and no configuration moves it",
+			path, c.Audit.RetentionDays, DefaultRetentionDays)
 	}
 	if c.Server.ReadTimeout == 0 {
 		c.Server.ReadTimeout = DefaultReadTimeout
@@ -406,7 +709,40 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if c.Files.MaxBytes < 1 {
 		return Config{}, fmt.Errorf("config %s: files.max_bytes is %d; a limit is a number of bytes", path, c.Files.MaxBytes)
 	}
+	// A retention table is a promise that bytes get removed, so the two ways to
+	// write one by mistake are refused here rather than discovered by the sweep.
+	// An empty key is the worst of them: every upload that named no class has
+	// kind '', and the widest policy in this application is one keyed on nothing
+	// — which is also why the module keeps a kind it was never given a policy
+	// for instead of guessing.
+	for _, kind := range slices.Sorted(maps.Keys(c.Files.Retention)) {
+		switch keep := c.Files.Retention[kind]; {
+		case kind == "":
+			return Config{}, fmt.Errorf("config %s: files.retention has an entry with no class name; an empty key is the upload that named no class, which is not a class", path)
+		case keep <= 0:
+			return Config{}, fmt.Errorf("config %s: files.retention.%s is %s; how long a class lives is a positive duration written Go's way, like 720h", path, kind, keep)
+		}
+	}
 	return c, nil
+}
+
+// safeReason is url.Parse's own diagnosis with the DSN taken out of it. The parse error
+// quotes the whole value it failed on, and all three of these values are DSNs whose
+// userinfo is a password (decision 0010: an error names the key and the mistake, never
+// the credential). The typo is worth reporting — "invalid URL escape" is what tells a
+// reader to look at the escaping — so the value is replaced rather than the reason
+// dropped. A reason that still carries the userinfo after the replacement says the one
+// true thing instead of leaking: which key, and that it could not be read.
+func safeReason(key, value string, err error) string {
+	reason := strings.ReplaceAll(err.Error(), value, "<"+key+">")
+	rest := value
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+len("://"):]
+	}
+	if creds, _, hasAt := strings.Cut(rest, "@"); hasAt && strings.Contains(reason, creds) {
+		return "it cannot be read as a URL, and this refusal does not repeat what is in it"
+	}
+	return reason
 }
 
 // validHost reports whether h is a host — a name or an address, optionally with
@@ -442,12 +778,14 @@ func (m *Mail) validate(path string) error {
 	if m.From == "" {
 		return fmt.Errorf("config %s: mail.from is empty; a message with no sender is refused by the far end", path)
 	}
-	// One bare address, because this is the envelope sender the SMTP session
-	// opens with (MAIL FROM) as well as the From header. A display name parses
-	// as an address and is refused by the relay hours later, in somebody else's
-	// log, which is the failure this key exists to avoid.
-	if a, err := mail.ParseAddress(m.From); err != nil || a.Address != m.From {
-		return fmt.Errorf("config %s: mail.from is %q; it is the envelope sender, so it is one bare address", path, m.From)
+	// One mailbox, with or without a display name: "noreply@acme.example.com" or
+	// "Acme <noreply@acme.example.com>". The mailer sends the bare address as the
+	// envelope sender (MAIL FROM) and the whole mailbox as the From header, so a
+	// name is what a person sees and never what a relay refuses. A list or a
+	// malformed address is refused here, at boot, rather than by the relay hours
+	// later in somebody else's log.
+	if _, err := mail.ParseAddress(m.From); err != nil {
+		return fmt.Errorf("config %s: mail.from is %q; it is one address, optionally with a display name", path, m.From)
 	}
 	if m.Port == 0 {
 		m.Port = defaultSMTPPort

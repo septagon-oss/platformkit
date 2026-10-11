@@ -2,9 +2,30 @@
 
 `kit/rest` is an entity's projection onto HTTP. A module declares one `Spec[T]`
 per entity in its manifest — module, entity, path, permissions and hooks — and
-`Spec.Mount` registers list, create, read, update and delete on the
-`httpx.API`, each with its declaration, emitting the events `Spec.Events()`
-names and registering the `httpx.Resource` the admin generates screens from.
+`Spec.Mount` registers the operations it offers on the `httpx.API`: all five, or
+the ones `Operations` names, each with its declaration, emitting the events
+`Spec.Events()` names and registering the `httpx.Resource` the admin generates
+screens from. `Operations` is one field answering one question — which routes
+does this resource actually have — and the route table, a generated page's doors,
+the catalogue's `operations` key and what a boot gate is told about are all read
+off that answer, so a New button over an address that mounts no POST is not
+composable. A verb left out mounts nothing: the router answers 405 where the
+address serves another verb and 404 where it serves none, never a refusal naming
+a permission nobody asked for. A set with no list has no workspace address, so
+such a resource mounts no generated page and publishes no screen; it writes its
+own pages, the way `modules/admin` writes the ones a Spec cannot describe.
+
+`ReadAuth` and `WriteAuth` are the same honesty about the guard: a route answered
+by something that is not a permission — `httpx.SignedIn()`, an operator's own
+tenant — is declared there rather than in the `Read`/`Write` shorthand, which
+refuses to mount beside it. The plan feature such a declaration may name with
+`.Needing` is asked wherever the declaration is read — the route, the six
+closures, a page's two doors and the catalogue's entry, all through one
+`mayDeclare` — so an entry no caller's plan reaches is in no document, and the
+`402` a route answers is the answer the in-process doors give as well. A
+`WriteAuth` that asks no grant may not carry `Update` or `Delete`: the generic
+routes check whose tenant a row is in and never whose row it is, so a write about
+one row the caller names is a `rest.Command`.
 `Singleton[T]` is the same for a tenant's one row: a read and a PUT, no list
 and no id in the path. Read [rest.go](rest.go) first;
 [modules/task](../../modules/task/README.md) is the reference Spec.
@@ -55,3 +76,26 @@ sentence is a door that crashes the request that asks it.
 Prerequisites: an entity embedding `crud.Base` with a `TableName`, its
 migration, and the permissions the manifest declares. Tests need the
 development database: `make up`, then `make test TEST_PACKAGES=./kit/rest`.
+
+## Composition (T-0185)
+
+**Reused** — `kit/httpx`'s closed guard set (`Public`, `SignedIn`, `Permission`,
+`OperatorPermission`, and the fifth, `AnyCredential`, which arrived on main while this
+branch was open and is admitted by the same `ReadAuth`/`WriteAuth` field, refused by the
+same rule that refuses a guard naming no grant on a generic write) and the `mayUse` that
+already answered all three questions for a command; the five verb strings the operation ids (`<module>-<entity>-<verb>`) and this
+package's own `writes` map are already built from; `Singleton`'s precedent of refusing
+rather than handing back a closure whose route does not exist; and `ui/screens`'s
+`derived` rule, which prints a catalogue key only once the derivation has stopped being
+true. **Added** — `Spec.Operations`, `Spec.ReadAuth` and `Spec.WriteAuth`, `httpx.CRUD`
+with `CRUDValues`, `httpx.Resource.Offers`/`OperationWords` and `screens.Entry.Operations`:
+nothing existing said which of the five routes a resource has — `Singleton.Write == ""`
+is a singleton's shape and its own doc says a Spec is not one, `CommandOptions.Auth` is
+one command's guard, and a shell could not learn that the address behind its New button
+mounts no POST. **Made reusable** — the operation set travels as one value from the Spec
+to the router, the registered resource, the generated pages, the catalogue entry and the
+OpenAPI document, so the route table, the doors and the wire cannot disagree about one
+resource; `Offers` and `OperationWords` are the two accessors any later shell reads; and
+the ratchet written beside the versioned catalogue
+(`apps/platformkit/catalog_version_test.go`) is the pattern for every additive key that
+catalogue gains next.

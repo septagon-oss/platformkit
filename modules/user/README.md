@@ -70,9 +70,13 @@ itself.
 
 `Deps.Administration` answers which of a tenant's roles grant the permission
 that can grant every other one back. It is required, and a composition that
-omits it panics at `user.Module`: who holds a role is this module's table and
+omits it panics at `user.New`: who holds a role is this module's table and
 what a role grants is the auth module's, so neither reads the other's rows and
-the application joins them — see `apps/platformkit/modules.go`.
+the application joins them — see `usercontracts.Administration` in
+`apps/platformkit/product.go`. `Deps.Granting` is the one adapter it accepts
+unwired: the answer is the authentication service's, that service is built after
+this module because it looks people up here, and the auth module fills the
+holder's `Ask` in its own build (an unfilled holder refuses the roles write).
 
 `Provision` is what `platformkit bootstrap` calls to create the first
 administrator with a password; the argon2id parameters are constants here.
@@ -134,3 +138,21 @@ None. No permission sets `Operator: true` and the spec sets no `OperatorRead` or
 ### Provisioning
 
 The module does not create roles. A composition grants `user:read`, `user:manage` and `user:approve` through the tenant's roles, using the auth module's roles API. The administrator role holds the wildcard by construction (`auth.SeedRoles`, mentioned in `modules/auth/contracts/auth.go`), which covers all three. `user:approve` can be granted alone, because approval never changes passwords or roles (`modules/user/contracts/permissions.go`). `Deps.Administration` is required and is wired to `auth.AdministeringRoles` (see the README above).
+
+## Composition (T-0184)
+
+**Reused** — this delivery composes `contracts.User.CanAdminister` (the same
+predicate the last-administrator floor decides on, so `Holders` and the floor
+cannot disagree), `contracts.Administration`/`AdministrationFunc` (the shape the
+new `Granting` port copies), `crud.ErrInvalid` and the `user.roles_set` event
+`modules/audit` already records with actor, tenant and `Was`/`Now`.
+**Added** — `Service.Holders` and `Deps.Granting`: nobody could carry them, because
+`crud.Query.Filter` is equality-only so "whose `roles` overlaps these names" did not
+exist in either module, and because the `roles` command took the Spec's write
+permission and nothing else, which left self-promotion one form away for anybody
+who may write a user.
+**Made reusable** — the conformance cases for both (`usertest.RunService`, nine of
+them, run against the fake and the Postgres service), so the next delivery that
+touches who holds a role runs them whether it means to or not; and
+`contracts.GrantingFunc`, the same four-line adapter shape as
+`AdministrationFunc`, for any other module that must ask "may this caller grant".

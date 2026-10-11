@@ -16,9 +16,11 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/web/internal"
+	"github.com/septagon-oss/platformkit/ui/page"
 )
 
 // Deps is what the site reads: the settings, the published pages, and the
@@ -26,25 +28,39 @@ import (
 type Deps struct {
 	Site    sitecontracts.Service
 	Content contentcontracts.Service
+	Files   richtext.Files
 	Theme   design.Pair
 
-	// SignInPath is where a visitor who wants to sign in is sent. The site has
-	// no sign-in of its own — the auth module mints the session and the shell
-	// owns the form — so the address belongs to whoever composed the two, and
-	// this is the line that says where the workspace ended up. A literal here
-	// would be this module naming a surface it does not serve, which is why the
-	// composition writes it and app_test.go asks the running server that the
-	// address it wrote is the address that answers.
+	// SignInPath is where a visitor who wants to sign in is sent: an entry point
+	// into the workspace, which answers with the form itself or turns the visitor
+	// towards it. The site has no sign-in of its own — the auth module mints the
+	// session and the shell owns the form — so the address belongs to whoever
+	// composed the two, and this is the line that says where the workspace ended
+	// up. Which door of which module that is, and how deep into the workspace a
+	// public page may link, are the composition's facts, not this module's. A
+	// literal here would be this module naming a surface it does not serve, which
+	// is why the composition writes it and its own test asks the running server
+	// that the address it wrote is the address that answers.
 	SignInPath string
 
 	// PublicFileURL answers the address of a file a visitor may see, which is
 	// the file module's business and this composition's knowledge. The logo is
 	// the one file the site renders.
 	PublicFileURL func(id string) string
+
+	// Messages opts the site into translated copy, as the admin shell's Deps of
+	// the same name does: the catalogues of every layer the composition installed,
+	// merged, this one's own refusal sentences among them. Nil leaves every page in
+	// the source language, which is what a site with no catalogue says today.
+	// What reaches through it is the refusal copy — the 404 of a slug nobody
+	// published is the answer most visitors get — because the copy the site writes
+	// for itself is Go text and declares its own language whatever is composed
+	// here; see Site.view.
+	Messages page.Messages
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	if deps.Site == nil || deps.Content == nil {
 		panic("web: Deps.Site and Deps.Content are required; the site renders what they publish")
 	}
@@ -54,13 +70,13 @@ func Module(deps Deps) module.Module {
 	return module.Module{
 		Name:          "web",
 		Permissions:   nil,
-		Events:        nil,
+		Declared:      nil,
 		Jobs:          nil,
 		Subscriptions: nil,
 		Routes: func(r httpx.Surfaces) {
 			internal.Mount(r, internal.Site{
-				Settings: deps.Site, Content: deps.Content, Theme: deps.Theme,
-				SignIn: deps.SignInPath, File: deps.PublicFileURL,
+				Settings: deps.Site, Content: deps.Content, Files: deps.Files, Theme: deps.Theme,
+				SignIn: deps.SignInPath, File: deps.PublicFileURL, Messages: deps.Messages,
 			})
 		},
 	}

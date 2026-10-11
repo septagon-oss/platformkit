@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -39,6 +40,16 @@ type Deps struct {
 	// customer locks themselves out — the same argument as file.Deps.Storage
 	// and notification.Deps.Mailer, which panic for the same reason.
 	Administration contracts.Administration
+
+	// Granting answers whether the caller of a roles write may hand out a role
+	// that administers the tenant. Wire &contracts.GrantingFunc{Ask: …} over
+	// whatever answers "may this caller manage roles" — in the reference
+	// application, the Authorizer the API already holds.
+	//
+	// Required, in Deps.Administration's own words: a composition that supplies
+	// none gets a panic at boot rather than a roles screen that promotes whoever
+	// is sitting in front of it.
+	Granting contracts.Granting
 }
 
 // spec is the entity's presence in the application: five routes, two
@@ -88,14 +99,14 @@ var spec = rest.Spec[*contracts.User]{
 // the manifest and not in contracts/ because it was the only thing there that
 // needed kit/module.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionUserRead},
-	{Key: contracts.PermissionUserManage},
-	{Key: contracts.PermissionRegistrationApprove},
+	{Key: contracts.PermissionUserRead, Label: "read people"},
+	{Key: contracts.PermissionUserManage, Label: "manage people"},
+	{Key: contracts.PermissionRegistrationApprove, Label: "approve new accounts"},
 }
 
 // Module is the manifest, and the service it is built on: the auth module takes
 // this value from main, because signing somebody in means finding them first.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Administration == nil {
 		panic("user.Module: Deps.Administration is required; wire auth.AdministeringRoles so the floor under a tenant's last administrator has something to ask")
 	}
@@ -110,7 +121,23 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 	if asked, ok := deps.Administration.(*contracts.AdministrationFunc); ok && (asked == nil || asked.Ask == nil) {
 		panic("user.Module: Deps.Administration is an adapter with no Ask; wire auth.AdministeringRoles, do not hand the floor an empty adapter")
 	}
-	svc := internal.NewService(deps.Administration)
+	if deps.Granting == nil {
+		panic("user.Module: Deps.Granting is required; wire the answer to \"may this caller manage roles\" so granting a role has a door")
+	}
+	// An empty GrantingFunc is the one adapter this module accepts unwired, and
+	// the reason is the shape of the answer. Who may hand out an administering
+	// role is the authentication service's, and the authentication service is
+	// built after this module — it looks people up here — so the holder arrives
+	// empty and the auth module fills its Ask in its own build. Refusing an empty
+	// holder at this line would refuse the only wiring that is not a cycle.
+	//
+	// What is not refused is what stays refused: an adapter with no Ask answers
+	// the error contracts.GrantingFunc.May carries, so a composition whose auth
+	// module never ran fails the roles write — no row, no event, no stale read —
+	// rather than answering "nobody may promote anybody" and reading as a door
+	// that works. Whether the fill happened is pinned by pkit's late-bound-holder
+	// case, not by this line.
+	svc := internal.NewService(deps.Administration, deps.Granting)
 	mounted := spec
 	mounted.AfterCreate = refuseLifecycleOnCreate
 	// The third door, and the one that is not a lifecycle command: DELETE
@@ -126,13 +153,22 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Adopts:      Migrations.Adopts,
 		RulesFrom:   Migrations.RulesFrom,
 		Permissions: permissions,
-		Events: []string{
-			contracts.EventCreated, contracts.EventUpdated, contracts.EventDeleted,
-			contracts.EventInvited, contracts.EventPasswordSet,
-			contracts.EventRolesSet, contracts.EventDeactivated,
-			contracts.EventHandleSet,
-			contracts.EventRegistrationPending, contracts.EventRegistrationApproved,
-			contracts.EventRegistrationUnverified, contracts.EventEmailVerified,
+		Declared: []events.Declared{
+			// The three kit/rest publishes carry the entity itself, which is
+			// what Spec.emit marshals; every other name carries the payload
+			// type beside it in contracts.
+			events.Declare[*contracts.User](contracts.EventCreated),
+			events.Declare[*contracts.User](contracts.EventUpdated),
+			events.Declare[*contracts.User](contracts.EventDeleted),
+			events.Declare[contracts.Invited](contracts.EventInvited),
+			events.Declare[contracts.PasswordSet](contracts.EventPasswordSet),
+			events.Declare[contracts.RolesSet](contracts.EventRolesSet),
+			events.Declare[contracts.Deactivated](contracts.EventDeactivated),
+			events.Declare[contracts.HandleSet](contracts.EventHandleSet),
+			events.Declare[contracts.RegistrationPending](contracts.EventRegistrationPending),
+			events.Declare[contracts.RegistrationApproved](contracts.EventRegistrationApproved),
+			events.Declare[contracts.RegistrationUnverified](contracts.EventRegistrationUnverified),
+			events.Declare[contracts.EmailVerified](contracts.EventEmailVerified),
 		},
 		Nav: []module.NavEntry{
 			{Label: "Users", Screen: "user/users", Permission: contracts.PermissionUserRead},
@@ -153,9 +189,31 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 // so returning an error rolls the whole create back and the caller gets a 422.
 // The PATCH route is guarded by spec.Immutable instead; a create cannot be,
 // because there is no row yet to refuse a change to.
-func refuseLifecycleOnCreate(_ context.Context, _ db.Tx[db.Tenant], u *contracts.User) error {
+//
+// The second half of its job is the brief's first rule: a person created through
+// the collection is invited. The create route used to write the row, publish
+// user.user.created and stop — and nothing subscribes to that name, so an
+// administrator who used it made somebody who exists, cannot sign in and was
+// never told, which is the defect the walkthrough of record counted as an empty
+// directory. Inviting is what the collection means by "create a person": the row
+// lands in `invited`, user.invited is published in the same transaction, and the
+// auth module mails the link that lets that person choose a password nobody else
+// chose for them. A create that left somebody unable to sign in and mailed to
+// nobody is refused, which is why `pending` and `unverified` have their own door
+// and why no status other than invited is a row the collection can make.
+func refuseLifecycleOnCreate(ctx context.Context, tx db.Tx[db.Tenant], u *contracts.User) error {
 	if u.Status == contracts.StatusPending || u.Status == contracts.StatusUnverified {
 		return fmt.Errorf("%w: password registrations must be created by the registration service", crud.ErrInvalid)
+	}
+	if u.Status != contracts.StatusInvited {
+		return fmt.Errorf("%w: the collection creates the person it invites; %s is a state some other door brings somebody to",
+			crud.ErrInvalid, u.Status)
+	}
+	if err := events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
+		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedFrom(ctx),
+	}); err != nil {
+		return err
 	}
 	if len(u.Roles) == 0 {
 		return nil

@@ -14,11 +14,13 @@ package dbtest
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"math/rand/v2"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -78,22 +80,6 @@ func URLsFor(t testing.TB) (adminURL, appURL string) {
 	return withSchema(t, baseAdmin, name), withSchema(t, baseApp, name)
 }
 
-// fixtureLockTimeout is the lock budget a fixture asks its migration for, and it is
-// not the runner's default. `CREATE INDEX CONCURRENTLY` — the shape the rule table
-// forces on an index added to a table an installation already has — waits for every
-// transaction that was open when its snapshot was taken, whatever table that
-// transaction touched: measured against this task's Postgres, a write held open on an
-// unrelated table of the same database blocked a build over a table of one row that
-// nothing had ever drawn a snapshot of, and a 3s budget cancelled it. A deployment meets that wait
-// as often as a release happens to land beside a long writer, and five seconds of
-// patience is right there, because a boot should stop and say so. A fixture has no such
-// reason: one database carries every package of this suite at once, so the wait is the
-// ordinary case and refusing to build the schema is not a finding but a test that never
-// ran. Ninety seconds is past the longest write any case here holds a transaction open
-// for, and short enough that a wedged database still reports instead of spending the
-// package's ten minutes.
-const fixtureLockTimeout = 90 * time.Second
-
 // Schema creates an isolated database schema with the kernel's tables and the
 // named capabilities — a module's exported Migrations source, such as
 // task.Migrations, and the sources of the modules it depends on (auth needs
@@ -104,8 +90,7 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	t.Helper()
 	adminURL, appURL := URLs(t)
 	sources := append([]db.MigrationSource{migrations.Source}, extra...)
-	patient := fixtureLockTimeout
-	if err := db.MigrateWith(t.Context(), adminURL, db.MigrationBudget{LockTimeout: &patient}, sources...); err != nil {
+	if err := migrate(t, t.Context(), adminURL, sources...); err != nil {
 		t.Fatalf("dbtest: migrate: %v", err)
 	}
 	admin = Open(t, adminURL)
@@ -115,6 +100,63 @@ func Schema(t *testing.T, extra ...db.MigrationSource) (admin *sql.DB, app *db.C
 	}
 	t.Cleanup(func() { _ = app.Close() })
 	return admin, app
+}
+
+// migrateTries and migratePause are this fixture's patience with a migration that
+// was refused rather than one that failed: see migrate.
+const (
+	migrateTries = 4
+	migratePause = time.Second
+)
+
+// migrate applies the sources to the schema URLs just made, taking the re-run that a
+// contended refusal offers.
+//
+// One database serves every package of the suite, and a migration of one test's own
+// namespace can still be refused a lock inside its budget: measured on CI's `make check`
+// of 2026-10-09, `000003_handled.up.sql` answered SQLSTATE 55P03 at the run's five-second
+// lock budget while the same runner applied the file before it in 1.8s instead of 13ms.
+// The refusal says what it did not do — nothing the run had not already applied was
+// applied, and it may be run again — and an installation answers that by handing the
+// decision to the operator standing in front of the database (apps/platformkit migrate).
+// A fixture has no operator and no replica queued behind it, so it answers the way the
+// refusal asks: run it again, a bounded number of times.
+//
+// The bound is what keeps this from becoming the wait the runner refuses to take. A
+// migration that fails — a file that is wrong, a checksum that moved — is refused on the
+// first answer, unchanged: retrying it would hide the failure behind a delay. And when the
+// tries run out, the error a person reads is the runner's own sentence, budgets and all.
+func migrate(t testing.TB, ctx context.Context, adminURL string, sources ...db.MigrationSource) error {
+	t.Helper()
+	try := 0
+	return pastContention(ctx, migrateTries, migratePause, func(ctx context.Context) error {
+		try++
+		if try > 1 {
+			t.Logf("dbtest: the migration was refused by a lock, running it again: attempt %d of %d", try, migrateTries)
+		}
+		return db.Migrate(ctx, adminURL, sources...)
+	})
+}
+
+// pastContention runs attempt until it answers something other than db.ErrContended,
+// the tries run out, or ctx ends. Anything else the attempt answers — success, or a
+// migration that really failed — is returned at once and untouched.
+func pastContention(ctx context.Context, tries int, pause time.Duration, attempt func(context.Context) error) error {
+	var err error
+	for try := 1; try <= tries; try++ {
+		if err = attempt(ctx); err == nil || !errors.Is(err, db.ErrContended) {
+			return err
+		}
+		if try == tries {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(pause):
+		}
+	}
+	return err
 }
 
 // DeploymentSchema is the namespace an unqualified statement in this session
@@ -172,6 +214,79 @@ func OpenFor(t testing.TB, rawURL string) *sql.DB {
 	}
 	t.Cleanup(func() { _ = pool.Close() })
 	return pool
+}
+
+// Role creates a login role that owns nothing and holds nothing except what the
+// caller grants it, in the schema URLs made for t, and returns its name and a DSN
+// that lands in that schema.
+//
+// It exists because the tree has two roles and some rights belong to neither: the
+// owner is a superuser that row-level security does not bind, and the application
+// role must hold INSERT or it cannot write at all. A boundary that fences an
+// expiry away from the role that appends (modules/audit/migrations/000048) therefore
+// cannot be tested from either handle — the second tenant's rows would be visible
+// from the first's session as the owner, and invisible as the app role, and both
+// answers would be about the wrong role. Each grants argument is the privilege list
+// and the object, spelled the way GRANT spells it, so the test says what the
+// deployment would have to grant and nothing else.
+//
+// The password is the one the test cluster already uses, read from
+// PLATFORMKIT_TEST_DATABASE_URL rather than invented: the role is a fixture in a
+// disposable schema, dropped with it, and a second secret in the environment would
+// be a second thing to rotate for no gain.
+func Role(t *testing.T, admin *sql.DB, grants ...string) (name, dsn string) {
+	t.Helper()
+	baseApp := mustEnv(t, "PLATFORMKIT_TEST_DATABASE_URL")
+	schema := DeploymentSchema(t, admin)
+	schemaSQL, appPassword := quote(schema), ""
+	if parsed, err := url.Parse(baseApp); err == nil && parsed.User != nil {
+		appPassword, _ = parsed.User.Password()
+	}
+	name = "r_" + strings.TrimPrefix(schema, "t_")
+	if len(name) > 63 {
+		name = name[:63]
+	}
+	must := func(query string) {
+		t.Helper()
+		if _, err := admin.ExecContext(t.Context(), query); err != nil {
+			t.Fatalf("dbtest: %s: %v", query, err)
+		}
+	}
+	// A password is a string literal, not an identifier: double the quotes and
+	// single-quote it, which is what the standard says and what CREATE ROLE takes.
+	literal := "'" + strings.ReplaceAll(appPassword, "'", "''") + "'"
+	must("CREATE ROLE " + quote(name) + " LOGIN PASSWORD " + literal)
+	must("GRANT USAGE ON SCHEMA " + schemaSQL + " TO " + quote(name))
+	for _, g := range grants {
+		must("GRANT " + g + " TO " + quote(name))
+	}
+	adminURL := mustEnv(t, "PLATFORMKIT_TEST_ADMIN_URL")
+	t.Cleanup(func() {
+		cleaner, err := sql.Open("pgx", adminURL)
+		if err != nil {
+			return
+		}
+		defer cleaner.Close()
+		ctx := context.WithoutCancel(t.Context())
+		_, _ = cleaner.ExecContext(ctx, "DROP OWNED BY "+quote(name))
+		_, _ = cleaner.ExecContext(ctx, "DROP ROLE IF EXISTS "+quote(name))
+	})
+	return name, withSchema(t, swapUser(t, baseApp, name), schema)
+}
+
+// swapUser returns rawURL with its login role replaced, password kept.
+func swapUser(t testing.TB, rawURL, role string) string {
+	t.Helper()
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		t.Fatalf("dbtest: %q is not a URL: %v", rawURL, err)
+	}
+	if u.User == nil {
+		t.Fatalf("dbtest: %q names no role", rawURL)
+	}
+	pw, _ := u.User.Password()
+	u.User = url.UserPassword(role, pw)
+	return u.String()
 }
 
 // RoleOf is the login role of a connection URL, so a test names the same role
@@ -277,4 +392,52 @@ func SystemToken() tenancy.SystemToken { return systemToken }
 // sees it.
 func System(ctx context.Context, conn *db.Conn, fn func(context.Context, db.Tx[db.System]) error) error {
 	return db.RunSystem(ctx, conn, systemToken, fn)
+}
+
+// Hold runs stmt on a session of its own, inside one transaction, and keeps
+// whatever lock that statement took until the caller releases it or the test
+// ends — whichever comes first. It answers once the lock is held, because the
+// statement that took it has already returned.
+//
+// This is how a test slows a store on purpose. The alternative, a Go timer in the
+// test's own goroutine, waits for a sleep rather than for a queue, and the
+// behaviour worth testing — a statement that cannot get the lock it asked for
+// because somebody else is holding it — is exactly what a loaded machine does by
+// itself. A caller that wants a row rather than a table takes it by name, with
+// UPDATE … WHERE key = $1; one that wants every statement to wait locks the table
+// instead, since a plain read never queues behind a row lock.
+//
+// The transaction is rolled back rather than committed, so the holder leaves no
+// mark on what the test reads afterwards, and the sleep that holds the lock is
+// cut short when the test ends rather than running out its bound.
+func Hold(t testing.TB, admin *sql.DB, hold time.Duration, stmt string, args ...any) (release func()) {
+	t.Helper()
+	ctx := context.WithoutCancel(t.Context())
+	session, err := admin.Conn(ctx)
+	if err != nil {
+		t.Fatalf("dbtest: open a session to hold %q: %v", stmt, err)
+	}
+	if _, err := session.ExecContext(ctx, "BEGIN"); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: begin the holder: %v", err)
+	}
+	if _, err := session.ExecContext(ctx, stmt, args...); err != nil {
+		session.Close()
+		t.Fatalf("dbtest: hold %q: %v", stmt, err)
+	}
+	released := make(chan struct{})
+	sleeping, stop := context.WithCancel(ctx)
+	go func() {
+		defer close(released)
+		defer session.Close()
+		_, _ = session.ExecContext(sleeping, "SELECT pg_sleep($1)", hold.Seconds())
+		// Roll back whether the sleep ran out or was cut short: a transaction whose
+		// statement was interrupted is aborted, and an aborted transaction is still
+		// holding the lock somebody else is waiting for.
+		_, _ = session.ExecContext(context.WithoutCancel(sleeping), "ROLLBACK")
+	}()
+	var once sync.Once
+	release = func() { once.Do(func() { stop(); <-released }) }
+	t.Cleanup(release)
+	return release
 }

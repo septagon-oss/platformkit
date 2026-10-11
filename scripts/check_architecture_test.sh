@@ -98,6 +98,21 @@ printf 'SELECT current_setting(%splatformkit.tenant_id%s, true) IS NOT NULL;\n' 
 bash "$scripts/check_gucs.sh" "$repo" >/dev/null
 rm -r "$repo/migrations"
 
+# A reviewed exemption (scripts/gucs-exempt.txt): a _test.go file with a reason is not
+# read; anything else in the file, a file that is not a test, or a row with no reason
+# is refused; and the exemption is announced, never silent.
+mkdir -p "$repo/scripts" "$repo/migrations"
+printf 'package migrations\nconst lead = "SELECT set_config(%splatformkit.system_access%s"\n' "'" "'" > "$repo/migrations/reads_test.go"
+rejects 'a test naming the setting with no exemption' 'OUT OF BOUNDS' bash "$scripts/check_gucs.sh" "$repo"
+printf 'migrations/reads_test.go matches a migration line as a string; it writes nothing\n' > "$repo/scripts/gucs-exempt.txt"
+said="$(bash "$scripts/check_gucs.sh" "$repo")"
+[[ "$said" == *"migrations/reads_test.go is exempt"* ]] || { echo "FAIL: an exemption was silent: $said" >&2; exit 1; }
+printf 'migrations/reads_test.go\n' > "$repo/scripts/gucs-exempt.txt"
+rejects 'an exemption with no reason' 'no reason' bash "$scripts/check_gucs.sh" "$repo"
+printf 'modules/a/internal/good.go it is fine\n' > "$repo/scripts/gucs-exempt.txt"
+rejects 'an exemption for a file that ships' 'only a _test.go file' bash "$scripts/check_gucs.sh" "$repo"
+rm -r "$repo/scripts" "$repo/migrations"
+
 # Tracked files deleted from the working tree do not become scanner failures.
 git -C "$repo" add .
 rm "$repo/modules/a/internal/good.go"
@@ -118,12 +133,12 @@ printf '{"packages":99}\n' > "$packages_repo/packages-budget.json"
 # Makefile exports, so this fixture counts packages with the gate's own compiler.
 selected_root="$(GOTOOLCHAIN="$(sed -n 's/^toolchain //p' "$scripts/../go.mod")" go env GOROOT)"
 export PATH="$selected_root/bin:$PATH"
-for path in apps/platformkit kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy \
+for path in apps/platformkit kit/wire kit/entity kit/entity/display kit/locale kit/fault kit/flags kit/tenancy kit/trace kit/request \
     modules/task/domain design ui/css ui/forms ui/components ui/components/examples ui/document ui/resource ui/page ui/screens ui/export kit/tenancy/providers/topaz \
-    kit/app kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
+    kit/app kit/appname kit/health migrations kit/module kit/jobs kit/crud kit/problem kit/rest \
     kit/events kit/events/transport kit/events/providers/memory kit/events/providers/nats kit/events/internal/delivery \
     kit/flags/providers/openfeature kit/flags/providers/ofrep kit/locale/providers/xtext \
-    kit/db kit/httpx kit/config modules/auth/contracts; do
+    kit/db kit/httpx kit/config kit/cache kit/cache/providers/valkey modules/auth/contracts pkit; do
     mkdir -p "$packages_repo/$path"
     printf 'package fixture\n' > "$packages_repo/$path/fixture.go"
 done
@@ -157,7 +172,32 @@ boundary_rejects kit/entity/display "$foundation/kit/crud"
 # imports kit/fault and the Go compiler refuses the cycle before any gate sees
 # it. What protects the package either way is the empty allowance below,
 # check("kit/fault", ""), which refuses this closure on its first non-standard line.
+# The value cache is a port over a store, not a second path to the database: the
+# one edge that would make it a second read path is the one into kit/db.
+boundary_rejects kit/cache "$foundation/kit/db"
+# The one store it speaks to reaches the port and the configuration and nothing
+# else — no router, no transaction, and no other provider.
+boundary_rejects kit/cache/providers/valkey "$foundation/kit/db"
 boundary_rejects kit/fault "$foundation/kit/db"
+# The wire gate reads JSON only; a renderer or transaction is not its dependency.
+boundary_rejects kit/wire "$foundation/kit/db"
+# kit/trace carries a W3C trace context and nothing else: the two values, their
+# parsing and the standard library. It is in the outbox and kernel allowances
+# because the relay stores the context with the event and hands it to the
+# envelope, which is a reason to reach it, not to widen it — so the edge this
+# case refuses is the one into a transaction or a transport, either of which
+# would make the carrier a tracer and put a driver behind every value type.
+boundary_rejects kit/trace "$foundation/kit/db"
+boundary_rejects kit/trace "$foundation/kit/events/transport"
+# kit/request is the call an event was caused by: its id, its peer address, its
+# trace context. Its allowance is kit/trace and nothing else, so the two edges
+# that would make it something else are refused here — a database behind a value
+# type, and net/http, which would put a server in the closure of every worker
+# that publishes an event and is how the package would end up parsing a request
+# it was told not to parse.
+boundary_rejects kit/request "$foundation/kit/db"
+boundary_rejects kit/request net/http
+boundary_rejects kit/request "$foundation/kit/httpx"
 # The runner selects a transport by name and builds none.
 boundary_rejects kit/app "$foundation/kit/events/providers/nats"
 fixture_import kit/tenancy/providers/topaz "$foundation/kit/tenancy"
@@ -174,6 +214,33 @@ boundary_rejects kit/tenancy/providers/topaz "$foundation/modules/auth/contracts
 boundary_rejects kit/flags/providers/openfeature "$foundation/kit/flags/providers/ofrep"
 boundary_rejects kit/flags/providers/ofrep "$foundation/ui/components"
 boundary_rejects kit/locale/providers/xtext "$foundation/kit/flags"
+# The composition vocabulary builds an application out of the modules a
+# composition handed it, so it has no reason to reach either side of that
+# boundary: not the page layer, whose mounts a composition hands in, and not a
+# module package, not even a contracts/ one, because the resolver asks for a
+# contract by type at the composition that names it.
+boundary_rejects pkit "$foundation/ui/css"
+boundary_rejects pkit "$foundation/modules/auth/contracts"
+# The whole-tree form of the measurement rule. `modules/auth/contracts` is a
+# package `parts` never asks about, so no closure bound above could see what it
+# links; the SDK line of this script is what refuses a second provider installed
+# somewhere the closure list does not reach. Source text only — nothing here is
+# resolved, and no dependency is fetched.
+mkdir -p "$packages_repo/modules/auth/internal"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/sdk/trace"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+rejects 'a package outside the closure list links the measurement SDK' 'MEASUREMENT BOUNDARY' "${packages[@]}"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+rejects 'a package outside the closure list links an exporter' 'MEASUREMENT BOUNDARY' "${packages[@]}"
+# What the rule admits: the API beside the vocabulary package, which drags no
+# provider, and the composition itself, in a subdirectory of its own.
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/trace"\n' > "$packages_repo/modules/auth/internal/fixture.go"
+"${packages[@]}" >/dev/null
+mkdir -p "$packages_repo/kit/app/sub"
+printf 'package fixture\nimport _ "go.opentelemetry.io/otel/sdk/trace"\n' > "$packages_repo/kit/app/sub/fixture.go"
+"${packages[@]}" >/dev/null
+rm -r "$packages_repo/kit/app/sub"
+printf 'package fixture\n' > "$packages_repo/modules/auth/internal/fixture.go"
+"${packages[@]}" >/dev/null
 "${packages[@]}" >/dev/null
 fixture_import kit/tenancy database/sql
 rejects 'write mode bypasses portability' 'transitively depends on database/sql' "${packages[@]}" --write
@@ -657,16 +724,59 @@ for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_b
 done
 echo 'rehearsal step: the candidate line names the tree the binary was built from, at one uncommitted file and at five thousand'
 
+# The restore drill's own default path, which needs no cluster because the case
+# supplies the psql, pg_dump and pg_restore. `make restore-drill` names --files
+# whenever the deployment has a byte store and names no --from, so the drill takes
+# the backup it drills — and a drill that hands its own backup step nothing but a
+# connection refuses the only installation the flag was there for, every time. The
+# case asks the question the drill answers from its own arguments.
+if ! drill_out=$(bash "$scripts/restore_drill_store_test.sh" 2>&1); then
+	printf 'FAIL: the restore drill does not drill its own default path:\n%s\n' "$drill_out" >&2
+	exit 1
+fi
+echo 'restore drill: with --files named and no --from, the backup the drill takes for itself carries the store'
+
 # Local selectors and an earlier test goal must never narrow the fresh gate.
 # Dry runs inspect the real Makefile without starting services or running tests.
 sed -n '/^module[[:space:]]/p; /^go[[:space:]]/p; /^toolchain[[:space:]]/p' "$scripts/../go.mod" > "$temporary/go.mod"
-test_commands() {
-	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "$@" |
+test_commands() { # <TEST_COUNT> <goals…>: the goal's own line, with the count the case is asking about
+	local count="$1"
+	shift
+	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "TEST_COUNT=$count" "$@" |
 		sed -n '/^go tool gotestsum /s/[[:blank:]]*$//p'
 }
-fresh="go tool gotestsum --packages='./...' -- -count=1"
+race_commands() { # <TEST_COUNT> <goals…>: the same for the race goal, whose line starts with `go test`
+	local count="$1"
+	shift
+	make --no-print-directory -n -C "$temporary" -f "$scripts/../Makefile" "TEST_COUNT=$count" "$@" |
+		sed -n '/^go test /s/[[:blank:]]*$//p'
+}
+# The fresh boundary, as bytes. This pin is a byte-pin on purpose: any change to the line `make check`
+# runs is red here until somebody reads this file and re-pins it, which is the only thing standing
+# between a per-package clock, a build tag or a `-skip` added under time pressure and a fresh gate that
+# quietly stops being fresh. The cost is that the line lives in three files — here, in the Makefile, and
+# in scripts/make_check_count_default_test.sh — so re-pinning is a decision somebody makes rather than a
+# fix. It has been made twice: -timeout=30m joined -count=1 on 2026-10-06, because a whole-suite run
+# measured 18m37s in `modules/tenant/internal` and 20m in `kit/rest` on a host carrying several suites at
+# once and that day's run killed `apps/platformkit` at go test's 10-minute default while it was still
+# working; and PR #141 turned the count into TEST_COUNT, which moved the order the two flags arrive in.
+# The measurements are written above the line in the Makefile. The loop below refuses a re-pin that drops
+# a part the fresh gate is made of, so pasting the failing line back in with `--packages` narrowed,
+# `-count=1` gone or the stated bound dropped is refused rather than rewarded — and it reads this pin,
+# not the Makefile, so it cannot be satisfied by the edit it watches.
+fresh="go tool gotestsum --packages='./...' -- -count=1 -timeout=30m"
+for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
+	case " $fresh " in
+	*" $fresh_part"*) ;;
+	*)
+		echo "FAIL: the pinned fresh boundary no longer carries $fresh_part; that part is the fresh gate, so re-pin what the Makefile runs around it rather than this:" >&2
+		echo "$fresh" >&2
+		exit 1
+		;;
+	esac
+done
 focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
-if [[ "$(test_commands test)" != "go tool gotestsum  --packages='./...' --" ]]; then
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' --" ]]; then
 	echo 'FAIL: local tests must use the default Go cache over every package' >&2
 	exit 1
 fi
@@ -678,13 +788,46 @@ for goals in test check 'test check' 'check test'; do
 		'test check') expected="$focused"$'\n'"$fresh" ;;
 		'check test') expected="$fresh"$'\n'"$focused" ;;
 	esac
-	actual="$(test_commands "${targets[@]}" TEST_PACKAGES='./design ./ui/css' TEST_FLAGS='-run Selected' TEST_OPTIONS=--watch)"
+	actual="$(test_commands -count=1 "${targets[@]}" TEST_PACKAGES='./design ./ui/css' TEST_FLAGS='-run Selected' TEST_OPTIONS=--watch)"
 	if [[ "$actual" != "$expected" ]]; then
 		printf 'FAIL: make %s changed the local or fresh test boundary:\n%s\n' "$goals" "$actual" >&2
 		exit 1
 	fi
 done
 echo 'test feedback: local selectors preserve fresh full checks in either goal order'
+
+# The count both full-suite goals read, in both shapes it can arrive in. A make command-line value
+# wins over the environment, which is what lets this case ask for either from inside a gate whose own
+# environment already exports TEST_COUNT empty — the loop's. The CI shape must be today's fresh line
+# byte for byte; the empty shape is what a caller asked for with its own gate, and it may take the
+# count and nothing else — not -race, because a race detector answering from a stale verdict is a
+# worse answer than no detector at all, and not the per-package bound either: that is a clock rather
+# than a count. The expected line below therefore carries `-timeout=30m` after the count leaves, and two
+# spaces where the count was, because make substitutes nothing for an empty $(TEST_COUNT) and leaves the
+# separator on both sides. The `test` goal's own line above is pinned the same way, with its gotestsum
+# options empty.
+if [[ "$(test_commands -count=1 check)" != "$fresh" ]]; then
+	printf 'FAIL: make check with TEST_COUNT=-count=1 lost the fresh suite line:\n%s\n' "$(test_commands -count=1 check)" >&2
+	exit 1
+fi
+if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -timeout=30m" ]]; then
+	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
+	exit 1
+fi
+case "$(race_commands -count=1 check-race)" in
+	'go test -race -count=1 -timeout='*m' ./'*) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+esac
+empty_race="$(race_commands '' check-race)"
+case "$empty_race" in
+	'go test -race '*'./apps/platformkit') ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
+esac
+if [[ "$empty_race" == *-count* ]]; then
+	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2
+	exit 1
+fi
+echo 'test feedback: the count is one variable, the CI default stays fresh and an empty value costs only the count'
 
 # An unrelated PATH formatter must not change formatting or hide tool errors.
 formatting="$temporary/formatting"

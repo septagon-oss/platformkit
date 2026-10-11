@@ -33,12 +33,15 @@ package page
 // this file holds the mechanism and the English, and no other language.
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
+	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/ui/document"
 )
 
 // faultKeys is the one table from a refusal the kernel published to the catalog key this
@@ -64,6 +67,16 @@ var faultKeys = map[string]string{
 	httpx.CodeLimitExhausted:    "fault.LIMIT_EXHAUSTED",
 }
 
+// refusalParts is every catalogue key the refusal page looks up besides the
+// verdict's own sentence: the four parts of a grant denial, the row denial's one,
+// and the confirmation the ask lands on. The test that reads this list is the
+// gate that keeps a part from shipping in English to a tenant served in
+// Portuguese, which is the defect the whole page exists to close.
+var refusalParts = []string{
+	"fault.missing", "fault.granter", "fault.ask", "fault.holds_the_row",
+	"fault.sent", "fault.sent_body",
+}
+
 // faultKey is the catalog key of the sentence a refusal is shown in, and whether
 // there is one to look for at all.
 //
@@ -74,11 +87,12 @@ var faultKeys = map[string]string{
 // written — an unlisted code is a sentence this package has not read, and a shell's
 // generic copy standing in for it would hide whatever that sentence says.
 //
-// A refusal with no code at all is keyed by its verdict, and only for the three
+// A refusal with no code at all is keyed by its verdict, and only for the four
 // verdicts whose sentence this layer writes because nobody else wrote it: the 404
 // of an address nobody mounted, the 405 of an address that does not take the verb
-// it was asked with, and the 500 of a handler that broke. Every one of those three
-// sentences is kit/httpx's own, written for the page this package renders it on.
+// it was asked with, the 500 of a handler that broke, and the 503 of a guard whose
+// own decision could not be made. Every one of those four sentences is kit/httpx's
+// own, written for the page this package renders it on.
 //
 // A 400, a 409 or a 422 is not one of them: it carries a sentence about the
 // caller's own request, written by a module or by the decoder, and translating
@@ -89,13 +103,23 @@ var faultKeys = map[string]string{
 // caller's request, and it is the refusal a derived client meets most often of
 // all — the catalog's write_path exists because the kernel keeps refusing clients
 // at the wrong verb.
+//
+// The 503 joins the 500 on the same ground as the other three: the sentences are
+// the kernel's about its own outage ("authorization is temporarily unavailable",
+// "the plan could not be read right now", "this host cannot be resolved right
+// now"), and a person cannot act on which subsystem is down — the guard logs each
+// one with its reason and sends Retry-After, so what the page owes the person is
+// that it is our side and it is for a moment. Which of them it was stays in the
+// problem document a monitor reads. Left untranslated it is the one refusal a
+// tenant served in Portuguese is handed in English on an outage — the outage being
+// the moment a person is most likely to be reading it.
 func faultKey(detail string, status int) (key string, lookup bool) {
 	if code, _, named := strings.Cut(detail, ": "); named {
 		key, shipped := faultKeys[code]
 		return key, shipped
 	}
 	switch status {
-	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError:
+	case http.StatusNotFound, http.StatusMethodNotAllowed, http.StatusInternalServerError, http.StatusServiceUnavailable:
 		return "fault." + strconv.Itoa(status), true
 	}
 	return "", false
@@ -104,18 +128,26 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
 // no catalog at all.
 //
-// The request's own Accept-Language is the only preference available, and that is a
-// consequence rather than a shortcut. Shell.Locale reads a URL, an account or a tenant
-// preference, and each of those needs something this response is the refusal to have: a
-// resolved tenant, an open transaction, a session that was accepted, or a handler to run
-// at all. A guard answers before any of them exist, so the language of a refusal can only
-// be the one the caller brought — which is also exactly what makes Vary: Accept-Language
-// the true thing to say about the response.
-func refusalLocale(m Messages, r *http.Request) *Locale {
+// It is the same contract every other page of this package uses — the tenant's set, the
+// caller's header filtered against it, the tenant's default behind that — and the tenant
+// arrives because the kernel resolves the address's host before it renders a refusal as a
+// page (kit/httpx's withHostTenant), which it may, because a host is a fact a refused
+// request still has. What a guard has no access to is everything Shell.Locale reads: a
+// URL, an account, a stored preference, each of which needs something this response is the
+// refusal to have — a session that was accepted, an open transaction, a handler to run at
+// all. Those are absent whatever the verdict, and the caller's own header is what is left
+// of the preference list — which is also exactly what makes Vary: Accept-Language the true
+// thing to say about the response.
+func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
 	if m == nil {
 		return nil
 	}
-	loc := SelectLocale(m, r.Header.Get("Accept-Language"))
+	// The tenant the request resolved to: the languages it is served in are as much a
+	// fact about a refusal as about any other page, and a tenant that declared one
+	// language was not refusing to be answered in another. An address whose host names no
+	// tenant — a domain nobody serves, a database that could not say — has no declaration
+	// to filter by, and the deployment's own catalog is then the only one standing.
+	loc := SelectLocale(m, TenantPreferences(Request{Tenant: tenant}, r.Header.Get("Accept-Language"))...)
 	return &loc
 }
 
@@ -137,12 +169,15 @@ func FaultHandler(s Shell) httpx.Fault {
 		}
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
-		loc := refusalLocale(s.Messages, r)
+		loc := refusalLocale(s.Messages, r, req.Tenant)
 		// The frame is given the negotiated language for the same reason the sentence is:
 		// a shell whose chrome has labels of its own renders them here as it does on every
 		// page Serve mounts, and not in English because the request was refused.
 		req.Locale = loc
-		v := fault(status, p.Detail, loc, requestID(p.Instance), s.Back, s.BackLabel)
+		v, ok := granted(r, loc, status, p.Detail, requestID(p.Instance), s)
+		if !ok {
+			v = fault(status, p.Detail, loc, requestID(p.Instance), s.Back, s.BackLabel)
+		}
 
 		body := s.Frame(ctx, req, v.Body)
 		out, err := Render(Document(s.Chrome, req, v, body), status)
@@ -187,6 +222,13 @@ func FaultHandler(s Shell) httpx.Fault {
 // support and an operator greps a log for; it is in the problem document and the log
 // line whatever the page says, and dropping it here would leave the page the only place
 // the refusal has no name. So the code is kept and the copy after it is what changes.
+// deniedPermission is the English sentence for a missing grant; the catalogue carries it as
+// deniedPermissionKey, with the permission as its one argument.
+const (
+	deniedPermission    = "You can't do this. You need the %s permission for it. Anyone who manages roles here can grant it: ask your administrator."
+	deniedPermissionKey = "fault.AUTH_DENIED.permission"
+)
+
 func fault(status int, detail string, loc *Locale, reference, back, backLabel string) View {
 	line := detail
 	if strings.TrimSpace(line) == "" {
@@ -194,14 +236,22 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 		// browser. The sentence has to be true and useful without it.
 		line = "Something went wrong while handling this."
 	}
-	language := ""
-	if loc != nil {
-		if key, lookup := faultKey(detail, status); lookup {
-			if text := loc.Text(key, line); text != line {
-				line, language = text, loc.Language
-				if code, _, named := strings.Cut(detail, ": "); named {
-					line = code + ": " + text
-				}
+	line, language := sentence(line, loc, status, detail)
+	// A missing grant names the grant and who can give it (UX walkthroughs, 2026-09-30: an editor who signed
+	// in met "Não pode fazer isto." and could not say what to ask for; the administrator helping her could not
+	// tell what to give). The guard already wrote the permission into its detail and the translated sentence
+	// dropped it. A catalogue with the full sentence answers with it; one that carries only the short sentence
+	// keeps its language and gains the permission, so no shell answers a denial in two languages.
+	if code, rest, named := strings.Cut(detail, ": "); named && code == httpx.CodeDenied {
+		if permission, ok := strings.CutPrefix(rest, "this operation requires "); ok && permission != "" {
+			words := fmt.Sprintf(deniedPermission, permission)
+			switch {
+			case loc != nil && loc.Text(deniedPermissionKey, words, permission) != words:
+				line, language = code+": "+loc.Text(deniedPermissionKey, words, permission), loc.Language
+			case language != "":
+				line = line + " (" + permission + ")" // the shell's own short sentence, in its own language
+			default:
+				line = code + ": " + words
 			}
 		}
 	}
@@ -218,6 +268,114 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 		v.Language = language
 	}
 	return v
+}
+
+// sentence is the refusal's own line, in the request's language when this shell
+// ships the copy for it and in the guard's English when it does not, and the
+// language actually on the page ("" for English). The code is kept and the copy
+// after it is what changes — see fault.
+func sentence(line string, loc *Locale, status int, detail string) (text, language string) {
+	text = line
+	if loc == nil {
+		return text, ""
+	}
+	key, lookup := faultKey(detail, status)
+	if !lookup {
+		return text, ""
+	}
+	translated := loc.Text(key, line)
+	if translated == line {
+		return text, ""
+	}
+	if code, _, named := strings.Cut(detail, ": "); named {
+		translated = code + ": " + translated
+	}
+	return translated, loc.Language
+}
+
+// granted is the refusal page for the two verdicts a person can be told more
+// about: the grant question (AUTH_DENIED) and the row question (POLICY_DENIED).
+// Every other verdict — a 404, a cross-site write, a handler that panicked, a
+// plan that does not include a feature — is answered by the page below, byte for
+// byte as it always was, because the parts below would name a grant nobody
+// withheld.
+//
+// The order is the one the brief walks: the verdict, code first, as the page has
+// always shown it; what is missing, in the words of the module that defines it;
+// who can grant it, as a role and never as a list of people; and the way on,
+// which is never the address that refused. The ask control is drawn only where the
+// composition mounted the door it posts to.
+func granted(r *http.Request, loc *Locale, status int, detail, reference string, s Shell) (document.View, bool) {
+	ref, ok := httpx.Refused(r.Context())
+	if !ok || status != http.StatusForbidden ||
+		(ref.Code != httpx.CodeDenied && ref.Code != httpx.CodePolicyDenied) {
+		return document.View{}, false
+	}
+	line, language := sentence("", loc, status, detail)
+	if line == "" {
+		line = strings.TrimPrefix(detail, ref.Code+": ")
+	}
+	if language != "" && reference != "" {
+		line = line + " (request " + reference + ")"
+	} else if reference != "" {
+		line = detail + " (request " + reference + ")"
+	}
+	p := document.RefusalProps{Status: status, Title: http.StatusText(status),
+		Sentence: line, Home: s.Back, HomeLabel: s.BackLabel}
+	if ref.Code == httpx.CodePolicyDenied {
+		p.Missing, _ = word(loc, "fault.holds_the_row",
+			"You already hold what this needs; this row's own rule refused it: %s", ref.Reason)
+	} else {
+		p.Missing, _ = word(loc, "fault.missing", "What is missing: %s",
+			word0(loc, "permission."+ref.Permission, ref.Label))
+		p.Granter, _ = word(loc, "fault.granter",
+			"Ask your administrator — anyone whose role grants them %s.",
+			word0(loc, "permission."+s.Granter.Permission, s.Granter.Label))
+		// Both the shell's address and a wired door: a composition that supplies
+		// the page route but no reach would draw a form that refuses.
+		if s.Ask != "" && httpx.CanAsk(r.Context()) {
+			p.Ask, p.AskLabel = s.Ask, word0(loc, "fault.ask", "Ask for access")
+			p.Permission, p.Path = ref.Permission, ref.Path
+		}
+	}
+	v := document.Refusal(p)
+	if language != "" {
+		// The verdict's own line is this language, which is the line the page is
+		// read for; a part the catalogue has no copy for is English beside it, as
+		// an untranslated screen is. Declaring the negotiation rather than the
+		// lowest common denominator is what every other page of this package does.
+		v.Language = language
+	}
+	return v, true
+}
+
+// word is one line of the refusal page through the shell's catalogue, and
+// whether the catalogue actually spoke it — a page the catalogue has no copy for
+// is English and must not declare Portuguese.
+func word(loc *Locale, key, fallback string, args ...any) (string, bool) {
+	if loc == nil {
+		return sprintf(fallback, args...), false
+	}
+	out := loc.Text(key, fallback, args...)
+	return out, out != sprintf(fallback, args...)
+}
+
+// sprintf is the fallback formatting Locale.Text itself applies to a key no
+// catalogue answers, applied here so "did the catalogue speak?" is a fair test.
+func sprintf(format string, args ...any) string {
+	if len(args) == 0 {
+		return format
+	}
+	return fmt.Sprintf(format, args...)
+}
+
+// word0 is a line already assembled, or one whose translation is not worth
+// recording: the refusal page's own labels.
+func word0(loc *Locale, key, text string) string {
+	if loc == nil {
+		return text
+	}
+	return loc.Text(key, text)
 }
 
 // requestID is the instance URN read back into the bare identifier, which is what a

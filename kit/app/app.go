@@ -17,15 +17,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"log/slog"
 	"net/http"
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/go-chi/chi/v5"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/config"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
@@ -82,6 +86,22 @@ type Options struct {
 	// Role defaults to All.
 	Role Role
 
+	// App is this composition's own app slug: the name every shared name it
+	// forms carries, so two compositions over one database and one broker cannot
+	// read one another's work (kit/appname, decision 0074). Empty is the deployment
+	// of one app, which keeps the names this kernel formed before the app segment.
+	// It is a slug and not a display name: it reaches a broker subject, a consumer
+	// name, a job lock and a cookie name.
+	//
+	// It is the same fact as the configuration key `nats.app`, and New reconciles the
+	// two before anything reads either: an empty App takes the configured slug, and an
+	// App named while the key stays empty is written into the key as this App carries
+	// it, so one value places this app's tenants (migrations/000043), addresses its
+	// subjects (kit/events/providers/nats) and keys its payload contract
+	// (kit/events/catalog.go). Two spellings naming two apps are refused; a caller
+	// that stamps tenants from its own config.Config still reads its own empty key.
+	App appname.Name
+
 	// Installation names the host the installation itself is reached at — the
 	// one address that serves the control plane (the Ops surface) and the only
 	// place an operator's own console answers.
@@ -93,17 +113,34 @@ type Options struct {
 	// decision, and a silent one is a surprise during the incident it was for.
 	Installation Installation
 
-	// WorkspaceCatalog is the body of the catalog route the kernel mounts at
+	// WorkspaceCatalog mounts the catalog route the kernel owns the address of,
 	// /api/v1/app/resources: the resources this caller may reach, as a document.
+	// Build it with WorkspaceCatalogRoute; the composition writes one line.
 	//
-	// It is a function and not a route because the two owners are different: only
-	// the kernel can compose the address (no module composes /api/v1/app/…, and
-	// the address is a native shell's contract, not a capability's), and only ui
-	// can render the answer — and kit may not import ui (scripts/check_packages.sh
-	// is that line). The composition wires ui/screens' renderer here, one literal,
-	// and a composition with resources and no renderer is refused: a native shell
-	// would have nothing to read.
-	WorkspaceCatalog func(ctx context.Context, resources []httpx.Resource) (any, error)
+	// It is a mount and not a function returning the body because the body's type
+	// has to reach the OpenAPI document, and a func returning `any` erases it
+	// before anything can read it. It stays a field rather than a call the
+	// composition makes because the two owners are still different: only the kernel
+	// can compose the address (no module composes /api/v1/app/…, and the address is
+	// a native shell's contract, not a capability's), and only ui can render the
+	// answer — and kit may not import ui (scripts/check_packages.sh is that line).
+	// The composition names its renderer here, one literal, and a composition with
+	// resources and no renderer is refused: a native shell would have nothing to
+	// read.
+	WorkspaceCatalog func(api *httpx.API)
+
+	// Access is the reach an ask for access needs: the people in this tenant
+	// whose role grants role management, and the notice written to each. Nil
+	// leaves the kernel's ask door unmounted and the refusal page with no ask
+	// control, which is the honest answer — see httpx.Options.Access.
+	Access httpx.AskForAccess
+
+	// AccessPage mounts the browser's half of the same command (the form the
+	// refusal page posts to, and the confirmation page). The address is the
+	// kernel's, the body is the composition's, because kit may not import ui:
+	// ui/page.MountAccess is what a composition passes here. It is called with
+	// the workspace router and only when Access is wired.
+	AccessPage func(router *httpx.Router)
 
 	// Transport carries events between the relay and the handlers. An explicit
 	// value overrides nats.transport and Transports. Otherwise All defaults to
@@ -117,6 +154,42 @@ type Options struct {
 	// opened; the check runs in every role, because one image must answer
 	// "will this start?" the same way whichever half it runs.
 	Transports Transports
+
+	// Caches is the constructor behind cache.adapter's one shared name. The
+	// kernel names the store an entry every replica must read lives in, and builds
+	// none of them: an installation that sets cache.adapter to valkey is refused at
+	// New if this composition never named how to reach one. An empty adapter is the
+	// in-process store, which needs no constructor because it opens nothing — and
+	// says so once, in a boot line, because a cache that reaches one process is a
+	// deployment choice an operator should not discover from a stale host.
+	Caches Caches
+}
+
+// Caches is how the stores cache.adapter can name are reached. The kernel knows
+// the names and the rule between them; the composing application is the one
+// importer of the provider package, so kit/app does not link a cache client any
+// more than it links a broker (scripts/check_packages.sh records that), and a
+// product that wants a different server supplies its own constructor here.
+type Caches struct {
+	// Valkey builds the shared store from the cache settings New has already
+	// validated. It is called with the boot context, and a store that cannot be
+	// reached within its own boot budget is a boot failure rather than a cache that
+	// misses forever: a deployment that says "shared" and silently gets a private
+	// one has lost every invalidation it will ever run.
+	Valkey func(ctx context.Context, cfg config.Cache) (cache.Cache, error)
+}
+
+// constructor is the Caches field the selected adapter needs, or the error that
+// names the missing one — Transports.constructor's shape, for the same reason: an
+// option a composition forgot is a boot refusal, not a runtime surprise.
+func (c Caches) constructor(adapter string) (func(context.Context, config.Cache) (cache.Cache, error), error) {
+	if adapter != "valkey" {
+		return nil, nil
+	}
+	if c.Valkey == nil {
+		return nil, errors.New("app: cache.adapter selects valkey and Options.Caches.Valkey is nil; the application supplies the constructor (kit/cache/providers/valkey.Connect)")
+	}
+	return c.Valkey, nil
 }
 
 // Transports is how the two event transports nats.transport can name are
@@ -165,6 +238,75 @@ type App struct {
 	mods []module.Module
 	opts Options
 	log  *slog.Logger
+
+	// declaredRoutes is the composition's route signature as the first of its four
+	// registrations left it, and nil exactly when no registration of this composition
+	// has run yet. registeredRoutes and registrationsAgree are its whole life: the
+	// first registration writes it and each of the other three is judged against it.
+	declaredRoutes []string
+
+	// declared is every event these manifests promise, with the payload type each
+	// one named, and declaredRelease is this composition's receipt for putting them
+	// in its own app's catalog. The catalog behind them is what events.Publish reads
+	// on every outbox write, and it is keyed by app, so a composition's tenants are
+	// measured against that composition's own contract from the moment the
+	// composition exists, and a boot can neither replace nor erase what another app
+	// is answering under (kit/events/catalog.go). The receipt gives back what this
+	// composition added — every refusal after New, and the Close of the Runtime Start
+	// hands out — which is what keeps a build this kernel refused from holding shapes
+	// no live composition declares.
+	declared        []events.Declared
+	declaredRelease func()
+
+	// held is this composition's connection, held open-handed from New until Start
+	// opens it. The API, its readiness probe, its anonymous write counter and the
+	// record of its refusals are all built before the pool is dialled — see heldConn
+	// — and each of them asks this for the connection on the request that needs it.
+	held *heldConn
+
+	// measurement is this deployment's telemetry, planned here and installed by a
+	// Start that got all the way through. Batched spans and the last metric interval
+	// have to be pushed before the process is gone, because a collector nobody told
+	// about does not come and fetch them — and a composition that was refused never
+	// asked to be traced anywhere. Nothing but a whole lifecycle needs either half,
+	// so they are held here rather than passed around — see flushTelemetry for who
+	// calls the flush.
+	measurement *telemetryPlan
+
+	// reports are what /ready says about the parts of the process that are not
+	// verdicts — today, the exporter's last success. Empty when measurement is off.
+	reports []health.Report
+
+	// telemetryOnce makes the flush one per process. Run and Runtime.Close both
+	// end a lifecycle and Run does both of them, so without it a traced process
+	// would shut its providers down twice and log the same failure twice.
+	telemetryOnce sync.Once
+}
+
+// flushTelemetry pushes what the exporters still hold, at most once per App.
+//
+// Two callers reach it, which is the whole reason it is a method with a Once
+// inside rather than a defer in one function: Run is told when the process ends and
+// flushes on the way out, and a caller that owns its listener is never inside Run at
+// all, for whom Runtime.Close is the only teardown there is. Both run it last, after
+// the listener, the work and the connection are gone, so a traced process's final act
+// is to hand over what its own handlers made. A process that goes through Run reaches
+// the Once twice and exports once.
+//
+// A plan that was never installed flushes nothing, so the Run whose Start failed
+// and the Close of a Runtime that outlived a failed transport both answer with the
+// silence of a process that made nothing to hand over.
+//
+// It cannot fail a shutdown. Spans and numbers nobody flushed are a loss of
+// information, and a shutdown that did not finish is a worse one, so the cause goes
+// to the log at the level a person looking for a missing trace will be reading, and
+// the error stays where the loss is: nowhere else.
+func (a *App) flushTelemetry(ctx context.Context) {
+	a.telemetryOnce.Do(func() {
+		if err := a.measurement.flush(ctx); err != nil {
+			a.log.ErrorContext(ctx, "app: telemetry was not flushed", "error", err)
+		}
+	})
 }
 
 // shutdownGrace bounds the wait for in-flight requests once the context is done.
@@ -208,6 +350,71 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == "" {
 		opts.Role = All
 	}
+	// Which app this is has one answer, and it reaches the composition by two
+	// routes: nats.app, the setting every shared name is formed from (migration
+	// 000043 places tenants by it, the transport addresses events with it, the
+	// reference application stamps new tenants with it), and Options.App, the same
+	// fact spoken by whoever wires in code. Here the two are reconciled, once, and
+	// nothing below re-reads either input: the payload catalog, the relay's claim,
+	// every subscription's durable and the job lock are named from the value this
+	// block leaves in opts.App, and everything that reads the setting rather than the
+	// option — the transport constructor, which transport() hands a.cfg.NATS, and the
+	// migration's placement of this boot's tenants — reads the value it leaves in
+	// cfg.NATS.App. Left to agree by themselves they do not: a
+	// deployment that named itself in configuration alone stamped its tenants
+	// "collect", addressed its events as collect and installed its catalog under
+	// nobody's slug, so checkPayload — which asks which app holds the tenant the row
+	// belongs to — found no schema for its own tenants and a malformed event that
+	// used to be refused at the INSERT began to commit and to reach the relay.
+	// Rule 9 on an authoritative write, lost by a setting.
+	configured, err := cfg.NATS.AppName()
+	if err != nil {
+		// A slug that is present and broken is refused here as everywhere else; this
+		// is the door the composition boots through, including for the memory
+		// transport, which never asks NATS.Validate.
+		return nil, fmt.Errorf("app: %w", err)
+	}
+	if opts.App.Named() {
+		// The type is not the check: a Name built by conversion bypasses Parse, and
+		// from here the slug is a label and nothing else. Every name kit/appname
+		// forms for it survives an ungrammatical spelling — the durable, the job
+		// lock, the cookie — so such an app boots, serves and emits while no tenant's
+		// tenants.app can ever equal it: it reads as nobody's app, and the payload
+		// contract it declared checks nobody, which is the coverage the catalog
+		// exists to make visible rather than lose. Consume refuses the same spelling
+		// per subscription; this refuses it once, where the composition is.
+		if _, err := appname.Parse(string(opts.App)); err != nil {
+			return nil, fmt.Errorf("app: Options.App %q: %w", string(opts.App), err)
+		}
+		if configured.Named() && configured != opts.App {
+			// Not a tie to break: the setting is what the tenants in the database are
+			// stamped with, so the option would name an app no tenant belongs to, and
+			// the composition's own declared contract would check nobody while its
+			// events carried the other name. Which one to keep is the deployment's
+			// decision, and a boot cannot make it; the error names both spellings.
+			return nil, fmt.Errorf("app: Options.App %q and nats.app %q are two answers to which app this composition is", string(opts.App), cfg.NATS.App)
+		}
+		if !configured.Named() {
+			// The opposite direction, and the one the case above cannot see: the code
+			// spoke and the setting said nothing. nats.app is not only how a deployment
+			// names itself, it is the key two consumers read — the transport constructor
+			// (kit/events/providers/nats forms its subjects, its subscription filter and
+			// its connection name from settings.AppName) and migrationDeclaration, whose
+			// app is what migrations/000043 places tenants against. Left empty, this boot
+			// would scope its relay, its durables and its job lock by the option and form
+			// every other shared name as the deployment of one app: the same question
+			// answered twice, which is what the two-spellings refusal above exists to
+			// forbid. Written to the copy of the configuration this App carries — a
+			// caller's own config.Config is passed by value and keeps its empty key.
+			cfg.NATS.App = string(opts.App)
+		}
+	} else {
+		// The composition said nothing about itself, so the deployment speaks: nats.app
+		// is the slug's one configuration key (kit/appname/README.md) and a
+		// composition that does not name itself is not a different app from the one
+		// its configuration names.
+		opts.App = configured
+	}
 	switch opts.Role {
 	case Web, Worker, All:
 	default:
@@ -234,13 +441,55 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 			}
 		}
 	}
+	// The store is checked the same way, in every role: the two halves of one
+	// deployment must answer "will this start?" identically, and a worker that
+	// resolves a host through a cache it cannot build is the same wiring bug as a
+	// web process serving the same page.
+	if _, err := opts.Caches.constructor(cfg.Cache.Adapter); err != nil {
+		return nil, err
+	}
 	// Expanded before it is checked: a module that subscribes to everything is
 	// given the names here, once every manifest is in hand, so where it sits in
 	// the list cannot change what it hears.
+	// The kernel emits one event of its own — event_replayed, the record of an
+	// operator's replay (kit/events.Replay) — and it is declared in the module
+	// list because that is where every event is declared. Declaring it is what
+	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
+	// lands in the tenant's trail beside the actions it re-ran, with the
+	// operator as its actor.
+	mods = append(mods, kernelModule)
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
 	}
+	// Every event this composition can emit, with the payload type its module
+	// promised, goes to the outbox: a payload that is not one is refused at the
+	// INSERT rather than published and discovered by a subscriber. One list per
+	// app, built from the manifests nobody else re-declares — a second composition
+	// in this process adds its own list and leaves this one standing, because the
+	// check acme's event is measured against is acme's. See kit/events/catalog.go
+	// and kit/app/asyncapi.go, which emits the same list as a document.
+	//
+	// What is answered here is the disagreement a boot can see before it claims
+	// anything: this composition spells one of its own app's event names another way
+	// than the shapes standing, or spells one name two ways inside itself. Refusing
+	// that after the connection would spend the deployment for a sentence about two
+	// manifests (0074 rule 1), and refusing it at the end of Start would spend the
+	// three dry registrations and the API built to serve on the way there. The claim
+	// itself is taken at the last line of this function, under the same lock, so two
+	// boots that both read the catalog before either wrote it are answered by the one
+	// that reaches the claim second.
+	//
+	// The gate reads every declaration the manifests wrote, not one per name: a list
+	// joined by name has already chosen which of two promises to keep before anything
+	// reads it to be told it may not choose. allDeclaredEvents is that list, and
+	// declaredEvents is the same list once this refusal has passed, joined by name for
+	// the catalog and the document, which is what a list nobody can disagree with
+	// looks like from the other side.
+	if err := events.CheckAppDeclared(opts.App, allDeclaredEvents(mods)); err != nil {
+		return nil, beforeEffects(err)
+	}
+	declared := declaredEvents(mods)
 	log := opts.Log
 	if log == nil {
 		// config's log.level was validated and then read by nobody, which is
@@ -257,13 +506,93 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if opts.Role == All && opts.Transport == nil && cfg.NATS.Transport != "jetstream" {
 		log.WarnContext(ctx, "app: in-process events reach only this replica; set nats.transport to jetstream to share events between replicas")
 	}
-	return &App{cfg: cfg, mods: mods, opts: opts, log: log}, nil
+	// The collector is settled here, after the logger exists and before anything is
+	// opened, so that a composition which fails a gate below has at least been
+	// described by a process that knew it would fail, and so that a collector URL
+	// that is not a URL is a wiring mistake, like every other error this function
+	// returns. What is settled is the plan: the address, the exporters and the
+	// resource. The providers themselves go in front of the process at the end of
+	// Start, because installing them is the one change a boot makes in its process
+	// that no release gives back, and a composition refused below is a composition
+	// that never asked to be traced anywhere (see telemetryPlan).
+	measurement, report, err := planTelemetry(ctx, cfg.Telemetry, log)
+	if err != nil {
+		return nil, err
+	}
+	var reports []health.Report
+	if report != nil {
+		reports = append(reports, report)
+	}
+	// The composition's event shapes are claimed here, the last line of a constructor
+	// that has nothing left to refuse, and under the catalog's own lock: a
+	// composition that spells one of its app's standing names another way is refused
+	// by the claim rather than by whoever reads the catalog next, and the answer costs
+	// the deployment nothing because nothing above this line opened anything.
+	declaredRelease, err := events.ClaimApp(opts.App, declared)
+	if err != nil {
+		return nil, beforeEffects(err)
+	}
+	return &App{cfg: cfg, mods: mods, opts: opts, log: log, declared: declared,
+		declaredRelease: declaredRelease,
+		held:            &heldConn{}, measurement: measurement, reports: reports}, nil
 }
 
-// Run migrates, then serves or works or both, and returns when ctx is done. It is
+// heldConn is the application connection of a composition that builds its routes
+// before it opens its database.
+//
+// The order is decision 0074 rule 1's: which routes the composed modules mounted,
+// what guards each of them and which events each publishes is the last thing a
+// composition can get wrong for free, and the pool is the first thing it spends —
+// so the four registrations and every gate over them come first, and the connection
+// arrives after the last one. It is still the connection every part of the boot was
+// built around: httpx holds it because every request transaction opens on it,
+// /ready asks it, kit/limit counts anonymous writes on it, and a refusal records
+// itself on it. Each of those readers asks here, on the request, rather than
+// carrying a value captured while the boot could still be refused; and no request
+// can arrive before Start returns a Runtime, so what an empty read means is that a
+// caller reached a handler the composition never started to serve — which is a
+// defect in this package's own ordering, said as an error rather than as a nil
+// dereference inside db.
+type heldConn struct {
+	mu   sync.RWMutex
+	conn *db.Conn
+}
+
+// fill is the one write: Start's, once, between the last gate and the first
+// listener, and beside the httpx.API.Connect that hands the same connection to the
+// router.
+func (h *heldConn) fill(conn *db.Conn) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.conn = conn
+}
+
+// read is the one question, and the shape kit/limit asks its connection source in.
+func (h *heldConn) read(context.Context) (*db.Conn, bool) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.conn, h.conn != nil
+}
+
+// Run answers every gate, migrates, then serves or works or both, and returns
+// when ctx is done. It is
 // Start, whichever halves this process's role names, and Close; a caller that owns
 // its own listener uses those parts directly instead. See lifecycle.go.
 func (a *App) Run(ctx context.Context) error {
+	// Registered first so it runs last — after the listener and the work have
+	// stopped and after Close has returned the connection. A whole boot flushes
+	// through Close; this defer is the case that never got there, and since the
+	// install moved to the end of Start it is a quiet one: a composition that failed
+	// a gate or an open installed nothing, so it has no spans of its own to get out.
+	// It stays because Run is the door a process ends through, and because the Once
+	// inside flushTelemetry makes arriving twice and arriving once one call. It gets
+	// the same grace the requests got, on a context the cancelled shutdown cannot cut
+	// short.
+	defer func() {
+		grace, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownGrace)
+		defer cancel()
+		a.flushTelemetry(grace)
+	}()
 	rt, err := a.Start(ctx)
 	if err != nil {
 		return err
@@ -349,6 +678,62 @@ func (a *App) transport() (events.Transport, error) {
 	return transport, nil
 }
 
+// defaultCacheApp is the first segment of every key this kernel writes when the
+// configuration names no application: the reference composition's own. It is a
+// default and not a secret — an installation with more than one product behind one
+// store is exactly the installation that must set cache.app, and cache.Validate
+// refuses to leave it empty once a shared store is named.
+const defaultCacheApp = "pkit"
+
+// cacheSegment is the first segment of every key this kernel writes: cache.app,
+// or the reference composition's own name when the installation named none. It is
+// checked here, before any store is built, because the one error these
+// constructors answer for a name is this one, and a boot that panics on its own
+// configuration is a worse log than a boot that names the key to fix — and
+// cache.Memory answers that name with a panic, which is the reason Declarations
+// asks for the segment the same way rather than handing a store straight to
+// httpx.
+func (a *App) cacheSegment() (string, error) {
+	segment := a.cfg.Cache.App
+	if segment == "" {
+		segment = defaultCacheApp
+	}
+	if _, err := cache.Slug(segment); err != nil {
+		return "", fmt.Errorf("app: cache.app: %w", err)
+	}
+	return segment, nil
+}
+
+// cache is the store this process reads values from: the shared one the
+// configuration names, or the in-process one when it names none. Where a shared
+// value lives is the runner's choice, which is why it is made here beside
+// transport() and not inside the package that reads a value.
+func (a *App) cache(ctx context.Context) (cache.Cache, error) {
+	segment, err := a.cacheSegment()
+	if err != nil {
+		return nil, err
+	}
+	build, err := a.opts.Caches.constructor(a.cfg.Cache.Adapter)
+	if err != nil {
+		return nil, err
+	}
+	if build == nil {
+		a.log.InfoContext(ctx, "cache: in-process store; forgetting a value reaches this process only")
+		return cache.Memory(segment), nil
+	}
+	store, err := build(ctx, a.cfg.Cache)
+	if err != nil {
+		return nil, fmt.Errorf("app: cache.adapter %s: %w", a.cfg.Cache.Adapter, err)
+	}
+	// The same refusal transport() makes of a constructor: answering (nil, nil) is
+	// reporting success, and a request that then reads a nil store is a panic in a
+	// middleware rather than a boot that came back.
+	if store == nil {
+		return nil, fmt.Errorf("app: cache.adapter %s answered with no store and no error", a.cfg.Cache.Adapter)
+	}
+	return store, nil
+}
+
 func useJetStream(mode string, role Role) (bool, error) {
 	switch mode {
 	case "":
@@ -365,15 +750,39 @@ func useJetStream(mode string, role Role) (bool, error) {
 	}
 }
 
-// buildAPI builds the API, lets every module register its routes and checks,
-// and runs the boot gates. It returns before anything listens, so a composition
-// that fails a gate never takes the port.
-func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error) {
+// composeRoutes builds the API, lets every module register its routes and runs
+// every gate that needs nothing but the routes. It opens nothing and dials no
+// store: httpx is handed no connection on any pass, and the three doors of this
+// composition that read the connection on a request — the readiness probe, the
+// anonymous write counter and the record of a refusal — read a.held, which Start
+// fills between the last gate and the first listener. store is where a resolved
+// host is believed, and httpx requires one for the same reason it requires the
+// connection; every pass is handed an in-process store, which the pass that serves
+// hands over to the store the deployment names at the same moment the connection
+// arrives (httpx.API.Connect).
+//
+// Four callers in one boot, one sequence: Declarations runs this three times on a
+// recorder before anything is opened, and buildAPI runs it again immediately
+// before anything is opened, on the way to serving. One registration order and one
+// set of gates, and one check — registrationsAgree — because a module's callback is
+// the one part of a composition those calls can run differently, and what it wrote
+// first is what every later one is judged to.
+//
+// Every pass sees what every other sees, because a module's Routes is handed
+// httpx.Surfaces and nothing else: the composition's recorded shape —
+// Resources, Permissions, Recorded, Mounted — a SystemToken, which is a capability
+// and not a connection, and InvalidateHost, a move in whichever store this pass
+// holds. No door on it runs a query or hands out the connection. That is what makes
+// the fourth registration answerable before the deployment is touched rather than
+// after it: there is nothing the last registration could read that the first three
+// could not.
+func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	api, router := httpx.New(httpx.Options{
+		Unwired:      true,
+		Cache:        store,
 		PublicHost:   a.cfg.Server.PublicHost,
 		Docs:         a.cfg.Server.Docs,
 		Tenants:      a.opts.Tenants,
-		Conn:         conn,
 		Authorize:    a.opts.Authorize,
 		Entitle:      a.opts.Entitle,
 		Authenticate: a.opts.Authenticate,
@@ -389,10 +798,13 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 		// here, because the routes say it and the kernel records it; boot prints
 		// the list below.
 		Installation: a.opts.Installation.Host,
-		WriteLimiter: limit.Postgres(func(context.Context) (*db.Conn, bool) { return conn, true }),
+		WriteLimiter: limit.Postgres(a.held.read),
 		// Every attributable refusal is an event and, where modules/audit is composed, an
 		// audit row: see recordDenial.
-		Denied: recordDenial(conn, a.log),
+		Denied: recordDenial(a.held, a.log),
+		// The ask for access: the reach is the composition's, the record is the
+		// kernel's event, and the one limiter the composition already builds.
+		Access: a.opts.Access, Accessed: recordAccessRequest,
 	})
 
 	// The catalogue before the routes: a module that validates a permission
@@ -401,24 +813,44 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	var catalogue []tenancy.Grant
 	for _, m := range a.mods {
 		for _, p := range m.Permissions {
-			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Operator: p.Operator})
+			catalogue = append(catalogue, tenancy.Grant{Permission: p.Key, Label: p.Label, Operator: p.Operator})
 		}
 	}
 	api.Declare(catalogue)
 
 	for _, m := range a.mods {
+		// A moved address is registered before any route, so the surface gate below
+		// can refuse a route mounted where a row redirects.
+		for _, mv := range m.Moved {
+			api.Alias(mv.From, mv.To)
+		}
+	}
+	for _, m := range a.mods {
 		if m.Routes != nil {
 			m.Routes(api.Surfaces(m.Name))
 		}
 	}
+	// The same line of the same sequence on both passes: every module's Routes has
+	// run, and composeGates has not yet mounted the routes the kernel owns, nor
+	// ValidateDeclarations stamped a surface onto huma's own schema route — what the
+	// kernel mounts it mounts alike on both runs, and a module's callback is the one
+	// thing they can disagree about. Before every gate below, each of which reads the
+	// routes as they are and would answer a disagreement as some other composition's
+	// problem: "this composition mounts nothing".
+	if err := a.registrationsAgree(api); err != nil {
+		return nil, nil, err
+	}
 	if err := a.composeGates(api); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
 	// be able to contribute their own and none ever did in three repositories,
-	// so the list was this line and a loop over nothing.
-	health.Register(api, health.DatabaseCheck(conn))
+	// so the list was this line and a loop over nothing. The probe asks the held
+	// connection rather than one captured here, because this line runs in a boot
+	// that has not opened its pool yet and /ready is only ever asked of a boot
+	// that has.
+	health.Register(api, []health.Check{health.DatabaseCheckThrough(a.held.read)}, a.reports...)
 
 	// The gates. An operation that declares no authorization, one guarded by a
 	// permission no module defines, or one that would publish an event no
@@ -426,18 +858,126 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	// no deployment to migrate and no reason to run a build it knows is
 	// unprotected, unreachable or unannounced.
 	if err := api.ValidateDeclarations(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validatePermissions(api, a.mods); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := validateEvents(api, a.mods); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	return api, router, nil
+}
+
+// registeredRoutes is what one registration of this composition mounted, as one
+// sorted set of lines rather than a call order. The composition writes every
+// route into two readings of itself and the set carries both, because neither
+// alone names what a module's Routes callback decided. The mount table is every
+// address a router mounted — routes and file trees alike — with its surface, its
+// module and the authorization guarding it; a tree mounted with Surfaces.Static
+// is recorded there and nowhere else, because it is no operation, so the recorder
+// never saw it and no operation gate ever will. The operation recorder adds what
+// only an operation carries — the id the OpenAPI document names it by, which is
+// what validateEvents and validatePermissions read — and names the kernel's own
+// routes, which no module mounted and which the kernel mounts alike on both
+// sides. A module's Routes callback writes both readings, and the kernel and the
+// manifests write them the same way in every registration, which makes them the
+// whole of what any two registrations can disagree about.
+func registeredRoutes(api *httpx.API) []string {
+	recorded, mounted := api.Recorded(), api.Mounted()
+	lines := make([]string, 0, len(recorded)+len(mounted))
+	for _, op := range recorded {
+		lines = append(lines, fmt.Sprintf("operation %s %s (%s) guarded by %v",
+			op.Method, op.Path, op.OperationID, op.Extensions[httpx.AuthExtension]))
+	}
+	for _, m := range mounted {
+		kind := "value"
+		if m.Page {
+			kind = "document"
+		}
+		lines = append(lines, fmt.Sprintf("mount %s %s on %s by %s, a %s, guarded by %s",
+			m.Method, m.Path, m.Surface, m.Module, kind, m.Auth))
+	}
+	sort.Strings(lines)
+	return lines
+}
+
+// registrationsAgree makes every registration of one composition's routes one
+// claim rather than a hope. They are registered four times: three times on a
+// recorder, where Declarations answers the gates before any effect, and once more
+// for the API that will serve, which is built the same way, over an in-process
+// store, and is handed the deployment's connection and store only once it has
+// answered. kit/module.Module.Routes never asked a callback to answer the same way
+// twice — kit/app called each one exactly once before the recorder existed — so a
+// callback behind an idempotent guard answers differently and one pass cannot see
+// it. The first registration therefore sets the standard and every later one is
+// judged against it, naming the side that differs. All four answers land before the
+// pool, the shared store and the migration are touched, which is what makes the
+// fourth one worth having: it is the registration whose surface would serve, and a
+// boot it refuses has spent nothing to find out.
+func (a *App) registrationsAgree(api *httpx.API) error {
+	if a.declaredRoutes == nil {
+		a.declaredRoutes = registeredRoutes(api)
+		return nil
+	}
+	first := a.declaredRoutes
+	live := registeredRoutes(api)
+	var bad []string
+	for _, gone := range onlyIn(first, live) {
+		bad = append(bad, "mounted by the first registration and not by this one: "+gone)
+	}
+	for _, added := range onlyIn(live, first) {
+		bad = append(bad, "mounted by this registration and not by the first: "+added)
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return errors.New("app: invalid composition:\n  this composition registered its routes more than once and answered more than once:\n    " +
+		strings.Join(bad, "\n    ") +
+		"\n  a module's Routes callback runs four times in one boot — three times while the gates are answered, once more for the API that is built to serve; a callback that mounts differently on any two of those runs is a composition that means two different things — mount the same routes every time Routes is called")
+}
+
+// onlyIn is every line the first registration carries that the second does not,
+// repeats included: the same route mounted twice is not the same composition as
+// that route mounted once.
+func onlyIn(first, second []string) []string {
+	count := make(map[string]int, len(second))
+	for _, line := range second {
+		count[line]++
+	}
+	var out []string
+	for _, line := range first {
+		if count[line] == 0 {
+			out = append(out, line)
+			continue
+		}
+		count[line]--
+	}
+	return out
+}
+
+// buildAPI is composeRoutes for the one API this process will serve, plus what
+// boot prints once the composition is known to be good. It is the fourth
+// registration and the last: it is built over an in-process store, with no
+// connection, exactly as the three gate passes were, so a composition that fails a
+// gate here — or whose modules mounted differently on this pass — is refused before
+// the pool, the shared store and the migration, and never takes the port. Start
+// hands what it returns to httpx.API.Connect once it has opened both.
+func (a *App) buildAPI(ctx context.Context, store cache.Cache) (*httpx.API, http.Handler, error) {
+	api, router, err := a.composeRoutes(store)
+	if err != nil {
+		return nil, nil, err
 	}
 	counts := api.MountedBySurface()
+	// event_schema_coverage is the register's number for this pillar: how many
+	// of the events this composition emits carry a payload schema its module
+	// declared. It is printed at boot because a number nobody can read is a
+	// number that drifts back down.
+	covered, declared := CoveredEvents(a.mods)
 	a.log.InfoContext(ctx, "app: operations declared",
 		"count", len(api.Recorded()), "events", len(api.Events()),
-		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps])
+		"public", counts[httpx.SurfacePublic], "app", counts[httpx.SurfaceApp], "ops", counts[httpx.SurfaceOps],
+		"event_schema_coverage", fmt.Sprintf("%d/%d", covered, declared))
 	if a.opts.Installation.Host == "" {
 		a.log.WarnContext(ctx, "app: no installation host; the control plane (/ops) is mounted and answers nothing",
 			"fix", "server.installation_host names the host the installation itself is reached at")
@@ -447,7 +987,7 @@ func (a *App) buildAPI(ctx context.Context, conn *db.Conn) (http.Handler, error)
 	for _, door := range api.AnonymousDoors() {
 		a.log.InfoContext(ctx, "app: a workspace route answers an anonymous caller", "route", door)
 	}
-	return router, nil
+	return api, router, nil
 }
 
 // composeGates refuses the compositions that cannot be products, and mounts the
@@ -474,8 +1014,14 @@ func (a *App) composeGates(api *httpx.API) error {
 	// A5, and the route itself. The address is the kernel's; the body is the
 	// composition's, because kit may not import ui.
 	resources := api.Resources()
+	if a.opts.Access != nil {
+		mountAccessRequest(api)
+		if a.opts.AccessPage != nil {
+			a.opts.AccessPage(api.Surfaces("").App)
+		}
+	}
 	if a.opts.WorkspaceCatalog != nil {
-		mountWorkspaceCatalog(api, a.opts.WorkspaceCatalog)
+		a.opts.WorkspaceCatalog(api)
 	} else if len(resources) > 0 && a.opts.Role != Worker {
 		// Same exemption: the document is read by a shell, and a worker process
 		// runs none. A web role that registered resources and wired no renderer
@@ -490,16 +1036,37 @@ func (a *App) composeGates(api *httpx.API) error {
 	return errors.New("app: invalid composition:\n  " + strings.Join(bad, "\n  "))
 }
 
-// workspaceDocument is the catalog route's envelope: whatever the composition's
-// function returned, as the body.
-type workspaceDocument struct {
-	Body any
+// WorkspaceCatalogRoute is the composition's catalog renderer, lifted into the
+// mount for the address this kernel owns. See Options.WorkspaceCatalog for why
+// the two owners make that a mount and not a route.
+//
+// The body is a type parameter and not an `any` because of who reads the OpenAPI
+// document: a native shell is written against /api/v1/app/resources, and while
+// the response was `any` the document the installation published about that
+// address named none of the fields that shell parses. The type arrives by
+// inference at the call site the composition wrote — the reference app names
+// ui/screens.Catalog there — so no registry, no init() and no generator is
+// involved (decision 0034), and kit still never imports ui: the concrete type is
+// the caller's, and this package sees a type parameter.
+func WorkspaceCatalogRoute[T any](describe func(ctx context.Context, resources []httpx.Resource) (*T, error)) func(api *httpx.API) {
+	return func(api *httpx.API) { mountWorkspaceCatalog(api, describe) }
 }
 
-// mountWorkspaceMounts the catalog route. It is the composition's own route:
-// the address belongs to the kernel, which is why the mount is here, and the
-// document belongs to ui, which is why the body is a function.
-func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, resources []httpx.Resource) (any, error)) {
+// mountWorkspaceCatalog mounts the catalog route. It is the composition's own
+// route: the address belongs to the kernel, which is why the mount is here, and
+// the document belongs to ui, which is why the body is a function — and why that
+// function's result type is carried through to huma's schema instead of being
+// handed over as `any`.
+// workspaceDocument is the catalog route's envelope: whatever the composition's
+// function returned, as the body. It is generic for the same reason the mount is:
+// the type has to survive to huma's schema. It is not simply dropped, because a
+// response struct whose fields are not inside a Body is read by huma as a set of
+// headers — the document would have left the OpenAPI description and then the wire.
+type workspaceDocument[T any] struct {
+	Body *T
+}
+
+func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Context, resources []httpx.Resource) (*T, error)) {
 	kernel := api.Surfaces("")
 	httpx.Register(kernel.App, huma.Operation{
 		OperationID: "app-resources",
@@ -508,12 +1075,20 @@ func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, re
 		Summary:     "The resources this caller may reach, with their schemas",
 		Description: "The same document the generated screens are built from, for a shell that is not a browser.",
 		Tags:        []string{"kernel"},
-	}, httpx.SignedIn(), func(ctx context.Context, _ *struct{}) (*workspaceDocument, error) {
+		// AnyCredential, not SignedIn, and the difference is the whole point of
+		// the declaration: this route spends no authority on the caller's own
+		// credentials — it describes what the caller may already reach, and the
+		// document is filtered by the caller's grants as it is built — so the
+		// caller may arrive with whichever credential they hold. The credential a
+		// client that is not a browser holds is a bearer key, and this is that
+		// client's first request: a key refused here could call every route its
+		// scopes name and no route that says what those are.
+	}, httpx.AnyCredential(), func(ctx context.Context, _ *struct{}) (*workspaceDocument[T], error) {
 		body, err := describe(ctx, api.Resources())
 		if err != nil {
 			return nil, err
 		}
-		return &workspaceDocument{Body: body}, nil
+		return &workspaceDocument[T]{Body: body}, nil
 	})
 }
 
@@ -521,7 +1096,7 @@ func mountWorkspaceCatalog(api *httpx.API, describe func(ctx context.Context, re
 // outbox relay and the two tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
-func kernelJobs(transport events.Transport) []jobs.Job {
+func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 	return []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
@@ -531,7 +1106,7 @@ func kernelJobs(transport events.Transport) []jobs.Job {
 		{Name: "outbox-relay", Every: relayEvery, Parallel: true, Run: func(ctx context.Context, conn *db.Conn) error {
 			ctx, cancel := context.WithTimeout(ctx, relayTimeout)
 			defer cancel()
-			return events.Relay(ctx, conn, transport)
+			return events.RelayApp(ctx, conn, transport, app)
 		}},
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
@@ -565,18 +1140,31 @@ func (a *App) drainMigrations() jobs.Job {
 // module's subscriptions. probes is the handler it serves, or nil when the web half
 // of the same process is already serving them.
 func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transport, probes http.Handler) error {
-	scheduled := append(kernelJobs(transport), a.drainMigrations())
+	scheduled := append(kernelJobs(transport, a.opts.App), a.drainMigrations())
 	var subs []events.Subscription
 	for _, m := range a.mods {
 		scheduled = append(scheduled, m.Jobs...)
-		subs = append(subs, m.Subscriptions...)
+		for _, s := range m.Subscriptions {
+			// The composition owns this fact. A subscription belongs to the app
+			// that composes the module that declared it, and a module never names
+			// an app — that is the deployment's, from configuration (Options.App),
+			// and the same line above hands it to the job scheduler and the one
+			// inside kernelJobs hands it to the relay's claim. What it names is the
+			// durable: the JetStream consumer on the one stream, the deliver group
+			// its replicas join, and half the key of the handled ledger (see
+			// kit/appname.Durable). Left unset here, two compositions of one module
+			// name one consumer, and the second app load-balances the first's
+			// tenants' work into its own handlers.
+			s.App = a.opts.App
+			subs = append(subs, s)
+		}
 	}
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
 	}
 	a.log.InfoContext(ctx, "app: working", "jobs", len(scheduled), "subscriptions", len(subs))
 
-	scheduler := jobs.NewScheduler(conn, a.log, scheduled...)
+	scheduler := jobs.NewScheduler(conn, a.log, a.opts.App, scheduled...)
 	if probes == nil {
 		return scheduler.Run(ctx)
 	}
@@ -614,7 +1202,7 @@ func (a *App) race(ctx context.Context, halves ...func(context.Context) error) e
 // same address the web role listens on, so one orchestrator manifest describes
 // both roles. kit/health owns the shape, so the two roles answer alike.
 func (a *App) probes(conn *db.Conn) http.Handler {
-	return health.Mux(a.log, health.DatabaseCheck(conn))
+	return health.Mux(a.log, []health.Check{health.DatabaseCheck(conn)}, a.reports...)
 }
 
 // routeKind names the constructor a route used, for the one error that has to
@@ -661,14 +1249,69 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 	return fmt.Errorf("app: %d permission(s) do not check out:\n  %s", len(bad), strings.Join(bad, "\n  "))
 }
 
+// kernelModule is the kernel's share of the composition, in the same shape
+// every other module arrives in: a name and the events it emits. It has no
+// permissions, no routes, no SQL and no nav of its own, and saying so here is
+// cheaper than a mechanism that discovers it.
+//
+// security.denied is declared here beside the kernel's manifest name, and it is
+// the one event that arrives by two doors: module.KernelEvents is what subscribes
+// a SubscribeAll module to it (no module raised it — the refusal is the kernel's),
+// and this declaration is what gives it a payload type, a schema the outbox checks
+// at the INSERT, and a channel in the AsyncAPI document. Without it the kernel
+// would emit an event its own catalogue knows nothing about, and
+// event_schema_coverage would count events it does not.
+var kernelModule = module.Module{
+	Name: module.KernelName,
+	Declared: []events.Declared{
+		events.Declare[events.ReplayRecord](events.EventReplayed),
+		events.Declare[Denied](EventDenied),
+		events.Declare[AccessRequested](EventAccessRequested),
+	},
+}
+
+// declaredEvents is every event every manifest declares, de-duplicated by name — the
+// list once the gate above has passed, which is what the boot installs and what the
+// AsyncAPI document renders and counts coverage over, each name said once.
+//
+// The de-duplication says nothing about which spelling stood, because after that gate
+// every spelling of one name is one shape: module.Validate refuses a manifest that
+// declares one name under two payloads and the namespaced-emit rule refuses two
+// manifests that emit one name, so a name has one emitter and one shape or the
+// composition never reached here.
+func declaredEvents(mods []module.Module) []events.Declared {
+	var out []events.Declared
+	seen := map[string]bool{}
+	for _, m := range mods {
+		for _, e := range m.Emits() {
+			if !seen[e.Name] {
+				seen[e.Name], out = true, append(out, e)
+			}
+		}
+	}
+	return out
+}
+
+// allDeclaredEvents is every declaration every manifest wrote, in build order, with
+// nothing dropped. It is the input to the catalog's gate: the disagreement it refuses
+// is between two declarations of one name, and a caller that hands the gate a list
+// already joined by name has answered the question before asking it.
+func allDeclaredEvents(mods []module.Module) []events.Declared {
+	var out []events.Declared
+	for _, m := range mods {
+		out = append(out, m.Emits()...)
+	}
+	return out
+}
+
 // validateEvents is the same gate for the other direction: an operation that
 // will publish an event no module declared is an event no subscriber can be
 // written against, because the manifest is where a subscriber looks.
 func validateEvents(api *httpx.API, mods []module.Module) error {
 	declared := map[string]bool{}
 	for _, m := range mods {
-		for _, e := range m.Events {
-			declared[e] = true
+		for _, e := range m.Emits() {
+			declared[e.Name] = true
 		}
 	}
 	var missing []string

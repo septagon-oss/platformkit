@@ -40,6 +40,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -83,6 +84,7 @@ func guardKernel(t *testing.T, f guardSetup, fault httpx.Fault) (*httpx.API, *ch
 	owner, app := dbtest.Schema(t)
 	f.who = tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme"}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Installation: installationHost, Conn: app,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
 			if f.unresolvable {

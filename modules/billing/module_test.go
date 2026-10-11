@@ -13,8 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/billing"
@@ -66,6 +68,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, billing.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		// The installation is reached at host, which is also the operator's own
 		// tenant: that is what makes the control-plane routes below reachable
@@ -76,7 +79,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, mounted := billing.Module(billing.Deps{Payments: billing.Manual()})
+	_, mounted := billing.New(billing.Deps{Payments: billing.Manual()})
 	mounted.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -199,7 +202,7 @@ func TestEveryEventTheRoutesDeclareIsInTheManifest(t *testing.T) {
 		}
 	}
 	for _, e := range declared {
-		if !slices.Contains(contracts.Events, e) {
+		if !slices.Contains(events.Names(contracts.Events), e) {
 			t.Errorf("a route publishes %q and the manifest does not name it", e)
 		}
 	}
@@ -213,7 +216,7 @@ func TestAModuleWithNoPaymentProviderDoesNotCompose(t *testing.T) {
 			t.Errorf("Module with no provider panicked with %v; it names the one to wire", r)
 		}
 	}()
-	_, mounted := billing.Module(billing.Deps{})
+	_, mounted := billing.New(billing.Deps{})
 	_ = mounted
 }
 

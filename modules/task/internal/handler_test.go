@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
@@ -59,6 +60,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router, *db.Conn) {
 	t.Helper()
 	_, conn := dbtest.Schema(t, task.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: conn, Authorize: caller{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{UserID: uuid.New()}, true, nil

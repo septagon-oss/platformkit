@@ -4,6 +4,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"github.com/septagon-oss/platformkit/kit/events"
 )
 
 // The events this module emits. A subscriber names one of these constants rather
@@ -54,10 +56,21 @@ const (
 // table those two events described was never written, so a consumer that
 // subscribed to either would wait for an event nothing could publish. It returns
 // with the table and the command that writes it.
-var Events = []string{
-	EventCreated, EventEmailRequested, EventRead,
-	EventPushRequested, EventWebPushRequested, EventWebhookRequested,
-	EventPreferenceSet, EventSenderSet, EventSenderVerified, EventSenderRemoved,
+//
+// Every channel's ask carries contracts.DeliveryRequested, which is what the
+// worker reads to find the row; mail keeps contracts.EmailRequested because that
+// is the name and shape an installation's own consumers already subscribe to.
+var Events = []events.Declared{
+	events.Declare[Created](EventCreated),
+	events.Declare[EmailRequested](EventEmailRequested),
+	events.Declare[Read](EventRead),
+	events.Declare[DeliveryRequested](EventPushRequested),
+	events.Declare[DeliveryRequested](EventWebPushRequested),
+	events.Declare[DeliveryRequested](EventWebhookRequested),
+	events.Declare[PreferenceSet](EventPreferenceSet),
+	events.Declare[SenderSet](EventSenderSet),
+	events.Declare[Verified](EventSenderVerified),
+	events.Declare[SenderRemoved](EventSenderRemoved),
 }
 
 // RequestedEvent is the event a chosen channel is asked for by — the one table

@@ -51,6 +51,23 @@ test('the Roles entry in the sidebar opens a screen that changes what a role gra
   await expect(page.locator('#pk-role-member-task-read')).toBeChecked();
   // admin's own grant is untouched: one form saved one role.
   await expect(page.locator('#pk-role-admin-everything')).toBeChecked();
+
+  // The tick is taken back off before the spec leaves. Every browser spec in this
+  // run shares one tenant in one database, and `member` is the role a person who
+  // holds nothing is created with: the two refusal journeys
+  // (e2e/access-request.spec.ts, e2e/review-r2-refusal-measure.spec.ts) start by
+  // being refused `task:read`, and one of them sorts after this file — a grant left
+  // on this box hands them the permission they are there to be refused, and their
+  // journey has no start. Unticking and saving is also the half of this screen's
+  // contract that nothing else checked: a grant taken away is written as surely as
+  // one given, and the screen reads back what the row says rather than what the
+  // browser still holds.
+  await page.locator('label[for="pk-role-member-task-read"]').click();
+  await expect(read).not.toBeChecked();
+  await member.getByRole('button', { name: 'Save member' }).click();
+  await expect(page).toHaveURL(/\/app\/auth\/roles$/);
+  await page.reload();
+  await expect(page.locator('#pk-role-member-task-read')).not.toBeChecked();
 });
 
 test('a role name the module refuses comes back on the screen rather than on a fault page', async ({ page }) => {

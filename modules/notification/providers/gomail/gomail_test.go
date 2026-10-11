@@ -138,7 +138,7 @@ func sender(key []byte) *contracts.Sender {
 //
 // Delete the SetDKIM line in gomail.go and the DKIM assertion fails; pass
 // cfg.EnvelopeFrom into msg.From instead of msg.EnvelopeFrom and the second
-// assertion fails, which is the confusion kit/config refuses at the door.
+// assertion fails, which is the confusion a relay answers with a refusal.
 func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 	r := serve(t, &relay{})
 	s := gomail.New(r.config())
@@ -172,6 +172,30 @@ func TestTheTenantSendsFromItsOwnName(t *testing.T) {
 	}
 	if !strings.Contains(r.data, "notifications@acme.example.com") || !strings.Contains(r.data, "Acme") {
 		t.Errorf("the From header is not the tenant's:\n%s", r.data)
+	}
+}
+
+// TestADeploymentSenderWithADisplayNameReachesTheRelayAsAnAddress is kit/config's
+// rule for mail.from read off the wire: "Acme Relay <noreply@acme.example.com>"
+// is a value a deployment may write, and the name has to fall off before the
+// envelope does — a relay refuses a name in MAIL FROM (Mailpit answers "501
+// invalid FROM parameter"), so a named sender that goes out whole delivers
+// nothing — while the From header keeps the name, since that is the only place a
+// person reads it.
+func TestADeploymentSenderWithADisplayNameReachesTheRelayAsAnAddress(t *testing.T) {
+	r := serve(t, &relay{})
+	cfg := r.config()
+	cfg.EnvelopeFrom = "Acme Relay <noreply@acme.example.com>"
+	if err := gomail.New(cfg).Send(t.Context(), contracts.Message{
+		To: "ada@example.com", Subject: "Verify your email address", Body: "the link",
+	}); err != nil {
+		t.Fatalf("send: %v", err)
+	}
+	if r.envelope != "noreply@acme.example.com" {
+		t.Errorf("MAIL FROM is %q, want the bare address", r.envelope)
+	}
+	if !strings.Contains(r.data, "noreply@acme.example.com") || !strings.Contains(r.data, "Acme Relay") {
+		t.Errorf("the From header lost the deployment's name:\n%s", r.data)
 	}
 }
 

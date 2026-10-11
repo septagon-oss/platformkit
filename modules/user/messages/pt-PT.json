@@ -1,0 +1,29 @@
+{
+  "permission.user:read": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "ler pessoas",
+    "plural": {
+      "": "ler pessoas"
+    }
+  },
+  "permission.user:manage": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "gerir pessoas",
+    "plural": {
+      "": "gerir pessoas"
+    }
+  },
+  "permission.user:approve": {
+    "references": [
+      "modules/user/module.go"
+    ],
+    "translation": "aprovar novas contas",
+    "plural": {
+      "": "aprovar novas contas"
+    }
+  }
+}

@@ -36,8 +36,9 @@ func mapSource(owner string, files ...string) db.MigrationSource {
 // them on refuses at its budget with the file unapplied.
 //
 // The budget has to be a wait the file's own statement can meet as well, because that
-// statement runs with it on the session (kit/db/certify.go). That is why the autocommit
-// file below drops an index concurrently instead of building one: a
+// statement runs with the statement budget on the session and no lock budget at all
+// (kit/db/migrate.go's noLockBudget). That is why the autocommit file below drops an
+// index concurrently instead of building one: a
 // `CREATE INDEX CONCURRENTLY` waits for every transaction that was open when its snapshot
 // was taken, whatever table those transactions touched, so on a host carrying this suite
 // the build alone took 337 ms, 2371 ms, 4711 ms and 7248 ms before refusing at the very
@@ -64,7 +65,9 @@ func TestTheCompositionLockComingBackIsNotBoundedByTheFileBudget(t *testing.T) {
 		`INSERT INTO lock_gate VALUES (1)`,
 		// The schema-local shadow, reached because this test's own search_path names
 		// pg_catalog last: the first call records the ask, the second waits for the gate.
-		`CREATE FUNCTION pg_advisory_lock(key bigint) RETURNS void LANGUAGE plpgsql AS $$
+		// It takes the two arguments the runner's ask carries — the composition key and
+		// this namespace's OID — because that is the call the runner sends.
+		`CREATE FUNCTION pg_advisory_lock(key1 integer, key2 integer) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE step integer;
 BEGIN
   UPDATE lock_asks SET asks = asks + 1 WHERE id = 1 RETURNING asks INTO step;

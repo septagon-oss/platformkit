@@ -101,7 +101,7 @@ func TestTheProseSheetIsWrittenInScaleSteps(t *testing.T) {
 		"font-size: " + style.Text3XL.Value() + ";", "font-size: " + style.Text2XL.Value() + ";",
 		"margin: " + style.S8.Value() + " 0 " + style.S3.Value() + ";", "padding-left: " + style.S6.Value() + ";",
 		"border-left: " + style.Border4.Value() + " solid;", "border-radius: " + style.RadiusLG.Value() + ";",
-		"color: var(--pk-color-accent-default);", "background: var(--pk-color-surface-muted);",
+		"color: var(--pk-color-text-primary);", "background: var(--pk-color-surface-muted);",
 	} {
 		if !strings.Contains(css, want) {
 			t.Errorf("prose lacks %q", want)

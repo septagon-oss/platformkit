@@ -1,0 +1,11 @@
+{
+  "permission.tenant:manage": {
+    "references": [
+      "modules/tenant/module.go"
+    ],
+    "translation": "gerir tenants",
+    "plural": {
+      "": "gerir tenants"
+    }
+  }
+}

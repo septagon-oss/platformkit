@@ -34,6 +34,11 @@ type Fixture struct {
 	// a door tested against one implementation is a door the other can differ
 	// on quietly. It is required.
 	Delete func(id uuid.UUID) error
+	// Granting opens or closes the door that hands out an administering role:
+	// false is a caller who may write a user and may not promote anybody. Every
+	// harness wires it, because a guard tested against one implementation is a
+	// guard the other can skip quietly. See contracts.Granting.
+	Granting func(allowed bool)
 }
 
 // Harness builds one Fixture and calls run with it.
@@ -45,6 +50,7 @@ func RunService(t *testing.T, h Harness) {
 	t.Helper()
 	all := cases()
 	maps.Copy(all, registrationCases())
+	maps.Copy(all, grantingCases())
 	maps.Copy(all, verificationCases())
 	for name, run := range all {
 		t.Run(name, func(t *testing.T) {
@@ -588,5 +594,105 @@ func published(t *testing.T, f Fixture, want ...string) {
 	}
 	if got := f.Published(); !slices.Equal(got, want) {
 		t.Errorf("published %v, want %v", got, want)
+	}
+}
+
+// grantingCases is the door in front of a promotion: SetRoles asks the Granting
+// port only for a write that *adds* a role somebody's table says administers, so
+// the cases below are that condition from both sides. They are here, in the
+// suite both the fake and the Postgres service run, because the rule is exactly
+// the kind that drifts: a guard a little wider refuses the repair the
+// last-administrator floor itself tells you to make, and a guard a little
+// narrower lets a member promote themself from their own page.
+func grantingCases() map[string]func(*testing.T, Fixture) {
+	// Somebody the floor will not miss: an active person with no roles, in a
+	// tenant where an administrator exists. The guard below is about a promotion,
+	// and a promotion is only interesting on a row that is not already one.
+	member := func(t *testing.T, f Fixture) *contracts.User {
+		t.Helper()
+		administrator(t, f, "ada@acme.test")
+		u, err := f.Service.Invite(f.Ctx, f.Tx, "ines@acme.test", "")
+		if err != nil {
+			t.Fatalf("Invite: %v", err)
+		}
+		if err := f.Service.SetPassword(f.Ctx, f.Tx, u.ID, good); err != nil {
+			t.Fatalf("SetPassword: %v", err)
+		}
+		return u
+	}
+	return map[string]func(*testing.T, Fixture){
+		"an administering role the caller may not grant is refused, with nothing written": func(t *testing.T, f Fixture) {
+			ines := member(t, f)
+			f.Granting(false)
+			_, err := f.Service.SetRoles(f.Ctx, f.Tx, ines.ID, []string{Administering})
+			if !errors.Is(err, crud.ErrInvalid) {
+				t.Fatalf("SetRoles(administering) = %v, want an ErrInvalid naming the grant", err)
+			}
+			got, err := f.Service.Get(f.Ctx, f.Tx, ines.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if got.Roles.Has(Administering) {
+				t.Errorf("the refused write put %q on the row anyway: %v", Administering, got.Roles)
+			}
+			published(t, f, contracts.EventInvited, contracts.EventPasswordSet, contracts.EventRolesSet,
+				contracts.EventInvited, contracts.EventPasswordSet)
+		},
+
+		"an ordinary role needs no door": func(t *testing.T, f Fixture) {
+			ines := member(t, f)
+			f.Granting(false)
+			if _, err := f.Service.SetRoles(f.Ctx, f.Tx, ines.ID, []string{"member"}); err != nil {
+				t.Fatalf("a caller who may not promote anybody was refused an ordinary role: %v", err)
+			}
+			published(t, f, contracts.EventInvited, contracts.EventPasswordSet, contracts.EventRolesSet,
+				contracts.EventInvited, contracts.EventPasswordSet, contracts.EventRolesSet)
+		},
+
+		"taking a role away needs no door": func(t *testing.T, f Fixture) {
+			ines := member(t, f)
+			if _, err := f.Service.SetRoles(f.Ctx, f.Tx, ines.ID, []string{"member"}); err != nil {
+				t.Fatalf("SetRoles(member): %v", err)
+			}
+			f.Granting(false)
+			if _, err := f.Service.SetRoles(f.Ctx, f.Tx, ines.ID, nil); err != nil {
+				t.Fatalf("a caller who may not promote anybody was refused a bare removal: %v", err)
+			}
+		},
+
+		"holders is the active people holding one of the named roles": func(t *testing.T, f Fixture) {
+			ines := member(t, f)
+			got, err := f.Service.Holders(f.Ctx, f.Tx, []string{Administering})
+			if err != nil {
+				t.Fatalf("Holders: %v", err)
+			}
+			if len(got) != 1 {
+				t.Errorf("Holders = %v, want exactly the one active holder; %s has no roles", got, ines.Email)
+			}
+		},
+
+		"naming no role names no people": func(t *testing.T, f Fixture) {
+			administrator(t, f, "ada@acme.test")
+			for _, roles := range [][]string{nil, {}} {
+				got, err := f.Service.Holders(f.Ctx, f.Tx, roles)
+				if err != nil || len(got) != 0 {
+					t.Errorf(`Holders(%v) = %v, %v; want nobody, because "nothing was named" is not "everybody"`, roles, got, err)
+				}
+			}
+		},
+
+		"a person holding two of the named roles is listed once": func(t *testing.T, f Fixture) {
+			ines := member(t, f)
+			if _, err := f.Service.SetRoles(f.Ctx, f.Tx, ines.ID, []string{Administering, "secondowner"}); err != nil {
+				t.Fatalf("SetRoles: %v", err)
+			}
+			got, err := f.Service.Holders(f.Ctx, f.Tx, []string{Administering, "secondowner"})
+			if err != nil {
+				t.Fatalf("Holders: %v", err)
+			}
+			if len(got) != 2 {
+				t.Errorf("Holders = %v, want the two people; a person holding two of the named roles is one notice, not two", got)
+			}
+		},
 	}
 }

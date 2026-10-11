@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -39,6 +40,7 @@ func mountDeleteCatalog(t *testing.T, soft bool) (http.Handler, *sql.DB) {
 	}
 	reader := tenancy.Tenant{ID: uuid.New(), Slug: "reader", Name: "Reader"}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host,
 		Tenants:    hosts{map[string]tenancy.Tenant{host: acme, "reader.test": reader}},
 		Conn:       conn, Authorize: caller{},

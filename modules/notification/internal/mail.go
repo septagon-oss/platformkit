@@ -71,7 +71,7 @@ func SendMail(mailer contracts.Mailer, recipients contracts.RecipientLookup, hos
 			// lost, the worker died after the send — and a second attempt at a
 			// message the person already received is the thing this table exists to
 			// make visible. Seeing it and *not sending* is the other half of the
-			// partial unique index 000030: the index stops the second row, this
+			// partial unique index 000056: the index stops the second row, this
 			// stops the second message.
 			done, err := closed(tx, row.ID, ChannelEmail)
 			if err != nil {

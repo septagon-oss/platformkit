@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/septagon-oss/platformkit/design"
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -49,6 +50,7 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 	t.Helper()
 	_, app := dbtest.Schema(t, content.Migrations, sitemodule.Migrations)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: tenants{}, Conn: app, Authorize: tenants{},
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
 			return tenancy.Principal{}, false, nil
@@ -56,7 +58,7 @@ func site(t *testing.T) (http.Handler, *sitetest.Fake, *contenttest.Fake) {
 		Log: slog.New(slog.DiscardHandler),
 	})
 	settings, contents := sitetest.NewFake(), contenttest.NewFake()
-	m := web.Module(web.Deps{
+	m := web.New(web.Deps{
 		Site: settings, Content: contents, Theme: design.Default(),
 		// Two addresses this module links and does not own: the workspace's
 		// sign-in page and the file module's public door. The composition names
@@ -107,7 +109,7 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 	ctx := t.Context()
 	if _, err := settings.Save(ctx, db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
 		Title: "Acme Journal", Tagline: "Notes from the workshop", HomeSlug: "welcome",
-		Theme: "dark", PrimaryColor: "#c0ffee",
+		Theme: "dark", PrimaryColor: "#b45309",
 		Nav: sitecontracts.Nav{{Label: "About", Path: "/about"}},
 	}); err != nil {
 		t.Fatal(err)
@@ -122,7 +124,7 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 		t.Fatalf("status %d: %s", status, body)
 	}
 	for _, want := range []string{
-		`data-theme="dark"`, `--pk-color-accent-default:#c0ffee`, "Acme Journal", "Notes from the workshop",
+		`data-theme="dark"`, `--pk-color-accent-default:#b45309`, "Acme Journal", "Notes from the workshop",
 		`href="/about"`, "Welcome home", "<strong>home</strong>", "<code>code</code>", `<title>Welcome home · Acme</title>`,
 	} {
 		if !strings.Contains(body, want) {

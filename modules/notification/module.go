@@ -108,7 +108,7 @@ func subscriptions(deps Deps) []events.Subscription {
 	return subs
 }
 
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	// A wiring mistake fails where it is written rather than as a nil
 	// dereference in the worker an hour later.
 	if deps.Mailer == nil {
@@ -123,7 +123,7 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		// No nav entry: a nav entry names the permission that decides who sees the
 		// link, and the key this module defines guards the tenant's mail identity,
 		// not a page. Everybody's notifications are their own, so the link belongs

@@ -28,8 +28,13 @@ type Fake struct {
 	// service asks the application through contracts.Administration; a fake
 	// with no database is handed the answer instead.
 	administering []string
-	users         map[uuid.UUID]contracts.User
-	published     []string
+	// mayGrant is the fake's whole Granting port: whether a write in front of it
+	// may hand out an administering role at all. It defaults to yes, so the
+	// suite's existing cases keep meaning what they meant before the door
+	// existed; AllowGranting(false) is how a case closes it.
+	mayGrant  bool
+	users     map[uuid.UUID]contracts.User
+	published []string
 }
 
 // NewFake returns an empty store whose tenant has no role system at all: no
@@ -62,8 +67,16 @@ func NewFake() *Fake {
 // which is the state user.Module panics rather than allow, reintroduced in the
 // one place a consumer tests against. A distinct name leaves NewFake's callers
 // alone and makes a test that wants the floor say so where it builds the store.
+// AllowGranting closes or opens the fake's door: false is a caller who may write
+// users and may not promote anybody.
+func (f *Fake) AllowGranting(allowed bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mayGrant = allowed
+}
+
 func NewFakeWithAdministration(administering []string) *Fake {
-	return &Fake{administering: administering, users: map[uuid.UUID]contracts.User{}}
+	return &Fake{administering: administering, mayGrant: true, users: map[uuid.UUID]contracts.User{}}
 }
 
 // Delete soft-deletes somebody, the way the generated CRUD route does, and
@@ -153,6 +166,12 @@ func (f *Fake) SetRoles(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID, rol
 	want := Normalise(roles)
 	if slices.Equal([]string(u.Roles), want) {
 		return u, nil
+	}
+	// The same door the real service guards, on the same condition: a write that
+	// hands out an administering role somebody else's table says administers, to
+	// a caller this fake has been told may not promote anybody.
+	if added := addedAdministering([]string(u.Roles), want, f.administering); len(added) > 0 && !f.mayGrant {
+		return nil, contracts.RefuseUngrantable(added[0])
 	}
 	after := *u
 	after.Roles = want
@@ -280,6 +299,36 @@ func (f *Fake) Provision(_ context.Context, _ db.Tx[db.System], tenantID uuid.UU
 	f.users[u.ID] = *u
 	f.published = append(f.published, contracts.EventInvited)
 	return f.get(u.ID)
+}
+
+// Holders is contracts.Service.Holders, decided by the same predicate the real
+// service writes in SQL: User.CanAdminister, which is why the two cannot disagree.
+func (f *Fake) Holders(_ context.Context, _ db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(roles) == 0 {
+		return nil, nil
+	}
+	var out []uuid.UUID
+	for id, u := range f.users {
+		if u.CanAdminister(roles) {
+			out = append(out, id)
+		}
+	}
+	slices.SortFunc(out, func(a, b uuid.UUID) int { return strings.Compare(a.String(), b.String()) })
+	return out, nil
+}
+
+// addedAdministering is internal.Service.addedAdministering: the roles this write
+// gives that the person did not hold, of the ones that administer.
+func addedAdministering(was, want, administering []string) []string {
+	var added []string
+	for _, role := range want {
+		if !slices.Contains(was, role) && slices.Contains(administering, role) {
+			added = append(added, role)
+		}
+	}
+	return added
 }
 
 // floor is internal.Service.floor without a database: the same decision, from

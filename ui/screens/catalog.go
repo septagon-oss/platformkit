@@ -22,7 +22,7 @@ import (
 // that actually protects it is the one beside this constant: additive, optional,
 // and never a change of meaning. A consumer that must refuse is the *next* build,
 // reading this field, and that is who the field is written for.
-const CatalogVersion = 1
+const CatalogVersion = 2
 
 // Catalog is the machine-readable form of what a shell shows: every resource
 // the caller may read, its schema, and whether the caller may write it. A shell
@@ -36,9 +36,23 @@ type Catalog struct {
 
 // Entry is one resource as a shell sees it. There is no Readable field because
 // an unreadable resource is not in the document at all: what a caller may not
-// look at, they are not told exists.
+// look at, they are not told exists. `writable` is the caller's guard narrowed by
+// this resource's operation set: an entry that names no write and still says
+// `writable` promises a door no route answers.
 type Entry struct {
 	entity.Schema
+	// Presentation is this resource as its author said it reads — the words, the
+	// icon, the group, which field names a row and which block each field belongs
+	// to. It is declared here, immediately after the embedded schema and before
+	// Screen, because encoding/json hoists an embedded struct's keys at the
+	// embed's position and writes fields in declaration order: this is where the
+	// entry's `presentation` block comes from, which is also why it goes last on
+	// Command below.
+	//
+	// An entry nobody hinted has no `presentation` key at all, so every shell
+	// already installed reads what it read before this field existed and
+	// CatalogVersion stays where it is.
+	Presentation *EntryPresentation `json:"presentation,omitempty"`
 	// Screen is the workspace address of the generated screen — /app/task/tasks
 	// — stated because the kernel composed it and a shell cannot derive it any
 	// more. It used to derive the screen's path from the API's, by cutting
@@ -62,6 +76,17 @@ type Entry struct {
 	// lifecycle routes the resource carries. A command the caller may not call
 	// is absent for the same reason an unreadable resource is.
 	Commands []Command `json:"commands,omitempty"`
+	// Operations names the routes this resource offers, in list/read/create/
+	// update/delete order, printed by the same rule as write_path and a command's
+	// path: only when a shell could no longer derive the answer. An entry that
+	// offers all five prints nothing, exactly as it did before this key existed.
+	//
+	// A shell that has not read this key reads an entry that hides a verb as if it
+	// did not — which is why CatalogVersion moves with the first *shipped* resource
+	// that hides one, and why apps/platformkit's ratchet case refuses to let that
+	// move be a memory. An absent key means all five, so it is the shell's next
+	// build that has to require it, reading this field.
+	Operations []string `json:"operations,omitempty"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
 	Singleton bool `json:"singleton,omitempty"`
@@ -85,6 +110,11 @@ type Command struct {
 	Collection  bool           `json:"collection,omitempty"`
 	Path        string         `json:"path,omitempty"`
 	Fields      []entity.Field `json:"fields,omitempty"`
+	// Presentation is this command as its author described it: the word on the
+	// button, whether it is the action to offer, what a person reads before it
+	// runs. It sits last so the six keys a shell has always read keep their
+	// positions, and it is absent for every command nobody described.
+	Presentation *CommandPresentation `json:"presentation,omitempty"`
 }
 
 // Describe is the catalog for this caller: the readable resources, in the
@@ -108,8 +138,16 @@ func Describe(ctx context.Context, resources []httpx.Resource) Catalog {
 // Describe1 is one entry, from a resource and the answer to "may this caller
 // write it". It is the pure half of Describe, and what the golden test builds
 // from without an authorizer.
+//
+// The flag is the caller's guard narrowed by the operation set: the guard says who
+// is asking, the set says whether anything here answers a write at all, and
+// `writable` is what this caller may *do*. See Entry.
 func Describe1(r httpx.Resource, writable bool) Entry {
-	e := Entry{Schema: r.Schema, Screen: r.Screen, Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton}
+	writable = writable && (len(r.Commands) > 0 || r.Offers(httpx.CRUDCreate) ||
+		r.Offers(httpx.CRUDUpdate) || r.Offers(httpx.CRUDDelete))
+	e := Entry{Schema: r.Schema, Presentation: deviations(r.Present), Screen: r.Screen,
+		Immutable: r.Immutable, Writable: writable, Singleton: r.Singleton,
+		Operations: r.OperationWords()}
 	if writable {
 		e.WritePath = r.WritePath
 	}
@@ -117,6 +155,7 @@ func Describe1(r httpx.Resource, writable bool) Entry {
 		e.Commands = append(e.Commands, Command{
 			Verb: c.Verb, Summary: c.Summary, Description: c.Description,
 			Collection: c.Collection, Path: derived(r, c), Fields: c.Fields,
+			Presentation: commandDeviations(c.Present),
 		})
 	}
 	return e

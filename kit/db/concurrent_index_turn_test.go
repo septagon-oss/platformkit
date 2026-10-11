@@ -67,10 +67,11 @@ BEGIN PERFORM nextval('turn_builds'); PERFORM pg_sleep(3); RETURN value; END $$`
 
 	queued := make(chan error, 1)
 	go func() { queued <- db.MigrateWith(ctx, adminURL, budget, source) }()
-	// The first boot holds the file's own advisory lock — a namespaced one, so not the
-	// composition lock, which puts 0 in classid — and holds it while it is asleep in the
-	// build. This is the overlap: the second boot is already running, and one build has
-	// reached the index.
+	// The first boot holds the file's own advisory lock — its classid is fileLockSpace,
+	// and the one row this predicate can read is the file's because its objid is the
+	// hash of the file's name, which no composition lock's objid (a namespace OID) is —
+	// and it holds it while asleep in the build. This is the overlap: the second boot is
+	// already running, and one build has reached the index.
 	waitFor(t, admin, ctx, `
 		SELECT (SELECT count(*) FROM pg_locks l JOIN pg_stat_activity b ON b.pid = l.pid
 				WHERE l.locktype = 'advisory' AND l.classid <> 0

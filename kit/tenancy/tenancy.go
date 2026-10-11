@@ -31,6 +31,54 @@ type Tenant struct {
 	// to list, create and suspend the tenants beside them. The column is
 	// written by the bootstrap and by nothing else; see Grant and docs/adr/0006.
 	Operator bool
+	// Demo is a creation-time tenant property. A seed request cannot upgrade an
+	// ordinary tenant into a walkthrough tenant by passing a flag.
+	Demo bool
+	// Languages are what this tenant is served in, or nil when the tenant declared
+	// nothing and the deployment's own default answers. The host resolution reads
+	// them with the rest of the row, which is what makes "which language is this
+	// request answered in" a fact about the tenant resolved for *this* request
+	// rather than a property of the catalog fixed at composition.
+	//
+	// A pointer rather than a slice so that Tenant stays comparable: three owners
+	// of a resolution ask "is this the tenant I resolved before?" with ==, and a
+	// struct that cannot answer that question would make them compare fields by
+	// hand — which is how a field gets forgotten.
+	Languages *Languages
+}
+
+// Languages are the languages one tenant is served in, as the control plane
+// declares them: one default, and the set a browser's list is intersected with.
+//
+// It is a value type with no behaviour, and the order inside it is the whole of
+// what a fallback means: Default first when nothing in the request's own list is
+// served here, and Others never ranking against one another.
+type Languages struct {
+	// Default is the language a request that brought nothing this tenant serves
+	// is answered in.
+	Default string
+	// Others are the remaining languages this tenant is served in, in no
+	// particular order.
+	Others []string
+}
+
+// Preferred is the tenant's language list in the one order a negotiation reads:
+// the default, then the rest. With no default set it is the rest alone.
+func (l *Languages) Preferred() []string {
+	if l == nil {
+		return nil
+	}
+	if l.Default == "" {
+		return l.Others
+	}
+	out := make([]string, 0, len(l.Others)+1)
+	out = append(out, l.Default)
+	for _, tag := range l.Others {
+		if tag != l.Default {
+			out = append(out, tag)
+		}
+	}
+	return out
 }
 
 // Grant is a permission question: which token, and whether that token is one
@@ -41,7 +89,13 @@ type Tenant struct {
 // first. It lives beside Tenant because both halves of the answer are here.
 type Grant struct {
 	Permission string
-	Operator   bool
+	// Label is the grant in words, carried from the manifest that defines it
+	// (module.Permission.Label) so the layer that renders a refusal can name
+	// what is missing without importing the module that owns the token. It
+	// travels with the whole struct — httpx.Declare and Permissions move it to
+	// every consumer without a further conversion.
+	Label    string
+	Operator bool
 }
 
 // contextKey is unexported so only this package can put a tenant on a context.
@@ -87,6 +141,19 @@ type Principal struct {
 	// Roles are the roles the credential carries, for an authorizer that wants
 	// them without a second lookup.
 	Roles []string
+	// Permissions is the authority the credential itself carries, and nil means
+	// it carries none: the roles decide, which is every request that has ever
+	// been served through here.
+	//
+	// A non-nil list is a ceiling, not an addition. An authorizer may grant what
+	// is on this list and nothing else, whatever the holder's roles say, and the
+	// roles are deliberately not consulted for such a caller: a scoped key is not
+	// an administrator who happens to be asking politely, and a role list beside
+	// it would be read by every role-shaped decision in the application as the
+	// authority the scope exists to narrow. So a bearer carries no Roles — see
+	// the auth module's bearer resolution, which hands over the intersection of
+	// the key's scopes and the holder's grants and no roles at all.
+	Permissions []string
 }
 
 // principalKey is unexported for the same reason contextKey is.
@@ -105,20 +172,20 @@ func PrincipalFrom(ctx context.Context) (Principal, bool) {
 }
 
 // actorKey is unexported for the same reason contextKey is: only this package
-// can put an actor on a context, and only kit/httpx calls WithActor.
+// can put an actor on a context, and only the two callers named below do.
 type actorKey struct{}
 
 // WithActor returns a copy of ctx carrying the user who is making the request.
 //
 // It lives here, beside the tenant, because the two are one thing: the identity
 // of a request is which customer it is about and who is asking. kit/httpx calls
-// it once, immediately after Options.Authenticate recognises the caller, and
-// kit/events reads it back so that every event an operation writes carries the
-// person who caused it without any module remembering to pass it along.
+// it when Options.Authenticate recognises a caller, and kit/events reads it back
+// so every event names who caused it. A door that admits an anonymous request
+// — a password, a passkey — calls it for the person it recognises inside its own
+// transaction: the request arrived as nobody, or as whoever's cookie it carried.
 //
 // Work with no person behind it — a job, the relay, an event handler — leaves
-// it unset, and that is the honest answer rather than a sentinel: the outbox
-// column is null and the audit row says the system did it.
+// it unset: null in the outbox, and the trail says the system did it.
 func WithActor(ctx context.Context, userID uuid.UUID) context.Context {
 	return context.WithValue(ctx, actorKey{}, userID)
 }

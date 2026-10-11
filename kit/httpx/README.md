@@ -3,8 +3,8 @@
 `kit/httpx` builds the one Huma API the application serves and enforces that
 every operation declares its authorization. `New(Options)` returns the `*API`
 and the router; `Register` mounts a handler with an `Auth` — `Public()`,
-`SignedIn()`, `Permission(key)` or `OperatorPermission(key)` — and
-`ValidateDeclarations` is the boot gate that refuses a route without one. Read
+`SignedIn()`, `AnyCredential()`, `Permission(key)` or `OperatorPermission(key)` —
+and `ValidateDeclarations` is the boot gate that refuses a route without one. Read
 [httpx.go](httpx.go) for the middleware chain: which surface an address is, host
 to tenant, the lazily opened tenant transaction (`TxFrom`, `ConnFrom`), the
 request on the context (`RequestFrom`), the security headers and the per-request
@@ -43,7 +43,11 @@ Each surface has its own chain, and the difference is not cosmetic:
   size, and a 500 with the body discarded wherever a response is still there to
   discard), caches a safe 2xx for sixty seconds, and puts a limit on an anonymous
   write because it is the one surface with no account to lock out
-  (`Options.WriteLimiter`, counted by tenant, route and address).
+  (`Options.WriteLimiter`, counted by tenant, route and address). A refusal from
+  that counter is a 429 whatever the counter's own reason was — a spent window and
+  an attempt the counter could not record are refused here, and only a store that
+  cannot be reached at all is the outage this kernel fails open on
+  ([kit/limit/README.md](../limit/README.md) owns the four).
 - **App** recognises the caller, refuses an anonymous caller except at a route
   that declares `Public()` — and `AnonymousDoors` lists those, because "the
   workspace admits nobody by default" is only checkable once you can see who it
@@ -57,6 +61,30 @@ Each surface has its own chain, and the difference is not cosmetic:
   consulted. `app.Installation{Host}` is the deployment's fact, read from
   `server.installation_host`.
 
+A credential that carries its own authority is held to it at **both**
+declarations that spend authority, and that pair is the whole of what makes a
+scoped key mean something: an operation naming `Permission(k)` is refused unless
+`k` is on the list, and an operation declaring `SignedIn()` — the door about the
+caller themselves, which names no permission and so spends its caller's whole
+authority — is refused outright. A key narrowed to a list therefore never
+reaches the doors that manage the credentials a person holds, and can never
+widen itself back to its holder. `scoped_credential_test.go` is both halves,
+with the session caller as the control.
+
+The one operation that names no permission because there is no permission to name
+— because it spends none of the caller's authority and only describes what the
+caller may already reach — declares `AnyCredential()` instead, and a scoped key is
+admitted to it. The set holds the two apart because the answers differ: the
+catalogue at `GET /api/v1/app/resources` (mounted by `kit/app`, the kernel's own
+namespace) is built by asking the authorizer which resources *this caller* may
+read and write, so the document a narrowed credential receives is already narrowed
+by that credential, and refusing it would leave a bearer key able to do its work
+and unable to find the routes its scopes name — the first request of a client that
+is not a browser. Mounting a self-service door here is the escalation `SignedIn()`
+exists to refuse: the test at such a mount is that the operation reads grants and
+never spends them, which is why no module's route belongs there and today only
+`kit/app` has one.
+
 `Home` claims a surface's root for one module — the site's home page at `/`, the
 workspace's at `/app` — and reports to the second claimant that it did not take
 it. `accepted` is the closed table of which declaration each surface will host; a
@@ -68,6 +96,16 @@ shape the client asked for: the problem document for a value, the registered ren
 page for a navigation (see [ui/page](../../ui/page/README.md)). An htmx write is a client
 that parses a value — its controller reads the code and swaps nothing for a 4xx — so it is
 answered in JSON even though it asks with `Accept: text/html,*/*`.
+
+A refusal that becomes a page resolves the host it is a page *of* (`withHostTenant`,
+called by `show`, the one branch either refusal path takes when a renderer is registered).
+Which languages a request is answered in is the tenant's declaration and not the
+browser's, and the guards that answer ahead of routing — an address nobody mounted, the
+verb an address does not take, a cross-site write, a handler that panicked — run ahead of
+the operation middleware that resolves hosts, so the page they render would otherwise be
+worded by whoever brought the header. A host nobody serves has no tenant to declare a
+language, and that one refusal is negotiated from the request alone; a request whose
+context is already over gets no query at all.
 
 ### Built on what came before
 

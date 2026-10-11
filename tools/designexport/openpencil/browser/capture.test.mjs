@@ -34,7 +34,16 @@ test('authored Go color roles match Chromium across palettes and independent tra
       const sheet = new CSSStyleSheet()
       sheet.replaceSync(css)
       document.adoptedStyleSheets = [sheet]
-      const definitions = [...sheet.cssRules].filter(rule => rule.selectorText === ':root').flatMap(rule =>
+      // Every rule of this sheet sits inside one of the four cascade layers it
+      // states, so an authored role declaration is reached through the layer block
+      // that carries it: @layer tokens { :root { --pk-role-… } }. Reading the top
+      // level alone reads an empty sheet — the assertions below would then judge no
+      // declaration at all, which is how this read broke when the layers landed. A
+      // media or supports block is not descended: a :root rule inside one is a
+      // conditional override, not the authored definition this case compares.
+      const rootRules = [...sheet.cssRules].flatMap(rule =>
+        rule instanceof CSSLayerBlockRule ? [...rule.cssRules] : [rule])
+      const definitions = rootRules.filter(rule => rule.selectorText === ':root').flatMap(rule =>
         [...rule.style].filter(name => name.startsWith('--pk-role-')).map(name => [name, rule.style.getPropertyValue(name)]))
       const sample = document.createElement('span'), results = []
       document.body.append(sample)
@@ -1028,10 +1037,46 @@ test('browser capture settles all real loading indicators through source reduced
 test('browser capture still refuses explicit infinite or paused animations under reduced motion', async () => {
   for (const animation of ['pk-spin 1s linear infinite', 'pk-spin 1s linear 1 paused']) {
     const snapshot = structuredClone(source)
-    snapshot.css += `\n[data-component="button"] { animation: ${animation} !important; }`
+    // Authored on the element itself rather than appended to the sheet. The sheet's
+    // reduced-motion fallback sits inside @layer base, and for !important
+    // declarations an earlier layer wins — so a rule in a later layer, or unlayered,
+    // which is the weakest author !important of all, is overridden to
+    // `iteration-count: 1; duration: 0.01ms` by that fallback. An element whose own
+    // style attribute says it animates forever is what this refusal exists for, and
+    // an inline !important outranks every author rule however the sheet is layered.
+    const example = snapshot.examples.find(item => item.id === primary)
+    example.html = example.html.replace(/^<button /, `<button style="animation: ${animation} !important" `)
     const beforeSnapshot = structuredClone(snapshot)
     await assert.rejects(captureExample(browser, snapshot, primary), /requires finite, running source animations to settle/)
     assert.deepEqual(snapshot, beforeSnapshot)
     assert.equal(browser.contexts().length, 0)
   }
+})
+
+test('browser capture waits a source animation longer than one wave instead of refusing it', async () => {
+  // The refusal above is for an animation that never advances. This is the other side of the same
+  // boundary: a source whose own animation runs to completion, slowly. CI run 56073 (job 56693)
+  // refused exactly this shape — `Capture source animation settling timed out` for
+  // pk-ui.component.product-card/loading-en, a page whose animations the motion floor had already
+  // ended — because the wait carried one stopwatch over its whole duration and that runner was
+  // three browser jobs deep. An animation authored to run 1.6 s is the same refusal with no load
+  // involved, and it is not a thing the capture should refuse: the guarantee is that nothing is
+  // observed while the page is still moving, which is why the assertion is a completed capture.
+  const snapshot = structuredClone(source)
+  const example = snapshot.examples.find(item => item.id === primary)
+  example.html = example.html.replace(/^<button /, '<button style="animation: pk-spin 1.6s linear 1 !important" ')
+  const beforeSnapshot = structuredClone(snapshot)
+  const result = await captureExample(browser, snapshot, primary)
+  assert.equal(result.exampleId, primary)
+  assert.deepEqual(snapshot, beforeSnapshot, 'waiting a slow source animation does not edit the caller\'s snapshot')
+  assert.equal(browser.contexts().length, 0)
+})
+
+test('capture retains closed disclosure content without waiting for its invisible spinner', async () => {
+  const exampleId = 'pk-ui.component.plan-comparison/pending-en'
+  const beforeSource = structuredClone(source)
+  const result = await captureExample(browser, source, exampleId)
+  assert.equal(result.exampleId, exampleId)
+  assert.equal(observed(result.roots).filter(node => node.tag === 'details').length, 2)
+  assert.deepEqual(source, beforeSource)
 })

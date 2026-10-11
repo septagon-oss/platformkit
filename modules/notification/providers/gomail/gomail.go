@@ -33,10 +33,13 @@ import (
 // composition converts one in a line, and it is a struct of this package rather
 // than an alias of kit/config so the carrier does not read a deployment's file.
 //
-// EnvelopeFrom is the MAIL FROM address: one bare address, still one per binary,
-// and still the value kit/config refuses with a display name attached. It is not
-// the sender a person sees — that is Message.Sender, the tenant's own, and the
-// two answer different questions (see contracts.Sender).
+// EnvelopeFrom is the MAIL FROM address: one per binary, and one address that
+// may carry a display name, which is what kit/config accepts (main's rule for
+// mail.from). The name is dropped for the envelope and kept in the From header
+// when no tenant has its own sender, because a relay refuses a name in MAIL
+// FROM and a person reads nothing else. It is not the sender a person sees when
+// a tenant has one — that is Message.Sender, and the two answer different
+// questions (see contracts.Sender).
 type Config struct {
 	Host         string
 	Port         int

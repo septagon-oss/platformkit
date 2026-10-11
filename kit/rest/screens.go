@@ -12,6 +12,8 @@ package rest
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/url"
@@ -44,12 +46,23 @@ func answered[T crud.Entity](ctx context.Context, run func(db.Tx[db.Tenant]) (T,
 }
 
 // resource is this Spec as httpx.Resource, for Mount to register.
+//
+// It carries the Spec's own answers — its two guard declarations and its
+// operation set — because the screens are generated from this value and not from
+// the Spec, and a door a shell draws behind which no route answers is a refusal
+// with a button on it. The closures of a verb this Spec did not mount refuse
+// rather than being nil, the way rest.Singleton's do: the generator calls all
+// five, and a nil closure is a panic where a sentence belongs.
 func (s Spec[T]) resource() httpx.Resource {
 	schema := s.Schema()
-	return httpx.Resource{
+	refused := func(verb string) error {
+		return problem.Conflict("a " + s.Entity + " resource offers no " + verb + " route; its Operations name the verbs it has")
+	}
+	res := httpx.Resource{
 		Module: s.Module, Entity: s.Entity, Path: s.Path,
 		Read: s.Read, Write: s.Write, OperatorRead: s.OperatorRead, OperatorWrite: s.OperatorWrite,
-		Immutable: s.Immutable, Schema: schema,
+		ReadBy: s.ReadAuth, WriteBy: s.WriteAuth, Operations: s.Operations,
+		Immutable: s.Immutable, Present: s.Present, Schema: schema, RichTextFiles: s.RichTextFiles,
 
 		Count: func(ctx context.Context) (int64, error) {
 			tx, err := transaction(ctx)
@@ -110,6 +123,32 @@ func (s Spec[T]) resource() httpx.Resource {
 			return err
 		},
 	}
+	if !s.offers(httpx.CRUDList) {
+		// Count goes with the list, not with the read. Its one caller outside this
+		// package is the dashboard card (modules/admin/internal/pages.go), and the
+		// whole card links to r.Screen — the address of the list page this Spec did
+		// not mount. A refused count produces no card, which is the truth; a number
+		// on a card that leads nowhere is the lie.
+		res.Count = func(context.Context) (int64, error) { return 0, refused("list") }
+		res.List = func(context.Context, crud.Query) ([]map[string]any, int64, error) {
+			return nil, 0, refused("list")
+		}
+	}
+	if !s.offers(httpx.CRUDRead) {
+		res.Get = func(context.Context, uuid.UUID) (map[string]any, error) { return nil, refused("read") }
+	}
+	if !s.offers(httpx.CRUDCreate) {
+		res.Create = func(context.Context, map[string]any) (map[string]any, error) { return nil, refused("create") }
+	}
+	if !s.offers(httpx.CRUDUpdate) {
+		res.Update = func(context.Context, uuid.UUID, map[string]any) (map[string]any, error) {
+			return nil, refused("update")
+		}
+	}
+	if !s.offers(httpx.CRUDDelete) {
+		res.Delete = func(context.Context, uuid.UUID) error { return refused("delete") }
+	}
+	return res
 }
 
 // row is the entity as a screen reads it. It is the entity's own JSON, so a
@@ -284,6 +323,36 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
+// FieldErrorsIn is FieldErrors for a screen that does not speak English. A
+// rich-text refusal carries its structured issues beside the problem, because
+// the English sentences are the contract the JSON API answers with and a form
+// redrawn in another language must not print them at a reader who asked in
+// theirs. text is that language's formatter — the same one that names the form's
+// own labels — and each issue's key is in its package's catalogue.
+//
+// Every other refusal is prose this package cannot take apart, so it comes back
+// from FieldErrors as it stands.
+func FieldErrorsIn(err error, fields []crud.Field, text func(key, fallback string) string) (map[string]string, string) {
+	var refused *richTextProblem
+	if text == nil || !errors.As(err, &refused) {
+		return FieldErrors(err, fields)
+	}
+	_, known := crud.FieldNamed(fields, refused.field)
+	out, lines := map[string]string{}, make([]string, 0, len(refused.issues))
+	for _, issue := range refused.issues {
+		issue = issue.Localize(text)
+		line := fmt.Sprintf("%s %d: %s: %s", text("richtext.line", "line"), issue.Line, issue.Construct, issue.Remedy)
+		lines = append(lines, line)
+		if known {
+			out[refused.field] = strings.TrimPrefix(out[refused.field]+"; "+line, "; ")
+		}
+	}
+	if !known {
+		return nil, strings.Join(lines, "; ")
+	}
+	return out, strings.Join(lines, "; ")
+}
+
 // invalid is a 422 about one field, in the shape FieldErrors reads back.
 func invalid(field, why string) error {
 	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
@@ -300,7 +369,7 @@ func invalid(field, why string) error {
 // substring, so a message about "subtitle" marked "title" — the wrong control,
 // with the right message, which is the confusing half of both.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
-	p, ok := err.(*problem.Problem)
+	p, ok := errors.AsType[*problem.Problem](err)
 	if !ok {
 		return nil, err.Error()
 	}
@@ -308,7 +377,10 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 	for _, e := range p.Errors {
 		if name, message, found := strings.Cut(e, ": "); found {
 			if _, known := crud.FieldNamed(fields, name); known {
-				out[name] = message
+				if out[name] != "" {
+					out[name] += "; "
+				}
+				out[name] += message
 			}
 		}
 	}

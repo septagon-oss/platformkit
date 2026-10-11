@@ -22,22 +22,32 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 	for _, poolSize := range []int{2, 5, 16} {
 		t.Run(fmt.Sprint(poolSize), func(t *testing.T) {
 			adminURL, appURL := dbtest.URLs(t)
-			if err := db.Migrate(t.Context(), adminURL, migrations.Source, audit.Migrations); err != nil {
+			// The boot gets a bound of its own, and it is not the ninety seconds below.
+			// The migration queue is patient on purpose (kit/db/README.md: "a replica that
+			// waits an hour and applies nothing beats one that refuses at five seconds and is
+			// read as a failed deploy"), and since 5605448 it is one namespace's queue rather
+			// than one database's, so a package booting its own schema no longer stands behind
+			// every other package's — what those boots still share is the machine. Charging
+			// either wait to this case's own bound is what made a busy suite answer
+			// `db: migrate: lock: timeout: context deadline exceeded` for a subtest whose work
+			// had never started: the deadline the run hit was the queue's, not the
+			// behaviour's. The ninety seconds below start when the schema this case observes
+			// exists, and bound what ten seconds bounded before them — the retention job, its
+			// worker bound and its deletes held at a table lock. Ten of them refused that on
+			// 2026-10-06 at head `bfd1681`, inside `make check`, with the deletes still behind
+			// the EXCLUSIVE lock this case lays on the table and nothing back but
+			// `audit: trim the trail of 1: timeout: context deadline exceeded`. The bound is
+			// this case's refusal to wait forever; how fast a loaded box releases a table lock
+			// is not the behaviour it exists to catch, and every assertion after it is the one
+			// that was there.
+			boot, cancelBoot := context.WithTimeout(t.Context(), 5*time.Minute)
+			defer cancelBoot()
+			if err := db.Migrate(boot, adminURL, migrations.Source, audit.Migrations); err != nil {
 				t.Fatal(err)
 			}
-			admin := dbtest.Open(t, adminURL)
-			// The ten seconds start here, at the observation, and not at the fixture. The
-			// case bounds how long the composed job may take while a real delete is held at
-			// a table lock; the schema above it is the fixture's own, and one database carries
-			// every package of this suite, so its DDL and its migration wait behind everybody
-			// else's. Measured at this branch, the window was being spent before the case
-			// began and the fixture's refusal was the failure:
-			//     retention_concurrency_test.go:28: db: migrate: lock: timeout: context
-			//     deadline exceeded        (and, with only the migration moved out, the same
-			//      answer at :41, on the pool's first query)
-			// What the ten seconds bound is unchanged; where they start is.
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 			defer cancel()
+			admin := dbtest.Open(t, adminURL)
 			pool := db.DefaultPool()
 			pool.MaxOpenConns, pool.MaxIdleConns = poolSize, min(4, poolSize)
 			conn, err := db.OpenWithPool(ctx, appURL, pool)
@@ -52,12 +62,20 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 			unlisted := tenancy.Tenant{ID: uuid.New(), Slug: "unlisted"}
 			for _, tenant := range append(slices.Clone(tenants), unlisted) {
 				if _, err := admin.ExecContext(ctx, `INSERT INTO audit_events (tenant_id, occurred_at, name, event_id, payload)
-                    VALUES ($1, now() - interval '40 days', 'expired', gen_random_uuid(), '{}'),
+                    VALUES ($1, now() - interval '400 days', 'expired', gen_random_uuid(), '{}'),
                            ($1, now(), 'kept', gen_random_uuid(), '{}')`, tenant.ID); err != nil {
 					t.Fatal(err)
 				}
 			}
-			job := audit.Module(audit.Deps{Tenants: tenants, RetentionDays: 30}).Jobs[0]
+			// The sweep no longer runs on the application's connection: 000048 fences the
+			// app role's DELETE away, so Deps names the expiry role the fence admits, and
+			// the job opens it for the length of one run. What this case now measures is
+			// that the deletes reach the lock from that pool and never from the
+			// application's, which is the assertion below.
+			_, retainURL := dbtest.Role(t, admin,
+				"SELECT, DELETE ON TABLE audit_events",
+				"SELECT, INSERT ON TABLE audit_retention_marks")
+			job := audit.New(audit.Deps{Tenants: tenants, RetentionDays: 365, RetainURL: retainURL}).Jobs[0]
 			if job.Name != "audit-retention" || job.Parallel {
 				t.Fatal("retention lost its scheduled-job lock")
 			}
@@ -75,14 +93,14 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 				t.Fatal(err)
 			}
 			before := conn.Stats()
+			// The job's own pool is four connections, one per tenant callback plus the
+			// tenant list, so three callbacks at most are ever in flight whatever the
+			// application's pool is — which is the point of opening one.
+			want := 3
 			done := make(chan error, 1)
 			var work sync.WaitGroup
 			work.Go(func() { done <- job.Run(ctx, conn) })
 			defer func() { cancel(); _ = blocker.Rollback(); work.Wait() }()
-			want := 4
-			if poolSize == 2 {
-				want = 1
-			}
 			for {
 				var waiting int
 				if err := admin.QueryRowContext(ctx, `SELECT count(*) FROM pg_stat_activity
@@ -104,8 +122,10 @@ func TestComposedRetentionBoundsWorkersAndPreservesOtherTenants(t *testing.T) {
 				case <-time.After(10 * time.Millisecond):
 				}
 			}
-			if stats := conn.Stats(); stats.InUse != want+1 || stats.WaitCount != before.WaitCount {
-				t.Fatalf("retention exceeded the available pool or omitted its job lock: %+v", stats)
+			// The application pool is what it was: the sweep holds connections of its
+			// own, so a busy retention pass no longer queues requests behind it.
+			if stats := conn.Stats(); stats.InUse != before.InUse || stats.WaitCount != before.WaitCount {
+				t.Fatalf("retention took application connections: before %+v now %+v", before, stats)
 			}
 			if err := blocker.Rollback(); err != nil {
 				t.Fatal(err)

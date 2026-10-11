@@ -8,9 +8,11 @@ package db_test
 // asking again turned a state with nothing at stake into a failed boot — and every test
 // fixture of this repository reaches the ask, so it did that as the suite got busier.
 //
-// The two cases below stand on one seam: a schema-local `pg_advisory_lock` shadow, the
-// same one kit/db/autocommit_lock_reask_test.go puts on the second ask, asked here to
-// answer 40P01 a fixed number of times. The counter is a sequence, because a sequence is
+// The two cases below stand on one seam: a schema-local `pg_advisory_lock` shadow —
+// the two-key form the runner asks, (the composition key, this namespace's OID), so the
+// shadow takes two arguments — the same one
+// kit/db/autocommit_lock_reask_test.go puts on the second ask, asked here to answer
+// 40P01 a fixed number of times. The counter is a sequence, because a sequence is
 // the only count that survives the abort of the statement that drew it — an ordinary
 // UPDATE of a row would roll back with the raise it is written beside, and the case would
 // be counting asks it had already thrown away.
@@ -59,12 +61,12 @@ func pickedSource(t *testing.T, adminURL string, raises string) (migrateURL stri
 	ctx := t.Context()
 	for _, statement := range []string{
 		`CREATE SEQUENCE lock_asks`,
-		`CREATE FUNCTION pg_advisory_lock(key bigint) RETURNS void LANGUAGE plpgsql AS $$
+		`CREATE FUNCTION pg_advisory_lock(key1 integer, key2 integer) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE ask bigint;
 BEGIN
   ask := nextval('lock_asks');
   ` + raises + `
-  PERFORM pg_catalog.pg_advisory_lock(key);
+  PERFORM pg_catalog.pg_advisory_lock(key1, key2);
 END $$`,
 	} {
 		if _, err := admin.ExecContext(ctx, statement); err != nil {

@@ -13,24 +13,123 @@ import (
 )
 
 // Event is one thing that happened in one tenant.
+//
+// It carries no JSON tags on purpose: the wire form is CloudEvents 1.0 and
+// lives in cloudevents.go, where the envelope's members and their names are
+// written once. The tags this struct used to carry were a second, private wire
+// format nobody outside this repository could read without importing it.
 type Event struct {
 	// ID is the deduplication key. A handler that has already seen it has
 	// already done the work when its sink claims deliveries transactionally.
-	ID uuid.UUID `json:"id"`
-	// Name is "<module>.<something>", the module's namespace first.
-	Name string `json:"name"`
+	ID uuid.UUID
+	// Name is "<module>.<something>", the module's namespace first. It is the
+	// envelope's `type`; the address it travels on is Subject of this name and
+	// TenantID, so the tenant is in the address and not only in the body.
+	Name string
 	// TenantID is the tenant the event happened in. The outbox's Consume opens
-	// a transaction in it; transports do not establish tenant isolation.
-	TenantID uuid.UUID `json:"tenantId"`
-	// Payload is whatever the publisher marshalled.
-	Payload json.RawMessage `json:"payload"`
+	// a transaction in it; transports do not establish tenant isolation. The
+	// envelope requires it, where CloudEvents leaves an extension optional:
+	// an event with no tenant has no transaction to deliver it in.
+	TenantID uuid.UUID
+	// Payload is whatever the publisher marshalled. It is the envelope's data.
+	Payload json.RawMessage
 	// At records when the state changed; the outbox uses its row's creation time.
-	At time.Time `json:"at"`
+	At time.Time
 	// Actor is the user whose request caused this, and the nil UUID when
 	// nothing did: a periodic job, the relay, a handler reacting to another
 	// event. The publishing owner supplies this trusted fact. The PlatformKit
 	// outbox reads it from kit/tenancy's context rather than request input.
-	Actor uuid.UUID `json:"actor"`
+	Actor uuid.UUID
+	// TraceParent and TraceState are the W3C Distributed Tracing context of
+	// the request that caused the event, carried from the publisher through the
+	// outbox row to the delivery. Empty is the normal case: a periodic job, the
+	// relay itself and a handler reacting to another event have no request to
+	// inherit. kit/trace owns the format; nothing here parses it.
+	TraceParent string
+	TraceState  string
+	// is the request id the router wrote on the publisher's context. The trace
+	// members above say which span this event happened under; this says which
+	// request — the one string an operator can quote from a response header, a
+	// log line and a customer's ticket. It is spelled as W3C spells it and absent
+	// when the publisher had nothing to leave, exactly as the pair above: the
+	// envelope carries it as a PlatformKit extension attribute beside the two the
+	// distributed tracing extension names, and it reaches the delivery's span and
+	// every span the handler opens below it. See migrations/000041.
+	Baggage string
+	// RequestID is the id the call was answered with (X-Request-ID), and ClientIP
+	// is the peer address of the connection it arrived on — never a header a
+	// client could write. They arrive with the event because they are readable
+	// only while the request is open: the publisher copies them from kit/request
+	// into its outbox row, and the relay reads them back onto the delivery. Empty
+	// is the normal case, and it means the same thing an empty TraceParent
+	// means: no request caused this, so there is no call to name.
+	//
+	// RequestID holds the same fact as Baggage in the other form: Baggage is the
+	// trace's correlation member spelled as W3C spells one (`pkit.request_id=<id>`),
+	// put back on the handler's context so its spans name the request; RequestID
+	// is the bare id, which is what the audit trail answers "which call" with,
+	// without parsing a header. One write, two readers.
+	RequestID string
+	ClientIP  string
+
+	// Attribution says what caused this when the cause was not a session: a
+	// seed run applying a file, a job reconciling a record. ActorKind names the
+	// sort of cause, SourceFile and SourceLine cite the instruction, and
+	// Initiator names the person the run served — who is not the Actor, because
+	// nobody signed in to write this. kit/events.Attribution owns the meaning;
+	// this carries it. Empty is the normal case: a person's request, which the
+	// Actor already names.
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	Initiator  uuid.UUID
+}
+
+// Attribution is the cause of an event when the cause was not a session: which
+// kind of cause, which instruction it came from, and on whose behalf. kit/events
+// owns the rules (its kind constants and Valid); this is the carried form, and
+// kit/events aliases it, the way it aliases Event.
+type Attribution struct {
+	ActorKind  string
+	SourceFile string
+	SourceLine int
+	// InitiatorID is the person the run named — for a seed, the address
+	// `--as` resolved to. It is not the Actor: no session of theirs wrote this.
+	InitiatorID uuid.UUID
+}
+
+// MaxSourceFile bounds the citation. The outbox column repeats the ceiling: a
+// source is a path inside the publisher's own module, and a longer string is not
+// a path but a payload wearing one.
+const MaxSourceFile = 512
+
+// Actor kinds, spelled the way the outbox column stores them. kit/tenancy names
+// the two a request can be; a seed and a job are the two an application's own
+// background work adds.
+// migrations/000052_outbox_attribution.up.sql repeats the four as a CHECK.
+const (
+	ActorUser   = "user"
+	ActorSystem = "system"
+	ActorSeed   = "seed"
+	ActorJob    = "job"
+)
+
+// Valid reports whether this can be stored. The checks are the outbox table's
+// CHECK constraints, said here too so a publisher hears about it in Go, at the
+// call, rather than as a failed INSERT deep inside somebody else's write path.
+func (a Attribution) Valid() bool {
+	switch a.ActorKind {
+	case ActorUser, ActorSystem, ActorSeed, ActorJob:
+	default:
+		return false
+	}
+	// A source is a place, so it is cited in whole: a line with no file, or a
+	// file with no line, is a citation nothing could follow.
+	if (a.SourceFile == "") != (a.SourceLine == 0) || a.SourceLine < 0 ||
+		len(a.SourceFile) > MaxSourceFile {
+		return false
+	}
+	return true
 }
 
 // eventName is the grammar of an event name: the module's name, a dot, and a
@@ -49,6 +148,13 @@ type Transport interface {
 	// Subscribe delivers every event called name to sink until ctx is done.
 	// durable names the subscription. Durable brokers resume its stored state;
 	// local providers need a caller-owned replay source after process restart.
+	//
+	// A transport that routes by an address the event does not travel inside —
+	// a subject, a topic, a queue name — checks that address against the
+	// document before its sink runs and terminates a mismatch
+	// (AddressMismatch). Its filter fixes the event's name and cannot fix its
+	// tenant, so a transport that skipped the check would open the handler's
+	// transaction in whatever tenant the message's body claimed.
 	Subscribe(ctx context.Context, durable, name string, sink Sink) error
 }
 

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -31,6 +32,7 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 		t.Fatalf("create the tables: %v", err)
 	}
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Tenants: caller{}, Conn: app, Authorize: caller{},
 		Installation: operatorHost,
 		Authenticate: func(context.Context, db.Tx[db.Tenant], *http.Request) (tenancy.Principal, bool, error) {
@@ -40,8 +42,8 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	})
 	notes := module.Module{
 		Name:        "note",
-		Permissions: []module.Permission{{Key: "note:read"}, {Key: "note:write"}},
-		Events:      spec.Events(),
+		Permissions: []module.Permission{{Key: "note:read", Label: "read notes"}, {Key: "note:write", Label: "write notes"}},
+		Declared:    spec.Declared(),
 		Routes: func(s httpx.Surfaces) {
 			spec.Mount(s)
 			// The module's own desk for one note, at the address the generated register would take.
@@ -55,11 +57,11 @@ func TestAModulesOwnWorkspacePageStandsInsteadOfTheGeneratedRegister(t *testing.
 	}
 	catalogue := module.Module{
 		Name:        "plan",
-		Permissions: []module.Permission{{Key: "plan:read"}, {Key: "plan:write", Operator: true}},
-		Events:      plans.Events(),
+		Permissions: []module.Permission{{Key: "plan:read", Label: "read plans"}, {Key: "plan:write", Operator: true, Label: "write plans"}},
+		Declared:    plans.Declared(),
 		Routes:      func(s httpx.Surfaces) { plans.Mount(s) },
 	}
-	shell := admin.Module(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
+	shell := admin.New(admin.Deps{Modules: []module.Module{notes, catalogue}, Authorize: caller{}, SignIn: "/api/v1/auth/login"})
 	var declared []tenancy.Grant
 	for _, m := range []module.Module{notes, catalogue, shell} {
 		for _, p := range m.Permissions {

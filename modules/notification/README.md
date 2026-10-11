@@ -22,8 +22,8 @@ per-tenant senders existed. Consumers import [contracts/](contracts/) and its
 
 Who may be told what is decided in the notice's own transaction, before any row is
 written. `Service.Notify` reads the person's channel choices and quiet window
-(`notification_preferences` and `notification_quiet_hours`, migration 000028) and the
-tenant's sender (`notification_senders`, 000029), runs `contracts.Decide`, and accounts
+(`notification_preferences` and `notification_quiet_hours`, migration 000054) and the
+tenant's sender (`notification_senders`, 000055), runs `contracts.Decide`, and accounts
 for the outcome of every channel the notice asked for: a chosen one opens a `requested`
 row and its own outbox event, a refused one closes in the same transaction with the
 sentence a person would read and the `Correction` naming whose decision would stop it —
@@ -44,14 +44,15 @@ answers into a ledger row this module writes — nil is `sent`, `contracts.ErrPe
 Mail leaves as the tenant that raised it. `SendMail` reads `notification_senders` in
 the worker's own transaction and hands the row to the carrier, which puts the tenant's
 name and address in the `From:` **header** and signs it with DKIM (RFC 6376) under the
-row's selector; the **envelope** sender stays `mail.from` — one bare address, one per
-binary, still refused by `kit/config` with a display name attached, because `MAIL FROM`
-and `From:` answer different questions. A verified sender whose key this deployment does
+row's selector; the **envelope** sender stays `mail.from` — one address per
+binary, which `kit/config` accepts with a display name and the carrier strips for
+`MAIL FROM` and keeps in `From:`, because those two answer different questions. A
+verified sender whose key this deployment does
 not hold is never sent unsigned. What the relay answers decides the ledger: a 5xx is
 `contracts.ErrPermanent`, which writes `failed` with the relay's own sentence and
 acknowledges the event, and anything else writes no row, rolls back and is retried on the
 kernel's ladder. A delivery the ledger already closed is not sent again — the worker reads
-the terminal row before it dials, which is the other half of migration 000030.
+the terminal row before it dials, which is the other half of migration 000056.
 
 The ledger is `notification_deliveries` (migration 000027), under the tenant's
 row-level security and append-only: a `requested` row when the notice is written, then a
@@ -59,7 +60,7 @@ terminal row in the same transaction as the step that finishes the channel — `
 `suppressed` with the reason (no address, the notice deleted before its mail was due).
 In-app is requested and sent with the row itself. A relay that refuses leaves no
 terminal row, because its transaction rolls back and the outbox retries; a send that can
-never succeed is recorded by the kernel in `platformkit_dead_letters`. Migration 000030
+never succeed is recorded by the kernel in `platformkit_dead_letters`. Migration 000056
 is a unique partial index over the `sent` rows, so a redelivered send is accounted once
 and the worker acknowledges the retry instead of dead-lettering a delivery that
 happened. `delivery_ledger_coverage` — requested channels with a terminal row, over all
@@ -87,7 +88,7 @@ that surface would take; it is the product's to build and the limits below name 
 ## Composition
 
 **Reused** — the delivery ledger and its one writer (`internal.record`,
-`internal.Coverage`, migration 000027 with 000030's sent-once index), the channel
+`internal.Coverage`, migration 000027 with 000056's sent-once index), the channel
 vocabulary and the single decision (`contracts.Channel`, `contracts.Wants`,
 `contracts.Decide`), the outbox and its retry ladder (`kit/events`, `docs/adr/0004`),
 row-level security through `platformkit_tenant_match`, and the `Mailer` port with its
@@ -169,7 +170,7 @@ What this module does not do, stated here rather than only in the branch that le
   and tenant endpoint URLs live outside this module.
 - **One expected revision, on one row.** `Put` refuses a copy that names a `Revision` the
   row has gone past — `crud.ErrConflict`, nothing written, published or returned; migration
-  000031 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
+  000057 keeps the counter and `Verify` advances it. A copy naming none (`Revision 0`, a
   value built rather than read) states what the tenant's sender is and writes. That guard
   reaches the command and no further: `kit/entity`'s `Base` carries no version and
   `rest` takes no `If-Match` (docs/adr/0016), so a screen over `Senders()` has to carry the
@@ -185,7 +186,7 @@ What this module does not do, stated here rather than only in the branch that le
 `go test ./modules/notification/...` runs the contracts suite against the real service,
 a real Postgres and a real tenant transaction (`TestServiceConforms`), the settings and
 sender commands against the same (`TestAConversationWithTheSenderCommands`), a redelivered
-send against 000030 (`TestARedeliveredSendWritesOneSentRow`) and the same committed replay
+send against 000056 (`TestARedeliveredSendWritesOneSentRow`) and the same committed replay
 over every asynchronous channel (`TestEveryCarriedChannelIgnoresACommittedEventReplay`), a
 wired carrier through its ledger row
 (`TestAChannelTheDeploymentWiresACarrierForReachesATerminalRow`), one tenant's writes against another tenant's rows with a caller both transactions name

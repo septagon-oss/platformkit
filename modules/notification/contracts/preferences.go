@@ -39,7 +39,7 @@ type Preference struct {
 	Enabled bool `json:"enabled" gorm:"type:boolean;not null" doc:"Whether this channel may be used"`
 }
 
-// TableName pins the table, so the entity and migrations/000028 agree.
+// TableName pins the table, so the entity and migrations/000054 agree.
 func (Preference) TableName() string { return "notification_preferences" }
 
 // Validate is the entity's own check, run by kit/crud on every write.
@@ -77,7 +77,7 @@ type QuietHours struct {
 	TimeZone    string `json:"timeZone" gorm:"type:text;not null" validate:"required" maxLength:"64" doc:"IANA zone these minutes are in" example:"Europe/Lisbon"`
 }
 
-// TableName pins the table, so the entity and migrations/000028 agree.
+// TableName pins the table, so the entity and migrations/000054 agree.
 func (QuietHours) TableName() string { return "notification_quiet_hours" }
 
 // Validate is the entity's own check, run by kit/crud on every write: an offset,

@@ -162,6 +162,18 @@ func TestAnOverrideIsAppliedBeforeValidation(t *testing.T) {
 	}
 }
 
+// TestASenderMayCarryADisplayName. The name is what the recipient sees in
+// their inbox; the mailer derives the envelope's bare address from it.
+func TestASenderMayCarryADisplayName(t *testing.T) {
+	got, err := config.Load(mailServer(t), config.Set("mail.from", "Acme <noreply@acme.example.com>"))
+	if err != nil {
+		t.Fatalf("a sender with a display name was refused: %v", err)
+	}
+	if got.Mail.From != "Acme <noreply@acme.example.com>" {
+		t.Errorf("mail.from = %q, want the mailbox as written", got.Mail.From)
+	}
+}
+
 // TestAnInvalidOverrideIsRefusedByName, with the two values the review found in
 // a client overlay. Both used to be accepted: public_host was checked for
 // emptiness and nothing else, and mail.from for emptiness only when a host was
@@ -172,7 +184,7 @@ func TestAnInvalidOverrideIsRefusedByName(t *testing.T) {
 		{"server.public_host", "https://acme.example.com", "server.public_host"},
 		{"server.public_host", "acme.example.com/admin", "server.public_host"},
 		{"mail.from", "this is not an address", "mail.from"},
-		{"mail.from", "Acme <noreply@acme.example.com>", "mail.from"},
+		{"mail.from", "noreply@acme.example.com, ops@acme.example.com", "mail.from"},
 	} {
 		t.Run(tt.key+"="+tt.value, func(t *testing.T) {
 			_, err := config.Load(mailServer(t), config.Set(tt.key, tt.value))

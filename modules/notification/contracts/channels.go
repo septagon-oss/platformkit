@@ -12,7 +12,7 @@ import (
 
 // Channel is one way a person can be told something. The values are the CHECK
 // constraint of notification_deliveries (migrations/000027, widened by this
-// module's 000028 to take web_push) spelled once in Go, so a provider written
+// module's 000054 to take web_push) spelled once in Go, so a provider written
 // outside this module can name a channel and cannot invent one the ledger would
 // refuse.
 //

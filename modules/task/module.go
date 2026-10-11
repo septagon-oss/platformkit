@@ -48,10 +48,15 @@ type Deps struct {
 // sweepEvery is the default interval. See Deps.SweepEvery.
 const sweepEvery = time.Minute
 
-// spec is the entity's presence in the application: five routes, two
+// Spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads. Everything
 // generic about a task is this value; internal/ holds only what is not.
-var spec = rest.Spec[*contracts.Task]{
+//
+// It is exported for one consumer and one reason: a write made outside an HTTP
+// request — the application's own seed — still owes this entity's validation,
+// its list schema and its event, and the alternative was a second write core
+// beside this one. Module below mounts a copy of it with one more hook.
+var Spec = rest.Spec[*contracts.Task]{
 	Module:     "task",
 	Entity:     "task",
 	Path:       "/tasks",
@@ -74,8 +79,8 @@ var spec = rest.Spec[*contracts.Task]{
 // the manifest and not in contracts/ because it was the only thing there that
 // needed kit/module.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionTaskRead},
-	{Key: contracts.PermissionTaskUpdate},
+	{Key: contracts.PermissionTaskRead, Label: "read tasks"},
+	{Key: contracts.PermissionTaskUpdate, Label: "write tasks"},
 }
 
 // NewService constructs task lifecycle commands for application composition.
@@ -93,8 +98,23 @@ func NewServiceWithPolicy(policy tenancy.Policy) contracts.Service {
 	return svc
 }
 
+// roles are the two people the task desk is written for. They are declared here
+// rather than listed by the application because they are the task capability's
+// own: a coordinator runs the desk and an observer follows it, in every
+// installation that composes this module, and the permissions that say so are the
+// two above. It is what lets a test ask, generated, whether a granted role
+// reaches the screens this module serves — a role written into an app's main
+// cannot be checked against a module from the outside.
+//
+// Which task a coordinator may resolve is policy/task.rego's, not a grant's, and
+// a product that wants a further role names it in its own composition.
+var roles = []module.RoleDecl{
+	{Name: "coordinator", Grants: []string{contracts.PermissionTaskRead, contracts.PermissionTaskUpdate}},
+	{Name: "observer", Grants: []string{contracts.PermissionTaskRead}},
+}
+
 // Module mounts one shared lifecycle implementation for routes and jobs.
-func Module(deps Deps) module.Module {
+func New(deps Deps) module.Module {
 	svc := deps.Service
 	if deps.Policy != nil {
 		if svc != nil {
@@ -114,14 +134,15 @@ func Module(deps Deps) module.Module {
 	// create's own transaction, rather than a minute later when the sweep gets
 	// to it. The hook is set here and not in the spec literal above because it
 	// needs the service, and the service is constructed here.
-	mounted := spec
+	mounted := Spec
 	mounted.AfterCreate = internal.BreachOnArrival(svc)
 	return module.Module{
 		Name:        "task",
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Roles:       roles,
+		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Tasks", Screen: "task/tasks", Permission: contracts.PermissionTaskRead},
 		},

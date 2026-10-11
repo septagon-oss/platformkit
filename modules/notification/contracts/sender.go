@@ -32,12 +32,13 @@ const (
 // binary serves many tenants and the name in a mail header belongs to one of
 // them, decided per request.
 //
-// The envelope sender stays the deployment's (config's mail.from, still one bare
-// address, still refused with a display name, because that is what MAIL FROM is).
-// What lives here is the *header* — `From: "Acme" <notifications@acme.example>` —
-// and the DKIM pair that has to exist for the far end to believe it. That is why
-// kit/config's refusal is untouched by this type: the two addresses answer
-// different questions, and a display name is legal in one and a bug in the other.
+// The envelope sender stays the deployment's (config's mail.from: one address,
+// optionally with a display name, and the carrier sends the bare address to the
+// relay because that is what MAIL FROM is). What lives here is the *header* —
+// `From: "Acme" <notifications@acme.example>` — and the DKIM pair that has to
+// exist for the far end to believe it. That is why the two addresses are checked
+// apart: they answer different questions, and a display name belongs in one and
+// never reaches the other.
 //
 // The private key is not a column. A row would put signing key material in a
 // table that every backup copies; the composition reads the key for this
@@ -95,7 +96,7 @@ type Sender struct {
 	Key []byte `json:"-" gorm:"-"`
 }
 
-// TableName pins the table, so the entity and migrations/000029 agree.
+// TableName pins the table, so the entity and migrations/000055 agree.
 func (Sender) TableName() string { return "notification_senders" }
 
 // Validate is the entity's own check, run by kit/crud on every write whichever

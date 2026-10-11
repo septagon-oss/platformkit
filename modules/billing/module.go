@@ -96,16 +96,16 @@ var spec = rest.Spec[*contracts.Plan]{
 // Operator would fail startup rather than quietly letting a customer's wildcard
 // into the price list.
 var permissions = []module.Permission{
-	{Key: contracts.PermissionBillingRead},
-	{Key: contracts.PermissionBillingManage},
-	{Key: contracts.PermissionBillingCatalog, Operator: true},
+	{Key: contracts.PermissionBillingRead, Label: "read billing"},
+	{Key: contracts.PermissionBillingManage, Label: "manage billing"},
+	{Key: contracts.PermissionBillingCatalog, Operator: true, Label: "manage the plan catalogue"},
 }
 
 // Module is the manifest, and the plan answer beside it, as user's and
 // notification's modules return their services: the kernel asks this module
 // what a tenant's plan includes, for the operations whose declaration names a
 // feature, and this is where an application is handed something to answer with.
-func Module(deps Deps) (httpx.Entitler, module.Module) {
+func New(deps Deps) (httpx.Entitler, module.Module) {
 	if deps.Payments == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference in the worker at two in the morning.
@@ -117,7 +117,7 @@ func Module(deps Deps) (httpx.Entitler, module.Module) {
 		Migrations:  Migrations.Files,
 		Adopts:      Migrations.Adopts,
 		Permissions: permissions,
-		Events:      contracts.Events,
+		Declared:    contracts.Events,
 		Nav: []module.NavEntry{
 			{Label: "Billing", Screen: "billing/plans", Permission: contracts.PermissionBillingRead},
 		},

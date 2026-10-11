@@ -11,11 +11,13 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/modules/user/contracts"
 )
 
@@ -29,19 +31,36 @@ type Service struct {
 	// read it, so the application supplies it. See contracts.Administration
 	// and floor.
 	administering contracts.Administration
+	// granting answers whether the caller may hand out one of those roles. See
+	// contracts.Granting: without it, the roles door is one anybody who may write
+	// a user may walk through.
+	granting contracts.Granting
 }
 
 // NewService returns the lifecycle commands. module.go constructs it, and
-// module.go is where a composition with no Administration is refused.
-func NewService(administering contracts.Administration) *Service {
-	return &Service{administering: administering}
+// module.go is where a composition with no Administration or no Granting is
+// refused.
+func NewService(administering contracts.Administration, granting contracts.Granting) *Service {
+	return &Service{administering: administering, granting: granting}
 }
 
 var _ contracts.Service = (*Service)(nil)
 
 // Invite creates a user with no password and publishes the invitation. Auth's
 // subscriber sends the link through the delivery capability the app supplies;
-// redeeming it lets the recipient choose their password.
+// redeeming it lets the recipient choose their password. The event carries the
+// address this call was answered at, because that subscriber runs in the worker,
+// after the call that asked is gone, and a set-password link that drops the port
+// it was asked at opens a server that is not this one.
+//
+// "The call that asked" includes the call that asked *this* one. A stranger's
+// email-only sign-up reaches no account, and it is a subscription — no request left
+// on its context, the request that made it long gone — that calls Invite to create
+// the account and raise this event. The address survives that far because
+// httpx.ServedFrom answers from the event being handled whenever no request is
+// being served, which is what a handler that read a `served` address out of an
+// outbox row restores onto its own context. An invitation asked by nothing at all —
+// the bootstrap, a replay — carries nothing, as it always did.
 func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displayName string) (*contracts.User, error) {
 	u := &contracts.User{Email: email, DisplayName: displayName, Status: contracts.StatusInvited}
 	if err := crud.Create(ctx, tx, u); err != nil {
@@ -49,6 +68,7 @@ func (s *Service) Invite(ctx context.Context, tx db.Tx[db.Tenant], email, displa
 	}
 	return u, events.Publish(ctx, tx, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: db.Now(),
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 
@@ -95,10 +115,31 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	want := normalise(roles)
+	want := contracts.CanonicalRoles(roles)
 	was := slices.Clone([]string(u.Roles))
 	if slices.Equal(was, want) {
 		return u, nil
+	}
+	// Promoting somebody is a different act from editing them, and it is guarded
+	// as one: see contracts.Granting. Only the roles this write *adds* are
+	// asked about, and only the administering ones, so a refusal here can never
+	// be the reason a tenant cannot take a role back.
+	// The grant question first, whoever the caller is: see
+	// contracts.Granting's note about the caller that is not a person, which is a
+	// composition acting and not a promotion somebody asked for.
+	if added, err := s.addedAdministering(ctx, tx, was, want); err != nil {
+		return nil, err
+	} else if len(added) > 0 {
+		// The decision is asked once, of the port, and only for a write that
+		// really promotes somebody: a query before every save would price the
+		// ordinary edit of a name for a rule about power.
+		may, err := s.granting.May(ctx, tx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s", crud.ErrInvalid, err)
+		}
+		if !may {
+			return nil, contracts.RefuseUngrantable(added[0])
+		}
 	}
 	after := *u
 	after.Roles = want
@@ -112,6 +153,45 @@ func (s *Service) SetRoles(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	return u, events.Publish(ctx, tx, contracts.EventRolesSet, contracts.RolesSet{
 		UserID: u.ID, Was: was, Now: want, At: db.Now(),
 	})
+}
+
+// Holders is contracts.Service.Holders: CanAdminister as one statement, under
+// the tenant's own row-level policy — which is the tenant boundary here, not a
+// WHERE clause this package remembered to write.
+//
+// It is the same predicate otherAdministrators writes for the floor, and the
+// reason both exist is that the floor wants the rows and this wants the ids.
+func (s *Service) Holders(ctx context.Context, tx db.Tx[db.Tenant], roles []string) ([]uuid.UUID, error) {
+	if len(roles) == 0 {
+		// "Nothing was named" is not "everybody".
+		return nil, nil
+	}
+	var ids []uuid.UUID
+	err := tx.DB().Model(&contracts.User{}).
+		Where("deleted_at IS NULL AND status = ? AND roles && ?::text[]",
+			contracts.StatusActive, pq.StringArray(roles)).
+		Order("id").Pluck("id", &ids).Error
+	if err != nil {
+		return nil, fmt.Errorf("user: look for the holders of a role: %w", err)
+	}
+	return ids, nil
+}
+
+// addedAdministering is the roles this write would give a person they do not
+// already hold, restricted to the ones that administer the tenant. Empty means
+// the write grants nobody anything, and the Granting port is never asked.
+func (s *Service) addedAdministering(ctx context.Context, tx db.Tx[db.Tenant], was, want []string) ([]string, error) {
+	administering, err := s.administering.Administering(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	var added []string
+	for _, role := range want {
+		if !slices.Contains(was, role) && slices.Contains(administering, role) {
+			added = append(added, role)
+		}
+	}
+	return added, nil
 }
 
 // SetHandle claims or renames a handle. See contracts.Service.SetHandle.
@@ -199,7 +279,7 @@ func (s *Service) Get(_ context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*co
 func (s *Service) ByEmail(_ context.Context, tx db.Tx[db.Tenant], email string) (*contracts.User, error) {
 	var u contracts.User
 	err := tx.DB().Where("lower(email) = ? AND deleted_at IS NULL",
-		strings.ToLower(strings.TrimSpace(email))).Take(&u).Error
+		contracts.CanonicalEmail(email)).Take(&u).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, crud.ErrNotFound
 	}
@@ -232,7 +312,7 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	at := db.Now()
 	u := &contracts.User{
 		Email: email, DisplayName: displayName, Status: status,
-		Roles: normalise(roles), PasswordHash: hash,
+		Roles: contracts.CanonicalRoles(roles), PasswordHash: hash,
 	}
 	u.ID, u.TenantID, u.CreatedAt, u.UpdatedAt = uuid.New(), tenantID, at, at
 	if err := u.Validate(ctx); err != nil {
@@ -243,19 +323,11 @@ func (s *Service) Provision(ctx context.Context, tx db.Tx[db.System], tenantID u
 	}
 	return u, events.PublishFor(ctx, tx, tenantID, contracts.EventInvited, contracts.Invited{
 		UserID: u.ID, Email: u.Email, Status: u.Status, At: at,
+		Served: httpx.ServedFrom(ctx),
 	})
 }
 
-// normalise is the stored form of a role set: trimmed, lower-cased, deduplicated
-// and sorted. Sorted, so that "the same roles in another order" is the same
-// value and SetRoles can tell that nothing changed.
-func normalise(roles []string) contracts.Roles {
-	out := make(contracts.Roles, 0, len(roles))
-	for _, r := range roles {
-		if r = strings.ToLower(strings.TrimSpace(r)); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
-		}
-	}
-	slices.Sort(out)
-	return out
-}
+// The stored form of a role set — trimmed, lower-cased, deduplicated and sorted,
+// so "the same roles in another order" is the same value and SetRoles can tell
+// that nothing changed — is contracts.CanonicalRoles: the entity's own rule, read
+// by the callers that have to meet the row a list names rather than repeated here.

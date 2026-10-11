@@ -433,10 +433,15 @@ func (r *Router) staticFault(rel string) string {
 // Routes receives is now the only thing it holds.
 func (r *Router) SystemToken() tenancy.SystemToken { return r.api.SystemToken() }
 
-// InvalidateHost forgets a cached host resolution, so a rename or a suspension
-// takes effect now rather than within the cache's own TTL. The tenant module
-// calls it; nothing else has a host to forget.
-func (r *Router) InvalidateHost(host string) { r.api.InvalidateHost(host) }
+// InvalidateHost forgets cached host resolutions, so a rename, a suspension or a
+// new language declaration takes effect now rather than within the cache's own
+// lifetime. The tenant module calls it; nothing else has a host to forget.
+//
+// However many hosts it names, the call is one Move of the host namespace, because
+// an invalidation that only deletes what is there loses the load that raced it. It
+// returns the store's error: unwinding the committed write that precedes it is the
+// worse outage, and so is answering as though every replica had already forgotten.
+func (r *Router) InvalidateHost(hosts ...string) error { return r.api.InvalidateHost(hosts...) }
 
 // The two prefixes of the table. A surface with no document prefix refuses
 // HTML at the door (R6), which is why the table has a hole in it rather than a
@@ -623,7 +628,7 @@ func (a *API) surface(next http.Handler) http.Handler {
 // answer: the verdict is this middleware's and the response is the host's.
 func (a *API) address(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if to, ok := alias(r.URL.Path); ok {
+		if to, ok := a.alias(r.URL.Path); ok {
 			target := to
 			if r.URL.RawQuery != "" {
 				target += "?" + r.URL.RawQuery
@@ -691,7 +696,8 @@ type MountedRoute struct {
 	OperationID string
 	Surface     Surface
 	// Auth is the declaration's own rendering: "public", "signed_in",
-	// "permission task:read", "operator_permission tenant:manage".
+	// "any_credential", "permission task:read", "operator_permission
+	// tenant:manage".
 	Auth string
 	// Module is the manifest name the route was mounted beneath.
 	Module string
@@ -806,6 +812,8 @@ func accepted(s Surface, auth Auth) (ok bool, why string) {
 			return false, "is mounted on the Public router and declares signed_in; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()"
 		case kindPermission:
 			return false, fmt.Sprintf("is mounted on the Public router and declares permission %s; the public surface resolves no session and sets no cookie, so nobody can satisfy it — mount it on the App router, or declare it Public()", auth.permission)
+		case kindAnyCredential:
+			return false, "is mounted on the Public router and declares any_credential; the public surface resolves no caller at all, so this door has nobody to admit — mount it on the App router, or declare it Public()"
 		default:
 			return false, fmt.Sprintf("is mounted on the Public router and declares operator_permission %s; the control plane is not a public page — mount it on the Ops router", auth.permission)
 		}
@@ -866,7 +874,7 @@ func (a *API) validateSurfaces() []string {
 		// nothing answers at the old address either. A route mounted there would
 		// be spent ahead of itself — the surfaces middleware answers the redirect
 		// first — so the module would ship a door nobody can open.
-		if to, moved := alias(m.path); moved {
+		if to, moved := a.alias(m.path); moved {
 			out = append(out, "httpx: "+where+" is mounted where the migration table redirects to "+to+
 				"; an alias is a redirect and not a second mount — mount the route at "+to+", or delete the row when the release that needs it is behind you")
 		}

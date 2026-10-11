@@ -41,7 +41,7 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 		t.Fatalf("pending login = %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}); !errors.Is(err, contracts.ErrCredentials) {
+		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}, contracts.ViaOIDC); !errors.Is(err, contracts.ErrCredentials) {
 			t.Fatalf("pending OIDC session = %v", err)
 		}
 		if err := auths.Forget(ctx, tx, pending.Email); err != nil {
@@ -138,7 +138,8 @@ func TestPendingRegistrationRefusesEvenAPreexistingPasswordToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		return auths.Reset(ctx, tx, token, authtest.Password+" changed")
+		_, err := auths.Reset(ctx, tx, token, authtest.Password+" changed", contracts.Client{})
+		return err
 	})
 	if !errors.Is(err, crud.ErrConflict) {
 		t.Fatalf("pending password token = %v", err)

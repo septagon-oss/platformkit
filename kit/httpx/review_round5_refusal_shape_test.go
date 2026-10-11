@@ -65,6 +65,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/cache"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/httpx"
@@ -82,6 +83,7 @@ func round5Kernel(t *testing.T, operator bool, fault httpx.Fault) (http.Handler,
 	who := tenancy.Tenant{ID: uuid.New(), Slug: "acme", Name: "Acme", Operator: operator}
 	_, app := dbtest.Schema(t)
 	api, router := httpx.New(httpx.Options{
+		Cache:      cache.Memory("pkit"),
 		PublicHost: host, Installation: installationHost, Conn: app,
 		Tenants: loaderFunc(func(_ context.Context, _ db.Tx[db.System], h string) (tenancy.Tenant, error) {
 			if h == host || h == installationHost {

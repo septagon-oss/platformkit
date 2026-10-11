@@ -3,6 +3,7 @@ package internal_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	"github.com/google/uuid"
@@ -11,12 +12,19 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/db/dbtest"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
+	"github.com/septagon-oss/platformkit/kit/trace"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant/contracts/tenanttest"
 	"github.com/septagon-oss/platformkit/modules/tenant/internal"
 	"github.com/septagon-oss/platformkit/modules/user"
 )
+
+// The lifecycle file beside this one holds the DB-backed half of what the suite
+// cannot see: the two rows a verb leaves in two tenants' trails, and the race
+// between two commands on one row.
+
+// column picks one field of an outbox row for the suite's three readers.
 
 // errRollback ends a case's transaction without committing it.
 var errRollback = errors.New("rolled back on purpose")
@@ -27,11 +35,37 @@ var errRollback = errors.New("rolled back on purpose")
 func TestServiceConforms(t *testing.T) {
 	tenanttest.RunService(t, func(t *testing.T, run func(tenanttest.Fixture)) {
 		_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-		svc := internal.NewService(nil)
-		err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		// Built with the dependency the reference application passes, not with nil:
+		// a suite run against a service missing it tests a service nobody composes,
+		// and the cases below that read the installation's languages would be silent.
+		svc := internal.NewService(nil, tenanttest.InstallationLanguages(), "")
+
+		// The installation's own tenant first, by the one write that makes it. Every
+		// lifecycle command mirrors its audit row into that tenant's trail and refuses
+		// without it, so a fixture with no operator tenant is one no verb can run in.
+		// The outbox row that bootstrap wrote is then emptied: what a case asserts is
+		// what *the case* published — the same line the fake's harness draws, one side
+		// in SQL and the other in a map.
+		var operator uuid.UUID
+		if err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+			installed, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
+				Slug: "installation", Name: "This installation", Host: "ops.example.com",
+			})
+			if err != nil {
+				return err
+			}
+			operator = installed.ID
+			return tx.DB().Exec("DELETE FROM platformkit_outbox").Error
+		}); err != nil {
+			t.Fatalf("bootstrap the fixture's installation: %v", err)
+		}
+
+		err := dbtest.System(trace.With(t.Context(), trace.New()), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 			run(tenanttest.Fixture{
-				Ctx: ctx, Tx: tx, Service: svc,
-				Published: func() []string { return outbox(t, tx) },
+				Ctx: ctx, Tx: tx, Service: svc, Operator: operator,
+				Published:       func() []string { return outbox(t, tx, func(r outboxRow) string { return r.Name }) },
+				PublishedScopes: func() []uuid.UUID { return outbox(t, tx, func(r outboxRow) uuid.UUID { return r.TenantID }) },
+				PublishedTraces: func() []string { return outbox(t, tx, func(r outboxRow) string { return r.TraceParent() }) },
 			})
 			return errRollback
 		})
@@ -41,17 +75,74 @@ func TestServiceConforms(t *testing.T) {
 	})
 }
 
+// installed writes the installation's own tenant - the row `bootstrap` creates and
+// no route can - so a case's world has the scope every lifecycle verb mirrors its
+// audit row into. Without one a verb cannot write the operator's half of the audit
+// and refuses: the rule lives in the service, and this is where it costs a fixture
+// one line. No assertion of any test that calls it changed; the world gained a
+// tenant.
+//
+// The service it is given is the app the installation belongs to: tenants_operator
+// is unique on (app) (migrations/000043_tenant_app), so an installation is one app's
+// and an app whose own installation is absent is refused rather than served by
+// another's. A case of two apps therefore installs one each - `installedAs`, because
+// tenants_slug names one installation per slug.
+func installed(t *testing.T, conn *db.Conn, svc contracts.Service) {
+	t.Helper()
+	installedAs(t, conn, svc, "installation", "ops.example.com")
+}
+
+// installedAs is `installed` under the slug and host a case needs, which is what a
+// world of several apps needs: the installation is per app, and tenants_slug is
+// unique across the schema, so two of them cannot share the one spelling.
+func installedAs(t *testing.T, conn *db.Conn, svc contracts.Service, slug, host string) {
+	t.Helper()
+	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
+		_, err := internal.Bootstrap(ctx, tx, svc, contracts.NewTenant{
+			Slug: slug, Name: "This installation", Host: host,
+		})
+		return err
+	})
+	if err != nil {
+		t.Fatalf("install the fixture's own tenant: %v", err)
+	}
+}
+
 // outbox is what has been published in this transaction, in order. It is what
 // makes the suite's silence assertions real: an idempotent command that
 // published a second time is visible here and nowhere else.
-func outbox(t *testing.T, tx db.Tx[db.System]) []string {
+func outbox[T any](t *testing.T, tx db.Tx[db.System], pick func(outboxRow) T) []T {
 	t.Helper()
-	var names []string
-	err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Pluck("name", &names).Error
+	var rows []outboxRow
+	err := tx.DB().Table("platformkit_outbox").Order("created_at, id").Find(&rows).Error
 	if err != nil {
 		t.Fatalf("read the outbox: %v", err)
 	}
-	return names
+	out := make([]T, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, pick(r))
+	}
+	return out
+}
+
+// outboxRow is the three columns the suite asks of the outbox: what happened,
+// whose trail it lands in, and which request caused it. They are the three the
+// table has, which is the point — the tenant an outbox row names is what decides
+// where the audit row goes, and the trace id is what joins the two rows a
+// lifecycle verb writes to the one request that caused them.
+type outboxRow struct {
+	Name     string
+	TenantID uuid.UUID
+	TraceCol *string `gorm:"column:traceparent"`
+}
+
+// TraceParent is the W3C value the row carries, or "" for an event published with
+// no request behind it — the absence migrations/000028 keeps on purpose.
+func (r outboxRow) TraceParent() string {
+	if r.TraceCol == nil {
+		return ""
+	}
+	return *r.TraceCol
 }
 
 // TestTheCreateHookRunsInTheSameTransaction is the mechanism the composition
@@ -62,6 +153,7 @@ func outbox(t *testing.T, tx db.Tx[db.System]) []string {
 func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
 	boom := errors.New("the hook refused")
+	installed(t, conn, internal.NewService(nil, nil, ""))
 	var seen uuid.UUID
 
 	svc := internal.NewService([]contracts.Hook{
@@ -72,7 +164,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 			return tx.DB().Exec("INSERT INTO roles (tenant_id, name, permissions) VALUES (?, ?, '{}')",
 				created.ID, "seeded").Error
 		},
-	})
+	}, nil, "")
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := svc.Create(ctx, tx, contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"})
 		return err
@@ -92,7 +184,7 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 	// A hook that fails leaves no tenant behind.
 	failing := internal.NewService([]contracts.Hook{
 		func(context.Context, db.Tx[db.System], *contracts.Tenant) error { return boom },
-	})
+	}, nil, "")
 	err = dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		_, err := failing.Create(ctx, tx, contracts.NewTenant{Slug: "globex", Name: "Globex", Host: "globex.example.com"})
 		return err
@@ -116,12 +208,21 @@ func TestTheCreateHookRunsInTheSameTransaction(t *testing.T) {
 // instead of a column on it.
 func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 	admin, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil)
+	svc := internal.NewService(nil, nil, "")
+	installed(t, conn, svc)
 
 	var acme, globex *contracts.Tenant
+	// acme is served in pt-PT and globex in the language it was created with, which
+	// is what the two doors below — acme's own transaction, and the owner's
+	// connection — have to disagree about for the case to mean anything.
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {
 		var err error
 		if acme, err = svc.Create(ctx, tx, contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"}); err != nil {
+			return err
+		}
+		// Two tenants, two languages: the isolation below is only visible if the
+		// rows are actually different.
+		if _, err = svc.SetLocale(ctx, tx, acme.ID, contracts.SetLocale{Default: "pt-PT"}); err != nil {
 			return err
 		}
 		globex, err = svc.Create(ctx, tx, contracts.NewTenant{Slug: "globex", Name: "Globex", Host: "globex.example.com"})
@@ -146,6 +247,17 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 		if len(hosts) != 1 || hosts[0] != "acme.example.com" {
 			t.Errorf("a tenant transaction sees hosts %v, want only its own", hosts)
 		}
+		// The languages a tenant is served in are its own rows to read and nobody's
+		// to write. This is the case that answers "what fails when a second
+		// tenant's locale is reachable from the first": acme may see its own
+		// pt-PT, must not see globex's en, and must not move it.
+		var languages []string
+		if err := tx.DB().Table("tenant_locales").Order("locale").Pluck("locale", &languages).Error; err != nil {
+			return err
+		}
+		if want := []string{"pt-PT"}; !slices.Equal(languages, want) {
+			t.Errorf("a tenant transaction sees the languages %v, want only its own %v", languages, want)
+		}
 		// And it may not write them: the control plane is changed through the
 		// routes that hold the capability, not from inside a tenant.
 		result := tx.DB().Exec("UPDATE tenants SET name = 'Stolen' WHERE id = ?", globex.ID)
@@ -154,6 +266,13 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 		}
 		if result.RowsAffected != 0 {
 			t.Error("a tenant transaction updated another tenant's row")
+		}
+		moved := tx.DB().Exec("UPDATE tenant_locales SET locale = 'en' WHERE tenant_id = ?", globex.ID)
+		if moved.Error != nil {
+			return moved.Error
+		}
+		if moved.RowsAffected != 0 {
+			t.Error("a tenant transaction rewrote another tenant's languages")
 		}
 		return nil
 	})
@@ -167,13 +286,33 @@ func TestATenantTransactionSeesOnlyItsOwnRow(t *testing.T) {
 	if name != "Globex" {
 		t.Errorf("the other tenant was renamed to %q", name)
 	}
+	var locales []string
+	// The fixture's own installation tenant speaks the language its copy is
+	// written in, so the assertion below — that the tenant transaction rewrote
+	// nobody's languages — is read over the two customers it was written about.
+	rows, err := admin.QueryContext(t.Context(),
+		"SELECT locale FROM tenant_locales WHERE tenant_id IN (SELECT id FROM tenants WHERE NOT operator) ORDER BY locale")
+	if err != nil {
+		t.Fatalf("independently read the languages: %v", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var tag string
+		if err := rows.Scan(&tag); err != nil {
+			t.Fatal(err)
+		}
+		locales = append(locales, tag)
+	}
+	if want := []string{"en", "pt-PT"}; !slices.Equal(locales, want) {
+		t.Errorf("the installation's languages are %v after the tenant transaction, want %v", locales, want)
+	}
 }
 
 // TestBootstrapRefusesASecondInstallation: the one write with no caller to
 // authorize is safe because it can only ever happen once.
 func TestBootstrapRefusesASecondInstallation(t *testing.T) {
 	_, conn := dbtest.Schema(t, user.Migrations, auth.Migrations)
-	svc := internal.NewService(nil)
+	svc := internal.NewService(nil, nil, "")
 	first := contracts.NewTenant{Slug: "acme", Name: "Acme", Host: "acme.example.com"}
 
 	err := dbtest.System(t.Context(), conn, func(ctx context.Context, tx db.Tx[db.System]) error {

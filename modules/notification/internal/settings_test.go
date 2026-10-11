@@ -357,7 +357,7 @@ func TestAConversationWithTheSenderCommands(t *testing.T) {
 	}
 }
 
-// TestARedeliveredSendWritesOneSentRow is why 000030 exists: the outbox
+// TestARedeliveredSendWritesOneSentRow is why 000056 exists: the outbox
 // redelivers what it did not see acknowledged, and a provider that answered on
 // both attempts must leave one sent row and a worker that can acknowledge.
 func TestARedeliveredSendWritesOneSentRow(t *testing.T) {
