@@ -413,6 +413,16 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 			httpx.SetFieldMediaType[T](read, field.Name, "text/markdown")
 		}
 	}
+	if s.offers(httpx.CRUDUpdate) {
+		var writable []crud.Field
+		for _, field := range schema.Fields {
+			accepted, ok := crud.FieldNamed(schema.Fields, field.Name)
+			if ok && !entity.ServerOwned(accepted) && foldedName(map[string]any{field.Name: nil}, s.Immutable) == "" {
+				writable = append(writable, accepted)
+			}
+		}
+		httpx.SetPatchSchema[T](write, s.item(), writable)
+	}
 }
 
 // ErrStaleTag is a conditional write whose tag the row has passed: the caller read it
