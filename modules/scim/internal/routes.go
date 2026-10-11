@@ -528,8 +528,11 @@ type (
 		ID      uuid.UUID `path:"id" format:"uuid"`
 		IfMatch string    `header:"If-Match" required:"false" doc:"Refused: this service issues no resource version to match, and will not perform a conditional write as an unconditional one"`
 		Body    struct {
-			Schemas    []string              `json:"schemas"`
-			Operations []contracts.Operation `json:"Operations"`
+			// The two members RFC 7644 §3.5.2 gives the document, named as the
+			// specification names them. A request that omits either, or names a
+			// schema this door does not speak, is refused rather than guessed at.
+			Schemas    []string              `json:"schemas" doc:"The URIs of the schemas this request conforms to. RFC 7644 §3.5.2 gives exactly one: urn:ietf:params:scim:api:messages:2.0:PatchOp"`
+			Operations []contracts.Operation `json:"Operations" doc:"The add, replace and remove operations to apply, in the order they are listed"`
 		}
 	}
 
