@@ -170,6 +170,19 @@ const settleUncertainSQL = "UPDATE " + idempotencyTable +
 	" SET settled = true, response = NULL, owner_lease = NULL," +
 	" expires_at = claimed_at + interval '24 hours'"
 
+// settleUnconfirmedSQL is what an unacknowledged COMMIT becomes when no answer could be
+// written beside the mark — the response was larger than maxStorableResponse, or had
+// already reached the wire. The key is kept, as settleUncertainSQL keeps it, and the row
+// says `unconfirmed` rather than admitting it is spent, because the size of a response is
+// not evidence about whether the command ran: the next press with this key still reads the
+// effect marker, and the marker is asked for by the submission that wrote the claim — so
+// this statement writes that id, which no other settle here does. A row settled by
+// settleUncertainSQL instead would refuse the retry of a command the database rolled back
+// for the rest of the key's day, which is the mistake this mechanism exists to avoid.
+const settleUnconfirmedSQL = "UPDATE " + idempotencyTable +
+	" SET settled = true, unconfirmed = true, response = NULL, request_id = ?," +
+	" owner_lease = NULL, expires_at = claimed_at + interval '24 hours'"
+
 // replayHeaders are the response headers a stored answer carries back, beside the
 // status and the body. They are the three a client acts on — htmx follows
 // HX-Redirect, a browser follows Location, and Retry-After is the wait a refusal
@@ -553,12 +566,14 @@ func (a *API) forgetClaim(ctx context.Context, holder *idempotencyHolder) {
 //     next press with this key reads platformkit_command_effect: the mark comes off and
 //     the stored answer is replayed when the marker is there, the command runs under
 //     this key when it is not. Where no answer could be held — it was too big, or was
-//     already on the wire — the row settles as the statement that admits it holds
-//     nothing, the same one settleUncertainSQL writes. Nothing is released here, and
+//     already on the wire — the row keeps that same mark and holds nothing beside it
+//     (settleUnconfirmedSQL), because the ceiling on an answer is not evidence about
+//     whether the command ran: the next press still asks the marker, and either refuses
+//     like every other answer-less row or runs the command. Nothing is released here, and
 //     nothing runs again before the marker is read: this branch is first because it
 //     outranks the two below — the 500 the transaction middleware substitutes for a
 //     commit it could not read is exactly the status that would otherwise delete the
-//     fence. See noteCommitUnacknowledged and resolveUnconfirmed.
+//     fence. See noteCommitUnacknowledged and effectWriteRunning.
 //   - A 5xx, in any form — the handler's own, the 500 the transaction substitutes
 //     when the commit was refused, the 500 a panic recovery wrote — deletes the claim.
 //     A refusal nobody received is not an answer to remember, and a retry of work
@@ -587,9 +602,14 @@ func (a *API) recordIdempotency(ctx context.Context, c idempotencyClaim, status 
 			// replay is promised by this statement either way — the fence holds until the
 			// key's own day is over.
 			if h.answer == nil || len(h.answer.body) > maxStorableResponse {
-				return tx.DB().Exec(settleUncertainSQL+
+				// The mark, without the answer. Storing nothing must not also stop asking:
+				// settleUncertainSQL would say "the answer of a command nobody can answer
+				// for is gone", and this request can still answer for its own command, so the
+				// row stays unconfirmed and names the submission whose COMMIT is in question —
+				// that id is what the marker is looked up by.
+				return tx.DB().Exec(settleUnconfirmedSQL+
 					" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ?",
-					c.tenant, c.actor, c.operation, c.key).Error
+					c.request, c.tenant, c.actor, c.operation, c.key).Error
 			}
 			return storeAnswer(tx, c, true, h.answer.status, h.answer.header, h.answer.body)
 		}
@@ -839,6 +859,24 @@ func (a *API) claimOnce(ctx context.Context, c idempotencyClaim) (idempotencyAns
 				if !locked {
 					continue
 				}
+				// The marker says nothing while a transaction is still writing it: a COMMIT
+				// in flight shows no marker and no work, exactly as a rollback does, and the
+				// claim row's lock does not reach that other transaction — it serializes
+				// presses, not commits. Take the effect's own lock and the silence has a
+				// shape. Held means this command is still landing, and the press that arrived
+				// is refused for a command that is truly still running, this step writing
+				// nothing and freeing nothing; free means that transaction is over, and what
+				// its marker does not say now it can never say. The marker is read in the
+				// statement after this one, so the snapshot it reads from is newer than the
+				// proof, and a COMMIT that landed in the meantime is seen rather than rerun.
+				running, err := effectWriteRunning(tx, c)
+				if err != nil {
+					return err
+				}
+				if running {
+					out = inProgress()
+					return nil
+				}
 				applied, err := commandCommitted(tx, c, h.requestID)
 				if err != nil {
 					return err
@@ -932,6 +970,12 @@ func lockClaim(tx db.Tx[db.System], c idempotencyClaim) (bool, error) {
 // statement about a different submission and cannot settle this one: the key is spent
 // and its caller is told to read the result, which is the smaller of the two faults
 // this package knows how to make.
+//
+// An absent marker is not yet the answer, and the caller asks effectWriteRunning first.
+// A COMMIT that is still executing has written its marker and shows nothing, so reading
+// this row without that question reads "the transaction rolled back" out of a row that is
+// merely not there yet — and a Postgres that takes no gap locks gives no reading of an
+// absent row that waits for the transaction that would have written it.
 func commandCommitted(tx db.Tx[db.System], c idempotencyClaim, request string) (bool, error) {
 	rows, err := tx.DB().Raw("SELECT 1 FROM "+effectTable+
 		" WHERE tenant_id = ? AND actor_id = ? AND operation = ? AND key = ? AND request_id = ?",
@@ -941,6 +985,54 @@ func commandCommitted(tx db.Tx[db.System], c idempotencyClaim, request string) (
 	}
 	defer rows.Close()
 	return rows.Next(), rows.Err()
+}
+
+// effectLockTakeSQL and effectLockTrySQL are the two ends of one advisory lock, named
+// after the effect row it guards: the transaction that writes that row takes it before it
+// writes, and the press that would read the row's absence tries for it first. The lock is
+// what turns marker absence into evidence.
+//
+// A COMMIT still executing holds the lock taken inside it: Postgres releases a
+// transaction-level advisory lock at the end of the transaction, after the commit record
+// is written and after that commit became visible to a new snapshot — the same ordering
+// this repository relies on everywhere else it serializes with an advisory lock (see
+// modules/user's administrationLock). So the press that gets the lock is looking at a
+// database the write has either reached or not. It is the only thing that can say so: the
+// marker is a row Postgres takes no gap locks over, so no reading of an absent row — not
+// even a locking one — waits for the transaction that would have put it there.
+//
+// hashtextextended over 64 bits, as modules/user's lock does: two unrelated claims
+// colliding in that space cost one refusal that one more press clears, never a second run
+// of a command.
+const (
+	effectLockTakeSQL = "SELECT pg_advisory_xact_lock(hashtextextended(?, 0))"
+	effectLockTrySQL  = "SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0))"
+)
+
+// effectLockTarget is the identity the lock is named after: the same four columns the
+// effect row and the claim row are keyed on, so one submission's write and another
+// submission's reading of its absence are the two ends of one lock.
+func effectLockTarget(c idempotencyClaim) string {
+	return strings.Join([]string{
+		"command-effect/", c.tenant.String(), "/", c.actor.String(), "/", c.operation, "/", c.key,
+	}, "")
+}
+
+// effectWriteRunning asks whether a transaction is still writing this key's effect. It
+// takes the lock when nobody holds it, and the caller reads the marker afterwards in a
+// statement of its own, so the snapshot that answer is read from is newer than the proof.
+//
+// Held means a COMMIT of this command is executing somewhere: the press that arrived is
+// told the one thing that is true — another request with this key is still running — and
+// this step writes nothing, settles nothing and frees nothing. Not held means the
+// transaction that could write the marker has ended, so its absence now says the work is
+// not in the database rather than saying nothing at all.
+func effectWriteRunning(tx db.Tx[db.System], c idempotencyClaim) (bool, error) {
+	mine := false
+	if err := tx.DB().Raw(effectLockTrySQL, effectLockTarget(c)).Row().Scan(&mine); err != nil {
+		return false, err
+	}
+	return !mine, nil
 }
 
 // rerunClaimSQL is the one statement in this package that gives a claim back to the
@@ -959,10 +1051,16 @@ const rerunClaimSQL = "UPDATE " + idempotencyTable +
 // marker as part of itself, when the transaction is on its way to a COMMIT.
 //
 // The marker has to be inside the transaction to be worth anything: written after the
-// commit it would be written by the request that can fail at that step — the exact
-// fault review 7 measured — and written before a rollback it would stand over work the
-// database refused. Inside, it commits with the effect and rolls back with it, which is
-// the whole of what makes an unanswered COMMIT answerable afterwards.
+// commit it would be written by the very request that can fail at that step — the store
+// can take the domain rows and refuse the answer written beside them — and written before
+// a rollback it would stand over work the database refused. Inside, it commits with the
+// effect and rolls back with it, which is the whole of what makes an unanswered COMMIT
+// answerable afterwards.
+//
+// The lock is taken first, and it is the half that makes the marker answerable rather
+// than merely present: anyone who would read this key's absence has to take the lock, and
+// this transaction holds it from here until it ends — COMMIT and the deferred triggers it
+// fires included. See effectLockTakeSQL.
 //
 // Nothing about the command is in the row: the marker's use is its existence and the
 // request it names, so one statement writes both and an ON CONFLICT writes them again
@@ -980,6 +1078,9 @@ func markCommandEffect(ctx context.Context, p *db.Pending, keep bool) error {
 		return nil
 	}
 	c := *h.claim
+	if err := tx.DB().Exec(effectLockTakeSQL, effectLockTarget(c)).Error; err != nil {
+		return err
+	}
 	return tx.DB().Exec("INSERT INTO "+effectTable+
 		" (tenant_id, actor_id, operation, key, request_id) VALUES (?, ?, ?, ?, ?)"+
 		" ON CONFLICT (tenant_id, actor_id, operation, key)"+

@@ -88,10 +88,15 @@ commit and can itself fail, and a key freed on the age of a marker is permission
 same submission to commit twice. An unanswered COMMIT is the same uncertainty with a name
 attached — `db.ErrCommitUnacknowledged` — and it resolves rather than staying spent: the
 command's own transaction writes a marker into `platformkit_command_effect`
-(`migrations/000045`) beside whatever else it wrote, and the next press with that key
-answers from the stored response when the marker is there and runs the command when it
-is not, since a marker inside a transaction is in the database exactly when that
-transaction's work is. The rows are `platformkit_idempotency` (`migrations/000044`), keyed
+(`migrations/000045`) beside whatever else it wrote, under an advisory lock named after
+that marker row which it holds until it ends, and the next press with that key answers
+from the stored response when the marker is there and runs the command when it is not,
+since a marker inside a transaction is in the database exactly when that transaction's
+work is — and never while the lock says that work is still landing, which is the one
+moment when an absent marker means nothing. An answer too large to keep leaves the mark
+without an answer beside it rather than settling the key: the size of a response is no
+evidence about the command behind it. The rows are `platformkit_idempotency`
+(`migrations/000044`), keyed
 by tenant, caller, operation and key under forced row-level security that no tenant
 transaction can read through, held for a day — a settled answer past that day is a fresh
 command on the request that asks — and emptied by the `idempotency-purge` job, which

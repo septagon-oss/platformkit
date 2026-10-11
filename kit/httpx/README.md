@@ -211,10 +211,24 @@ absent, so the claim keeps its key for the rest of the day it was written for, h
 the answer the handler wrote beside a mark that says the answer is held and not owed.
 The next press with that key resolves the mark rather than guessing at it: every keyed
 command writes a marker row into `platformkit_command_effect` inside its own transaction
-(`markCommandEffect`, migration `000045`), so the marker is in the database exactly when
-the command's effect is, and the press reads it — present, the stored answer is the
-answer to that commit and replays; absent, the transaction is not in the database and
-that press runs the command. A COMMIT the database answered with an error — a
+(`markCommandEffect`, migration `000045`) and takes an advisory lock named after that
+row before it writes, so the marker is in the database exactly when the command's effect
+is, and the press reads the marker only after it has taken that same lock. A COMMIT
+still executing holds the lock and shows no marker yet, so the press that finds the lock
+held is told 409 `IDEMPOTENCY_IN_PROGRESS` with a `Retry-After` — another submission of
+this key really is still landing — and the press that gets the lock reads a database the
+write has either reached or not: present, the stored answer is the answer to that commit
+and replays; absent, the transaction ended without it and that press runs the command.
+Reading the marker without the lock would read a rollback out of a COMMIT still in
+flight, which is the double apply this table exists to prevent, and no locking read of
+the absent row could wait for it instead: Postgres takes no gap locks.
+
+When no answer could be held beside the mark — the response was larger than 64 KiB, or
+had already reached the wire — the row keeps the mark and holds nothing
+(`settleUnconfirmedSQL`), because the size of a response says nothing about whether the
+command ran. That press then reads the marker like any other: a marker there and it is
+refused the way every row whose answer is gone is refused; no marker and it runs the
+command. A COMMIT the database answered with an error — a
 deferred constraint — is still a rollback, and its retry still runs. A deadline that
 expires while the answer is on its way is the same silence wearing the caller's shape,
 not the hang-up above: only `sql.ErrTxDone` proves the COMMIT never left this process,

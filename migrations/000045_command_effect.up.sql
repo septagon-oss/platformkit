@@ -14,7 +14,12 @@
 -- So the next request that arrives with that key asks this table rather than
 -- guessing: a marker here means the command ran and the answer the claim holds is
 -- the answer to it; no marker means the transaction that wrote the claim is not in
--- the database, and the identical retry may run.
+-- the database, and the identical retry may run. That reading needs the marker's
+-- lock, which the writing transaction takes before this row and keeps until it
+-- ends: a COMMIT still executing shows neither marker nor work, and Postgres takes
+-- no gap locks, so no read of this table's absence could wait for the transaction
+-- that would have written a row. Absence is evidence only across that lock — see
+-- effectLockTakeSQL and effectWriteRunning in kit/httpx/idempotency.go.
 --
 -- The row names its tenant, its caller and its route for the same reason the claim
 -- does — one key must not speak for two customers or two accounts — and its policy
@@ -60,12 +65,14 @@ CREATE POLICY platformkit_command_effect_tenant ON platformkit_command_effect
 
 COMMENT ON TABLE platformkit_command_effect IS 'platformkit: one row per keyed command whose transaction committed, written inside that transaction by kit/httpx; its existence is the whole of what it says';
 
--- The claim's side of the same arrangement: the answer below is held against a
+-- The claim's side of the same arrangement: whatever is below is held against a
 -- COMMIT nobody read, and is owed to nobody until the marker above says which way
--- that COMMIT went. NULL DEFAULT false keeps every row an installation already has:
+-- that COMMIT went — and when nothing could be kept below, this mark alone is what
+-- keeps the key resolvable, because the size of a response is no evidence about the
+-- command behind it. NULL DEFAULT false keeps every row an installation already has:
 -- a row written before this file settled an answer the kernel saw land, and there
 -- is nothing to resolve about it.
 ALTER TABLE platformkit_idempotency
 	ADD COLUMN unconfirmed boolean NOT NULL DEFAULT false;
 
-COMMENT ON COLUMN platformkit_idempotency.unconfirmed IS 'platformkit: the response below was written by a request whose COMMIT was never acknowledged; the answer is held, not owed, until platformkit_command_effect says whether that commit landed. kit/httpx/idempotency.go resolves it on the next press with the same key.';
+COMMENT ON COLUMN platformkit_idempotency.unconfirmed IS 'platformkit: this row was written by a request whose COMMIT was never acknowledged, so whatever is below it is held and not owed until platformkit_command_effect says whether that commit landed; when nothing could be kept below it, this mark alone is what leaves the key resolvable. kit/httpx/idempotency.go resolves it on the next press with the same key.';
