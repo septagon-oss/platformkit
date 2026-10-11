@@ -71,7 +71,7 @@ type Deps struct {
 //
 // The application passes this service to host resolution, periodic jobs and
 // consumers before constructing their modules.
-func Module(deps Deps) (contracts.Service, module.Module) {
+func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService(deps.OnCreate, deps.Languages, deps.App)
 	return svc, module.Module{
 		Name:        "tenant",
@@ -88,6 +88,8 @@ func Module(deps Deps) (contracts.Service, module.Module) {
 			events.Declare[contracts.LifecycleRecorded](contracts.EventLifecycleRecorded),
 			events.Declare[contracts.OIDCSet](contracts.EventOIDCSet),
 			events.Declare[contracts.OIDCCleared](contracts.EventOIDCCleared),
+			events.Declare[contracts.SAMLSet](contracts.EventSAMLSet),
+			events.Declare[contracts.SAMLCleared](contracts.EventSAMLCleared),
 		},
 		// The invitation route publishes user.invited, which the user module
 		// declares and the auth module subscribes to. It is not listed above

@@ -1,0 +1,89 @@
+{
+  "schema": "platformkit.composition.v1",
+  "app": "collect",
+  "environment": "development",
+  "resolved": true,
+  "modules": [
+    {
+      "name": "user",
+      "provides": [
+        "usercontracts.Service"
+      ]
+    },
+    {
+      "name": "shop",
+      "contributes": [
+        {
+          "contract": "homepagecontracts.Landing",
+          "to": [
+            "homepage"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "wishlist",
+      "needs": [
+        {
+          "contract": "usercontracts.Service",
+          "from": "user"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "paymentcontracts.Provider",
+          "from": ""
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "cartcontracts.Extension",
+          "to": [
+            "cart"
+          ]
+        }
+      ],
+      "after": [
+        "user"
+      ]
+    },
+    {
+      "name": "homepage",
+      "needs": [
+        {
+          "contract": "homepagecontracts.Landing",
+          "from": "shop"
+        }
+      ],
+      "after": [
+        "shop"
+      ]
+    },
+    {
+      "name": "cart",
+      "provides": [
+        "cartcontracts.Service"
+      ],
+      "takes": [
+        {
+          "contract": "cartcontracts.Extension",
+          "from": [
+            "wishlist"
+          ]
+        }
+      ],
+      "after": [
+        "wishlist"
+      ]
+    }
+  ],
+  "roles": [
+    {
+      "name": "member",
+      "grants": [
+        "task.read"
+      ]
+    }
+  ],
+  "problems": []
+}

@@ -79,7 +79,7 @@ func mounted(t *testing.T) (*httpx.API, chi.Router) {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, mounted := billing.Module(billing.Deps{Payments: billing.Manual()})
+	_, mounted := billing.New(billing.Deps{Payments: billing.Manual()})
 	mounted.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -216,7 +216,7 @@ func TestAModuleWithNoPaymentProviderDoesNotCompose(t *testing.T) {
 			t.Errorf("Module with no provider panicked with %v; it names the one to wire", r)
 		}
 	}()
-	_, mounted := billing.Module(billing.Deps{})
+	_, mounted := billing.New(billing.Deps{})
 	_ = mounted
 }
 

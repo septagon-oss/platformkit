@@ -127,7 +127,7 @@ func TestThePseudoLocaleGate(t *testing.T) {
 	start(t, cfg, c.modules, options)
 
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
-	seeds := seed(t, cfg, admin)
+	seeds := seedRecords(t, cfg, admin)
 
 	measured := map[string]coverage{}
 	var skips, unreachable, declined []string
@@ -567,10 +567,10 @@ func count(collected []legible.String) coverage {
 	return coverage{Wrapped: wrapped, Readable: wrapped + len(legible.Violations(collected))}
 }
 
-// seed creates the rows the record screens need: one per resource that has a record
+// seedRecords creates the rows the record screens need: one per resource that has a record
 // screen, plus one published page for the site's `/{slug}`. It writes through the
 // same doors a person does, before the walk, and nothing after it.
-func seed(t *testing.T, cfg config.Config, admin *http.Client) seeds {
+func seedRecords(t *testing.T, cfg config.Config, admin *http.Client) seeds {
 	t.Helper()
 	out := seeds{ids: map[string]string{}}
 	created := func(path, body string) string {

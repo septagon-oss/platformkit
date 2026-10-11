@@ -92,7 +92,7 @@ func mountedOn(t *testing.T, hosts map[string]tenancy.Tenant) (chi.Router, *sql.
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, m := file.Module(file.Deps{Storage: file.Local(t.TempDir()), MaxBytes: filetest.Limit})
+	_, m := file.New(file.Deps{Storage: file.Local(t.TempDir()), MaxBytes: filetest.Limit})
 	m.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
@@ -266,14 +266,14 @@ func TestAModuleWithNoStorageDoesNotCompose(t *testing.T) {
 			t.Errorf("Module with no storage panicked with %v; it names the one to wire", r)
 		}
 	}()
-	_, _ = file.Module(file.Deps{})
+	_, _ = file.New(file.Deps{})
 }
 
 // TestTheManifestSubscribesToItsOwnDelete is what makes the bytes go: the
 // module declares file.deleted and handles it, which is the only way work can
 // be scheduled for after a commit.
 func TestTheManifestSubscribesToItsOwnDelete(t *testing.T) {
-	_, m := file.Module(file.Deps{Storage: filetest.NewMemory()})
+	_, m := file.New(file.Deps{Storage: filetest.NewMemory()})
 	if len(m.Subscriptions) != 1 || m.Subscriptions[0].Name != contracts.EventDeleted {
 		t.Fatalf("the manifest subscribes to %v", m.Subscriptions)
 	}

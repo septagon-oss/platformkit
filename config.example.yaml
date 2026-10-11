@@ -52,6 +52,13 @@ database:
   # Migrations connect as the owner, which holds the DDL rights.
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
+  # The role that may expire the audit trail and may not write it: SELECT and DELETE
+  # on audit_events, SELECT and INSERT on audit_retention_marks, and never SUPERUSER
+  # or BYPASSRLS, or kit/db refuses the connection. Empty means the trail never
+  # expires, and the audit-retention job says so at its first tick rather than
+  # deleting nothing. audit.retention_days below 365 is refused at boot.
+  retain_url: ""
+
   # Per-process pool limits; omitted values retain 16 open, 4 idle, 30m.
   # Account for every replica. All app roles require at least two connections:
   # HTTP detached transactions and job advisory locks need a second connection.
@@ -213,6 +220,16 @@ audit:
 bootstrap:
   password: ""
 
+# The password the demonstration people sign in with, read by the seed alone.
+# Empty means this installation offers no demo sign-in: the demo people are still
+# invited and given their roles, and the file's signIn record is neither asked for
+# nor compared. The password itself belongs in no seed file — nothing under
+# apps/platformkit/seed holds a secret, and the loader refuses a field named for
+# one — and belongs here the way every other secret does: in
+# PLATFORMKIT_DEMO_PASSWORD rather than in this file.
+demo:
+  password: ""
+
 # Where uploaded bytes go, how large one upload may be, and how much disk one
 # tenant may fill. They are the three things modules/file cannot decide for
 # itself: a directory is a deployment's disk, and both limits are how much of it
@@ -227,6 +244,11 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # The largest frame an uploaded image is decoded into: a file whose header
+  # claims more pixels is refused with the reason rather than allocated, which
+  # is the decompression bomb. It bounds a decode and not an upload — max_bytes
+  # is that — and zero means the module's own forty megapixels.
+  max_image_pixels: 40000000
   # How long each retention class lives, keyed by the `kind` an upload carried.
   # A kind this table does not name is never deleted, only logged, so the empty
   # table below keeps everything and is the safe default for an example. A

@@ -104,6 +104,7 @@ function restorePropertyHistory(ctx, state) {
 
 function refreshPropertyLayout(ctx, target) {
   if (target?.field !== "TEXT") return;
+  if (ownSourceLayoutRecord(target.node)?.textWrap && !target.node.text) throw new Error("Intrinsic source text requires actual measurement");
   ctx.withoutComponentSync(() => {
     if (target.node.layoutPositioning === "ABSOLUTE" && (target.node.textAutoResize === "WIDTH_AND_HEIGHT" ||
         target.node.textAutoResize === "HEIGHT" && ownSourceLayoutScope(target.node) === "source-composition-layout")) {
@@ -161,7 +162,7 @@ export function correctEditorCreation(source, replace) {
 export function correctPropertyActions(source, replaceOnce) {
   const helper = fileURLToPath(new URL('./layout-correction.mjs', import.meta.url))
   const sync = fileURLToPath(new URL('./sync-correction.mjs', import.meta.url))
-  source = `import { ownSourceLayoutScope } from ${JSON.stringify(helper)};\n` +
+  source = `import { ownSourceLayoutScope, ownSourceLayoutRecord } from ${JSON.stringify(helper)};\n` +
     `import { applyNativeSync } from ${JSON.stringify(sync)};\n` +
     'import { SceneGraph } from "@open-pencil/scene-graph";\n' +
     'import { isEqual } from "es-toolkit";\n' +

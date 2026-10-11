@@ -13,19 +13,32 @@ const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
+// The first three lines are the tenant's first day: `platformkit bootstrap` created
+// the tenant through the tenant module, whose creation hook applied the starter seed
+// (apps/platformkit/seed/starter), so the visitor lands on a page and not on an
+// apology. The empty state this case used to assert is still what a site with a home
+// slug that names nothing published shows — modules/web's own
+// TestSiteRefusesWhatItCannotServe covers those words — but it is no longer what a
+// new installation shows.
+test('a new tenant opens on its starter home, and a published page takes its place', async ({ page, browser }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
+
   // The site's way into the workspace is the workspace root, and nothing deeper:
-  // a public page may name /app and no screen behind it (TestLocalizedCompositionKeepsSurfaceBoundaries
-  // reads the published frame's own hrefs). An anonymous browser that asks /app is taken
-  // to the door with the root remembered as `next` — surfaces.spec.ts holds that redirect
-  // — so the person who follows this link arrives at the same form as ever, one hop
-  // through the address the public page is allowed to print.
+  // a public page may name /app and no screen behind it (webcontracts.Links.SignIn,
+  // pinned by TestThePublicFrameLinksOnlyTheWorkspaceRoot, and
+  // TestLocalizedCompositionKeepsSurfaceBoundaries reads the published frame's own
+  // hrefs). The journey follows the link the page actually printed rather than
+  // typing the address: a bar that moved its door would fail here and not in a
+  // module's fixture. An anonymous browser that arrives at the root is taken to the
+  // form with the root remembered as `next`, so the person who follows this link
+  // lands on the same form, one hop through the address a public page may print.
   const signInLink = page.getByRole('link', { name: 'Sign in to the admin' });
   await expect(signInLink).toHaveAttribute('href', '/app');
-
   await signInLink.click();
+  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await expect(page.locator('[data-login-form]')).toBeVisible();
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);

@@ -23,7 +23,7 @@ func TestRichTextFilesConformAcrossTwoTenants(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	a := tenancy.Tenant{ID: uuid.New(), Slug: "a"}
 	b := tenancy.Tenant{ID: uuid.New(), Slug: "b"}
-	service, _ := file.Module(file.Deps{Storage: file.Local(t.TempDir())})
+	service, _ := file.New(file.Deps{Storage: file.Local(t.TempDir())})
 	var pngBytes bytes.Buffer
 	if err := pngimage.Encode(&pngBytes, image.NewRGBA(image.Rect(0, 0, 2, 3))); err != nil {
 		t.Fatal(err)

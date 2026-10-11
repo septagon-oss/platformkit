@@ -453,11 +453,14 @@ func TestComposeKeepsConsumerRulesAfterSharedUtilities(t *testing.T) {
 func TestGalleryIsTheDifference(t *testing.T) {
 	t.Parallel()
 	app, gallery := string(ui.Compose(design.Default()).Body), string(ui.Gallery().Body)
-	if !strings.Contains(gallery, ".animate-pulse {") {
-		t.Fatal("the skeleton's rule is not in gallery.css")
+	if !strings.Contains(app, ".animate-pulse {") || !strings.Contains(app, ".p-12 {") {
+		t.Fatal("generated DataList loading/empty rules are absent from app.css")
 	}
-	if strings.Contains(app, ".animate-pulse {") {
-		t.Fatal("the skeleton's rule is in app.css, which no ordinary page needs")
+	if strings.Contains(gallery, ".animate-pulse {") || strings.Contains(gallery, ".p-12 {") {
+		t.Fatal("gallery.css repeats DataList state rules already in app.css")
+	}
+	if !strings.Contains(gallery, `.max-h-\[85vh\] {`) || strings.Contains(app, `.max-h-\[85vh\] {`) {
+		t.Fatal("the gallery-only modal height must stay in gallery.css alone")
 	}
 	if strings.Contains(gallery, "--pk-color-surface-primary:") {
 		t.Fatal("gallery.css repeats the tokens")
@@ -511,8 +514,18 @@ func TestAssetsServeSheetsControllersAndOverlays(t *testing.T) {
 
 func TestThereAreFewControllers(t *testing.T) {
 	t.Parallel()
-	if len(ui.Controllers) > 8 {
-		t.Fatalf("there are %d browser controllers; the budget is 8", len(ui.Controllers))
+	// Nine, and the number is stated rather than discovered. Every entry here is
+	// a script each page downloads, which is what this ceiling exists to keep
+	// small. The base this branch and main both forked from shipped seven under
+	// this ceiling of eight, and two deliveries each spent that last slot: main
+	// on specialists.js, which registers the shared component families, this one
+	// on passkeys.js, which runs the two WebAuthn ceremonies. The merge is where
+	// they meet, so the merge is where the count is decided, and the decision is
+	// nine rather than a folding of one into the other: one script talks to an
+	// authenticator, the other defines custom elements, and neither is sign-in
+	// state (session.js) or component behaviour (components.js).
+	if len(ui.Controllers) > 9 {
+		t.Fatalf("there are %d browser controllers; the budget is 9", len(ui.Controllers))
 	}
 	for _, name := range ui.Controllers {
 		if !strings.HasSuffix(name, ".js") {

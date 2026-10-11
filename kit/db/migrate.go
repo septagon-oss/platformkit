@@ -641,8 +641,10 @@ func partnerFile(files []migration, version int64) string {
 	return fmt.Sprintf("version %d", version)
 }
 
-// compositionLockKey is the advisory lock one migration run holds for its whole
-// composition, so that two replicas do not apply the same file at once.
+// compositionLockKey is the first half of the advisory lock one migration run holds for
+// its whole composition, so that two replicas do not apply the same file at once. The
+// second half is the namespace the run resolves to: see holdCompositionLock, which says
+// why the key is one namespace's and not one database's.
 const compositionLockKey = 7240101
 
 // runner is one pinned connection and the budgets in force for one run. Every file and
@@ -654,7 +656,8 @@ const compositionLockKey = 7240101
 type runner struct {
 	conn   *sql.Conn
 	budget MigrationBudget
-	locked bool // whether this session holds compositionLockKey right now
+	locked bool  // whether this session holds the composition lock right now
+	schema int64 // the namespace the lock was taken under, read once: see compositionSchema
 }
 
 // holdCompositionLock takes the composition's advisory lock for this session.
@@ -677,16 +680,65 @@ type runner struct {
 // that second call the lock budget has already come off for the statement above it, so
 // what that call still takes off is the statement budget, which bounds a wait for a
 // lock as surely as it bounds the work done inside one.
+//
+// Which lock, and why it is the namespace's. The key is (compositionLockKey, the OID of
+// current_schema()) — the namespace this run's `schema_migrations` lands in and the one
+// every table its files create lands in. That is the smallest scope that still holds the
+// promise ADR 0005 makes: two sessions can apply one file twice only if they write one
+// ledger, and one ledger belongs to one namespace. Two replicas of one installation reach
+// the same namespace through the same URL, so they still queue; two installations that
+// share a database but not a namespace own nothing in common to queue about — each has
+// its own ledger, its own history and its own rows, and Declaration is how a run says
+// which app it is beside saying which hosts it serves.
+//
+// Sharing one database is a normal shape for a deployment of several apps, and it is the
+// shape a test suite of many packages finds itself in: dbtest gives each test its own
+// schema of one database. A key with no namespace in it put every migration of every one
+// of those schemas behind every other one's — measured during a `make check`, 32 of the 33
+// live backends of this worktree's database parked in `Lock:advisory` at once, an average
+// of 29 of them across the run and a single wait of 55 s, which is how a package whose
+// suite costs 140 s on its own spent ten minutes of Go's package watchdog in a queue that
+// had nothing in it to protect. A session whose path resolves to no namespace
+// (`to_regnamespace` answers NULL) is refused below rather than locked around: it has
+// nowhere to write its history, and `pg_advisory_lock(NULL, …)` answers NULL without
+// taking anything, which would be a run that set out believing it was alone.
 func (r *runner) holdCompositionLock(ctx context.Context) error {
 	if r.locked {
 		return nil
 	}
-	_, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_lock($1)", compositionLockKey)
+	schema, err := r.compositionSchema(ctx)
 	if err != nil {
+		return err
+	}
+	if _, err := r.conn.ExecContext(ctx,
+		"SELECT pg_advisory_lock($1::int, $2::oid::int)", compositionLockKey, schema); err != nil {
 		return fmt.Errorf("db: migrate: lock: %w", r.refused(err))
 	}
 	r.locked = true
 	return nil
+}
+
+// compositionSchema is the namespace the run's own session resolves to, as the OID the
+// lock's second half takes. An OID is unsigned 32-bit, so a namespace created after the
+// cluster's counter passed 2^31 has an OID no int holds: the value is carried as a bigint
+// and the two lock statements wrap it with `::oid::int`, which is how Postgres itself
+// narrows an OID into an int and is the key the suite's own lock lines contend. Read once
+// and kept on the runner: the lock has to be given back under the key it was taken under,
+// whatever the session's path holds by the time it is given back — and a file may set one.
+func (r *runner) compositionSchema(ctx context.Context) (int64, error) {
+	if r.schema != 0 {
+		return r.schema, nil
+	}
+	var schema int64
+	if err := r.conn.QueryRowContext(ctx,
+		"SELECT coalesce(to_regnamespace(current_schema()), 0)::oid::bigint").Scan(&schema); err != nil {
+		return 0, fmt.Errorf("db: migrate: reading the composition's namespace: %w", err)
+	}
+	if schema == 0 {
+		return 0, fmt.Errorf("db: migrate: this session resolves to no schema — current_schema() is NULL — so its history table has nowhere to land and its composition lock has no namespace to name")
+	}
+	r.schema = schema
+	return schema, nil
 }
 
 // releaseCompositionLock gives the lock back, and is quiet about a session that
@@ -695,7 +747,8 @@ func (r *runner) releaseCompositionLock(ctx context.Context) error {
 	if !r.locked {
 		return nil
 	}
-	if _, err := r.conn.ExecContext(ctx, "SELECT pg_advisory_unlock($1)", compositionLockKey); err != nil {
+	if _, err := r.conn.ExecContext(ctx,
+		"SELECT pg_advisory_unlock($1::int, $2::oid::int)", compositionLockKey, r.schema); err != nil {
 		return fmt.Errorf("db: migrate: unlock: %w", err)
 	}
 	r.locked = false

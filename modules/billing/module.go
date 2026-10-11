@@ -105,7 +105,7 @@ var permissions = []module.Permission{
 // notification's modules return their services: the kernel asks this module
 // what a tenant's plan includes, for the operations whose declaration names a
 // feature, and this is where an application is handed something to answer with.
-func Module(deps Deps) (httpx.Entitler, module.Module) {
+func New(deps Deps) (httpx.Entitler, module.Module) {
 	if deps.Payments == nil {
 		// A wiring mistake fails where it is written rather than as a nil
 		// dereference in the worker at two in the morning.

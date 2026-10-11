@@ -69,6 +69,12 @@ type Tenant struct {
 	// would say the same thing on every row of a response and name the deployment to
 	// whoever asked.
 	App string `json:"-"`
+	// Demo says this tenant was created as a walkthrough tenant, so the
+	// application's demo seed records are its own. `platformkit bootstrap` never
+	// sets it and no command writes the column afterwards: the seed refuses a
+	// demo request for a tenant whose row says false, so a request cannot make
+	// itself one — see docs/seed.md.
+	Demo bool `json:"demo"`
 	// Hosts are the names this tenant is served at, the primary one first. They
 	// live in their own table and are loaded with the tenant, because a tenant
 	// without its hosts is a row nobody can reach and an admin screen that
@@ -108,7 +114,7 @@ func (Tenant) TableName() string { return "tenants" }
 // with no languages rather than with a list holding an empty string — the
 // distinction a page reads as "the deployment's own default answers here".
 func (t *Tenant) Tenancy() tenancy.Tenant {
-	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator}
+	kernel := tenancy.Tenant{ID: t.ID, Slug: t.Slug, Name: t.Name, Operator: t.Operator, Demo: t.Demo}
 	if t.DefaultLocale != "" || len(t.Locales) > 0 {
 		kernel.Languages = &tenancy.Languages{Default: t.DefaultLocale, Others: t.Locales}
 	}
@@ -130,6 +136,13 @@ type NewTenant struct {
 	// writer is Bootstrap, which is the one write in the application with no
 	// caller to authorize and can only ever happen once.
 	Operator bool `json:"-"`
+	// Demo says the tenant being created is a walkthrough tenant. Unlike
+	// Operator it is in the body, because the create route is already guarded by
+	// the operator permission and creating a demo tenant is the ordinary way to
+	// get one; the flag names which seed records the tenant may be given, never
+	// who may reach the control plane. It is written here or not at all — see
+	// migrations/000050_tenant_demo.up.sql.
+	Demo bool `json:"demo" required:"false" default:"false"`
 }
 
 // slugPattern is a DNS label: what a slug has to be if it is ever going to be a
@@ -414,6 +427,29 @@ type Service interface {
 	// It answers false, not an error, when this tenant has no provider.
 	OIDCOf(ctx context.Context, tx db.Tx[db.Tenant]) (*OIDCSettings, bool, error)
 
+	// SetSAML says which SAML 2.0 identity provider one tenant's people sign in
+	// against. It refuses the same half-providers SetOIDC refuses — an entity ID
+	// with no metadata, metadata with no entity ID, `provision` with no roles —
+	// naming the field an operator has to fix, and it refuses a metadata document
+	// that carries no signing certificate, because an assertion presented against
+	// that document could never be verified and the moment worth saying so is the
+	// write rather than the first person turned away at the door.
+	//
+	// Writing the same values again changes nothing and publishes nothing.
+	SetSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID, in SAMLSettings) (*Tenant, error)
+
+	// ClearSAML takes a tenant's SAML provider away, leaving its OIDC provider —
+	// if it has one — exactly where it was: the two column families are
+	// independent and neither command touches the other's columns. People already
+	// signed in stay signed in, for the reason ClearOIDC gives.
+	ClearSAML(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
+
+	// SAMLSettingsOf is OIDCOf for the other protocol: the read the SAML legs
+	// make, per request, in the transaction the Host header resolved, answering
+	// false and not an error when this tenant signs in no other way than it
+	// always has. A tenant may answer both reads at once.
+	SAMLSettingsOf(ctx context.Context, tx db.Tx[db.Tenant]) (*SAMLSettings, bool, error)
+
 	// Get is one tenant with its hosts.
 	Get(ctx context.Context, tx db.Tx[db.System], id uuid.UUID) (*Tenant, error)
 
@@ -464,4 +500,20 @@ func (a Active) List(ctx context.Context, tx db.Tx[db.System]) ([]tenancy.Tenant
 		}
 	}
 	return out, nil
+}
+
+// Languages is the set a tenant's locale may be set to: what this installation's
+// copy is written in, read off the catalogues the composition installed.
+//
+// It is a contract and not a Deps field because the composition is the thing
+// that read the files, and the module that refuses a locale has to be told what
+// exists — this module names no tag of its own. A composition that installs no
+// catalogues composes no provider, and then nothing is checked against anything.
+//
+// It is a struct around the tags rather than the slice itself because a slice is
+// the resolver's own spelling of "take every contribution of the element"
+// (pkit.Needs[[]E]): a named []string would be read as a demand for every
+// contributed string, and this is one value holding a list.
+type Languages struct {
+	Tags []string
 }

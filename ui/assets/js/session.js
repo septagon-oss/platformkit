@@ -111,6 +111,15 @@
           return;
         }
         const problem = await response.json().catch(() => ({}));
+        // The refusal is this form's business only insofar as the form has to say
+        // it out loud. What the refusal names — a type, a status — may be answered
+        // by a control elsewhere on the page, so the page is told in the words the
+        // server used rather than in a paraphrase this file would have to keep
+        // up to date: the problem document is passed through unchanged, and this
+        // controller decides nothing about what any listener does with it.
+        form.dispatchEvent(new CustomEvent("auth-refused", {
+          bubbles: true, detail: { kind, status: response.status, problem },
+        }));
         announce(error, typeof problem?.detail === "string" && problem.detail.trim() ? problem.detail : "The request could not be completed. Please try again.");
       } catch {
         // A lost response does not establish whether a write committed. Never

@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"golang.org/x/text/currency"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -127,6 +128,22 @@ type Plan struct {
 	// true on either and {"active": false} stores an active plan. The
 	// alternative is a *bool in every use of the field to fix one write.
 	Active bool `json:"active" gorm:"not null" ui:"widget:checkbox" doc:"Whether this plan accepts new subscriptions" example:"true"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// billing.plan.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (p *Plan) SetChanges(changes []events.Change) {
+	p.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000016 agree.
