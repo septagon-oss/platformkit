@@ -21,6 +21,12 @@ const (
 	EventRolesSet    = "user.roles_set"
 	EventHandleSet   = "user.handle_set"
 	EventDeactivated = "user.deactivated"
+	// EventAdministrationRefused is a write this module refused because it would
+	// have left the tenant with nobody who can sign in and administer it. It is
+	// the record of an attempt that did not happen, which is the only reason it
+	// exists: the write it describes was rolled back, so nothing else about the
+	// attempt is written down anywhere. See AdministrationRefused and internal.floor.
+	EventAdministrationRefused = "user.administration_refused"
 )
 
 // Invited is the payload of EventInvited: a user account now exists in this
@@ -81,4 +87,29 @@ type HandleSet struct {
 type Deactivated struct {
 	UserID uuid.UUID `json:"userId"`
 	At     time.Time `json:"at"`
+}
+
+// AdministrationRefused is the payload of EventAdministrationRefused: somebody
+// tried to take the last way a tenant has of administering itself away, and the
+// write was refused.
+//
+// It names the person and the door, not the caller: actor, request id, client
+// address and trace context ride on every outbox row already (kit/events), and
+// modules/audit copies them into the trail, so repeating them here would be a
+// second, drift-prone copy of facts the row already carries. The address is not
+// here either — userId is the key every foreign key, subject and audit row
+// already uses, and a trail reader can read the address from it. auth.login_failed
+// carries an address only because a failed login has no user id to name.
+//
+// Roles are the person's roles that grant a tenant the ability to administer
+// itself — the grant this write would have taken away. Nothing else is carried:
+// the whole refusal is about those names, and the state that would have followed
+// is one the refused write never created, so there is no "after" to report.
+type AdministrationRefused struct {
+	UserID uuid.UUID `json:"userId"`
+	// Attempt is which door refused: "roles" (Service.SetRoles), "status"
+	// (Service.Deactivate) or "delete" (the delete route's hook).
+	Attempt string    `json:"attempt" enums:"roles,status,delete" example:"roles"`
+	Roles   []string  `json:"roles"`
+	At      time.Time `json:"at"`
 }
