@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+**A change to somebody else's row is proposed, decided and applied through four
+commands.** `modules/change` holds a proposal over another account's row: the
+ digest of the bytes a verdict was made about, the state machine that makes a
+`decision one-way` (`proposed → approved → applied`, `proposed → declined`,
+`proposed|approved → withdrawn`, one outbox event per transition), the actor rule
+that an author can neither decide nor apply their own change, and an apply that
+writes once at the revision it was reviewed at or not at all.
+`change-proposal-propose`, `-review`, `-apply` and `-withdraw` are its only writes,
+under `change:read`, `change:propose` and `change:decide`, and
+`modules/change/migrations/000038_change.up.sql` (owner `change`) keeps the rows
+under forced row-level security with a partial unique index over tenant, subject
+and diff digest — which is what makes a second submit of the same diff the same
+proposal rather than a race. Which writes need it is not the module's fact: it
+reads one switch a composition hands it and declares no `rest.Spec`, catalog
+resource or job. The reference application puts two subjects behind that switch, a
+task and a site's settings row, with a review queue and a proposal page whose
+refusals speak `modules/change/messages/pt-PT.json`.
+
+**A row's write count belongs to the server.** `kit/entity` names it and `kit/rest`
+refuses a body that writes it, a conditional write whose quoted revision is stale
+(`If-Match` on the API, the form's own revision condition on the generated screen)
+and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
+gives the task one. Nothing the server owns is drawn as a control, so no form asks a
+person to type a number that would move the row to it.
+
 **The kernel publishes its journey steps.** `e2e/steps/kernel.ts` and `e2e/steps/public.ts` ship
 in this module, so the version a consumer pins that resolves `kit/rest` and `ui/page` carries the
 steps of the kernel's own acts — the sign-in door, the way out, the workspace, the generated
