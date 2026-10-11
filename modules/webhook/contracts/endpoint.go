@@ -132,7 +132,25 @@ type Endpoint struct {
 	// disablement notice addresses, and it is stamped by the create's own
 	// actor rather than sent by the caller.
 	CreatedBy uuid.UUID `json:"createdBy" gorm:"column:created_by;type:uuid;not null" required:"false" readOnly:"true" doc:"The user who registered this endpoint" format:"uuid"`
+
+	// Changes is what the save that published this payload moved. It is the
+	// trail's field and not the entity's: the kernel's own write door fills it
+	// from the row that write made, just before it publishes
+	// webhook.endpoint.updated, and clears it before the response is written —
+	// and this module's `target` command fills it by hand, because a destination
+	// change is a command rather than a PATCH and the door that would have
+	// diffed it never runs. It is no column, no form field, no filter and no
+	// REST property (`gorm:"-"` drops it from the table, `hidden:"true"` drops
+	// it from the document), so the one place it exists is the event that says
+	// the save happened: which is where "where did this endpoint's events go, and
+	// when did they start going somewhere else" has to still be readable in a
+	// year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
 }
+
+// SetChanges is events.Recorder: it lets the door that made the write report what
+// it replaced, in the event that says the write happened. See Changes.
+func (e *Endpoint) SetChanges(changes []events.Change) { e.Changes = changes }
 
 // TableName pins the table, so the entity and migrations/000044 agree.
 func (Endpoint) TableName() string { return "webhook_endpoints" }

@@ -206,7 +206,25 @@ func (s *Service) Target(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	if err := crud.Update(ctx, tx, endpoint, "url", "events", "updated_at"); err != nil {
 		return nil, err
 	}
-	return endpoint, events.Publish(ctx, tx, contracts.EventEndpointUpdated, endpoint)
+	// What the save moved, in the event that says the save happened. The kernel's
+	// CRUD door diffs the row it wrote for an entity that carries a changes member;
+	// this is a command and not a PATCH, so the diff is made here over the two
+	// fields this command owns, after the UPDATE and before the publish, and
+	// cleared on the way out because the response is the row and the diff belongs
+	// to the event. A diff that cannot be computed fails the command: the
+	// transaction rolls back with the UPDATE in it, and an endpoint whose
+	// destination moved without a trail row saying what moved is the half-fact the
+	// trail exists to prevent.
+	changes, err := events.ChangesOf(&before, endpoint, "url", "events")
+	if err != nil {
+		return nil, fmt.Errorf("webhook: describe the destination change of %s: %w", id, err)
+	}
+	endpoint.SetChanges(changes)
+	if err := events.Publish(ctx, tx, contracts.EventEndpointUpdated, endpoint); err != nil {
+		return nil, err
+	}
+	endpoint.SetChanges(nil)
+	return endpoint, nil
 }
 
 // Enable takes a disabled endpoint back and starts the fault clock again. It
