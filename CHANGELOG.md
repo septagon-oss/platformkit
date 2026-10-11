@@ -17,7 +17,7 @@ naming the operation
 and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
 `kind=any_credential`) covers no feature it does not spell on both sides. A pair written
 against a declaration with no feature keeps matching exactly what it matched, which is why
-112 of the reference document's 114 declarations are untouched and its golden is not
+113 of the reference document's 115 declarations are untouched and its golden is not
 regenerated. Enforcement is unchanged, so this is a gate that stopped missing a change, not
 a door that started refusing a request.
 

@@ -388,8 +388,8 @@ func TestTheWireGateRefusesEachRuleOnTheRealDocument(t *testing.T) {
 		}},
 		{"the whole document re-rendered with its keys in another order", nil, func(t *testing.T, doc map[string]any) {
 			// Nothing is done to it: rendering the parsed golden again writes every object's
-			// keys in sorted order, so the bytes move and no declaration does. The 114 doors
-			// this document publishes are the 114 the golden publishes, and the identity that
+			// keys in sorted order, so the bytes move and no declaration does. The 115 doors
+			// this document publishes are the 115 the golden publishes, and the identity that
 			// now reads a plan feature out of them reads it from both sides the same way.
 		}},
 	} {
