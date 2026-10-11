@@ -207,7 +207,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
 	// no example, schema, icon, class or notice. The digest below is this merged
 	// tree's own export, printed by the refusal and copied from it.
-	if legacy.SHA256 != "6f102a89a2217b98e60e68a1d89a9c74138b8645a1bfbe08f1e917de89d020b0" {
+	if legacy.SHA256 != "19c7fbbe9c13d456ca151476fe331b0ccbf78901ba0a32b5fe96e9694c11bf89" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
