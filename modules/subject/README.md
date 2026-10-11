@@ -148,6 +148,20 @@ control-plane door over eight modules' rows at once. Nothing in this module is m
 through the file module's own retention rules — which is why the hold travels with the
 link and is placed by this module rather than assumed.
 
+### What a bundle is behind
+
+The zip is stored through the file module and sealed: the file module's own list and read
+show the row, its content routes and its presigned URL refuse it. `file:read` is the
+tenant's ordinary file reader and the export is one person's answer, so the only door that
+streams those bytes is `GET /api/v1/public/subject/bundles/{token}`, whose caller spent a
+single-use token this module minted. A bundle reachable at `/api/v1/file/files/{id}/content`
+would be a copy of a person's rows handed to every holder of a broad read key, which is what
+this module's expiry and one-use promises exist to prevent.
+
+Both commands also ask their grant inside their own transaction (`internal.ceiling`): a
+module that composes `subjectcontracts.Service` gets the same refusal the routes give, and a
+person's own copy still asks none.
+
 ### Provisioning
 
 Two permissions, one role, one migration (owner `subject`, version 46, the next number
@@ -159,6 +173,10 @@ that revocation is the product's, not this module's.
 
 ## Limits
 
+* **A sealed bundle's record is still listed.** `file:read` cannot download a bundle, but it
+  can list the row and read its name, size and digest — the file module's list is one
+  generic `crud.List` and hiding a class of row from it is the file module's own decision,
+  not one to be taken from here. What is refused is the bytes.
 * **The bundle's ceiling is not implemented.** ADR 0020 §5 sets `MaxBundleBytes` at 64 MiB
   and says that below it a file's *bytes* are attached to the bundle, and above it the
   manifest names each file whose bytes it left out. Today the file module's part carries
