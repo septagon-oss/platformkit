@@ -515,18 +515,18 @@ func TestAssetsServeSheetsControllersAndOverlays(t *testing.T) {
 
 func TestThereAreFewControllers(t *testing.T) {
 	t.Parallel()
-	// Nine, and the number is stated rather than discovered. Every entry here is
-	// a script each page downloads, which is what this ceiling exists to keep
-	// small. The base this branch and main both forked from shipped seven under
-	// this ceiling of eight, and two deliveries each spent that last slot: main
-	// on specialists.js, which registers the shared component families, this one
-	// on passkeys.js, which runs the two WebAuthn ceremonies. The merge is where
-	// they meet, so the merge is where the count is decided, and the decision is
-	// nine rather than a folding of one into the other: one script talks to an
-	// authenticator, the other defines custom elements, and neither is sign-in
-	// state (session.js) or component behaviour (components.js).
-	if len(ui.Controllers) > 9 {
-		t.Fatalf("there are %d browser controllers; the budget is 9", len(ui.Controllers))
+	// Ten, and the number is stated rather than discovered. Every entry is a
+	// script each page downloads, which is what this ceiling keeps small. The
+	// base both sides forked from shipped seven under a ceiling of eight; main
+	// spent two slots, on specialists.js (the shared component families) and
+	// passkeys.js (the two WebAuthn ceremonies), and this branch spent one on
+	// command.js, which mints the Idempotency-Key a submission carries and sends
+	// those bytes again when the answer never arrives. The merge is where they
+	// meet, so the merge decides the count: three scripts, three different jobs,
+	// none of them sign-in state (session.js) or component behaviour
+	// (components.js), and command.js is capped in bytes on top of this.
+	if len(ui.Controllers) > 10 {
+		t.Fatalf("there are %d browser controllers; the budget is 10", len(ui.Controllers))
 	}
 	for _, name := range ui.Controllers {
 		if !strings.HasSuffix(name, ".js") {
