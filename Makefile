@@ -112,8 +112,18 @@ help: ## List the targets
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
+# The same stated per-package bound `check` and `check-race` carry, for the same reason against the
+# same measurement: go test's ten-minute default is a clock nobody in this repository chose, and
+# `apps/platformkit` needs most of it even uncached and unraced. Measured on this program's shared
+# Postgres: 9m51s for the package on a host doing nothing else — nine seconds of headroom on a
+# default the suite does not beat so much as tie — and `panic: test timed out after 10m0s` on one
+# doing something, with the cases that were merely running when the clock rang reported as failures.
+# A goal whose verdict is a race against a clock it never names answers to the load on the box, and
+# every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
+# number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
+# and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
