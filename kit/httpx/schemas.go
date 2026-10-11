@@ -89,7 +89,14 @@ type Resource struct {
 	Operations []CRUD
 	// Immutable are the fields a command owns, shown read-only in a form.
 	Immutable []string
-	Schema    entity.Schema
+	// Present is what this resource's author said about how it reads. It is the
+	// carrier between kit/rest, which validates a declaration at mount, and
+	// ui/screens, which writes it into the catalogue: the two never see each
+	// other, and a hint that reached one and not the other is a decision nobody
+	// honours. Zero means nothing was declared, which is every resource written
+	// before this field existed.
+	Present entity.EntryHints
+	Schema  entity.Schema
 	// RichTextFiles is the request-scoped image port for generated detail views.
 	RichTextFiles richtext.Files `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
@@ -140,6 +147,11 @@ type Command struct {
 	// only those, so a document that could be derived still is.
 	Endpoint string
 	Fields   []entity.Field
+	// Present is how this command's author described it: the word on the button,
+	// whether it is the one to offer, what a person reads before it runs. Carried
+	// to the shells by the same hop that carries Fields, and validated by
+	// kit/rest before any route for it is mounted.
+	Present entity.CommandHints
 	// Run performs the command with the values a caller submitted, inside the
 	// request's own transaction, and is the closure the command's HTTP route
 	// calls. It has to be here because docs/adr/0007 promises a derived screen

@@ -287,6 +287,45 @@ func RegisterRoutes(r *httpx.Router, svc contracts.Service, invite contracts.Inv
 			return out, rest.Fault(err)
 		})
 
+	// The two SAML routes, which are the control plane's for the same two reasons
+	// the OIDC pair is: the row they write is the control plane's, and which
+	// directory a company's people live in is a decision somebody makes about a
+	// customer. They are independent of the pair above by construction — a tenant
+	// may hold an OIDC provider and a SAML provider at once, and neither command
+	// names the other's columns.
+	//
+	// What the write refuses that SetOIDC does not is a metadata document with no
+	// signing certificate: an assertion presented against that document could never
+	// be verified, so the tenant would have a door that answers 403 forever, and the
+	// operator who can fix it is reading this response rather than a sign-in log.
+	httpx.Register(r, op("set-saml", http.MethodPost, path+"/{id}/saml", 0, "Say which SAML identity provider a tenant signs in against",
+		"Sets the service provider entity ID, the IdP's metadata — a URL, a document, or both — the attribute that carries the address, and what an address the provider vouches for and this tenant has no account for does: disabled, existing or provision. Setting the same values again changes nothing and publishes nothing. Nothing is fetched here: a metadata URL that cannot be reached reads as the 503 sign-in already answers for a wrong issuer.",
+		[]string{contracts.EventSAMLSet}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *samlInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.SetSAML(ctx, tx, in.ID, in.Body)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
+		})
+
+	httpx.Register(r, op("clear-saml", http.MethodPost, path+"/{id}/saml/clear", 0, "Take a tenant's SAML provider away",
+		"After this the tenant's SAML sign-in answers 404 and its people sign in the way they did before that provider: with a password, or at its OIDC issuer, which this route leaves alone. People already signed in stay signed in.",
+		[]string{contracts.EventSAMLCleared}),
+		httpx.OperatorPermission(contracts.PermissionTenantManage),
+		func(ctx context.Context, in *idInput) (*itemOutput, error) {
+			out := &itemOutput{}
+			err := system(ctx, func(ctx context.Context, tx db.Tx[db.System]) error {
+				t, err := svc.ClearSAML(ctx, tx, in.ID)
+				out.Body = t
+				return err
+			})
+			return out, rest.Fault(err)
+		})
+
 	if invite == nil {
 		return
 	}
@@ -382,6 +421,11 @@ func op(verb, method, at string, status int, summary, description string, publis
 type oidcInput struct {
 	ID   uuid.UUID              `path:"id" format:"uuid" doc:"The tenant's id"`
 	Body contracts.OIDCSettings `required:"true"`
+}
+
+type samlInput struct {
+	ID   uuid.UUID              `path:"id" format:"uuid" doc:"The tenant's id"`
+	Body contracts.SAMLSettings `required:"true"`
 }
 
 type idInput struct {

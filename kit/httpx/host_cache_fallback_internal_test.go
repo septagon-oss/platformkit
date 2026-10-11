@@ -87,12 +87,22 @@ func TestACachedResolutionCarriesTheWholeTenant(t *testing.T) {
 		Languages: &tenancy.Languages{Default: "pt", Others: []string{"en"}},
 	}
 	writer := resolverOver(t, shared, &fixed{tenant: installation})
+	// The reader's own loader knows nothing: what it resolves came from the store.
+	//
+	// Both fixtures exist before either resolve runs, and the order is the case's own. Every
+	// resolverOver migrates a schema of its own, and migrations queue behind one composition
+	// advisory lock across the whole server: in the whole-suite run of 2026-10-08 the two fixtures'
+	// migrations started 111 s apart, while every one of the thirty migration files they logged
+	// answered in under 525 ms (the case cost 218.89 s), and a host is believed for hostTTL —
+	// 30 s (tenant.go:28). Writing before the reader is built spends the entry's whole life inside a
+	// wait nobody asked the case to make, and the read below lands as "no tenant at this host" over
+	// a store that had nothing wrong with it. The assertions are the case; this order only stops a
+	// fixture from measuring the queue.
+	reader := resolverOver(t, shared, &fixed{err: tenancy.ErrNoSuchHost})
 	if _, err := writer.resolve(context.Background(), "ops.example"); err != nil {
 		t.Fatalf("resolve through the writer: %v", err)
 	}
 
-	// The reader's own loader knows nothing: what it resolves came from the store.
-	reader := resolverOver(t, shared, &fixed{err: tenancy.ErrNoSuchHost})
 	got, err := reader.resolve(context.Background(), "ops.example")
 	if err != nil {
 		t.Fatalf("resolve through the second replica: %v; the entry the first wrote was not read", err)

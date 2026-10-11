@@ -24,30 +24,48 @@ git cat-file -e "$base^{commit}"
 # ceilings. Removing a bucket or changing what it measures also needs review.
 base_loc="$(git show "$base:loc-budget.json")"
 head_loc="$(cat loc-budget.json)"
-problems="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
+# A ceiling that moved and a ceiling that no longer measures what it measured are two verdicts, so
+# they are collected apart: the first is a decision an owner can take and a `build(budget):` commit
+# can price, the second is never excused. Every moved ceiling is kept as one `file|name|from|to`
+# row, which is what lets the accept verdict and the refuse verdict say the same two numbers in
+# different words.
+hard_problems="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
     $base.buckets[] as $before
     | [$head.buckets[] | select(.name == $before.name)] as $after
     | if ($after | length) != 1 then
         "loc-budget.json: bucket \($before.name) was removed or duplicated"
       elif ($before | del(.max)) != ($after[0] | del(.max)) then
         "loc-budget.json: measurement changed for \($before.name)"
-      elif $after[0].max > $before.max then
-        "loc-budget.json: \($before.name) raised from \($before.max) to \($after[0].max)"
       else empty end
+')"
+moved="$(jq -nr --argjson base "$base_loc" --argjson head "$head_loc" '
+    $base.buckets[] as $before
+    | ([$head.buckets[] | select(.name == $before.name)] | .[0]) // empty
+    | select(.max > $before.max)
+    | "loc-budget.json|\($before.name)|\($before.max)|\(.max)"
 ')"
 if git cat-file -e "$base:packages-budget.json" 2>/dev/null; then
 	base_packages="$(git show "$base:packages-budget.json")"
 	head_packages="$(cat packages-budget.json)"
-	package_problem="$(jq -nr --argjson base "$base_packages" --argjson head "$head_packages" '
+	package_moved="$(jq -nr --argjson base "$base_packages" --argjson head "$head_packages" '
         if ($base.packages | type) != "number" or ($head.packages | type) != "number" then
             error("packages-budget.json: packages must be a number")
         elif $head.packages > $base.packages then
-            "packages-budget.json: raised from \($base.packages) to \($head.packages)"
+            "packages-budget.json||\($base.packages)|\($head.packages)"
         else empty end
     ')"
-	if [ -n "$package_problem" ]; then
-		problems="${problems:+$problems$'\n'}$package_problem"
+	if [ -n "$package_moved" ]; then
+		moved="${moved:+$moved$'\n'}$package_moved"
 	fi
+fi
+problems="$hard_problems"
+raised=''
+while IFS='|' read -r file name from to; do
+	[ -n "$file" ] || continue
+	raised="${raised:+$raised$'\n'}$file: ${name:+$name }raised from $from to $to"
+done <<< "$moved"
+if [ -n "$raised" ]; then
+	problems="${problems:+$problems$'\n'}$raised"
 fi
 # CONTRIBUTING.md's "separate owner budget commit before the implementation", made checkable: a raise
 # passes when every commit between the base and HEAD that touches a budget file is a `build(budget):`
@@ -69,7 +87,16 @@ if [ -n "$problems" ] && ! printf '%s\n' "$problems" | grep -qv ' raised from ';
 		fi
 	done
 	if [ -n "$touched" ] && [ -z "$unreviewed" ]; then
-		printf '%s\n' "$problems"
+		# An accepted raise is printed in the accept verdict's own words, never in the refusal's. Both
+		# verdicts have to name the same two numbers, so nothing is hidden here; what changed is that only
+		# a refusal still reads "raised from N to N". This step prints the last lines a CI job writes, and
+		# a reader that triages a red run by pattern quotes any line in that shape as one of its failures —
+		# which is how four ceilings an owner had priced came to be reported as refusals of this branch.
+		# A verdict that cannot be told from its opposite in the log is the defect.
+		while IFS='|' read -r file name from to; do
+			[ -n "$file" ] || continue
+			echo "$file: ${name:+$name }ceiling $from -> $to is priced in its own build(budget) commit"
+		done <<< "$moved"
 		echo "budget ratchet: the raises above stand alone in build(budget) commits: $(printf '%s ' $touched | cut -c1-200)"
 		problems=''
 	elif [ -n "$unreviewed" ]; then

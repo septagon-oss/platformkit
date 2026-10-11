@@ -28,6 +28,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/septagon-oss/platformkit/kit/events"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -133,6 +134,22 @@ type User struct {
 	// identity provider. It is json:"-", so it is in no response, in no request
 	// and in no generated screen.
 	PasswordHash string `json:"-" gorm:"type:text"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// user.user.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (u *User) SetChanges(changes []events.Change) {
+	u.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000007 agree.
@@ -141,12 +158,40 @@ func (User) TableName() string { return "users" }
 // CanSignIn reports whether this user could authenticate with a password.
 func (u *User) CanSignIn() bool { return u.Status == StatusActive && u.PasswordHash != "" }
 
+// CanonicalEmail is an address as this module stores it: trimmed, and folded to
+// lower case. Two strings that differ only in case or padding name one mailbox,
+// so the fold belongs in one published function the entity itself runs before it
+// checks an address — anything else that has to meet the row a string names
+// (a read path, a seed record) asks this, rather than spelling the rule again
+// and drifting from it.
+func CanonicalEmail(value string) string { return strings.ToLower(strings.TrimSpace(value)) }
+
+// CanonicalRoles is a role list as this module stores it: each name trimmed and
+// folded to lower case, blanks and repeats dropped, then sorted, because the
+// set a person holds is one answer whatever order and padding named it. SetRoles,
+// the registration input and any caller that has to meet the row a list names (a
+// seed record, an import) ask this one function rather than spelling the fold
+// again and drifting from it — a comparison against a list the module would never
+// store is a comparison that never ends, on every run, with a write nobody asked
+// for. Names outside roleName still refuse: this folds a spelling, it does not
+// invent a role.
+func CanonicalRoles(roles []string) Roles {
+	out := make(Roles, 0, len(roles))
+	for _, role := range roles {
+		if role = strings.ToLower(strings.TrimSpace(role)); role != "" && !slices.Contains(out, role) {
+			out = append(out, role)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: an address that
 // differs only in case or in whitespace is the same mailbox, and two callers
 // must not disagree about that.
 func (u *User) Validate(context.Context) error {
-	u.Email = strings.ToLower(strings.TrimSpace(u.Email))
+	u.Email = CanonicalEmail(u.Email)
 	u.DisplayName = strings.TrimSpace(u.DisplayName)
 	at := strings.IndexByte(u.Email, '@')
 	switch {

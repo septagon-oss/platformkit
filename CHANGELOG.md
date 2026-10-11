@@ -2,6 +2,89 @@
 
 ## Unreleased
 
+**A change to somebody else's row is proposed, decided and applied through four
+commands.** `modules/change` holds a proposal over another account's row: the
+ digest of the bytes a verdict was made about, the state machine that makes a
+`decision one-way` (`proposed → approved → applied`, `proposed → declined`,
+`proposed|approved → withdrawn`, one outbox event per transition), the actor rule
+that an author can neither decide nor apply their own change, and an apply that
+writes once at the revision it was reviewed at or not at all.
+`change-proposal-propose`, `-review`, `-apply` and `-withdraw` are its only writes,
+under `change:read`, `change:propose` and `change:decide`, and
+`modules/change/migrations/000038_change.up.sql` (owner `change`) keeps the rows
+under forced row-level security with a partial unique index over tenant, subject
+and diff digest — which is what makes a second submit of the same diff the same
+proposal rather than a race. Which writes need it is not the module's fact: it
+reads one switch a composition hands it and declares no `rest.Spec`, catalog
+resource or job. The reference application puts two subjects behind that switch, a
+task and a site's settings row, with a review queue and a proposal page whose
+refusals speak `modules/change/messages/pt-PT.json`.
+
+**A row's write count belongs to the server.** `kit/entity` names it and `kit/rest`
+refuses a body that writes it, a conditional write whose quoted revision is stale
+(`If-Match` on the API, the form's own revision condition on the generated screen)
+and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
+gives the task one. Nothing the server owns is drawn as a control, so no form asks a
+person to type a number that would move the row to it.
+
+**The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
+`rest.CommandOptions` now carry an optional declaration of how a resource is
+presented — the words a person is shown, which field names a row, which block a
+field belongs to, which columns a header may order by, what a command's button
+says and what a person reads before it runs — and `GET /api/v1/app/resources`
+publishes it as a `presentation` object on the entry, on each field and on each
+command. The four vocabularies it is declared in are frozen in `kit/entity`
+(`Icons`, `Tones`, `Formats`, `Visibilities`) and bound to what draws them by
+tests inside `ui/`, because a kernel below the presentation layer cannot import
+the renderer it must check against. Anything the gate can name refuses at boot —
+a field, section, icon, tone, reference or sortable field that does not exist, a
+money format on a column that holds no minor units, a command that is both the
+primary action and the destructive one — with a message naming the offender and
+the list that refused (`kit/rest/hints.go`). The change is additive on the wire:
+a key is printed only for a hint somebody declared, so an entry nobody hinted
+serialises byte for byte as it did before, `catalogVersion` stays 2, and the
+committed catalogue golden is unchanged by this release. Adopting a hint on a
+real resource, and translating one, are not part of it.
+
+**A limiter whose counter is queued is not a limiter whose store is down.**
+`kit/limit` gave one two-second wall to a connection, `BEGIN`, the wait behind the
+row's own lock and `COMMIT`, and answered any of them with an error — which every
+caller of a limiter is told to fail open on. A same-key burst is one queue behind
+one row, so on a loaded runner the tail of it spent its budget waiting and was
+admitted: 75 anonymous submissions at an allowance of 60, none refused. The
+counter's transaction now names its own lock budget (`lock_timeout`, one second,
+transaction-local), so the server stops that wait and says it did, and an attempt
+that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
+whole window, and **no error**, because a refusal that travels as an error is a
+refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
+refuse with, answer `ErrBusy` rather than a number nobody read. A store that
+answers it cannot serve still fails open exactly as ADR 0010 said; a store that
+answers nothing at all is this attempt's own wall expiring, which is a refusal.
+`kit/limit/README.md` now states the four outcomes and the two budgets for every
+composer of them.
+
+**A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
+routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
+composition that can resolve a tenant's identity provider, and `modules/tenant` carries
+that provider as six columns an operator sets with
+`POST /api/v1/ops/tenant/tenants/{id}/saml` and clears with `…/saml/clear`, publishing
+`tenant.saml_set` and `tenant.saml_cleared`. The service provider is built per request
+from the row the `Host` resolved, so two tenants on one installation verify against two
+IdPs at two assertion consumer URLs. The callback requires an assertion signed in its own
+right, addressed to this tenant's entity ID (an assertion that names no audience names
+nobody), bound in the bearer method, current, and answering a request the same browser
+started; it then spends the assertion id in the transaction that opens the session, so a
+sign-in that is refused leaves the assertion presentable and one that succeeds spends it
+exactly once. An address may present sixty assertions a minute and no more: the leg is mounted on
+the app surface, past the kernel's Public-only write limit, so it carries its own bound,
+refused ahead of the document rather than after it. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+(`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
+add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
+are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to
+v1.6.1, the XML-signature verifier an assertion is checked with, whose previous version
+carries a known signature bypass (GO-2026-4753), and `golang.org/x/net` to v0.60.0 with
+the 2026-10-08 Go security release (GO-2026-6617 and four beside it).
+
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
 `admin.Module` — declaring the contracts it needs and provides, the contributions it
