@@ -9,18 +9,22 @@ it was reviewed at or not at all.
 
 Which writes need it is not one of them. There is no `rest.Spec` here (a Spec is
 five routes on a collection, three of which write whatever the body says; a
-proposal moves through four named commands with an actor rule each), no HTML, no
-nav entry, no job, and no flag read: a capability that decided which of its host's
-operations were sensitive would be a capability with a product in it.
+proposal moves through four named commands with an actor rule each), no catalog
+resource and no job: a capability that decided which of its host's
+operations were sensitive would be a capability with a product in it. It reads a switch in
+exactly one place, and only where a composition built the switch into it — `Gate` below, with
+a `Key` somebody else chose and a `WayOn` somebody else serves.
 
 ## Composition
 
-The reference application names it in `Use` (`apps/platformkit/app.go`), and the
-subject it applies proposals for is contributed by `apps/platformkit/product.go`'s
-`access` module, which is the first module in the composition with a site service
-to read one with: a subject is a site settings row, and which writes need change
-control stays this product's fact. `change.Module` is the provider value; the
-literal below builds the hand path.
+The reference application names it in `Use` (`apps/platformkit/app.go`). Its two
+subjects arrive as contributions, one per contributing module, because a
+contribution is the one value of a contract a module *is*: `access` contributes the
+site settings row — the first subject in the composition with a site service to
+read one with — and `product`, first and needing nobody, contributes the task,
+whose two doors are the two argument-free constructors of `modules/task`. Which
+writes need change control stays this product's fact. `change.Module` is the
+provider value; the literal below builds the hand path.
 `readme_composition_test.go` compiles its field names, its `Resolve` signature and
 the `change.Deps` and `change.Module` around them, with a subject stubbed out.
 
@@ -41,6 +45,31 @@ module's `WriteGate` question answered by one flag, wired into
 over `kit/config`'s flags block). One `SubjectBinding` per subject, written out by
 one author, checked by the compiler; `change.Deps.Subjects` empty means no subject
 exists and every proposal for one is `contracts.ErrUnsupportedSubject`.
+
+The reference application binds a second subject the same way — `task`, over
+`taskcontracts.LockedReader` and `taskcontracts.Writer` — and puts a door in front of the
+writes that subject is reachable through. `change.NewGate` takes the product's switch key, the
+address a refusal points at, the subject the door writes and a `contracts.Protection`;
+`change.Door` hands the result to `rest.Spec.Gate`; and the answer is given in field names,
+because `contracts.Refusal` carries `Fields` and a person refused at a PATCH has to be told
+which field, and where the change goes instead. What this module owns is the shape of that
+answer — ask the subject owner before the switch, so an unreachable provider never refuses a
+write nobody protected, and refuse with an address rather than a wall. What it owns in none of
+them is a key, a subject, or a field of anybody's row.
+
+Three more edges are the composition's rather than this module's, and all three are
+`pkit.Optional`, because each is a thing a module must not guess:
+`contracts.Notifier`, whose absence leaves the manifest's `Subscriptions` nil rather
+than inventing a mail server; `contracts.ProposalPage`, the address a notice names,
+because the module owns the proposal and not the path it answers at; and
+`ReviewChrome`, the `page.Shell` the two screens are drawn in, the authorizer the
+decision controls reuse and the page size. `access` supplies all three in the
+reference application — it is the first module there that can name a person, a
+notice and a site at once — and the read and the four commands are filled by the
+module's own wire, from the one service the resolver builds, so no composition can
+hand a queue a different service than the routes beside it. None of the three arrives
+and this module is the object and six JSON routes: no subscription, no queue, and
+the surface's own 404 for a person who asks for a screen nobody composed.
 
 **Reused** — `kit/crud.GetForUpdate` for the row lock and `kit/db.Tx[db.Tenant]`
 for the caller's transaction; `kit/events.Publish` for the one event per
@@ -74,6 +103,18 @@ a reviewer cannot eyeball). Nothing existing could carry either: the reuse
 inventory ran `grep -rn "Proposer"` across `kit modules apps ui` and found nothing,
 and the one working implementation of this pattern is a client's fee review, which
 is the reason for the object and not a unit the kernel could import.
+
+The round that made the object reach a write added `contracts.Protection` (a subset question:
+of the fields this write moves, which may not be written without a proposal),
+`contracts.SubjectRef` and `contracts.DirectWrite` as the door's description of a write, the
+reusable `Gate`/`NewGate`/`Door` answer, and `Refusal.Fields`. **Reused** rather than written:
+`kit/rest`'s `Spec.Gate` at the lock-merge-write seam, `kit/flags`' `Evaluator` for the switch,
+`kit/problem`'s 503 for a switch that did not answer, `crud.ErrConflict` for the refusal, and
+`kit/tenancy.ActorFrom` with `db.TenantOf` for who is asking — so the switch is evaluated for
+the tenant the request resolved to, not for the process that happens to serve it. **Made
+reusable**: a module that publishes its field vocabulary, as `modules/task` publishes
+`ProtectableFields` and `CommandOwnedFields`, stands behind a door because one composition
+wrote one `Gate` — and because nothing in this module read a name, a key or a subject to do it.
 
 **Made reusable** — the port list: any module with a row worth protecting can be
 proposed-and-applied by writing `Lock` and `Save` over its own table, and any host
@@ -160,8 +201,10 @@ proposal, no synthetic history. A tenant with no `change:decide` holder cannot
 approve anything, which is the configuration a customer's own roles decide — and
 that configuration is what the rule is for, so the module seeds none of it. The
 three keys are grantable the moment the module is composed, and
-`modules/change/messages/pt-PT.json` carries the words a refusal uses for a tenant
-served in Portuguese.
+`modules/change/messages/pt-PT.json` carries the copy of every refusal the two
+review pages answer with — one key per sentinel in `contracts`, which is what makes
+"a refusal speaks the page's language" true of the set rather than of the three
+cases somebody happened to write (the copy's edges are in Limits).
 
 ## The table
 
@@ -208,20 +251,68 @@ device, because no device-facing surface asks for one.
 
 ## Limits
 
-`modules/site`'s settings row is the only subject composed, in the reference
-application, which makes `PUT /api/v1/site/settings` the only write change
-control routes there. A subject nobody binds is `ErrUnsupportedSubject` — the
-list in `apps/platformkit` is what makes a subject exist, and the one gate is
-one flag (`change.control.site-settings`), off by default, one boolean for the
-installation rather than per tenant; unreadable, it refuses the write.
+`modules/site`'s settings row and `modules/task`'s tasks are the two subjects composed in the
+reference application, which makes `PUT /api/v1/site/settings`, `PATCH /api/v1/task/tasks/{id}`
+and `DELETE /api/v1/task/tasks/{id}` the writes change control routes there. A subject nobody
+binds is `ErrUnsupportedSubject` — the list in `apps/platformkit` is what makes a subject
+exist. Each subject is one flag (`change.control.site-settings`, `change.control.task-sla`),
+off by default, one boolean for the installation rather than per tenant; unreadable, it refuses
+the write it gates and nothing else. Which task fields are protected (`slaDeadline`,
+`priority`) is that application's opinion, intersected with `taskcontracts.ProtectableFields`
+and written in `apps/platformkit/change.go` — nowhere in this module.
+
+Two doors stay open by decision rather than by oversight, and they are the same one: a proposal
+is a diff over a row measured against a revision, so **a create is not gated** (there is no
+proposal about a row that does not exist yet, and gating create would make an entity
+uncreatable while its switch was on — the first run of the test found that) and **there is no
+proposal for a delete**. A delete changes every value the row held, so a row holding a
+protected value cannot be deleted while the switch is on. The baseline a delete is measured
+against is a blank row holding the entity's own declared defaults, not nothing: a value the row
+starts at is one nobody chose, and a refusal that named `priority` on every task ever created —
+which is what measuring against nothing did, with `Validate` putting the default back the moment
+anyone emptied it — is a way through that closes itself. A task whose deadline is set or whose
+priority was chosen is protected against deletion; a task carrying nothing but defaults is not,
+which is the difference between a door and a wall, and the reason `Writer.Save`'s one override is
+not the only way to remove a row.
+
+Translated copy, and where it stops. Every refusal `contracts` names — the nine a decider can act
+on — is keyed in `internal.refusalKey`, and `messages/pt-PT.json` answers all nine and the alert's
+heading. Three things stay English, by fact rather than by oversight, each owed its own key: the
+pages' own copy (`Decision`, `Approve`, `Apply`, `Withdraw`, the queue's toolbar), the
+literal-English convention `modules/admin`'s hand-drawn pages use; a refusal this module raises but
+never named, whose words belong to whoever raised it — `crud`'s own sentences, or the JSON error
+behind `Apply`'s merge of a stored diff, which names the value that broke rather than the cure; and
+`contracts.Refusal`, the gated door's sentence, which the shell interpolates inside
+`fault.holds_the_row` around its English. A translated refusal is the service's sentence without the
+number or the state name the English interpolates — x/text formats a catalogue line with the
+arguments a caller passes and the page passes none — and the row's state and the revision it is on
+now are drawn on the same page, above the controls.
 
 Also not here, each one named rather than hidden: the `changetest` fake and the
 C1–C14 conformance suite the specification lists; `modules/change/...` *is* in
 `Makefile`'s `RACE_PACKAGES` and `concurrency_test.go` is the two-applies case
 that uses it, and no other case in this module runs under `-race` by default;
 `modules/content`, `modules/billing` and every other module's rows are not
-subjects; there is no review queue, which is a screen and therefore belongs to
-whoever composes one; `contracts.Diff` covers RFC 7386 and nothing else — an array
+subjects; `contracts.Diff` covers RFC 7386 and nothing else — an array
 is replaced, never merged, because merge patch has no rule for one and inventing
 one here would be a patch format of our own; and there is no way to re-open a
 declined proposal, which is what proposing it again as a new row is for.
+
+## The two screens
+
+The queue at `/app/change/proposals` and the proposal at `/app/change/proposals/{id}` are this
+module's own pages (`modules/change/internal/reviews.go`), mounted when the
+composition hands over the `ReviewChrome` whose `page.Shell` draws them and
+declared by the manifest's one `Nav` entry. The module owns the queue, the
+difference, the decision controls and the row's own history of proposals; it does not own the
+shell around them, the dashboard, or the notice a proposer receives — the shell is handed in, and
+the notice goes out through `contracts.Notifier`, which `apps/platformkit` implements over
+`modules/notification` in four lines. A composition that hands neither mounts no page and declares
+no subscription; the manifest's one `Nav` entry stands either way, gated on `change:read`.
+
+A watcher — `change:read` alone — is drawn no decision controls at all, because the page was
+composed for a person who may not press them rather than built for one who may and hidden. The
+authorizer the page asks is the one the kernel enforces with, so the controls and the route
+underneath them cannot disagree about who looks like a reviewer. Every control is a real
+`<form method="post">` carrying the revision the page was drawn from, so two people deciding one
+proposal is one decision and one refusal that says so.

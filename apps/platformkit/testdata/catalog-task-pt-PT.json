@@ -149,6 +149,11 @@
       "widget": "textarea",
       "hideList": true,
       "doc": "How the task was resolved"
+    },
+    {
+      "name": "revision",
+      "type": "int",
+      "doc": "This row's own write count, from 1"
     }
   ],
   "presentation": {
