@@ -77,7 +77,7 @@ func TestACredentialAnsweredWithoutItsFirstHalfSignsNobodyIn(t *testing.T) {
 	// another surface or path still has to answer this case.
 	challenge := ""
 	for _, m := range api.Mounted() {
-		if m.Module == "auth" && m.Method == http.MethodPost && strings.Contains(m.Path, "challenge") {
+		if m.Module == "auth" && m.Method == http.MethodPost && strings.HasSuffix(m.Path, "/challenge/verify") {
 			challenge = m.Path
 		}
 	}

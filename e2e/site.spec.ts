@@ -13,12 +13,29 @@ const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-test('a fresh site says nothing is published, and the home page appears once one is', async ({ page, browser }) => {
+// The first three lines are the tenant's first day: `platformkit bootstrap` created
+// the tenant through the tenant module, whose creation hook applied the starter seed
+// (apps/platformkit/seed/starter), so the visitor lands on a page and not on an
+// apology. The empty state this case used to assert is still what a site with a home
+// slug that names nothing published shows — modules/web's own
+// TestSiteRefusesWhatItCannotServe covers those words — but it is no longer what a
+// new installation shows.
+test('a new tenant opens on its starter home, and a published page takes its place', async ({ page, browser }) => {
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Nothing published yet' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Sign in to the admin' })).toHaveAttribute('href', '/app/admin/login');
+  await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
+  await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
 
-  await page.goto('/app/admin/login');
+  // The workspace is entered at its root: /app is the address the public frame is
+  // allowed to offer (webcontracts.Links.SignIn, pinned by
+  // TestThePublicFrameLinksOnlyTheWorkspaceRoot), and the root is what turns a
+  // visitor with no session towards the form. The bar of a seeded home page offers
+  // that door too — modules/web carries it on every public page now, and
+  // public-frame-links-workspace-root.spec.ts is the browser's evidence for it —
+  // and this journey names the door itself, so it is not at the bar's mercy.
+  // The form and the landing it answers for are main's own: next=%2Fapp, /app after.
+  await page.goto('/app');
+  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
   await page.getByLabel('Email').fill(email);
   await page.getByLabel('Password').fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click();

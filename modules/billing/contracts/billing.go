@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/lib/pq"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"golang.org/x/text/currency"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -100,21 +101,21 @@ type Plan struct {
 
 	// Code is what an invoice, a price page and an integration call this plan,
 	// unique within the tenant and unchanged when somebody renames it.
-	Code string `json:"code" gorm:"type:varchar(60);not null" validate:"required" minLength:"1" maxLength:"60" doc:"Stable identifier, unique within the tenant" example:"pro-monthly"`
+	Code string `json:"code" gorm:"type:varchar(60);not null" validate:"required" minLength:"1" maxLength:"60" ui:"visibility:detail" doc:"Stable identifier, unique within the tenant" example:"pro-monthly"`
 	// Name is what a price page shows.
 	Name string `json:"name" gorm:"type:varchar(120);not null" validate:"required" minLength:"1" maxLength:"120" doc:"Display name" example:"Pro, billed monthly"`
 
 	// PriceCents is one interval's price in the minor unit of Currency. Zero is
 	// free, and a free plan renews without asking a provider for anything.
-	PriceCents int64  `json:"priceCents" gorm:"not null;default:0" minimum:"0" doc:"Price of one interval, in the currency's minor unit" default:"0" required:"false" example:"2900"`
-	Currency   string `json:"currency" gorm:"type:char(3);not null" validate:"required" minLength:"3" maxLength:"3" doc:"ISO 4217 code" example:"EUR"`
+	PriceCents int64  `json:"priceCents" gorm:"not null;default:0" ui:"label:Price;format:money;currency:currency;scale:2" minimum:"0" doc:"Price of one interval, in the currency's minor unit" default:"0" required:"false" example:"2900"`
+	Currency   string `json:"currency" gorm:"type:char(3);not null" ui:"visibility:detail" validate:"required" minLength:"3" maxLength:"3" doc:"ISO 4217 code" example:"EUR"`
 	// Interval is a closed set; the enum tag is what a form renders as a select.
-	Interval string `json:"interval" gorm:"type:varchar(10);not null;default:'month'" enum:"month,year" ui:"widget:select" doc:"How long one period lasts" default:"month" required:"false"`
+	Interval string `json:"interval" gorm:"type:varchar(10);not null;default:'month'" enum:"month,year" ui:"widget:select;label:Billing period" enumLabels:"month=Monthly,year=Yearly" doc:"How long one period lasts" default:"month" required:"false"`
 
 	// Features are names and not permissions: what a name entitles somebody to
 	// is the consuming module's business, so a plan can be re-priced without
 	// touching an authorization.
-	Features Features `json:"features,omitempty" gorm:"type:text[];not null;default:'{}'" required:"false" doc:"Feature names this plan includes"`
+	Features Features `json:"features,omitempty" gorm:"type:text[];not null;default:'{}'" ui:"label:Includes;help:What a person gets on this plan" required:"false" doc:"Feature names this plan includes"`
 
 	// Active gates enrollment and not existence: a deactivated plan refuses new
 	// subscriptions and the ones already on it keep running, because a price
@@ -127,6 +128,22 @@ type Plan struct {
 	// true on either and {"active": false} stores an active plan. The
 	// alternative is a *bool in every use of the field to fix one write.
 	Active bool `json:"active" gorm:"not null" ui:"widget:checkbox" doc:"Whether this plan accepts new subscriptions" example:"true"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// billing.plan.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (p *Plan) SetChanges(changes []events.Change) {
+	p.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000016 agree.

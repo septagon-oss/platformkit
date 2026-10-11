@@ -2,6 +2,125 @@
 
 ## Unreleased
 
+**A change to somebody else's row is proposed, decided and applied through four
+commands.** `modules/change` holds a proposal over another account's row: the
+ digest of the bytes a verdict was made about, the state machine that makes a
+`decision one-way` (`proposed → approved → applied`, `proposed → declined`,
+`proposed|approved → withdrawn`, one outbox event per transition), the actor rule
+that an author can neither decide nor apply their own change, and an apply that
+writes once at the revision it was reviewed at or not at all.
+`change-proposal-propose`, `-review`, `-apply` and `-withdraw` are its only writes,
+under `change:read`, `change:propose` and `change:decide`, and
+`modules/change/migrations/000038_change.up.sql` (owner `change`) keeps the rows
+under forced row-level security with a partial unique index over tenant, subject
+and diff digest — which is what makes a second submit of the same diff the same
+proposal rather than a race. Which writes need it is not the module's fact: it
+reads one switch a composition hands it and declares no `rest.Spec`, catalog
+resource or job. The reference application puts two subjects behind that switch, a
+task and a site's settings row, with a review queue and a proposal page whose
+refusals speak `modules/change/messages/pt-PT.json`.
+
+**A row's write count belongs to the server.** `kit/entity` names it and `kit/rest`
+refuses a body that writes it, a conditional write whose quoted revision is stale
+(`If-Match` on the API, the form's own revision condition on the generated screen)
+and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
+gives the task one. Nothing the server owns is drawn as a control, so no form asks a
+person to type a number that would move the row to it.
+
+**The reference resources read well, in the person's language.** The five
+resources the reference application shows — tasks, content, people, plans and
+site settings — now declare how they read: the words a person is shown
+(`task`/`tarefa`, `Assignee`, `Due`, `Response due`, `Response overdue`,
+`Billing period`, `Username`, `Includes`), which field names a row and which two
+say what it costs to wait, which integration columns are kept off every screen
+(`source`, `sourceRef`) and which are answered on the record and not the row
+(`assigneeId`, `author`, `roles`, `currency`, `code`), the tone of every status
+and priority, and the short verb on a command's button (`Assign`, `Resolve`,
+`Archive`, `Deactivate`) with the consequence a person reads before an archive or
+a deactivation runs. `check-sla` is declared `system`, so no screen offers a
+sweep's work while its JSON route keeps its guard unchanged. Every declared word
+is served in the request's language: `GET /api/v1/app/resources` negotiates
+`Accept-Language` through the tenant's own declared set, answers `Vary:
+Accept-Language`, and falls back to the English the code author wrote — which is
+why no layer ships an `en.json`. The key is derived from the declaration's own
+address (`hints.<module>/<entity>.<aspect>`), so no author keeps a second list of
+keys, and the resolver is one file (`ui/resource/hints.go`) read by the catalogue
+document and the generated screens alike. Two readings become honest: a declared
+`enumLabels` map is now drawn (`display.EnumWord`), and a field declared `hidden`
+is no longer offered by a generated form. The line a declared `help:` writes under
+a control arrives in the request's language beside its label — the two words are
+read by one projection, so a Portuguese form no longer asks in Portuguese and
+explains in English. `apps/platformkit/reference_reading_test.go` holds the golden
+entry in `en` and `pt-PT`, the rule that no hint string is ever served empty, and
+the rule that both happen on a drawn screen and not only in the document;
+`apps/platformkit/portuguese_completeness_test.go` holds the rule that every key
+the resolver derives has its Portuguese copy, which the loader's own parity check
+cannot see because each of these modules ships one translated file. The same
+change hides the assignee column from a task list, which lets a title fit one
+line — and the link that is a row's way in was exactly as tall as one line of
+text, so hiding a column took its hit target from 60px to 20px. It is a target of
+its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
+floor, so the 24px the browser audit enforces comes from the rule and not from
+whether the person's title happened to wrap.
+
+**The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
+`rest.CommandOptions` now carry an optional declaration of how a resource is
+presented — the words a person is shown, which field names a row, which block a
+field belongs to, which columns a header may order by, what a command's button
+says and what a person reads before it runs — and `GET /api/v1/app/resources`
+publishes it as a `presentation` object on the entry, on each field and on each
+command. The four vocabularies it is declared in are frozen in `kit/entity`
+(`Icons`, `Tones`, `Formats`, `Visibilities`) and bound to what draws them by
+tests inside `ui/`, because a kernel below the presentation layer cannot import
+the renderer it must check against. Anything the gate can name refuses at boot —
+a field, section, icon, tone, reference or sortable field that does not exist, a
+money format on a column that holds no minor units, a command that is both the
+primary action and the destructive one — with a message naming the offender and
+the list that refused (`kit/rest/hints.go`). The change is additive on the wire:
+a key is printed only for a hint somebody declared, so an entry nobody hinted
+serialises byte for byte as it did before, `catalogVersion` stays 2, and the
+committed catalogue golden is unchanged by this release. Adopting a hint on a
+real resource, and translating one, are not part of it.
+
+**A limiter whose counter is queued is not a limiter whose store is down.**
+`kit/limit` gave one two-second wall to a connection, `BEGIN`, the wait behind the
+row's own lock and `COMMIT`, and answered any of them with an error — which every
+caller of a limiter is told to fail open on. A same-key burst is one queue behind
+one row, so on a loaded runner the tail of it spent its budget waiting and was
+admitted: 75 anonymous submissions at an allowance of 60, none refused. The
+counter's transaction now names its own lock budget (`lock_timeout`, one second,
+transaction-local), so the server stops that wait and says it did, and an attempt
+that spent its budget is answered as a refusal — `ok false`, `Retry-After` the
+whole window, and **no error**, because a refusal that travels as an error is a
+refusal every composer throws away. `Count` and `Forget`, which have no `ok` to
+refuse with, answer `ErrBusy` rather than a number nobody read. A store that
+answers it cannot serve still fails open exactly as ADR 0010 said; a store that
+answers nothing at all is this attempt's own wall expiring, which is a refusal.
+`kit/limit/README.md` now states the four outcomes and the two budgets for every
+composer of them.
+
+**A tenant's people sign in with SAML 2.0.** `modules/auth` mounts three app-surface
+routes — `auth-saml-start`, `auth-saml-callback` and `auth-saml-metadata` — for a
+composition that can resolve a tenant's identity provider, and `modules/tenant` carries
+that provider as six columns an operator sets with
+`POST /api/v1/ops/tenant/tenants/{id}/saml` and clears with `…/saml/clear`, publishing
+`tenant.saml_set` and `tenant.saml_cleared`. The service provider is built per request
+from the row the `Host` resolved, so two tenants on one installation verify against two
+IdPs at two assertion consumer URLs. The callback requires an assertion signed in its own
+right, addressed to this tenant's entity ID (an assertion that names no audience names
+nobody), bound in the bearer method, current, and answering a request the same browser
+started; it then spends the assertion id in the transaction that opens the session, so a
+sign-in that is refused leaves the assertion presentable and one that succeeds spends it
+exactly once. An address may present sixty assertions a minute and no more: the leg is mounted on
+the app surface, past the kernel's Public-only write limit, so it carries its own bound,
+refused ahead of the document rather than after it. **Breaking:** `auth/contracts.Service.Open` takes the sign-in method
+(`ViaPassword`, `ViaOIDC`, `ViaSAML`) — an out-of-tree implementer of that contract must
+add the argument, and the API-diff baseline records it as `Reset`'s did. Two dependencies
+are raised because this path runs on them: `github.com/russellhaering/goxmldsig` to
+v1.6.1, the XML-signature verifier an assertion is checked with, whose previous version
+carries a known signature bypass (GO-2026-4753), and `golang.org/x/net` to v0.60.0 with
+the 2026-10-08 Go security release (GO-2026-6617 and four beside it).
+
 **A kernel module names itself, and the app names it.** Every module of the kernel
 now carries a provider value beside its constructor — `audit.Module`, `user.Module`,
 `admin.Module` — declaring the contracts it needs and provides, the contributions it

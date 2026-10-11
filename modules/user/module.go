@@ -13,6 +13,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
@@ -55,11 +56,26 @@ type Deps struct {
 // spec is the entity's presence in the application: five routes, two
 // permissions, three events and the schema a generated screen reads.
 var spec = rest.Spec[*contracts.User]{
-	Module:     "user",
-	Entity:     "user",
-	Path:       "/users",
-	Read:       contracts.PermissionUserRead,
-	Write:      contracts.PermissionUserManage,
+	Module: "user",
+	Entity: "user",
+	Path:   "/users",
+	Read:   contracts.PermissionUserRead,
+	Write:  contracts.PermissionUserManage,
+	// Present is how a person reads. `primaryField` is the address and not
+	// displayName: displayName defaults to empty, so the documented default would
+	// name an invited person "Untitled person", and an email is required, unique
+	// per tenant and never blank. `summaryFields` is written nowhere: the status is
+	// already the row's pill, and a summary that repeats it is the fault the mount
+	// gate refuses.
+	Present: entity.EntryHints{
+		Singular:     "person",
+		Plural:       "people",
+		Icon:         "people",
+		Group:        &entity.ResourceGroup{Key: "people", Label: "People"},
+		PrimaryField: "email",
+		StatusField:  "status",
+		Sortable:     []string{"email", "displayName", "updatedAt"},
+	},
 	SoftDelete: true,
 	// The two fields a command owns. Lifecycle commands move status, and
 	// roles are changed by SetRoles, which publishes

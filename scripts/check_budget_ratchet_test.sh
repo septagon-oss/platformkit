@@ -67,5 +67,32 @@ fresh lowered; base="$(git rev-parse HEAD)"
 budget 80 docs && commit 'feat: the ceiling comes down with the code'
 expect 0 'a lowered ceiling passes in any commit'
 
+# The two verdicts have to read differently. Both name the same two numbers, and only the exit
+# status told them apart, so an accepted raise printed a line in the refusal's shape — and a reader
+# that triages a red CI run by pattern reports that line as one of its failures. The ratchet keeps
+# "raised from N to N" for the ceilings it refuses and says "priced" for the ones it accepts.
+fresh wording; base="$(git rev-parse HEAD)"
+budget 140 docs && commit 'build(budget): go 100 -> 140 for the feature'
+accepted=0
+bash "$script" "$base" >"$root/accepted" 2>&1 || accepted=$?
+if [ "$accepted" != 0 ] || ! grep -q 'go ceiling 100 -> 140 is priced' "$root/accepted" \
+   || grep -q ' raised from ' "$root/accepted"; then
+	echo 'FAIL: an accepted raise did not say so in words no refusal shares'
+	sed 's/^/    /' "$root/accepted"
+	failures=$((failures + 1))
+else
+	echo 'ok   an accepted raise says it is priced, in words no refusal shares'
+fi
+budget 160 docs && commit 'chore: a second raise nobody priced'
+unreviewed=0
+bash "$script" "$base" >"$root/unreviewed" 2>&1 || unreviewed=$?
+if [ "$unreviewed" != 1 ] || ! grep -q 'go raised from 100 to 160' "$root/unreviewed"; then
+	echo 'FAIL: a refusal no longer names the raise it refused in the words a reviewer reads'
+	sed 's/^/    /' "$root/unreviewed"
+	failures=$((failures + 1))
+else
+	echo 'ok   a refusal still names the raise it refused'
+fi
+
 [ "$failures" -eq 0 ] || { echo "$failures case(s) failed"; exit 1; }
 echo 'budget ratchet: all cases hold'

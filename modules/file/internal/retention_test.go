@@ -63,7 +63,7 @@ func TestTheRetentionSweepRemovesWhatItsPolicyCovers(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	globex := tenancy.Tenant{ID: uuid.New(), Slug: "globex", Name: "Globex"}
 	// inertia is never listed to the sweep, which is the case for listing it.
@@ -286,7 +286,7 @@ func TestTheRetentionSweepTakesOneBatchATick(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	const files = 201
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {

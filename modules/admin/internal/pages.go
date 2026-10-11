@@ -92,7 +92,6 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 // and a second one that minted it differently is the duplicate most worth not
 // having. ui/assets/js/session.js is the thirty lines that make a form post
 // JSON. It is a bare page: somebody who has no session yet has no navigation.
-//
 // The destination under the form is where the person goes once the sign-in
 // answers. Three callers, three answers, in that order:
 //
@@ -105,6 +104,21 @@ func (p pages) mount(s httpx.Surfaces, home, app *httpx.Router) {
 //     like their role — see TestTheDashboardNamesTheScreensThisCallersRoleOpens
 //     for why the landing stays there, and what answers the walkthrough's zero
 //     scores once they arrive.
+//
+// The button beside the form is a second way through the same door, drawn as a
+// secondary action because the page asks for one thing at a time: "Sign in" stays
+// the only filled button above the fold, and a person who would rather not type a
+// password at all has the control in front of them. It carries the four ceremony
+// addresses the auth module publishes, derived from the login address the
+// composition already handed this page — p.SignIn is that route, so its legs are
+// the same paths with the ceremony appended, and this page invents no route and
+// names no module. Which pair the control runs is the module's answer, not the
+// page's guess: with no password offered it is the usernameless ceremony, and
+// after /login refused to finish without a second factor it is the challenge
+// ceremony for the address in the form. What the browser does with either pair is
+// ui/assets/js/passkeys.js: hand the options to the platform, hand the answer
+// back. A tenant that never opened the usernameless door answers the begin leg
+// with the reason, and that sentence is what the page shows.
 func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, register string) page.View {
 	home := p.at.dashboard.at
 	locale := r.Locale
@@ -182,6 +196,18 @@ func (p pages) login(ctx context.Context, r page.Request, next, action, forgot, 
 		// one. It is always offered, whatever the composition wires: forgetting a
 		// password is not an opt-in.
 		components.Flex(components.FlexProps{Direction: "row", Gap: "2"}, ways...),
+		components.Divider(components.DividerProps{Text: text("or", "or")}),
+		components.Button(components.ButtonProps{
+			Label: text("passkey", "Continue with a passkey"), FullWidth: true, Variant: "outline",
+			ComponentProps: components.ComponentProps{Attrs: map[string]string{
+				"data-passkey-signin": "",
+				"data-begin":          action + "/passkey/begin",
+				"data-verify":         action + "/passkey/verify",
+				"data-factor-begin":   strings.TrimSuffix(action, "/login") + "/challenge/passkey/begin",
+				"data-factor-verify":  strings.TrimSuffix(action, "/login") + "/challenge/passkey/verify",
+				"data-next":           next,
+			}},
+		}),
 	}}
 }
 

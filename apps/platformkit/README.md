@@ -45,7 +45,13 @@ service by hand and stated each edge a second time. **Made reusable** — the
 `product`/`access` pair itself: a first module of product-owned values with no
 needs, and a late one for the joins that need services, which is the shape every
 client's `Use` list now has; and `deploymentInputs`, the one place a process names
-which `FromDeployment` implementations its deployment has inputs for.
+which `FromDeployment` implementations its deployment has inputs for; and
+`reference.describe`, which commits what the resolved composition says as
+[COMPOSITION.development.json](COMPOSITION.development.json) and
+[COMPOSITION.production.json](COMPOSITION.production.json) beside the text file,
+named by `platformkit.composition.v1` and refused on drift by the same
+`UPDATE_GOLDEN` check — names only, so a machine can read what this installation
+is composed of without reading a configuration value out of it.
 
 The one edge no module declares is `user`'s promotion check, answered by the auth
 service. Declaring it either way is the cycle `user → auth → user`, which is a fact

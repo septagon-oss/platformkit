@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -51,6 +53,28 @@ func NewService(bindings []contracts.SubjectBinding) *Service {
 
 var _ contracts.Service = (*Service)(nil)
 
+// unwritable names the first key of a diff this subject cannot move, and answers true
+// when it can move every one of them.
+//
+// A subject that does not say (a Subject that is not a contracts.Writable) is asked
+// nothing, which is what leaves every binding written before this question standing
+// exactly where it stood: the merged document is then its own owner's business, as it
+// was. Where the subject does say, the keys are asked in sorted order, so two requests
+// carrying the same impossible diff name the same field.
+func unwritable(subject contracts.Subject, diff contracts.Diff) (string, bool) {
+	w, ok := subject.(contracts.Writable)
+	if !ok {
+		return "", true
+	}
+	allowed := w.WritableFields()
+	for _, field := range slices.Sorted(maps.Keys(diff)) {
+		if !slices.Contains(allowed, field) {
+			return field, false
+		}
+	}
+	return "", true
+}
+
 // actor is the person the request came from. No command reads one from a body: an
 // identity a caller could send is an identity a caller could choose, and the whole
 // four-eyes rule is a note on a form otherwise.
@@ -94,6 +118,14 @@ func (s *Service) Propose(ctx context.Context, tx db.Tx[db.Tenant], in contracts
 	current, revision, err := subject.Lock(ctx, tx)
 	if err != nil {
 		return nil, err
+	}
+	// A diff is only a promise if some apply could keep it. The subject is the one
+	// that knows which of its fields a Save writes, and a name outside that list
+	// merges into nothing: the proposal would be digested, decided and applied, the
+	// row would not move as reviewed, and the state would say it had.
+	if field, ok := unwritable(subject, in.Diff); !ok {
+		return nil, fmt.Errorf("%w: %s/%s has no field %q a proposal can move: it is either not a field of the subject, or one a command owns outright",
+			crud.ErrInvalid, in.SubjectModule, in.SubjectEntity, field)
 	}
 	if _, err := in.Diff.Merge(current); err != nil {
 		return nil, fmt.Errorf("%w: %v", crud.ErrInvalid, err)
@@ -204,7 +236,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 	}
 	verdict := in.Verdict
 	if verdict != contracts.VerdictApproved && verdict != contracts.VerdictDeclined {
-		return nil, fmt.Errorf("%w: a verdict is approved or declined, not %q", crud.ErrInvalid, verdict)
+		return nil, fmt.Errorf("%w: %w, not %q", crud.ErrInvalid, contracts.ErrVerdict, verdict)
 	}
 	if reviewer == row.Proposer {
 		// Asked before the row's state, so the author cannot read a decided proposal
@@ -222,7 +254,7 @@ func (s *Service) Review(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID,
 		if row.Verdict == verdict && row.Reviewer != nil && *row.Reviewer == reviewer {
 			return row, nil
 		}
-		return nil, fmt.Errorf("%w: this proposal was already %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrAlreadyDecided, row.State)
 	}
 	at := db.Now()
 	row.State = contracts.StateDeclined
@@ -264,7 +296,7 @@ func (s *Service) Apply(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, 
 		return row, nil
 	}
 	if row.State != contracts.StateApproved {
-		return nil, fmt.Errorf("%w: only an approved proposal may be applied, and this one is %s", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: this one is %s", crud.ErrConflict, contracts.ErrNotApproved, row.State)
 	}
 	binding, ok := s.binding(row.SubjectModule, row.SubjectEntity)
 	if !ok {
@@ -327,13 +359,13 @@ func (s *Service) Withdraw(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		// row's state, so a second account retrying an author's withdraw is refused the
 		// withdrawn row rather than handed it: the idempotent answer belongs to whoever
 		// the command would have accepted the first time.
-		return nil, fmt.Errorf("%w: only the proposer may withdraw a proposal", crud.ErrConflict)
+		return nil, fmt.Errorf("%w: %w", crud.ErrConflict, contracts.ErrNotProposer)
 	}
 	if row.State == contracts.StateWithdrawn {
 		return row, nil
 	}
 	if !row.Open() {
-		return nil, fmt.Errorf("%w: a %s proposal is over", crud.ErrConflict, row.State)
+		return nil, fmt.Errorf("%w: %w: it is %s", crud.ErrConflict, contracts.ErrProposalOver, row.State)
 	}
 	at := db.Now()
 	from := row.State
@@ -378,7 +410,7 @@ func (s *Service) open(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, e
 	if expectedRevision != row.Revision {
 		// The caller decided about a revision it had read. Anything else is two
 		// deciders who both clicked, and only one of them can be right.
-		return nil, fmt.Errorf("%w: this proposal is at revision %d", crud.ErrConflict, row.Revision)
+		return nil, fmt.Errorf("%w: %w: it is at revision %d", crud.ErrConflict, contracts.ErrStaleProposal, row.Revision)
 	}
 	return row, nil
 }

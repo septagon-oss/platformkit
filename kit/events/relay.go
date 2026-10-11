@@ -57,6 +57,13 @@ type row struct {
 	Baggage     string `gorm:"column:baggage"`
 	RequestID   string `gorm:"column:request_id"`
 	ClientIP    string `gorm:"column:client_ip"`
+	// The attribution the publisher stored beside the actor, pointers for the same
+	// reason Actor is: an event with no attribution is a person's request, and the
+	// envelope says so by leaving the attributes out.
+	ActorKind  *string
+	SourceFile *string
+	SourceLine *int
+	Initiator  *uuid.UUID
 }
 
 // lagKey is one pkit.outbox.lag time series: one tenant's share of one event name.
@@ -288,6 +295,10 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 		// what turns a column that is NULL — the ordinary case, see nilIfEmpty — into
 		// the empty string the envelope's optional members are written for.
 		//
+		// The attribution columns keep their NULL: unlike the trace members, an
+		// envelope says "no attribution" by leaving the attribute out, and the empty
+		// string would say the person acted without saying so.
+		//
 		// The table alias and the OF o below it belong to the app claim, not to the
 		// aliases: without them FOR UPDATE locks the rows of the one table named, which
 		// is the outbox today and would be the tenant table tomorrow — and locking the
@@ -296,7 +307,8 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 		const q = `SELECT o.id, o.tenant_id, o.name, o.payload, o.created_at, o.actor,
 			COALESCE(o.traceparent, '') AS traceparent, COALESCE(o.tracestate, '') AS tracestate,
 			COALESCE(o.baggage, '') AS baggage, COALESCE(o.request_id, '') AS request_id,
-			COALESCE(host(o.client_ip), '') AS client_ip FROM ` + table + ` o
+			COALESCE(host(o.client_ip), '') AS client_ip,
+			o.actor_kind, o.source_file, o.source_line, o.initiator FROM ` + table + ` o
 			LEFT JOIN tenants tn ON tn.id = o.tenant_id
 			WHERE o.published_at IS NULL AND coalesce(tn.app, '') = ?
 			ORDER BY o.created_at, o.id LIMIT ? FOR UPDATE OF o SKIP LOCKED`
@@ -347,6 +359,20 @@ func relayBatch(ctx context.Context, conn *db.Conn, t Transport, app appname.Nam
 				RequestID: r.RequestID, ClientIP: r.ClientIP}
 			if r.Actor != nil {
 				ev.Actor = *r.Actor
+			}
+			// The attribution the publisher stored, carried onto the envelope so a
+			// subscriber three hops away can still say which file asked for this.
+			if r.ActorKind != nil {
+				ev.ActorKind = *r.ActorKind
+			}
+			if r.SourceFile != nil {
+				ev.SourceFile = *r.SourceFile
+			}
+			if r.SourceLine != nil {
+				ev.SourceLine = *r.SourceLine
+			}
+			if r.Initiator != nil {
+				ev.Initiator = *r.Initiator
 			}
 			// One span for this row's departure, on this row's own trace, naming
 			// this row's tenant. It carries the row's trace context rather than the

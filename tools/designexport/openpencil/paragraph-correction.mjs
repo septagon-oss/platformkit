@@ -4,6 +4,7 @@ import { drawUnderlinedParagraph } from './underline-correction.mjs'
 
 const paragraphs = new WeakMap()
 const breaks = new Rules()
+const graphemes = new Intl.Segmenter('und', { granularity: 'grapheme' })
 const encoder = new TextEncoder()
 const shiftedRect = (rect, x, y) => Float32Array.from(rect, (value, i) => value + (i % 2 ? y : x))
 
@@ -11,8 +12,11 @@ const shiftedRect = (rect, x, y) => Float32Array.from(rect, (value, i) => value 
 // not. Keep one native TEXT/string; compose its line paragraphs at this private
 // provider boundary so measurement, paint, selection and hit testing agree.
 // Break opportunities come from UAX #14, advances and glyphs from native Skia.
+// Emergency breaks shape each resulting line independently, as the browser
+// does, rather than retaining kerning across a split inside an oversized word.
 export function sourceParagraph(node, make) {
-  if (ownSourceLayoutRecord(node)?.textWrap !== 'normal-v1' || !node.text) return make(node)
+  const wrapping = ownSourceLayoutRecord(node)?.textWrap
+  if (!['normal-v1', 'break-word-v1', 'anywhere-v1'].includes(wrapping) || !node.text) return make(node)
   // These authored native changes leave the converter's proven CSS subset.
   // Preserve native editing instead of applying an incompatible line model.
   if (/[\r\n\t\u00ad]/u.test(node.text) || node.textDirection === 'RTL' ||
@@ -33,19 +37,39 @@ export function sourceParagraph(node, make) {
   function layout(width) {
     if (width === state.width) return
     const lines = []
-    let start = 0, pending
+    let start = 0, pending, candidate
     try {
       for (const boundary of breaks.breaks(node.text)) {
-        let candidate = line(start, boundary.position)
+        candidate = line(start, boundary.position)
         if (pending && candidate.advance > width) {
           candidate.paragraph.delete()
+          candidate = undefined
           lines.push(pending)
           start = pending.end
           pending = undefined
           candidate = line(start, boundary.position)
         }
+        if (wrapping !== 'normal-v1' && candidate.advance > width) {
+          candidate.paragraph.delete()
+          candidate = undefined
+          const wordStart = start
+          for (const part of graphemes.segment(node.text.slice(wordStart, boundary.position))) {
+            const end = wordStart + part.index + part.segment.length
+            let next = line(start, end)
+            if (candidate && next.advance > width) {
+              next.paragraph.delete()
+              lines.push(candidate)
+              start = candidate.end
+              candidate = undefined
+              next = line(start, end)
+            }
+            candidate?.paragraph.delete()
+            candidate = next
+          }
+        }
         pending?.paragraph.delete()
         pending = candidate
+        candidate = undefined
         if (boundary.required) {
           lines.push(pending)
           start = boundary.position
@@ -62,6 +86,7 @@ export function sourceParagraph(node, make) {
         y += item.paragraph.getHeight()
       }
     } catch (error) {
+      candidate?.paragraph.delete()
       pending?.paragraph.delete()
       for (const item of lines) item.paragraph.delete()
       throw error

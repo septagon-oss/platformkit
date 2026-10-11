@@ -1,0 +1,33 @@
+# Three pieces of work, so the demonstration opens on a list with something in
+# it: one thing to do, one thing somebody is already doing, and one nobody has
+# taken yet. Every row is written by task's own write core, the one its POST route
+# runs, and assigned by its Assign command — a seeded task is a task, with the
+# same validation, the same task.created event, and, where a person is named, the
+# same task.assigned one.
+#
+# No deadline is declared on a task whose deadline is already behind it. The task
+# module mounts its Spec with a create hook that marks such a task breached, and
+# that hook belongs to the route it was written for; a seed that named a past
+# deadline would be a seed that skipped the breach. `dueAt` below is three days
+# ahead of the run that writes the row, which the seeder's own grammar resolves
+# against the run's clock and applies on creation only — kit/seed/README.md's
+# Limits and docs/seed.md's *Time, audit and external effects* say why a moving
+# value is never reconciled.
+apiVersion: platformkit.seed/v1
+resource: tasks
+records:
+  - key: take-the-tour
+    fields:
+      title: Take the tour of the site
+      priority: high
+      dueAt: "+3d"
+      assignee: users/marta@example.test
+  - key: write-the-first-page
+    fields:
+      title: Write the first page for a real reader
+      priority: normal
+      assignee: users/devin@example.test
+  - key: invite-a-colleague
+    fields:
+      title: Invite a colleague and give them a role
+      priority: low
