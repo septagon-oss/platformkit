@@ -15,7 +15,9 @@ test('an API session stays in its own context and saves through the generated fo
     await structure(session.page);
     const title = `Published form step ${Date.now()}`;
     await session.page.getByLabel('Title').fill(title);
-    await session.page.getByLabel('Due At').fill(moment(60));
+    // The form names this control `Due` (`modules/task/contracts/task.go:104`) and draws
+    // `Response due` for the hard deadline, so the name has to match exactly or both answer it.
+    await session.page.getByLabel('Due', { exact: true }).fill(moment(60));
     await save(session.page);
     await expect(session.page.getByRole('heading', { name: title, exact: true })).toBeVisible();
     await expect(session.page).toHaveURL(/\/app\/task\/tasks\/[0-9a-f-]{36}$/);
