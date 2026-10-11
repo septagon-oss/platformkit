@@ -197,12 +197,27 @@ and changes what no existing tenant sees until a field of theirs is tagged.
 
 ## Composition
 
+The module is a `pkit.Module`: it needs one contract and provides one.
+
 ```go
-translationSvc, translationModule := translation.Module(translation.Deps{
-    Sources: []rest.TranslationSource{rest.TranslationSourceOf(contentSpec)},
-})
-contentSpec.Translations = translationSvc
+// apps/platformkit/app.go — named in the sentence, before the module that needs it
+pkit.NewApp("platformkit", …).Use(
+    translation.Module, // Needs[rest.TranslationSource], Provides[contracts.Service]
+    content.Module,     // Needs[rest.Translations] — so content is named after it
+    …,
+)
+
+// apps/platformkit/product.go — and the application, not the module, writes down
+// whose records may be translated: an edge from translation to content is a cycle
+// the resolver refuses, and the row set is a value derived from schema tags.
+pkit.Put[rest.TranslationSource](w, content.TranslationSource())
 ```
+
+`translation.New(Deps{Sources, Translator})` is the constructor behind that module,
+and it is wider than the provider that wraps it: the constructor takes a list of
+sources and an optional `locale.Translator`, `wire` names one source and no
+translator, so a deployment that means to serve machine drafts writes its own
+provider rather than editing this one.
 
 **Reused** — the delivery is composed from `kit/richtext.SourceHash` (the digest
 staleness is decided by, uncalled until now), `kit/crud`'s `Classify` and
