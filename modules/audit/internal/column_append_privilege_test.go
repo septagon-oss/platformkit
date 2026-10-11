@@ -18,7 +18,10 @@ func TestColumnAppenderCannotExpireHistory(t *testing.T) {
 	admin, _ := dbtest.Schema(t, audit.Migrations)
 	_, appDSN := dbtest.Role(t, admin,
 		"SELECT, DELETE ON TABLE audit_events",
-		"INSERT (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent) ON TABLE audit_events")
+		// A column list that leaves one of the appended columns out refuses the whole
+		// INSERT, so this grant names the attribution four as well; what it still may not
+		// do is the point of the case.
+		"INSERT (tenant_id, occurred_at, name, actor, event_id, payload, records, request_id, client_ip, traceparent, actor_kind, source_file, source_line, initiator) ON TABLE audit_events")
 	conn, err := db.Open(t.Context(), appDSN)
 	if err != nil {
 		t.Fatal(err)

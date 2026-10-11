@@ -182,6 +182,7 @@ func (f *Fake) Create(ctx context.Context, tx db.Tx[db.System], in contracts.New
 		// json:"-" on the request type, so the only caller that can set it is the
 		// fixture or a Bootstrap — which is the same rule the real create keeps.
 		Operator: in.Operator, Hosts: []string{host}, DefaultLocale: start,
+		Demo:      in.Demo,
 		CreatedAt: at, UpdatedAt: at,
 	}
 	f.tenants[t.ID], f.hosts[host] = t, t.ID

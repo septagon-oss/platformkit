@@ -36,7 +36,7 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   await page.getByLabel('Title').fill(title);
   await page.getByLabel('Priority').selectOption('high');
   await page.getByLabel('Description').fill('Inspect the supply hose');
-  await page.getByLabel('Due At').fill('2026-12-01T14:30');
+  await page.getByLabel('Due', { exact: true }).fill('2026-12-01T14:30');
   await page.getByRole('button', { name: 'Save' }).click();
 
   // The write redirects to the row it created.
@@ -51,16 +51,16 @@ test('the admin shell renders and a generated CRUD screen works', async ({ page 
   // Edit.
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('Inspect the supply hose');
-  await expect(page.getByLabel('Due At')).not.toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).not.toHaveValue('');
   await page.getByLabel('Title').fill(renamed);
   await page.getByLabel('Description').fill('');
-  await page.getByLabel('Due At').fill('');
+  await page.getByLabel('Due', { exact: true }).fill('');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page).toHaveURL(row);
   await expect(page.getByRole('heading', { name: renamed })).toBeVisible();
   await page.goto(`${row}/edit`);
   await expect(page.getByLabel('Description')).toHaveValue('');
-  await expect(page.getByLabel('Due At')).toHaveValue('');
+  await expect(page.getByLabel('Due', { exact: true })).toHaveValue('');
   await page.goto(row);
 
   // Delete, through the confirm dialog the shell puts on every page.
@@ -80,11 +80,18 @@ test('an empty title is refused on the form rather than by a page of JSON', asyn
   await expect(page.getByLabel('Title')).toBeFocused();
 });
 
+// The case asks a generated list with no rows to keep its empty-state message inside
+// a narrow page. It used to ask that of the content list, and a reference tenant now
+// opens on starter pages — seed/starter/contents.yaml is written by the tenant-creation
+// hook — so /app/content/contents has rows and the empty state a person meets first is
+// elsewhere. The plans list is the one generated list no journey of this suite writes
+// to and nothing provisions: a plan is priced by an operator, not by a tenant's
+// arrival.
 test('an empty generated list keeps its message within the visible page', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 900 });
-  const response = await page.goto('/app/content/contents');
+  const response = await page.goto('/app/billing/plans');
   expect(response?.status()).toBe(200);
-  const message = page.getByText('No contents yet.', { exact: true });
+  const message = page.getByText('No plans yet.', { exact: true });
   await expect(message).toBeVisible();
   await page.evaluate(() => document.fonts.ready);
   const text = await message.evaluate(element => {

@@ -17,6 +17,7 @@
 package content
 
 import (
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -39,9 +40,12 @@ type Deps struct {
 	Uses rest.FileUses
 }
 
-// spec is the entity's presence in the application: five routes, two
-// permissions, three events and the schema a generated screen reads.
-var spec = rest.Spec[*contracts.Content]{
+// Spec is the entity's presence in the application: five routes, two
+// permissions, three events and the schema a generated screen reads. It is
+// exported because the write it describes is the one write path content has: an
+// application that seeds a page, or writes one from a process that is not a
+// person's request, goes through it rather than through a copy of what it does.
+var Spec = rest.Spec[*contracts.Content]{
 	Module:     "content",
 	Entity:     "content",
 	Path:       "/contents",
@@ -57,6 +61,19 @@ var spec = rest.Spec[*contracts.Content]{
 	// declare on the write routes' behalf. The lifecycle's three events are
 	// declared by the three commands that publish them, in internal/handler.go.
 	HookEvents: nil,
+	// Present is how a page reads to the person who maintains it. `previewField`
+	// is written nowhere here: the body is Markdown source, and a row previewing
+	// raw Markdown is the fault decision 0085 photographs.
+	Present: entity.EntryHints{
+		Singular:      "page",
+		Plural:        "pages",
+		Icon:          "document",
+		Group:         &entity.ResourceGroup{Key: "content", Label: "Content"},
+		PrimaryField:  "title",
+		StatusField:   "status",
+		SummaryFields: []string{"kind"},
+		Sortable:      []string{"title", "publishedAt", "updatedAt"},
+	},
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -78,7 +95,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if uses == nil {
 		uses = rest.RecordNoUses{}
 	}
-	resource := spec
+	resource := Spec
 	resource.RichTextFiles = files
 	resource.FileUses = uses
 	svc := internal.NewService()
