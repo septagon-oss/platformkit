@@ -55,7 +55,6 @@ import (
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
-	"github.com/septagon-oss/platformkit/modules/site"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	"github.com/septagon-oss/platformkit/modules/task"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
@@ -237,8 +236,12 @@ func access(ask *accessReach) *pkit.Module {
 		// One contribution each: a module contributes the one of a contract it is, so
 		// this product's second subject — the task — is contributed by the product
 		// module, which needs nobody and can build it from two named constructors, and
-		// a slice the resolver would refuse is what a loop over both here would be.
-		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, site.NewLockedReader()))
+		// a slice the resolver would refuse is what a loop over both here would be. The
+		// locked read is the service above under the contract a caller about to write
+		// is handed: a second door to it could not reach what the wiring gives it, and a
+		// base document whose accent read differently from the API's answer would be a
+		// proposal diffed against a site nobody was shown.
+		pkit.Put[changecontracts.SubjectBinding](w, siteSubjectBinding(sites, pkit.Get[sitecontracts.LockedReader](w)))
 		// The same join makes the two facts change control needs to be more than a
 		// row: who is told about a decision, and where the thing decided is read.
 		// modules/change owns the proposal, its page's content and no address, and
@@ -261,6 +264,7 @@ func access(ask *accessReach) *pkit.Module {
 		pkit.Needs[usercontracts.Service](),
 		pkit.Needs[notificationcontracts.Service](),
 		pkit.Needs[sitecontracts.Service](),
+		pkit.Needs[sitecontracts.LockedReader](),
 		pkit.Needs[usercontracts.Granting](),
 		pkit.Needs[authcontracts.Auth](),
 		pkit.Provides[changecontracts.Notifier](),
