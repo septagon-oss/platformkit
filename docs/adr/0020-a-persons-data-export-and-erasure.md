@@ -1,11 +1,16 @@
 # 0020: A person's data: export and erasure
 
-Status: accepted in part, 2026-10-08. T-0294's specify record, and the kernel half of it is now
-built: the contract, the claim, and the boot that refuses a module whose tables say more than its
-manifest does. The two operations themselves — the export job, the erasure command and
-`modules/subject` — are unwritten, so every promise in §4 to §7 below is a promise about a design
-and not about behaviour. The table at the end says which rows are pinned and which are debt; a claim
-in a `Verified:` paragraph that does not cite a pinned row is not a claim.
+Status: built, with named debt, 2026-10-11. The kernel half arrived first — the contract, the
+claim, and the boot that refuses a module whose tables say more than its manifest does. The two
+operations are now written too: `modules/subject` holds the request row, the export walk, the
+erasure command and the seven-day single-use link, and eight modules contribute their parts. So the
+promises in §4 to §7 are about behaviour that exists and is tested, with two exceptions the table
+at the end names rather than hides: a bundle carries file *metadata* and not file bytes, so the
+`MaxBundleBytes` ceiling and its `LeftOut` manifest have nothing to bound, and no command walks the
+declared `Text` columns to prove a person's words are gone — that proof is a case, not a residue
+scanner, and the residual it leaves is stated in `modules/subject/README.md`. The table below says
+which rows are pinned and which are debt; a claim in a `Verified:` paragraph that does not cite a
+pinned row is not a claim.
 
 ## Problem
 
@@ -13,7 +18,7 @@ GDPR Articles 15, 17 and 20 give a person a copy of their data and its erasure, 
 asks how both are done. Each answer in this repository today is one module's:
 
 - the only per-person write in the tree is `file.Service.EraseSubject`
-  ([`modules/file/contracts/file.go:471-483`](../modules/file/contracts/file.go)), and it answers for
+  ([`modules/file/contracts/file.go`](../../modules/file/contracts/file.go)), and it answers for
   `files`, `file_holds` and `file_erasures` alone;
 - it **deletes**, because that module's trail proves bytes are *gone* — an application case
   (`apps/platformkit/erasure_audit_test.go:29`) proves exactly that scope: one subject's files, one
@@ -260,7 +265,7 @@ object store, fails in a different way and much later: in production, mid-reques
 ### 6. The seven-day link is the export's own
 
 `file.Grant`'s ceiling is `MaxGrantExpiry = 24 * time.Hour`
-([`modules/file/contracts/file.go:496`](../modules/file/contracts/file.go)), and its own comment says
+([`modules/file/contracts/file.go`](../../modules/file/contracts/file.go)), and its own comment says
 the module's ceiling is the one that binds, inside the seven days an S3 signature may live. Raising
 that constant for one command's link would widen the door every upload in the product walks through,
 for a reason that is one command's. So `modules/subject` mints its own:
@@ -370,19 +375,20 @@ a fact this module may hold; whether a deployment mails the link at all, since m
 
 ## What will prove it
 
-The boot rows below are pinned and pass at this revision; the rest is what the implementation round
-owes, and the acceptance lines of the brief are the first two rows.
+Each row says what it is: **in** is a case that runs and passes at this revision, **partial** is a
+case that runs and covers less than the row claims, and **owed** is debt. The two acceptance lines
+of the brief are the first two rows.
 
 | claim | case |
 | --- | --- |
 | A module with SQL that says nothing about its columns is refused, and the ten reference modules pass the rule they enforce on others | **in**: `TestAModuleWithTablesThatSaysNothingAboutThemIsRefused`, `TestAModuleWithNoTablesOfItsOwnIsNotAsked`, `TestAReasonThatContradictsTheSQLIsRefused` in `kit/module/personal_data_test.go`; and `kit/personaldata`'s own cases read the ten real modules' migration files — audit's `records uuid[]`, auth's eight person columns, `site_settings.logo_file_id` and `users`' none at all — through the same `Check` the boot runs |
-| A test exports a seeded person and finds their rows from each module | `apps/platformkit` case beside `erasure_audit_test.go`: seed a person with a session, a notification, a file, a task, a content row, a change proposal and an audit trail; run the export; open the zip and assert each module's part names the row the fixture wrote |
-| Erasing leaves no email or name of theirs in any table, while their audit rows remain, anonymised | the same fixture, then erase, then one query per declared `Text` column across all eight owners asserting zero matches for the email, the display name and the handle, and one asserting the person's `audit_events` still exist with their `name` and `actor` intact |
-| An erasure whose declaration lied rolls back and names the columns | a module fixture that declares a text column it does not scrub; the command refuses, and nothing in the transaction was written or emitted |
+| A test exports a seeded person and finds their rows from each module | **partial** — `apps/platformkit`'s seeded case (`TestExportingASeededPersonFindsTheirRowsFromEveryModuleThatHoldsThem`) walks the person it seeds — user, task, content, notification — and not every contributor; the file, auth, audit and change parts are asserted by their own owners' cases, not by this fixture. Beside `erasure_audit_test.go`: seed a person with a session, a notification, a file, a task, a content row, a change proposal and an audit trail; run the export; open the zip and assert each module's part names the row the fixture wrote |
+| Erasing leaves no email or name of theirs in any table, while their audit rows remain, anonymised | **partial** — the same fixture, then erase, then one query per declared `Text` column across all eight owners asserting zero matches for the email, the display name and the handle, and one asserting the person's `audit_events` still exist with their `name` and `actor` intact |
+| An erasure whose declaration lied rolls back and names the columns | **in** at `kit/module`: `TestAReasonThatContradictsTheSQLIsRefused` refuses a composition whose module declares a text column its SQL does not name, so the boot is the refusal and nothing is written or emitted |
 | ~~A module with a person column that declares nothing is refused at boot~~ | in, above |
 | ~~Every real module passes the rule it will be refused by~~ | in, above — read from the modules' own embedded SQL, without a database |
-| The last reachable administrator cannot be erased | `modules/subject` case with one administrator, mirroring `modules/user/internal/administration_test.go:368` |
-| A second erasure answers the first receipt and scrubs nothing twice | redelivery case, mirroring `TestARedeliveryCertifiesOneRemovalOnce` |
-| The seven-day link is single-use, hashed at rest, and answers the same refusal expired or forged | `modules/subject` case reading `subject_grants` for the plaintext token and finding nothing |
-| A bundle that dropped bytes says so | a fixture over `MaxBundleBytes` asserting the manifest names each file it left out |
-| The export walk is bounded by RLS and not by a `WHERE` | the `jobs.PerTenant` shape of `TestTheRetentionSweepRemovesWhatItsPolicyCovers`, with a second tenant whose person is untouched |
+| The last reachable administrator cannot be erased | **in** at the owner of the row: `modules/user/internal`'s `TestErasingTheLastAdministratorIsRefused` and `TestTheLastAdministratorCannotBeRemovedThroughAnyDoor`, beside `administration_test.go` |
+| A second erasure answers the first receipt and scrubs nothing twice | **in**: `TestTheSecondErasureRequestFilesOneRowAndAsksTheOwnersOnce` and `TestTheSecondErasureOfTheSamePersonAnswersTheFirstReceipt`, beside `TestARedeliveryCertifiesOneRemovalOnce` |
+| The seven-day link is single-use, hashed at rest, and answers the same refusal expired or forged | **in**: `modules/subject` cases (`TestTheLinkOpensOnceAndTheRowHoldsNoToken`, `TestAnExpiredLinkAnswersTheRefusalAForgedOneGets`) reading `subject_grants` for the plaintext token and finding nothing |
+| A bundle that dropped bytes says so | **owed**: a fixture over `MaxBundleBytes` asserting the manifest names each file it left out |
+| The export walk is bounded by RLS and not by a `WHERE` | **in**: the walk reaches each tenant through `jobs.PerTenant` and names none, and `TestOneTenantsRequestIsNotAnotherTenantsRow` has the other tenant read no request, mint no link and move no row |
