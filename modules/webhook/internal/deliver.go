@@ -61,13 +61,16 @@ const (
 // true even of a mistyped query, and a wrong-tenant claim is not a bug this file
 // can introduce.
 //
-// Three steps, and which transaction writes which row is the part a reviewer
+// Four steps, and which transaction writes which row is the part a reviewer
 // should check first:
 //
 //	claim    — one short tenant transaction: queued (or in_flight past its
-//	           lease) rows become in_flight with FOR UPDATE SKIP LOCKED, the
-//	           endpoint's secret is decrypted while that transaction is open,
-//	           and it commits before any socket opens.
+//	           lease) rows become in_flight with FOR UPDATE SKIP LOCKED, a row
+//	           whose endpoint is gone or disabled is ended there, and it
+//	           commits before any socket opens.
+//	re-ask   — one short tenant transaction per row, before its request is
+//	           built: whether the row is still wanted, and what its endpoint's
+//	           row says its address and its signing key are now.
 //	send     — no transaction at all. A lock is never held across somebody
 //	           else's web server.
 //	outcome  — a new tenant transaction: this row's terminal state, the retry
@@ -121,8 +124,16 @@ func Deliver(svc *Service, tenants jobs.TenantLister, every time.Duration, batch
 	}
 }
 
-// attempt is one claimed row and the signing key it needs, both read in the
-// claim transaction. The key travels in memory for the length of the send and
+// attempt is one row a tick claimed, the moment the claim ran, and — filled by
+// the re-ask beside the socket, not by the claim — the endpoint row to address
+// and the signing key to sign with.
+//
+// The claim cannot carry those two: it takes a batch in one transaction and the
+// requests leave one at a time afterwards, and an endpoint's address and its
+// secret are exactly the two facts a tenant's command can change in between.
+// Sending what the claim read would deliver to an address the tenant moved on
+// from, or sign with a key a rotation replaced; both are documented as taking
+// effect at once. The key travels in memory for the length of one send and
 // nowhere else: it is never stored on the row, never logged, never in the
 // outcome.
 type attempt struct {
@@ -191,11 +202,7 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 				}
 				continue
 			}
-			key, err := s.CurrentSecret(tx, row.EndpointID)
-			if err != nil {
-				return err
-			}
-			out = append(out, attempt{row: row, endpoint: endpoint, key: key, firstSent: now})
+			out = append(out, attempt{row: row, firstSent: now})
 		}
 		return nil
 	})
@@ -218,9 +225,12 @@ func (s *Service) claim(ctx context.Context, conn *db.Conn, batch int, lease tim
 // about. Sending them anyway would be a destination an administrator just stopped
 // trusting receiving payloads it was never asked for; "disable stops delivery
 // now" is about the attempts that had not started as much as about the ones that
-// were never queued.
+// were never queued. The same ask reads the address and the signing key from that
+// row, for the same reason and with the same boundary: a re-target or a rotation
+// that committed while an earlier member was on the wire is the end of the old
+// address and the old key for every request that had not started.
 func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *http.Client) {
-	wanted, err := s.stillWanted(ctx, conn, a)
+	a, wanted, err := s.recheck(ctx, conn, a)
 	if err != nil {
 		if ctx.Err() == nil {
 			s.logSendFailure(a, err)
@@ -242,18 +252,28 @@ func (s *Service) send(ctx context.Context, conn *db.Conn, a attempt, client *ht
 	}
 }
 
-// stillWanted is that second ask, and it ends the row in the same short
-// transaction it read the endpoint in, so an attempt that never opened a socket
-// still carries its terminal state and the reason — the same end the claim gives
-// a row it finds addressed to a disabled endpoint, and the same one the
-// disablement's own statement gives the rows it was able to see.
+// recheck is that second ask, and it ends the row in the same short transaction
+// it read the endpoint in, so an attempt that never opened a socket still carries
+// its terminal state and the reason — the same end the claim gives a row it finds
+// addressed to a disabled endpoint, and the same one the disablement's own
+// statement gives the rows it was able to see.
 //
 // It reads without locking: this is not a command deciding a state change, it is
 // the sender declining to act on a fact that is already committed. A disable
 // committing one instant after this read sends one request the administrator
 // would not have wanted, which is the window every "stops now" promise has; a
 // disable that committed before it stops this attempt and the rest of its batch.
-func (s *Service) stillWanted(ctx context.Context, conn *db.Conn, a attempt) (bool, error) {
+//
+// The same read answers where the request goes and what signs it, for the reason
+// the batch's rows leave one at a time: a Target or a Rotate that committed while
+// an earlier member of the batch was on the wire committed before this request was
+// built, so the address and the key a sender would find stale here are the two a
+// tenant just changed. Dialling the previous address keeps telling a receiver that
+// stopped asking; signing with the replaced key hands the next receiver a 401 it
+// has no reason to retry and the event is lost. What is already on the wire keeps
+// what it started with — those bytes are signed and that socket is open, and no
+// later command can unsend them.
+func (s *Service) recheck(ctx context.Context, conn *db.Conn, a attempt) (attempt, bool, error) {
 	wanted := true
 	err := db.Run(ctx, conn, func(_ context.Context, tx db.Tx[db.Tenant]) error {
 		endpoint, err := crud.Get[*contracts.Endpoint](tx, a.row.EndpointID)
@@ -264,13 +284,18 @@ func (s *Service) stillWanted(ctx context.Context, conn *db.Conn, a attempt) (bo
 			wanted = false
 			return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDeleted)
 		}
-		if endpoint.IsEnabled() {
-			return nil
+		if !endpoint.IsEnabled() {
+			wanted = false
+			return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDisabled)
 		}
-		wanted = false
-		return s.dropRow(tx, a.row.ID, contracts.StateDropped, 0, contracts.ReasonEndpointDisabled)
+		key, err := s.CurrentSecret(tx, endpoint.ID)
+		if err != nil {
+			return err
+		}
+		a.endpoint, a.key = endpoint, key
+		return nil
 	})
-	return wanted, err
+	return a, wanted, err
 }
 
 // post is the socket. The body is the stored payload's bytes and nothing else:

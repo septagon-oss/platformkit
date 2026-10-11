@@ -9,6 +9,8 @@ outbox ──▶ Fanout (kit/events handler, one subscription per emitted event)
               └─ one queued row per matching endpoint of this tenant
         ──▶ Deliver (kit/jobs, per tenant, every 5 s)
               claim ─ short tenant tx, FOR UPDATE SKIP LOCKED, commits
+              re-ask ─ short tenant tx per row: still enabled? and what
+                       address and what signing key does the row say now?
               send  ─ no transaction: the socket opens with no lock held
               outcome ─ new tenant tx: state, retry row, fault clock,
                         disablement + its event + its notice, one commit
@@ -260,6 +262,15 @@ Stated because each one is a promise someone could otherwise read into the modul
   batch that had not started, `dropped` with `the endpoint is disabled`, and the one
   already open is answered as it was going. A disable that commits a microsecond
   after the re-check is one request; there is no protocol that promises less.
+* **A re-target and a rotation are as immediate as a disable, and no more.** The
+  same re-ask reads the address to dial and the secret to sign with from the
+  endpoint's row, so a `Target` or a `Rotate` that committed while an earlier
+  member of the batch was on the wire is obeyed by every request that had not
+  started: the previous address hears nothing further, and no unsent member carries
+  a signature the current key does not verify — which a receiver checking only the
+  secret it holds would answer `401`, and `401` is terminal, so the event would be
+  lost. The request already on the wire keeps the address it connected to and the
+  key it signed with: those bytes are signed and that socket is open.
 * **One waiting replay per pair, and no more.** The command is idempotent while an
   attempt is `queued` or `in_flight`; a pair whose replay has been answered can be
   replayed again, and that second replay is a new row with the next attempt number.
@@ -294,7 +305,8 @@ Stated because each one is a promise someone could otherwise read into the modul
 * **A rotated secret is kept for a day and never signs with.** `previous_*` is
   stored so a support question can be answered; the space-delimited signature list
   would let the module sign with both keys during the window, and it does not, so a
-  receiver mid-rotation must pick up the new secret.
+  receiver mid-rotation must pick up the new secret. Every request that starts
+  after the rotation commits already uses it.
 * **The stored refusal sentences are English.** `contracts.Reason*` are written
   into rows. The two permission labels have pt-PT words; a reason on a delivery row
   is the language it was written in. Reason *keys*, translated at render, is open
