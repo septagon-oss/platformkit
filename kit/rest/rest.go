@@ -73,6 +73,17 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// History keeps a version of every write this Spec commits, in the same
+	// transaction as the write. It is a declaration and not a request: a resource
+	// whose content people revise wants a version per save, and a resource whose
+	// rows are counters does not. It requires two things, both refused at mount:
+	// Versions to keep them in, and a write count of the row's own to number them
+	// with — the version number is entity.RevisionField, and this module refuses
+	// to invent a second one.
+	History bool
+	// Versions is the store a History resource's versions are kept in, called
+	// inside the transaction that wrote the row. modules/history provides it.
+	Versions httpx.Versions
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -315,6 +326,9 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 		res.WritePath = write.Prefix() + s.Path
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
+	if s.History {
+		s.mountHistory(surfaces, read, write)
+	}
 
 	if s.offers(httpx.CRUDList) {
 		httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
@@ -464,6 +478,19 @@ func (s Spec[T]) createRow(ctx context.Context, tx db.Tx[db.Tenant], e T) (T, er
 	if err := crud.Create(ctx, tx, e); err != nil {
 		return e, err
 	}
+	// The row's first version, at the number the row itself starts on. Nothing
+	// preceded it, so it names no changed fields: a version's `changed` answers
+	// "what did this write move", and the first write moved everything by being
+	// the beginning rather than by moving anything.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, nil); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Created, e, s.AfterCreate)
 }
 
@@ -560,6 +587,21 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return e, err
 	}
 	defer done()
+	// The version rides this transaction: the snapshot is the row as the UPDATE
+	// left it (normalised by the entity's own Validate, which is the same reason
+	// the diff below is taken here), taken before reportDiff put the diff on the
+	// entity, so no stored document holds a `changes` array that belongs to one
+	// event. It is recorded before the event is published, so a published
+	// `updated` never describes a version the database refused.
+	if s.History {
+		snap, err := jsonSnapshot(e)
+		if err != nil {
+			return e, err
+		}
+		if err := s.recordVersion(ctx, tx, e, snap, changedNamesFrom(fields, beforeJSON, snap)); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Updated, e, nil)
 }
 
@@ -1012,6 +1054,9 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = s.operationsFault()
+	}
+	if bad == "" {
+		bad = s.historyFault()
 	}
 	if bad == "" {
 		bad = s.gateFault()
