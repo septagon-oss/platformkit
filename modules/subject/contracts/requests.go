@@ -62,6 +62,13 @@ const MaxReason = 500
 // (ADR 0020 §7's last row).
 var ErrGrant = errors.New("subject: that link is not open")
 
+// ErrDenied is the answer of a command whose caller does not hold the grant that door is
+// declared with, or whose credential names somebody other than the actor the transaction
+// carries. It is a refusal and not a "not found": a person who may not ask is told that,
+// because which doors exist on this installation is not a secret and which rows are in them
+// is. The row, the event and the contributors are untouched when it comes back.
+var ErrDenied = errors.New("subject: this caller is not granted that")
+
 // RequestExportInput is one ask for a person's copy.
 type RequestExportInput struct {
 	// Subject is the person whose rows are wanted. On the person's own door the route
@@ -211,7 +218,7 @@ type Door interface {
 // `filecontracts.Service` so the door's dependency is the two calls it makes, and the
 // composition hands over the file module's own Service, which satisfies it.
 type BundleSource interface {
-	// Put stores one bundle: private, and named for the request it answers. It answers the
+	// Put stores one bundle: sealed, and named for the request it answers. It answers the
 	// file row's id.
 	Put(ctx context.Context, tx Tx, name string, body []byte) (uuid.UUID, error)
 
