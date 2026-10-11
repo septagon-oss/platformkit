@@ -43648,6 +43648,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/resource/edit_form_hidden_field_and_write_condition_test.go",
+   "id": "ui/resource/edit_form_hidden_field_and_write_condition_test.go#TestAnEditFormKeepsAHiddenFieldOffAndQuotesTheWriteCountOnlyAsItsCondition",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnEditFormKeepsAHiddenFieldOffAndQuotesTheWriteCountOnlyAsItsCondition",
+   "needs_db": false,
+   "pkg": "ui/resource",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/resource/help_language_test.go",
    "id": "ui/resource/help_language_test.go#TestAFormDrawsItsLabelAndItsHelpLineInOneLanguage",
    "kind": "go",
@@ -50706,7 +50725,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1215,
+  "files": 1216,
   "forge_runs": [
    408,
    413,
@@ -50740,7 +50759,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2218,
+   "behaviour": 2219,
    "composition": 259,
    "contract": 19,
    "journey": 58
@@ -50759,23 +50778,23 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2554,
+  "rows": 2555,
   "tiers": {
    "merge": 1561,
    "nightly": 58,
-   "push": 935
+   "push": 936
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1000,
+   "keep": 1001,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2207,
+   "keep": 2208,
    "keep-rewrite": 132,
    "merge": 215
   }
