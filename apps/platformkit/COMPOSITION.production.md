@@ -17,7 +17,7 @@ pkit: user.Module is built after product.Module.
 pkit: user.Module needs usercontracts.Administration from product.Module.
 pkit: user.Module needs usercontracts.Granting from product.Module.
 pkit: user.Module defines the permission user:read, user:manage and user:approve.
-pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
+pkit: user.Module emits user.user.created, user.user.updated, user.user.deleted, user.invited, user.password_set, user.roles_set, user.deactivated, user.reactivated, user.handle_set, user.registration_pending, user.registration_approved, user.registration_unverified and user.email_verified.
 pkit: site.Module is built after product.Module.
 pkit: site.Module uses sitecontracts.WriteGate from product.Module.
 pkit: site.Module defines the permission site:manage.
