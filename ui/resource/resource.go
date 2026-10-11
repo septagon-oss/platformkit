@@ -16,6 +16,7 @@ package resource
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -169,11 +170,14 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
-	return DetailRichText(r, o, row, writable, nil)
+	return DetailRichText(r, o, row, writable, nil, nil)
 }
 
-// DetailRichText renders prose prepared by the request adapter in its tenant transaction.
-func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string) document.View {
+// DetailRichText renders prose prepared by the request adapter in its tenant
+// transaction, beside the record's standing in each language the tenant speaks
+// besides its own.
+func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
+	locales []entity.LocaleState) document.View {
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -201,11 +205,12 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
+		localeStrip(locales),
 		details(r, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, o.Words(r.Schema), r.Commands, item, false)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.Commands, item, false, locales)...)
 	return document.View{Title: named, Body: body}
 }
 
@@ -455,6 +460,47 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		},
 	}
 	return components.DataListWithSlots(p, slots)
+}
+
+// localeStrip is the record's translation standing: one badge per language this
+// tenant speaks besides its own, each naming how much of this record exists in it
+// and what it is behind by.
+//
+// It is the first thing a translator needs on a record — what is reviewed and what
+// somebody still owes — and the numbers come from the same read a public page
+// answers with, so the badge cannot report a translation a reader would never be
+// served. A language nobody has touched reads 0% rather than disappearing: the
+// language that needs work is the one worth naming.
+//
+// The word beside the number is the point of the badge. "50%" asks the reader to
+// work out whether somebody owes a first translation or owes a second look at one
+// that went stale, and those are different jobs; "50% · Outdated" answers it. The
+// tone stays the one the strip has always worn — success when the language is whole,
+// warning when it is not — because the word, not the colour, carries which of the
+// two it is, and a badge that meant "stale" one release and "never started" the
+// next by colour alone would be a colour doing a word's work.
+//
+// Nothing at all when there is no language to report — an entity with no
+// translatable field, or a tenant served in one language — because a badge about a
+// language nobody can switch to is noise, and every screen of every entity that was
+// never translated would be wearing one.
+func localeStrip(locales []entity.LocaleState) g.Node {
+	if len(locales) == 0 {
+		return g.Raw("")
+	}
+	badges := make([]g.Node, 0, len(locales))
+	for _, state := range locales {
+		tone := "warning"
+		if state.Percent() == 100 {
+			tone = "success"
+		}
+		badges = append(badges, components.Badge(components.BadgeProps{
+			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "% · " +
+				display.Humanize(state.State()),
+			Tone: tone, Size: "sm",
+		}))
+	}
+	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
 }
 
 // details is the detail screen: every field the author kept on a record, in schema

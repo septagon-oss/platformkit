@@ -1,6 +1,7 @@
 package xtext_test
 
-// A reviewer's case, T-0111 review round 1.
+// A catalogue that escapes a percent sign loads, and prints the one argument it is
+// given.
 //
 // `verbs` reads a copy's format specifiers with the regular expression
 // `%[-+# 0]*[0-9.]*[a-zA-Z]`, and the copy it compares is the gettext source text,

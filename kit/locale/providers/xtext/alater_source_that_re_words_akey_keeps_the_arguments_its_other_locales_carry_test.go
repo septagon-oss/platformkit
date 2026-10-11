@@ -1,6 +1,7 @@
 package xtext_test
 
-// A reviewer's case, T-0111 review round 5 (2026-09-29).
+// A later source that re-words a key keeps the arguments that key's other
+// languages already carry.
 //
 // `Load` merges sources in argument order — a later source answers for a key an
 // earlier one carried — and it refuses a copy that renumbers a sentence's
