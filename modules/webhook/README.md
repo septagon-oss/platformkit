@@ -106,6 +106,15 @@ plaintext exists only inside the process that signs. A `whsec_` value on the
 entity would be a `whsec_` value on the generated form and in
 `webhook.endpoint.created`, which the audit trail keeps for a year.
 
+`webhook.endpoint.updated` carries `changes` — the `events.Change` list the trail is
+written from — because the question a year-old trail row is asked is not "what does
+this endpoint point at now" but "what did it point at, and when did it stop". A PATCH
+of the name gets that diff from the kernel's own write door; `target` is a command and
+no door runs over it, so it diffs the two fields it owns itself, after the write and
+before the publish. `changes` is no column and no REST property (`gorm:"-"`,
+`hidden:"true"`), so the member exists in the event and in no response body — the same
+shape `task`, `content`, `user`, `billing` and `site` carry.
+
 ## Refusals worth naming
 
 * An address that is not https, or carries a user name, a query or a fragment.
@@ -274,6 +283,12 @@ Stated because each one is a promise someone could otherwise read into the modul
 * **One waiting replay per pair, and no more.** The command is idempotent while an
   attempt is `queued` or `in_flight`; a pair whose replay has been answered can be
   replayed again, and that second replay is a new row with the next attempt number.
+* **The event list gates what fans out, not what was already promised.** A `target`
+  that drops a name stops every later event of that type reaching the address, and
+  leaves the rows the fan-out already wrote to go out: the receiver was given those
+  promises while the name was subscribed, `Target`'s own contract is about where
+  events go rather than whether this one goes, and `delete` — which ends every queued
+  row by name — is the command that stops work already promised.
 * **The window is counted from the current claim, not the first attempt.** The
   ladder's 12 rungs span about 4 days 20 hours, so an endpoint that fails one event
   while succeeding others (which resets `failing_since`) can retry that event for
