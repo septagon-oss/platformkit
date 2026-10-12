@@ -775,9 +775,9 @@ for fresh_part in "--packages='./...'" "--" "-timeout=" "-count=1"; do
 		;;
 	esac
 done
-focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -run Selected"
-if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' --" ]]; then
-	echo 'FAIL: local tests must use the default Go cache over every package' >&2
+focused="go tool gotestsum --watch --packages='./design ./ui/css' -- -timeout=30m -run Selected"
+if [[ "$(test_commands -count=1 test)" != "go tool gotestsum  --packages='./...' -- -timeout=30m" ]]; then
+	echo 'FAIL: local tests must use the default Go cache over every package, under the stated clock' >&2
 	exit 1
 fi
 for goals in test check 'test check' 'check test'; do
@@ -805,7 +805,11 @@ echo 'test feedback: local selectors preserve fresh full checks in either goal o
 # than a count. The expected line below therefore carries `-timeout=30m` after the count leaves, and two
 # spaces where the count was, because make substitutes nothing for an empty $(TEST_COUNT) and leaves the
 # separator on both sides. The `test` goal's own line above is pinned the same way, with its gotestsum
-# options empty. Both shapes of the race goal carry a clock of their own below, beside the count where
+# options empty and its own copy of the stated bound: -timeout=30m sits before $(TEST_FLAGS) there, so a
+# caller that passes a clock of its own still wins, and a local goal that loses the line answers to go
+# test's ten-minute default — which `apps/platformkit` measured at 9m51s on a box doing nothing else, so
+# the default answers a working suite by whether the host happened to be busy. Both shapes of the race
+# goal carry a clock of their own below, beside the count where
 # the Makefile writes it: a race suite that states no bound answers to go test's ten-minute default,
 # and CI runs 57644, 57686, 57718 and 57727 killed a working apps/platformkit that way. Losing that
 # clock is losing the run, so the two race patterns ask for it.
