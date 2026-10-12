@@ -188,5 +188,59 @@
     "plural": {
       "": "Comma separated."
     }
+  },
+  "invalid.rest.form.unreadable": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "this form could not be read",
+    "plural": {
+      "": "this form could not be read"
+    }
+  },
+  "invalid.rest.form.wholeNumber": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s is not a whole number",
+    "plural": {
+      "": "%s is not a whole number"
+    }
+  },
+  "invalid.rest.form.number": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s is not a number",
+    "plural": {
+      "": "%s is not a number"
+    }
+  },
+  "invalid.rest.form.time": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s is not a time",
+    "plural": {
+      "": "%s is not a time"
+    }
+  },
+  "invalid.rest.form.listItem": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s contains an invalid %s",
+    "plural": {
+      "": "%s contains an invalid %s"
+    }
+  },
+  "invalid.rest.form.routeOfItsOwn": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s belongs to a route of its own, not to this form",
+    "plural": {
+      "": "%s belongs to a route of its own, not to this form"
+    }
   }
 }

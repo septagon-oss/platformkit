@@ -188,5 +188,59 @@
     "plural": {
       "": "Separados por vírgula."
     }
+  },
+  "invalid.rest.form.unreadable": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "Não foi possível ler este formulário",
+    "plural": {
+      "": "Não foi possível ler este formulário"
+    }
+  },
+  "invalid.rest.form.wholeNumber": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s não é um número inteiro",
+    "plural": {
+      "": "%s não é um número inteiro"
+    }
+  },
+  "invalid.rest.form.number": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s não é um número",
+    "plural": {
+      "": "%s não é um número"
+    }
+  },
+  "invalid.rest.form.time": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s não é uma data e hora",
+    "plural": {
+      "": "%s não é uma data e hora"
+    }
+  },
+  "invalid.rest.form.listItem": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s contém um %s inválido",
+    "plural": {
+      "": "%s contém um %s inválido"
+    }
+  },
+  "invalid.rest.form.routeOfItsOwn": {
+    "references": [
+      "kit/rest/screens.go"
+    ],
+    "translation": "%s pertence a uma rota própria, não a este formulário",
+    "plural": {
+      "": "%s pertence a uma rota própria, não a este formulário"
+    }
   }
 }
