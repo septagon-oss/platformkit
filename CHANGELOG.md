@@ -9,9 +9,8 @@ only the pages that draw one field load, mounts the vendored Tiptap bundle on it
 keeps the submitted value in step. Images upload to the file API by drag, paste or
 file pick; a record that keeps a write count autosaves against its own ETag and
 compares on a conflict, and one that does not keeps the draft on the device.
-`make richtext-bundle` rebuilds the bundle, and `check-richtext-bundle` keeps it
-under 150 KiB gzipped and equal to a fresh build. Browser evidence is owed: the
-journeys, axe and the Markdown round trip are the next round's.
+`make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
+150 KiB gzipped and equal to a fresh build. Browser evidence is owed.
 
 
 **The wire gate reads the plan feature a door declares.** An operation's authorization

@@ -79,13 +79,11 @@ editing surface, `aria-live` save status, counter, draft-restore bar — and the
 `<textarea name=…>` stays the submitted value, drawn first, with every piece of
 chrome starting hidden. With no JavaScript the field is the textarea and the
 "Formatting help" disclosure: the same form with less, not a control that lies
-about working. `Field.Editor` carries the four things the browser is allowed to
-know and may not guess — the record's address and the revision this form quotes
-(as a pair, absent when the entity keeps no write count), the key a draft is kept
-under, and the route an image is posted to — and `ui/resource` fills them. The
-glue is `ui/assets/js/richtext.js`, loaded as a module only by a page that draws
-an editable richtext field; it mounts the vendored `ui/assets/vendor/richtext/editor.js`
-(Tiptap and its Markdown extension, built by `tools/richtext-bundle`).
+about working. `Field.Editor` carries what the browser may know and may not
+guess — the record's address, the revision this form quotes (both absent when the
+entity keeps no write count), the draft key, the image upload route — and
+`ui/resource` fills them. The glue is `ui/assets/js/richtext.js`, a module only a
+page with an editable richtext field loads, mounting the vendored Tiptap bundle.
 
 * **Reused** — `ui/components`' Button, Input, Textarea and Prose for every control, `ui/document`'s `head()` for script emission, `ui/hooks.go`'s declared-attribute vocabulary, `kit/richtext`'s schema and `Normalise` as the stored format, `modules/file`'s upload route, `components.js`' idiom of binding behaviour to drawn markup.
 * **Added** — the chrome, because `ui/components` has no toolbar, menu, popover or progress component to borrow and inventing one is another task's share; `View.Modules`, because a page-weight budget is only real if the answer is per page; and the vendored bundle, because there was no vendor tree and 0069 §3 names the library.
