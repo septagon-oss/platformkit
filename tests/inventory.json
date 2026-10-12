@@ -25883,6 +25883,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/audit/internal/the_trail_document_is_not_rewritable_test.go",
+   "id": "modules/audit/internal/the_trail_document_is_not_rewritable_test.go#TestTheApplicationRoleCannotRewriteATrailDocument",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestTheApplicationRoleCannotRewriteATrailDocument",
+   "needs_db": true,
+   "pkg": "modules/audit/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/audit/internal/trace_id_test.go",
    "id": "modules/audit/internal/trace_id_test.go#TestTheTrailRowNamesTheTraceThatWroteIt",
    "kind": "go",
@@ -30364,6 +30383,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/content/internal/erasure_leaves_a_colleagues_ordinary_words_test.go",
+   "id": "modules/content/internal/erasure_leaves_a_colleagues_ordinary_words_test.go#TestErasingAPersonWhoseHandleIsAnOrdinaryWordLeavesOtherPeoplesSentences",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestErasingAPersonWhoseHandleIsAnOrdinaryWordLeavesOtherPeoplesSentences",
+   "needs_db": true,
+   "pkg": "modules/content/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/content/internal/erasure_leaves_words_that_contain_a_name_test.go",
    "id": "modules/content/internal/erasure_leaves_words_that_contain_a_name_test.go#TestErasingAPersonLeavesOtherPeoplesWordsAlone",
    "kind": "go",
@@ -32919,6 +32957,25 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestAnExportRacingErasureDoesNotCommitStaleWork",
+   "needs_db": true,
+   "pkg": "modules/subject/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
+   "file": "modules/subject/internal/minting_anothers_link_asks_the_grant_test.go",
+   "id": "modules/subject/internal/minting_anothers_link_asks_the_grant_test.go#TestMintingAnotherPersonsLinkRefusesAnActorWithoutTheRequiredGrant",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestMintingAnotherPersonsLinkRefusesAnActorWithoutTheRequiredGrant",
    "needs_db": true,
    "pkg": "modules/subject/internal",
    "round_named": false,
@@ -51488,7 +51545,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1230,
+  "files": 1233,
   "forge_runs": [
    408,
    413,
@@ -51522,7 +51579,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2263,
+   "behaviour": 2266,
    "composition": 255,
    "contract": 19,
    "journey": 57
@@ -51541,9 +51598,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2594,
+  "rows": 2597,
   "tiers": {
-   "merge": 1590,
+   "merge": 1593,
    "nightly": 57,
    "push": 947
   },
@@ -51551,13 +51608,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1015,
+   "keep": 1018,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2247,
+   "keep": 2250,
    "keep-rewrite": 132,
    "merge": 215
   }
