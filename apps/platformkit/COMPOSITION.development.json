@@ -13,7 +13,9 @@
         "auditcontracts.Plan",
         "tenancy.Policy",
         "sitecontracts.WriteGate",
+        "rest.Gate",
         "webcontracts.Links",
+        "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
         "tenantcontracts.Languages"
@@ -23,6 +25,12 @@
           "contract": "tenantcontracts.Hook",
           "to": [
             "tenant"
+          ]
+        },
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "to": [
+            "change"
           ]
         }
       ]
@@ -54,6 +62,21 @@
         },
         {
           "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
+      "name": "translation",
+      "provides": [
+        "rest.Translations"
+      ],
+      "needs": [
+        {
+          "contract": "rest.TranslationSource",
           "from": "product"
         }
       ],
@@ -201,6 +224,10 @@
         {
           "contract": "tenancy.Policy",
           "from": "product"
+        },
+        {
+          "contract": "rest.Gate",
+          "from": "product"
         }
       ],
       "after": [
@@ -313,7 +340,36 @@
       ]
     },
     {
+      "name": "content",
+      "provides": [
+        "contentcontracts.Service"
+      ],
+      "needs": [
+        {
+          "contract": "richtext.Files",
+          "from": "file"
+        },
+        {
+          "contract": "rest.FileUses",
+          "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        }
+      ],
+      "after": [
+        "file",
+        "translation"
+      ]
+    },
+    {
       "name": "access",
+      "provides": [
+        "changecontracts.Notifier",
+        "changecontracts.ProposalPage",
+        "*change.ReviewChrome"
+      ],
       "needs": [
         {
           "contract": "usercontracts.Service",
@@ -330,6 +386,10 @@
         {
           "contract": "usercontracts.Granting",
           "from": "product"
+        },
+        {
+          "contract": "authcontracts.Auth",
+          "from": "auth"
         }
       ],
       "contributes": [
@@ -344,43 +404,8 @@
         "product",
         "user",
         "notification",
+        "auth",
         "site"
-      ]
-    },
-    {
-      "name": "content",
-      "provides": [
-        "contentcontracts.Service"
-      ],
-      "needs": [
-        {
-          "contract": "richtext.Files",
-          "from": "file"
-        },
-        {
-          "contract": "rest.FileUses",
-          "from": "file"
-        }
-      ],
-      "after": [
-        "file"
-      ]
-    },
-    {
-      "name": "change",
-      "provides": [
-        "changecontracts.Service"
-      ],
-      "takes": [
-        {
-          "contract": "changecontracts.SubjectBinding",
-          "from": [
-            "access"
-          ]
-        }
-      ],
-      "after": [
-        "access"
       ]
     },
     {
@@ -403,13 +428,55 @@
         {
           "contract": "webcontracts.Links",
           "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
         }
       ],
       "after": [
         "product",
         "file",
+        "translation",
         "content",
         "site"
+      ]
+    },
+    {
+      "name": "change",
+      "provides": [
+        "changecontracts.Service"
+      ],
+      "uses": [
+        {
+          "contract": "changecontracts.Notifier",
+          "from": "access"
+        },
+        {
+          "contract": "changecontracts.ProposalPage",
+          "from": "access"
+        },
+        {
+          "contract": "*change.ReviewChrome",
+          "from": "access"
+        }
+      ],
+      "takes": [
+        {
+          "contract": "changecontracts.SubjectBinding",
+          "from": [
+            "product",
+            "access"
+          ]
+        }
+      ],
+      "after": [
+        "product",
+        "access"
       ]
     },
     {

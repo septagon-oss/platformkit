@@ -61,7 +61,7 @@ func Control(p ControlProps) g.Node {
 	base := components.InputProps{
 		ComponentProps: components.ComponentProps{ID: p.ID},
 		Name:           name, Label: label, Value: p.Value, Error: p.Error,
-		HelpText: hint(f.Doc, immutableNote(p.Immutable)),
+		HelpText: hint(cmp.Or(p.Field.Help, f.Doc), immutableNote(p.Immutable)),
 		Required: f.Required, ReadOnly: p.Immutable, FullWidth: true,
 	}
 	switch {

@@ -99,6 +99,18 @@ type Resource struct {
 	Schema  entity.Schema
 	// RichTextFiles is the request-scoped image port for generated detail views.
 	RichTextFiles richtext.Files `json:"-"`
+	// Locales answers one record's standing in each language this tenant speaks
+	// besides its own, for the generated record screen to show. It is wired by
+	// kit/rest for a Spec that declares a translatable field and its translation
+	// port, and by nobody else: a resource whose entity translates nothing leaves
+	// it nil, and its screens say nothing about languages they know nothing about.
+	//
+	// It is a closure beside the five, the way RichTextFiles is a port beside them,
+	// because the answer needs the request's own tenant transaction and only the
+	// side that mounted the routes has that: a screen that computed completeness
+	// for itself would be a second implementation of a rule the read doors already
+	// own, and the first one to drift.
+	Locales func(ctx context.Context, id uuid.UUID) ([]entity.LocaleState, error) `json:"-"`
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command

@@ -54,7 +54,8 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	// The three columns this command changed, and no others: a concurrent
 	// patch of the description has to survive an assignment, and writing the
 	// whole row would put every field back to what this transaction read.
-	if err := crud.Update(ctx, tx, task, "assignee_id", "status", "updated_at"); err != nil {
+	task.Revision++ // every write of the row moves its number, so a diff quotes one
+	if err := crud.Update(ctx, tx, task, "assignee_id", "status", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(ctx, tx, contracts.EventAssigned, contracts.Assigned{
@@ -85,7 +86,8 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	task.Status = contracts.StatusResolved
 	task.Resolution = decision.Text
 	task.ResolvedAt = &at
-	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "updated_at"); err != nil {
+	task.Revision++
+	if err := crud.Update(ctx, tx, task, "status", "resolution", "resolved_at", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(ctx, tx, contracts.EventResolved, contracts.Resolved{
@@ -106,7 +108,8 @@ func (s *Service) CheckSLA(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 		return task, nil
 	}
 	task.SLABreached = true
-	if err := crud.Update(ctx, tx, task, "sla_breached", "updated_at"); err != nil {
+	task.Revision++
+	if err := crud.Update(ctx, tx, task, "sla_breached", "revision", "updated_at"); err != nil {
 		return nil, err
 	}
 	return task, events.Publish(ctx, tx, contracts.EventSLABreached, contracts.SLABreached{
