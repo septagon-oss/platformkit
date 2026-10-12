@@ -1613,7 +1613,7 @@ func legacyLayout(t *testing.T, sources []db.MigrationSource) db.MigrationSource
 // TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace is the
 // upgrade half of the migration move, and the half a fresh database cannot
 // check: an existing installation's ledger says "platformkit" applied all
-// twenty-four files, and the release that splits them must neither refuse the
+// thirty-three files at or below the adopted ceiling, and the release that splits them must neither refuse the
 // files the foundation no longer ships nor run the module files again.
 //
 // Success alone proves the SQL did not re-run — a second 000004_task.up.sql
@@ -1685,7 +1685,7 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// kit/db refuses a repeated version before the ledger ever sees it
 	// (migration_files.go, "invalid or repeated version"). One version, one row.
 	//
-	// 33 stays 33 for those files and for the twenty-one above the ceiling, because the
+	// 33 stays 33 for those files and for every file above the ceiling, because the
 	// ceiling is the highest version an owner adopts back rather than the
 	// foundation's highest file — see legacyLayout for why a derivation off the
 	// kernel's own top stopped working once the modules numbered past it. A file
@@ -1693,25 +1693,18 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 	// below has to produce, and the two counts below compare the ledger against
 	// every file the release ships.
 	//
-	// Measured, not carried: `find migrations modules -name '*.up.sql' | wc -l` at
-	// this head prints 56 — twenty under migrations/ (1, 2, 3, 5, 6, 9, 12, 20, 21,
-	// 26, 28, 29, 30, 34, 41, 43, 46, 50, 51, 52) and thirty-six under
-	// modules/*/migrations/ (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24,
-	// 25, 27, 31, 32, 33, 35, 35, 36, 37, 38, 39, 40, 42, 44, 45, 47, 48, 49, 50, 53,
-	// 54). Every version to 33 is one file, and the release repeats two numbers, both
-	// above the ceiling, so the flattening below never meets them: 35 is modules/audit's
-	// audit_context beside modules/auth's passkeys, and 50 is modules/task's
-	// task_revision beside the kernel's own tenant demo marker. The release this fixture is
-	// applied from shipped 33 of them: the thirteen under migrations/ up to the
-	// adopted ceiling (1, 2, 3, 5, 6, 9, 12, 20, 21, 26, 28, 29, 30) and the twenty a
-	// module adopts back (4, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25,
-	// 27, 31, 32, 33), which is every version to modules/auth's 33, the highest number
-	// any owner names. The twenty-three above it — the kernel's own 34, 41, 43, 46, 50,
-	// 51 and 52, modules/audit's 35, 36, 37, 48, 49 and 53, modules/auth's 35 and 47,
-	// modules/change's 38, modules/site's 39, modules/file's 40, 44 and 45,
-	// modules/content's 42, modules/task's 50 and modules/scim's 54 — postdate that release, are not in the old installation's
-	// ledger, and legacyLayout leaves them out; the upgrade below applies them under
-	// the owner that ships them and counts them as new rows. Each continues past the
+	// The whole-tree census is deliberately absent: the file count this fixture
+	// ships moves with every delivery that adds a migration, and a number quoted here
+	// is a number the next merge silently falsifies. `find migrations modules -name
+	// '*.up.sql' | wc -l` answers it, and the two counts that matter are asserted
+	// below rather than restated here — the old layout's ledger against the files at
+	// or beneath the adopted ceiling, and the upgraded ledger against every file the
+	// release ships. What the census used to enumerate is the part worth keeping: the
+	// release repeats three numbers, each above the ceiling so the flattening below
+	// never meets them — 35 is modules/audit's audit_context beside modules/auth's
+	// passkeys, 43 is the kernel's tenant-app columns beside modules/translation's
+	// field copy, and 50 is the kernel's tenant demo marker beside modules/task's
+	// task_revision. Every file above the ceiling continues past the
 	// highest number anywhere in the composition at the time it was written, which is
 	// the rule this fixture exists to enforce — and it is a rule with teeth rather
 	// than tidiness, because
@@ -1766,13 +1759,11 @@ func TestAnInstallationFromBeforeModulesOwnedTheirSQLUpgradesInPlace(t *testing.
 		}
 	}
 	// Each file now reads under the owner that ships it — and every file this
-	// release ships is in the ledger, which is where the twenty-three files above the
-	// adopted ceiling of 33 (the kernel's own 34, 41, 43, 46, 50, 51 and 52,
-	// modules/audit 35, 36, 37, 48, 49 and 53, modules/auth 35 and 47, modules/change
-	// 38, modules/site 39, modules/file 40, 44 and 45, modules/content 42, modules/task
-	// 50 and modules/scim 54, all absent from the old ledger) have to be accounted for:
-	// 56 files in the release and 56 ledger rows, which are 54 keys in the two maps
-	// below because 35 and 50 are each one version held by two owners.
+	// release ships is in the ledger, which is where the files above the adopted
+	// ceiling have to be accounted for. Both maps below are keyed by version, so a
+	// version two owners hold is one key in each of them: the comparison is between
+	// the ledger and the sources the composition names, never against a count carried
+	// in this comment.
 	want := map[int64]string{}
 	for _, source := range sources {
 		entries, err := fs.ReadDir(source.Files, ".")
