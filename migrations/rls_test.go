@@ -33,6 +33,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/change"
 	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
+	"github.com/septagon-oss/platformkit/modules/history"
 	"github.com/septagon-oss/platformkit/modules/notification"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/task"
@@ -43,8 +44,8 @@ import (
 // apps/platformkit composes them: the claim below is about every table this
 // repository creates, whichever owner now carries the file.
 var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
-	task.Migrations, billing.Migrations, content.Migrations, site.Migrations, file.Migrations, audit.Migrations,
-	change.Migrations}
+	task.Migrations, billing.Migrations, content.Migrations, site.Migrations, file.Migrations, history.Migrations,
+	audit.Migrations, change.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is
