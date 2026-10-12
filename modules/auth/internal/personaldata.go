@@ -37,6 +37,8 @@ type authPart struct {
 	Sessions          []authSessionRow   `json:"sessions"`
 	APITokens         []authApiTokenRow  `json:"apiTokens"`
 	Factors           []authFactorRow    `json:"totpFactors"`
+	Passkeys          []authPasskeyRow   `json:"passkeys"`
+	PasskeyCeremonies []authCeremonyRow  `json:"passkeyCeremonies"`
 	RecoveryCodes     []authRecoveryRow  `json:"recoveryCodes"`
 	PasswordTokens    []authIssuedRow    `json:"passwordTokens"`
 	VerificationEmail []authVerification `json:"authVerificationEmails"`
@@ -73,6 +75,28 @@ type authFactorRow struct {
 	ID        uuid.UUID `json:"id"`
 	CreatedAt time.Time `json:"createdAt"`
 	Kind      string    `json:"kind"`
+}
+
+// authPasskeyRow names a passkey and never carries one. The credential id and the COSE
+// public key are what an assertion is matched against; they are public by construction
+// (000035 says why they are stored in the open) and worthless to a thief, but a bundle
+// that leaves the building by email is the wrong place to send even worthless material,
+// and nothing in it is what the person would recognise. The name they typed and the date
+// it appeared are: "phone", "laptop", and the one from before the laptop was stolen.
+type authPasskeyRow struct {
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// authCeremonyRow is one passkey ceremony of this person's that has not finished. The
+// session column stays behind: it is webauthn.SessionData, whose challenge nonce is the
+// server's only copy of what an answer must match, so a bundle would carry live protocol
+// state rather than a record, and the row is deleted by the erasure below anyway.
+type authCeremonyRow struct {
+	Kind      string    `json:"kind"`
+	CreatedAt time.Time `json:"createdAt"`
+	ExpiresAt time.Time `json:"expiresAt"`
 }
 
 type authRecoveryRow struct {
@@ -115,6 +139,12 @@ func (personalData) Export(ctx context.Context, tx db.Tx[db.Tenant],
 	if err := q(&out.Factors, "totp_factors", "id, created_at, 'totp' AS kind", "created_at, id"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's factors: %w", s.ID, err)
 	}
+	if err := q(&out.Passkeys, "passkey_credentials", "id, name, created_at", "created_at, id"); err != nil {
+		return nil, fmt.Errorf("auth: export %s's passkeys: %w", s.ID, err)
+	}
+	if err := q(&out.PasskeyCeremonies, "passkey_challenges", "kind, created_at, expires_at", "created_at, id"); err != nil {
+		return nil, fmt.Errorf("auth: export %s's passkey ceremonies: %w", s.ID, err)
+	}
 	if err := q(&out.RecoveryCodes, "recovery_codes", "id, created_at, used_at", "created_at, id"); err != nil {
 		return nil, fmt.Errorf("auth: export %s's recovery codes: %w", s.ID, err)
 	}
@@ -145,7 +175,14 @@ func (personalData) Erase(ctx context.Context, tx db.Tx[db.Tenant], s personalda
 	}
 	// verification_tokens and not a name of this file's inventing: it is the table
 	// modules/auth/migrations/000024_email_verification.up.sql creates.
-	for _, t := range []string{"password_tokens", "verification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs"} {
+	//
+	// A passkey is in the list because it is a door the person's own device holds, and a
+	// credential a public key makes is still a credential: the key cannot be read out of
+	// the row, but it can be signed with, and every assertion re-checks the stored row.
+	// Delete the row and the key in the authenticator signs nothing — which is what "the
+	// person's credentials are removed" has to mean for the one credential kind that
+	// cannot be reset, revoked or emailed: there is no secret here to replace.
+	for _, t := range []string{"password_tokens", "verification_tokens", "totp_factors", "recovery_codes", "api_tokens", "first_factor_proofs", "passkey_credentials", "passkey_challenges"} {
 		// The table name is this file's own constant, never a caller's: it is the only
 		// thing a name written into SQL could be.
 		if err := db_.Exec("DELETE FROM "+t+" WHERE user_id = ?", s.ID).Error; err != nil {
