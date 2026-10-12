@@ -306,7 +306,18 @@ func (s *service) store() (contracts.BundleSource, error) {
 }
 
 // Request answers one request row to the person who filed it.
+//
+// operator says the caller reached this as a holder of `subject:export` rather than as the
+// person who filed the row. It is the route's statement about the door it authenticated,
+// and this command does not take it on trust: it asks the same grant of the caller's own
+// credential that the route asked, so a module composing this service gets the refusal the
+// door gives rather than a read of anybody's request.
 func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*contracts.Request, error) {
+	if operator {
+		if err := ceiling(ctx, actor, contracts.PermissionExport); err != nil {
+			return nil, err
+		}
+	}
 	row := &contracts.Request{}
 	if err := tx.DB().WithContext(ctx).Where("id = ?", request).First(row).Error; err != nil {
 		return nil, fmt.Errorf("subject: %w", crud.Classify(err))
@@ -319,12 +330,20 @@ func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, act
 
 // Mint opens the seven-day door onto one bundle.
 //
-// The caller is either the person who asked or a holder of `subject:export`, and the route
-// says which of the two it authenticated, because this command cannot read a grant from
-// inside the transaction. What it can and does check is the requester: a request id is not
-// a capability, and naming a row is not authorisation to open it. Somebody else's request
-// answers not-found, which is the answer that does not confirm the row exists.
+// The caller is either the person who asked or a holder of `subject:export`. The route says
+// which of the two it authenticated, and the operator half of that is re-asked here of the
+// caller's own credential, because a request id is not a capability, naming a row is not
+// authorisation to open it, and a boolean a caller passes is not a fact this command knows.
+// What it always checks is the requester: somebody else's request answers not-found, which is
+// the answer that does not confirm the row exists.
 func (s *service) Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*contracts.Link, error) {
+	// Asked before the row is read: a refusal has to be the refusal that writes nothing,
+	// and a mint that moved the bundle's hold before it refused would not be that.
+	if operator {
+		if err := ceiling(ctx, actor, contracts.PermissionExport); err != nil {
+			return nil, err
+		}
+	}
 	row := &contracts.Request{}
 	if err := tx.DB().WithContext(ctx).Where("id = ?", request).First(row).Error; err != nil {
 		return nil, fmt.Errorf("subject: %w", crud.Classify(err))

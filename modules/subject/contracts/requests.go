@@ -201,10 +201,17 @@ type Door interface {
 	// Request reads one request row back: "where is my export", answered to the person who
 	// asked it, or to a holder of subject:export. Somebody else's row is not found, which is
 	// the answer that does not confirm it exists.
+	//
+	// operator tells the command that the caller is the second kind rather than the first,
+	// and the command holds that caller to subject:export on its own credential: passing the
+	// flag is not what lets a caller read another person's row.
 	Request(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*Request, error)
 
 	// Mint opens a seven-day, single-use door onto one request's bundle, for the person who
 	// asked or for a holder of subject:export. The token is in the answer and nowhere else.
+	// operator names the second kind, and asks its grant inside this transaction: a caller
+	// whose credential carries no subject:export gets the refusal with no grant row written
+	// and the bundle's hold unmoved.
 	Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*Link, error)
 
 	// Redeem spends a token: it answers the bundle the link points at, and the row it
