@@ -203,7 +203,7 @@ func TestThePseudoLocaleGate(t *testing.T) {
 	}
 	for _, form := range refusedForms(mounted, blanks) {
 		rec.Begin(form.Page)
-		code, contentType, body := postForm(t, cfg, admin, form.Path, form.Body)
+		code, contentType, body := postFormBody(t, cfg, admin, form.Path, form.Body)
 		// A create form that *accepted* an empty submission would have written a row,
 		// which this gate never does. Measuring stops there and says so: the gate's
 		// promise is a check, not an assumption.
@@ -479,9 +479,10 @@ func blankSubmission(form []byte) string {
 	return fields.Encode()
 }
 
-// postForm submits an empty form the way a browser does, with the session the walk
-// uses, and returns what came back.
-func postForm(t *testing.T, cfg config.Config, client *http.Client, at, form string) (int, string, []byte) {
+// postFormBody submits an empty form the way a browser does, with the session the walk
+// uses, and returns what came back. The form is the browser's own encoding, already
+// written: the gate is submitting what the page itself offered, not a value it built.
+func postFormBody(t *testing.T, cfg config.Config, client *http.Client, at, form string) (int, string, []byte) {
 	t.Helper()
 	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "http://"+cfg.Server.Addr+at,
 		strings.NewReader(form))

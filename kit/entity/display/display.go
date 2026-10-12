@@ -50,7 +50,20 @@ func Text(v any) string {
 // them. An instant is in the form a person reads, a boolean is Yes or No, and
 // nothing at all is a dash, because a blank cell reads as a bug rather than as
 // an empty field.
-func Display(f entity.Field, v any) string {
+func Display(f entity.Field, v any) string { return DisplayWord(f, v, nil) }
+
+// DisplayWord is Display with one thing decided elsewhere: how an enum value is
+// read. A screen that serves the request's language passes its own words (a
+// declared `enumLabels:"month=Monthly"` translated for that request) and every
+// other reading — booleans, instants, the dash for nothing — stays this
+// function's, so a cell, a description list and a select's option cannot drift
+// apart over which half of the value each one localises.
+//
+// A nil word function is EnumWord: the declared label, or Humanize(value).
+func DisplayWord(f entity.Field, v any, word func(entity.Field, string) string) string {
+	if word == nil {
+		word = EnumWord
+	}
 	switch {
 	case f.Type == entity.TypeBool:
 		if b, ok := v.(bool); ok && b {
@@ -63,7 +76,7 @@ func Display(f entity.Field, v any) string {
 		}
 	case len(f.Enum) > 0:
 		if out := Text(v); out != "" {
-			return Humanize(out)
+			return word(f, out)
 		}
 	default:
 		if out := Text(v); out != "" {
@@ -104,6 +117,22 @@ func Humanize(name string) string {
 		}
 	}
 	return b.String()
+}
+
+// EnumWord is one enum value as the author of its field named it, and
+// Humanize(value) when nobody named it. It is the enum half of FieldLabel: a
+// field that declares `enumLabels:"month=Monthly"` says so in one place, and a
+// cell, a description term and a select's option all read that one place.
+//
+// It returns the declared words untranslated, exactly as FieldLabel does: this
+// package knows the schema and no language, and the request's words are put on
+// the declared value at the two boundaries that serve it — ui/screens for the
+// catalogue document and ui/resource for the generated screens.
+func EnumWord(f entity.Field, value string) string {
+	if word := f.Presentation.EnumLabels[value]; word != "" {
+		return word
+	}
+	return Humanize(value)
 }
 
 // FieldLabel is what a control, a column header and a description term call a

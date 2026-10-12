@@ -375,7 +375,9 @@ RACE_PACKAGES ?= ./kit/events/... ./kit/db/... ./kit/limit ./kit/jobs ./kit/http
 # minutes with this step measured at 314-947s inside it. The count comes first and the bound after it,
 # as in `check`'s own line, because scripts/ci_go_cache_test.sh reads $(TEST_COUNT) as it sits
 # directly after `-race`; scripts/make_check_count_default_test.sh and scripts/check_architecture_test.sh
-# hold byte copies of the line that result, in CI's expansion and with the count emptied.
+# hold byte copies of the line that result, in CI's expansion and with the count emptied,
+# scripts/race_binary_timeout_test.py asks the test binary what it was given, and
+# scripts/race_bound_not_below_check_bound_test.sh compares this bound with `check`'s own.
 check-race: ## Run the concurrency kernel under -race
 	go test -race $(TEST_COUNT) -timeout=30m $(RACE_PACKAGES)
 
@@ -390,6 +392,16 @@ check-race: ## Run the concurrency kernel under -race
 check-run-owner: ## Refuse a browser run that would drive an application it did not start
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
+
+# The journey steps this module publishes are a surface a pinned consumer compiles against, and
+# nothing else here asks them a question: `make check` builds Go, and gate 10 transpiles the two
+# files without asking whether they should exist. So the published names, the specifiers a module
+# zip can carry, the addresses the reference application serves and the hosts a harness step may
+# fall back to are decided here, beside check-apidiff, which makes the same promise about Go. It
+# reads text and builds no fixture tree, so nothing it asks needs node, a browser or a database —
+# the placement argument check-run-owner makes above.
+check-step-library: ## Refuse a published journey step that vanished, or one that cannot load from the pin
+	bash scripts/e2e_step_library_test.sh
 
 # Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
@@ -463,7 +475,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-pillars check-i18n check-run-owner check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-step-library check-i18n check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -507,6 +519,13 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
+	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
+	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
+	# default when the same recipe loses it. A bound that stops at the recipe would satisfy all three
+	# guards above and still leave the suite answering to a clock nobody chose, which is the failure this
+	# repository already paid for once. Half a second, nothing compiled, nothing started.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/race_binary_timeout_test.py
 	bash scripts/ci_go_cache_one_saver_per_key_test.sh
 	bash scripts/ci_go_cache_job_archives_test.sh
 	# The refusal a job reaches when its toolchain cannot answer where its caches live: the recipe
@@ -631,6 +650,40 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/push_tier_reaches_test_imports_test.sh
 	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
 	bash scripts/the_inventory_lists_a_javascript_test_test.sh
+	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
+	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
+	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
+	# `go tool gotestsum --packages='./...'` sees no Python file and no `.spec.ts`, so a `check-pillars`
+	# that dropped out would let ARCHITECTURE.md's citations land on blank lines, and a
+	# `check-step-library` that dropped out would let a published journey step vanish while gate 10 went
+	# on transpiling a file nobody owns. scripts/journey_and_pillar_check_wiring_test.sh dry-runs this
+	# goal and refuses a recipe that has lost either command — a nested `make -n`, the shape
+	# scripts/check_architecture_test.sh already runs from inside this same recipe, measured at 5 ms for
+	# the whole dry run here. scripts/journey_and_pillar_check_refusal_test.sh asks whether that pin
+	# would notice: it deletes one prerequisite at a time from a temporary copy of this Makefile and
+	# refuses each acceptance. Both read text and start nothing, which is the argument
+	# check-step-library makes for itself above, and here it holds twice over — unlike its two subjects
+	# these need no node and no browser either, so nothing argues for a job later than this one. Review 5
+	# found the first wired to nothing: correct at `0012ae0`, run by nobody, and a gate nobody runs is
+	# prose. Wiring it is these two lines.
+	bash scripts/journey_and_pillar_check_wiring_test.sh
+	bash scripts/journey_and_pillar_check_refusal_test.sh
+	# The third and fourth lines here are that argument run once more over itself. Review 6 wrote
+	# scripts/journey_check_recipe_test.sh — the one assertion that both source-gate guards still execute
+	# as children of a parallel make, which is the question `make -n` cannot answer — and the sixth
+	# round adopted its bytes at `f676a6e` unwired, on scope rather than cost: the file measured 0.52 s
+	# standalone and the same inside a recipe at -j2, with make printing `-j2 forced in submake:
+	# resetting jobserver mode`, which is the nested recipe taking its own token pool. Review 6 named
+	# that deferral as the thing left to adopt, and a gate nobody runs is prose, so it is wired here.
+	# scripts/journey_check_recipe_wiring_test.sh is the case this line needs and `f676a6e` deliberately
+	# did not write: `go tool gotestsum --packages='./...'` sees no shell script, so a recipe line that
+	# leaves this list leaves nothing else red. It asks the dry-run recipe for this command, copies this
+	# Makefile to a temporary tree, deletes the one line, and requires the same assertion to fail there —
+	# three dry runs of a goal one of these two prerequisites already dry-runs, 0.2 s for the file.
+	# What pins the last line is nothing: the case has no peer to pin it, and it says so rather than
+	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
+	bash scripts/journey_check_recipe_test.sh
+	bash scripts/journey_check_recipe_wiring_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

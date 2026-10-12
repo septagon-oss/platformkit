@@ -2,6 +2,59 @@
 
 ## Unreleased
 
+**The wire gate reads the plan feature a door declares.** An operation's authorization
+declaration has three parts — its `kind`, its `permission`, and the plan feature a route
+names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
+asks the tenant's plan about at request time (a refusal answers `402` with
+`PLAN_EXCLUDES`). The compatibility identity in `kit/wire` was a list of key names that left
+the feature out, so on a document whose only other member had moved, dropping a feature,
+adding one to a door that named none, or renaming one were accepted with zero breaks — and
+`UPDATE_GOLDEN=1` then rewrote the reviewed artefact over a plan gate the runtime still
+enforces. The identity is now the whole emitted declaration, spelled `kind`, `permission`,
+`feature`, then any other member by name, with a name or a value that does not read as one
+member quoted so one member cannot be read as another pair, so all three are B6 refusals
+naming the operation
+and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
+`kind=any_credential`) covers no feature it does not spell on both sides. A pair written
+against a declaration with no feature keeps matching exactly what it matched, which is why
+117 of the reference document's 119 declarations are untouched and its golden is not
+regenerated. Enforcement is unchanged, so this is a gate that stopped missing a change, not
+a door that started refusing a request.
+
+**Any declared field of a record can be said in the tenant's other languages.**
+`modules/translation` holds the saying, not the text: one `translations` table
+whose identity is `(tenant_id, module, entity, record_id, field, locale)` —
+`translations_identity` in
+`modules/translation/migrations/000043_translation.up.sql`, with `ENABLE` and
+`FORCE ROW LEVEL SECURITY` around the policy that matches
+`platformkit_tenant_match` — where a row is one field of one record in one
+language and is never a record, a lifecycle or a list of its own. A field declares
+itself once, `i18n:"translatable"` beside its own `json` and `ui` tags, and no
+second list of translatable names exists anywhere: the read overlay, the generated
+form, the write body's description and the record screen's per-language badges are
+all read from that declaration. The module declares no permission and mounts no
+route (`Permissions: nil`, `Routes: nil`), because the record is the door —
+`kit/rest` mounts `GET …?lang=`, `POST …/translate`, `…/review-translation`,
+`…/suggest-translation` and `…/untranslate` beside the record's own `PATCH`, behind
+that `Spec`'s own read and write grants — so a caller translates a record exactly
+as far as they may write it, and a key meaning "may translate" could only open a
+row its holder cannot read. A read answers the locale's rows with every field that
+fell back named in `_i18n` and why (`missing`, `outdated`, `machine`, `withheld`),
+and a machine draft no person has reviewed never reaches a public reader. A
+translation remembers the source it was made from: `source_text` and `source_hash`
+are written inside the source row's own `FOR UPDATE` and are not re-based when the
+source moves again, because the stale pair is what a side-by-side review exists to
+show. Each write carries the expected revision of each field it names, checked
+over every field before any is written, so a save that loses on one of six writes
+none of them, publishes nothing and returns no stale row; `translation.updated` is
+the module's only event, committed beside the rows it describes, and there is no
+`audit.Record` call in this module because the trail subscribes to that event.
+Neither a machine translator nor its price is composed here — the provider's
+address, key and price are an installation's facts (`translation.Deps.Translator`),
+and where none is configured `Suggest` refuses and writes nothing — and which
+records a translator may work on is the product's line, written in
+`apps/platformkit/product.go`.
+
 **A change to somebody else's row is proposed, decided and applied through four
 commands.** `modules/change` holds a proposal over another account's row: the
  digest of the bytes a verdict was made about, the state machine that makes a
@@ -26,6 +79,52 @@ refuses a body that writes it, a conditional write whose quoted revision is stal
 and an edit that arrived after the row moved; `modules/task/migrations/000050_task_revision.up.sql`
 gives the task one. Nothing the server owns is drawn as a control, so no form asks a
 person to type a number that would move the row to it.
+
+**The reference resources read well, in the person's language.** The five
+resources the reference application shows — tasks, content, people, plans and
+site settings — now declare how they read: the words a person is shown
+(`task`/`tarefa`, `Assignee`, `Due`, `Response due`, `Response overdue`,
+`Billing period`, `Username`, `Includes`), which field names a row and which two
+say what it costs to wait, which integration columns are kept off every screen
+(`source`, `sourceRef`) and which are answered on the record and not the row
+(`assigneeId`, `author`, `roles`, `currency`, `code`), the tone of every status
+and priority, and the short verb on a command's button (`Assign`, `Resolve`,
+`Archive`, `Deactivate`) with the consequence a person reads before an archive or
+a deactivation runs. `check-sla` is declared `system`, so no screen offers a
+sweep's work while its JSON route keeps its guard unchanged. Every declared word
+is served in the request's language: `GET /api/v1/app/resources` negotiates
+`Accept-Language` through the tenant's own declared set, answers `Vary:
+Accept-Language`, and falls back to the English the code author wrote — which is
+why no layer ships an `en.json`. The key is derived from the declaration's own
+address (`hints.<module>/<entity>.<aspect>`), so no author keeps a second list of
+keys, and the resolver is one file (`ui/resource/hints.go`) read by the catalogue
+document and the generated screens alike. Two readings become honest: a declared
+`enumLabels` map is now drawn (`display.EnumWord`), and a field declared `hidden`
+is no longer offered by a generated form. The line a declared `help:` writes under
+a control arrives in the request's language beside its label — the two words are
+read by one projection, so a Portuguese form no longer asks in Portuguese and
+explains in English. `apps/platformkit/reference_reading_test.go` holds the golden
+entry in `en` and `pt-PT`, the rule that no hint string is ever served empty, and
+the rule that both happen on a drawn screen and not only in the document;
+`apps/platformkit/portuguese_completeness_test.go` holds the rule that every key
+the resolver derives has its Portuguese copy, which the loader's own parity check
+cannot see because each of these modules ships one translated file. The same
+change hides the assignee column from a task list, which lets a title fit one
+line — and the link that is a row's way in was exactly as tall as one line of
+text, so hiding a column took its hit target from 60px to 20px. It is a target of
+its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
+floor, so the 24px the browser audit enforces comes from the rule and not from
+whether the person's title happened to wrap.
+
+**The kernel publishes its journey steps.** `e2e/steps/kernel.ts` and `e2e/steps/public.ts` ship
+in this module, so the version a consumer pins that resolves `kit/rest` and `ui/page` carries the
+steps of the kernel's own acts — the sign-in door, the way out, the workspace, the generated
+screen and the public frame — beside the code they drive. A caller that kept its own copy of that
+walk re-exports these instead; the addresses in `endpoints` are the reference application's
+(`apps/platformkit/fault.go` pins them), and a composition reaches them by its own specifier.
+`scripts/e2e_step_library_test.sh` refuses a published name that vanished, an import a module zip
+cannot carry, an address this application does not serve, and a step whose evidence path, host or
+inbox the file guessed instead of asking the run that started it.
 
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is
