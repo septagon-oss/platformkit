@@ -15,6 +15,7 @@ import (
 	"context"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -59,8 +60,20 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	svc := internal.NewService()
 	settings := rest.Singleton[*contracts.SiteSettings]{
 		Module: "site", Entity: "settings", Path: "/settings",
-		Read:   contracts.PermissionSiteManage,
-		Write:  contracts.PermissionSiteManage,
+		Read:  contracts.PermissionSiteManage,
+		Write: contracts.PermissionSiteManage,
+		// Present is how these settings read. `singular` and `plural` are the same
+		// words because this resource has no plural — a tenant has one row — and
+		// they are written rather than left to `Singular + "s"` precisely because
+		// that default is the "1 Settingss" the phone photographs. No
+		// `primaryField`, `statusField`, `summaryFields` or `sortable`: a singleton
+		// has no rows, no list and no New button.
+		Present: entity.EntryHints{
+			Singular: "site settings",
+			Plural:   "site settings",
+			Icon:     "settings",
+			Group:    &entity.ResourceGroup{Key: "site", Label: "Site"},
+		},
 		Event:  contracts.EventSettingsUpdated,
 		Public: true,
 		Load: func(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.SiteSettings, error) {
