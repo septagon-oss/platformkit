@@ -31,6 +31,14 @@ import (
 // the row under its lock, so a body is always filed under the record it became.
 func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, columns []string) error {
 	value := reflect.ValueOf(e).Elem()
+	// Asked once per write, and once there is anything to ask for: the audience is a
+	// fact of the record, not of the field, and two richtext fields of one record
+	// cannot disagree about who it is showing them to. See Spec.Audience for why the
+	// answer has to be had here rather than after the write.
+	public, err := s.audience(ctx, tx, e)
+	if err != nil {
+		return err
+	}
 	for _, field := range crud.Fields[T]() {
 		if field.Widget != "richtext" || (columns != nil && !slices.Contains(columns, field.Column)) {
 			continue
@@ -55,20 +63,35 @@ func (s Spec[T]) prepareRichText(ctx context.Context, tx db.Tx[db.Tenant], e T, 
 		for _, ref := range refs {
 			ids = append(ids, ref.ID)
 		}
-		if err := s.recordUses(ctx, tx, e, field, ids); err != nil {
+		if err := s.recordUses(ctx, tx, e, field, ids, public); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// audience is Spec.Audience asked, with "nobody" as the answer for the Spec that
+// declares no public face. It is asked once, before any use is filed, so that an
+// error costs the write nothing: a record whose audience cannot be answered never
+// has bytes promoted by this write, and nothing half-filed survives it.
+func (s Spec[T]) audience(ctx context.Context, tx db.Tx[db.Tenant], e T) (bool, error) {
+	if s.Audience == nil {
+		return false, nil
+	}
+	public, err := s.Audience(ctx, tx, e)
+	if err != nil {
+		return false, fmt.Errorf("who %s/%s shows its files to: %w", s.Module, s.Entity, err)
+	}
+	return public, nil
+}
+
 // recordUses files what one richtext field of this record shows. One field, one
 // record, one call: the port's input names the field, so the two doors and the
 // delete cannot invent three shapes of the same sentence.
-func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID) error {
+func (s Spec[T]) recordUses(ctx context.Context, tx db.Tx[db.Tenant], e T, field crud.Field, ids []uuid.UUID, public bool) error {
 	if err := s.fileUses().SetUses(ctx, tx, UsesInput{
 		Module: s.Module, Entity: s.Entity, Field: field.Column,
-		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids,
+		Locale: recordLocale(ctx), Record: entity.BaseOf(e).ID, Files: ids, Public: public,
 	}); err != nil {
 		return fmt.Errorf("richtext field %s: %w", field.Name, err)
 	}
@@ -87,7 +110,7 @@ func (s Spec[T]) clearRichTextUses(ctx context.Context, tx db.Tx[db.Tenant], e T
 		if field.Widget != "richtext" {
 			continue
 		}
-		if err := s.recordUses(ctx, tx, e, field, nil); err != nil {
+		if err := s.recordUses(ctx, tx, e, field, nil, false); err != nil {
 			return err
 		}
 	}

@@ -208,9 +208,12 @@ upload. A `failed` row is never retried and nothing reads it automatically yet; 
 library will. An erasure proof certifies the frame's object, and the widths' removal
 rides the same delivery beside it.
 
-The pixel ceiling bounds one frame, not how
-many frames are decoded at once — concurrent decodes are unbounded until the
-upload route carries a `kit/limit`. The release sweep (`file-unused`,
+The pixel ceiling bounds one frame; how
+many there are at once is bounded by the process's own ceiling
+(`internal/decode.go`, one slot per core), which an upload that cannot get one
+inside its wait answers with `ErrBusyDecoding` and a 503 rather than by queueing
+without limit. The encode pass shares those slots and defers instead of failing.
+The release sweep (`file-unused`,
 `internal/unused.go`) removes an image stamped `unused_since` further ago than
 `Deps.UnusedAfter` with no live use and no hold, and only ever a file the image
 pass measured (`width > 0`), so a document upload is never reaped by a rule about
@@ -223,10 +226,15 @@ that cannot tell an unsaved picture from a configured one. A resource left on
 `rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
 ever stamps its images and the release sweep never reaches them — mount warns because the
 audience of those images is never derived either, so a published page shows only what its
-uploader made public. `Service.Delete` still has a gap beside all of this: a file can be
-deleted under a body still showing it, and the ledger row
-left behind ends with the next rewrite of that field: an edit, or the record's
+uploader made public. `Service.Delete` refuses a file any row of `file_uses`
+still names — `ErrInUse`, naming how many records — and it asks under a lock on
+the file row, so a use that begins concurrently either waits behind the removal
+and is refused the file it named, or lands first and is counted. A dangling row
+is therefore what the erasure door and the retention sweep leave behind, and it
+ends with the next rewrite of that field: an edit, or the record's
 own delete through `kit/rest`, which ends its uses and is not refused by a file
-that went first. Nothing else ends a use. The pass's refusals are
+that went first. An edit of a published record files what it adds as public in
+the same write: `rest.Spec.Audience` is the record's answer and `SetUsesShown`
+is the one rewrite that can act on it. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
 `messages/` catalogue the rest of the module answers in.

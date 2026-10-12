@@ -34,6 +34,11 @@ type Service struct {
 	quota   int64
 	// maxPixels is the frame the image pass will decode; see processImage.
 	maxPixels int
+	// decode is this process's ceiling on how many frames are being decoded at
+	// once, held by the upload pass and by the background encode alike. It is a
+	// field rather than a parameter because a deployment sets it from the machine,
+	// and a white-box test that wants to see the ceiling close sets it to one.
+	decode *decodeGate
 }
 
 // NewService takes the storage the bytes go to, the largest upload this
@@ -43,7 +48,10 @@ func NewService(storage contracts.Storage, max, quota int64, maxPixels int) *Ser
 	if maxPixels <= 0 {
 		maxPixels = contracts.DefaultMaxImagePixels
 	}
-	return &Service{storage: storage, max: max, quota: quota, maxPixels: maxPixels}
+	return &Service{
+		storage: storage, max: max, quota: quota, maxPixels: maxPixels,
+		decode: newDecodeFrames(0),
+	}
 }
 
 var _ contracts.Service = (*Service)(nil)
@@ -229,6 +237,24 @@ func (s *Service) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUI
 // the key share. Ascending order is what stops two records that name the same two
 // files from each holding one and waiting for the other.
 func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
+	return s.setUses(ctx, tx, use, refs, false)
+}
+
+// SetUsesShown is the same rewrite with the audience the record asserts. See
+// contracts.ShownUses.
+func (s *Service) SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
+	return s.setUses(ctx, tx, use, refs, public)
+}
+
+var _ contracts.ShownUses = (*Service)(nil)
+
+// setUses is one rewrite, asked with the audience the record owning it asserts.
+// public says whether the rows this pass files are shown to somebody who has not
+// signed in — the record's state, never the request's claim — and it changes two
+// things and nothing else: the strength a begun-use file is locked at, because a
+// row written public is followed by a write of the file's visibility, and which
+// files get their visibility recomputed once the rows are down.
+func (s *Service) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	wanted := contracts.CollapseRefs(refs)
 	var existing []contracts.FileUse
 	if err := tx.DB().WithContext(ctx).
@@ -286,7 +312,7 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 			found bool
 			err   error
 		)
-		if slices.Contains(remove, id) {
+		if slices.Contains(remove, id) || public {
 			found, err = lockFileForUpdate(ctx, tx, id)
 		} else {
 			found, err = lockFileKeyShare(ctx, tx, id)
@@ -310,6 +336,7 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		row := &contracts.FileUse{
 			FileID: id, Module: use.Module, Entity: use.Entity,
 			Record: use.Record, Field: use.Field, Locale: use.Locale,
+			Public: public,
 		}
 		if err := crud.Create(ctx, tx, row); err != nil {
 			return nil, err
@@ -326,6 +353,17 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		}
 	}
 	if len(remove) == 0 {
+		// Nothing ended, so no grace period started and no audience was taken back.
+		// A public audience is still owed its recompute: the case is the published
+		// page that gained its first picture, whose row was filed by this very write
+		// and whose bytes stay private until something recomputes them.
+		if public {
+			for _, id := range add {
+				if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
+					return nil, err
+				}
+			}
+		}
 		return nil, nil
 	}
 	// Which of the ended uses were the last their file had. This is the answer
@@ -372,6 +410,17 @@ func (s *Service) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contract
 		// refused at the door rather than served until the release sweep gets there.
 		if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
 			return nil, err
+		}
+	}
+	if public {
+		// The added files, under the same locks and in the same transaction as the
+		// rows that just asserted the audience. Counted with spoke true: a file this
+		// write named has a row now, so the ledger has spoken about it, and the
+		// recompute is the answer to "may anybody read this" rather than a shrug.
+		for _, id := range add {
+			if err := s.recomputeVisibility(ctx, tx, id, use, true); err != nil {
+				return nil, err
+			}
 		}
 	}
 	return unused, nil
@@ -673,7 +722,12 @@ var _ contracts.VariantServable = (*Service)(nil)
 
 // Delete removes the row and says where the bytes are. See contracts.Service.
 func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
-	f, err := crud.Get[*contracts.File](tx, id)
+	// FOR UPDATE, and it is the lock that makes the question below answerable: the
+	// strength a save takes on a file its new body names is FOR KEY SHARE, which
+	// conflicts with this one, so the two orders settle without a second check
+	// anywhere. A save that waits here finds no row when it wakes and is refused
+	// whole; a save that landed first is counted by the read below.
+	f, err := crud.GetForUpdate[*contracts.File](tx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -685,6 +739,23 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 		return nil, err
 	} else if live {
 		return nil, fmt.Errorf("%w: %s (%s)", contracts.ErrHeld, id, why)
+	}
+	// What still shows this. Distinct on the record and not on the row, because the
+	// number a person can act on is the number of pages to go and edit, and one
+	// page can name one picture in two fields in two locales. Served by the
+	// file_uses (tenant_id, file_id) index, and scoped by the table's own policy —
+	// a use of another tenant's file is not visible here and is not this tenant's
+	// answer either.
+	var uses []contracts.UseRow
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Where("file_id = ?", id).Select("DISTINCT module, entity, record").Find(&uses).Error; err != nil {
+		return nil, fmt.Errorf("file: what shows %s: %w", id, err)
+	}
+	// Refused after the hold check and before any write: a hold is a reason nobody
+	// can lift by editing a page, and a refusal has to leave the row, the bytes and
+	// the ledger exactly where they were, with nothing in the outbox.
+	if records := contracts.DistinctRecords(uses); records > 0 {
+		return nil, &contracts.InUse{File: id, Records: records}
 	}
 	// Hard, not soft. A soft-deleted row is a row that still points at bytes,
 	// and the bytes are about to go: keeping the row would be keeping a lie.
@@ -761,7 +832,15 @@ func (s *Service) reencode(ctx context.Context, scope contracts.Scope, up contra
 	// orientation tag, and the frame itself is allocated once the ceiling has
 	// been agreed to. The object past that header is streamed, not buffered — a
 	// photograph is several megabytes and the probe is one.
+	// Under the process's ceiling: the pixel limit bounds one picture, this bounds
+	// how many there are at once. The store read above stays outside the slot — a
+	// slot held across somebody else's latency is one doing nothing.
+	release, ok := s.decode.wait(ctx, decodeUploadWait)
+	if !ok {
+		return nil, s.refuseOrKeep(ctx, up, key, contracts.ErrBusyDecoding)
+	}
 	pass, err := contracts.ProcessImage(body, s.maxPixels)
+	release()
 	_ = body.Close()
 	if err != nil {
 		return nil, s.refuseOrKeep(ctx, up, key, err)

@@ -93,6 +93,19 @@ func (f *Fake) Uses(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.UUID) 
 // file this rewrite only ends is allowed to be gone already — see the case in
 // conformance.go that holds both implementations to that.
 func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID) ([]uuid.UUID, error) {
+	return f.setUses(ctx, tx, use, refs, false)
+}
+
+// SetUsesShown mirrors internal.Service.SetUsesShown: the rows this call files
+// carry the audience the record asserts, and each of them has its visibility
+// recomputed off the whole ledger in the same write.
+func (f *Fake) SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
+	return f.setUses(ctx, tx, use, refs, public)
+}
+
+var _ contracts.ShownUses = (*Fake)(nil)
+
+func (f *Fake) setUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error) {
 	scope, err := contracts.ScopeOf(ctx)
 	if err != nil {
 		return nil, err
@@ -138,6 +151,7 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		kept = append(kept, contracts.FileUse{
 			Base:   crud.Base{ID: uuid.New(), TenantID: scope.TenantID(), CreatedAt: db.Now(), UpdatedAt: db.Now()},
 			FileID: id, Module: use.Module, Entity: use.Entity, Record: use.Record, Field: use.Field, Locale: use.Locale,
+			Public: public,
 		})
 	}
 	slices.SortFunc(kept, func(a, b contracts.FileUse) int { return bytes.Compare(a.FileID[:], b.FileID[:]) })
@@ -147,9 +161,17 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		// writes with its UPDATE, run against the row this fake keeps in memory.
 		if row, ok := f.rows[id]; ok {
 			row.UnusedSince = nil
+			f.rows[id] = row
 		}
 	}
 	if len(remove) == 0 {
+		// Nothing ended, so no clock started — but a public audience still asks the
+		// invariant, which is the published page that gained its first picture.
+		if public {
+			for _, id := range add {
+				f.settle(scope.TenantID(), id, true)
+			}
+		}
 		return nil, nil
 	}
 	var unused []uuid.UUID
@@ -166,6 +188,7 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 				// The grace period starts at the moment the last use went.
 				at := db.Now()
 				row.UnusedSince = &at
+				f.rows[id] = row
 			}
 		}
 	}
@@ -176,6 +199,11 @@ func (f *Fake) SetUses(ctx context.Context, tx db.Tx[db.Tenant], use contracts.U
 		// one goes private in the same write that ended it. internal.Service does this
 		// with its own rows and its own lock; the answer has to be the one answer.
 		if wasPublic[id] {
+			f.settle(scope.TenantID(), id, true)
+		}
+	}
+	if public {
+		for _, id := range add {
 			f.settle(scope.TenantID(), id, true)
 		}
 	}
@@ -265,8 +293,21 @@ func (f *Fake) settle(tenant uuid.UUID, id uuid.UUID, spoke bool) {
 	if row.Visibility == want {
 		return
 	}
+	// Written back: rows holds values, so a flip left on the copy this read handed
+	// out would publish an event for a visibility no read of this fake ever shows.
 	row.Visibility = want
+	f.rows[id] = row
 	f.published = append(f.published, contracts.EventVisibility)
+}
+
+// Forget drops one file row past every rule Delete keeps. It stands in for the
+// two doors that remove a file without consulting the ledger — the erasure door
+// and the retention sweep — which is how a case gets at the use whose file is
+// already gone without Delete refusing to create that state.
+func (f *Fake) Forget(id uuid.UUID) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rows, id)
 }
 
 // Published is the names of the events the fake would have emitted.
@@ -387,13 +428,32 @@ func (f *Fake) Open(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, anony
 	return &row, body, nil
 }
 
-// Delete mirrors internal.Service.Delete: the row goes and the bytes do not.
-func (f *Fake) Delete(_ context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+// Delete mirrors internal.Service.Delete: the row goes, the bytes do not, and a
+// file some record still shows is refused with the same count the SQL service
+// counts — contracts.DistinctRecords over the same rows the details panel lists.
+func (f *Fake) Delete(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error) {
+	scope, err := contracts.ScopeOf(ctx)
+	if err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	row, ok := f.rows[id]
 	if !ok {
 		return nil, crud.ErrNotFound
+	}
+	var uses []contracts.UseRow
+	for _, use := range f.uses {
+		if use.TenantID == scope.TenantID() && use.FileID == id {
+			uses = append(uses, contracts.UseRow{
+				Use:       contracts.Use{Module: use.Module, Entity: use.Entity, Record: use.Record, Field: use.Field, Locale: use.Locale},
+				ID:        use.ID,
+				CreatedAt: use.CreatedAt,
+			})
+		}
+	}
+	if records := contracts.DistinctRecords(uses); records > 0 {
+		return nil, &contracts.InUse{File: id, Records: records}
 	}
 	delete(f.rows, id)
 	f.published = append(f.published, contracts.EventDeleted)

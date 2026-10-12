@@ -31,9 +31,21 @@ func (r RecordUses) SetUses(ctx context.Context, tx db.Tx[db.Tenant], in rest.Us
 	if r.Service == nil {
 		return fmt.Errorf("file: no service to record a use with")
 	}
-	_, err := r.Service.SetUses(ctx, tx, contracts.Use{
+	use := contracts.Use{
 		Module: in.Module, Entity: in.Entity, Record: in.Record, Field: in.Field, Locale: in.Locale,
-	}, in.Files)
+	}
+	if in.Public {
+		// A published record files public rows. The silent version of a Service that
+		// cannot be asked that is a published page whose picture nobody can load, so
+		// the write is refused and the wiring says so.
+		shown, ok := r.Service.(contracts.ShownUses)
+		if !ok {
+			return fmt.Errorf("file: %T was wired to record a use for a published record and answers no contracts.ShownUses", r.Service)
+		}
+		_, err := shown.SetUsesShown(ctx, tx, use, in.Files, true)
+		return err
+	}
+	_, err := r.Service.SetUses(ctx, tx, use, in.Files)
 	return err
 }
 

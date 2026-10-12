@@ -210,6 +210,14 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 				return nil, err
 			}
 			if _, err := svc.Delete(ctx, tx, in.ID); err != nil {
+				// A refusal that names a count is worth sending the caller the
+				// address that lists them: what to do next is edit or remove those
+				// records, and where they are is this module's own read.
+				refused := new(contracts.InUse)
+				if errors.As(err, &refused) {
+					return nil, problem.Conflict(fmt.Sprintf("%s; their uses are at %s",
+						err, strings.Replace(path+"/{id}/uses", "{id}", in.ID.String(), 1)))
+				}
 				return nil, fault(err)
 			}
 			return nil, nil
@@ -479,6 +487,18 @@ func fault(err error) error {
 	// declarations, and this is where that promise is kept.
 	case errors.Is(err, contracts.ErrHeld):
 		return problem.Conflict(err.Error())
+	// A file some record still shows. The count and the door to list the records
+	// are added by the route that refused (the mounted address is its fact, not
+	// this function's); what belongs here is the status, which is 409 for the same
+	// reason a hold's is: the caller can act on it, and nothing about it says the
+	// kernel's word for two states that cannot both be true.
+	case errors.Is(err, contracts.ErrInUse):
+		return problem.Conflict(err.Error())
+	// Every image slot is taken. Nothing in the request is wrong and nothing is
+	// broken, so it is neither a 4xx nor a 500: it is the answer that says ask
+	// again, which is what the upload's own retry expects to hear.
+	case errors.Is(err, contracts.ErrBusyDecoding):
+		return problem.New(http.StatusServiceUnavailable, err.Error())
 	default:
 		return rest.Fault(err)
 	}

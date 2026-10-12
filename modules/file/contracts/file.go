@@ -511,6 +511,20 @@ type UseRow struct {
 	CreatedAt time.Time `json:"createdAt" doc:"When this use began"`
 }
 
+// DistinctRecords is how many records these uses belong to: the count Delete
+// names when it refuses, and the count a details panel would show. It is a
+// function and not a SQL GROUP BY because the fake has to give the same answer as
+// the database for the same rows — the count is one decision, made in one place,
+// and a second implementation of it in either language is where the two
+// implementations would start to disagree about what one page shows.
+func DistinctRecords(rows []UseRow) int {
+	seen := map[Use]struct{}{}
+	for _, row := range rows {
+		seen[Use{Module: row.Module, Entity: row.Entity, Record: row.Record}] = struct{}{}
+	}
+	return len(seen)
+}
+
 // CollapseRefs is what a body's references mean as a set of uses: the ids in the
 // order the document shows them, with a file referenced twice by one field used
 // once. Document order is kept because the details panel lists what a record
@@ -610,6 +624,12 @@ type Service interface {
 	// key. The bytes are removed by whoever handles that event, after this
 	// transaction commits — see the module's subscription. Deleting what is
 	// already gone is ErrNotFound, because the row is what a caller named.
+	//
+	// A file some record still shows is refused with ErrInUse naming how many
+	// records show it, and nothing is written, published or removed. The check and
+	// the removal are one transaction under a lock on the file row, so a use that
+	// begins concurrently is decided rather than raced: it waits behind the removal
+	// and is then refused the file it named, or it lands first and is counted.
 	Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*File, error)
 
 	// Grant hands out a time-limited door onto one row's bytes, so a private
@@ -716,6 +736,25 @@ type Service interface {
 	EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID, reason string) (*ErasureReceipt, error)
 }
 
+// ShownUses is SetUses for the one caller that knows the record filing these uses
+// has a public face. It is a separate interface rather than a fifth method on
+// Service because a deployment that wired its own Service before this command
+// existed is not broken by a capability it never asked for: the one caller that
+// wants it asserts it at the call, and refuses the write when the Service it was
+// wired cannot answer. See Service.SetUses for the rules it does not change and
+// Service.SetShown for what public means.
+//
+// A row this call files carries public = true and the file it belongs to has its
+// visibility recomputed in the same transaction, so a published page that gains an
+// image in an ordinary edit gains public bytes at once rather than at the next
+// lifecycle move. Rows it keeps are left alone: the audience of an existing use
+// stays SetShown's to change, and this command came to file new uses, not to
+// re-assert old ones. public false is SetUses exactly as it is, which is what
+// every command that does not know the answer calls.
+type ShownUses interface {
+	SetUsesShown(ctx context.Context, tx db.Tx[db.Tenant], use Use, refs []uuid.UUID, public bool) ([]uuid.UUID, error)
+}
+
 // DefaultGrantExpiry is the life of a grant nobody asked a length for: long
 // enough to open a document on a slow connection, short enough that a leaked
 // link is a bad hour and not a bad forever.
@@ -745,6 +784,37 @@ var ErrInvalidExpiry = errors.New("file: that expiry is not one this module sign
 
 // ErrHeld is a removal refused because a hold says the bytes must stay.
 var ErrHeld = errors.New("file: this file is under a retention hold")
+
+// ErrInUse is a removal refused because some record still shows the file. It is
+// a conflict and not a validation failure, and the remedy is the other door: edit
+// or delete the records that name it, and the file goes. A hold outranks a use,
+// so a file under a live hold still answers ErrHeld.
+var ErrInUse = errors.New("file: this file is shown by records that still exist")
+
+// InUse is that refusal with its size: how many records show the file. Records,
+// not rows — one page can show one picture in its body and its summary, in two
+// locales, and the person deciding what to do about it counts pages.
+type InUse struct {
+	File    uuid.UUID
+	Records int
+}
+
+func (e *InUse) Error() string {
+	noun := "records"
+	if e.Records == 1 {
+		noun = "record"
+	}
+	return fmt.Sprintf("%s: %s is shown by %d %s", ErrInUse, e.File, e.Records, noun)
+}
+
+// Is lets errors.Is find ErrInUse in a refusal that carries its size.
+func (e *InUse) Is(target error) bool { return target == ErrInUse }
+
+// ErrBusyDecoding is an image upload the process will not take right now:
+// every decode slot is held, and the wait for one ran out. Neither the request
+// nor anybody's state is wrong, so it is a 503 with the caller's own retry, not
+// a 4xx about a body and not a 500 about a broken installation.
+var ErrBusyDecoding = errors.New("file: this instance is decoding every image it has room for")
 
 // ErrUnprovable is an erasure the store cannot certify: it reported a version,
 // a delete marker or an in-flight multipart part, so the bytes are not gone in
