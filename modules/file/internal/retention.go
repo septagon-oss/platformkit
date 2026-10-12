@@ -82,7 +82,7 @@ func (s *Service) Release(ctx context.Context, tx db.Tx[db.Tenant], fileID uuid.
 		return err
 	}
 	return events.Publish(ctx, tx, contracts.EventReleased, contracts.Released{
-		FileID: fileID, At: db.Now(),
+		FileID: fileID, Cause: contracts.EraseHold, At: db.Now(),
 	})
 }
 
@@ -178,9 +178,13 @@ func (s *Service) EraseSubject(ctx context.Context, tx db.Tx[db.Tenant], subject
 		if err := crud.Delete[*contracts.File](tx, f.ID, false); err != nil {
 			return nil, err
 		}
+		widths, err := removeWidths(ctx, tx, f.ID)
+		if err != nil {
+			return nil, err
+		}
 		if err := events.Publish(ctx, tx, contracts.EventDeleted, contracts.Deleted{
 			FileID: f.ID, StorageKey: f.StorageKey, SHA256: f.SHA256, Size: f.Size,
-			Cause: contracts.EraseSubject, Subject: subject, Reason: reason, At: receipt.At,
+			VariantKeys: widths, Cause: contracts.EraseSubject, Subject: subject, Reason: reason, At: receipt.At,
 		}); err != nil {
 			return nil, err
 		}
@@ -308,9 +312,13 @@ func (s *Sweep) run(ctx context.Context, conn *db.Conn) error {
 				if err := crud.Delete[*contracts.File](tx, f.ID, false); err != nil {
 					return err
 				}
+				widths, err := removeWidths(ctx, tx, f.ID)
+				if err != nil {
+					return err
+				}
 				if err := events.Publish(ctx, tx, contracts.EventDeleted, contracts.Deleted{
 					FileID: f.ID, StorageKey: f.StorageKey, SHA256: f.SHA256, Size: f.Size,
-					Cause: contracts.EraseExpired, At: db.Now(),
+					VariantKeys: widths, Cause: contracts.EraseExpired, At: db.Now(),
 				}); err != nil {
 					return err
 				}
@@ -413,6 +421,17 @@ func EraseBlobs(storage contracts.Storage) events.Subscription {
 				// An error rolls the handler's transaction back, which releases
 				// the claim, which is what makes the next delivery try again.
 				return err
+			}
+			// The widths of this picture go with it, by the names the row carried
+			// before it was removed. They travel on the event rather than being read
+			// here because there is nothing left to read them from: that is the whole
+			// reason this subscription exists. One failure rolls the whole delivery
+			// back, so a file is never certified erased with a width still sitting in
+			// the bucket beside it.
+			for _, extra := range deleted.VariantKeys {
+				if err := storage.Delete(ctx, scope, contracts.Key(extra)); err != nil {
+					return fmt.Errorf("file: remove the %s width of %s: %w", extra, deleted.FileID, err)
+				}
 			}
 			seen, verified := 0, (*time.Time)(nil)
 			if prover, ok := storage.(contracts.Prover); ok {
