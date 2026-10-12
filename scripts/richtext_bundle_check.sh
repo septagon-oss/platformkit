@@ -38,29 +38,16 @@ fi
 # node_modules/.package-lock.json, so an install made before a dependency change
 # still leaves a node_modules behind and the new pins would go on being ignored
 # on every machine that had installed once. scripts/e2e.sh explains the same trap.
-matches_lock() {
-	node -e 'const fs = require("node:fs");
-		const packages = path => JSON.parse(fs.readFileSync(path, "utf8")).packages ?? {};
-		let installed;
-		try { installed = packages("node_modules/.package-lock.json"); } catch { process.exit(1); }
-		for (const [name, pinned] of Object.entries(packages("package-lock.json"))) {
-			if (!name || pinned.optional) continue;
-			if (installed[name]?.version !== pinned.version) {
-				console.error(`richtext bundle: ${name} is ${installed[name]?.version ?? "not installed"}, package-lock.json pins ${pinned.version}; reinstalling`);
-				process.exit(1);
-			}
-		}'
-}
-
+# The build happens in a temporary copy of the node project — see
+# scripts/richtext_bundle_build.sh — so this compares the committed bytes against a
+# build from the lockfile and leaves no node_modules in the working tree behind.
 fresh="$(mktemp -d "${TMPDIR:-/tmp}/platformkit-richtext-bundle.XXXXXX")"
 trap 'rm -rf "$fresh"' EXIT
-cd "$project"
-matches_lock || npm ci --no-audit --no-fund
-node build.mjs "$fresh" >/dev/null
+bash "$here/richtext_bundle_build.sh" "$fresh" >/dev/null
 
-# cmp names the file that differs, and a byte comparison is the only verdict
-# worth having here: the check is "the committed file is the build", not "the
-# committed file behaves like the build", which is what the journeys decide.
+# cmp names the file that differs, and a byte comparison is the only verdict worth
+# having here: the check is "the committed file is the build", not "the committed
+# file behaves like the build", which is what the journeys decide.
 for name in editor.js LICENSE.md; do
 	if ! cmp -s "$repo/ui/assets/vendor/richtext/$name" "$fresh/$name"; then
 		echo "richtext bundle: ui/assets/vendor/richtext/$name differs from a fresh build" >&2

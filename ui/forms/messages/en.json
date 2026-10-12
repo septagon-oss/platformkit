@@ -1,38 +1,320 @@
 {
   "forms.richtext.help": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Formatting help"
   },
   "forms.richtext.paragraphs": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Paragraphs: leave a blank line; a hard break ends with \\."
   },
   "forms.richtext.headings": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Headings: ## through ####."
   },
   "forms.richtext.marks": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Bold **text**, italic *text*, strike ~~text~~, inline `code`."
   },
   "forms.richtext.links": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Links: [label](https://example.com) or [label](/page)."
   },
   "forms.richtext.lists": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Lists: - item, 1. item or - [ ] task; up to three levels."
   },
   "forms.richtext.blocks": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Quote: > text; code: ```language; rule: ---."
   },
   "forms.richtext.tables": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Tables: | heading | with a | --- | separator."
   },
   "forms.richtext.images": {
-    "references": ["ui/forms/control.go"],
+    "references": [
+      "ui/forms/control.go"
+    ],
     "translation": "Images: ![alt](pk-file:uuid \"caption\") alone on a line. Upload the file first."
+  },
+  "forms.richtext.toolbar": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Formatting"
+  },
+  "forms.richtext.bubble": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Format selection"
+  },
+  "forms.richtext.menu": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Insert a block"
+  },
+  "forms.richtext.surface": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Content"
+  },
+  "forms.richtext.more": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "More formatting"
+  },
+  "forms.richtext.bold": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Bold"
+  },
+  "forms.richtext.italic": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Italic"
+  },
+  "forms.richtext.link": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Link"
+  },
+  "forms.richtext.bulletList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Bulleted list"
+  },
+  "forms.richtext.orderedList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Numbered list"
+  },
+  "forms.richtext.taskList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Task list"
+  },
+  "forms.richtext.quote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Quote"
+  },
+  "forms.richtext.code": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Inline code"
+  },
+  "forms.richtext.strike": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Strikethrough"
+  },
+  "forms.richtext.codeBlock": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Code block"
+  },
+  "forms.richtext.table": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Table"
+  },
+  "forms.richtext.heading1": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Heading 1"
+  },
+  "forms.richtext.heading2": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Heading 2"
+  },
+  "forms.richtext.heading3": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Heading 3"
+  },
+  "forms.richtext.paragraph": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Text"
+  },
+  "forms.richtext.image": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Image"
+  },
+  "forms.richtext.rule": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Divider"
+  },
+  "forms.richtext.undo": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Undo"
+  },
+  "forms.richtext.redo": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Redo"
+  },
+  "forms.richtext.preview": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Preview as published"
+  },
+  "forms.richtext.menu.bulletList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Unordered list of items"
+  },
+  "forms.richtext.menu.orderedList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "List numbered from one"
+  },
+  "forms.richtext.menu.taskList": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Checkboxes you can tick off"
+  },
+  "forms.richtext.menu.quote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A passage someone else wrote"
+  },
+  "forms.richtext.menu.codeBlock": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Monospaced text, unformatted"
+  },
+  "forms.richtext.menu.table": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Rows and columns of short values"
+  },
+  "forms.richtext.menu.heading1": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "The title of a section"
+  },
+  "forms.richtext.menu.heading2": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A section inside a section"
+  },
+  "forms.richtext.menu.heading3": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A sub-section heading"
+  },
+  "forms.richtext.menu.paragraph": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "An ordinary paragraph"
+  },
+  "forms.richtext.menu.image": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Upload a picture from this device, or paste one"
+  },
+  "forms.richtext.menu.rule": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A line across the page"
+  },
+  "forms.richtext.menu.preview": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "The page as the server renders it"
+  },
+  "forms.richtext.linkAddress": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Address"
+  },
+  "forms.richtext.linkSave": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Save link"
+  },
+  "forms.richtext.linkRemove": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Remove link"
+  },
+  "forms.richtext.draftFound": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A draft from this device was not saved."
+  },
+  "forms.richtext.draftRestore": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Restore unsaved draft"
+  },
+  "forms.richtext.draftDiscard": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Discard"
   }
 }

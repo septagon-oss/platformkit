@@ -51,6 +51,33 @@ var renderedHooks = map[string]string{
 	"data-session-error":        "ui/document/document.go",
 	"data-signin":               "ui/document/document.go",
 	"data-theme":                "ui/document/document.go",
+	// The rich text field's vocabulary: all of it drawn by ui/forms, read by
+	// ui/assets/js/richtext.js. The glue creates no attribute of its own, so what
+	// a browser may know about a field is what this list already names.
+	"data-richtext":               "ui/forms/richtext.go",
+	"data-richtext-bubble":        "ui/forms/richtext.go",
+	"data-richtext-command":       "ui/forms/richtext.go",
+	"data-richtext-count":         "ui/forms/richtext.go",
+	"data-richtext-draft":         "ui/forms/richtext.go",
+	"data-richtext-draft-bar":     "ui/forms/richtext.go",
+	"data-richtext-draft-discard": "ui/forms/richtext.go",
+	"data-richtext-draft-restore": "ui/forms/richtext.go",
+	"data-richtext-endpoint":      "ui/forms/richtext.go",
+	"data-richtext-etag":          "ui/forms/richtext.go",
+	"data-richtext-field":         "ui/forms/richtext.go",
+	"data-richtext-file":          "ui/forms/richtext.go",
+	"data-richtext-limits":        "ui/forms/richtext.go",
+	"data-richtext-link":          "ui/forms/richtext.go",
+	"data-richtext-link-input":    "ui/forms/richtext.go",
+	"data-richtext-max":           "ui/forms/richtext.go",
+	"data-richtext-menu":          "ui/forms/richtext.go",
+	"data-richtext-more":          "ui/forms/richtext.go",
+	"data-richtext-more-panel":    "ui/forms/richtext.go",
+	"data-richtext-preview":       "ui/forms/richtext.go",
+	"data-richtext-status":        "ui/forms/richtext.go",
+	"data-richtext-surface":       "ui/forms/richtext.go",
+	"data-richtext-toolbar":       "ui/forms/richtext.go",
+	"data-richtext-upload":        "ui/forms/richtext.go",
 }
 
 // kernelHooks is the vocabulary refuseClientSheet compares a selector against,

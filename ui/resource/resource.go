@@ -16,6 +16,7 @@ package resource
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,13 @@ import (
 type Resource struct {
 	Schema    entity.Schema
 	Immutable []string
+	// API is the resource's own read address as the kernel composed it — the path
+	// its JSON routes answer at — empty for a screen rendered without a kernel
+	// behind it. A renderer builds an autosave target from it and from nothing
+	// else: the screen's own /app/... address is where a person is, not where the
+	// record lives, and a browser that guessed an API path would be guessing which
+	// surface its caller may read on.
+	API string
 	// Present is how this resource's author said it reads. The renderer consults
 	// three parts of it and no others: `visibility`, which keeps a field off the
 	// list and off the record; `section`, which groups the record; and
@@ -226,11 +234,58 @@ func Form(r Resource, o Options, action, title string, row map[string]any, errs 
 	if detail != "" {
 		status = statusUnprocessableEntity
 	}
-	return document.View{Title: title, Status: status, Body: []g.Node{
+	return document.View{Title: title, Status: status, Modules: richtextModules(r), Body: []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, title),
 		components.Toolbar(components.ToolbarProps{Title: title}),
 		FormExample(at, r, o, action, title, row, errs, detail, create).Node,
 	}}
+}
+
+// richtextModule is the editor's browser half, as a path under the shell's asset
+// prefix. It is a module and not a controller: a page that draws no rich text
+// field carries no tag for it and downloads none of it.
+const richtextModule = "js/richtext.js"
+
+// richtextModule asks whether this form draws an editor at all: an editable rich
+// text field, which is the only thing that needs 470 KB of editor. A record whose
+// rich text is immutable is read-only chrome and no editor, and the page that
+// draws one costs the same as the page that draws none.
+func richtextModules(r Resource) []string {
+	for _, f := range readable(r.Schema.Fields) {
+		if f.Widget == "richtext" && !slices.Contains(r.Immutable, f.Name) {
+			return []string{richtextModule}
+		}
+	}
+	return nil
+}
+
+// fileUploadRoute is the file module's own upload address on the workspace
+// surface, spelled rather than derived: the editor posts the bytes it is handed to
+// this route and to no other, and never builds a path out of a record's own.
+const fileUploadRoute = "/api/v1/file/files"
+
+// richtextEditor is the server's answer to "what may this field's editor do, and
+// where". An author who is writing has no record yet, so there is nothing to save
+// against and nothing to keep a draft under: the two attributes appear together
+// with the record's id. An entity that keeps no write count has no tag to quote,
+// so the editor saves nothing as the author writes and keeps the draft instead —
+// which is the honest mode, not a degraded one: a conflict panel needs a revision
+// to disagree about.
+func richtextEditor(r Resource, row map[string]any, create bool, name string) forms.Editor {
+	editor := forms.Editor{FileUpload: fileUploadRoute}
+	if create || row == nil || r.Singleton || r.API == "" {
+		return editor
+	}
+	id, _ := row["id"].(string)
+	if id == "" || !r.offers("update") {
+		return editor
+	}
+	editor.DraftKey = r.API + "/" + id + "/" + name
+	if revision, quoted := revisionCondition(r, row, create); quoted {
+		editor.Endpoint = r.API + "/" + id
+		editor.ETag = `"` + revision + `"`
+	}
+	return editor
 }
 
 // statusUnprocessableEntity is the one status this package writes: the 422 a
@@ -259,7 +314,11 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
 	words := o.Words(r.Schema)
 	for _, field := range readable(r.Schema.Fields) {
-		fields = append(fields, formField(words, field))
+		f := formField(words, field)
+		if f.Definition.Widget == "richtext" {
+			f.Editor = richtextEditor(r, row, create, f.Definition.Name)
+		}
+		fields = append(fields, f)
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {

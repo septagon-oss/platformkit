@@ -108,8 +108,15 @@ type View struct {
 	// that kept the answer. Only the public face is cacheable to begin with, so this
 	// says nothing about a workspace document, which is never stored at all.
 	Revalidate bool
-	Head       []g.Node
-	Body       []g.Node
+	// Modules are scripts this one page loads as ES modules, as paths under the
+	// shell's asset prefix. A page with a rich text field names the editor; every
+	// other page carries no tag and no bytes. It is a field of the view and not of
+	// the chrome because the question is per page: the controllers a shell loads on
+	// every page answer a different question, and a page weight budget is only real
+	// if the answer is per page too.
+	Modules []string
+	Head    []g.Node
+	Body    []g.Node
 }
 
 // Document renders a whole HTML document: the head from the chrome and the
@@ -216,6 +223,13 @@ func head(c Chrome, r Request, v View) g.Node {
 	for _, name := range c.Scripts {
 		scripts = append(scripts, h.Script(h.Src(c.Assets+"/js/"+name), g.Attr("defer")))
 	}
+	// A module is fetched with the document it belongs to and never deferred: it
+	// is the page's own enhancement, and the page it enhances is already parsed by
+	// the time a module at the end of the head runs.
+	modules := make([]g.Node, 0, len(v.Modules))
+	for _, path := range v.Modules {
+		modules = append(modules, h.Script(h.Src(c.Assets+"/"+path), g.Attr("type", "module")))
+	}
 	return h.Head(
 		h.Meta(h.Charset("utf-8")),
 		h.Meta(h.Name("viewport"), h.Content("width=device-width, initial-scale=1")),
@@ -224,6 +238,7 @@ func head(c Chrome, r Request, v View) g.Node {
 		h.Link(h.Rel("stylesheet"), h.Href(c.Assets+"/app.css?v="+c.Stylesheet.Fingerprint)),
 		g.If(v.Theme == "", g.Group(r.Inline)),
 		g.Group(scripts),
+		g.Group(modules),
 		g.Group(v.Head),
 	)
 }
