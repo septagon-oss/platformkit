@@ -31,7 +31,7 @@
 // page and its table of sentences that kit/httpx and ui/page also call a
 // "fault" — belongs to those owners and to
 // docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md. This package renders
-// nothing, imports no HTML and holds no sentence intended for a person.
+// nothing and imports no HTML; its three values hold no sentence of their own.
 //
 // # The messages are a marker other packages parse, not decoration
 //
