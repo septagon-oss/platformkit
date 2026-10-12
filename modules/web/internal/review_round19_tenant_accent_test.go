@@ -91,7 +91,7 @@ func TestTheSitePaintsOnlyAnAccentTheContrastGateWouldIssue(t *testing.T) {
 				// ever be painted with it. Nothing to measure.
 				continue
 			}
-			head := render(t, Site{}.view(settings, page.Request{}, "Welcome", nil).Head)
+			head := render(t, Site{}.view(settings, page.Request{}, "Welcome", sourceLanguage, nil).Head)
 			found := accentPin.FindStringSubmatch(head)
 			if found == nil {
 				t.Fatalf("settings %q/%s were accepted by SiteSettings.Validate but the rendered head carries no %s, so this case can no longer see how the tenant's colour reaches the page: head = %s",

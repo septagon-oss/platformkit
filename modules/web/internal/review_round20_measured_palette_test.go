@@ -131,7 +131,7 @@ func TestTheTenantAccentIsMeasuredAgainstThePaletteThePageLinks(t *testing.T) {
 			if err := settings.Validate(t.Context()); err != nil {
 				t.Fatalf("SiteSettings.Validate refused %q, which this case offers as a colour a tenant can type: %v", hex, err)
 			}
-			head := render(t, site.view(settings, page.Request{}, "Welcome", nil).Head)
+			head := render(t, site.view(settings, page.Request{}, "Welcome", sourceLanguage, nil).Head)
 			pinned := "light"
 			if theme == "dark" {
 				pinned = "dark"
@@ -206,7 +206,7 @@ func TestTheSiteComposedWithNoPaletteMeasuresWhatItLinks(t *testing.T) {
 		t.Fatalf("a site composed with no palette measures a pair other than design.Default(), which is the pair every case in this package measures the answer against: light accent = %s", got.Light.AccentDefault)
 	}
 	head := render(t, site.view(&sitecontracts.SiteSettings{Theme: "system", PrimaryColor: "#c0ffee"},
-		page.Request{}, "Welcome", nil).Head)
+		page.Request{}, "Welcome", sourceLanguage, nil).Head)
 	for _, r := range accentRules(t, head, "light") {
 		th := themePainting(site.palette(), r.mode, r.hex)
 		if err := th.CheckRoles(design.RoleLayer(), design.GatedRolePairs()); err != nil {

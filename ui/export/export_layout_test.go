@@ -198,6 +198,16 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
+	// A confirmation body drawn into a command form is a sentence of the form's own
+	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
+	// and the confirm dialog's message — the same sentence, read inside a frame
+	// already narrowed to 24rem — now wears that one list. Measured by exporting this
+	// tree and the same tree without the change and walking both documents leaf by
+	// leaf: 99,892 leaves become 99,906. The 14 added leaves are the new Gallery
+	// example's own (id, name, group, props, schema and html); of the 2 changed, one
+	// is /sha256 and the other is pk-ui.component.confirmdialog/default's html, which
+	// gains max-w-sm on the message paragraph and paints the same box. No leaf is
+	// removed; CSS, schema, notices, themes, icons and font policy are identical.
 	//
 	// This branch measures the edge a component draws on the ground it is painted
 	// on, which the shipped pair missed: both themes' border-default and
@@ -205,9 +215,11 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// on, including the muted panel and the hovered fill, and the derived role
 	// values move with them. A leaf-by-leaf diff of this tree's export against the
 	// tree before those commits moves /css, /sha256 and the theme colour leaves, and
-	// no example, schema, icon, class or notice. The digest below is this merged
-	// tree's own export, printed by the refusal and copied from it.
-	if legacy.SHA256 != "19c7fbbe9c13d456ca151476fe331b0ccbf78901ba0a32b5fe96e9694c11bf89" {
+	// no example, schema, icon, class or notice.
+	//
+	// The digest below is that measurement of this merged tree, printed by the
+	// refusal above the re-measure and copied from it.
+	if legacy.SHA256 != "b51d21dec00319b066ddb3b154ae1cbf7776d3fe1aa44f329433f81b4dbb4bf4" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)

@@ -72,7 +72,7 @@ func TestTheSiteDeclaresTheColourEachModeCanCarry(t *testing.T) {
 	t.Parallel()
 	site := Site{Theme: design.Default()}
 	head := render(t, site.view(&sitecontracts.SiteSettings{Theme: "system", PrimaryColor: "#ffffff"},
-		page.Request{}, "Welcome", nil).Head)
+		page.Request{}, "Welcome", sourceLanguage, nil).Head)
 	painted := accents(t, head, "light")
 	for _, mode := range []string{"light", "dark"} {
 		hex, ok := painted[mode]
@@ -103,7 +103,7 @@ func TestTheSiteKeepsTheTenantColourThatReads(t *testing.T) {
 	t.Parallel()
 	site := Site{Theme: design.Default()}
 	head := render(t, site.view(&sitecontracts.SiteSettings{Theme: "dark", PrimaryColor: "#C0FFEE"},
-		page.Request{}, "Welcome", nil).Head)
+		page.Request{}, "Welcome", sourceLanguage, nil).Head)
 	if !strings.Contains(head, ":root{--pk-color-accent-default:#c0ffee}") {
 		t.Errorf("a dark theme's mint reads and was moved anyway: %s", head)
 	}
@@ -124,10 +124,10 @@ func TestTheSiteKeepsTheTenantColourThatReads(t *testing.T) {
 func TestTheSiteDeclaresNoAccentItsPaletteCannotCarry(t *testing.T) {
 	t.Parallel()
 	site := Site{Theme: design.Pair{Light: design.Theme{}, Dark: design.Default().Dark}}
-	if v := site.view(&sitecontracts.SiteSettings{Theme: "light", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", nil); len(v.Head) != 0 {
+	if v := site.view(&sitecontracts.SiteSettings{Theme: "light", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", sourceLanguage, nil); len(v.Head) != 0 {
 		t.Errorf("an empty light palette answered for the light mode: head = %s", render(t, v.Head))
 	}
-	if v := site.view(&sitecontracts.SiteSettings{Theme: "dark", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", nil); !strings.Contains(render(t, v.Head), "#c0ffee") {
+	if v := site.view(&sitecontracts.SiteSettings{Theme: "dark", PrimaryColor: "#c0ffee"}, page.Request{}, "Welcome", sourceLanguage, nil); !strings.Contains(render(t, v.Head), "#c0ffee") {
 		t.Error("the dark half of the palette reads and was refused its tenant's colour too")
 	}
 }
@@ -148,7 +148,7 @@ func TestASiteWhoseTenantChoseNonePaintsItsPaletteOwnAccent(t *testing.T) {
 	settings := &sitecontracts.SiteSettings{Title: "Acme"}
 	for _, theme := range []string{"light", "dark", "system"} {
 		settings.Theme = theme
-		head := render(t, Site{}.view(settings, page.Request{}, "Welcome", nil).Head)
+		head := render(t, Site{}.view(settings, page.Request{}, "Welcome", sourceLanguage, nil).Head)
 		got := accents(t, head, theme)
 		// A site that pinned no mode writes its :root rule for the light mode, and
 		// accents() labels that rule with the mode it stands for: "system".
