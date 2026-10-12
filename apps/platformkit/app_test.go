@@ -89,6 +89,11 @@ func quiet() *slog.Logger { return slog.New(slog.DiscardHandler) }
 // configure writes the configuration the reference app would have read from
 // config.yaml, against a schema of this test's own, and returns the path and
 // the loaded value. The database is empty: no tables, no ledger, nothing.
+// webhookKey is the composition's webhook secret key: thirty-two bytes, the width
+// AES-256-GCM asks for. A fixture's value, not a secret — no receiver on this
+// planet verifies a delivery signed with it.
+const webhookKey = "0123456789abcdef0123456789abcdef"
+
 func configure(t *testing.T) (string, config.Config) {
 	t.Helper()
 	// The seed command's operator proves themselves the way every deployment
@@ -112,6 +117,9 @@ func configure(t *testing.T) (string, config.Config) {
 		"nats:\n  url: \"nats://localhost:4222\"\n" +
 		"log:\n  level: \"error\"\n" +
 		"files:\n  dir: \"" + t.TempDir() + "\"\n" +
+		// Outbound webhooks are composed, so the composition needs the key that
+		// wraps an endpoint's signing secret. The fixture's own thirty-two bytes.
+		"webhook:\n  secret_key: \"" + webhookKey + "\"\n" +
 		"auth:\n  oidc:\n    issuer: \"\"\n    client_id: \"\"\n    client_secret: \"\"\n    redirect_path: \"\"\n"
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatalf("write the config: %v", err)
