@@ -34,5 +34,572 @@
     "plural": {
       "": "reter ficheiros"
     }
+  },
+  "file.library.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Biblioteca de ficheiros",
+    "plural": {
+      "": "Biblioteca de ficheiros"
+    }
+  },
+  "file.library.pagination": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Paginação da biblioteca de ficheiros",
+    "plural": {
+      "": "Paginação da biblioteca de ficheiros"
+    }
+  },
+  "file.library.grid": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Ficheiros deste tenant",
+    "plural": {
+      "": "Ficheiros deste tenant"
+    }
+  },
+  "file.library.tile": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "ficheiro",
+    "plural": {
+      "": "ficheiro"
+    }
+  },
+  "file.library.clear": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Limpar filtros",
+    "plural": {
+      "": "Limpar filtros"
+    }
+  },
+  "file.library.empty.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Ainda não há nada na biblioteca",
+    "plural": {
+      "": "Ainda não há nada na biblioteca"
+    }
+  },
+  "file.library.empty": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Os ficheiros chegam pela porta de envio; esta página lê tudo o que este tenant guarda.",
+    "plural": {
+      "": "Os ficheiros chegam pela porta de envio; esta página lê tudo o que este tenant guarda."
+    }
+  },
+  "file.library.noResults.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nada corresponde",
+    "plural": {
+      "": "Nada corresponde"
+    }
+  },
+  "file.library.noResults": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nenhum ficheiro deste tenant corresponde ao que pediu. Limpe os filtros para ver todos.",
+    "plural": {
+      "": "Nenhum ficheiro deste tenant corresponde ao que pediu. Limpe os filtros para ver todos."
+    }
+  },
+  "file.library.unusedSince": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "inutilizado desde",
+    "plural": {
+      "": "inutilizado desde"
+    }
+  },
+  "file.library.meter.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Armazenamento",
+    "plural": {
+      "": "Armazenamento"
+    }
+  },
+  "file.library.meter.used": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Ocupado agora",
+    "plural": {
+      "": "Ocupado agora"
+    }
+  },
+  "file.library.meter.variants": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Disso, outras larguras",
+    "plural": {
+      "": "Disso, outras larguras"
+    }
+  },
+  "file.library.meter.ceiling": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Limite",
+    "plural": {
+      "": "Limite"
+    }
+  },
+  "file.library.meter.none": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Esta instalação não define nenhum",
+    "plural": {
+      "": "Esta instalação não define nenhum"
+    }
+  },
+  "file.library.meter.left": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Ainda cabe",
+    "plural": {
+      "": "Ainda cabe"
+    }
+  },
+  "file.library.preview": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "A imagem tal como está guardada",
+    "plural": {
+      "": "A imagem tal como está guardada"
+    }
+  },
+  "file.library.panel.about": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Um ficheiro, como este tenant o guarda",
+    "plural": {
+      "": "Um ficheiro, como este tenant o guarda"
+    }
+  },
+  "file.library.panel.label": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Detalhes do ficheiro",
+    "plural": {
+      "": "Detalhes do ficheiro"
+    }
+  },
+  "file.library.panel.close": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Fechar",
+    "plural": {
+      "": "Fechar"
+    }
+  },
+  "file.library.fact.type": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Tipo de média",
+    "plural": {
+      "": "Tipo de média"
+    }
+  },
+  "file.library.fact.size": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Tamanho",
+    "plural": {
+      "": "Tamanho"
+    }
+  },
+  "file.library.fact.frame": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Dimensões",
+    "plural": {
+      "": "Dimensões"
+    }
+  },
+  "file.library.fact.unmeasured": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "não medido",
+    "plural": {
+      "": "não medido"
+    }
+  },
+  "file.library.fact.digest": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "SHA-256",
+    "plural": {
+      "": "SHA-256"
+    }
+  },
+  "file.library.fact.visibility": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Visibilidade",
+    "plural": {
+      "": "Visibilidade"
+    }
+  },
+  "file.library.fact.uploaded": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Enviado",
+    "plural": {
+      "": "Enviado"
+    }
+  },
+  "file.library.fact.shown": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Mostrado por",
+    "plural": {
+      "": "Mostrado por"
+    }
+  },
+  "file.library.fact.unusedSince": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Inutilizado desde",
+    "plural": {
+      "": "Inutilizado desde"
+    }
+  },
+  "file.library.fact.kind": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Classe de retenção",
+    "plural": {
+      "": "Classe de retenção"
+    }
+  },
+  "file.library.uses.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Usado em",
+    "plural": {
+      "": "Usado em"
+    }
+  },
+  "file.library.unused": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nada neste tenant mostra este ficheiro.",
+    "plural": {
+      "": "Nada neste tenant mostra este ficheiro."
+    }
+  },
+  "file.library.caption.label": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "O que esta imagem diz de si mesma",
+    "plural": {
+      "": "O que esta imagem diz de si mesma"
+    }
+  },
+  "file.library.caption.save": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Guardar descrição",
+    "plural": {
+      "": "Guardar descrição"
+    }
+  },
+  "file.library.altRequired": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Uma imagem diz o que contém ou diz que é decorativa.",
+    "plural": {
+      "": "Uma imagem diz o que contém ou diz que é decorativa."
+    }
+  },
+  "file.library.decorative": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Imagem decorativa",
+    "plural": {
+      "": "Imagem decorativa"
+    }
+  },
+  "file.library.decorativeHelp": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Assinalada, a imagem nada diz de si mesma e não se pede texto.",
+    "plural": {
+      "": "Assinalada, a imagem nada diz de si mesma e não se pede texto."
+    }
+  },
+  "file.library.delete": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Remover este ficheiro",
+    "plural": {
+      "": "Remover este ficheiro"
+    }
+  },
+  "file.library.deleteHelp": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Os bytes partem quando a transacção que removeu a linha for confirmada.",
+    "plural": {
+      "": "Os bytes partem quando a transacção que removeu a linha for confirmada."
+    }
+  },
+  "file.library.inUse": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Algo ainda mostra este ficheiro, por isso não pode ser removido; esse registo tem de deixar de o mostrar primeiro.",
+    "plural": {
+      "": "Algo ainda mostra este ficheiro, por isso não pode ser removido; esse registo tem de deixar de o mostrar primeiro."
+    }
+  },
+  "file.library.refusal.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Isso não foi possível",
+    "plural": {
+      "": "Isso não foi possível"
+    }
+  },
+  "file.library.refusal.form": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "O formulário não pôde ser lido, por isso nada foi escrito.",
+    "plural": {
+      "": "O formulário não pôde ser lido, por isso nada foi escrito."
+    }
+  },
+  "file.library.refusal.in_use": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Algo ainda mostra este ficheiro, por isso não pode ser removido.",
+    "plural": {
+      "": "Algo ainda mostra este ficheiro, por isso não pode ser removido."
+    }
+  },
+  "file.library.refusal.held": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Este ficheiro está retido por uma promessa feita a alguém.",
+    "plural": {
+      "": "Este ficheiro está retido por uma promessa feita a alguém."
+    }
+  },
+  "file.library.stale": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Este ficheiro mudou enquanto o estava a ver; veja a linha actual e escreva outra vez.",
+    "plural": {
+      "": "Este ficheiro mudou enquanto o estava a ver; veja a linha actual e escreva outra vez."
+    }
+  },
+  "file.library.refusal.invalid": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "O que foi escrito não pode ser guardado como está.",
+    "plural": {
+      "": "O que foi escrito não pode ser guardado como está."
+    }
+  },
+  "file.library.refusal.not_found": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Este tenant não tem nenhum ficheiro com esse nome.",
+    "plural": {
+      "": "Este tenant não tem nenhum ficheiro com esse nome."
+    }
+  },
+  "file.library.family.all": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Todos os tipos",
+    "plural": {
+      "": "Todos os tipos"
+    }
+  },
+  "file.library.family.image": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Imagens",
+    "plural": {
+      "": "Imagens"
+    }
+  },
+  "file.library.family.document": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Documentos",
+    "plural": {
+      "": "Documentos"
+    }
+  },
+  "file.library.family.video": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Vídeos",
+    "plural": {
+      "": "Vídeos"
+    }
+  },
+  "file.library.sort.newest": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Mais recentes primeiro",
+    "plural": {
+      "": "Mais recentes primeiro"
+    }
+  },
+  "file.library.sort.oldest": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Mais antigos primeiro",
+    "plural": {
+      "": "Mais antigos primeiro"
+    }
+  },
+  "file.library.sort.name": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nome, A a Z",
+    "plural": {
+      "": "Nome, A a Z"
+    }
+  },
+  "file.library.sort.nameDesc": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nome, Z a A",
+    "plural": {
+      "": "Nome, Z a A"
+    }
+  },
+  "file.library.sort.size": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Mais pequenos primeiro",
+    "plural": {
+      "": "Mais pequenos primeiro"
+    }
+  },
+  "file.library.sort.sizeDesc": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Mais grandes primeiro",
+    "plural": {
+      "": "Mais grandes primeiro"
+    }
+  },
+  "file.library.filter.name": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Procurar por nome",
+    "plural": {
+      "": "Procurar por nome"
+    }
+  },
+  "file.library.filter.type": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Tipo",
+    "plural": {
+      "": "Tipo"
+    }
+  },
+  "file.library.filter.sort": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Ordenar por",
+    "plural": {
+      "": "Ordenar por"
+    }
+  },
+  "file.library.filter.unused": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Só o que nada mostra",
+    "plural": {
+      "": "Só o que nada mostra"
+    }
+  },
+  "file.library.filter.unusedHelp": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "O que o registo de uso carimbou — os ficheiros que a varredura removerá quando a tolerância terminar.",
+    "plural": {
+      "": "O que o registo de uso carimbou — os ficheiros que a varredura removerá quando a tolerância terminar."
+    }
+  },
+  "file.library.filter.apply": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Aplicar",
+    "plural": {
+      "": "Aplicar"
+    }
   }
 }

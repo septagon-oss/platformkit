@@ -722,7 +722,7 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 	}
 }
 
-// knownUnservedNav is the debt this gate is adopted against: two nav entries
+// knownUnservedNav is the debt this gate is adopted against: the nav entries this
 // this repository declares and does not serve yet, each with the reason it is
 // not a line of work this gate can force.
 //
@@ -738,9 +738,10 @@ func TestEveryOperationDeclaresExactlyOneAuthorization(t *testing.T) {
 // in the shell would not.
 //
 // A name is removed from this map by serving the entry, never by moving an
-// entry into it. The gate below refuses a stale name for exactly that reason.
+// entry into it. The gate below refuses a stale name for exactly that reason:
+// /app/file/files left this map by being served, when modules/file mounted the page
+// its own nav entry named, and the map now holds the one entry left unserved.
 var knownUnservedNav = map[string]string{
-	"/app/file/files":   "modules/file declares it; no read-only generated screen exists yet",
 	"/app/audit/events": "modules/audit declares it; no read-only generated screen exists yet",
 }
 
