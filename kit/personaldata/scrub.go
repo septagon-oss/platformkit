@@ -46,6 +46,10 @@ var namePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // carry their id — the person a task's description is about is not its assignee — so a
 // text column is scrubbed over everything the tenant can see. It is also what lets
 // Residue ask the same question back and mean it.
+//
+// One match does not run over the whole tenant however the caller is written: a handle
+// read as a bare word is only taken for the person in a row that carries their own id.
+// See Subject.Known for why, and ownRow for how.
 func Scrub(ctx context.Context, tx db.Tx[db.Tenant], s Subject, table string,
 	columns []string, where string, args ...any) (int64, error) {
 	return scrub(ctx, tx, s, table, columns, false, where, args)
@@ -133,6 +137,49 @@ type rewrite struct {
 	args   []any
 }
 
+// match is one replacement the scrub makes in one column: what to look for, and — for the
+// one string that cannot be told from an ordinary word — which rows may be searched for it.
+type match struct {
+	// pattern is what every row of the scope is searched for.
+	pattern string
+
+	// ownPattern is what only a row carrying the person's own id is searched for, and it is
+	// set only beside a handle: read as a bare word it is the person in their own rows and
+	// somebody's verb in everybody else's. The row that does not carry the id keeps the
+	// narrower pattern above, so the two live in one expression the server decides per row.
+	ownPattern string
+}
+
+// matches expands what a person is known by into the replacements to make, longest
+// identifier first: an address and a name as whole words wherever they sit, and a handle as
+// the @-mention it always is, or — in a row that names the person by id — as the bare word
+// too. See Subject.Known.
+func matches(s Subject) []match {
+	out := make([]match, 0, 3)
+	for _, id := range s.Known() {
+		if id.Login {
+			out = append(out, match{pattern: mentionPattern(id.Value), ownPattern: boundedPattern(id.Value)})
+			continue
+		}
+		out = append(out, match{pattern: boundedPattern(id.Value)})
+	}
+	return out
+}
+
+// ownRow is the SQL that says a row carries this person's own id in one of its own columns.
+//
+// The row is named by the table — which namePattern has already refused to build anything
+// but a plain identifier out of — and the id is bound rather than written. Reading the row
+// as jsonb pairs is what keeps the rule one sentence rather than a list of columns: a uuid
+// column and a text column that holds the id read the same way, and a contributor adds a
+// person column without editing this file. A row that merely quotes the id inside a
+// sentence counts too, which widens the scrub by one handle in a row that does name the
+// person; that is the direction this rule is written to fail in.
+func ownRow(table string) string {
+	return "EXISTS (SELECT 1 FROM jsonb_each_text(to_jsonb(" + table +
+		")) AS named WHERE named.value = ?::text)"
+}
+
 // query writes the rewrite, and refuses one whose caller mis-counted its own filter.
 //
 // A nil statement with no error is the honest no-op: a person with no email, no name
@@ -148,10 +195,11 @@ func query(s Subject, table string, columns []string, isJSON bool,
 			return nil, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, c)
 		}
 	}
-	ids := s.Identifiers()
+	ids := matches(s)
 	if len(ids) == 0 || len(columns) == 0 {
 		return nil, nil
 	}
+	own := ownRow(table)
 
 	// Every value is bound at the place it is written, in the order the finished SQL
 	// asks for it, and a value used twice is bound twice. Neither this file nor a
@@ -166,14 +214,24 @@ func query(s Subject, table string, columns []string, isJSON bool,
 			text = c + "::text"
 		}
 		expr := text
-		for _, id := range ids {
+		for _, m := range ids {
 			// Identifiers are longest first, so a name inside the person's own address
 			// goes with the address and not after it, which would leave the tail of a
 			// mailbox in a note about somebody. boundedPattern is what lets an address
 			// full of dots, pluses and question marks be a pattern at all, and stops that
 			// pattern finding a colleague's word that merely contains them.
-			expr = "regexp_replace(" + expr + ", ?, ?, 'gi')"
-			q.args = append(q.args, boundedPattern(id), s.Token())
+			//
+			// A handle is the one string whose pattern the row itself picks: the CASE below
+			// asks the server, per row, whether this row carries the person's id, and a row
+			// that does is searched for the bare word as well as the mention. One expression
+			// decides both halves, which is what makes the re-read below mean what it says.
+			find := "?"
+			if m.ownPattern != "" {
+				q.args = append(q.args, s.ID, m.ownPattern)
+				find = "(CASE WHEN " + own + " THEN ? ELSE ? END)"
+			}
+			expr = "regexp_replace(" + expr + ", " + find + ", ?, 'gi')"
+			q.args = append(q.args, m.pattern, s.Token())
 		}
 		if isJSON {
 			// Back to jsonb by cast, and an unparseable payload fails here rather than
@@ -181,12 +239,17 @@ func query(s Subject, table string, columns []string, isJSON bool,
 			expr += "::jsonb"
 		}
 		q.sets = append(q.sets, c+" = "+expr)
-		for _, id := range ids {
+		for _, m := range ids {
 			// The same pattern the rewrite used, and not a plain substring test: the
 			// re-read has to ask what the rewrite would find, or a row the rewrite left
 			// alone reads as residue and a row it could not reach reads as clean.
-			terms = append(terms, text+" ~* ?")
-			termArgs = append(termArgs, boundedPattern(id))
+			if m.ownPattern != "" {
+				terms = append(terms, "(("+own+" AND "+text+" ~* ?) OR "+text+" ~* ?)")
+				termArgs = append(termArgs, s.ID, m.ownPattern)
+			} else {
+				terms = append(terms, text+" ~* ?")
+			}
+			termArgs = append(termArgs, m.pattern)
 		}
 	}
 
@@ -262,6 +325,23 @@ func boundedPattern(id string) string {
 		out.WriteString(`\M`)
 	}
 	return out.String()
+}
+
+// mentionPattern quotes a handle that is written as one — with the @ in front of it — and
+// nothing else.
+//
+// The @ is the whole difference: it is the form a handle takes in prose that cannot also be
+// the word itself, so it is the one handle match that runs over the whole tenant. The
+// closing boundary keeps "@will" from finding "@william", and the refusal of a dot followed
+// by a letter keeps it from finding the domain of somebody's address: "@will.co" is a
+// mailhost somebody else receives mail on, and an erasure that rewrote it would be destroying
+// a third party's data to erase one person.
+func mentionPattern(id string) string {
+	out := "@" + escapePattern(id)
+	if last, _ := utf8.DecodeLastRuneInString(id); isWordRune(last) {
+		out += `\M(?!\.[[:alnum:]])`
+	}
+	return out
 }
 
 // isWordRune reports whether Postgres' ARE word boundary would count r as a word

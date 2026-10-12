@@ -197,7 +197,15 @@ The brief's rule, and the reason a per-person command is not a `DELETE`:
   `modules/user/migrations/000025_handle.up.sql:27-33` excludes NULL, and the `users_handle_form`
   CHECK only constrains a non-NULL value), `password_hash` becomes `NULL`, `roles` becomes `'{}'`;
 - every column a declaration lists as `Text` is **scrubbed**: each occurrence of the email, the
-  display name or the handle is replaced by `Subject.Token()`. This is what reaches `tasks.description`
+  display name or the handle is replaced by `Subject.Token()`. The match is case-insensitive and
+  whole-word, and which rows it may reach splits by where the string came from, because the three
+  are not three spellings of one thing. An address and a display name are what a person is called,
+  so they are found anywhere in the tenant's text: the row that *mentions* a person need not carry
+  their id. A handle is drawn from the same characters as the language — `users_handle_form` accepts
+  `will`, and "the deploy will run on Monday" is a colleague's sentence about a deploy — so a handle
+  is taken for the person where it is written as one, an `@`-mention, and as a bare word only in a
+  row that carries the person's own id. `kit/personaldata/scrub.go` owns both rules, and the
+  verification below asks them back. This is what reaches `tasks.description`
   and `.resolution` (somebody else's note about the person), `contents.title` and `.body`,
   `change_proposals.comment` and the JSON in `.diff`, `notifications.title`/`.body`/`.link`,
   `file_holds.reason`, and the `payload jsonb` of `audit_events`, where an address sits verbatim
