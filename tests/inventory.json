@@ -22997,6 +22997,44 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/richtext/link_title_test.go",
+   "id": "kit/richtext/link_title_test.go#TestALinksOwnTitleReachesThePage",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestALinksOwnTitleReachesThePage",
+   "needs_db": false,
+   "pkg": "kit/richtext",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/richtext/link_title_test.go",
+   "id": "kit/richtext/link_title_test.go#TestALinkTitleCarriesNoMarkup",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestALinkTitleCarriesNoMarkup",
+   "needs_db": false,
+   "pkg": "kit/richtext",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/richtext/literal_code_test.go",
    "id": "kit/richtext/literal_code_test.go#TestSupportedCodeMayContainTextThatLooksLikeAnotherConstruct",
    "kind": "go",
@@ -54057,7 +54095,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1342,
+  "files": 1343,
   "forge_runs": [
    408,
    413,
@@ -54091,7 +54129,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2331,
+   "behaviour": 2333,
    "composition": 291,
    "contract": 19,
    "journey": 86
@@ -54110,23 +54148,23 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2727,
+  "rows": 2729,
   "tiers": {
    "merge": 1677,
    "nightly": 86,
-   "push": 964
+   "push": 966
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1126,
+   "keep": 1127,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2379,
+   "keep": 2381,
    "keep-rewrite": 133,
    "merge": 215
   }

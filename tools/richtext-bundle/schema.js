@@ -40,7 +40,7 @@ export const Link = Mark.create({
   renderMarkdown(node, helpers) {
     const href = (node.attrs && node.attrs.href) || "";
     const title = node.attrs && node.attrs.title;
-    const label = href === "" ? helpers.renderChildren(node) : `[${helpers.renderChildren(node)}](${href}${title ? ` "${title}"` : ""})`;
+    const label = href === "" ? helpers.renderChildren(node) : `[${helpers.renderChildren(node)}](${href}${title ? ` "${quotedTitle(title)}"` : ""})`;
     return label;
   },
 
@@ -52,3 +52,15 @@ export const Link = Mark.create({
     );
   },
 });
+
+// quotedTitle writes a title back the way it was read. A title arrives with its
+// quotes already taken off — `A "quoted" title` — and putting those bytes back
+// between two quote characters ends the title at the author's first quote: what
+// is left is an address with an unterminated title after it, which no reader
+// parses as a link. The author's words then survive nowhere — the page shows an
+// address where a word was written — so the two characters that carry meaning at
+// this position are written as themselves. Backslash first, so the escape it
+// earns is not escaped by the pass that follows it.
+function quotedTitle(title) {
+  return String(title).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+}

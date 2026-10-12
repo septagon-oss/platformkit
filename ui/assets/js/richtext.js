@@ -716,14 +716,17 @@ function inserted(control, request, file) {
 // whether the document took it.
 //
 // A picture goes where the selection is, because that is where the author was
-// writing. One case is not writing there: while an earlier picture of the same pick
-// still waits for its description it holds the selection, and to insert at a
-// selection is to replace it — so a second file chosen beside a first would arrive
-// by deleting the first, which is a picture nobody chose to lose. A picture this
-// field has placed and not yet described is therefore placed behind the newest of
-// them rather than over it.
+// writing. Two selections are not writing there, and to insert at a selection is to
+// replace what it holds. An earlier picture of the same pick still waits for its
+// description with the selection on it; and a picture the selection has simply come
+// to rest on is held the same way, which is where the field leaves it when it places
+// one and where a click or an arrow leaves any other. A second file chosen beside a
+// first would then arrive by deleting the first, which is a picture nobody chose to
+// lose — answered or not, whichever of the two has been described since. A picture
+// the field is standing behind is therefore joined by the new one rather than
+// replaced by it: the new picture goes directly after it.
 function placePicture(control, src) {
-	const behind = lastUndescribedPosition(control);
+	const behind = pictureToPlaceBehind(control);
 	if (behind < 0) return control.editor.chain().focus().setImage({ src, alt: "", title: "" }).run()
 		&& picturePosition(control.editor.state.doc, src) >= 0;
 	const image = control.editor.schema.nodes.image;
@@ -831,6 +834,33 @@ function askAlt(control, src) {
 		withdrawPicture(control, src);
 		commit(control);
 	});
+}
+
+// pictureToPlaceBehind is the picture a new one must not land on top of: the newest
+// one still waiting for its description, or, once every question has been answered,
+// the picture the selection itself is holding. -1 when the document holds neither,
+// which is an author writing words, and the ordinary case.
+function pictureToPlaceBehind(control) {
+	const waiting = lastUndescribedPosition(control);
+	if (waiting >= 0) return waiting;
+	return selectedPicturePosition(control);
+}
+
+// selectedPicturePosition is where the selection covers one whole picture, or -1
+// when it covers words. The picture has to be all the selection spans, at its own
+// address and for all of its own length: a range that reaches past a picture is the
+// author having selected around it, and the picture they asked for belongs where
+// they pointed rather than behind what they highlighted.
+function selectedPicturePosition(control) {
+	const { from, to } = control.editor.state.selection;
+	if (from === to) return -1;
+	let at = -1;
+	control.editor.state.doc.nodesBetween(from, to, (node, position) => {
+		if (at >= 0) return false;
+		if (node.type.name === "image" && position === from && position + node.nodeSize === to) at = position;
+		return false;
+	});
+	return at;
 }
 
 // awaitDescription and forgetUndescribed keep the pictures this field placed and
