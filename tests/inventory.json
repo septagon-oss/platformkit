@@ -46663,6 +46663,25 @@
   {
    "area": "ui",
    "evidence": "not-round-named",
+   "file": "ui/legible/encoded_attribute_location_test.go",
+   "id": "ui/legible/encoded_attribute_location_test.go#TestEncodedAttributeCopyKeepsItsDecodedTextAndElementLocation",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestEncodedAttributeCopyKeepsItsDecodedTextAndElementLocation",
+   "needs_db": false,
+   "pkg": "ui/legible",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "ui",
+   "evidence": "not-round-named",
    "file": "ui/legible/label_copy_test.go",
    "id": "ui/legible/label_copy_test.go#TestALabelEndingInAColonIsCopy",
    "kind": "go",
@@ -55439,7 +55458,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1382,
+  "files": 1383,
   "forge_runs": [
    408,
    413,
@@ -55473,7 +55492,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2400,
+   "behaviour": 2401,
    "composition": 313,
    "contract": 19,
    "journey": 67
@@ -55492,23 +55511,23 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2799,
+  "rows": 2800,
   "tiers": {
    "merge": 1744,
    "nightly": 67,
-   "push": 988
+   "push": 989
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1166,
+   "keep": 1167,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2451,
+   "keep": 2452,
    "keep-rewrite": 133,
    "merge": 215
   }
