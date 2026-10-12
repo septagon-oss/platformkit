@@ -35264,6 +35264,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/site/internal/default_colour_upgrade_test.go",
+   "id": "modules/site/internal/default_colour_upgrade_test.go#TestDefaultColourUpgradePreservesExistingChoicesAndEvents",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestDefaultColourUpgradePreservesExistingChoicesAndEvents",
+   "needs_db": true,
+   "pkg": "modules/site/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/site/internal/refused_accent_writes_nothing_test.go",
    "id": "modules/site/internal/refused_accent_writes_nothing_test.go#TestARefusedAccentWritesNothingAndSaysNothing",
    "kind": "go",
@@ -56941,7 +56960,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1399,
+  "files": 1400,
   "forge_runs": [
    408,
    413,
@@ -56975,7 +56994,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2479,
+   "behaviour": 2480,
    "composition": 302,
    "contract": 19,
    "journey": 67
@@ -56994,9 +57013,9 @@
   },
   "round_named_ceiling": 234,
   "round_named_files": 234,
-  "rows": 2867,
+  "rows": 2868,
   "tiers": {
-   "merge": 1733,
+   "merge": 1734,
    "nightly": 67,
    "push": 1067
   },
@@ -57004,13 +57023,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1165,
+   "keep": 1166,
    "keep-rewrite": 89,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2489,
+   "keep": 2490,
    "keep-rewrite": 163,
    "merge": 215
   }
