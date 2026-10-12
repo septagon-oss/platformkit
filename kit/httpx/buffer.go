@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"net/http"
+	"time"
 )
 
 // buffer is a response that has not been sent yet.
@@ -92,14 +93,22 @@ func (b *buffer) Flush() {
 func (b *buffer) Unwrap() http.ResponseWriter { return b.ResponseWriter }
 
 // noteCounted keeps the readings a limit reported on this answer, in the order they
-// were taken. It keeps none of a response that is already on the wire: past that
-// point there is no answer left to remember, and a keyed write is spent rather than
+// were taken, each stamped with the instant it reached the answer — which is the
+// instant the counter answered, because every door that spends a counter states it at
+// the statement. The stamp is what a window is closed against: a handler that went on
+// working after its refusal must not add its own seconds to the wait a retry is told to
+// sit out. It keeps none of a response that is already on the wire: past that point
+// there is no answer left to remember, and a keyed write is spent rather than
 // replayable. See buffer.counted.
 func noteCounted(b *buffer, got ...measured) {
 	if b == nil || b.direct {
 		return
 	}
-	b.counted = append(b.counted, got...)
+	at := time.Now().UTC()
+	for _, m := range got {
+		m.seen = at
+		b.counted = append(b.counted, m)
+	}
 }
 
 // send writes what is held, once.

@@ -96,11 +96,18 @@ func policyField(policies ...limitPolicy) string {
 	return joinList(items)
 }
 
-// measured is one policy as a counter reported it on this answer.
+// measured is one policy as a counter reported it on this answer, and the instant the
+// answer took the report down. The instant is part of the reading: `left` is a countdown
+// from the look at the row, so the window this answer was decided under closes at
+// `seen+left` and at no other moment. Measured against the instant the answer was finally
+// written instead, the window would outlast its own counter by however long the handler
+// spent after its decision, and every retry of that refusal would be told to sit out
+// seconds no counter ever opened.
 type measured struct {
 	policy    limitPolicy
 	remaining int
 	left      time.Duration
+	seen      time.Time
 }
 
 func answerField(got ...measured) string {
@@ -216,11 +223,11 @@ func sayCountedOnto(h http.Header, m measured, refused bool) {
 	}
 }
 
-// recorded is the answer's own account of the ceilings it was decided under, at the
-// moment it was given: the same readings, in the same order, with each window's
-// closing worked out from the instant it was read. This is what a replay restates, and
-// the reason the numbers are kept rather than the rendered lines.
-func recorded(got []measured, at time.Time) []idempotency.Limit {
+// recorded is the answer's own account of the ceilings it was decided under: the same
+// readings, in the same order, with each window's closing worked out from the instant
+// that reading was taken. This is what a replay restates, and the reason the numbers are
+// kept rather than the rendered lines.
+func recorded(got []measured) []idempotency.Limit {
 	if len(got) == 0 {
 		return nil
 	}
@@ -228,7 +235,7 @@ func recorded(got []measured, at time.Time) []idempotency.Limit {
 	for _, m := range got {
 		out = append(out, idempotency.Limit{
 			Name: m.policy.name, Quota: m.policy.quota, Remaining: m.remaining,
-			Window: m.policy.window, ResetsAt: at.Add(m.left),
+			Window: m.policy.window, ResetsAt: m.seen.Add(m.left),
 		})
 	}
 	return out

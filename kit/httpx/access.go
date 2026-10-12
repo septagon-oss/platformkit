@@ -277,8 +277,13 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 			if held {
 				// The rate line names only the counter that refused: the other is still
 				// inside its quota and its number belongs to an answer this ask did not get.
-				b.Header().Set(RateLimitHeader, answerField(measured{
-					policy: c.policy, remaining: remaining, left: after}))
+				// Kept beside the response as well as written on it, because this ask is a
+				// keyed write and its retry is answered from the record: an ask that stated
+				// its window here and kept none of it would be retried into the kernel's
+				// one-minute floor, a wait this door never decided.
+				m := measured{policy: c.policy, remaining: remaining, left: after}
+				noteCounted(b, m)
+				b.Header().Set(RateLimitHeader, answerField(m))
 				b.Header().Set(RetryAfterHeader, secondsUp(after, 1))
 			}
 			return tooMany(after)
@@ -291,6 +296,10 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 		spent = append(spent, measured{policy: c.policy, remaining: remaining, left: after})
 	}
 	if held && len(spent) > 0 {
+		// Kept as well as stated, for the same reason as the refusal above: an accepted
+		// ask is remembered too, and its retry states the counters under which it was
+		// accepted.
+		noteCounted(b, spent...)
 		b.Header().Set(RateLimitHeader, answerField(spent...))
 	}
 	return nil

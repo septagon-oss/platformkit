@@ -479,13 +479,13 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, header htt
 	if now == nil {
 		now = ctx
 	}
-	// One reading of the clock, for the record's own moment and for the instant each
-	// window it names closes: the two are read together or a replay reports a wait
-	// counted from the wrong minute.
+	// This reading dates the record, and nothing else: the windows its limits name were
+	// closed when their readings arrived, because a handler may work for seconds after
+	// the statement that decided the answer (see recorded).
 	at := time.Now().UTC()
 	answer := idempotency.Answer{
 		Status: status, ContentType: header.Get("Content-Type"), Body: body,
-		Headers: keepHeaders(header), Limits: recorded(counted, at),
+		Headers: keepHeaders(header), Limits: recorded(counted),
 	}
 	if !held || len(answer.Body) > maxRecordedAnswer {
 		// The bytes were already on the wire, or they are too large to hold: the
