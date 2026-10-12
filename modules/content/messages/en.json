@@ -284,5 +284,77 @@
     "plural": {
       "": "Keeps it and serves it to nobody. Archiving twice changes nothing."
     }
+  },
+  "invalid.content.slug": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "a page needs a slug, and %q leaves nothing a URL can carry",
+    "plural": {
+      "": "a page needs a slug, and %q leaves nothing a URL can carry"
+    }
+  },
+  "invalid.content.title": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "a page needs a title",
+    "plural": {
+      "": "a page needs a title"
+    }
+  },
+  "invalid.content.title.length": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "a title is at most %d characters",
+    "plural": {
+      "": "a title is at most %d characters"
+    }
+  },
+  "invalid.content.body.length": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page",
+    "plural": {
+      "": "a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page"
+    }
+  },
+  "invalid.content.kind": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "kind %q is not %s or %s",
+    "plural": {
+      "": "kind %q is not %s or %s"
+    }
+  },
+  "invalid.content.status": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "status %q is not a lifecycle state",
+    "plural": {
+      "": "status %q is not a lifecycle state"
+    }
+  },
+  "invalid.content.published_at.missing": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "published content needs a publication time",
+    "plural": {
+      "": "published content needs a publication time"
+    }
+  },
+  "invalid.content.published_at.extra": {
+    "references": [
+      "modules/content/contracts/content.go"
+    ],
+    "translation": "%s content cannot have a publication time",
+    "plural": {
+      "": "%s content cannot have a publication time"
+    }
   }
 }

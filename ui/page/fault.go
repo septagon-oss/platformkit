@@ -31,8 +31,14 @@ package page
 // "en", which is what it always did and what the copy still is. Which languages a
 // deployment's failure page speaks is the composition's, as it is for every page here:
 // this file holds the mechanism and the English, and no other language.
+//
+// The person the guard refused is the person the page is written for: it asks the same
+// Shell.Locale every served page asks, so a choice the account made is what a refusal is
+// answered in, and only a caller with no accepted session to read a choice from falls
+// back to the language their request asked for.
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -41,7 +47,6 @@ import (
 	kitfault "github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
-	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/ui/document"
 )
 
@@ -167,18 +172,20 @@ func faultKey(detail string, status int) (key string, lookup bool) {
 // refusalLocale is the language this refusal is answered in, or nil for a shell that ships
 // no catalog at all.
 //
-// It is the same contract every other page of this package uses — the tenant's set, the
-// caller's header filtered against it, the tenant's default behind that — and the tenant
-// arrives because the kernel resolves the address's host before it renders a refusal as a
-// page (kit/httpx's withHostTenant), which it may, because a host is a fact a refused
-// request still has. What a guard has no access to is everything Shell.Locale reads: a
-// URL, an account, a stored preference, each of which needs something this response is the
-// refusal to have — a session that was accepted, an open transaction, a handler to run at
-// all. Those are absent whatever the verdict, and the caller's own header is what is left
-// of the preference list — which is also exactly what makes Vary: Accept-Language the true
-// thing to say about the response.
-func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
-	if m == nil {
+// It is the same contract every other page of this package uses, asked in the same order:
+// the tenant's set as the ceiling, the language Shell.Locale prefers for this caller, the
+// caller's header behind that, the tenant's default last. The resolver is the one Serve
+// asks, because a verdict changes nothing about who is standing there: a person refused a
+// permission has an accepted session, a resolved tenant and a language they chose, and a
+// refusal is the page their choice is worth most on. What the guards ahead of routing can
+// reach is exactly what the request already carries — kit/httpx resolves the host of the
+// refusal it renders as a page (withHostTenant), and the principal and the transaction are
+// on the request context by the time a guard answers — and what it cannot, an unsigned
+// caller, an address that names no tenant, a public face that parses no cookie at all, is
+// answered "" by that resolver and negotiated from the header, which is also what keeps
+// Vary: Accept-Language the truth for the pages a session does not already make private.
+func (s Shell) refusalLocale(ctx context.Context, r *http.Request, req Request) *Locale {
+	if s.Messages == nil {
 		return nil
 	}
 	// The tenant the request resolved to: the languages it is served in are as much a
@@ -186,7 +193,11 @@ func refusalLocale(m Messages, r *http.Request, tenant tenancy.Tenant) *Locale {
 	// language was not refusing to be answered in another. An address whose host names no
 	// tenant — a domain nobody serves, a database that could not say — has no declaration
 	// to filter by, and the deployment's own catalog is then the only one standing.
-	loc := SelectLocale(m, TenantPreferences(Request{Tenant: tenant}, r.Header.Get("Accept-Language"))...)
+	var preferred string
+	if s.Locale != nil {
+		preferred = s.Locale(ctx, req)
+	}
+	loc := SelectLocale(s.Messages, TenantPreferences(req, preferred, r.Header.Get("Accept-Language"))...)
 	return &loc
 }
 
@@ -208,7 +219,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		}
 		ctx := r.Context()
 		req := read(ctx, s.Chrome)
-		loc := refusalLocale(s.Messages, r, req.Tenant)
+		loc := s.refusalLocale(ctx, r, req)
 		// The frame is given the negotiated language for the same reason the sentence is:
 		// a shell whose chrome has labels of its own renders them here as it does on every
 		// page Serve mounts, and not in English because the request was refused.
@@ -230,10 +241,11 @@ func FaultHandler(s Shell) httpx.Fault {
 			w.Header().Set("Cache-Control", out.CacheControl)
 		}
 		if loc != nil {
-			// The two headers every page of a translated shell carries (see Serve), for
-			// the reason every page carries them: the copy is this language and a cache
-			// that ignores Accept-Language would answer a Portuguese refusal to the next
-			// person who asked in English.
+			// The two headers every page of a translated shell carries (see Serve): the
+			// copy is this language, and a cache has to key on what moved it. An account
+			// preference outranks the caller's header, and only a caller with an accepted
+			// session has one to be moved by — the surface kit/httpx already answers
+			// no-store, so what Vary cannot fully say, the session policy already keeps.
 			w.Header().Set("Content-Language", v.Language)
 			w.Header().Set("Vary", "Accept-Language")
 		}
