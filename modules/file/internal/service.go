@@ -17,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -686,6 +687,30 @@ func (s *Service) Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	} else if live {
 		return nil, fmt.Errorf("%w: %s (%s)", contracts.ErrHeld, id, why)
 	}
+	// A record that still shows this file is a claim about *that* record, and the
+	// ledger is what knows: refuse here, inside the transaction, rather than
+	// trusting the control a person happened to be shown. The lock is the one
+	// SetUses takes when it ends a use — FOR UPDATE on the row's own ledger — so
+	// "nothing shows it" is a fact and not a race against a save in flight: a
+	// publish that lands after this read waits for this transaction, and one that
+	// landed before it is counted.
+	// The rows and not their count: Postgres refuses a FOR UPDATE under an
+	// aggregate, and the count is the least interesting part of the answer.
+	var shown []uuid.UUID
+	if err := tx.DB().WithContext(ctx).Model(&contracts.FileUse{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).Where("file_id = ?", id).
+		Pluck("id", &shown).Error; err != nil {
+		return nil, fmt.Errorf("file: what reads %s: %w", id, err)
+	}
+	if len(shown) > 0 {
+		// Refused, so nothing is written and nothing is published: the remedy is in
+		// the other record, which has to stop showing this one first. The retention
+		// and release sweeps remove rows through their own paths and are never
+		// refused by a ledger row they are about to end, and a subject's erasure
+		// outranks a record's convenience — see the module's README.
+		return nil, fmt.Errorf("%w: %s is shown by %d %s", contracts.ErrInUse, id,
+			len(shown), plural(int64(len(shown)), "record", "records"))
+	}
 	// Hard, not soft. A soft-deleted row is a row that still points at bytes,
 	// and the bytes are about to go: keeping the row would be keeping a lie.
 	if err := crud.Delete[*contracts.File](tx, id, false); err != nil {
@@ -855,10 +880,8 @@ func (c *counter) Read(p []byte) (int, error) {
 // needs no table, no row and no migration. It is taken before the sum and never
 // after, which is the only ordering rule there is here.
 //
-// Two tables are summed and one number is answered: a stored image and the
-// widths of it this deployment serves are the same tenant's disk. Every writer
-// of a size — the upload, the encode, the sweep that removes one — asks here
-// first, in its own transaction and under this one lock.
+// What it asks is usage — the same sum the quota meter answers with, so the
+// number a person is shown and the number that refuses them are one number.
 func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) error {
 	if s.quota <= 0 {
 		return nil
@@ -868,26 +891,45 @@ func (s *Service) charge(ctx context.Context, tx db.Tx[db.Tenant], n int64) erro
 		Exec(`SELECT pg_advisory_xact_lock(hashtext(?)::bigint)`, lock).Error; err != nil {
 		return fmt.Errorf("file: lock this tenant's quota: %w", err)
 	}
-	var used int64
-	err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
-		Select("COALESCE(SUM(size), 0)").Scan(&used).Error
+	used, _, err := usage(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("file: what this tenant is holding: %w", err)
+		return err
+	}
+	if left := s.quota - used; n > left {
+		return fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d", contracts.ErrQuota, n, max(left, 0), s.quota)
+	}
+	return nil
+}
+
+// usage is one tenant's disk: the bytes of its live rows and the bytes of the
+// other widths of those same pictures, as one number.
+//
+// It is one function with two callers — the refusal above, which takes the
+// tenant's lock before asking, and the meter, which deliberately does not — for
+// the reason that matters: a meter that summed a different way from the refusal
+// would promise space the upload then refused to give. Both ask the same
+// question of the same two tables and get the same answer.
+func usage(ctx context.Context, tx db.Tx[db.Tenant]) (used, widths int64, err error) {
+	if err := tx.DB().Model(&contracts.File{}).Where("deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").Scan(&used).Error; err != nil {
+		return 0, 0, fmt.Errorf("file: what this tenant is holding: %w", err)
 	}
 	// A variant is the same picture at another width, and the disk it takes is
 	// the same disk, so it is the same sum. It enters here and nowhere else: a
 	// second counter would be a second number to be wrong about, and a width that
 	// counted as nothing would make the quota a lie the day widths shipped. A
 	// pending row carries no size, so filing a plan charges for nothing.
-	var other int64
-	err = tx.DB().Model(&contracts.Variant{}).Where("deleted_at IS NULL").
-		Select("COALESCE(SUM(size), 0)").Scan(&other).Error
-	if err != nil {
-		return fmt.Errorf("file: what this tenant is holding in other widths: %w", err)
+	if err := tx.DB().Model(&contracts.Variant{}).Where("deleted_at IS NULL").
+		Select("COALESCE(SUM(size), 0)").Scan(&widths).Error; err != nil {
+		return 0, 0, fmt.Errorf("file: what this tenant is holding in other widths: %w", err)
 	}
-	used += other
-	if left := s.quota - used; n > left {
-		return fmt.Errorf("%w: %d bytes is past the %d this tenant has left of %d", contracts.ErrQuota, n, max(left, 0), s.quota)
+	return used + widths, widths, nil
+}
+
+// plural is the one word a refusal gets to agree with its own number.
+func plural(n int64, one, many string) string {
+	if n == 1 {
+		return one
 	}
-	return nil
+	return many
 }

@@ -115,6 +115,27 @@ is alive, because from that moment its own older traffic is unreadable to it. A 
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
 
+**A file says what it is, and the library can ask it.** `files` gains `alt`
+(`varchar(1000)`, default `''`) and `decorative` (`boolean`, default `false`, under
+`file_files_decorative`, which refuses a picture that carries words while claiming it
+carries none) in `modules/file/migrations/000058_file_alt_text.up.sql`, and one command
+writes them: `Service.SetAlt` re-checks the claim inside the caller's transaction under
+`crud.GetForUpdate`, refuses a row that has moved past the `updatedAt` the caller was
+shown with `ErrConflict` and no write, and publishes the new `file.altered` in the same
+transaction. An empty alt with no decorative claim is legal to arrive at and illegal to
+leave by — the upload is never refused for want of words nobody typed. Three reads join
+the app surface, all `file:read`: `GET /api/v1/file/files` gained the grid's axes (`q`,
+`type` of `all|image|document|video`, `unused`), `GET /api/v1/file/quota` answers the
+tenant's own disk from the same sum an upload is refused against and without the upload
+lock, and `PUT /api/v1/file/files/{id}/alt` is `file:manage`. `DELETE
+/api/v1/file/files/{id}` gains a refusal of its own: a file a live `file_uses` row still
+shows answers `ErrInUse` (409) after locking that ledger, and writes nothing — the
+removals that outrank a page (a subject's erasure, the two sweeps) keep their own paths.
+`contracts.MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` are pure and in
+`contracts/`, so the SQL service and `filetest.Fake` answer the grid and the meter
+identically; the suite's `Delete` cases now show a file surviving until its last use
+ends. `apps/platformkit/testdata/openapi.json` is re-recorded for the three operations.
+
 **The wire gate reads the plan feature a door declares.** An operation's authorization
 declaration has three parts — its `kind`, its `permission`, and the plan feature a route
 names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and

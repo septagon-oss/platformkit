@@ -45,6 +45,7 @@ var streams, streaming = httpx.StreamedBody()
 type door interface {
 	contracts.Service
 	contracts.WidthOpener
+	contracts.Library
 }
 
 var faults = []int{
@@ -52,17 +53,20 @@ var faults = []int{
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
-// RegisterRoutes mounts the twelve operations a file has, over seven paths: the
+// RegisterRoutes mounts the fourteen operations a file has, over nine paths: the
 // list, one read, the upload, the content door twice (GET and HEAD), the public
-// door twice, the delete, the grant, the hold placed and released, and the
-// subject erasure.
+// door twice, the delete, the grant, the hold placed and released, the subject
+// erasure, the meter and the caption.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
 // takes a JSON body, and a file arrives as bytes. The list and the read below
 // are the two Spec routes that would have made sense, written out; the create
-// is a multipart upload, the update does not exist because a file's bytes are
-// what they are, and the delete has an event to publish that the generic one
-// could not carry.
+// is a multipart upload; the bytes are never updated, because a file's bytes are
+// what they are and a new picture is a new digest under a new key; and the delete
+// has an event to publish that the generic one could not carry. The two
+// operations at the end write no bytes: a caption and a meter reading are the
+// facts about a file a person edits and reads every day, and both answers come
+// out of the service rather than out of a screen.
 func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 	app, public := surfaces.App, surfaces.Public
 	httpx.Register(app, huma.Operation{
@@ -70,7 +74,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 		Method:      http.MethodGet,
 		Path:        path,
 		Summary:     "List files",
-		Description: "The tenant's files, newest first. The bytes are at /{id}/content.",
+		Description: "The tenant's files, newest first, filtered by name, media family and whether anything still shows them. The bytes are at /{id}/content.",
 		Tags:        []string{"file"},
 		Errors:      faults,
 	}, httpx.Permission(contracts.PermissionFileRead),
@@ -79,13 +83,71 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			if err != nil {
 				return nil, err
 			}
-			items, total, err := crud.List[*contracts.File](tx, crud.Query{Limit: in.Limit, Offset: in.Offset, Sort: in.Sort})
+			items, total, err := svc.Search(ctx, tx, contracts.LibraryQuery{
+				Name: in.Q, Family: in.Type, Unused: in.Unused,
+				Sort: in.Sort, Limit: in.Limit, Offset: in.Offset,
+			})
 			if err != nil {
 				return nil, fault(err)
 			}
 			out := &rest.Page[*contracts.File]{}
 			out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, in.Limit, in.Offset
 			return out, nil
+		})
+
+	// The meter, beside the refusal it is the same number as. It is file:read and
+	// never anonymous: an anonymous caller learning how much of a quota is left is
+	// what contracts.ErrQuota's own comment refuses a status of its own for, and a
+	// member of the tenant asking about that tenant's own disk is a different
+	// question with a different answer.
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-quota-read",
+		Method:      http.MethodGet,
+		Path:        "/quota",
+		Summary:     "Read this tenant's storage meter",
+		Description: "What the tenant is holding, what it was given, and what is left — the same sum an upload is refused against, taken without the upload lock, so it is the number as of this request and not a promise about the next one. An installation with no ceiling answers unlimited.",
+		Tags:        []string{"file"},
+		Errors:      faults,
+	}, httpx.Permission(contracts.PermissionFileRead),
+		func(ctx context.Context, in *quotaInput) (*rest.Item[*contracts.Quota], error) {
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			q, err := svc.Quota(ctx, tx)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.Quota]{Body: q}, nil
+		})
+
+	// The caption. PUT and not PATCH: the pair (alt, decorative) is the whole of
+	// what a caption claims, so writing it is a replacement of a claim and not a
+	// partial edit of one, and the revision travels in the body for the reason
+	// contracts.Library states.
+	httpx.Register(app, huma.Operation{
+		OperationID: "file-file-alt",
+		Method:      http.MethodPut,
+		Path:        path + "/{id}/alt",
+		Summary:     "Write what a file says about itself",
+		Description: "Alt text, or the claim that the image is decorative and says nothing. A file that is empty and not decorative is refused with 422, and one whose updatedAt has moved past expectedUpdatedAt is refused with 409 and stays exactly as it was.",
+		Tags:        []string{"file"},
+		Errors:      append(slices.Clone(faults), http.StatusConflict),
+		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventAltered}},
+	}, httpx.Permission(contracts.PermissionFileManage),
+		func(ctx context.Context, in *altInput) (*rest.Item[*contracts.File], error) {
+			if in.Body == nil {
+				return nil, problem.New(http.StatusUnprocessableEntity, "an alt text, or the claim that the image is decorative")
+			}
+			tx, err := transaction(ctx)
+			if err != nil {
+				return nil, err
+			}
+			f, err := svc.SetAlt(ctx, tx, in.ID, in.Body.Alt, in.Body.Decorative, in.Body.ExpectedUpdatedAt)
+			if err != nil {
+				return nil, fault(err)
+			}
+			return &rest.Item[*contracts.File]{Body: f}, nil
 		})
 
 	httpx.Register(app, huma.Operation{
@@ -475,9 +537,10 @@ func fault(err error) error {
 	// on — release the hold or stop asking — which makes it a conflict and not
 	// an outage. rest.Fault's ErrConflict arm cannot see it: this sentinel is
 	// the module's, and nothing about it says the kernel's word for "those two
-	// states cannot both be true". The two routes that refuse say 409 in their
+	// states cannot both be true". A file the ledger still shows is refused the same
+	// way for the same reason, and the routes that refuse say 409 in their
 	// declarations, and this is where that promise is kept.
-	case errors.Is(err, contracts.ErrHeld):
+	case errors.Is(err, contracts.ErrHeld), errors.Is(err, contracts.ErrInUse):
 		return problem.Conflict(err.Error())
 	default:
 		return rest.Fault(err)
@@ -542,7 +605,40 @@ type eraseBody struct {
 type listInput struct {
 	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"200" doc:"Rows per page"`
 	Offset int    `query:"offset" minimum:"0" doc:"Rows to skip"`
-	Sort   string `query:"sort" doc:"A field name, or a field name prefixed with - for descending"`
+	Sort   string `query:"sort" doc:"One of -createdAt, createdAt, name, -name, size, -size"`
+	// Q, Type and Unused are the library's three filters. They are read by
+	// contracts.LibraryQuery, which is the one place their grammar lives, so the
+	// grid's own page and this door cannot disagree about what "unused" means.
+	Q    string `query:"q" maxLength:"64" doc:"A name to look for, matched case-insensitively"`
+	Type string `query:"type" default:"all" doc:"all, image, document or video"`
+	// Unused is the ledger's own answer: 1 keeps the files something stopped
+	// showing, which is the set the release sweep will remove once the grace runs.
+	Unused bool `query:"unused" default:"false" doc:"Only the files nothing shows any more"`
+}
+
+// quotaInput is the meter's request: it asks one question and the answer is the
+// tenant's own disk, which is why the door is file:read and not anonymous.
+type quotaInput struct{}
+
+// altInput is one file's caption being written, with the instant the caller was
+// shown. The revision is required rather than optional: a caption typed over
+// three minutes of somebody else's edit is worth a re-read, and a PUT that
+// silently overwrote it would make the number the panel carried meaningless.
+type altInput struct {
+	ID   uuid.UUID `path:"id" format:"uuid"`
+	Body *altBody
+}
+
+type altBody struct {
+	// 1000 is contracts.MaxAlt, and the same limit the textarea carries: a schema
+	// that promises no width tells a caller a wall of text is a request and they
+	// get a 422 about somebody else's column instead.
+	Alt        string `json:"alt" maxLength:"1000" doc:"What the image says about itself; empty only when it is declared decorative" required:"false"`
+	Decorative bool   `json:"decorative" doc:"True when the image carries no information a reader would want" required:"false"`
+	// The row's own updatedAt, as it was read. A timestamp and not a counter,
+	// because a file carries one already and a second clock on the same row is a
+	// second thing to be wrong about.
+	ExpectedUpdatedAt time.Time `json:"expectedUpdatedAt" format:"date-time" doc:"The updatedAt the caller was shown"`
 }
 
 // uploadInput is everything about an upload that is not the bytes. Visibility

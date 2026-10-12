@@ -117,6 +117,47 @@ Both public routes are reads; the module has no public write, so `kit/limit` is 
 
 For a file the use ledger speaks about the audience is derived, not remembered: it is public if and only if some live `file_uses` row of it says the record showing it is showing it to somebody who has not signed in (`SetShown`, migrations/000056). The two commands that can end that assertion take it back in the transaction that ends it — `SetShown` when a record leaves the public face, and `SetUses` when the last row that made a file public goes, which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
 
+### The media library
+
+The grid, the meter and the caption are three reads and one write on the rows this
+module already owned, and they are `contracts.Library` rather than a fourth and
+fifth method on `Service`, for the reason `WidthOpener` exists: a caller that draws
+a grid has no business being handed the erasure commands.
+
+`GET /api/v1/file/files` gained the grid's three axes — `q`, `type` and `unused` —
+and `GET /api/v1/file/quota` answers what one tenant is holding. The meter is
+`file:read` and never anonymous: an upload must not teach a stranger how much of a
+quota is left, while a member of the tenant asking about that tenant's own disk is
+a different question with a different answer. `PUT /api/v1/file/files/{id}/alt`
+(`file:manage`) writes what a picture says about itself and publishes
+`file.altered`.
+
+Four decisions are functions in `contracts/` and not clauses in a query —
+`MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` — because the SQL service and
+`filetest.Fake` have to answer them identically, and the fake encodes no widths and
+holds no lock. The type filter shows why: a family read off the media type's prefix
+alone files `image/svg+xml` — which nothing here decodes, measures or renders
+inline — among the photographs, so `MediaFamily` asks for a frame the image pass
+actually measured (`width > 0`) as well as a type it would show in a browser.
+
+The meter takes no advisory lock, deliberately: the lock exists so twenty
+simultaneous uploads cannot each read one total and each decide there is room, and
+a page load that queued behind the tenant's own uploads would be an outage with a
+friendly face. Its number is the same sum `charge` refuses against, read as of the
+caller's own snapshot, so it can be one commit stale and is never the number that
+refused you. `used` counts a picture and its other widths together — one tenant's
+disk, one sum — and an installation with no ceiling answers `unlimited`, with no
+bar to draw.
+
+An alt text is a claim a person makes about a picture, so it is one command's
+write. `alt = ''` with no decorative claim is legal to arrive at — every upload and
+seeded file starts there — and illegal to leave by; `decorative` with words in it
+is refused by `File.Validate` and by the column's `CHECK`, written in the same
+image; and a caption is written against the `updatedAt` the caller was shown, so a
+row that has moved answers `ErrConflict` and changes nothing. A `PUT` naming no
+revision is a `PUT` that means "last write wins", and this module has no such
+command.
+
 ### The operator boundary
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
@@ -193,6 +234,27 @@ kernel mounted. The orphan sweep asks both tables which objects a row names, so 
 row still says `ready` is never removed as an orphan the night after it was built — its object is
 named by `file_variants.storage_key` and by nothing else.
 
+### Composition — the library's grid, meter and caption (T-0316)
+
+**Reused** — `crud.GetForUpdate` and the tenant policy `000019_file.up.sql` keeps for
+the grid's read, the caption's write and the delete's second lock; `internal.Service.charge`
+and the advisory-locked two-table sum it already took, which the meter now reads through
+the same function rather than beside it; `filetest.RunService` and `filetest.Fake`, which
+ran the three new cases the moment `contracts/` held the decisions behind them; the
+existing `files.unused_since` stamp, `file_uses`, `Service.Uses` and the `file:read`/
+`file:manage` pair — no new column beyond the caption's own two, no new table, no new
+permission. **Added** — `alt`/`decorative` and `contracts.AltClaim`, `MediaFamily`,
+`LibrarySort`, `Quota` and `contracts.ErrInUse`: nothing in the tree could answer what a
+picture says about itself, what a file's family is, whether a tenant is out of room, or
+whether removing a file would strand a page, and each had to be one function `contracts/`
+owns so the SQL service and the fake cannot answer it differently. **Made reusable** —
+`contracts.Quota`, whose `Left`/`Fraction`/`Full` are the meter's whole arithmetic for any
+screen or client; `contracts.MediaFamily`, which is the type filter any later browse of
+these rows draws from; `WithQuota` on the fake, so a consumer can drive its own quota
+empty and get the same refusal the deployment gives; and a caption guarded by the row's
+own `updatedAt` rather than by a second counter, which is the revision guard any future
+single-column edit of a file can copy.
+
 ## Limits
 
 The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
@@ -223,10 +285,17 @@ that cannot tell an unsaved picture from a configured one. A resource left on
 `rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
 ever stamps its images and the release sweep never reaches them — mount warns because the
 audience of those images is never derived either, so a published page shows only what its
-uploader made public. `Service.Delete` still has a gap beside all of this: a file can be
-deleted under a body still showing it, and the ledger row
-left behind ends with the next rewrite of that field: an edit, or the record's
-own delete through `kit/rest`, which ends its uses and is not refused by a file
-that went first. Nothing else ends a use. The pass's refusals are
+uploader made public. `Service.Delete` asks the ledger first: it locks the row, then
+locks that file's own `file_uses` rows `FOR UPDATE`, and one of them answers
+`ErrInUse` — 409, the count in the sentence, nothing written and nothing published.
+The library's disabled control is the courtesy; this is the refusal, and it reaches a
+client that never saw the page. What ends a use is unchanged: an edit, or the
+record's own delete through `kit/rest`, which is not refused by a file that went
+first — and the removals that outrank a record's convenience keep going through the
+paths that ignore the ledger: a subject's erasure removes what a page is still
+showing, and the two sweeps remove rows they are about to end. A tenant that wants
+the person's file gone and the page intact edits the page first; the module will not
+tell the holder of a subject request to go and do a content edit. Nothing else ends a
+use. The pass's refusals are
 English `error` text, not catalogue keys, so they are untranslated beside the
 `messages/` catalogue the rest of the module answers in.
