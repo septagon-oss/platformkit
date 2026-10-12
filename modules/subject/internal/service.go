@@ -102,6 +102,15 @@ func NewService(d Deps) contracts.Service {
 // this module needs the people service: only the orchestrator may look across the
 // boundary, and only the person's own module holds the name and the address
 // (ADR 0020 §1). A person with no row is nobody's data and answers ErrNotFound.
+//
+// It asks for the retained row rather than the directory's, because the two are not the
+// same set: a soft-deleted person has a row, an address and a name, and the filter that
+// hides that row from a screen hides it from an erasure too — which would leave the
+// strings in place and report the person erased, the one failure this module exists not
+// to make. Hiding a row is not the same act as forgetting it, and Article 17 asks about
+// the second. It is the owner's own lookup (contracts.Service.Retained) and not a read of
+// the users table from here: the directory's filter stays user's to own, and the tenant
+// bound stays row-level security's.
 func (s *service) person(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (personaldata.Subject, error) {
 	if s.people == nil {
 		// Refused here rather than panicked at construction, because the manifest a reader
@@ -110,7 +119,7 @@ func (s *service) person(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 		// line is reachable: it Needs the people service and would be built without it.
 		return personaldata.Subject{}, errors.New("subject: no people service is composed, so an export and an erasure have nothing to read")
 	}
-	u, err := s.people.Get(ctx, tx, id)
+	u, err := s.people.Retained(ctx, tx, id)
 	if err != nil {
 		return personaldata.Subject{}, fmt.Errorf("subject: %w", err)
 	}

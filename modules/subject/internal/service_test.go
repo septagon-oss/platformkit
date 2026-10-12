@@ -75,7 +75,22 @@ type peopleStub struct {
 func (peopleStub) Get(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error) {
 	var u usercontracts.User
 	err := tx.DB().WithContext(ctx).Table("users").
-		Select("id, email, display_name, handle").Where("id = ?", id).First(&u).Error
+		Select("id, email, display_name, handle").
+		Where("id = ? AND deleted_at IS NULL", id).First(&u).Error
+	if err != nil {
+		return nil, crud.ErrNotFound
+	}
+	return &u, nil
+}
+
+// Retained is the same row with the directory's filter taken off it, which is what the
+// owner's own contracts.Service.Retained is: a hidden row is still a held row, and a stub
+// that could not tell the two reads apart would let a case pass without ever asking for
+// the difference.
+func (peopleStub) Retained(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*usercontracts.User, error) {
+	var u usercontracts.User
+	err := tx.DB().WithContext(ctx).Table("users").
+		Select("id, email, display_name, handle, deleted_at").Where("id = ?", id).First(&u).Error
 	if err != nil {
 		return nil, crud.ErrNotFound
 	}
