@@ -301,7 +301,13 @@ redeemed token answers the same refusal, and neither says which.
 
 Every command rechecks the actor's grant, the tenant scope and the row's expected revision inside its
 own authoritative transaction, and an erasure is irreversible and so publishes `subject.erased` to the
-outbox in the same commit as the state it changed. A second export of an unchanged person writes a new
+outbox in the same commit as the state it changed. "Every command" includes the two that are not doors
+— the read and the irreversible write — and the requester-only half of the read and the mint: what they
+compare is the identity the transaction carries, never the id the caller supplied, because a caller
+that could name the requester could name anybody. A route that guarded its door is not a command that
+may assume it was reached through that door, since another module composes these commands with no route
+in front of them at all. A mutation that is refused asks this before it reads the row it might change,
+so it writes nothing, emits nothing and hands back no stale row. A second export of an unchanged person writes a new
 request row and a new bundle (it is a different moment in time and the person may have been told
 already); a second erasure answers the receipt of the first, and does not scrub twice.
 
