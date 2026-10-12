@@ -11,7 +11,6 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
-	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
 
 // TestARefusedAccentWritesNothingAndSaysNothing is the write-refusal invariant
@@ -22,7 +21,7 @@ import (
 // asserts the silence and the untouched row behind it.
 func TestARefusedAccentWritesNothingAndSaysNothing(t *testing.T) {
 	_, conn := dbtest.Schema(t, site.Migrations)
-	svc := internal.NewService()
+	svc := bareService()
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		saved, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme", PrimaryColor: "#b45309"})

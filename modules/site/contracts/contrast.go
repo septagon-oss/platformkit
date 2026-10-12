@@ -31,9 +31,13 @@ const (
 // beside it).
 //
 // It is 3 and not 4.5 for a second, harder reason: 4.5 against both canvases
-// refuses #2563eb, the colour this repository ships as DefaultPrimaryColor, and so
-// it would refuse every tenant that never chose one — a rule that indicts the
-// default is a bug handed to the next person as a rule.
+// refuses #2563eb, the colour this column used to default to and the colour every
+// existing row was written with before the default moved to the absence of one, so
+// a threshold of 4.5 would have indicted tenants that never chose anything. The
+// target above is the reason it is 3; this is the reason nobody had to argue about
+// it. A resolved accent never meets this rule at all — it is not a colour a person
+// typed, and the pair it comes from is measured against the canvases in
+// TestTheAccentRatiosAreTheOnesTheRuleCompared.
 const MinAccentRatio = 3.0
 
 // ContrastRatio is the WCAG 2.x contrast ratio between two #rrggbb colours: the

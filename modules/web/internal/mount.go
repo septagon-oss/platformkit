@@ -333,10 +333,38 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title, 
 	// which is the point of a per-tenant colour, and the guard is the pattern —
 	// an inline declaration reaches the gate that refuses a consumer sheet a raw
 	// colour and the --pk- namespace. See refuseClientSheet.
-	if colour.MatchString(settings.PrimaryColor) {
-		v.Head = []g.Node{h.StyleEl(g.Raw(":root{--pk-color-accent-default:" + settings.PrimaryColor + "}"))}
+	if accent := s.accent(settings.PrimaryColor); accent != "" {
+		v.Head = []g.Node{h.StyleEl(g.Raw(accent))}
 	}
 	return v
+}
+
+// accent is the declaration block the tenant's colour deserves, or "" when the
+// document should carry none and let the linked sheet speak.
+//
+// Three cases, in this order. A value that is not six hex digits is dropped — the
+// grammar is the second line of defence behind the site module's, because this text
+// reaches a style element. A value that is one of this site's two accents is the
+// installation's own, and is written back as the installation writes it: per mode,
+// in the three spellings ui/style.ThemeVars uses, because one char(7) column cannot
+// tell "nobody chose" from "typed, and it happens to be the palette's", and a single
+// value pinned over both modes would be the light accent on a dark page. Anything
+// else is a colour this tenant chose and stays mode-independent — that is what the
+// site module's rule means when it asks a colour to read against both canvases.
+func (s Site) accent(stored string) string {
+	if !colour.MatchString(stored) {
+		return ""
+	}
+	light, dark := s.Theme.Light.AccentDefault, s.Theme.Dark.AccentDefault
+	if !strings.EqualFold(stored, light) && !strings.EqualFold(stored, dark) {
+		return ":root{--pk-color-accent-default:" + stored + "}"
+	}
+	if strings.EqualFold(light, dark) {
+		return ":root{--pk-color-accent-default:" + light + "}"
+	}
+	return ":root{--pk-color-accent-default:" + light +
+		"}[data-theme=\"dark\"]{--pk-color-accent-default:" + dark +
+		"}@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" + dark + "}}"
 }
 
 func frame(_ context.Context, _ page.Request, body []g.Node) g.Node {
