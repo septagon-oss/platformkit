@@ -2,7 +2,7 @@
   "note": "Exported API changes already accepted on this release line, one per line, in the form apidiff reports them. This is not a licence: an entry is a change somebody reviewed and recorded, the gate fails on any line not listed here and on any listed line that stops being reported, and the whole measured report stays in the evidence JSON. Delete this file when the next stable line is published, and re-measure against that tag instead.",
   "commits": {
     "base": "893cf2ae79a7f5b6a9b8618fd3586e237fea85ea",
-    "candidate": "224f0da4d3aa35b09c0ba0f5e79956809476417b"
+    "candidate": "8eed027f56e0531292d8b5c4a3a72bbd1b28f1b7"
   },
   "incompatibilities": [
     "./kit/config.Config: old is comparable, new is not",
@@ -46,12 +46,14 @@
     "./modules/content/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/file.Deps: old is comparable, new is not",
     "./modules/file.Module: changed from func(Deps) (github.com/septagon-oss/platformkit/modules/file/contracts.Service, github.com/septagon-oss/platformkit/kit/module.Module) to *github.com/septagon-oss/platformkit/pkit.Module",
+    "./modules/file/contracts.Deleted: old is comparable, new is not",
     "./modules/file/contracts.Events: changed from []string to []github.com/septagon-oss/platformkit/kit/events.Declared",
     "./modules/file/contracts.Lister: removed",
     "./modules/file/contracts.Service.EraseSubject: added",
     "./modules/file/contracts.Service.Grant: added",
     "./modules/file/contracts.Service.Release: added",
     "./modules/file/contracts.Service.Retain: added",
+    "./modules/file/contracts.Service.SetShown: added",
     "./modules/file/contracts.Service.SetUses: added",
     "./modules/file/contracts.Service.Uses: added",
     "./modules/file/contracts.Storage.Delete: changed from func(context.Context, string) error to func(context.Context, Scope, Key) error",
