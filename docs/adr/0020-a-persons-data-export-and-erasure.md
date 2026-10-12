@@ -37,7 +37,7 @@ has to account for, and it is the reason the list is a walk rather than a snapsh
 | owner | tables naming a person | the columns |
 | --- | --- | --- |
 | user | `users` | `id` (the person), `email`, `display_name`, `handle`, `roles`, `password_hash`, `status` |
-| auth | `sessions`, `password_tokens`, `verification_tokens`, `totp_factors`, `recovery_codes`, `api_tokens`, `first_factor_proofs` | `user_id` in each of the first six; `first_factor_proofs.user_id` is a primary key with **no** foreign key (`modules/auth/migrations/000033_first_factor_proofs.up.sql:69`); free text in `sessions.user_agent`, `sessions.ip`; a stored address in `verification_tokens.email`; a name a peer reads in `api_tokens.name`, whose `created_by` is a second person column |
+| auth | `sessions`, `password_tokens`, `verification_tokens`, `totp_factors`, `recovery_codes`, `api_tokens`, `first_factor_proofs`, `passkey_credentials`, `passkey_challenges` | `user_id` in each of the first six; `first_factor_proofs.user_id` is a primary key with **no** foreign key (`modules/auth/migrations/000033_first_factor_proofs.up.sql:69`); free text in `sessions.user_agent`, `sessions.ip`; a stored address in `verification_tokens.email`; a name a peer reads in `api_tokens.name`, whose `created_by` is a second person column |
 | notification | `notifications`, `notification_deliveries` | `recipient_id`; free text in `title`, `body`, `link`; deliveries reach a person only through `notification_id` (`modules/notification/migrations/000027_notification_deliveries.up.sql:21`) |
 | file | `files`, `file_holds`, `file_erasures`, `file_uses` | `uploader_id`, `placed_by`, `subject_id`, `actor`; free text in `file_holds.reason`, `file_erasures.reason`, `files.name`; `file_uses.record` is a polymorphic id (`module`+`entity` say whose row) that names this person's own record whenever the richtext field that displays the file is theirs, and `file_uses.file_id` names a file (`modules/file/migrations/000045_file_uses.up.sql:22-27`) |
 | task | `tasks` | `assignee_id`; free text in `description`, `resolution` — somebody else's notes *about* this person |
@@ -211,8 +211,12 @@ The brief's rule, and the reason a per-person command is not a `DELETE`:
   `file_holds.reason`, and the `payload jsonb` of `audit_events`, where an address sits verbatim
   today;
 - **credentials are removed, not anonymised**: `password_tokens`, `verification_tokens`,
-  `totp_factors`, `recovery_codes`, `first_factor_proofs` rows and `api_tokens` rows are deleted. A
-  secret that outlives its person is a door. `sessions` are ended, and their `user_agent`/`ip` scrubbed
+  `totp_factors`, `recovery_codes`, `first_factor_proofs`, `api_tokens`, `passkey_credentials` and
+  `passkey_challenges` rows are deleted. A secret that outlives its person is a door. A passkey is the
+  same door with no secret in it: the stored row is what an assertion is checked against, so deleting
+  the row is the only way a public key that cannot be reset, revoked or emailed stops opening
+  something — and its name is exported, because "laptop" and "phone" are the person's own words for
+  their own credentials. `sessions` are ended, and their `user_agent`/`ip` scrubbed
   where the row is kept as history;
 - **a person the directory hides is still held**: the lookup an export and an erasure make is the
   owner's `user.Service.Retained`, the row without `deleted_at IS NULL`. Soft deletion hides a row
@@ -322,7 +326,7 @@ the brief's list is not the whole list.
 | module | tables declared | Export answers | Erase does |
 | --- | --- | --- | --- |
 | user | `users` (Person `id`; Text none — the values *are* the columns) | email, display name, handle, status, roles, created/updated/deleted, **never** `password_hash` | §4's replacements; refuses as the last reachable administrator |
-| auth | `sessions`, `password_tokens`, `verification_tokens`, `totp_factors`, `recovery_codes`, `api_tokens`, `first_factor_proofs` | sessions (device, address, times), tokens by *name and time only* — never a hash or a secret, factors by kind | ends sessions and deletes every credential row; scrubs `sessions.user_agent`/`.ip` on what stays as history |
+| auth | `sessions`, `password_tokens`, `verification_tokens`, `totp_factors`, `recovery_codes`, `api_tokens`, `first_factor_proofs`, `passkey_credentials`, `passkey_challenges` | sessions (device, address, times), tokens by *name and time only* — never a hash or a secret, factors by kind, a passkey by the name its owner gave it and never its credential id or its public key | ends sessions and deletes every credential row; scrubs `sessions.user_agent`/`.ip` on what stays as history |
 | notification | `notifications`, `notification_deliveries` | recipient, title, body, link, read-at, and the delivery ledger (channel, outcome, reason) | anonymises `title`/`body`/`.link`; keeps the row, because `notification_deliveries` reaches a person only through it and deleting it would silently orphan a ledger that has an index and a CHECK |
 | file | `files`, `file_holds`, `file_erasures`, `file_uses` (About `record`, NotPerson `file_id`) | metadata always, bytes under the ceiling; holds with their reasons; the erasure certificates that name this person as subject or actor; the uses that read this person's own records, which say which field of which record displayed which file | `uploader_id`/`placed_by`/`subject_id`/`actor` keep their ids, `files.name`, `file_holds.reason` and `file_erasures.reason` are scrubbed, and `file_uses` rows whose `record` is this person's are deleted with the record they name — 000045 rewrites that set hard, so a row outliving the record it points at is a use that ended. **The person's own bytes are not deleted by an erasure**: `EraseSubject` answers a *retention* question with a certificate, and Article 17 asks for a copy and for the identifying record; the two commands stay distinct and the request names which one ran |
 | task | `tasks` | title, description, status, priority, source, due/SLA, resolution of tasks assigned to them | keeps the row (it is somebody else's work record), keeps `assignee_id`, scrubs `description` and `resolution` |
