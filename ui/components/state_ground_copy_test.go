@@ -1,10 +1,9 @@
 package components_test
 
-// Review round 9 (T-0107). Round 8's HIGH — the label a filled tone button paints
-// on a status fill — is cured and pinned by its own cases, so this round leaves no
-// failing case. What it leaves instead is a pin on the most fragile thing it
-// could reach: the one ground this package paints that design.GatedRolePairs does
-// not name at all.
+// The label a filled tone button paints on a status fill is cured and pinned by
+// its own cases. What these cases hold instead is the most fragile thing that
+// measurement reaches: the one ground this package paints that
+// design.GatedRolePairs does not name at all.
 //
 // `hoverBg(style.SurfaceHover)` and the modal close's
 // `c.TextColor(style.FgPrimary).Bg(style.SurfaceHover)` paint copy on
@@ -15,7 +14,7 @@ package components_test
 // opens a declaration (`name = style.New()`) and this ground is painted from
 // inside `On(style.StateHover, …)`. Mixing the foreground into the surface always
 // costs contrast, so every gated pair that sits at exactly 4.5:1 on surface-hover's
-// source sits below 4.5:1 on the hover ground itself. Round 9 swept 448,000
+// source sits below 4.5:1 on the hover ground itself. A sweep of 448,000
 // single-token client overrides through design.Client.Resolve (109,384 accepted)
 // and measured the pairs this package actually paints on that ground: fg-primary
 // and fg-secondary never fell under the floor, because the pairs that gate them
@@ -148,7 +147,7 @@ func TestStateGroundsCarryTheirCopyAboveTheFloor(t *testing.T) {
 		len(pairs), seeds, worst, worstWhere, strings.Join(names, ", "))
 }
 
-// TestStateGroundsHoldForAClientAtTheEdgeOfTheGate takes the client round 9's
+// TestStateGroundsHoldForAClientAtTheEdgeOfTheGate takes the client the
 // 448,000-override sweep found at the edge — a light theme whose surface-primary is
 // #0df7f7, which design.Client.Resolve accepts, and whose gated fg-muted pair sits
 // at 4.503:1, three thousandths above the floor. On the hover ground mixed from that

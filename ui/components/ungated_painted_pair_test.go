@@ -8,7 +8,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-// Review round 13.
+// The pairs this package paints that the gate's own list does not name.
 //
 // design.GatedRolePairs lists the pairs the gate certifies. This case lists the
 // pairs ui/components actually paints that are NOT in that list, read from the

@@ -1,6 +1,6 @@
 package components_test
 
-// Review round 16 (T-0107). Rounds 14 and 15 each found a ground this package
+// Twice over, a finding named one more ground this package
 // paints a component's edge on that the one gate did not name: first the card,
 // the canvas and the muted panel, then the fill a hovered control moves under its
 // own line. Both are gated now — design.EdgeRolePairs names border-primary on
@@ -168,7 +168,7 @@ func TestEveryEdgeThisPackagePaintsHoldsTheFloorOnTheGroundItIsPaintedOn(t *test
 
 // r16PaintedEdges reads, for each rule declaration, the border it draws and the
 // fill it stands on — including the fill a hovered state moves under it, which is
-// where round 15's ground came from.
+// where the hovered ground came from.
 func r16PaintedEdges(source string) []r16Edge {
 	starts := regexp.MustCompile(`(?m)^\t+(cl[A-Za-z0-9_]+)\s*=|(?m)^\t+"([a-z0-9_-]+)":\s*style\.New\(\)`).FindAllStringSubmatchIndex(source, -1)
 	var out []r16Edge

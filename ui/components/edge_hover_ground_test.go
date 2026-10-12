@@ -1,6 +1,6 @@
 package components_test
 
-// Review round 15 (T-0107). Round 14's fix made a component's edge a measured
+// The ground no named pair covers. What made a component's edge a measured
 // pair: design.edgeRolePairs gates --pk-role-border-primary on
 // --pk-role-surface-primary and --pk-role-surface-secondary at
 // MinContrastGraphic, and design/roles.go states the scope as "Two grounds,

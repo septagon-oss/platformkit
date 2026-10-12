@@ -1,6 +1,6 @@
 package components_test
 
-// Review round 14 (T-0107). design/contrast.go introduces the ratio this
+// A text field's border carries information. design/contrast.go introduces the ratio this
 // repository measures and the two floors it applies — 4.5:1 for body copy
 // (SC 1.4.3) and 3.0:1 for "a graphical object such as a focus ring"
 // (SC 1.4.11) — and its own comment then states the scope: "Borders and tints

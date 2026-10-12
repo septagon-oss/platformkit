@@ -5,7 +5,7 @@ package components_test
 // package's own declarations — every rule that paints text on a tint in the same
 // declaration, and the one tinted panel whose copy is declared somewhere else
 // and merged in — turns each style constant into the role a browser paints, and
-// refuses a pair design.GatedRolePairs does not name. Round 7 found exactly one
+// refuses a pair design.GatedRolePairs does not name. The first sweep found one
 // such pair, the muted reason line inside the failed media panel, and that pair
 // is why the gated list carries a status-tint section at all.
 //
@@ -20,8 +20,8 @@ package components_test
 // comment was false: bodyRolePairs names no fg-on-brand at all, so the filled tone
 // button — clButtonTone's Bg(style.SurfaceDanger) under
 // TextColor(style.FgOnBrand), at the text-sm every generated list's delete form
-// wears — fell between the two lists, and review round 8 measured it at 3.497:1
-// under a client's own design.yaml. A ground being named like a surface is no
+// wears — fell between the two lists, and one client's design.yaml measured it
+// at 3.497:1. A ground being named like a surface is no
 // reason to leave a label unmeasured, so the only ground allowed out of the sweep
 // is the one named by compositedGround below, with the measurement it stands for.
 

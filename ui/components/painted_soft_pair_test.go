@@ -1,9 +1,9 @@
 package components_test
 
-// Review round 7 (T-0107). Round 3's HIGH was a pair the kernel paints by one
-// rule of one component that sat in neither list of measured pairs; the cure
-// added the two pairs it found. This case asks the same question of the pair
-// this package still paints for a media panel that failed: clMediaFailed gives
+// A pair the kernel paints by one rule of one component can sit in neither
+// list of measured pairs, and the cure for the first such finding added the two
+// pairs that finding reached. This case asks the same question of the pair this
+// package still paints for a media panel that failed: clMediaFailed gives
 // the panel --pk-role-surface-warning-soft, and mediaAbsent fills that panel
 // with clEmptyDesc, whose colour is --pk-role-role-fg-muted at --pk-text-sm —
 // body-size copy, not a large heading, so SC 1.4.3 asks 4.5:1 of it.

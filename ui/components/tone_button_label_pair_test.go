@@ -1,9 +1,9 @@
 package components_test
 
-// Review round 8 (T-0107). Round 7's HIGH was a body-size foreground painted on
-// a status ground that no gated pair named; the cure adopted the rule "a body
-// foreground on a status tint is a measured pair" and gated fg-muted on the four
-// soft tints. This case asks the same question of the other ground a status tone
+// A body-size foreground painted on a status ground that no gated pair named is
+// the finding the rule "a body foreground on a status tint is a measured pair"
+// cured, by gating fg-muted on the four soft tints. This case asks the same
+// question of the other ground a status tone
 // is painted on: the filled tone button, whose label nobody measures.
 //
 // ButtonWithSlots replaces a button's whole appearance with clButtonTone[tone]
@@ -199,7 +199,7 @@ func roleCSS(name string) string {
 	return "--pk-role-" + name
 }
 
-// forEachSeed generates the same grid of seeds round 7 used — eight sectors, the
+// forEachSeed generates the grid the painted-pair cases sweep — eight sectors, the
 // six-value colour grid for a brand colour, deterministic by name — and hands
 // every palette to the caller. It returns how many the generator accepted.
 func forEachSeed(measure func(label string, pair design.Pair)) int {
