@@ -47,6 +47,17 @@ writes, validates nor publishes.
 [kit/entity/display](../entity/display/display.go), the one way a value is
 shown, which the generated screens read without linking this package.
 
+## Composition (typed PATCH)
+
+**Reused** — `Spec.Schema`, `crud.FieldNamed`, `foldedName` and Huma's entity
+schemas provide the writable names, types, formats, enums and media annotations.
+**Added** — `httpx.SetPatchSchema` replaces the untyped map with `<Entity>Patch`:
+closed, optional properties, excluding Base, `Immutable` fields and defaults.
+Nullable pointers/lists admit null; the body stays required. Attachment after
+registration preserves decoding, merge refusals, validation and tenant checks.
+**Made reusable** — each API owns its components for Update-enabled Specs;
+conflicting shapes under one name refuse mounting.
+
 `Immutable` names the fields a command owns. Every door that reads a body — the
 JSON create and patch, the two a page calls beneath HTTP, and `Values` beneath a
 create form — asks its keys the decoder's own question: one folding onto a

@@ -16,6 +16,7 @@ package resource
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	g "maragu.dev/gomponents"
@@ -159,7 +160,7 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 		Toolbar: []g.Node{components.Toolbar(components.ToolbarProps{Title: title}, actions...)},
 		// Collection commands retain their native forms and precede the pager.
 		// Generated CRUD does not gain selected-row writes from a UI control.
-		Footer: commandForms(o, r.Commands, at, true),
+		Footer: commandForms(o, o.Words(r.Schema), r.Commands, at, true),
 	})}
 	return document.View{Title: title, Body: body}
 }
@@ -169,11 +170,14 @@ func List(r Resource, o Options, rows []map[string]any, total int64, pageNo int,
 // entity's: a browser tab, a bookmark and a history entry all read it, and
 // eleven of them saying "Task" is eleven of them saying nothing.
 func Detail(r Resource, o Options, row map[string]any, writable bool) document.View {
-	return DetailRichText(r, o, row, writable, nil)
+	return DetailRichText(r, o, row, writable, nil, nil)
 }
 
-// DetailRichText renders prose prepared by the request adapter in its tenant transaction.
-func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string) document.View {
+// DetailRichText renders prose prepared by the request adapter in its tenant
+// transaction, beside the record's standing in each language the tenant speaks
+// besides its own.
+func DetailRichText(r Resource, o Options, row map[string]any, writable bool, rendered map[string]string,
+	locales []entity.LocaleState) document.View {
 	at := r.Screen
 	// A singleton is reached at its own path, which is the only place its API is
 	// reached too: an id in this path would be an id nobody issued, and the row
@@ -201,11 +205,12 @@ func DetailRichText(r Resource, o Options, row map[string]any, writable bool, re
 	body := []g.Node{
 		breadcrumb(o, display.Humanize(r.Schema.Entity)+"s", at, named),
 		components.Toolbar(components.ToolbarProps{Title: named}, actions...),
-		details(r, row, rendered),
+		localeStrip(locales),
+		details(r, o.Words(r.Schema), row, rendered),
 	}
 	// Below the record rather than above it: what a person comes to read is the
 	// row, and a command is what they may do to it once they have read it.
-	body = append(body, commandForms(o, r.Commands, item, false)...)
+	body = append(body, commandFormsIn(o, o.Words(r.Schema), r.Commands, item, false, locales)...)
 	return document.View{Title: named, Body: body}
 }
 
@@ -245,9 +250,16 @@ const statusUnprocessableEntity = 422
 // the refused POST that swaps errors back in is answered at the address the form
 // was drawn from, so the swap still finds its target.
 func FormExample(id string, r Resource, o Options, action, title string, row map[string]any, errs map[string]string, detail string, create bool) examples.Example {
+	// The form asks for every field its author did not keep off every screen:
+	// `hidden` is the one visibility off this screen too, because a control for a
+	// field no screen may name is a question nobody may answer, and `detail` stays
+	// on it — a required field a form cannot ask for is a record nobody can
+	// create. See readable. The one field added after this loop is the edit form's
+	// own write condition, below, so the capacity holds room for it.
 	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
-	for _, field := range r.Schema.Fields {
-		fields = append(fields, formField(field))
+	words := o.Words(r.Schema)
+	for _, field := range readable(r.Schema.Fields) {
+		fields = append(fields, formField(words, field))
 	}
 	values := make(map[string]string, len(row))
 	for name, value := range row {
@@ -317,17 +329,27 @@ func revisionCondition(r Resource, row map[string]any, create bool) (string, boo
 // Control adapts an entity field to the portable form control, preserving the
 // generated screens' existing labels, choices and name-derived DOM identity.
 func Control(f entity.Field, value, fieldErr string, immutable bool) g.Node {
-	return forms.Control(forms.ControlProps{Field: formField(f), Value: value, Error: fieldErr, Immutable: immutable})
+	return controlWords(Words{}, f, value, fieldErr, immutable)
+}
+
+// controlWords is Control with one thing added: the words a request's language
+// chose, which is what a command's argument controls need and what the exported
+// Control has no request to read. ui/forms stays this package's only owner of the
+// control itself.
+func controlWords(words Words, f entity.Field, value, fieldErr string, immutable bool) g.Node {
+	return forms.Control(forms.ControlProps{Field: formField(words, f), Value: value, Error: fieldErr, Immutable: immutable})
 }
 
 // formField projects display words at the screen boundary. The portable form
-// owns controls; the value words keep their owner in kit/entity/display.
-func formField(f entity.Field) forms.Field {
+// owns controls; the value words keep their owner in kit/entity/display, and
+// `words` is what puts them in the request's language — the zero Words reads
+// each of them exactly as written.
+func formField(words Words, f entity.Field) forms.Field {
 	options := make([]components.SelectOption, 0, len(f.Enum))
 	for _, value := range f.Enum {
-		options = append(options, components.SelectOption{Label: display.Humanize(value), Value: value})
+		options = append(options, components.SelectOption{Label: words.EnumWord(f, value), Value: value})
 	}
-	return forms.Field{Definition: f, Label: display.FieldLabel(f), Options: options}
+	return forms.Field{Definition: f, Label: words.FieldLabel(f), Help: words.FieldHelp(f), Options: options}
 }
 
 // listName is the heading a list screen wears. It is also the accessible name of
@@ -359,9 +381,10 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 		shown = append(shown, f)
 	}
 	columns := make([]components.TableColumn, 0, len(shown))
+	words := o.Words(r.Schema)
 	for i, f := range shown {
 		columns = append(columns, components.TableColumn{
-			Key: f.Name, Label: display.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
+			Key: f.Name, Label: words.FieldLabel(f), Sortable: r.sortable(f), Primary: i == 0,
 		})
 	}
 	out := make([]components.DataRow, 0, len(rows))
@@ -374,7 +397,7 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 	for _, row := range rows {
 		cells := map[string]any{}
 		for _, f := range shown {
-			cells[f.Name] = display.Display(f, row[f.Name])
+			cells[f.Name] = words.Value(f, row[f.Name])
 		}
 		// The leading cell is the row's only link, so its text is that link's accessible name. A
 		// blank there means this row has nothing in the column the entity leads with, and an empty
@@ -433,17 +456,58 @@ func table(o Options, r Resource, at, title string, rows []map[string]any, sort,
 			if name, ok := named[row.ID]; ok {
 				text = name
 			}
-			return components.Link(components.LinkProps{Label: text, Href: at + "/" + row.ID})
+			return components.RowLink(components.LinkProps{Label: text, Href: at + "/" + row.ID})
 		},
 	}
 	return components.DataListWithSlots(p, slots)
+}
+
+// localeStrip is the record's translation standing: one badge per language this
+// tenant speaks besides its own, each naming how much of this record exists in it
+// and what it is behind by.
+//
+// It is the first thing a translator needs on a record — what is reviewed and what
+// somebody still owes — and the numbers come from the same read a public page
+// answers with, so the badge cannot report a translation a reader would never be
+// served. A language nobody has touched reads 0% rather than disappearing: the
+// language that needs work is the one worth naming.
+//
+// The word beside the number is the point of the badge. "50%" asks the reader to
+// work out whether somebody owes a first translation or owes a second look at one
+// that went stale, and those are different jobs; "50% · Outdated" answers it. The
+// tone stays the one the strip has always worn — success when the language is whole,
+// warning when it is not — because the word, not the colour, carries which of the
+// two it is, and a badge that meant "stale" one release and "never started" the
+// next by colour alone would be a colour doing a word's work.
+//
+// Nothing at all when there is no language to report — an entity with no
+// translatable field, or a tenant served in one language — because a badge about a
+// language nobody can switch to is noise, and every screen of every entity that was
+// never translated would be wearing one.
+func localeStrip(locales []entity.LocaleState) g.Node {
+	if len(locales) == 0 {
+		return g.Raw("")
+	}
+	badges := make([]g.Node, 0, len(locales))
+	for _, state := range locales {
+		tone := "warning"
+		if state.Percent() == 100 {
+			tone = "success"
+		}
+		badges = append(badges, components.Badge(components.BadgeProps{
+			Label: state.Locale + " " + strconv.Itoa(state.Percent()) + "% · " +
+				display.Humanize(state.State()),
+			Tone: tone, Size: "sm",
+		}))
+	}
+	return components.Flex(components.FlexProps{Gap: "2", Wrap: true}, badges...)
 }
 
 // details is the detail screen: every field the author kept on a record, in schema
 // order, as a description list. `hide:list` hides nothing here — it is about a table
 // being readable, not about a field being secret — and `visibility:hidden` is the one
 // declaration that is off this screen too, which readable applies.
-func details(r Resource, row map[string]any, rendered map[string]string) g.Node {
+func details(r Resource, words Words, row map[string]any, rendered map[string]string) g.Node {
 	// One pass, in schema order: richtext becomes a prose section as it always
 	// did, and every other readable field becomes a term beside its value.
 	var prose []g.Node
@@ -455,14 +519,14 @@ func details(r Resource, row map[string]any, rendered map[string]string) g.Node 
 	for _, f := range readable(r.Schema.Fields) {
 		if f.Widget == "richtext" {
 			if html, ok := rendered[f.Name]; ok {
-				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
+				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), components.Prose(components.ProseProps{HTML: html})))
 			} else {
-				prose = append(prose, h.Section(h.H2(g.Text(display.FieldLabel(f))), h.P(g.Text(display.Text(row[f.Name])))))
+				prose = append(prose, h.Section(h.H2(g.Text(words.FieldLabel(f))), h.P(g.Text(display.Text(row[f.Name])))))
 			}
 			continue
 		}
 		reads = append(reads, read{field: f,
-			item: components.DetailItem{Label: display.FieldLabel(f), Value: display.Display(f, row[f.Name])}})
+			item: components.DetailItem{Label: words.FieldLabel(f), Value: words.Value(f, row[f.Name])}})
 	}
 	list := func(items []components.DetailItem) g.Node {
 		return components.DetailList(components.DetailListProps{Items: items})
@@ -488,7 +552,7 @@ func details(r Resource, row map[string]any, rendered map[string]string) g.Node 
 				taken[r.field.Name] = true
 			}
 		}
-		out = append(out, h.Section(h.H2(g.Text(sec.Label)), list(items)))
+		out = append(out, h.Section(h.H2(g.Text(words.Section(sec).Label)), list(items)))
 	}
 	rest := make([]components.DetailItem, 0, len(reads))
 	for _, r := range reads {
