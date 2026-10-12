@@ -2282,6 +2282,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/mailed_link_retry_test.go",
+   "id": "apps/platformkit/mailed_link_retry_test.go#TestMailedLinkRetriesPreserveTheCredentialAndStopAfterSuccess",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestMailedLinkRetriesPreserveTheCredentialAndStopAfterSuccess",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/mailed_link_served_address_test.go",
    "id": "apps/platformkit/mailed_link_served_address_test.go#TestAMailedLinkCarriesTheAddressTheTenantIsServedAt",
    "kind": "go",
@@ -52920,7 +52939,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1291,
+  "files": 1292,
   "forge_runs": [
    408,
    413,
@@ -52955,7 +52974,7 @@
   ],
   "layers": {
    "behaviour": 2309,
-   "composition": 282,
+   "composition": 283,
    "contract": 19,
    "journey": 59
   },
@@ -52973,9 +52992,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2669,
+  "rows": 2670,
   "tiers": {
-   "merge": 1662,
+   "merge": 1663,
    "nightly": 59,
    "push": 948
   },
@@ -52983,13 +53002,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1075,
+   "keep": 1076,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2321,
+   "keep": 2322,
    "keep-rewrite": 133,
    "merge": 215
   }
