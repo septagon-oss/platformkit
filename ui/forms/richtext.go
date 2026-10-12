@@ -219,7 +219,13 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 		h.Div(
 			g.Attr("data-richtext-link", ""), h.Hidden(""),
 			h.Label(h.For(f.Name+"-richtext-link"), g.Text(word("forms.richtext.linkAddress", "Address"))),
-			h.Input(h.Type("url"), h.ID(f.Name+"-richtext-link"), g.Attr("data-richtext-link-input", "")),
+			// type=text, not type=url: the address this dialog accepts is decision 0069
+			// §1's vocabulary, which holds a site-relative /path and a #fragment as well as
+			// the schemes a browser's own URL check reads — drawn as a URL field it would
+			// take the link the page offered out of the record on the person's own submit,
+			// with nothing said. The same list is checked on the way in (the glue's) and on
+			// the way through (kit/richtext's); this control only types the keyboard.
+			h.Input(h.Type("text"), h.ID(f.Name+"-richtext-link"), g.Attr("inputmode", "url"), g.Attr("data-richtext-link-input", "")),
 			components.Button(components.ButtonProps{
 				ComponentProps: components.ComponentProps{Attrs: map[string]string{"data-richtext-command": "link-save"}},
 				Type:           "button", Label: word("forms.richtext.linkSave", "Save link"), Size: "sm",
@@ -280,6 +286,7 @@ var richtextSentences = []struct {
 	{"data-richtext-draft-found", "forms.richtext.draftFound", "A draft from this device was not saved."},
 	{"data-richtext-alt-title", "forms.richtext.altTitle", "Alt text"},
 	{"data-richtext-alt-required", "forms.richtext.altRequired", "Describe the picture, or say it is decorative."},
+	{"data-richtext-alt-gone", "forms.richtext.altGone", "This picture is no longer in the document."},
 	{"data-richtext-decorative", "forms.richtext.decorative", "Decorative"},
 	{"data-richtext-save", "forms.richtext.save", "Save"},
 	{"data-richtext-choices", "forms.richtext.choices", "Choices"},

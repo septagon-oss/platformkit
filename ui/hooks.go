@@ -84,6 +84,7 @@ var renderedHooks = map[string]string{
 	// The sentences the field says while the author writes, and the name the
 	// editing surface carries: drawn by ui/forms from the request's catalogue,
 	// read by the glue, which holds no prose of its own.
+	"data-richtext-alt-gone":     "ui/forms/richtext.go",
 	"data-richtext-alt-required": "ui/forms/richtext.go",
 	"data-richtext-alt-title":    "ui/forms/richtext.go",
 	"data-richtext-bad-link":     "ui/forms/richtext.go",

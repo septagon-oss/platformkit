@@ -196,6 +196,7 @@ function bindChrome(control) {
 	}
 	bindSlash(control);
 	bindLink(control);
+	bindSelectionChrome(control);
 	updatePressed(control);
 }
 
@@ -214,7 +215,7 @@ function run(control, command, argument) {
 		case "bulletList": chain().toggleBulletList().run(); break;
 		case "orderedList": chain().toggleOrderedList().run(); break;
 		case "taskList": chain().toggleTaskList().run(); break;
-		case "table": chain().createTable({ rows: 2, cols: 2, rowsWithHeader: 1 }).run(); break;
+		case "table": chain().insertTable({ rows: 2, cols: 2, withHeaderRow: true }).run(); break;
 		case "rule": chain().setHorizontalRule().run(); break;
 		case "heading2": chain().toggleHeading({ level: 2 }).run(); break;
 		case "heading3": chain().toggleHeading({ level: 3 }).run(); break;
@@ -259,11 +260,14 @@ function isActive(control, name) {
 
 // positionBubble anchors the selection bubble to the selection itself, which is the
 // one thing the browser can compute and the server cannot. No selection, no
-// bubble: an empty floating toolbar is a widget asking to be ignored.
+// bubble: an empty floating toolbar is a widget asking to be ignored. The selection
+// has to be this field's own as well — two fields share one page, and a range read
+// somewhere else in it is not a call to move this field's toolbar.
 function positionBubble(control) {
 	if (!control.bubble) return;
 	const selection = window.getSelection();
-	if (!control.editor.isEditable || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+	if (!control.editor.isEditable || !selection || selection.isCollapsed || selection.rangeCount === 0
+		|| !control.surface.contains(selection.getRangeAt(0).commonAncestorContainer)) {
 		control.bubble.hidden = true;
 		return;
 	}
@@ -278,6 +282,28 @@ function positionBubble(control) {
 	control.bubble.style.top = (above > 0 ? above : rect.bottom + window.scrollY + 8) + "px";
 	control.bubble.style.zIndex = "var(--pk-z-popover, 50)";
 	updatePressed(control);
+}
+
+// bindSelectionChrome keeps the bubble answering the browser's own selection rather
+// than waiting for the editor to notice one. The editor's selectionUpdate reports
+// what the document decided and when the editor agreed with it; the keyboard's
+// range is real — and reads as real to anything that asks the page — for a moment
+// before that. A person who has selected words and is shown no toolbar has selected
+// nothing as far as this field is concerned, which is this field's failure and not
+// theirs. The listener is the page's, so it asks whether the range is inside this
+// field's own surface before it moves anything: two fields on one page share the one
+// document event, and a selection in the other one is not this one's business.
+//
+// What it does not settle is the editor's half. When the editor later re-asserts its
+// own state over the browser's range, the bubble goes with it, and the paste that
+// decides on the editor's state stands down — the selection-readiness race named in
+// the task's follow-ups, which this listener narrows and does not close.
+function bindSelectionChrome(control) {
+	document.addEventListener("selectionchange", () => {
+		const selection = window.getSelection();
+		if (!selection || !selection.rangeCount || !control.surface.contains(selection.getRangeAt(0).commonAncestorContainer)) return;
+		positionBubble(control);
+	});
 }
 
 // bindSlash opens the command menu on a slash typed into an empty block, filters
@@ -665,7 +691,8 @@ function referenceID(src) {
 // inserted is the only place a file reference enters the document, and it enters as
 // the text §1 stores: ![alt](pk-file:<id>). The alt prompt is asked after the image
 // is placed, because the person is more likely to answer it when the picture is
-// where they can see it.
+// where they can see it — and it is asked of the reference, which is how the answer
+// finds this picture again after the author has written around it.
 function inserted(control, request, file) {
 	let id = "";
 	try {
@@ -673,10 +700,40 @@ function inserted(control, request, file) {
 		id = parsed.id || (parsed.file && parsed.file.id) || "";
 	} catch { id = ""; }
 	if (id === "") return refused(control, { file: file }, 0, "");
-	const src = "pk-file:" + id;
-	control.editor.chain().focus().setImage({ src, alt: "", title: "" }).run();
+	const src = fileReference + id;
+	if (!placePicture(control, src)) {
+		// The bytes are stored and the document would not take the picture. The page
+		// drew no sentence for that, so the field says nothing it was not given and
+		// leaves the state and the reference for the page to read.
+		mark(control, "error", { reason: "picture not placed", src: src });
+		return;
+	}
 	commit(control);
-	askAlt(control, file, positionOfImage(control, src));
+	askAlt(control, src);
+}
+
+// placePicture puts the picture an upload answered with into the document and says
+// whether the document took it.
+//
+// A picture goes where the selection is, because that is where the author was
+// writing. One case is not writing there: while an earlier picture of the same pick
+// still waits for its description it holds the selection, and to insert at a
+// selection is to replace it — so a second file chosen beside a first would arrive
+// by deleting the first, which is a picture nobody chose to lose. A picture this
+// field has placed and not yet described is therefore placed behind the newest of
+// them rather than over it.
+function placePicture(control, src) {
+	const behind = lastUndescribedPosition(control);
+	if (behind < 0) return control.editor.chain().focus().setImage({ src, alt: "", title: "" }).run()
+		&& picturePosition(control.editor.state.doc, src) >= 0;
+	const image = control.editor.schema.nodes.image;
+	if (!image) return false;
+	return control.editor.chain().command(({ tr }) => {
+		const node = tr.doc.nodeAt(behind);
+		if (!node || node.type.name !== "image") return false;
+		tr.insert(behind + node.nodeSize, image.create({ src: src, alt: "", title: "" }));
+		return picturePosition(tr.doc, src) >= 0;
+	}).run();
 }
 
 function refused(control, state, status, detail) {
@@ -704,14 +761,22 @@ function problemDetail(request) {
 //
 // Three things make it a question rather than a pair of boxes. Each control is
 // named by a label joined to it by identity, because the prompt is read by people
-// who hear the page. An empty answer is refused by this function and not by the
-// control's own `required`, which constrains a form and not a button of
-// type=button, so an informative picture enters the document only once its author
-// has said what it shows. And Escape is not an answer: it withdraws the picture
-// the prompt was asked for, because the document that carries an undescribed
-// photograph is the thing the requirement exists to prevent.
-function askAlt(control, file, at) {
+// who hear the page. Which of the two answers is being given is decided here and
+// not by the input's own `required`, which constrains a form's submit and not a
+// button of type=button: an empty answer is a refusal until the author has said the
+// picture is decorative, and is the whole answer once they have. And Escape is not
+// an answer: it withdraws the picture the prompt was asked for, because the document
+// that carries an undescribed photograph is the thing the requirement exists to
+// prevent.
+//
+// The prompt is not modal: the author types, deletes and undoes while it waits. It
+// therefore carries the file reference its picture arrived with rather than the
+// position it arrived at — a reference names one picture in this document and
+// survives every edit between the upload's answer and that answer's being given,
+// and a position survives none of them.
+function askAlt(control, src) {
 	if (word(control, "richtextAltTitle") === "" || word(control, "richtextSave") === "") return;
+	awaitDescription(control, src);
 	control.altAsked = (control.altAsked || 0) + 1;
 	const descriptionID = control.field + "-richtext-alt-" + control.altAsked;
 	const decorativeID = descriptionID + "-decorative";
@@ -722,19 +787,38 @@ function askAlt(control, file, at) {
 	const save = element("button", { type: "button" }, word(control, "richtextSave"));
 	const prompt = element("div", { role: "group", "aria-label": word(control, "richtextAltTitle") },
 		[element("div", {}, [label, input, decorativeLabel, save])]);
-	control.surface.parentElement.insertBefore(prompt, control.surface.nextSibling);
+	const open = (control.openPrompts || []).filter((waiting) => waiting.isConnected);
+	// Two pictures asked for at once are answered in the order they were picked, so
+	// a prompt goes behind the last one still open rather than in front of it.
+	control.surface.parentElement.insertBefore(prompt, (open.length ? open[open.length - 1] : control.surface).nextSibling);
+	control.openPrompts = open.concat([prompt]);
 	input.focus();
+	const close = () => {
+		prompt.remove();
+		control.openPrompts = (control.openPrompts || []).filter((waiting) => waiting !== prompt);
+	};
 	const finish = () => {
-		const alt = decorative.checked ? "" : input.value.trim();
-		if (alt === "") {
+		const decorativeAnswer = decorative.checked;
+		if (!decorativeAnswer && input.value.trim() === "") {
 			mark(control, "error", { reason: "alt" });
 			statusLine(control, word(control, "richtextAltRequired"), null);
 			input.focus();
 			return;
 		}
-		setImage(control, at, { alt: alt, title: lastTitle(control) });
-		prompt.remove();
-		commit(control);
+		// A decorative picture's answer is the empty description — the alternative the
+		// question offers is not an unanswered one, and refusing it would make the
+		// accessibility choice the field offers impossible to complete.
+		const answered = describePicture(control, src, { alt: decorativeAnswer ? "" : input.value.trim() });
+		forgetUndescribed(control, src);
+		close();
+		if (answered) return commit(control);
+		// The picture this question was asked about left the document while the answer
+		// was being written — deleted, or undone back over the insert. The prompt says
+		// so rather than closing as though it had described something: an author who
+		// watched the picture go needs the field to agree with what they saw, not to
+		// answer a question that no longer has a subject.
+		statusLine(control, word(control, "richtextAltGone"), null);
+		mark(control, "error", { reason: "picture gone", src: src });
 	};
 	save.addEventListener("click", finish);
 	input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); finish(); } });
@@ -742,45 +826,72 @@ function askAlt(control, file, at) {
 	prompt.addEventListener("keydown", (event) => {
 		if (event.key !== "Escape") return;
 		event.preventDefault();
-		prompt.remove();
-		dropImage(control, at);
+		close();
+		forgetUndescribed(control, src);
+		withdrawPicture(control, src);
 		commit(control);
 	});
 }
 
-function lastTitle(control) {
-	return control.editor.getAttributes("image").title || "";
+// awaitDescription and forgetUndescribed keep the pictures this field placed and
+// has not yet described, in the order they arrived. One thing reads the list: the
+// next upload, which has to know it follows one of them rather than replacing one.
+// Answering a prompt never consults it — the prompt carries the reference its own
+// picture matched on, which is a name and not a seat.
+function awaitDescription(control, src) {
+	control.undescribed = (control.undescribed || []).concat([src]);
 }
 
-// positionOfImage is where the picture that just arrived sits in the document. The
-// alt text is asked after the insert, by which time focus has moved, and a document
-// with two images would otherwise answer for the first one.
-function positionOfImage(control, src) {
+function forgetUndescribed(control, src) {
+	control.undescribed = (control.undescribed || []).filter((waiting) => waiting !== src);
+}
+
+// lastUndescribedPosition is where the newest picture still waiting sits, or -1
+// when this document holds none of them. The position is looked up from the
+// reference each time rather than remembered, which is the whole point of the
+// reference: the author's keystrokes move a picture and never rename one.
+function lastUndescribedPosition(control) {
+	for (const src of (control.undescribed || []).slice().reverse()) {
+		const at = picturePosition(control.editor.state.doc, src);
+		if (at >= 0) return at;
+	}
+	return -1;
+}
+
+// picturePosition is where one document holds the picture a file reference names,
+// or -1 when it holds none. The reference is the file's own id, so in one document
+// it names one picture and no other.
+function picturePosition(doc, src) {
 	let at = -1;
-	control.editor.state.doc.descendants((node, position) => {
+	doc.descendants((node, position) => {
 		if (at >= 0) return false;
-		if (node.type.name !== "image") return;
-		if (node.attrs.src !== src) return;
+		if (node.type.name !== "image" || node.attrs.src !== src) return;
 		at = position;
 		return false;
 	});
 	return at;
 }
 
-function setImage(control, at, attributes) {
-	control.editor.chain().command(({ tr }) => {
-		const node = tr.doc.nodeAt(at);
+// describePicture answers the prompt for the one picture it was asked about, and
+// says whether that picture is still in the document to be answered for. Only the
+// description is written: the picture's own title stays as the document holds it,
+// which is never the title of whichever picture the caret happens to reach now.
+function describePicture(control, src, attributes) {
+	return control.editor.chain().command(({ tr }) => {
+		const at = picturePosition(tr.doc, src);
+		const node = at < 0 ? null : tr.doc.nodeAt(at);
 		if (!node || node.type.name !== "image") return false;
 		tr.setNodeMarkup(at, undefined, Object.assign({}, node.attrs, attributes));
 		return true;
 	}).run();
 }
 
-// dropImage is the other half of the prompt: the picture goes back the way it
+// withdrawPicture is the other half of the prompt: the picture goes back the way it
 // came when the question that came with it is withdrawn rather than answered.
-function dropImage(control, at) {
+function withdrawPicture(control, src) {
 	control.editor.chain().command(({ tr }) => {
-		const node = tr.doc.nodeAt(at);
+		const at = picturePosition(tr.doc, src);
+		const node = at < 0 ? null : tr.doc.nodeAt(at);
 		if (!node || node.type.name !== "image") return false;
 		tr.delete(at, at + node.nodeSize);
 		return true;

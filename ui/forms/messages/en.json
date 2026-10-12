@@ -407,6 +407,12 @@
     ],
     "translation": "Describe the picture, or say it is decorative."
   },
+  "forms.richtext.altGone": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "This picture is no longer in the document."
+  },
   "forms.richtext.altTitle": {
     "references": [
       "ui/forms/richtext.go"
