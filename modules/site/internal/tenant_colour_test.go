@@ -28,7 +28,10 @@ func TestASecondTenantCannotReadOrReplaceTheFirstSitesColour(t *testing.T) {
 	}
 	run(first, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
-		saved, err = svc.Save(ctx, tx, &contracts.SiteSettings{Title: "First", PrimaryColor: "#0f5d4e"})
+		// #b45309 is the colour the module's own conformance fixture carries: 4.37:1 on
+		// the light canvas and 3.66:1 on the dark one, so the door admits it and the
+		// row holds what the tenant typed.
+		saved, err = svc.Save(ctx, tx, &contracts.SiteSettings{Title: "First", PrimaryColor: "#b45309"})
 		return err
 	})
 	run(second, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -55,7 +58,7 @@ func TestASecondTenantCannotReadOrReplaceTheFirstSitesColour(t *testing.T) {
 	})
 	run(first, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		got, err := svc.Settings(ctx, tx)
-		if err == nil && (got.PrimaryColor != "#0f5d4e" || got.Title != "First") {
+		if err == nil && (got.PrimaryColor != "#b45309" || got.Title != "First") {
 			t.Errorf("first tenant's settings changed: %+v", got)
 		}
 		return err
