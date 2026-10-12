@@ -46,6 +46,12 @@ var webhookCatalogue = emittedEvents{
 	authcontracts.EventVerificationRequested, authcontracts.EventRegistrationRequested,
 	authcontracts.EventFactorUsed, authcontracts.EventFactorSuspect,
 	authcontracts.EventPasskeySignInSet,
+	// The two names the mail delivery record added: a sign-up that sent no link,
+	// and a mail this module could not hand to a transport. Both are emitted in the
+	// transaction that writes the delivery record, so a subscriber that asked for the
+	// record's trail would otherwise be refused the two events that say the record
+	// exists.
+	authcontracts.EventNoLinkRequested, authcontracts.EventMailFailed,
 	// user, including the doors registration opened.
 	usercontracts.EventCreated, usercontracts.EventUpdated, usercontracts.EventDeleted,
 	usercontracts.EventInvited, usercontracts.EventPasswordSet, usercontracts.EventRolesSet,
