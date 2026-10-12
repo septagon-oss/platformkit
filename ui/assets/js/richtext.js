@@ -1,0 +1,791 @@
+// The rich text field's browser half. It mounts the vendored editor on every
+// [data-richtext] field the page drew, keeps the field's own <textarea> as the
+// submitted value, binds behaviour to the chrome ui/forms drew, and saves.
+//
+// It fetches two URLs and no others: the upload route and the record's own
+// address, both written by the server. It stores one key and no others: the draft
+// key the server composed. It reads no cookie and invents no path — an attribute
+// the page left out is a feature that is off, not one to guess at.
+//
+// With this file absent the page is the same page: the textarea posts, the server
+// validates every line, and "Formatting help" is the guidance. The editor is an
+// enhancement, and the form is the contract.
+import {
+	Blockquote, Bold, BulletList, CharacterCount, Code, CodeBlock, Document,
+	HardBreak, Heading, History, HorizontalRule, Image, Italic, Link, ListItem,
+	Markdown, OrderedList, Paragraph, Placeholder, Strike, TableKit, TaskItem,
+	TaskList, Text, Editor,
+} from "../vendor/richtext/editor.js";
+
+const AUTOSAVE_AFTER = 2000;
+const DOCUMENT_SHAPE = 1;
+const LINK_SCHEMES = ["https:", "http:", "mailto:", "tel:"];
+
+for (const root of document.querySelectorAll("[data-richtext]")) {
+	mount(root);
+}
+
+// mount turns one drawn field into one editor. A field the server marked read-only
+// or disabled carries no chrome to bind, and gets nothing: the textarea stays
+// visible and posts as it always did.
+function mount(root) {
+	const field = root.dataset.richtextField;
+	const textarea = root.querySelector("textarea[name='" + field + "']");
+	const surface = root.querySelector("[data-richtext-surface]");
+	if (!textarea || !surface) return;
+
+	const control = {
+		root, textarea, surface, field,
+		toolbar: root.querySelector("[data-richtext-toolbar]"),
+		more: root.querySelector("[data-richtext-more]"),
+		morePanel: root.querySelector("[data-richtext-more-panel]"),
+		bubble: root.querySelector("[data-richtext-bubble]"),
+		menu: root.querySelector("[data-richtext-menu]"),
+		link: root.querySelector("[data-richtext-link]"),
+		linkInput: root.querySelector("[data-richtext-link-input]"),
+		status: root.querySelector("[data-richtext-status]"),
+		count: root.querySelector("[data-richtext-count]"),
+		file: root.querySelector("[data-richtext-file]"),
+		draftBar: root.querySelector("[data-richtext-draft-bar]"),
+		preview: root.querySelector("[data-richtext-preview]"),
+	};
+	control.editor = createEditor(control);
+	bindChrome(control);
+	bindUploads(control);
+	bindPersistence(control);
+	reveal(control);
+}
+
+// createEditor builds one editor per field, with decision 0069 §1's schema and the
+// field's own limits. The document is loaded and stored as Markdown: the format is
+// the stored value, so the editor holds no second opinion about it.
+function createEditor(control) {
+	const limit = Number(control.root.dataset.richtextMax || 0);
+	const extensions = [
+		Document, Paragraph, Text,
+		Heading.configure({ levels: [1, 2, 3, 4] }),
+		Bold, Italic, Strike, Code, Link,
+		Blockquote, CodeBlock, HardBreak, HorizontalRule,
+		BulletList, OrderedList, ListItem, TaskList, TaskItem.configure({ nested: true }),
+		TableKit,
+		Image.configure({ inline: false, allowBase64: false }),
+		History,
+		Markdown.configure({ indentStyle: "space", indentSize: 2, renderer: { tightTypes: [] } }),
+		Placeholder.configure({ showOnlyWhenEditable: false }),
+	];
+	if (limit > 0) extensions.push(CharacterCount.configure({ limit }));
+
+	const editor = new Editor({
+		element: control.surface,
+		extensions,
+		content: control.textarea.value || "",
+		contentType: "markdown",
+		editable: !control.textarea.disabled && !control.textarea.readOnly,
+		onUpdate: () => commit(control),
+		onSelectionUpdate: () => positionBubble(control),
+		onTransaction: (_transaction, changed) => { if (changed.docChanged) return; updatePressed(control); },
+	});
+	return editor;
+}
+
+// commit is the only writer of the textarea, and it writes on every document
+// change: a submit that arrives between two keystrokes must not post a stale
+// value. The change event is the form's own signal to whatever else is listening.
+function commit(control) {
+	const markdown = control.editor.getMarkdown();
+	if (control.textarea.value !== markdown) {
+		control.textarea.value = markdown;
+		control.textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		control.textarea.dispatchEvent(new Event("change", { bubbles: true }));
+	}
+	count(control);
+	mark(control, "dirty");
+	control.save = schedule(control, control.save);
+}
+
+function count(control) {
+	if (!control.count) return;
+	const characters = control.textarea.value.length;
+	const limit = Number(control.root.dataset.richtextMax || 0);
+	const words = control.textarea.value.trim() === "" ? 0 : control.textarea.value.trim().split(/\s+/).length;
+	control.count.textContent = limit > 0
+		? wordsLabel(control, words) + " · " + characters + " / " + limit
+		: wordsLabel(control, words);
+	control.count.hidden = false;
+	if (limit > 0 && characters > limit) mark(control, "over-limit");
+}
+
+function wordsLabel(control, words) {
+	return (control.root.dataset.richtextWords || "{count} words").replace("{count}", String(words));
+}
+
+// mark is how the rest of the page learns what the field is doing. A module's own
+// screen can read the event and say something in its own words; the status line
+// beside the field is the kernel's sentence about the same fact.
+function mark(control, state, detail) {
+	const payload = Object.assign({ state: state, at: Date.now() }, detail || {});
+	control.root.dispatchEvent(new CustomEvent("richtext:status", { bubbles: true, detail: payload }));
+	if (!control.status) return;
+	const said = control.root.dataset["richtextWord" + state.charAt(0).toUpperCase() + state.slice(1)];
+	if (said) {
+		control.status.textContent = said;
+		control.status.hidden = false;
+	}
+	control.status.dataset.state = state;
+}
+
+function schedule(control, previous) {
+	if (previous) clearTimeout(previous);
+	return setTimeout(() => save(control), AUTOSAVE_AFTER);
+}
+
+// reveal un-hides the chrome only once an editor actually stands behind it. A page
+// whose module script never ran — no JavaScript, a fetch that failed, a browser
+// too old for ES modules — keeps the plain textarea it was drawn with.
+function reveal(control) {
+	if (control.toolbar) control.toolbar.hidden = false;
+	control.surface.hidden = false;
+	if (control.count) count(control);
+	mark(control, "ready");
+}
+
+// bindChrome connects the drawn buttons to editor commands. Every control already
+// exists, already carries its label in the page's language and already names its
+// shortcut in its accessible name; this adds behaviour and the two states a toggle
+// reports.
+function bindChrome(control) {
+	for (const button of control.root.querySelectorAll("[data-richtext-command]")) {
+		button.addEventListener("click", (event) => {
+			event.preventDefault();
+			run(control, button.dataset.richtextCommand);
+		});
+	}
+	if (control.more && control.morePanel) {
+		control.more.addEventListener("click", () => {
+			const open = control.morePanel.hidden;
+			control.morePanel.hidden = !open;
+			control.more.setAttribute("aria-expanded", String(open));
+		});
+	}
+	bindSlash(control);
+	bindLink(control);
+	bindShortcuts(control);
+	updatePressed(control);
+}
+
+// run is the command vocabulary. The server draws a name only when it means it,
+// so a name with no case here is a bug rather than a fallback.
+function run(control, command, argument) {
+	const editor = control.editor;
+	const chain = () => editor.chain().focus();
+	switch (command) {
+		case "bold": chain().toggleBold().run(); break;
+		case "italic": chain().toggleItalic().run(); break;
+		case "strike": chain().toggleStrike().run(); break;
+		case "code": chain().toggleCode().run(); break;
+		case "quote": chain().toggleBlockquote().run(); break;
+		case "codeBlock": chain().toggleCodeBlock().run(); break;
+		case "bulletList": chain().toggleBulletList().run(); break;
+		case "orderedList": chain().toggleOrderedList().run(); break;
+		case "taskList": chain().toggleTaskList().run(); break;
+		case "table": chain().createTable({ rows: 2, cols: 2, rowsWithHeader: 1 }).run(); break;
+		case "rule": chain().setHorizontalRule().run(); break;
+		case "heading1": chain().toggleHeading({ level: 1 }).run(); break;
+		case "heading2": chain().toggleHeading({ level: 2 }).run(); break;
+		case "heading3": chain().toggleHeading({ level: 3 }).run(); break;
+		case "paragraph": chain().setParagraph().run(); break;
+		case "undo": editor.commands.undo(); break;
+		case "redo": editor.commands.redo(); break;
+		case "link": openLink(control); break;
+		case "link-save": saveLink(control); break;
+		case "link-remove": editor.chain().focus().extendMarkRange("link").unsetLink().run(); hideLink(control); break;
+		case "image": pickFile(control); break;
+		case "preview": togglePreview(control); break;
+		default: mark(control, "error", { reason: "unknown command " + command });
+	}
+	if (argument) closeMenu(control);
+	updatePressed(control);
+}
+
+function updatePressed(control) {
+	const editor = control.editor;
+	for (const button of control.root.querySelectorAll("[data-richtext-command]")) {
+		const name = button.dataset.richtextCommand;
+		if (!button.hasAttribute("aria-pressed")) continue;
+		button.setAttribute("aria-pressed", String(isActive(control, name)));
+	}
+	void editor;
+}
+
+function isActive(control, name) {
+	const editor = control.editor;
+	const levels = { heading1: 1, heading2: 2, heading3: 3 };
+	if (name in levels) return editor.isActive("heading", { level: levels[name] });
+	if (name === "paragraph") return editor.isActive("paragraph");
+	if (name === "link") return editor.isActive("link");
+	if (name === "quote") return editor.isActive("blockquote");
+	if (name === "codeBlock") return editor.isActive("codeBlock");
+	if (name === "bulletList") return editor.isActive("bulletList");
+	if (name === "orderedList") return editor.isActive("orderedList");
+	if (name === "taskList") return editor.isActive("taskList");
+	if (name === "preview") return !editor.isEditable;
+	return editor.isActive(name);
+}
+
+// positionBubble anchors the selection bubble to the selection itself, which is the
+// one thing the browser can compute and the server cannot. No selection, no
+// bubble: an empty floating toolbar is a widget asking to be ignored.
+function positionBubble(control) {
+	if (!control.bubble) return;
+	const selection = window.getSelection();
+	if (!control.editor.isEditable || !selection || selection.isCollapsed || selection.rangeCount === 0) {
+		control.bubble.hidden = true;
+		return;
+	}
+	const rect = selection.getRangeAt(0).getBoundingClientRect();
+	if (rect.width === 0 && rect.height === 0) { control.bubble.hidden = true; return; }
+	control.bubble.hidden = false;
+	const box = control.bubble.getBoundingClientRect();
+	const left = Math.max(8, rect.left + window.scrollX + rect.width / 2 - box.width / 2);
+	const above = rect.top + window.scrollY - box.height - 8;
+	control.bubble.style.position = "absolute";
+	control.bubble.style.left = left + "px";
+	control.bubble.style.top = (above > 0 ? above : rect.bottom + window.scrollY + 8) + "px";
+	control.bubble.style.zIndex = "var(--pk-z-popover, 50)";
+	updatePressed(control);
+}
+
+// bindSlash opens the command menu on a slash typed into an empty block, filters
+// the drawn rows as the author keeps typing, and lets the keyboard choose one. The
+// rows are the server's markup; only which of them are showing is computed here.
+function bindSlash(control) {
+	control.editor.on("keydown", (_view, event) => {
+		if (control.menu && !control.menu.hidden) return menuKeys(control, event);
+		if (event.key !== "Escape") return false;
+		hideFloating(control);
+		return true;
+	});
+	control.editor.on("update", () => {
+		const empty = currentText(control);
+		if (empty === "/") openMenu(control, "");
+		else if (empty.startsWith("/")) filterMenu(control, empty.slice(1));
+		else if (control.menu && !control.menu.hidden) closeMenu(control, true);
+	});
+}
+
+function currentText(control) {
+	const { $from } = control.editor.state.selection;
+	if (!$from.parent.isBlock) return "";
+	return $from.parent.textBetween(0, $from.parent.content.size, undefined, "\u{fffc}");
+}
+
+function openMenu(control, query) {
+	if (!control.menu) return;
+	control.menu.hidden = false;
+	control.menu.style.position = "absolute";
+	const caret = control.editor.view.coordsAtPos(control.editor.state.selection.from);
+	control.menu.style.left = Math.max(8, caret.left + window.scrollX) + "px";
+	control.menu.style.top = (caret.bottom + window.scrollY + 4) + "px";
+	control.menuChoice = filterMenu(control, query);
+}
+
+function filterMenu(control, query) {
+	const wanted = query.trim().toLowerCase();
+	const rows = [...control.menu.querySelectorAll("[data-richtext-command]")];
+	const shown = rows.filter((row) => wanted === "" || row.textContent.toLowerCase().includes(wanted));
+	rows.forEach((row) => { row.hidden = !shown.includes(row); });
+	if (shown.length === 0) { closeMenu(control); return []; }
+	control.menuRows = shown;
+	control.menuIndex = 0;
+	markChoice(control);
+	return shown;
+}
+
+function markChoice(control) {
+	(control.menuRows || []).forEach((row, index) =>
+		row.setAttribute("aria-selected", String(index === control.menuIndex)));
+}
+
+function menuKeys(control, event) {
+	const rows = control.menuRows || [];
+	if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+		const step = event.key === "ArrowDown" ? 1 : -1;
+		control.menuIndex = (control.menuIndex + step + rows.length) % rows.length;
+		markChoice(control);
+		event.preventDefault();
+		return true;
+	}
+	if (event.key === "Enter") {
+		const chosen = rows[control.menuIndex];
+		if (chosen) {
+			// The slash the author typed to open the menu is part of the text, and it
+			// is not content: it goes away with the menu that opened.
+			deleteSlash(control);
+			closeMenu(control);
+			run(control, chosen.dataset.richtextCommand, true);
+		}
+		event.preventDefault();
+		return true;
+	}
+	if (event.key === "Escape") {
+		closeMenu(control, true);
+		event.preventDefault();
+		return true;
+	}
+	return false;
+}
+
+function deleteSlash(control) {
+	const text = currentText(control);
+	if (!text.startsWith("/")) return;
+	const { from } = control.editor.state.selection;
+	control.editor.chain().focus().deleteRange({ from: from - Math.max(1, text.length), to: from }).run();
+}
+
+function closeMenu(control, backspace) {
+	if (!control.menu) return;
+	control.menu.hidden = true;
+	control.menuRows = [];
+	if (backspace) deleteSlash(control);
+}
+
+function hideFloating(control) {
+	closeMenu(control);
+	hideLink(control);
+	if (control.bubble) control.bubble.hidden = true;
+}
+
+// bindLink is the popover: one field, Enter accepts, and a URL pasted onto a
+// selection is the same action with fewer keystrokes. The scheme list is §1's, and
+// it is a hint given before the submit — the server refuses the same value again,
+// and its refusal is the one that decides.
+function bindLink(control) {
+	if (!control.link || !control.linkInput) return;
+	control.linkInput.addEventListener("keydown", (event) => {
+		if (event.key === "Enter") { event.preventDefault(); saveLink(control); }
+		if (event.key === "Escape") { event.preventDefault(); hideLink(control); control.editor.commands.focus(); }
+	});
+	control.editor.on("paste", (view, event) => {
+		const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
+		if (!isLink(text) || control.editor.state.selection.empty) return false;
+		event.preventDefault();
+		control.editor.chain().focus().extendMarkRange("link").setLink({ href: text.trim() }).run();
+		commit(control);
+		return true;
+	});
+}
+
+function isLink(text) {
+	if (!text) return false;
+	const value = text.trim();
+	if (value.startsWith("/") || value.startsWith("#")) return true;
+	try { return LINK_SCHEMES.includes(new URL(value).protocol); } catch { return false; }
+}
+
+function openLink(control) {
+	if (!control.link || !control.linkInput) return;
+	const existing = control.editor.getAttributes("link");
+	control.link.hidden = false;
+	control.linkInput.value = existing.href || "";
+	control.linkInput.focus();
+	control.linkInput.select();
+}
+
+function saveLink(control) {
+	const href = control.linkInput.value.trim();
+	if (href === "") {
+		control.editor.chain().focus().extendMarkRange("link").unsetLink().run();
+	} else if (!isLink(href)) {
+		mark(control, "error", { reason: "scheme" });
+		control.status.textContent = control.root.dataset.richtextBadLink || "That address is not a link this page may publish.";
+		control.status.hidden = false;
+		return;
+	} else {
+		control.editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+	}
+	hideLink(control);
+	commit(control);
+}
+
+function hideLink(control) {
+	if (control.link) control.link.hidden = true;
+}
+
+// bindShortcuts implements the Markdown spellings as the author types them. Tiptap
+// ships no input rules in the extensions this bundle carries, and the spellings are
+// §1's contract with an author, so they live here: a few lines that turn the line
+// the caret sits on into the block its prefix names.
+function bindShortcuts(control) {
+	const rules = [
+		[/^# (.*)$/, () => run(control, "heading1")],
+		[/^## (.*)$/, () => run(control, "heading2")],
+		[/^### (.*)$/, () => run(control, "heading3")],
+		[/^- (.*)$/, () => run(control, "bulletList")],
+		[/^1\. (.*)$/, () => run(control, "orderedList")],
+		[/^- \[ \] (.*)$/, () => run(control, "taskList")],
+		[/^> (.*)$/, () => run(control, "quote")],
+		[/^```(.*)$/, () => run(control, "codeBlock")],
+	];
+	control.editor.on("keydown", (_view, event) => {
+		if (event.key !== " " || control.editor.isActive("codeBlock")) return false;
+		const text = currentText(control);
+		for (const [pattern, apply] of rules) {
+			if (!pattern.test(text)) continue;
+			event.preventDefault();
+			const { from } = control.editor.state.selection;
+			control.editor.chain().focus()
+				.deleteRange({ from: from - text.length, to: from })
+				.run();
+			apply();
+			return true;
+		}
+		if (text === "---") {
+			event.preventDefault();
+			const { from } = control.editor.state.selection;
+			control.editor.chain().focus().deleteRange({ from: from - 3, to: from }).setHorizontalRule().run();
+			return true;
+		}
+		return false;
+	});
+}
+
+// togglePreview is a read-only view of the same document. It is not the published
+// page: only the server's renderer is that, and the page would have to name that
+// route for this control to use it.
+function togglePreview(control) {
+	const previewing = control.editor.isEditable;
+	control.editor.setEditable(!previewing, true);
+	if (control.preview) {
+		control.preview.hidden = !previewing;
+		control.preview.textContent = control.root.dataset.richtextPreviewNote || "";
+	}
+	updatePressed(control);
+}
+
+function pickFile(control) {
+	if (control.file) control.file.click();
+}
+
+// bindUploads is the file path: the person's own bytes, the server's answer, and the
+// one reference the document ever holds. A cancelled upload leaves the file to the
+// file module's own sweep — deleting from a browser would be a retention decision
+// made in the wrong place.
+function bindUploads(control) {
+	const route = control.root.dataset.richtextUpload;
+	if (!route) return;
+	if (control.file) {
+		control.file.addEventListener("change", () => {
+			for (const file of [...control.file.files]) upload(control, file);
+			control.file.value = "";
+		});
+	}
+	control.editor.on("paste", (view, event) => {
+		const files = filesIn(event);
+		if (files.length === 0) return false;
+		event.preventDefault();
+		for (const file of files) upload(control, file);
+		return true;
+	});
+	const element = control.surface;
+	element.addEventListener("dragover", (event) => { event.preventDefault(); });
+	element.addEventListener("drop", (event) => {
+		const files = filesIn(event);
+		if (files.length === 0) return;
+		event.preventDefault();
+		for (const file of files) upload(control, file);
+	});
+}
+
+function filesIn(event) {
+	const items = event.dataTransfer ? event.dataTransfer.items : null;
+	if (items && items.length) {
+		return [...items].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean);
+	}
+	return event.dataTransfer && event.dataTransfer.files ? [...event.dataTransfer.files] : [];
+}
+
+// upload posts one file as multipart with one filename-bearing part and all metadata
+// in the query, which is the contract the file module answers. Progress comes from
+// XMLHttpRequest because fetch has none, and the request is cancellable because the
+// person may change their mind.
+function upload(control, file) {
+	const route = control.root.dataset.richtextUpload + "?image=true";
+	const body = new FormData();
+	body.append("file", file, file.name);
+	const request = new XMLHttpRequest();
+	const state = { file: file, request: request };
+	request.open("POST", route, true);
+	request.responseType = "text";
+	request.upload.addEventListener("progress", (event) => {
+		if (!event.lengthComputable) return;
+		statusLine(control, control.root.dataset.richtextUploading || "Uploading",
+			Math.round((event.loaded / event.total) * 100));
+		mark(control, "uploading", { percent: Math.round((event.loaded / event.total) * 100) });
+	});
+	request.addEventListener("load", () => {
+		if (request.status === 0) return refused(control, state, 0, "");
+		if (request.status >= 200 && request.status < 300) return inserted(control, request, file);
+		refused(control, state, request.status, problemDetail(request));
+	});
+	request.addEventListener("error", () => refused(control, state, 0, ""));
+	request.addEventListener("abort", () => mark(control, "idle"));
+	control.cancel = () => request.abort();
+	request.send(body);
+}
+
+// inserted is the only place a file reference enters the document, and it enters as
+// the text §1 stores: ![alt](pk-file:<id>). The alt prompt is asked after the image
+// is placed, because the person is more likely to answer it when the picture is
+// where they can see it.
+function inserted(control, request, file) {
+	let id = "";
+	try {
+		const parsed = JSON.parse(request.responseText);
+		id = parsed.id || (parsed.file && parsed.file.id) || "";
+	} catch { id = ""; }
+	if (id === "") return refused(control, { file: file }, 0, "");
+	control.editor.chain().focus().setImage({ src: "pk-file:" + id, alt: "", title: "" }).run();
+	commit(control);
+	askAlt(control, file);
+}
+
+function refused(control, state, status, detail) {
+	const words = control.root.dataset.richtextFailed || "Upload failed";
+	const retryable = status === 0 || status === 408 || status === 429 || status >= 500;
+	statusLine(control, detail === "" ? words : words + " — " + detail, null);
+	mark(control, "upload-failed", { status: status, detail: detail, retry: retryable });
+	offer(control, {
+		note: detail === "" ? words : words + " — " + detail,
+		actions: retryable
+			? [{ label: control.root.dataset.richtextRetry || "Retry", act: () => upload(control, state.file) }]
+			: [{ label: control.root.dataset.richtextChoose || "Choose another file", act: () => pickFile(control) }],
+	});
+}
+
+function problemDetail(request) {
+	try {
+		const problem = JSON.parse(request.responseText);
+		return problem.detail || problem.title || "";
+	} catch { return ""; }
+}
+
+// askAlt is the prompt on insert: alt text is required, or the picture is
+// decorative, which is the same answer with a different reason. Escape leaves the
+// image with no alt text and says so rather than inventing one.
+function askAlt(control, file) {
+	const prompt = element("div", { role: "group", "aria-label": control.root.dataset.richtextAltTitle || "Image text" });
+	const label = element("label", {}, control.root.dataset.richtextAltTitle || "Alt text");
+	const input = element("input", { type: "text", required: "" });
+	const decorative = element("input", { type: "checkbox" });
+	const decorativeLabel = element("label", {}, control.root.dataset.richtextDecorative || "Decorative");
+	const save = element("button", { type: "button" }, control.root.dataset.richtextSave || "Save");
+	const wrapper = element("div", {}, [label, input, decorative, decorativeLabel, save]);
+	prompt.append(wrapper);
+	control.surface.parentElement.insertBefore(prompt, control.surface.nextSibling);
+	input.focus();
+	const finish = () => {
+		const alt = decorative.checked ? "" : input.value.trim();
+		setLastImage(control, { alt: alt, title: lastTitle(control) });
+		prompt.remove();
+		commit(control);
+	};
+	save.addEventListener("click", finish);
+	input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); finish(); } });
+	decorative.addEventListener("change", () => { input.required = !decorative.checked; });
+	prompt.addEventListener("keydown", (event) => { if (event.key === "Escape") { prompt.remove(); } });
+}
+
+function lastTitle(control) {
+	return control.editor.getAttributes("image").title || "";
+}
+
+function setLastImage(control, attributes) {
+	const { selection } = control.editor.state;
+	const node = selection.node || (selection.$from.nodeAfter);
+	if (node && node.type.name === "image") {
+		control.editor.chain().focus().updateAttributes("image", attributes).run();
+		return;
+	}
+	control.editor.chain().focus().command(({ state, tr }) => {
+		let done = false;
+		state.doc.descendants((child, position) => {
+			if (done || child.type.name !== "image") return;
+			tr.setNodeMarkup(position, undefined, Object.assign({}, child.attrs, attributes));
+			done = true;
+			return false;
+		});
+		return done;
+	}).run();
+}
+
+// offer is the one line that can carry a button: a failed upload, a conflict, a
+// draft that came back from another tab. It replaces the last one rather than
+// stacking, because a form with three error widgets is a form nobody reads.
+function offer(control, spec) {
+	const note = element("p", {}, spec.note);
+	const actions = element("div", { role: "group", "aria-label": control.root.dataset.richtextChoices || "Choices" });
+	for (const action of spec.actions) {
+		const button = element("button", { type: "button" }, action.label);
+		button.addEventListener("click", action.act);
+		actions.append(button);
+	}
+	control.root.querySelectorAll("[data-richtext-offer]").forEach((old) => old.remove());
+	const slot = element("div", { "data-richtext-offer": "" }, [note, actions]);
+	control.root.insertBefore(slot, control.surface);
+}
+
+function statusLine(control, text, percent) {
+	if (!control.status) return;
+	control.status.hidden = false;
+	control.status.textContent = percent === null ? text : text + " " + percent + "%";
+}
+
+function element(tag, attributes, content) {
+	const node = document.createElement(tag);
+	for (const name in attributes) node.setAttribute(name, attributes[name]);
+	if (typeof content === "string") node.textContent = content;
+	if (Array.isArray(content)) node.append(...content);
+	return node;
+}
+
+// bindPersistence is the save half. The page decided which mode this field is in:
+// an endpoint and a tag mean the record takes an expected version and the editor
+// saves as the author writes; no endpoint means nothing is sent and the draft is
+// kept on this device instead. The two are never tried at once.
+function bindPersistence(control) {
+	control.endpoint = control.root.dataset.richtextEndpoint || "";
+	control.etag = control.root.dataset.richtextEtag || "";
+	control.key = control.root.dataset.richtextDraft || "";
+	if (control.endpoint === "" && control.key !== "") restoreOffered(control);
+	window.addEventListener("storage", (event) => {
+		if (event.key === control.key && event.newValue) restoreOffered(control);
+	});
+	for (const button of control.root.querySelectorAll("[data-richtext-draft-restore]")) {
+		button.addEventListener("click", () => {
+			const stored = readDraft(control.key);
+			if (!stored) return;
+			load(control, stored.markdown);
+			control.draftBar.hidden = true;
+			mark(control, "dirty");
+		});
+	}
+	for (const button of control.root.querySelectorAll("[data-richtext-draft-discard]")) {
+		button.addEventListener("click", () => {
+			localStorage.removeItem(control.key);
+			control.draftBar.hidden = true;
+			mark(control, "idle");
+		});
+	}
+	const form = control.textarea.form;
+	if (form) form.addEventListener("submit", () => {
+		commit(control);
+		if (control.endpoint === "") keepDraft(control, true);
+	});
+}
+
+function save(control) {
+	if (control.dirty === undefined) control.dirty = true;
+	if (control.endpoint !== "") return autosave(control);
+	keepDraft(control, false);
+}
+
+// keepDraft writes the browser's own copy. A browser that will not hold it is said
+// to out loud: "Saved on this device" is a promise this one did not keep.
+function keepDraft(control, cleared) {
+	if (control.key === "") return;
+	if (cleared) { localStorage.removeItem(control.key); mark(control, "saved"); return; }
+	try {
+		localStorage.setItem(control.key, JSON.stringify({ markdown: control.textarea.value, savedAt: Date.now(), doc: DOCUMENT_SHAPE }));
+		mark(control, "drafted");
+	} catch {
+		mark(control, "offline");
+		statusLine(control, control.root.dataset.richtextNoDraft || "This browser will not keep a draft", null);
+	}
+}
+
+function readDraft(key) {
+	try {
+		const stored = JSON.parse(localStorage.getItem(key) || "null");
+		return stored && stored.doc === DOCUMENT_SHAPE ? stored : null;
+	} catch { return null; }
+}
+
+function restoreOffered(control) {
+	const stored = readDraft(control.key);
+	if (!stored || stored.markdown === control.textarea.value) return;
+	if (!control.draftBar) return;
+	control.draftBar.hidden = false;
+	const when = new Date(stored.savedAt);
+	const label = Number.isNaN(when.getTime()) ? "" : " " + when.toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
+	control.draftBar.firstElementChild.textContent = (control.root.dataset.richtextDraftFound || "") + label;
+}
+
+// autosave writes one field and quotes the tag this form was drawn from. A body
+// carrying a second field would take somebody else's edit down with it, and a tag
+// invented here would be a conflict the client decided for the server.
+async function autosave(control) {
+	if (control.saving) { control.queued = true; return; }
+	control.saving = true;
+	mark(control, "saving");
+	let response;
+	try {
+		response = await fetch(control.endpoint, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json", "If-Match": control.etag },
+			body: JSON.stringify({ [control.field]: control.textarea.value }),
+			credentials: "same-origin",
+		});
+	} catch {
+		control.saving = false;
+		mark(control, "offline");
+		return;
+	}
+	const tag = response.headers.get("ETag");
+	if (tag) control.etag = tag.replace(/^W\//, "");
+	control.saving = false;
+	if (response.status === 409 || response.status === 412) {
+		mark(control, "conflict");
+		compare(control);
+	} else if (!response.ok) {
+		mark(control, "error", { status: response.status });
+		statusLine(control, problemDetail(response) || control.root.dataset.richtextRefused || "Not saved", null);
+	} else {
+		mark(control, "saved");
+	}
+	if (control.queued) { control.queued = false; save(control); }
+}
+
+// compare is the conflict panel. Both texts are in the page, neither is discarded,
+// and the choice is the author's: keep theirs, take what arrived, or close the
+// panel and merge by hand against the tag that just arrived.
+async function compare(control) {
+	let theirs = "";
+	let tag = control.etag;
+	try {
+		const read = await fetch(control.endpoint, { credentials: "same-origin" });
+		theirs = JSON.stringify(await read.json(), null, 0);
+		tag = read.headers.get("ETag") || tag;
+	} catch { theirs = ""; }
+	const theirsText = JSON.parse(theirs || "null");
+	offer(control, {
+		note: control.root.dataset.richtextConflict || "Changed by someone else — compare",
+		actions: [
+			{ label: control.root.dataset.richtextKeep || "Keep mine", act: () => { control.etag = tag; save(control); } },
+			{ label: control.root.dataset.richtextTheirs || "Take theirs", act: () => {
+				if (theirsText && typeof theirsText[control.field] === "string") load(control, theirsText[control.field]);
+				control.etag = tag;
+			} },
+			{ label: control.root.dataset.richtextMerge || "Merge by hand", act: () => { control.etag = tag; mark(control, "dirty"); } },
+		],
+	});
+	control.conflicted = true;
+}
+
+// load puts a text into both halves of the field: the editor's document and the
+// value the form would post if the browser had no editor at all.
+function load(control, markdown) {
+	control.editor.commands.setContent(markdown, { contentType: "markdown" });
+	control.textarea.value = markdown;
+	control.textarea.dispatchEvent(new Event("change", { bubbles: true }));
+	count(control);
+}
