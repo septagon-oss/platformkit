@@ -525,8 +525,8 @@ func (a *API) complete(ctx context.Context, n *claimNote, status int, header htt
 // it used to be is that the guard bounds what it digests at the same ceiling every
 // other keyed write has: a keyed body is at most maxKeyedBody, whatever the route
 // would swallow without a key. A route whose answer is larger than maxRecordedAnswer
-// spends its key rather than replaying it, which the document says once (§
-// keyDescription) instead of leaving a caller to discover on a retry.
+// spends its key rather than replaying it; the document's description of the header
+// names the body ceiling only, and README states the spent answer and its 409.
 func declaresKey(op *huma.Operation) bool {
 	if op == nil {
 		return false

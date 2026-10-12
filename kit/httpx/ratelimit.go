@@ -44,11 +44,11 @@ const (
 // defaultRetryAfter is the wait a 429 names when the writer of it named none, and
 // the 429 rule of this package: every refusal this package decides already names its
 // window, and the ones that do not came from a handler counting somewhere kit/httpx
-// cannot see (modules/auth's lockout and its mail caps answer 429 from their own
-// counters, which do know the wait, and stating it there is that module's change to
-// make). Until it does, the kernel refuses to answer "too many" with no number at
-// all, and says which route did — a guarantee that holds for every 429 is worth more
-// than a guarantee that holds for the two guards this package happens to own.
+// cannot see and that named no wait either. The kernel refuses to answer "too many"
+// with no number at all, and says which route did — a guarantee that holds for every
+// 429 is worth more than a guarantee that holds for the two guards this package
+// happens to own. A module that counts for itself names its own window instead of
+// reaching here: SayCounted is how modules/auth's lockout and its mail caps do it.
 //
 // The rule is that a refusal which says "too many" and no number tells a client
 // nothing it can act on, and every client then retries at its own guess — which is
