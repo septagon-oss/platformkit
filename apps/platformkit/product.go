@@ -61,6 +61,7 @@ import (
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
+	webhookcontracts "github.com/septagon-oss/platformkit/modules/webhook/contracts"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
 	"github.com/septagon-oss/platformkit/ui/export"
@@ -93,6 +94,7 @@ func product(cfg config.Config) *pkit.Module {
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
+		pkit.Provides[webhookcontracts.Catalogue](),
 		pkit.Contributes[tenantcontracts.Hook](),
 		pkit.Contributes[changecontracts.SubjectBinding](),
 	}
@@ -185,6 +187,12 @@ func product(cfg config.Config) *pkit.Module {
 		// the language its text was authored in on the day the tenant appears.
 		pkit.Put[tenantcontracts.Languages](w, tenantcontracts.Languages{Tags: installed.Languages()})
 		pkit.Put[tenantcontracts.Hook](w, tenantcontracts.Hook(seedRoles))
+		// Which event names may be put on a webhook endpoint is this file's fact:
+		// the modules that emit them are composed by this file, and the module that
+		// checks a subscription against them cannot enumerate them. The literal is
+		// webhook_catalogue.go's, and a case asks the resolved composition whether it
+		// still matches what that composition emits.
+		pkit.Put[webhookcontracts.Catalogue](w, webhookCatalogue)
 		// A task is this product's second change subject, and it needs no service to
 		// be named: the locked read a diff is made against and the whole-row write an
 		// approved proposal comes through are two named constructors of the module that
