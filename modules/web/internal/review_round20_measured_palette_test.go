@@ -119,10 +119,11 @@ func TestTheTenantAccentIsMeasuredAgainstThePaletteThePageLinks(t *testing.T) {
 	t.Parallel()
 
 	site := Site{Theme: composedPalette(t)}
-	// A tenant colour per shape of failure: the column's default, a colour that
-	// cannot read on a light card, one that cannot read on a dark canvas, and the
-	// two poles.
-	values := []string{sitecontracts.DefaultPrimaryColor, "#c0ffee", "#ffffff", "#000000", "#f7f7f2"}
+	// A tenant colour per shape the door admits: the column's default, one at its
+	// edge on each canvas, the inside half of the achromatic pair the settings
+	// conformance names as that edge, one clearing both by a margin. The colours
+	// first offered here read about 1:1 on a canvas, which the door now refuses.
+	values := []string{sitecontracts.DefaultPrimaryColor, "#008afd", "#004cfc", "#8a8a8a", "#00865e"}
 	themes := []string{"light", "dark", "system"}
 	differing, checked := 0, 0
 	for _, theme := range themes {
