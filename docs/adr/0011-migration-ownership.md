@@ -115,8 +115,9 @@ step after it that a crash can skip. The application role is revoked from both.
 
 An autocommit statement is also the one statement a migration run must not hold the
 composition's advisory lock across. Such a statement waits for the transactions already
-in the database — that is what `CONCURRENTLY` is for — while that lock is what every
-other replica's boot queues behind. Holding both was measured, and it deadlocks the queue:
+in the database — that is what `CONCURRENTLY` is for, and no `lock_timeout` bounds that
+wait — while that lock is what every other replica's boot queues behind. Holding both
+was measured, and it deadlocks the queue:
 
 ```
 Process 30201 waits for ShareLock on virtual transaction 10/17350; blocked by process 30222.
@@ -139,13 +140,15 @@ for the transactions already in the database: to queue inside the holder's criti
 section is to join the cycle the release exists to leave (`kit/db/certify.go`,
 `kit/db/concurrent_index_replicas_test.go`, `kit/db/concurrent_index_turn_test.go`).
 
-What the budgets bound is the statement itself, and a `CONCURRENTLY` build that runs out
-of `lock_timeout` mid-way leaves the half-built object behind under the name it was
-building — which the next send of `IF NOT EXISTS` reports as done. Success is therefore
-not the end of an autocommit file: the runner reads the object it named out of the
-catalog, drops and rebuilds one that is not valid, and refuses the file rather than
-recording a constraint the database does not enforce
-(`kit/db/certify.go`, `kit/db/migrate_certify_concurrently_test.go`).
+The budget that survives that window is the statement one, which an installation names
+on purpose and which defaults to no bound. A `CONCURRENTLY` build cut short by it
+mid-way — or by the deadlock detector picking this session, or by the caller's context —
+leaves the half-built object standing under the name it was building, which the next send
+of `IF NOT EXISTS` reports as done. Success is therefore not the end of an autocommit
+file: the runner reads the object it named out of the catalog, drops and rebuilds one
+that is not valid, and refuses the file rather than recording a constraint the database
+does not enforce (`kit/db/certify.go`,
+`kit/db/migrate_certify_concurrently_test.go`).
 
 The order of a release is now a rule rather than a review comment. A `contract` file
 refuses while the `expand=` version it names is not already in that installation's

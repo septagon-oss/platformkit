@@ -1,8 +1,9 @@
 package db_test
 
-// An autocommit file's statement may be cancelled rather than refused: the run's
-// own lock budget is on the session while CREATE INDEX CONCURRENTLY waits for the
-// transactions already writing the table, and a wait that runs out leaves the
+// An autocommit file's statement may be cut short rather than refused outright: the
+// statement budget an installation named is on the session while CREATE INDEX
+// CONCURRENTLY waits for the transactions already writing the table (the lock budget
+// steps down with the composition lock, ADR 0011), and a wait that runs out leaves the
 // half-built index behind under the name it was building. The next send of the same
 // statement answers "relation already exists, skipping" — success — and a history
 // row written on top of that certifies a unique constraint the database does not
@@ -23,7 +24,7 @@ import (
 )
 
 // TestAWriteThatReliesOnACertifiedIndexFindsIt holds the table one row-writer has
-// touched shut for longer than the run's lock budget, lets the build die on that,
+// touched shut for longer than the run's statement budget, lets the build die on that,
 // and applies the file again the way an operator would: the second run may not
 // report success over an index the first one left invalid.
 func TestAWriteThatReliesOnACertifiedIndexFindsIt(t *testing.T) {
@@ -44,7 +45,9 @@ func TestAWriteThatReliesOnACertifiedIndexFindsIt(t *testing.T) {
 CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS build_probe_sent_once ON build_probe (note, channel) WHERE sent;`)
 
 	// The state the reproduction leaves behind, built here rather than assumed: a
-	// row-level writer, and a run whose build runs out of its lock budget.
+	// row-level writer, and a run whose build is cut short waiting for it. The lock
+	// budget comes off the session for that wait, so both budgets are named at one
+	// length and the refusal below says which of them reached the build.
 	gate, err := admin.Conn(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -57,11 +60,11 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS build_probe_sent_once ON build_pr
 	if _, err := tx.ExecContext(ctx, `UPDATE build_probe SET sent = sent WHERE id = 1`); err != nil {
 		t.Fatal(err)
 	}
-	lock := 400 * time.Millisecond
+	budget := time.Second
 	first := func() error {
 		runCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 		defer cancel()
-		return db.MigrateWith(runCtx, adminURL, db.MigrationBudget{LockTimeout: &lock}, source)
+		return db.MigrateWith(runCtx, adminURL, db.MigrationBudget{LockTimeout: &budget, StatementTimeout: &budget}, source)
 	}()
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("open the gate again: %v", err)
@@ -71,6 +74,11 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS build_probe_sent_once ON build_pr
 	}
 	if errors.Is(first, context.DeadlineExceeded) {
 		t.Fatalf("the run waited on the gate to the end rather than refusing at its budget: %v", first)
+	}
+	if errors.Is(first, db.ErrContended) {
+		t.Fatalf("the run refused the build at its lock budget, which comes off the session for "+
+			"this wait (ADR 0011): %v — the budget that survives the window, and the one this case's "+
+			"cut-short premise is built on, is the statement budget", first)
 	}
 	if valid, _, applied := indexState(t, admin, ctx); valid || applied != 0 {
 		t.Errorf("the cancelled run left the file certified (valid=%v, history rows=%d), want an invalid index and no history row: %v", valid, applied, first)
