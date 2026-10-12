@@ -6,9 +6,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2594 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1230 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 2406 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| test rows | 2597 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1233 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 2409 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 215 | filename prefix |
 | rows inside them | 347 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 56 / 1 / 42 / 89 | same walk |
@@ -18,7 +18,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 19 | push, first | asserts a golden or the published API set |
-| behaviour | 2263 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 2266 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 255 | merge | package `main` of the reference app: it boots the composition |
 | journey | 57 | nightly | `e2e/`: browser or device |
 
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1015 | 2247 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1018 | 2250 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 70 | 132 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 145 | 215 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
