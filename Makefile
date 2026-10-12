@@ -714,6 +714,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/push_tier_reaches_test_imports_test.sh
 	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
 	bash scripts/the_inventory_lists_a_javascript_test_test.sh
+	# scripts/inventory_area_totals_match_document_test.py re-derives the "Round-named verdicts by
+	# area" table in tests/INVENTORY.md from the rows tests/inventory.json carries: each listed area's
+	# file population and its three verdict columns, those columns' sums against the Verdicts table,
+	# and the population of every area the table leaves out because it holds no verdict. The Scale,
+	# Layers and Verdicts figures are re-checked by scripts/check_test_inventory.sh, but these five
+	# columns are quoted by hand, so this is the line that refuses a drift nothing else sees. It reads
+	# two files and starts nothing.
+	PYTHONDONTWRITEBYTECODE=1 python3 scripts/inventory_area_totals_match_document_test.py
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as
