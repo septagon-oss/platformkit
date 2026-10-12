@@ -318,7 +318,7 @@
    "ci_med_s": null,
    "ci_runs": 0,
    "coverage": "",
-   "round_named": 0
+   "round_named": 1
   },
   "migrations": {
    "ci_fails": 0,
@@ -24234,6 +24234,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/wire/allowance_quoted_member_spelling_test.go",
+   "id": "kit/wire/allowance_quoted_member_spelling_test.go#TestAnAllowanceOverAQuotedMemberNamesItsExactSpelling",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAnAllowanceOverAQuotedMemberNamesItsExactSpelling",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/wire/asyncapi_test.go",
    "id": "kit/wire/asyncapi_test.go#TestAsyncStructureAndLinks",
    "kind": "go",
@@ -24310,6 +24329,25 @@
   {
    "area": "kit",
    "evidence": "not-round-named",
+   "file": "kit/wire/authorization_member_names_test.go",
+   "id": "kit/wire/authorization_member_names_test.go#TestAuthorizationMemberNamesCannotBorrowReviewedTransitions",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAuthorizationMemberNamesCannotBorrowReviewedTransitions",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
    "file": "kit/wire/golden_writer_identity_test.go",
    "id": "kit/wire/golden_writer_identity_test.go#TestReadOnlyGoldenRefusalPreservesTheParentIdentity",
    "kind": "go",
@@ -24325,6 +24363,29 @@
    "unique_reach": [],
    "unique_reach_kind": "symbols",
    "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "assertions_in_file": 4,
+   "evidence": "only file in its package reaching wire.Break",
+   "file": "kit/wire/reviewed_widening_gains_no_feature_test.go",
+   "id": "kit/wire/reviewed_widening_gains_no_feature_test.go#TestAReviewedWideningCoversNoFeatureTheDoorGained",
+   "kind": "go",
+   "layer": "behaviour",
+   "merge_into": "",
+   "name": "TestAReviewedWideningCoversNoFeatureTheDoorGained",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "rename_to": "areviewed_widening_covers_no_feature_the_door_gained_test.go",
+   "round_named": true,
+   "rule": "",
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [
+    "wire.Break"
+   ],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep-rewrite"
   },
   {
    "area": "kit",
@@ -24353,6 +24414,82 @@
    "kind": "go",
    "layer": "behaviour",
    "name": "TestExplicitAllowances",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/wire/wire_test.go",
+   "id": "kit/wire/wire_test.go#TestFeatureDeclarationIsCompared",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestFeatureDeclarationIsCompared",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/wire/wire_test.go",
+   "id": "kit/wire/wire_test.go#TestGoldenRefusesFeatureMutationsBeforeWriting",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestGoldenRefusesFeatureMutationsBeforeWriting",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/wire/wire_test.go",
+   "id": "kit/wire/wire_test.go#TestAllowancesCoverOnlyWhatTheyName",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAllowancesCoverOnlyWhatTheyName",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "kit",
+   "evidence": "not-round-named",
+   "file": "kit/wire/wire_test.go",
+   "id": "kit/wire/wire_test.go#TestAuthorizationIdentitySpellings",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestAuthorizationIdentitySpellings",
    "needs_db": false,
    "pkg": "kit/wire",
    "round_named": false,
@@ -52627,7 +52764,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1286,
+  "files": 1289,
   "forge_runs": [
    408,
    413,
@@ -52661,7 +52798,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2282,
+   "behaviour": 2289,
    "composition": 286,
    "contract": 19,
    "journey": 66
@@ -52678,26 +52815,26 @@
    "ui/export": "81.6% of statements",
    "ui/screens": "19.4% of statements"
   },
-  "round_named_ceiling": 215,
-  "round_named_files": 215,
-  "rows": 2653,
+  "round_named_ceiling": 216,
+  "round_named_files": 216,
+  "rows": 2660,
   "tiers": {
    "merge": 1639,
    "nightly": 66,
-   "push": 948
+   "push": 955
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1071,
-   "keep-rewrite": 70,
+   "keep": 1073,
+   "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2306,
-   "keep-rewrite": 132,
+   "keep": 2312,
+   "keep-rewrite": 133,
    "merge": 215
   }
  }
