@@ -48,6 +48,7 @@ function mount(root) {
 		file: root.querySelector("[data-richtext-file]"),
 		draftBar: root.querySelector("[data-richtext-draft-bar]"),
 		preview: root.querySelector("[data-richtext-preview]"),
+		offer: root.querySelector("[data-richtext-offer]"),
 	};
 	control.editor = createEditor(control);
 	bindChrome(control);
@@ -63,7 +64,9 @@ function createEditor(control) {
 	const limit = Number(control.root.dataset.richtextMax || 0);
 	const extensions = [
 		Document, Paragraph, Text,
-		Heading.configure({ levels: [1, 2, 3, 4] }),
+		// Levels 2 to 4: kit/richtext refuses a level-1 heading at the write, so a
+		// document holding one could be typed and never saved.
+		Heading.configure({ levels: [2, 3, 4] }),
 		Bold, Italic, Strike, Code, Link,
 		Blockquote, CodeBlock, HardBreak, HorizontalRule,
 		BulletList, OrderedList, ListItem, TaskList, TaskItem.configure({ nested: true }),
@@ -75,15 +78,26 @@ function createEditor(control) {
 	];
 	if (limit > 0) extensions.push(CharacterCount.configure({ limit }));
 
+	// Every callback below takes the one props object this Tiptap emits for its
+	// event: {editor, transaction, appendedTransactions} for transaction and
+	// update, {editor, transaction} for selectionUpdate, {editor, event, slice}
+	// for paste. Keyboard handling is not an event here at all — the editor ships
+	// no keydown event — so it is a ProseMirror editor prop.
 	const editor = new Editor({
 		element: control.surface,
 		extensions,
 		content: control.textarea.value || "",
 		contentType: "markdown",
 		editable: !control.textarea.disabled && !control.textarea.readOnly,
+		editorProps: {
+			handleKeyDown: (_view, event) => handleKey(control, event),
+			// The editable element is the field's control: it carries the field's own
+			// name, which the hidden textarea no longer speaks for.
+			attributes: { "aria-label": control.root.dataset.richtextName || "", "aria-multiline": "true" },
+		},
 		onUpdate: () => commit(control),
-		onSelectionUpdate: () => positionBubble(control),
-		onTransaction: (_transaction, changed) => { if (changed.docChanged) return; updatePressed(control); },
+		onSelectionUpdate: () => { positionBubble(control); updatePressed(control); },
+		onTransaction: ({ transaction }) => { if (!transaction.docChanged) updatePressed(control); },
 	});
 	return editor;
 }
@@ -116,7 +130,14 @@ function count(control) {
 }
 
 function wordsLabel(control, words) {
-	return (control.root.dataset.richtextWords || "{count} words").replace("{count}", String(words));
+	return word(control, "richtextWords").replace("{count}", String(words));
+}
+
+// word is one sentence the page already drew, in the request's language. This file
+// holds no prose: a line the server did not draw is a line the field does not say,
+// and never one the browser writes in whichever language it happens to ship in.
+function word(control, name) {
+	return control.root.dataset[name] || "";
 }
 
 // mark is how the rest of the page learns what the field is doing. A module's own
@@ -126,7 +147,7 @@ function mark(control, state, detail) {
 	const payload = Object.assign({ state: state, at: Date.now() }, detail || {});
 	control.root.dispatchEvent(new CustomEvent("richtext:status", { bubbles: true, detail: payload }));
 	if (!control.status) return;
-	const said = control.root.dataset["richtextWord" + state.charAt(0).toUpperCase() + state.slice(1)];
+	const said = word(control, "richtextWord" + state.charAt(0).toUpperCase() + state.slice(1));
 	if (said) {
 		control.status.textContent = said;
 		control.status.hidden = false;
@@ -143,6 +164,11 @@ function schedule(control, previous) {
 // whose module script never ran — no JavaScript, a fetch that failed, a browser
 // too old for ES modules — keeps the plain textarea it was drawn with.
 function reveal(control) {
+	// One surface, not two. The textarea keeps the value and posts it, but the
+	// editor is what the person sees and types into from here on: leaving both
+	// visible would offer two documents for one field, and the editor's own wins
+	// every commit, so the one a person could still type in would be a lie.
+	control.textarea.hidden = true;
 	if (control.toolbar) control.toolbar.hidden = false;
 	control.surface.hidden = false;
 	if (control.count) count(control);
@@ -169,7 +195,6 @@ function bindChrome(control) {
 	}
 	bindSlash(control);
 	bindLink(control);
-	bindShortcuts(control);
 	updatePressed(control);
 }
 
@@ -190,7 +215,6 @@ function run(control, command, argument) {
 		case "taskList": chain().toggleTaskList().run(); break;
 		case "table": chain().createTable({ rows: 2, cols: 2, rowsWithHeader: 1 }).run(); break;
 		case "rule": chain().setHorizontalRule().run(); break;
-		case "heading1": chain().toggleHeading({ level: 1 }).run(); break;
 		case "heading2": chain().toggleHeading({ level: 2 }).run(); break;
 		case "heading3": chain().toggleHeading({ level: 3 }).run(); break;
 		case "paragraph": chain().setParagraph().run(); break;
@@ -198,7 +222,7 @@ function run(control, command, argument) {
 		case "redo": editor.commands.redo(); break;
 		case "link": openLink(control); break;
 		case "link-save": saveLink(control); break;
-		case "link-remove": editor.chain().focus().extendMarkRange("link").unsetLink().run(); hideLink(control); break;
+		case "link-remove": removeLink(control); hideLink(control); break;
 		case "image": pickFile(control); break;
 		case "preview": togglePreview(control); break;
 		default: mark(control, "error", { reason: "unknown command " + command });
@@ -219,7 +243,7 @@ function updatePressed(control) {
 
 function isActive(control, name) {
 	const editor = control.editor;
-	const levels = { heading1: 1, heading2: 2, heading3: 3 };
+	const levels = { heading2: 2, heading3: 3 };
 	if (name in levels) return editor.isActive("heading", { level: levels[name] });
 	if (name === "paragraph") return editor.isActive("paragraph");
 	if (name === "link") return editor.isActive("link");
@@ -259,12 +283,6 @@ function positionBubble(control) {
 // the drawn rows as the author keeps typing, and lets the keyboard choose one. The
 // rows are the server's markup; only which of them are showing is computed here.
 function bindSlash(control) {
-	control.editor.on("keydown", (_view, event) => {
-		if (control.menu && !control.menu.hidden) return menuKeys(control, event);
-		if (event.key !== "Escape") return false;
-		hideFloating(control);
-		return true;
-	});
 	control.editor.on("update", () => {
 		const empty = currentText(control);
 		if (empty === "/") openMenu(control, "");
@@ -365,14 +383,25 @@ function bindLink(control) {
 		if (event.key === "Enter") { event.preventDefault(); saveLink(control); }
 		if (event.key === "Escape") { event.preventDefault(); hideLink(control); control.editor.commands.focus(); }
 	});
-	control.editor.on("paste", (view, event) => {
-		const text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
-		if (!isLink(text) || control.editor.state.selection.empty) return false;
+	bindPasteLink(control);
+}
+
+// bindPasteLink is the URL-over-a-selection spelling, and it is a capture-phase
+// listener one rung above the element ProseMirror owns — the drawn surface —
+// rather than the editor's `paste` event:
+// ProseMirror parses a paste as soon as its handlers see it and replaces whatever
+// was selected, so the selection the author means to link is gone by the time a
+// listener downstream could answer. Answering before it is the only way to keep
+// the words and add the address.
+function bindPasteLink(control) {
+	control.surface.addEventListener("paste", (event) => {
+		const text = event.clipboardData ? event.clipboardData.getData("text/plain").trim() : "";
+		if (!isLink(text) || control.editor.state.selection.empty) return;
 		event.preventDefault();
-		control.editor.chain().focus().extendMarkRange("link").setLink({ href: text.trim() }).run();
+		event.stopImmediatePropagation();
+		linkSelection(control, text);
 		commit(control);
-		return true;
-	});
+	}, true);
 }
 
 function isLink(text) {
@@ -394,17 +423,37 @@ function openLink(control) {
 function saveLink(control) {
 	const href = control.linkInput.value.trim();
 	if (href === "") {
-		control.editor.chain().focus().extendMarkRange("link").unsetLink().run();
+		removeLink(control);
 	} else if (!isLink(href)) {
 		mark(control, "error", { reason: "scheme" });
-		control.status.textContent = control.root.dataset.richtextBadLink || "That address is not a link this page may publish.";
+		control.status.textContent = word(control, "richtextBadLink");
 		control.status.hidden = false;
 		return;
 	} else {
-		control.editor.chain().focus().extendMarkRange("link").setLink({ href }).run();
+		linkSelection(control, href);
 	}
 	hideLink(control);
 	commit(control);
+}
+
+// linkSelection and removeLink are the address applied to a selection. The bundled
+// Link is a bare mark — it carries href and title and ships no setLink command —
+// so the mark is set by name, which is also the only way a mark the editor does
+// not know about could be applied at all.
+function linkSelection(control, href) {
+	const { state } = control.editor;
+	const link = state.schema.marks.link;
+	const { from, to } = state.selection;
+	if (!link || from === to) return;
+	control.editor.view.dispatch(state.tr.addMark(from, to, link.create({ href: href, title: null })).scrollIntoView());
+}
+
+function removeLink(control) {
+	const { state } = control.editor;
+	const link = state.schema.marks.link;
+	const { from, to } = state.selection;
+	if (!link || from === to) return;
+	control.editor.view.dispatch(state.tr.removeMark(from, to, link).scrollIntoView());
 }
 
 function hideLink(control) {
@@ -415,9 +464,24 @@ function hideLink(control) {
 // ships no input rules in the extensions this bundle carries, and the spellings are
 // §1's contract with an author, so they live here: a few lines that turn the line
 // the caret sits on into the block its prefix names.
-function bindShortcuts(control) {
+// handleKey is the editor's whole keyboard surface: the open menu takes the keys
+// first, Escape closes what is floating, and a space is where a block spelling
+// ends. It is an editor prop rather than an event because this Tiptap emits no
+// keydown event — a listener on one would never be called.
+function handleKey(control, event) {
+	if (control.menu && !control.menu.hidden) return menuKeys(control, event);
+	if (event.key === "Escape") { hideFloating(control); return true; }
+	return blockSpelling(control, event);
+}
+
+// blockSpelling turns the line the caret sits on into the block its prefix names,
+// which is §1's contract with an author. The keystroke has not reached the document
+// yet, so the line is read with the character being typed appended: the space that
+// ends "##" is the last character of the spelling, not a character after it.
+function blockSpelling(control, event) {
+	if (event.key !== " " || control.editor.isActive("codeBlock")) return false;
+	const line = currentText(control);
 	const rules = [
-		[/^# (.*)$/, () => run(control, "heading1")],
 		[/^## (.*)$/, () => run(control, "heading2")],
 		[/^### (.*)$/, () => run(control, "heading3")],
 		[/^- (.*)$/, () => run(control, "bulletList")],
@@ -426,27 +490,27 @@ function bindShortcuts(control) {
 		[/^> (.*)$/, () => run(control, "quote")],
 		[/^```(.*)$/, () => run(control, "codeBlock")],
 	];
-	control.editor.on("keydown", (_view, event) => {
-		if (event.key !== " " || control.editor.isActive("codeBlock")) return false;
-		const text = currentText(control);
-		for (const [pattern, apply] of rules) {
-			if (!pattern.test(text)) continue;
-			event.preventDefault();
-			const { from } = control.editor.state.selection;
-			control.editor.chain().focus()
-				.deleteRange({ from: from - text.length, to: from })
-				.run();
-			apply();
-			return true;
-		}
-		if (text === "---") {
-			event.preventDefault();
-			const { from } = control.editor.state.selection;
-			control.editor.chain().focus().deleteRange({ from: from - 3, to: from }).setHorizontalRule().run();
-			return true;
-		}
-		return false;
-	});
+	for (const [pattern, apply] of rules) {
+		if (!pattern.test(line + " ")) continue;
+		event.preventDefault();
+		dropLine(control, line);
+		apply();
+		return true;
+	}
+	if (line === "---") {
+		event.preventDefault();
+		dropLine(control, line);
+		control.editor.chain().focus().setHorizontalRule().run();
+		return true;
+	}
+	return false;
+}
+
+// dropLine removes the spelling the author just typed, so the block that replaces
+// it starts where the marker started.
+function dropLine(control, text) {
+	const { from } = control.editor.state.selection;
+	control.editor.chain().focus().deleteRange({ from: from - text.length, to: from }).run();
 }
 
 // togglePreview is a read-only view of the same document. It is not the published
@@ -457,7 +521,7 @@ function togglePreview(control) {
 	control.editor.setEditable(!previewing, true);
 	if (control.preview) {
 		control.preview.hidden = !previewing;
-		control.preview.textContent = control.root.dataset.richtextPreviewNote || "";
+		control.preview.textContent = word(control, "richtextPreviewNote");
 	}
 	updatePressed(control);
 }
@@ -479,7 +543,7 @@ function bindUploads(control) {
 			control.file.value = "";
 		});
 	}
-	control.editor.on("paste", (view, event) => {
+	control.editor.on("paste", ({ event }) => {
 		const files = filesIn(event);
 		if (files.length === 0) return false;
 		event.preventDefault();
@@ -518,7 +582,7 @@ function upload(control, file) {
 	request.responseType = "text";
 	request.upload.addEventListener("progress", (event) => {
 		if (!event.lengthComputable) return;
-		statusLine(control, control.root.dataset.richtextUploading || "Uploading",
+		statusLine(control, word(control, "richtextUploading"),
 			Math.round((event.loaded / event.total) * 100));
 		mark(control, "uploading", { percent: Math.round((event.loaded / event.total) * 100) });
 	});
@@ -544,21 +608,22 @@ function inserted(control, request, file) {
 		id = parsed.id || (parsed.file && parsed.file.id) || "";
 	} catch { id = ""; }
 	if (id === "") return refused(control, { file: file }, 0, "");
-	control.editor.chain().focus().setImage({ src: "pk-file:" + id, alt: "", title: "" }).run();
+	const src = "pk-file:" + id;
+	control.editor.chain().focus().setImage({ src, alt: "", title: "" }).run();
 	commit(control);
-	askAlt(control, file);
+	askAlt(control, file, positionOfImage(control, src));
 }
 
 function refused(control, state, status, detail) {
-	const words = control.root.dataset.richtextFailed || "Upload failed";
+	const words = word(control, "richtextFailed");
 	const retryable = status === 0 || status === 408 || status === 429 || status >= 500;
 	statusLine(control, detail === "" ? words : words + " — " + detail, null);
 	mark(control, "upload-failed", { status: status, detail: detail, retry: retryable });
 	offer(control, {
 		note: detail === "" ? words : words + " — " + detail,
 		actions: retryable
-			? [{ label: control.root.dataset.richtextRetry || "Retry", act: () => upload(control, state.file) }]
-			: [{ label: control.root.dataset.richtextChoose || "Choose another file", act: () => pickFile(control) }],
+			? [{ label: word(control, "richtextRetry"), act: () => upload(control, state.file) }]
+			: [{ label: word(control, "richtextChoose"), act: () => pickFile(control) }],
 	});
 }
 
@@ -572,20 +637,21 @@ function problemDetail(request) {
 // askAlt is the prompt on insert: alt text is required, or the picture is
 // decorative, which is the same answer with a different reason. Escape leaves the
 // image with no alt text and says so rather than inventing one.
-function askAlt(control, file) {
-	const prompt = element("div", { role: "group", "aria-label": control.root.dataset.richtextAltTitle || "Image text" });
-	const label = element("label", {}, control.root.dataset.richtextAltTitle || "Alt text");
+function askAlt(control, file, at) {
+	if (word(control, "richtextAltTitle") === "" || word(control, "richtextSave") === "") return;
+	const prompt = element("div", { role: "group", "aria-label": word(control, "richtextAltTitle") });
+	const label = element("label", {}, word(control, "richtextAltTitle"));
 	const input = element("input", { type: "text", required: "" });
 	const decorative = element("input", { type: "checkbox" });
-	const decorativeLabel = element("label", {}, control.root.dataset.richtextDecorative || "Decorative");
-	const save = element("button", { type: "button" }, control.root.dataset.richtextSave || "Save");
+	const decorativeLabel = element("label", {}, word(control, "richtextDecorative"));
+	const save = element("button", { type: "button" }, word(control, "richtextSave"));
 	const wrapper = element("div", {}, [label, input, decorative, decorativeLabel, save]);
 	prompt.append(wrapper);
 	control.surface.parentElement.insertBefore(prompt, control.surface.nextSibling);
 	input.focus();
 	const finish = () => {
 		const alt = decorative.checked ? "" : input.value.trim();
-		setLastImage(control, { alt: alt, title: lastTitle(control) });
+		setImage(control, at, { alt: alt, title: lastTitle(control) });
 		prompt.remove();
 		commit(control);
 	};
@@ -599,22 +665,27 @@ function lastTitle(control) {
 	return control.editor.getAttributes("image").title || "";
 }
 
-function setLastImage(control, attributes) {
-	const { selection } = control.editor.state;
-	const node = selection.node || (selection.$from.nodeAfter);
-	if (node && node.type.name === "image") {
-		control.editor.chain().focus().updateAttributes("image", attributes).run();
-		return;
-	}
-	control.editor.chain().focus().command(({ state, tr }) => {
-		let done = false;
-		state.doc.descendants((child, position) => {
-			if (done || child.type.name !== "image") return;
-			tr.setNodeMarkup(position, undefined, Object.assign({}, child.attrs, attributes));
-			done = true;
-			return false;
-		});
-		return done;
+// positionOfImage is where the picture that just arrived sits in the document. The
+// alt text is asked after the insert, by which time focus has moved, and a document
+// with two images would otherwise answer for the first one.
+function positionOfImage(control, src) {
+	let at = -1;
+	control.editor.state.doc.descendants((node, position) => {
+		if (at >= 0) return false;
+		if (node.type.name !== "image") return;
+		if (node.attrs.src !== src) return;
+		at = position;
+		return false;
+	});
+	return at;
+}
+
+function setImage(control, at, attributes) {
+	control.editor.chain().command(({ tr }) => {
+		const node = tr.doc.nodeAt(at);
+		if (!node || node.type.name !== "image") return false;
+		tr.setNodeMarkup(at, undefined, Object.assign({}, node.attrs, attributes));
+		return true;
 	}).run();
 }
 
@@ -622,20 +693,22 @@ function setLastImage(control, attributes) {
 // draft that came back from another tab. It replaces the last one rather than
 // stacking, because a form with three error widgets is a form nobody reads.
 function offer(control, spec) {
-	const note = element("p", {}, spec.note);
-	const actions = element("div", { role: "group", "aria-label": control.root.dataset.richtextChoices || "Choices" });
+	const slot = control.offer;
+	if (!slot) return;
+	const actions = element("div", { role: "group", "aria-label": word(control, "richtextChoices") });
 	for (const action of spec.actions) {
+		if (!action.label) continue;
 		const button = element("button", { type: "button" }, action.label);
 		button.addEventListener("click", action.act);
 		actions.append(button);
 	}
-	control.root.querySelectorAll("[data-richtext-offer]").forEach((old) => old.remove());
-	const slot = element("div", { "data-richtext-offer": "" }, [note, actions]);
-	control.root.insertBefore(slot, control.surface);
+	slot.replaceChildren(element("p", {}, spec.note), actions);
+	slot.hidden = false;
+	slot.querySelector("button")?.focus();
 }
 
 function statusLine(control, text, percent) {
-	if (!control.status) return;
+	if (!control.status || text === "") return;
 	control.status.hidden = false;
 	control.status.textContent = percent === null ? text : text + " " + percent + "%";
 }
@@ -699,7 +772,7 @@ function keepDraft(control, cleared) {
 		mark(control, "drafted");
 	} catch {
 		mark(control, "offline");
-		statusLine(control, control.root.dataset.richtextNoDraft || "This browser will not keep a draft", null);
+		statusLine(control, word(control, "richtextNoDraft"), null);
 	}
 }
 
@@ -717,7 +790,7 @@ function restoreOffered(control) {
 	control.draftBar.hidden = false;
 	const when = new Date(stored.savedAt);
 	const label = Number.isNaN(when.getTime()) ? "" : " " + when.toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
-	control.draftBar.firstElementChild.textContent = (control.root.dataset.richtextDraftFound || "") + label;
+	control.draftBar.firstElementChild.textContent = (word(control, "richtextDraftFound")) + label;
 }
 
 // autosave writes one field and quotes the tag this form was drawn from. A body
@@ -748,7 +821,7 @@ async function autosave(control) {
 		compare(control);
 	} else if (!response.ok) {
 		mark(control, "error", { status: response.status });
-		statusLine(control, problemDetail(response) || control.root.dataset.richtextRefused || "Not saved", null);
+		statusLine(control, problemDetail(response) || word(control, "richtextRefused"), null);
 	} else {
 		mark(control, "saved");
 	}
@@ -768,14 +841,14 @@ async function compare(control) {
 	} catch { theirs = ""; }
 	const theirsText = JSON.parse(theirs || "null");
 	offer(control, {
-		note: control.root.dataset.richtextConflict || "Changed by someone else — compare",
+		note: word(control, "richtextConflict"),
 		actions: [
-			{ label: control.root.dataset.richtextKeep || "Keep mine", act: () => { control.etag = tag; save(control); } },
-			{ label: control.root.dataset.richtextTheirs || "Take theirs", act: () => {
+			{ label: word(control, "richtextKeep"), act: () => { control.etag = tag; save(control); } },
+			{ label: word(control, "richtextTheirs"), act: () => {
 				if (theirsText && typeof theirsText[control.field] === "string") load(control, theirsText[control.field]);
 				control.etag = tag;
 			} },
-			{ label: control.root.dataset.richtextMerge || "Merge by hand", act: () => { control.etag = tag; mark(control, "dirty"); } },
+			{ label: word(control, "richtextMerge"), act: () => { control.etag = tag; mark(control, "dirty"); } },
 		],
 	});
 	control.conflicted = true;
