@@ -34438,6 +34438,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/webhook/internal/target_refusal_test.go",
+   "id": "modules/webhook/internal/target_refusal_test.go#TestARefusedTargetReturnsNoRowAndChangesNothing",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestARefusedTargetReturnsNoRowAndChangesNothing",
+   "needs_db": true,
+   "pkg": "modules/webhook/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/webhook/internal/targeted_batch_test.go",
    "id": "modules/webhook/internal/targeted_batch_test.go#TestChangingDestinationStopsUnsentRequestsToThePreviousAddress",
    "kind": "go",
@@ -51081,7 +51100,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1227,
+  "files": 1228,
   "forge_runs": [
    408,
    413,
@@ -51115,7 +51134,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2249,
+   "behaviour": 2250,
    "composition": 248,
    "contract": 19,
    "journey": 57
@@ -51134,9 +51153,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2573,
+  "rows": 2574,
   "tiers": {
-   "merge": 1587,
+   "merge": 1588,
    "nightly": 57,
    "push": 929
   },
@@ -51144,13 +51163,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1012,
+   "keep": 1013,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2226,
+   "keep": 2227,
    "keep-rewrite": 132,
    "merge": 215
   }
