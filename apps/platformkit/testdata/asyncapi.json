@@ -1855,6 +1855,57 @@
       "summary": "Every tenant's delivery of content.unpublished.",
       "title": "content.unpublished"
     },
+    "file.altered": {
+      "address": "platformkit.*.file.altered",
+      "description": "Published at platformkit.{tenantId}.file.altered; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "file.altered": {
+          "contentType": "application/json",
+          "name": "file.altered",
+          "payload": {
+            "properties": {
+              "alt": {
+                "type": "string"
+              },
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "decorative": {
+                "type": "boolean"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "height": {
+                "type": "integer"
+              },
+              "size": {
+                "type": "integer"
+              },
+              "width": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "fileId",
+              "alt",
+              "decorative",
+              "size",
+              "width",
+              "height",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.altered",
+          "title": "file.altered"
+        }
+      },
+      "summary": "Every tenant's delivery of file.altered.",
+      "title": "file.altered"
+    },
     "file.deleted": {
       "address": "platformkit.*.file.deleted",
       "description": "Published at platformkit.{tenantId}.file.deleted; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
@@ -5139,6 +5190,23 @@
       "tags": [
         {
           "name": "content"
+        }
+      ]
+    },
+    "file.altered": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.altered"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.altered/messages/file.altered"
+        }
+      ],
+      "summary": "The file module publishes file.altered.",
+      "tags": [
+        {
+          "name": "file"
         }
       ]
     },
