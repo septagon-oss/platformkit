@@ -138,6 +138,7 @@ test('typed admission refuses the entire unsupported request without mutating th
     [s => { s.requiredFeatures.push('source-tokens.v1') }, /feature/],
     [s => { s.requiredFeatures = [] }, /feature/],
     [s => { s.sourceTokens.modes[0].fonts = captured.sourceTokens.modes[0].fonts }, /font/],
+    [s => { s.sourceTokens.modes[0].dimensions = captured.sourceTokens.modes[0].dimensions }, /dimensions/],
     [s => { s.sourceTokens.shadows = captured.sourceTokens.shadows }, /shadow/],
     [s => { s.sourceTokens.easings = captured.sourceTokens.easings }, /easing/],
     [s => { s.sourceTokens.transitions = captured.sourceTokens.transitions }, /transition/],
