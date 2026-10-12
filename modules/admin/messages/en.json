@@ -626,5 +626,59 @@
   },
   "admin.account.language.unreadable": {
     "translation": "This form could not be read, so nothing was changed."
+  },
+  "admin.roles.denied.unreadable": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "This form could not be read, so nothing was changed.",
+    "plural": {
+      "": "This form could not be read, so nothing was changed."
+    }
+  },
+  "admin.roles.denied.name": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "role %q is not a lower-case identifier",
+    "plural": {
+      "": "role %q is not a lower-case identifier"
+    }
+  },
+  "admin.roles.denied.name.length": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "a role name is at most %d characters, and %q is %d",
+    "plural": {
+      "": "a role name is at most %d characters, and %q is %d"
+    }
+  },
+  "admin.roles.denied.permission.undeclared": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "no module defines the permission %q, so a role naming it would grant nothing",
+    "plural": {
+      "": "no module defines the permission %q, so a role naming it would grant nothing"
+    }
+  },
+  "admin.roles.denied.permission.operator": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%q belongs to the operator of this installation, and %s is not it",
+    "plural": {
+      "": "%q belongs to the operator of this installation, and %s is not it"
+    }
+  },
+  "admin.roles.denied.last_administration": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
+    "plural": {
+      "": "%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again"
+    }
   }
 }

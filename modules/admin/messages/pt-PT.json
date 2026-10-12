@@ -626,5 +626,59 @@
   },
   "admin.account.language.unreadable": {
     "translation": "Este formulário não pôde ser lido, por isso nada foi alterado."
+  },
+  "admin.roles.denied.unreadable": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "Este formulário não foi possível ler, por isso nada foi alterado.",
+    "plural": {
+      "": "Este formulário não foi possível ler, por isso nada foi alterado."
+    }
+  },
+  "admin.roles.denied.name": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "a função %q não é um identificador em minúsculas",
+    "plural": {
+      "": "a função %q não é um identificador em minúsculas"
+    }
+  },
+  "admin.roles.denied.name.length": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "um nome de função tem no máximo %d caracteres, e %q tem %d",
+    "plural": {
+      "": "um nome de função tem no máximo %d caracteres, e %q tem %d"
+    }
+  },
+  "admin.roles.denied.permission.undeclared": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "nenhum módulo desta instalação define a permissão %q, por isso uma função que a nomeie não concederia nada",
+    "plural": {
+      "": "nenhum módulo desta instalação define a permissão %q, por isso uma função que a nomeie não concederia nada"
+    }
+  },
+  "admin.roles.denied.permission.operator": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%q pertence ao operador desta instalação, e %s não o é",
+    "plural": {
+      "": "%q pertence ao operador desta instalação, e %s não o é"
+    }
+  },
+  "admin.roles.denied.last_administration": {
+    "references": [
+      "modules/admin/internal/roles.go"
+    ],
+    "translation": "%q é a última função que concede %s, e um tenant a quem nenhuma função conceda essa permissão não voltará a poder alterar as suas funções",
+    "plural": {
+      "": "%q é a última função que concede %s, e um tenant a quem nenhuma função conceda essa permissão não voltará a poder alterar as suas funções"
+    }
   }
 }

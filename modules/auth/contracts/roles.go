@@ -1,7 +1,6 @@
 package contracts
 
 import (
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -23,14 +22,22 @@ const MaxRoleName = 64
 
 // ValidRoleName normalizes a role name and checks the identifier shared by
 // role administration and tenant provisioning.
+//
+// Its refusals are fault.Reason values, so the rule that refused survives as a
+// named verdict rather than as prose: the sentence here is the one this file is
+// written in, which is what a problem document and a log line print, and the key is
+// what whoever renders the refusal for a reader looks their own copy up under. See
+// CheckedPermissions for the same choice.
 func ValidRoleName(name string) (string, error) {
 	name = strings.ToLower(strings.TrimSpace(name))
 	if !roleName.MatchString(name) {
-		return "", fmt.Errorf("%w: role %q is not a lower-case identifier", fault.ErrInvalid, name)
+		return "", &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.auth.role.name",
+			Text: "role %q is not a lower-case identifier", Args: []any{name}}
 	}
 	if len(name) > MaxRoleName {
-		return "", fmt.Errorf("%w: a role name is at most %d characters, and %q is %d",
-			fault.ErrInvalid, MaxRoleName, name, len(name))
+		return "", &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.auth.role.name.length",
+			Text: "a role name is at most %d characters, and %q is %d",
+			Args: []any{MaxRoleName, name, len(name)}}
 	}
 	return name, nil
 }
@@ -141,12 +148,17 @@ func CheckedAdministration(name string, was, want Permissions, others func() ([]
 			return nil
 		}
 	}
-	return fmt.Errorf("%w: %q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
-		fault.ErrInvalid, name, PermissionRoleManage)
+	return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.auth.role.last_administration",
+		Text: "%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again",
+		Args: []any{name, PermissionRoleManage}}
 }
 
 // CheckedPermissions normalises a permission list and refuses the two ways one can be
-// wrong. The result is sorted and deduplicated, so "the same permissions in
+// wrong. Both refusals name themselves (fault.Reason) rather than only saying so in
+// prose: the sentence below is what a problem document and a log line carry, and the
+// key is what the screen offering this write answers with, in the language of the
+// person it refused. This module owns the rule and so owns both; who renders it is not
+// this module's business, which is why the key is a name and not an import. The result is sorted and deduplicated, so "the same permissions in
 // another order" is the same value and SetRole can tell that nothing changed.
 func CheckedPermissions(permissions []string, declared []tenancy.Grant, tenant tenancy.Tenant) (Permissions, error) {
 	out := make(Permissions, 0, len(permissions))
@@ -167,11 +179,13 @@ func CheckedPermissions(permissions []string, declared []tenancy.Grant, tenant t
 		i := slices.IndexFunc(declared, func(g tenancy.Grant) bool { return g.Permission == p })
 		switch {
 		case i < 0:
-			return nil, fmt.Errorf("%w: no module defines the permission %q, so a role naming it would grant nothing",
-				fault.ErrInvalid, p)
+			return nil, &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.auth.permission.undeclared",
+				Text: "no module defines the permission %q, so a role naming it would grant nothing",
+				Args: []any{p}}
 		case declared[i].Operator && !tenant.Operator:
-			return nil, fmt.Errorf("%w: %q belongs to the operator of this installation, and %s is not it",
-				fault.ErrInvalid, p, tenant.Slug)
+			return nil, &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.auth.permission.operator",
+				Text: "%q belongs to the operator of this installation, and %s is not it",
+				Args: []any{p, tenant.Slug}}
 		}
 		out = append(out, p)
 	}
