@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { makePublisher, publishAs } from './steps/content';
+import { signIn } from './steps/kernel';
+import { openHome, signInDoor } from './steps/public';
 
 // The public site: what an operator publishes through the admin's generated
 // screens is what an anonymous visitor reads at the root of the host. The
@@ -7,13 +9,11 @@ import { makePublisher, publishAs } from './steps/content';
 // journey is about the seam between the two modules and the shell, not about
 // the forms, which admin-tasks.spec.ts already drives.
 
-const email = process.env.PLATFORMKIT_E2E_EMAIL ?? 'admin@e2e.test';
-const password = process.env.PLATFORMKIT_E2E_PASSWORD ?? '';
 const publisherPass = 'a passphrase for the publisher';
 const stamp = Date.now();
 const slug = `welcome-${stamp}`;
 
-// The first three lines are the tenant's first day: `platformkit bootstrap` created
+// The first lines are the tenant's first day: `platformkit bootstrap` created
 // the tenant through the tenant module, whose creation hook applied the starter seed
 // (apps/platformkit/seed/starter), so the visitor lands on a page and not on an
 // apology. The empty state this case used to assert is still what a site with a home
@@ -21,7 +21,7 @@ const slug = `welcome-${stamp}`;
 // TestSiteRefusesWhatItCannotServe covers those words — but it is no longer what a
 // new installation shows.
 test('a new tenant opens on its starter home, and a published page takes its place', async ({ page, browser }) => {
-  await page.goto('/');
+  await openHome(page);
   await expect(page.getByRole('heading', { name: 'Home' })).toBeVisible();
   await expect(page.getByText('This site is served by PlatformKit')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
@@ -29,17 +29,14 @@ test('a new tenant opens on its starter home, and a published page takes its pla
   // The workspace is entered at its root: /app is the address the public frame is
   // allowed to offer (webcontracts.Links.SignIn, pinned by
   // TestThePublicFrameLinksOnlyTheWorkspaceRoot), and the root is what turns a
-  // visitor with no session towards the form. The bar of a seeded home page offers
-  // that door too — modules/web carries it on every public page now, and
-  // public-frame-links-workspace-root.spec.ts is the browser's evidence for it —
-  // and this journey names the door itself, so it is not at the bar's mercy.
-  // The form and the landing it answers for are main's own: next=%2Fapp, /app after.
-  await page.goto('/app');
-  await expect(page).toHaveURL(/\/app\/admin\/login\?next=%2Fapp$/);
-  await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
-  await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page).toHaveURL(/\/app$/);
+  // visitor with no session towards the form. modules/web carries that door on every
+  // public page now — public-frame-links-workspace-root.spec.ts is the browser's
+  // evidence for it — so the journey follows the entry the page offers rather than
+  // naming the form's address itself: the step requires the entry to exist and the
+  // guard to carry /app back in `next`, which is what makes an entry a door. The
+  // form and the landing it answers for are main's own: next=%2Fapp, /app after.
+  await signInDoor(page);
+  await signIn(page);
 
   const created = await page.request.post('/api/v1/content/contents', {
     data: { slug, title: `Welcome ${stamp}`, kind: 'page', body: `## Hello\n\nThis is **home** number ${stamp}.` },

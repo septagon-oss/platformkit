@@ -342,37 +342,36 @@ func (s Site) view(settings *sitecontracts.SiteSettings, r page.Request, title, 
 	return v
 }
 
-// accent is the tenant's brand colour as the declarations that pin it, in the
-// same three selectors ui/style's ThemeVars uses for the dark theme, narrowed to
-// the modes this page can actually be in. The colour is one value; the pair paints
-// it in two modes, and a colour legible as a link on a light card is not the same
-// colour as the one legible on a dark canvas, so each mode gets its own measured
-// declaration and a visitor who switches modes never sees an unmeasured one.
+// accent is the declarations that pin the tenant's colour, in the three selectors
+// ui/style's ThemeVars uses, narrowed to the modes this page can be in. The colour
+// is one value and the pair paints it in two modes: a colour legible as a link on a
+// light card is not the colour legible on a dark canvas.
 //
-// design.Pair.LegibleAccent is the measurement: the colour as it stands when the
-// finished theme clears both halves of the gate with it, or the nearest colour
-// along its own hue when it does not. It answers the same way for the row a tenant
-// saved before any gate existed as for the write that arrives now, which is why
-// the door that paints measures: refusing the write would leave every installation
-// that already saved the colour painting it unmeasured. Where no colour reads — a
-// palette that fails its own gate — nothing is declared, and the page keeps the
-// accent the stylesheet it links already carries.
+// Three cases, in this order. A value that is neither six hex digits nor the empty
+// colour a tenant that chose none stores is dropped — the grammar is this module's
+// own second line of defence behind the site module's, because this text reaches a
+// style element. A value equal to one of this site's two accents is the
+// installation's own, and goes back as the installation writes it: one char(7)
+// column cannot tell "nobody chose" from "typed, and it happens to be the palette's",
+// and a single value pinned over both modes would be the light accent on a dark page.
+// Anything else is a colour this tenant chose, and is measured per mode at the paint
+// rather than refused at the door, because a row saved before any gate existed is
+// served today and its reader sees the measured colour either way. Where no colour
+// reads — a palette that fails its own gate — nothing is declared and the page keeps
+// the accent of the stylesheet it links.
 func (s Site) accent(settings *sitecontracts.SiteSettings) string {
 	pair := s.palette()
+	stored := settings.PrimaryColor
+	if stored != "" && !colour.MatchString(stored) {
+		return ""
+	}
 	base, other := "light", "dark"
 	if settings.Theme == "dark" {
 		base, other = "dark", "light"
 	}
-	// Characters first, and only this module's own grammar for them: the value
-	// goes into a style element, so anything that is not six hex digits is
-	// dropped rather than interpolated. LegibleAccent parses too; this guard is
-	// the injection defence, not the legibility one. An empty value is not
-	// dropped: it is what a tenant that chose none stores, and such a site wears
-	// the palette's own accent, which that palette's gate issued.
-	if settings.PrimaryColor != "" && !colour.MatchString(settings.PrimaryColor) {
-		return ""
-	}
-	measured, err := pair.LegibleAccent(base, accentWanted(pair, base, settings.PrimaryColor))
+	installation := stored == "" || strings.EqualFold(stored, pair.Light.AccentDefault) ||
+		strings.EqualFold(stored, pair.Dark.AccentDefault)
+	measured, err := s.accentFor(pair, base, stored, installation)
 	if err != nil {
 		return ""
 	}
@@ -381,7 +380,7 @@ func (s Site) accent(settings *sitecontracts.SiteSettings) string {
 	// it: the visitor's stored choice (beforePaint in ui/page moves data-theme)
 	// and, for a site that named no mode, the browser's own preference, which is
 	// the sheet's :root:not([data-theme]) case and outranks the plain :root.
-	alternate, err := pair.LegibleAccent(other, accentWanted(pair, other, settings.PrimaryColor))
+	alternate, err := s.accentFor(pair, other, stored, installation)
 	if err != nil || alternate == measured {
 		return rules
 	}
@@ -392,18 +391,19 @@ func (s Site) accent(settings *sitecontracts.SiteSettings) string {
 	return rules
 }
 
-// accentWanted is the colour to measure for one mode: what the tenant stored, or
-// when the tenant stored none, the accent this palette already paints in that mode
-// — so a site that chose no colour is painted the colour its own palette's gate
-// certified, and says so in the declaration rather than by leaving one out.
-func accentWanted(pair design.Pair, mode, stored string) string {
-	if stored != "" {
-		return stored
+// accentFor is the colour to paint in one mode. The installation's own accent is the
+// colour that mode's sheet is composed from, so it is answered from the pair, which
+// certified it for that mode's canvas. A colour the tenant chose goes through
+// design.Pair.LegibleAccent: the colour as it stands when the finished theme clears
+// its gate, or the nearest colour along its own hue when it does not.
+func (s Site) accentFor(pair design.Pair, mode, stored string, installation bool) (string, error) {
+	if installation {
+		if mode == "dark" {
+			return pair.Dark.AccentDefault, nil
+		}
+		return pair.Light.AccentDefault, nil
 	}
-	if mode == "dark" {
-		return pair.Dark.AccentDefault
-	}
-	return pair.Light.AccentDefault
+	return pair.LegibleAccent(mode, stored)
 }
 
 // palette is the pair this site paints and the pair its tenant's colour is

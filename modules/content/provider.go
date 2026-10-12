@@ -29,6 +29,7 @@ var Module = pkit.NewModule("content", wire,
 	pkit.Needs[richtext.Files](),
 	pkit.Needs[rest.FileUses](),
 	pkit.Needs[rest.Translations](),
+	pkit.Needs[rest.FileShown](),
 	pkit.Provides[contentcontracts.Service](),
 )
 
@@ -37,6 +38,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 		Files:        pkit.Get[richtext.Files](w),
 		Uses:         pkit.Get[rest.FileUses](w),
 		Translations: pkit.Get[rest.Translations](w),
+		Shown:        pkit.Get[rest.FileShown](w),
 	})
 	pkit.Put(w, svc)
 	return manifest, nil

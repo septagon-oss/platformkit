@@ -117,6 +117,22 @@ type Deps struct {
 	// RetainEvery replaces the daily retention sweep with an interval, for a
 	// test. Zero means the schedule.
 	RetainEvery time.Duration
+
+	// VariantEvery replaces the encode pass that builds a stored image's other
+	// widths with an interval, for a deployment that will not wait five minutes
+	// and for a test that cannot wait at all. Zero means the schedule.
+	VariantEvery time.Duration
+
+	// UnusedAfter is the grace period an image is kept after nothing is showing
+	// it, and zero means internal.DefaultUnusedAfter (a day). It is a dependency
+	// and not a constant because how long a person gets to move a picture from one
+	// draft to another without paying for its storage twice is a deployment's
+	// call; a negative number is not "delete immediately" but no sweep at all.
+	UnusedAfter time.Duration
+
+	// UnusedEvery replaces the daily release sweep with an interval, for a test
+	// that cannot wait until ten to five in the morning. Zero means the schedule.
+	UnusedEvery time.Duration
 }
 
 // permissions is what the manifest declares. kit/app checks every route's
@@ -173,6 +189,18 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	retention := internal.NewSweep(deps.Storage, internal.SweepConfig{
 		Retention: deps.Retention, Tenants: deps.Tenants, Every: deps.RetainEvery,
 	})
+	// The encode pass is the third job and the only one that writes bytes rather
+	// than removing them. It needs the service because a width charges for itself
+	// through the same quota an upload does, and it needs the tenant lister
+	// because it walks tenants the way the retention sweep does — which is why
+	// Jobs() mounts nothing when no lister was wired rather than running over
+	// nobody.
+	variants := internal.NewVariants(svc, deps.Storage, deps.Tenants, deps.VariantEvery)
+	// The release sweep is the fourth. It needs no storage — the bytes go on the
+	// strength of the work order it publishes, which is the only thing that can
+	// remove an object after the row's transaction commits — and it needs the
+	// tenant lister for the reason every sweep here does.
+	unused := internal.NewUnused(deps.Tenants, deps.UnusedAfter, deps.UnusedEvery)
 	return svc, module.Module{
 		Name:        "file",
 		Migrations:  Migrations.Files,
@@ -182,10 +210,17 @@ func New(deps Deps) (contracts.Service, module.Module) {
 		Nav: []module.NavEntry{
 			{Label: "Files", Screen: "file/files", Permission: contracts.PermissionFileRead},
 		},
-		// The one piece of periodic work, and it is the cost of writing the
-		// bytes before the row: a transaction that failed after the blob was
-		// written left bytes nobody references, and this removes them.
-		Jobs: append(sweep.Jobs(), retention.Jobs()...),
+		// The periodic work, and it is four things now. The orphan sweep is the
+		// cost of writing the bytes before the row: a transaction that failed after
+		// the blob was written left bytes nobody references, and this removes them.
+		// The retention sweep removes rows whose class ran out. The encode pass
+		// builds the widths of a stored image, which is the one job here that writes
+		// bytes rather than removing them — and the reason it is on the clock is that
+		// an upload's own request should answer with the frame it was given rather
+		// than with four encodes on the way there. The release sweep removes the images
+		// nobody is showing once the grace period has run — the one job that reads the
+		// use ledger rather than writing it.
+		Jobs: append(append(append(sweep.Jobs(), retention.Jobs()...), variants.Jobs()...), unused.Jobs()...),
 		// The one subscription, and it is to this module's own event: the bytes
 		// are removed after the transaction that removed the row commits, and
 		// an event is the only thing delivered exactly then.

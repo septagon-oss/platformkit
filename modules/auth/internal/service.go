@@ -37,6 +37,14 @@ type Delivery struct {
 	Mailer contracts.Mailer
 	Hosts  contracts.Hosts
 	Secure bool
+
+	// Mails is what this module records about a mail it sends itself, with no
+	// notice behind it: one row per send, saying who it went to, which kind it was,
+	// what became of it and which call asked — and no subject, body, link or
+	// credential. A composition that wires none sends its mail exactly as it did
+	// before the record existed and leaves no trace of the attempt, which is the bug
+	// the record exists to close rather than a mode to preserve.
+	Mails contracts.MailLedger
 }
 
 // Service is signing in and what a role may do.
@@ -97,6 +105,14 @@ func (s *Service) MayAsk(ctx context.Context, ip string) bool { return s.limiter
 // contracts.Service.
 func (s *Service) MayRedeem(ctx context.Context, ip string) bool {
 	return s.limiter.Redeemed(ctx, ip)
+}
+
+// MayAskAboutMail counts one read of a delivery record from an address. It is
+// not MayRedeem: the shell polls this read while a person waits for a link, and
+// spending the link's own budget on waiting would lock the person out of the
+// thing they are waiting for.
+func (s *Service) MayAskAboutMail(ctx context.Context, ip string) bool {
+	return s.limiter.AskedAboutMail(ctx, ip)
 }
 
 var _ contracts.Service = (*Service)(nil)

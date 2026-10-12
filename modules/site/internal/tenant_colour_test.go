@@ -11,12 +11,14 @@ import (
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/site/contracts"
-	"github.com/septagon-oss/platformkit/modules/site/internal"
 )
 
 func TestASecondTenantCannotReadOrReplaceTheFirstSitesColour(t *testing.T) {
 	_, conn := dbtest.Schema(t, site.Migrations)
-	svc := internal.NewService()
+	// A service with no palette: this case is about which tenant's row a call can
+	// reach, and an installation with no accent of its own keeps the read of a site
+	// that named none at the empty colour.
+	svc := bareService()
 	first := tenancy.Tenant{ID: uuid.New(), Slug: "first", Name: "First"}
 	second := tenancy.Tenant{ID: uuid.New(), Slug: "second", Name: "Second"}
 	var saved *contracts.SiteSettings
