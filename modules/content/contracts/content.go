@@ -12,7 +12,6 @@ package contracts
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +23,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -151,6 +151,15 @@ func (Content) TableName() string { return "contents" }
 // door it came through. It normalises as well as refuses, and it stamps the
 // author: the context is the one thing that knows whose request this is, which
 // is the same reason kit/events reads the actor off it.
+//
+// Every refusal is a fault.Reason rather than a bare sentence — the verdict, the
+// sentence this module is written in, and the entry of modules/content/messages
+// that sentence is kept under — because a refused write reaches a person on the
+// form they just filled in, and their language is not this package's to decide.
+// The words belong here, beside the rule that refused, and the layer rendering
+// the refusal reads the key: a problem document and a log line keep this text, a
+// page answers it in the reader's, and a composition with no catalogue reads this
+// one. The same shape modules/task/contracts takes for the same reason.
 func (c *Content) Validate(ctx context.Context) error {
 	c.Slug = Slugify(c.Slug)
 	c.Title = strings.TrimSpace(c.Title)
@@ -167,29 +176,38 @@ func (c *Content) Validate(ctx context.Context) error {
 	}
 	switch {
 	case c.Slug == "":
-		return fmt.Errorf("a page needs a slug, and %q leaves nothing a URL can carry", c.Slug)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.slug",
+			Text: "a page needs a slug, and %q leaves nothing a URL can carry", Args: []any{c.Slug}}
 	case c.Title == "":
-		return fmt.Errorf("a page needs a title")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.title",
+			Text: "a page needs a title"}
 	// Characters, not bytes: len() counts bytes, so a title of 80 Chinese
 	// characters used to be refused as 240 and a 200-character column was
 	// handed 200 characters that did not fit.
 	case utf8.RuneCountInString(c.Title) > MaxTitle:
-		return fmt.Errorf("a title is at most %d characters", MaxTitle)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.title.length",
+			Text: "a title is at most %d characters", Args: []any{MaxTitle}}
 	// Bytes here, and deliberately: this one is a bound on what is stored and
 	// on what the public route renders per anonymous request, and both are
 	// measured in bytes. The column carries the same check.
 	case len(c.Body) > MaxBody:
-		return fmt.Errorf("a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page", MaxBody, len(c.Body))
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.body.length",
+			Text: "a body is at most %d bytes, and this one is %d; a document longer than that is a file and not a page",
+			Args: []any{MaxBody, len(c.Body)}}
 	case !slices.Contains(kinds, c.Kind):
-		return fmt.Errorf("kind %q is not %s or %s", c.Kind, KindPage, KindPost)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.kind",
+			Text: "kind %q is not %s or %s", Args: []any{c.Kind, KindPage, KindPost}}
 	case !slices.Contains(statuses, c.Status):
-		return fmt.Errorf("status %q is not a lifecycle state", c.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.status",
+			Text: "status %q is not a lifecycle state", Args: []any{c.Status}}
 	// Both halves of "published means published at a time", so anything that is
 	// served can say when it started being served and nothing else pretends to.
 	case c.Status == StatusPublished && c.PublishedAt == nil:
-		return fmt.Errorf("published content needs a publication time")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.published_at.missing",
+			Text: "published content needs a publication time"}
 	case c.Status != StatusPublished && c.PublishedAt != nil:
-		return fmt.Errorf("%s content cannot have a publication time", c.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.content.published_at.extra",
+			Text: "%s content cannot have a publication time", Args: []any{c.Status}}
 	}
 	return nil
 }

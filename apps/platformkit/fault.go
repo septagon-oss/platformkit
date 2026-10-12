@@ -45,9 +45,12 @@ import (
 //
 // A module may not write a prefix; the product may, and here it must. The
 // failure page is rendered by the kernel's own guard before any module is
-// consulted — a refused visitor has no session to resolve and no module to ask
-// — so the chrome it needs is knowledge the composition carries: where the
-// shell's stylesheet is, where signing in is, and what the workspace is called.
+// consulted — a person refused by a guard ahead of routing has no handler to ask
+// what the workspace is called — so the chrome it needs is knowledge the
+// composition carries: where the shell's stylesheet is, where signing in is, and
+// what the workspace is called. What the guard does have, for the caller it
+// refuses after recognition, is that caller's session on the request context,
+// which is why the language resolver below can be the same one every page asks.
 // TestPinnedAddresses asks the running server that every one of them answers,
 // which is what makes pinning them safe rather than hopeful.
 const (
@@ -122,31 +125,13 @@ func faultFrame(_ context.Context, _ page.Request, body []g.Node) g.Node {
 	return page.Bare(body)
 }
 
+// faultPage is the kernel's renderer for this application: the one shell this file
+// builds, asked to answer. The refusal page and the two pages of an ask are the same
+// chrome, the same catalogue and the same language resolver, so they are built once —
+// a person refused then asking for access is refused and asking in one application, not
+// in two that happen to look alike.
 func faultPage(c composition) httpx.Fault {
-	messages := c.messages
-	return page.FaultHandler(page.Shell{
-		Chrome:    faultChrome(),
-		Frame:     faultFrame,
-		Back:      pinnedHome,
-		BackLabel: "Back to the workspace",
-		// Who may hand out what the page refused, as a role and never as a name:
-		// the grant that gates role management is the auth module's fact, and its
-		// label is that module's words, read off the manifest that defines it.
-		Granter: c.granter,
-		// The ask door exists in this composition, so the refusal page may offer
-		// it. A product that wired no AskForAccess leaves this empty and the page
-		// draws no button — the kernel never offers a door it has not mounted.
-		Ask: pinnedAsk,
-		// The catalogues this application already composed. Without them the shell
-		// is what ui/page/fault.go documents as "a shell that ships no catalog":
-		// refusalLocale negotiates from nothing, the guard's English line is shown,
-		// and the refusal sentences this repository ships are copy nothing reads at
-		// the application that shipped them. The line is what the page is rendered
-		// *with* — a person refused by a guard ahead of routing is refused by this
-		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
-		// refusal cases here are asked of the page this literal builds.
-		Messages: messages,
-	})
+	return page.FaultHandler(faultShell(c))
 }
 
 // workspaceCatalog is the mount for the document a native shell reads to know what
@@ -193,18 +178,37 @@ func appOptions(cfg config.Config, c composition, role app.Role) app.Options {
 	}
 }
 
-// faultShell is the chrome the two ask pages are drawn with: the same frame, the
-// same catalogue and the same way on as the refusal page they follow, built once
-// per composition. One page per shell, and the shell is this file's to build —
-// the admin module builds its own, for the screens it mounts.
+// faultShell is the chrome the refusal page and the two ask pages are drawn with: one
+// shell per composition, built here because the admin module builds its own for the
+// screens it mounts and this one belongs to the guards that run ahead of any module.
 func faultShell(c composition) page.Shell {
 	return page.Shell{
 		Chrome:    faultChrome(),
 		Frame:     faultFrame,
 		Back:      pinnedHome,
 		BackLabel: "Back to the workspace",
-		Granter:   c.granter,
-		Ask:       pinnedAsk,
-		Messages:  c.messages,
+		// Who may hand out what the page refused, as a role and never as a name:
+		// the grant that gates role management is the auth module's fact, and its
+		// label is that module's words, read off the manifest that defines it.
+		Granter: c.granter,
+		// The ask door exists in this composition, so the refusal page may offer
+		// it. A product that wired no AskForAccess leaves this empty and the page
+		// draws no button — the kernel never offers a door it has not mounted.
+		Ask: pinnedAsk,
+		// The catalogues this application already composed. Without them the shell
+		// is what ui/page/fault.go documents as "a shell that ships no catalog":
+		// refusalLocale negotiates from nothing, the guard's English line is shown,
+		// and the refusal sentences this repository ships are copy nothing reads at
+		// the application that shipped them. The line is what the page is rendered
+		// *with* — a person refused by a guard ahead of routing is refused by this
+		// shell, not by the ones page.Serve mounts — and TestPinnedAddresses and the
+		// refusal cases here are asked of the page this shell builds.
+		Messages: c.messages,
+		// The same resolver every served page asks, so the language a person chose is
+		// what refuses them too. It reads the accepted session off the request context
+		// the guard already carries, and answers "" — the caller's own header, as before
+		// — wherever there is no choice to read: an anonymous caller, the public face,
+		// an address whose host names no tenant.
+		Locale: accountLocale{users: c.users}.Locale,
 	}
 }
