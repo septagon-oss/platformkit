@@ -285,26 +285,23 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
-// invalid is a 422 about one field, in the shape FieldErrors reads back: the
-// whole sentence in the Detail, and the same sentence again under the field's own
-// name so the screen marks that control rather than only shouting above it. One
-// sentence in both places is what lets a reader who speaks another language be
-// shown one translated sentence rather than half a page in each of two.
+// invalid is a 422 about one field, in the shape FieldErrors reads back: the whole
+// sentence in the Detail and the same sentence again under the field's name, so the
+// screen marks that control rather than only shouting above it. One sentence in both
+// places is what lets a reader be shown one translated sentence rather than half a
+// page in each of two.
 //
-// The sentence is a fault.Reason — the verdict, the text this package is written
-// in, the key that text is kept under and the arguments it wants — because a form's
-// refusal reaches a person, and that person's language is not this package's to
-// decide. The key names this package and the shape of what went wrong; the
-// catalogue that answers it is the one a generated form is drawn from
-// (ui/resource), the only place these sentences are ever said out loud.
+// It is a fault.Reason — verdict, text, key and the arguments the text wants —
+// because a form's refusal reaches a person, and that person's language is not this
+// package's to decide. ui/resource is the catalogue that answers the key, being the
+// only one a generated form is ever drawn from.
 func invalid(field, key, text string, args ...any) error {
 	reason := &fault.Reason{Kind: crud.ErrInvalid, Key: key, Text: text, Args: args}
 	return refusedProblem(reason, field)
 }
 
-// refusedForm is the one refusal of this package's that is not about a field: the
-// body that arrived was not a form at all, so there is no control to mark and the
-// sentence stands on its own.
+// refusedForm is the one refusal of this package's with no field to mark: the body
+// that arrived was not a form at all, so its sentence stands on its own.
 func refusedForm(key, text string, args ...any) error {
 	return refusedProblem(&fault.Reason{Kind: crud.ErrInvalid, Key: key, Text: text, Args: args}, "")
 }
