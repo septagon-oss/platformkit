@@ -91,6 +91,13 @@ func (s *Service) SetPreferredLocaleAt(ctx context.Context, tx db.Tx[db.Tenant],
 // the caller read something, and the only honest answer to a read that is no longer
 // current is a conflict that writes nothing and publishes nothing.
 //
+// Three facts are read off the locked row rather than trusted from the caller: the
+// account is still open, the choice is still the one the caller saw (when the
+// caller claims to have seen one), and the language is still one this tenant
+// serves. A session outlives none of them: an account closed two minutes ago has
+// no more right to be written here than one that was never open, and it is refused
+// with the same nothing — no write, no event, no row handed back.
+//
 // The tenant's row is locked before the person's, the order every write that
 // touches both takes: SetLocale changes the set this tag has to be found in, and
 // two writers who take the two rows in the opposite order deadlock rather than
@@ -112,6 +119,13 @@ func (s *Service) choose(ctx context.Context, tx db.Tx[db.Tenant], expected *int
 	u, err := crud.GetForUpdate[*contracts.User](tx, principal.UserID)
 	if err != nil {
 		return nil, err
+	}
+	if u.Status == contracts.StatusInactive {
+		// The session ahead of this command was taken when the account was open, and
+		// nothing about a token says the account still is. This row, locked, is what
+		// answers whether it is: a closed account writes nothing here and publishes
+		// nothing, whoever the caller was when the page was drawn.
+		return nil, contracts.ErrAccountInactive
 	}
 	if u.PreferredLocale == tag {
 		// The choice they already hold is not a change: no write, no event, and no

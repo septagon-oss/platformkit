@@ -320,5 +320,14 @@
     "plural": {
       "": "Writes the signed-in person's own language, which beats browser negotiation on every page they are shown and survives signing out and back in. An empty locale takes the choice back and leaves it to the browser and the tenant's default. A tag this tenant is not served in is refused: the set is the tenant's declaration and a choice outside it would be a preference that silently means nothing."
     }
+  },
+  "conflict.user.account_inactive": {
+    "references": [
+      "modules/user/contracts/locale.go"
+    ],
+    "translation": "this account is closed, so its person cannot change the language it is answered in",
+    "plural": {
+      "": "this account is closed, so its person cannot change the language it is answered in"
+    }
   }
 }

@@ -286,6 +286,11 @@ func (f *Fake) choose(ctx context.Context, expected *int64, tag string) (*contra
 	if err != nil {
 		return nil, err
 	}
+	if u.Status == contracts.StatusInactive {
+		// Mirrors internal.Service.choose: the account behind the principal is read
+		// every time, so a caller cannot pass against the fake and fail in production.
+		return nil, contracts.ErrAccountInactive
+	}
 	if u.PreferredLocale == tag {
 		return u, nil
 	}
