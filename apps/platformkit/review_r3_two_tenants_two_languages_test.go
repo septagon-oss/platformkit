@@ -108,9 +108,10 @@ func TestTwoTenantsOfOneInstallationAreServedInTwoLanguagesAtOnce(t *testing.T) 
 	// deliberate rather than an oversight this file forgot: English words do appear on
 	// the Portuguese tenant's page — ui/document's anonymous-session banner
 	// ("Sign-in required", "Sign in (opens a new tab)") is a literal no catalogue
-	// carries — which is the pseudo-locale literal gate this branch names as unshipped
-	// (ui/page/README.md; IMPLEMENT's item 2) and not one tenant's copy reaching
-	// another's request. The direction that would prove a leak is the other one: a
+	// carries — which is a violation the pseudo-locale gate
+	// (apps/platformkit/i18n_gate_test.go) names on that page, and not one tenant's
+	// copy reaching another's request: the gate found the banner and the coverage
+	// floor still allows it, because translating it is a separate change. The direction that would prove a leak is the other one: a
 	// sentence that exists only in the neighbour's declaration showing up here.
 	for _, want := range []struct {
 		host       string
