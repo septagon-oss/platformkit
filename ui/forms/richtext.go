@@ -89,8 +89,9 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 
 	// Every value the glue is allowed to know came from this transaction: the
 	// record's address, the revision this form quotes, the draft key, the upload
-	// route and the deployment's ceiling. An absent attribute means the browser
-	// does without the feature — never that it guesses one.
+	// route, where an uploaded file's bytes are read back from and the deployment's
+	// ceiling. An absent attribute means the browser does without the feature — never
+	// that it guesses one.
 	attrs := []g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}
 	// The editing surface is a control the server never drew: Tiptap builds the
 	// contenteditable inside it, and a textbox with no name is a control nobody
@@ -115,9 +116,18 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 	}
 	if editor.FileUpload != "" {
 		attrs = append(attrs, g.Attr("data-richtext-upload", editor.FileUpload))
+		if editor.ImageSrc != "" {
+			attrs = append(attrs, g.Attr("data-richtext-image-src", editor.ImageSrc))
+		}
 		if editor.Limits != "" {
 			attrs = append(attrs, g.Attr("data-richtext-limits", editor.Limits))
 		}
+	}
+	// The one thing the browser cannot tell by looking: whether the text in front of
+	// it is the record's or the person's own refused submission. A draft is kept
+	// through a refused write, so the page that refused says so.
+	if editor.Submitted {
+		attrs = append(attrs, g.Attr("data-richtext-submitted", "1"))
 	}
 
 	// Read-only or disabled: the text, the counters and nothing focusable. The
@@ -269,6 +279,7 @@ var richtextSentences = []struct {
 	{"data-richtext-preview-note", "forms.richtext.previewNote", "The editor's own preview. Only the published page is the server's rendering."},
 	{"data-richtext-draft-found", "forms.richtext.draftFound", "A draft from this device was not saved."},
 	{"data-richtext-alt-title", "forms.richtext.altTitle", "Alt text"},
+	{"data-richtext-alt-required", "forms.richtext.altRequired", "Describe the picture, or say it is decorative."},
 	{"data-richtext-decorative", "forms.richtext.decorative", "Decorative"},
 	{"data-richtext-save", "forms.richtext.save", "Save"},
 	{"data-richtext-choices", "forms.richtext.choices", "Choices"},

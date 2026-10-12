@@ -401,6 +401,12 @@
     ],
     "translation": "Pré-visualização do editor. Apenas a página publicada é a apresentação do servidor."
   },
+  "forms.richtext.altRequired": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Descreva a imagem ou diga que é decorativa."
+  },
   "forms.richtext.altTitle": {
     "references": [
       "ui/forms/richtext.go"

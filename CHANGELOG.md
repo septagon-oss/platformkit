@@ -10,7 +10,9 @@ keeps the submitted value in step. Images upload to the file API by drag, paste 
 file pick; a record that keeps a write count autosaves against its own ETag and
 compares on a conflict, and one that does not keeps the draft on the device.
 `make richtext-bundle` rebuilds the bundle; `check-richtext-bundle` keeps it under
-150 KiB gzipped and equal to a fresh build. Browser evidence is owed.
+150 KiB gzipped and equal to a fresh build. The browser cases cover typing, one
+surface, a draft kept through a refused save, images by pick and by paste, the alt
+prompt and the parsed round trips; storybook, gallery and mobile editing are owed.
 
 
 **The wire gate reads the plan feature a door declares.** An operation's authorization

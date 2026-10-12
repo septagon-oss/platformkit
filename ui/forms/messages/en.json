@@ -401,6 +401,12 @@
     ],
     "translation": "The editor's own preview. Only the published page is the server's rendering."
   },
+  "forms.richtext.altRequired": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Describe the picture, or say it is decorative."
+  },
   "forms.richtext.altTitle": {
     "references": [
       "ui/forms/richtext.go"

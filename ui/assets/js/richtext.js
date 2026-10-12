@@ -2,10 +2,11 @@
 // [data-richtext] field the page drew, keeps the field's own <textarea> as the
 // submitted value, binds behaviour to the chrome ui/forms drew, and saves.
 //
-// It fetches two URLs and no others: the upload route and the record's own
-// address, both written by the server. It stores one key and no others: the draft
-// key the server composed. It reads no cookie and invents no path — an attribute
-// the page left out is a feature that is off, not one to guess at.
+// It touches three URLs and no others: the upload route, the record's own address,
+// and the address a stored picture's bytes are read back from, all three written by
+// the server. It stores one key and no others: the draft key the server composed.
+// It reads no cookie and invents no path — an attribute the page left out is a
+// feature that is off, not one to guess at.
 //
 // With this file absent the page is the same page: the textarea posts, the server
 // validates every line, and "Formatting help" is the guidance. The editor is an
@@ -71,7 +72,7 @@ function createEditor(control) {
 		Blockquote, CodeBlock, HardBreak, HorizontalRule,
 		BulletList, OrderedList, ListItem, TaskList, TaskItem.configure({ nested: true }),
 		TableKit,
-		Image.configure({ inline: false, allowBase64: false }),
+		picture(control),
 		History,
 		Markdown.configure({ indentStyle: "space", indentSize: 2, renderer: { tightTypes: [] } }),
 		Placeholder.configure({ showOnlyWhenEditable: false }),
@@ -534,6 +535,15 @@ function pickFile(control) {
 // one reference the document ever holds. A cancelled upload leaves the file to the
 // file module's own sweep — deleting from a browser would be a retention decision
 // made in the wrong place.
+//
+// Both the paste and the drop are answered on the drawn surface, in the capture
+// phase, one rung above the element ProseMirror owns. ProseMirror parses a paste as
+// soon as its own handlers see it and hands a listener what it built out of that
+// parse, so a picture the browser was handed on the pasteboard is not in it; and a
+// drop it reads as content. Answering first is what keeps the person's bytes theirs.
+// bindPasteLink listens the same way for the address-over-a-selection spelling, and
+// registers first, so a URL pasted across words is still a link rather than an
+// upload.
 function bindUploads(control) {
 	const route = control.root.dataset.richtextUpload;
 	if (!route) return;
@@ -543,29 +553,29 @@ function bindUploads(control) {
 			control.file.value = "";
 		});
 	}
-	control.editor.on("paste", ({ event }) => {
+	const take = (event) => {
 		const files = filesIn(event);
 		if (files.length === 0) return false;
 		event.preventDefault();
+		event.stopImmediatePropagation();
 		for (const file of files) upload(control, file);
 		return true;
-	});
-	const element = control.surface;
-	element.addEventListener("dragover", (event) => { event.preventDefault(); });
-	element.addEventListener("drop", (event) => {
-		const files = filesIn(event);
-		if (files.length === 0) return;
-		event.preventDefault();
-		for (const file of files) upload(control, file);
-	});
+	};
+	control.surface.addEventListener("paste", take, true);
+	control.surface.addEventListener("dragover", (event) => { event.preventDefault(); });
+	control.surface.addEventListener("drop", take);
 }
 
+// filesIn is the person's own files, from whichever half of the clipboard the
+// browser filled: a paste carries them in clipboardData and a drag in dataTransfer.
+// A reader of one of the two uploads on a drop and does nothing at all on a paste.
 function filesIn(event) {
-	const items = event.dataTransfer ? event.dataTransfer.items : null;
-	if (items && items.length) {
-		return [...items].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean);
+	const transfer = event.clipboardData || event.dataTransfer;
+	if (!transfer) return [];
+	if (transfer.items && transfer.items.length) {
+		return [...transfer.items].filter((item) => item.kind === "file").map((item) => item.getAsFile()).filter(Boolean);
 	}
-	return event.dataTransfer && event.dataTransfer.files ? [...event.dataTransfer.files] : [];
+	return transfer.files ? [...transfer.files] : [];
 }
 
 // upload posts one file as multipart with one filename-bearing part and all metadata
@@ -595,6 +605,61 @@ function upload(control, file) {
 	request.addEventListener("abort", () => mark(control, "idle"));
 	control.cancel = () => request.abort();
 	request.send(body);
+}
+
+// The image reference and the address its pixels live at. A document holds the
+// reference §1 stores and the server validates — ![alt](pk-file:<id>) — and a
+// browser fetches bytes from no such address, so the page drew where they are: the
+// file module's own content address with one hole in it for a file id. Which side
+// of that pair a value sits on is decided once, in the image node's own src
+// attribute, in both directions: the document, the Markdown and the posted value
+// hold the reference, and only the drawn <img> holds the address. A reference no
+// address was drawn for, and every other src, is drawn as it was written.
+const fileReference = "pk-file:";
+const fileSlot = "{file}";
+const fileID = /^[0-9a-fA-F-]{36}$/;
+
+// picture is the schema's image — block-level, no base64, the one §1's scheme
+// carries — with that substitution and no other opinion of its own.
+function picture(control) {
+	return Image.extend({
+		addAttributes() {
+			return {
+				...this.parent(),
+				src: {
+					default: null,
+					renderHTML: (attributes) => ({ src: imageAddress(control, attributes.src) }),
+					parseHTML: (node) => imageReference(control, node.getAttribute("src")),
+				},
+			};
+		},
+	});
+}
+
+// imageAddress is the reference read as an address for the browser to fetch from.
+function imageAddress(control, src) {
+	const id = referenceID(src);
+	const address = control.root.dataset.richtextImageSrc || "";
+	return address === "" || id === "" ? src : address.split(fileSlot).join(id);
+}
+
+// imageReference is an address read back as the reference, which is what keeps a
+// picture copied out of the document and pasted into it again arriving as the line
+// it left as rather than as an address the server would refuse.
+function imageReference(control, src) {
+	const halves = (control.root.dataset.richtextImageSrc || "").split(fileSlot);
+	if (halves.length !== 2 || typeof src !== "string") return src;
+	if (!src.startsWith(halves[0]) || !src.endsWith(halves[1])) return src;
+	const id = src.slice(halves[0].length, src.length - halves[1].length);
+	return referenceID(fileReference + id) === "" ? src : fileReference + id;
+}
+
+// referenceID is the file a reference names. Only an id of the shape the server
+// accepts is named: nothing else reaches an address.
+function referenceID(src) {
+	if (typeof src !== "string" || !src.startsWith(fileReference)) return "";
+	const id = src.slice(fileReference.length);
+	return id.match(fileID) ? id : "";
 }
 
 // inserted is the only place a file reference enters the document, and it enters as
@@ -635,22 +700,38 @@ function problemDetail(request) {
 }
 
 // askAlt is the prompt on insert: alt text is required, or the picture is
-// decorative, which is the same answer with a different reason. Escape leaves the
-// image with no alt text and says so rather than inventing one.
+// decorative, which is the same answer with a different reason.
+//
+// Three things make it a question rather than a pair of boxes. Each control is
+// named by a label joined to it by identity, because the prompt is read by people
+// who hear the page. An empty answer is refused by this function and not by the
+// control's own `required`, which constrains a form and not a button of
+// type=button, so an informative picture enters the document only once its author
+// has said what it shows. And Escape is not an answer: it withdraws the picture
+// the prompt was asked for, because the document that carries an undescribed
+// photograph is the thing the requirement exists to prevent.
 function askAlt(control, file, at) {
 	if (word(control, "richtextAltTitle") === "" || word(control, "richtextSave") === "") return;
-	const prompt = element("div", { role: "group", "aria-label": word(control, "richtextAltTitle") });
-	const label = element("label", {}, word(control, "richtextAltTitle"));
-	const input = element("input", { type: "text", required: "" });
-	const decorative = element("input", { type: "checkbox" });
-	const decorativeLabel = element("label", {}, word(control, "richtextDecorative"));
+	control.altAsked = (control.altAsked || 0) + 1;
+	const descriptionID = control.field + "-richtext-alt-" + control.altAsked;
+	const decorativeID = descriptionID + "-decorative";
+	const input = element("input", { type: "text", id: descriptionID, required: "" });
+	const label = element("label", { for: descriptionID }, word(control, "richtextAltTitle"));
+	const decorative = element("input", { type: "checkbox", id: decorativeID });
+	const decorativeLabel = element("label", { for: decorativeID }, [decorative, word(control, "richtextDecorative")]);
 	const save = element("button", { type: "button" }, word(control, "richtextSave"));
-	const wrapper = element("div", {}, [label, input, decorative, decorativeLabel, save]);
-	prompt.append(wrapper);
+	const prompt = element("div", { role: "group", "aria-label": word(control, "richtextAltTitle") },
+		[element("div", {}, [label, input, decorativeLabel, save])]);
 	control.surface.parentElement.insertBefore(prompt, control.surface.nextSibling);
 	input.focus();
 	const finish = () => {
 		const alt = decorative.checked ? "" : input.value.trim();
+		if (alt === "") {
+			mark(control, "error", { reason: "alt" });
+			statusLine(control, word(control, "richtextAltRequired"), null);
+			input.focus();
+			return;
+		}
 		setImage(control, at, { alt: alt, title: lastTitle(control) });
 		prompt.remove();
 		commit(control);
@@ -658,7 +739,13 @@ function askAlt(control, file, at) {
 	save.addEventListener("click", finish);
 	input.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); finish(); } });
 	decorative.addEventListener("change", () => { input.required = !decorative.checked; });
-	prompt.addEventListener("keydown", (event) => { if (event.key === "Escape") { prompt.remove(); } });
+	prompt.addEventListener("keydown", (event) => {
+		if (event.key !== "Escape") return;
+		event.preventDefault();
+		prompt.remove();
+		dropImage(control, at);
+		commit(control);
+	});
 }
 
 function lastTitle(control) {
@@ -685,6 +772,17 @@ function setImage(control, at, attributes) {
 		const node = tr.doc.nodeAt(at);
 		if (!node || node.type.name !== "image") return false;
 		tr.setNodeMarkup(at, undefined, Object.assign({}, node.attrs, attributes));
+		return true;
+	}).run();
+}
+
+// dropImage is the other half of the prompt: the picture goes back the way it
+// came when the question that came with it is withdrawn rather than answered.
+function dropImage(control, at) {
+	control.editor.chain().command(({ tr }) => {
+		const node = tr.doc.nodeAt(at);
+		if (!node || node.type.name !== "image") return false;
+		tr.delete(at, at + node.nodeSize);
 		return true;
 	}).run();
 }
@@ -729,7 +827,12 @@ function bindPersistence(control) {
 	control.endpoint = control.root.dataset.richtextEndpoint || "";
 	control.etag = control.root.dataset.richtextEtag || "";
 	control.key = control.root.dataset.richtextDraft || "";
-	if (control.endpoint === "" && control.key !== "") restoreOffered(control);
+	// A form redrawn after a write the server refused carries the person's own
+	// submission in its controls. That text says nothing about the record — the page
+	// says which of the two it is showing, and nothing compares a device's copy
+	// against an echo.
+	control.echoed = control.root.dataset.richtextSubmitted !== undefined;
+	if (control.endpoint === "" && control.key !== "" && !control.echoed) restoreOffered(control);
 	window.addEventListener("storage", (event) => {
 		if (event.key === control.key && event.newValue) restoreOffered(control);
 	});
@@ -750,10 +853,11 @@ function bindPersistence(control) {
 		});
 	}
 	const form = control.textarea.form;
-	if (form) form.addEventListener("submit", () => {
-		commit(control);
-		if (control.endpoint === "") keepDraft(control, true);
-	});
+	// A submit commits the value and touches no draft. A form posts and navigates, so
+	// at the moment of the submit nothing has been answered — and the write that came
+	// back refused leaves the words unsaved with this copy as the only place they
+	// live. Clearing a draft is the record's doing: see restoreOffered.
+	if (form) form.addEventListener("submit", () => commit(control));
 }
 
 function save(control) {
@@ -785,12 +889,31 @@ function readDraft(key) {
 
 function restoreOffered(control) {
 	const stored = readDraft(control.key);
-	if (!stored || stored.markdown === control.textarea.value) return;
-	if (!control.draftBar) return;
+	if (!stored) return;
+	// The record was drawn carrying the words this device kept, so the write that
+	// carried them was answered and nothing is left unsaved: the copy goes, and the
+	// bar has nothing to offer. This is the only thing that clears a draft besides the
+	// person's own Discard button, and it is evidence rather than optimism — the
+	// moment a form is posted says nothing about whether the write it asked for
+	// happened, and a refused one leaves this copy as the only place the words are.
+	if (savedAlready(stored.markdown, control.textarea.value)) {
+		if (!control.echoed) keepDraft(control, true);
+		return;
+	}
+	if (!control.draftBar || control.echoed) return;
 	control.draftBar.hidden = false;
 	const when = new Date(stored.savedAt);
 	const label = Number.isNaN(when.getTime()) ? "" : " " + when.toLocaleTimeString(document.documentElement.lang || undefined, { hour: "2-digit", minute: "2-digit" });
 	control.draftBar.firstElementChild.textContent = (word(control, "richtextDraftFound")) + label;
+}
+
+// savedAlready asks whether the record says what the device kept, reading the words
+// rather than the bytes: line endings differ by browser, and the server's own
+// normalisation ends a body with a newline. It is asked only of a value that came
+// out of a record, never of an echo of a refused write.
+function savedAlready(stored, drawn) {
+	const said = (text) => String(text).replace(/\r\n?/g, "\n").trim();
+	return said(stored) === said(drawn);
 }
 
 // autosave writes one field and quotes the tag this form was drawn from. A body

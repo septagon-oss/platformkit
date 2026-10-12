@@ -67,6 +67,7 @@ var renderedHooks = map[string]string{
 	"data-richtext-etag":          "ui/forms/richtext.go",
 	"data-richtext-field":         "ui/forms/richtext.go",
 	"data-richtext-file":          "ui/forms/richtext.go",
+	"data-richtext-image-src":     "ui/forms/richtext.go",
 	"data-richtext-limits":        "ui/forms/richtext.go",
 	"data-richtext-link":          "ui/forms/richtext.go",
 	"data-richtext-link-input":    "ui/forms/richtext.go",
@@ -76,12 +77,14 @@ var renderedHooks = map[string]string{
 	"data-richtext-more-panel":    "ui/forms/richtext.go",
 	"data-richtext-preview":       "ui/forms/richtext.go",
 	"data-richtext-status":        "ui/forms/richtext.go",
+	"data-richtext-submitted":     "ui/forms/richtext.go",
 	"data-richtext-surface":       "ui/forms/richtext.go",
 	"data-richtext-toolbar":       "ui/forms/richtext.go",
 	"data-richtext-upload":        "ui/forms/richtext.go",
 	// The sentences the field says while the author writes, and the name the
 	// editing surface carries: drawn by ui/forms from the request's catalogue,
 	// read by the glue, which holds no prose of its own.
+	"data-richtext-alt-required": "ui/forms/richtext.go",
 	"data-richtext-alt-title":    "ui/forms/richtext.go",
 	"data-richtext-bad-link":     "ui/forms/richtext.go",
 	"data-richtext-choose":       "ui/forms/richtext.go",

@@ -264,6 +264,15 @@ func richtextModules(r Resource) []string {
 // this route and to no other, and never builds a path out of a record's own.
 const fileUploadRoute = "/api/v1/file/files"
 
+// fileImageSrc is the same module's own address for reading one stored file back,
+// with {file} standing for the id an upload answered with. The editor substitutes
+// an id an upload handed it and no other text, so the picture a person just
+// uploaded is a picture they can look at while the document, the posted value and
+// the line the server validates all keep the pk-file reference they always held.
+// Spelled here beside the upload route rather than built from it, for the same
+// reason: the browser is handed addresses, never a rule for making one.
+const fileImageSrc = "/api/v1/file/files/{file}/content"
+
 // richtextEditor is the server's answer to "what may this field's editor do, and
 // where". An author who is writing has no record yet, so there is nothing to save
 // against and nothing to keep a draft under: the two attributes appear together
@@ -271,8 +280,13 @@ const fileUploadRoute = "/api/v1/file/files"
 // so the editor saves nothing as the author writes and keeps the draft instead —
 // which is the honest mode, not a degraded one: a conflict panel needs a revision
 // to disagree about.
-func richtextEditor(r Resource, row map[string]any, create bool, name string) forms.Editor {
-	editor := forms.Editor{FileUpload: fileUploadRoute}
+//
+// submitted says this render is the answer to a write that was refused: its
+// controls carry the person's own post rather than the record's text. Nothing
+// compares a kept draft against that text — a refused write saves nothing, and the
+// copy on the device is the only place unsaved words live.
+func richtextEditor(r Resource, row map[string]any, create bool, name string, submitted bool) forms.Editor {
+	editor := forms.Editor{FileUpload: fileUploadRoute, ImageSrc: fileImageSrc, Submitted: submitted}
 	if create || row == nil || r.Singleton || r.API == "" {
 		return editor
 	}
@@ -313,10 +327,13 @@ func FormExample(id string, r Resource, o Options, action, title string, row map
 	// own write condition, below, so the capacity holds room for it.
 	fields := make([]forms.Field, 0, len(r.Schema.Fields)+1)
 	words := o.Words(r.Schema)
+	// A render carrying a refusal line is the form redrawn over a write that was
+	// refused, with the person's own words in its controls.
+	refused := detail != ""
 	for _, field := range readable(r.Schema.Fields) {
 		f := formField(words, field)
 		if f.Definition.Widget == "richtext" {
-			f.Editor = richtextEditor(r, row, create, f.Definition.Name)
+			f.Editor = richtextEditor(r, row, create, f.Definition.Name, refused)
 		}
 		fields = append(fields, f)
 	}

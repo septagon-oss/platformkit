@@ -62,6 +62,16 @@ type Editor struct {
 	// FileUpload is the route an image is posted to, and Limits the sentence that
 	// states the formats and the ceiling before any refusal.
 	FileUpload, Limits string
+	// ImageSrc is where one stored file's bytes are read back, with {file} standing
+	// for the id an upload returned: the address the editor draws a picture from
+	// while the document keeps the pk-file reference it posts. Empty means no
+	// preview is drawn and a reference shows as it was written.
+	ImageSrc string
+	// Submitted says this render is the answer to a write the server refused, so its
+	// controls hold what the person posted rather than what the record holds. The
+	// browser keeps an unsaved draft through such a page: an echo of a refused
+	// submission is no evidence that anything was saved.
+	Submitted bool
 }
 
 // Model contains a form's already-read values and already-decided field errors.
