@@ -160,7 +160,8 @@
       "provides": [
         "notificationcontracts.Service",
         "authcontracts.Notifier",
-        "notificationcontracts.Mailer"
+        "notificationcontracts.Mailer",
+        "notificationcontracts.MailLedger"
       ],
       "needs": [
         {
@@ -304,6 +305,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "notificationcontracts.MailLedger",
+          "from": "notification"
         },
         {
           "contract": "authcontracts.OIDCProviders",
