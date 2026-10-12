@@ -515,6 +515,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
+	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
+	# and refuses a stated default that vanished or a caller's bound that no longer arrives last. Go honours
+	# the last `-timeout` it is handed, so the order of the two on that line is the whole promise: put the
+	# default after the caller's flags and a shorter ask is answered with the longer bound, which is a suite
+	# ignoring the clock its caller named. Two dry runs in a directory holding only go.mod's module, go and
+	# toolchain lines; nothing is compiled, started or tested.
+	bash scripts/make_test_timeout_override_test.sh
 	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
 	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
 	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
