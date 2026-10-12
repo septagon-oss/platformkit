@@ -256,8 +256,10 @@ func (d *accessDoor) count(ctx context.Context, permission string, user uuid.UUI
 	if held {
 		// The policy line before any verdict it describes: it names every counter this
 		// door spends, in the order it spends them, so a client can tell which limit it
-		// is approaching across the asks it makes. It is the same three lines on every
-		// ask and costs no statement to write.
+		// is approaching across the asks it makes. It is the same two items on every ask
+		// and costs no statement to write — and it is the line a retry of a refused ask
+		// states again (keptHeaders keeps it with the answer), which is why it names both
+		// ceilings here rather than the one this ask spent.
 		b.Header().Set(RateLimitPolicyHeader, policyField(askPolicies()...))
 	}
 	for _, c := range []struct {

@@ -54,6 +54,10 @@ type Limiter interface {
 	// whichever way the answer went — the caller who was allowed is the one the
 	// number is most useful to, because it is the only moment they can back off
 	// before the refusal rather than after it.
+	//
+	// retryAfter counts down from the instant the statement wrote the row — on a
+	// contended key, the end of the wait for that row rather than its start. The row
+	// owns when its window ends, and a caller may never date a reading earlier than it.
 	Reserve(ctx context.Context, key string, limit int, window time.Duration) (allowed bool, remaining int, retryAfter time.Duration, err error)
 
 	// Count reports how many events key has in the window that is open now, and
@@ -138,11 +142,19 @@ func (p postgres) Reserve(ctx context.Context, key string, limit int, window tim
 	// back is the one this event landed in. Two statements would be two
 	// replicas reading the same number and writing it back, and would be two
 	// answers about one attempt.
+	//
+	// Which window the event landed in is asked of the transaction's own instant, so the
+	// two CASEs cannot disagree about it and the row is anchored at that instant. The
+	// countdown is asked of the clock instead, because another writer of this key can
+	// hold the row's lock and this statement waits for it: the transaction's instant is
+	// then earlier than the event by the wait, and a countdown taken from it is that
+	// wait added back on — every caller of the key told to sit out a window longer than
+	// the row holds. `clock_timestamp()` is the instant the event landed.
 	const q = `INSERT INTO ` + table + ` (key, window_start, count) VALUES (?, now(), 1)
 		ON CONFLICT (key) DO UPDATE SET
 			count = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.count + 1 ELSE 1 END,
 			window_start = CASE WHEN ` + table + `.window_start > now() - ?::interval THEN ` + table + `.window_start ELSE now() END
-		RETURNING count, extract(epoch FROM (window_start + ?::interval - now()))`
+		RETURNING count, extract(epoch FROM (window_start + ?::interval - clock_timestamp()))`
 	n, left, err := p.scan(ctx, q, p.scoped(ctx, key), interval(window), interval(window), interval(window))
 	if err != nil {
 		return false, 0, 0, err
@@ -154,13 +166,16 @@ func (p postgres) Reserve(ctx context.Context, key string, limit int, window tim
 // decided is the arithmetic of one reading, shared by both stores so the counter
 // in a map and the counter in a row cannot disagree about what the same count
 // under the same quota means. `left` is the window's own clock: it may have closed
-// while the statement ran.
+// while the statement ran, or while it waited for another writer of the key, and a
+// caller is never told a wait a closed window owes them.
 func decided(quota, count int, left time.Duration) (allowed bool, remaining int, retryAfter time.Duration) {
 	return count <= quota, max(quota-count, 0), max(left, 0)
 }
 
 func (p postgres) Count(ctx context.Context, key string, window time.Duration) (int, time.Duration, error) {
-	const q = `SELECT count, extract(epoch FROM (window_start + ?::interval - now())) FROM ` + table +
+	// The same rule as Reserve's: the window's ending is a fact of the row, and the
+	// countdown is that fact read at the instant the read happened.
+	const q = `SELECT count, extract(epoch FROM (window_start + ?::interval - clock_timestamp())) FROM ` + table +
 		` WHERE key = ? AND window_start > now() - ?::interval`
 	return p.scan(ctx, q, interval(window), p.scoped(ctx, key), interval(window))
 }

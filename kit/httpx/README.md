@@ -168,11 +168,17 @@ them lives in [../idempotency](../idempotency), and the counter behind the other
 body and the same caller get the first attempt's status, `Content-Type`, the
 navigation it sent the caller to (`Location`, or `HX-Redirect` for the request htmx
 made — html.go's `Redirect` picks between them) and body, and the handler does not
-run. The ceilings it was decided under go with it too: the record holds the reading each
-counter gave, and a replay writes `RateLimit-Policy`, `RateLimit` and `Retry-After` from
-them — the policy and the quota as they were decided, and what is left of the window
-worked out against the moment the replay is answered at, because a refusal that restated
-a stored wait would tell a caller to sit out a window that had already closed.
+run. The ceilings it was decided under go with it too. The record keeps the answer's own
+`RateLimit-Policy` line and, separately, the reading each counter gave: the policy line
+comes back as it was first stated, because a door names the ceilings it consulted and not
+only the one that refused, and a field rebuilt from the readings alone would drop a
+ceiling no reading was kept for; the quota comes back as the counter reported it; and
+`RateLimit`'s `t` and `Retry-After` are worked out again against the moment the replay is
+answered at, because a refusal that restated a stored wait would tell a caller to sit out
+a window that had already closed. What is left of a window is what the row itself had left
+when the event landed in it — the counter measures it against the clock at that instant,
+not the instant its transaction opened, so a key several replicas are waiting on costs a
+caller a shorter window than they were told and never a longer one.
 
 A 303 replayed without its `Location` is a status with nothing to act on, so the
 destination is part of the answer and not a header beside it. "The same write" is

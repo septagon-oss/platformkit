@@ -333,10 +333,11 @@ func (a *API) idempotency(ctx huma.Context, next func(huma.Context)) {
 // What does travel, besides the body, is whatever keptHeaders names: the headers
 // the answer cannot be without. A redirect is a functional answer — the write is
 // done and the caller is being sent somewhere — and the retry of one that dropped
-// its destination is a caller left at a status with no page to go to. And what
-// travels beside them, in a shape of its own rather than as a rendered header, are
-// the limits the answer was decided under: see sayRecorded, which restates them
-// against the moment the replay is being answered at.
+// its destination is a caller left at a status with no page to go to, and the same is
+// true of the ceilings the answer said it was decided under. What travels beside
+// them, in a shape of its own rather than as a rendered header, is the reading behind
+// those ceilings: see sayRecorded, which restates it against the moment the replay is
+// being answered at.
 func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	r, w := humachi.Unwrap(ctx)
 	if stored.ContentType != "" {
@@ -345,15 +346,20 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 	// The kept headers go on before the status line, as every header does: a 303
 	// replayed without its Location is a status with nothing to act on, and the
 	// retry of a form that worked would arrive somewhere it could not go.
+	//
+	// Set and not added: a guard above this one may have stated one of these names for
+	// this exchange already — the public write limit states its policy line on every
+	// reply it applies to — and an answer remembered under its ceilings is stated once,
+	// as it was decided, rather than twice under two readings of one ceiling.
 	for _, h := range stored.Headers {
-		w.Header().Add(h.Name, h.Value)
+		w.Header().Set(h.Name, h.Value)
 	}
 	// The ceilings the write was refused under go on the replay too, with the one
-	// number that ages worked out again. A policy line costs nothing to restate and
-	// names the limit the caller is under; the reading is the one the deciding counter
-	// gave, and the wait is what is left of the window that refusal landed in. A replay
-	// that said nothing let respond.go's floor stand in — a minute for a window of an
-	// hour — which is a guess where the answer had a number.
+	// number that ages worked out again. The policy line is already on its way: the
+	// answer kept it among its own headers just above. The reading is the one the
+	// deciding counter gave, and the wait is what is left of the window that refusal
+	// landed in. A replay that said nothing let respond.go's floor stand in — a minute
+	// for a window of an hour — which is a guess where the answer had a number.
 	sayRecorded(w.Header(), stored.Limits, stored.Status == http.StatusTooManyRequests, time.Now().UTC())
 	// Both places, as declared does: the writer holds the answer, and the huma
 	// context holds the verdict the transaction middleware commits or rolls back on.
@@ -411,24 +417,30 @@ func withClaim(ctx context.Context) context.Context {
 
 // keptHeaders are the response headers an answer is not the same answer without.
 //
-// Two of them, both navigation: `Location` is the 303 a browser follows and
-// `HX-Redirect` is the same instruction as htmx reads it (html.go's Redirect
-// chooses between them by the request in front of it), so a keyed form post that
-// answered by sending the caller to the page its write finished at still sends
-// them there on the retry. Every other header is deliberately absent:
+// Three of them. `Location` is the 303 a browser follows and `HX-Redirect` is the
+// same instruction as htmx reads it (html.go's Redirect chooses between them by the
+// request in front of it), so a keyed form post that answered by sending the caller
+// to the page its write finished at still sends them there on the retry: both are
+// navigation, and a redirect without its destination is a status with nowhere to go.
+// The third is `RateLimit-Policy`, kept because it is the one limit field that never
+// ages — a name, a quota and a window are the same on every answer under them, which
+// is the property draft-ietf-httpapi-ratelimit-headers asks that field to keep — and
+// because the bytes the deciding answer stated are the only complete account of the
+// ceilings that answer named: a door may name a ceiling it did not spend, and the
+// readings kept beside an answer name none of it. Its two counting siblings are absent
+// from this list and present on a replay all the same, because a countdown is restated
+// rather than repeated (sayRecorded).
+//
+// Every other header is deliberately absent:
 // `Set-Cookie` is a credential minted for one exchange, and a remembered one would
 // be a live session key sitting in a row for a day and a dead one the moment the
 // session behind it was revoked — which is why a route whose answer is a credential
 // declares that it takes no key at all (CredentialExtension) rather than promising a
 // replay that cannot sign anybody in. `Cache-Control` and `Vary` describe this
-// exchange rather than the answer. The three rate fields are absent from this list
-// and present on a replay all the same, because they are kept as the numbers the
-// counters reported rather than as the lines those numbers render to: two of them
-// count down, and a countdown is restated rather than repeated (sayRecorded).
-// `Content-Type` has its own field because it is the one the row is read into. A
+// exchange rather than the answer. `Content-Type` has its own field because it is the one the row is read into. A
 // header not on this list is a header a replay answers without, which is the trade
 // the memory makes on purpose: keep what the answer does, not how it was carried.
-var keptHeaders = []string{"Location", "HX-Redirect"}
+var keptHeaders = []string{"Location", "HX-Redirect", RateLimitPolicyHeader}
 
 // keepHeaders reads the headers worth keeping out of the response the caller was
 // finally given, in the order the list names them, with the value the writer

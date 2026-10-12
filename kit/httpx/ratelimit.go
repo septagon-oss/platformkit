@@ -212,8 +212,9 @@ func SayCounted(ctx context.Context, c Counted) {
 	sayCountedOnto(b.Header(), m, c.Refused)
 }
 
-// sayCountedOnto writes one counter's numbers onto a response's headers. It is the
-// rendering half of both doors: SayCounted's, and the answer's own list, which is
+// sayCountedOnto writes one counter's numbers onto a response's headers: the ceiling
+// it is under, and the reading the counter gave this answer. It is the rendering half of
+// the live doors — SayCounted's, publicWrites', and the access door's — and its list is
 // appended to rather than replaced for the reason SayCounted spells.
 func sayCountedOnto(h http.Header, m measured, refused bool) {
 	h.Set(RateLimitPolicyHeader, appendItem(h.Get(RateLimitPolicyHeader), m.policy.item()))
@@ -221,6 +222,14 @@ func sayCountedOnto(h http.Header, m measured, refused bool) {
 	if refused {
 		h.Set(RetryAfterHeader, secondsUp(m.left, 1))
 	}
+}
+
+// sayCountedAgain restates one remembered counter on the answer to the attempt asking
+// again: the reading, worked out against this moment, and no policy line, which the
+// answer keeps among its own headers (keptHeaders, and sayRecorded for why that is the
+// complete account of it).
+func sayCountedAgain(h http.Header, m measured) {
+	h.Set(RateLimitHeader, appendItem(h.Get(RateLimitHeader), m.policy.answer(m.remaining, m.left)))
 }
 
 // recorded is the answer's own account of the ceilings it was decided under: the same
@@ -244,15 +253,20 @@ func recorded(got []measured) []idempotency.Limit {
 // sayRecorded restates the ceilings a remembered answer was decided under on the
 // reply to the attempt that is asking again.
 //
-// The policy line is the easy half: a name, a quota and a window are the same on every
-// answer under them, which is the property draft-ietf-httpapi-ratelimit-headers asks
-// that field to keep. The reading is the harder one, and the reason the numbers are
-// stored rather than the rendered lines: what is left of a quota and what is left of a
-// window both shrink while a record sits in it, so a replay that restated the stored
-// figures would report a wait that has partly elapsed, or outlast a window that has
-// closed. `t` and `Retry-After` therefore come from the window's own ending, and the
-// quota is restated as the counter reported it — the ceiling a caller was told at the
-// moment it was decided has not changed; only the clock has moved.
+// The policy line is not restated here, because it is not lost: the answer kept it among
+// its own headers and the reply is written with it verbatim, which is the only complete
+// account of it. A door names the ceilings it consulted and not only the one that
+// refused — the access door names both of its counters on every ask — so a policy line
+// rebuilt from the kept readings alone would drop a ceiling no reading was kept for, and
+// the draft asks that field to stay the same across a sequence of responses.
+//
+// The reading is the harder half, and the reason the numbers are stored rather than the
+// rendered lines: what is left of a quota and what is left of a window both shrink while
+// a record sits in it, so a replay that restated the stored figures would report a wait
+// that has partly elapsed, or outlast a window that has closed. `t` and `Retry-After`
+// therefore come from the window's own ending, and the quota is restated as the counter
+// reported it — the ceiling a caller was told at the moment it was decided has not
+// changed; only the clock has moved.
 //
 // A refusal names the longest of the waits that still run: an answer under two counters
 // is not free to retry until the later of them opens, and a caller told the shorter has
@@ -268,7 +282,7 @@ func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now ti
 		// attempt over again — so the quota line can only be the reading the first
 		// attempt was given, and `t` is the field that says how long that reading held.
 		got := max(l.ResetsAt.Sub(now), 0)
-		sayCountedOnto(h, measured{policy: limitPolicy{name: l.Name, quota: l.Quota, window: l.Window}, remaining: l.Remaining, left: got}, false)
+		sayCountedAgain(h, measured{policy: limitPolicy{name: l.Name, quota: l.Quota, window: l.Window}, remaining: l.Remaining, left: got})
 		left = max(left, got)
 	}
 	if refused {
