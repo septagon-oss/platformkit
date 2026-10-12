@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"io"
@@ -76,6 +77,10 @@ const (
 	filesPath   = "/api/v1/file/files"
 	adminEmail  = "root@acme.localhost"
 	adminPass   = "correct horse battery staple"
+	// acmeName is the tenant's own name, which the bootstrap's operator typed. It is
+	// a value and not copy: no catalogue can hold it, and the frame puts it in the
+	// tab title and the chrome, so the pseudo-locale gate reads it back as data.
+	acmeName = "Acme Corporation"
 )
 
 // quiet keeps a passing test's output to the test's own lines.
@@ -151,7 +156,7 @@ func install(t *testing.T, path string) {
 	// e2e/localization.spec.ts then check the other language against.
 	args := []string{
 		"--config", path, "--tenant", "acme", "--host", acmeHost,
-		"--name", "Acme Corporation", "--admin-email", adminEmail,
+		"--name", acmeName, "--admin-email", adminEmail,
 		"--language", "pt-PT",
 	}
 	until := time.Now().Add(installContentionWait)
@@ -1454,10 +1459,16 @@ func blobs(t *testing.T, cfg config.Config) int {
 // The transaction half is measured from outside, through pg_stat_activity,
 // because the claim is about a server-side connection and not about a Go value.
 // dbtest names this installation's pool after the test's schema, so the count is
-// this application's backends and nobody else's. The question it asks is the age
-// of the oldest open transaction rather than how many there are: the application
-// is running its periodic jobs too, and a job's transaction is milliseconds old,
-// while a pinned one keeps getting older for as long as the body trickles.
+// this application's backends and nobody else's.
+//
+// It asks the age of the oldest open transaction of an installation started as the
+// serving half, because that is the only installation this question has an answer
+// for. The worker half runs the outbox relay, the outbox purge and every module's
+// periodic jobs over this same pool, and a transaction of that work stays open for
+// as long as its goroutine keeps a CPU: on a host carrying several suites at once
+// it is seconds old, and no bound separates it from one a client pinned. On role
+// web nothing but a request opens a transaction, so a transaction still open and
+// old at the last sample is the trickling request's own.
 func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	const timeout = 3 * time.Second
 	path, cfg := configure(t)
@@ -1469,7 +1480,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 
@@ -1478,14 +1489,28 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// asking dbtest for the URLs again would give this test a fresh schema and
 	// take the tables out from under the application that is serving.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
-	longest := func() float64 {
+	// longest answers the age of the oldest open transaction of this installation and
+	// names the backend holding it. The name belongs in the refusal: a bare number says
+	// the claim failed and nothing about which pool to go and look at, and the reader is
+	// left to work out by hand what this one line already knows.
+	longest := func() (float64, string) {
 		var age float64
-		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
-			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
-			t.Errorf("read pg_stat_activity: %v", err)
+		var backend string
+		const q = `SELECT EXTRACT(EPOCH FROM now() - xact_start),
+				coalesce(usename::text, '?') || ' at pid ' || pid::text || ': '
+				|| coalesce(left(regexp_replace(query, '\s+', ' ', 'g'), 120), '(no statement seen)')
+			FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')
+			ORDER BY xact_start ASC NULLS LAST LIMIT 1`
+		err := owner.QueryRowContext(t.Context(), q).Scan(&age, &backend)
+		if err == sql.ErrNoRows {
+			return 0, ""
 		}
-		return age
+		if err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+			return 0, ""
+		}
+		return age, backend
 	}
 
 	// A multipart form whose file part never ends: one byte, then a pause,
@@ -1550,13 +1575,16 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// loop is finished before the server gives up and the handler's own failure
 	// path runs.
 	samples, oldest := 0, 0.0
+	oldestBackend := ""
 	for time.Since(start) < timeout*3/4 {
 		select {
 		case got := <-done:
 			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
 		default:
 		}
-		oldest = max(oldest, longest())
+		if age, backend := longest(); age > oldest {
+			oldest, oldestBackend = age, backend
+		}
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1566,12 +1594,12 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// The bound is half the read timeout, and it is arithmetic rather than taste. A
 	// transaction the upload pinned opens when the request arrives and is still open at
 	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
-	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
-	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
-	// refused. timeout/2 sits between the two with margin on both sides.
+	// 2.2s here. Nothing on this role opens a transaction while a body trickles and no
+	// other request is in flight, so the only way to be older than the bound is to be
+	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest, limit)
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs), held by %s; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit, oldestBackend)
 	}
 
 	var got answer
