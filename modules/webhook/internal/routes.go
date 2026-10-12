@@ -69,7 +69,11 @@ func RegisterRoutes(s httpx.Surfaces, endpoints rest.Spec[*contracts.Endpoint],
 		OperationID: "webhook-endpoint-create",
 		Method:      http.MethodPost,
 		Path:        createPath,
-		Summary:     "Register a webhook endpoint",
+		// A create that creates answers 201, which is what the Spec's own generated
+		// create says and what every consumer's client generator branches on; this
+		// route replaces that create, so it owes that answer too.
+		DefaultStatus: http.StatusCreated,
+		Summary:       "Register a webhook endpoint",
 		Description: "An HTTPS address that wants events, and the event types it wants. " +
 			"Every event type must be one this application emits. The signing secret is answered once, here, and by nothing else: " +
 			"a caller who loses it rotates. The address is refused if it is not https or is not one this deployment dials.",
