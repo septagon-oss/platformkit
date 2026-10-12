@@ -92,6 +92,25 @@ is alive, because from that moment its own older traffic is unreadable to it. A 
 ledger, which is what the move above is for; the two are one decision read at two moments.
 
 
+**The wire gate reads the plan feature a door declares.** An operation's authorization
+declaration has three parts — its `kind`, its `permission`, and the plan feature a route
+names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
+asks the tenant's plan about at request time (a refusal answers `402` with
+`PLAN_EXCLUDES`). The compatibility identity in `kit/wire` was a list of key names that left
+the feature out, so on a document whose only other member had moved, dropping a feature,
+adding one to a door that named none, or renaming one were accepted with zero breaks — and
+`UPDATE_GOLDEN=1` then rewrote the reviewed artefact over a plan gate the runtime still
+enforces. The identity is now the whole emitted declaration, spelled `kind`, `permission`,
+`feature`, then any other member by name, with a name or a value that does not read as one
+member quoted so one member cannot be read as another pair, so all three are B6 refusals
+naming the operation
+and both declarations, and the composition's one reviewed pair (`kind=signed_in` to
+`kind=any_credential`) covers no feature it does not spell on both sides. A pair written
+against a declaration with no feature keeps matching exactly what it matched, which is why
+117 of the reference document's 119 declarations are untouched and its golden is not
+regenerated. Enforcement is unchanged, so this is a gate that stopped missing a change, not
+a door that started refusing a request.
+
 **Any declared field of a record can be said in the tenant's other languages.**
 `modules/translation` holds the saying, not the text: one `translations` table
 whose identity is `(tenant_id, module, entity, record_id, field, locale)` —
@@ -125,6 +144,21 @@ address, key and price are an installation's facts (`translation.Deps.Translator
 and where none is configured `Suggest` refuses and writes nothing — and which
 records a translator may work on is the product's line, written in
 `apps/platformkit/product.go`.
+
+**A client that names no accent gets the palette's, resolved on read.**
+`modules/site`'s `DefaultPrimaryColor` is the empty colour: not a colour but the
+absence of one, stored rather than filled in, so a row says "nobody chose" instead
+of recording whatever the installation's accent was the day it was written.
+`contracts.Palette` asks the composition for that accent per mode — answered from
+`pkit.App.Theme(pair)` over `Wiring.Skin()`, the seam `modules/web` already reads for
+the sheet it composes — and both of the service's reads resolve through it, so no
+screen, shell or device is handed the empty colour where its own document says
+`#rrggbb`. A save of either accent clears it back to the absence before validation and
+before the diff, so the settings form that submits what the read gave it writes
+nothing, publishes nothing and moves no revision; the event and the trail keep
+speaking stored values. `migrations/000054_site_default_accent.up.sql` moves the
+column's default and runs no `UPDATE`: a migration cannot tell a colour somebody
+typed from the one that column used to fill in, so every existing row keeps it.
 
 **A change to somebody else's row is proposed, decided and applied through four
 commands.** `modules/change` holds a proposal over another account's row: the
@@ -186,6 +220,16 @@ text, so hiding a column took its hit target from 60px to 20px. It is a target o
 its own now: `components.RowLink` sets `display: inline-block` and a 1.5rem
 floor, so the 24px the browser audit enforces comes from the rule and not from
 whether the person's title happened to wrap.
+
+**The kernel publishes its journey steps.** `e2e/steps/kernel.ts` and `e2e/steps/public.ts` ship
+in this module, so the version a consumer pins that resolves `kit/rest` and `ui/page` carries the
+steps of the kernel's own acts — the sign-in door, the way out, the workspace, the generated
+screen and the public frame — beside the code they drive. A caller that kept its own copy of that
+walk re-exports these instead; the addresses in `endpoints` are the reference application's
+(`apps/platformkit/fault.go` pins them), and a composition reaches them by its own specifier.
+`scripts/e2e_step_library_test.sh` refuses a published name that vanished, an import a module zip
+cannot carry, an address this application does not serve, and a step whose evidence path, host or
+inbox the file guessed instead of asking the run that started it.
 
 **The catalogue says how a resource reads.** A `Spec`, a `Singleton` and a
 `rest.CommandOptions` now carry an optional declaration of how a resource is

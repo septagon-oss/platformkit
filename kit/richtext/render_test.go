@@ -73,7 +73,7 @@ func TestImageResolutionAndPolicy(t *testing.T) {
 		t.Fatalf("first image: %+v, %v", first, ok)
 	}
 	path := "/api/v1/file/files/" + id.String() + "/content"
-	files := testFiles{image: Image{path, path + " 800w", 800, 600}}
+	files := testFiles{image: Image{Src: path, SrcSet: path + " 800w", Width: 800, Height: 600}}
 	if _, err := Prepare(context.Background(), db.Tx[db.Tenant]{}, source, files, 100); err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestImageResolutionAndPolicy(t *testing.T) {
 	if err != nil || !strings.Contains(html, "Missing image") || strings.Contains(html, "<img") {
 		t.Fatalf("missing: %q, %v", html, err)
 	}
-	bad := testFiles{image: Image{"https://attacker.test/x", "https://attacker.test/x 800w", 800, 600}}
+	bad := testFiles{image: Image{Src: "https://attacker.test/x", SrcSet: "https://attacker.test/x 800w", Width: 800, Height: 600}}
 	if _, err := Prepare(context.Background(), db.Tx[db.Tenant]{}, source, bad, 100); err == nil {
 		t.Fatal("accepted off-site image")
 	}
