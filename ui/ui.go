@@ -38,6 +38,15 @@
 // interface is built separately under ui/storybook and served through authorization.
 // The application enhancements live in assets/js, listed in Controllers.
 //
+// # The rich text editor bundle
+//
+// assets/vendor/richtext/editor.js is the headless editor a rich text field
+// mounts: Tiptap and its official Markdown extension, built to one minified
+// module by the node project under tools/richtext-bundle and committed, so
+// building this repository needs no package registry. It is no one's controller:
+// a page loads it as an ES module, and only where a rich text field renders, so
+// the bytes stay off every page without one. Its licences travel beside it.
+//
 // # What is not here
 //
 // Design snapshots, token export, proposals and the storybook composition are
@@ -63,7 +72,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-//go:embed assets/js/*.js assets/css/*.css
+//go:embed assets/js/*.js assets/css/*.css assets/vendor/richtext/*.js
 var scripts embed.FS
 
 // Controllers are the browser scripts a page loads, in order. The list is here
