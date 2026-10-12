@@ -385,7 +385,7 @@
     },
     "auth.mail_failed": {
       "address": "platformkit.*.auth.mail_failed",
-      "description": "Published at platformkit.{tenantId}.auth.mail_failed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.auth.mail_failed; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "auth.mail_failed": {
           "contentType": "application/json",
@@ -429,7 +429,7 @@
     },
     "auth.no_link_requested": {
       "address": "platformkit.*.auth.no_link_requested",
-      "description": "Published at platformkit.{tenantId}.auth.no_link_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.auth.no_link_requested; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "auth.no_link_requested": {
           "contentType": "application/json",
@@ -2059,7 +2059,7 @@
     },
     "file.visibility": {
       "address": "platformkit.*.file.visibility",
-      "description": "Published at platformkit.{tenantId}.file.visibility; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.file.visibility; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "file.visibility": {
           "contentType": "application/json",
@@ -4008,7 +4008,7 @@
     },
     "webhook.endpoint.created": {
       "address": "platformkit.*.webhook.endpoint.created",
-      "description": "Published at platformkit.{tenantId}.webhook.endpoint.created; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.created; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "webhook.endpoint.created": {
           "contentType": "application/json",
@@ -4095,7 +4095,7 @@
     },
     "webhook.endpoint.deleted": {
       "address": "platformkit.*.webhook.endpoint.deleted",
-      "description": "Published at platformkit.{tenantId}.webhook.endpoint.deleted; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.deleted; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "webhook.endpoint.deleted": {
           "contentType": "application/json",
@@ -4182,7 +4182,7 @@
     },
     "webhook.endpoint.disabled": {
       "address": "platformkit.*.webhook.endpoint.disabled",
-      "description": "Published at platformkit.{tenantId}.webhook.endpoint.disabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.disabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "webhook.endpoint.disabled": {
           "contentType": "application/json",
@@ -4230,7 +4230,7 @@
     },
     "webhook.endpoint.enabled": {
       "address": "platformkit.*.webhook.endpoint.enabled",
-      "description": "Published at platformkit.{tenantId}.webhook.endpoint.enabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.enabled; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "webhook.endpoint.enabled": {
           "contentType": "application/json",
@@ -4317,7 +4317,7 @@
     },
     "webhook.endpoint.updated": {
       "address": "platformkit.*.webhook.endpoint.updated",
-      "description": "Published at platformkit.{tenantId}.webhook.endpoint.updated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "description": "Published at platformkit.{tenantId}.webhook.endpoint.updated; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute, and `app` names the app whose process published it — absent for a deployment that hosts one app.",
       "messages": {
         "webhook.endpoint.updated": {
           "contentType": "application/json",
