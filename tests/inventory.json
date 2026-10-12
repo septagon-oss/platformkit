@@ -5894,6 +5894,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/webhook_registration_test.go",
+   "id": "apps/platformkit/webhook_registration_test.go#TestWebhookRegistrationAcceptsMailEventsAndReturnsACreatedSecret",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestWebhookRegistrationAcceptsMailEventsAndReturnsACreatedSecret",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "routes",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/workspace_face_language_test.go",
    "id": "apps/platformkit/workspace_face_language_test.go#TestTheShippedWorkspaceMountServesTheCatalogueInTheRequestsLanguage",
    "kind": "go",
@@ -54092,7 +54111,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1337,
+  "files": 1338,
   "forge_runs": [
    408,
    413,
@@ -54127,7 +54146,7 @@
   ],
   "layers": {
    "behaviour": 2348,
-   "composition": 295,
+   "composition": 296,
    "contract": 19,
    "journey": 67
   },
@@ -54145,9 +54164,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2729,
+  "rows": 2730,
   "tiers": {
-   "merge": 1705,
+   "merge": 1706,
    "nightly": 67,
    "push": 957
   },
@@ -54155,13 +54174,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1121,
+   "keep": 1122,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2381,
+   "keep": 2382,
    "keep-rewrite": 133,
    "merge": 215
   }
