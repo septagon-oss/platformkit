@@ -69,6 +69,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/ui/components"
 	"github.com/septagon-oss/platformkit/ui/css"
+	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
@@ -711,6 +712,11 @@ func base() *css.Sheet {
 func componentState() *css.Sheet {
 	s := css.NewSheet()
 	s.Merge(components.ProseStyle())
+	// The rich text field's chrome, and the published page's own prose rules
+	// inside its editing surface: what an author formats is dressed the way the
+	// reader will see it.
+	s.Merge(forms.RichTextChrome())
+	s.Merge(components.ProseStyleFor(`[data-richtext-surface] [contenteditable="true"]`))
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	// Component layout utilities must respect Hidden. Keep the override scoped
 	// so consumer HTML can reveal its own hidden content in print styles.

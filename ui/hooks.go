@@ -52,8 +52,9 @@ var renderedHooks = map[string]string{
 	"data-signin":               "ui/document/document.go",
 	"data-theme":                "ui/document/document.go",
 	// The rich text field's vocabulary: all of it drawn by ui/forms, read by
-	// ui/assets/js/richtext.js. The glue creates no attribute of its own, so what
-	// a browser may know about a field is what this list already names.
+	// ui/assets/js/richtext.js. The glue creates no attribute of its own — the
+	// offer slot it fills is drawn empty — so what a browser may know about a
+	// field is what this list already names.
 	"data-richtext":               "ui/forms/richtext.go",
 	"data-richtext-bubble":        "ui/forms/richtext.go",
 	"data-richtext-command":       "ui/forms/richtext.go",
@@ -78,6 +79,34 @@ var renderedHooks = map[string]string{
 	"data-richtext-surface":       "ui/forms/richtext.go",
 	"data-richtext-toolbar":       "ui/forms/richtext.go",
 	"data-richtext-upload":        "ui/forms/richtext.go",
+	// The sentences the field says while the author writes, and the name the
+	// editing surface carries: drawn by ui/forms from the request's catalogue,
+	// read by the glue, which holds no prose of its own.
+	"data-richtext-alt-title":    "ui/forms/richtext.go",
+	"data-richtext-bad-link":     "ui/forms/richtext.go",
+	"data-richtext-choose":       "ui/forms/richtext.go",
+	"data-richtext-choices":      "ui/forms/richtext.go",
+	"data-richtext-conflict":     "ui/forms/richtext.go",
+	"data-richtext-decorative":   "ui/forms/richtext.go",
+	"data-richtext-draft-found":  "ui/forms/richtext.go",
+	"data-richtext-failed":       "ui/forms/richtext.go",
+	"data-richtext-keep":         "ui/forms/richtext.go",
+	"data-richtext-merge":        "ui/forms/richtext.go",
+	"data-richtext-name":         "ui/forms/richtext.go",
+	"data-richtext-no-draft":     "ui/forms/richtext.go",
+	"data-richtext-offer":        "ui/forms/richtext.go",
+	"data-richtext-preview-note": "ui/forms/richtext.go",
+	"data-richtext-refused":      "ui/forms/richtext.go",
+	"data-richtext-retry":        "ui/forms/richtext.go",
+	"data-richtext-save":         "ui/forms/richtext.go",
+	"data-richtext-theirs":       "ui/forms/richtext.go",
+	"data-richtext-uploading":    "ui/forms/richtext.go",
+	"data-richtext-word-drafted": "ui/forms/richtext.go",
+	"data-richtext-word-dirty":   "ui/forms/richtext.go",
+	"data-richtext-word-offline": "ui/forms/richtext.go",
+	"data-richtext-word-saved":   "ui/forms/richtext.go",
+	"data-richtext-word-saving":  "ui/forms/richtext.go",
+	"data-richtext-words":        "ui/forms/richtext.go",
 }
 
 // kernelHooks is the vocabulary refuseClientSheet compares a selector against,

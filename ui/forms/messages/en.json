@@ -316,5 +316,137 @@
       "ui/forms/richtext.go"
     ],
     "translation": "Discard"
+  },
+  "forms.richtext.words": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "{count} words"
+  },
+  "forms.richtext.word.saving": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Saving"
+  },
+  "forms.richtext.word.saved": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Saved"
+  },
+  "forms.richtext.word.dirty": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Not saved yet"
+  },
+  "forms.richtext.word.drafted": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Kept on this device"
+  },
+  "forms.richtext.word.offline": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Not saved — offline"
+  },
+  "forms.richtext.uploading": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Uploading"
+  },
+  "forms.richtext.failed": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Upload failed"
+  },
+  "forms.richtext.retry": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Retry"
+  },
+  "forms.richtext.choose": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Choose another file"
+  },
+  "forms.richtext.refused": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Not saved"
+  },
+  "forms.richtext.noDraft": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "This browser will not keep a draft"
+  },
+  "forms.richtext.badLink": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "That address is not a link this page may publish."
+  },
+  "forms.richtext.previewNote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "The editor's own preview. Only the published page is the server's rendering."
+  },
+  "forms.richtext.altTitle": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Alt text"
+  },
+  "forms.richtext.decorative": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Decorative"
+  },
+  "forms.richtext.save": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Save"
+  },
+  "forms.richtext.choices": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Choices"
+  },
+  "forms.richtext.conflict": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Changed by someone else — compare"
+  },
+  "forms.richtext.keep": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Keep mine"
+  },
+  "forms.richtext.theirs": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Take theirs"
+  },
+  "forms.richtext.merge": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Merge by hand"
   }
 }

@@ -316,5 +316,137 @@
       "ui/forms/richtext.go"
     ],
     "translation": "Descartar"
+  },
+  "forms.richtext.words": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "{count} palavras"
+  },
+  "forms.richtext.word.saving": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A guardar"
+  },
+  "forms.richtext.word.saved": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardado"
+  },
+  "forms.richtext.word.dirty": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Ainda não guardado"
+  },
+  "forms.richtext.word.drafted": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardado neste dispositivo"
+  },
+  "forms.richtext.word.offline": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Não guardado — sem ligação"
+  },
+  "forms.richtext.uploading": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "A carregar"
+  },
+  "forms.richtext.failed": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Falha ao carregar"
+  },
+  "forms.richtext.retry": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Repetir tentativa"
+  },
+  "forms.richtext.choose": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Escolher outro ficheiro"
+  },
+  "forms.richtext.refused": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Não guardado"
+  },
+  "forms.richtext.noDraft": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Este navegador não guarda versões"
+  },
+  "forms.richtext.badLink": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Esse endereço não é uma ligação que esta página possa publicar."
+  },
+  "forms.richtext.previewNote": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Pré-visualização do editor. Apenas a página publicada é a apresentação do servidor."
+  },
+  "forms.richtext.altTitle": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Texto alternativo"
+  },
+  "forms.richtext.decorative": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Decorativo"
+  },
+  "forms.richtext.save": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Guardar"
+  },
+  "forms.richtext.choices": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Escolhas"
+  },
+  "forms.richtext.conflict": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Alterado por outra pessoa — comparar"
+  },
+  "forms.richtext.keep": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Manter o meu"
+  },
+  "forms.richtext.theirs": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Aceitar o outro"
+  },
+  "forms.richtext.merge": {
+    "references": [
+      "ui/forms/richtext.go"
+    ],
+    "translation": "Juntar à mão"
   }
 }

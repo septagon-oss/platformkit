@@ -54,7 +54,6 @@ var richtextCommands = []richtextCommand{
 	{Command: "strike", TitleKey: "forms.richtext.strike", Title: "Strikethrough", Toggle: true, Toolbar: true},
 	{Command: "codeBlock", TitleKey: "forms.richtext.codeBlock", Title: "Code block", HelpKey: "forms.richtext.menu.codeBlock", Help: "Monospaced text, unformatted", Menu: true},
 	{Command: "table", TitleKey: "forms.richtext.table", Title: "Table", HelpKey: "forms.richtext.menu.table", Help: "Rows and columns of short values", Menu: true},
-	{Command: "heading1", TitleKey: "forms.richtext.heading1", Title: "Heading 1", HelpKey: "forms.richtext.menu.heading1", Help: "The title of a section", Bubble: true, Menu: true},
 	{Command: "heading2", TitleKey: "forms.richtext.heading2", Title: "Heading 2", HelpKey: "forms.richtext.menu.heading2", Help: "A section inside a section", Bubble: true, Menu: true},
 	{Command: "heading3", TitleKey: "forms.richtext.heading3", Title: "Heading 3", HelpKey: "forms.richtext.menu.heading3", Help: "A sub-section heading", Menu: true},
 	{Command: "paragraph", TitleKey: "forms.richtext.paragraph", Title: "Text", HelpKey: "forms.richtext.menu.paragraph", Help: "An ordinary paragraph", Bubble: true, Menu: true},
@@ -93,6 +92,15 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 	// route and the deployment's ceiling. An absent attribute means the browser
 	// does without the feature — never that it guesses one.
 	attrs := []g.Node{g.Attr("data-richtext", "1"), g.Attr("data-richtext-field", f.Name)}
+	// The editing surface is a control the server never drew: Tiptap builds the
+	// contenteditable inside it, and a textbox with no name is a control nobody
+	// can fill by screen reader. The words are the catalogue's for an editing
+	// surface; the field's own label stays on the textarea, which is the control
+	// that posts.
+	attrs = append(attrs, g.Attr("data-richtext-name", word("forms.richtext.surface", "Content")))
+	for _, line := range richtextSentences {
+		attrs = append(attrs, g.Attr(line.Attr, word(line.Key, line.Fallback)))
+	}
 	if f.MaxLength > 0 {
 		attrs = append(attrs, g.Attr("data-richtext-max", strconv.Itoa(f.MaxLength)))
 	}
@@ -211,7 +219,7 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 				Type:           "button", Label: word("forms.richtext.linkRemove", "Remove link"), Variant: "ghost", Size: "sm",
 			}),
 		),
-		h.Div(g.Attr("data-richtext-surface", ""), h.Aria("label", word("forms.richtext.surface", "Content")), h.Hidden("")),
+		h.Div(g.Attr("data-richtext-surface", ""), h.Hidden("")),
 		h.P(g.Attr("data-richtext-status", ""), h.Aria("live", "polite"), h.Hidden("")),
 		h.P(g.Attr("data-richtext-count", ""), h.Hidden("")),
 		h.Input(h.Type("file"), h.Accept("image/*"), h.Multiple(), g.Attr("data-richtext-file", ""), h.Hidden("")),
@@ -228,9 +236,46 @@ func richtextChrome(p ControlProps, area, help g.Node) g.Node {
 			}),
 		),
 		h.Div(g.Attr("data-richtext-preview", ""), h.Hidden("")),
+		// The one slot a refusal, a conflict or a returned draft occupies. It is
+		// drawn empty so the browser fills a slot the page laid out instead of
+		// inventing a widget of its own.
+		h.Div(g.Attr("data-richtext-offer", ""), h.Hidden("")),
 		help,
 	)
 	return h.Div(frame...)
+}
+
+// richtextSentences are the lines the browser writes while the person is writing:
+// the counter, an upload's progress, a refused address, a conflict. Each is drawn
+// as an attribute in the request's language so the glue holds no prose of its own —
+// a sentence the page did not draw is a line the field leaves blank, never one the
+// browser spells in whichever language its own install happens to use.
+var richtextSentences = []struct {
+	Attr, Key, Fallback string
+}{
+	{"data-richtext-words", "forms.richtext.words", "{count} words"},
+	{"data-richtext-word-saving", "forms.richtext.word.saving", "Saving"},
+	{"data-richtext-word-saved", "forms.richtext.word.saved", "Saved"},
+	{"data-richtext-word-dirty", "forms.richtext.word.dirty", "Not saved yet"},
+	{"data-richtext-word-drafted", "forms.richtext.word.drafted", "Kept on this device"},
+	{"data-richtext-word-offline", "forms.richtext.word.offline", "Not saved — offline"},
+	{"data-richtext-uploading", "forms.richtext.uploading", "Uploading"},
+	{"data-richtext-failed", "forms.richtext.failed", "Upload failed"},
+	{"data-richtext-retry", "forms.richtext.retry", "Retry"},
+	{"data-richtext-choose", "forms.richtext.choose", "Choose another file"},
+	{"data-richtext-refused", "forms.richtext.refused", "Not saved"},
+	{"data-richtext-no-draft", "forms.richtext.noDraft", "This browser will not keep a draft"},
+	{"data-richtext-bad-link", "forms.richtext.badLink", "That address is not a link this page may publish."},
+	{"data-richtext-preview-note", "forms.richtext.previewNote", "The editor's own preview. Only the published page is the server's rendering."},
+	{"data-richtext-draft-found", "forms.richtext.draftFound", "A draft from this device was not saved."},
+	{"data-richtext-alt-title", "forms.richtext.altTitle", "Alt text"},
+	{"data-richtext-decorative", "forms.richtext.decorative", "Decorative"},
+	{"data-richtext-save", "forms.richtext.save", "Save"},
+	{"data-richtext-choices", "forms.richtext.choices", "Choices"},
+	{"data-richtext-conflict", "forms.richtext.conflict", "Changed by someone else — compare"},
+	{"data-richtext-keep", "forms.richtext.keep", "Keep mine"},
+	{"data-richtext-theirs", "forms.richtext.theirs", "Take theirs"},
+	{"data-richtext-merge", "forms.richtext.merge", "Merge by hand"},
 }
 
 // helpKey is the catalogue key of a command menu's description, which a command
