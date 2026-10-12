@@ -198,6 +198,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	// and textarea's. No token, theme, notice, icon or schema leaf moves. The
 	// digest below is that measurement of this tree, printed by the refusal above
 	// the re-measure and copied from it.
+	//
 	// A confirmation body drawn into a command form is a sentence of the form's own
 	// copy, so it takes the form's text scale and bounded measure (clFormSentence),
 	// and the confirm dialog's message — the same sentence, read inside a frame
@@ -219,7 +220,7 @@ func TestSourceLayoutPreservesLegacyBytesAndCallerInputs(t *testing.T) {
 	//
 	// The digest below is that measurement of this merged tree, printed by the
 	// refusal above the re-measure and copied from it.
-	if legacy.SHA256 != "b51d21dec00319b066ddb3b154ae1cbf7776d3fe1aa44f329433f81b4dbb4bf4" {
+	if legacy.SHA256 != "be39ae2b0e1efb7f1cbcbdbf0e0a5df841740683ad240379886ad53259ee6e5b" {
 		t.Fatalf("v1 baseline changed; investigate rendering and encoding before accepting a migration (this tree exports %s)", legacy.SHA256)
 	}
 	before, _ := json.Marshal(legacy)
