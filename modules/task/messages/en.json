@@ -383,5 +383,68 @@
     "plural": {
       "": "Records a breach if the deadline has passed with the task unresolved. Records at most one."
     }
+  },
+  "invalid.task.title": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "a task needs a title",
+    "plural": {
+      "": "a task needs a title"
+    }
+  },
+  "invalid.task.title.length": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "title must have at most 200 characters",
+    "plural": {
+      "": "title must have at most 200 characters"
+    }
+  },
+  "invalid.task.status": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "status %q is not a lifecycle state",
+    "plural": {
+      "": "status %q is not a lifecycle state"
+    }
+  },
+  "invalid.task.priority": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "priority %q is not a priority",
+    "plural": {
+      "": "priority %q is not a priority"
+    }
+  },
+  "invalid.task.breach.deadline": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "a breach needs the deadline it broke",
+    "plural": {
+      "": "a breach needs the deadline it broke"
+    }
+  },
+  "invalid.task.resolved_at.extra": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "a %s task cannot have a resolution time",
+    "plural": {
+      "": "a %s task cannot have a resolution time"
+    }
+  },
+  "invalid.task.resolved_at.missing": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "a %s task needs a resolution time",
+    "plural": {
+      "": "a %s task needs a resolution time"
+    }
   }
 }

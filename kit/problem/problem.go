@@ -11,6 +11,8 @@ package problem
 import (
 	"fmt"
 	"net/http"
+
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // ContentType is the media type of a problem response.
@@ -33,6 +35,15 @@ type Problem struct {
 	// "urn:request:<request id>", which is the same id the log line carries, so
 	// a report of "I got a 500" is one grep away from the reason.
 	Instance string `json:"instance,omitempty"`
+
+	// Refusal is the writer's own sentence for this problem, when the error that
+	// became it carried one, and which entry of that writer's catalogue the
+	// sentence is kept under. It is not part of the problem document — Detail is
+	// what a client is answered, in the language it was written in — and it is what
+	// lets the layer drawing a page for a person show them that same sentence in the
+	// language they are being answered in. See fault.Reason and
+	// docs/adr/0015-a-refusal-has-one-value-and-two-shapes.md.
+	Refusal *fault.Reason `json:"-"`
 
 	// cause is the server-side error. It is never serialized; Unwrap exposes
 	// it to the logger, which is the only thing allowed to see it.

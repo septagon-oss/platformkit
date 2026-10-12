@@ -52,7 +52,10 @@
 // what a client is answered.
 package fault
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
 
 // The three failures a caller distinguishes. What the mapping recognises past
 // these is an outage, except the authorization refusals kit/tenancy declares,
@@ -70,3 +73,57 @@ var (
 	// package's: a duplicate value is correctable, and the last one away is not.
 	ErrConflict = errors.New("crud: conflict")
 )
+
+// Reason is a refusal's own sentence, carried as a value instead of as prose.
+//
+// A refusal has one value and two shapes (docs/adr/0015): the problem document a
+// program reads, which says the same thing in every language because a program
+// reads a code, and the sentence a person is shown. The second is the reader's
+// language, and the writer of a refusal — a module's value package, which knows
+// what it refused and knows no HTTP, no HTML and no reader — cannot know it. So a
+// refusal that reaches a person carries two things besides the verdict: the source
+// sentence its caller is written in, which is what Error answers and the log and the
+// problem document print, and the key that sentence's own catalogue entry is kept
+// under, which is what the layer rendering the refusal reads the reader's language
+// from.
+//
+// The key belongs to whoever wrote the sentence, because the sentence does: a
+// module refusing its own field owns both the words and the entry they sit under.
+// A rendered page may answer the same verdict with copy of its own instead, and a
+// refusal whose writer named no key is shown the source sentence in whatever
+// language it was written in — the answer it always gave.
+//
+// Unwrap reports Kind, so errors.Is still matches the sentinel a caller tested for
+// however the refusal is spelled, and every consumer of the three values is
+// untouched by one being wrapped in words.
+type Reason struct {
+	// Kind is which of the three failures this is. It is one of the values above:
+	// a refusal of any other kind is an outage, and an outage has no sentence for
+	// a person to act on.
+	Kind error
+	// Key names this sentence in its writer's catalogue, in the form kit/locale
+	// uses: the verdict, the module, the thing — "invalid.task.title". The empty
+	// string says the writer ships no copy for this refusal.
+	Key string
+	// Text is the sentence in the writer's own source language, as a format
+	// string for Args. It is the text a reader who speaks that language is shown,
+	// and the fallback for one who does not while the catalogue ships nothing.
+	Text string
+	// Args are the values Text places. They are values, not sentences: a
+	// translation puts them where its own sentence reads them.
+	Args []any
+}
+
+// Error is the refusal in the language it was written in. It is what a log line,
+// a problem document and a shell with no catalogue for this key all print.
+func (r *Reason) Error() string {
+	if len(r.Args) == 0 {
+		return r.Text
+	}
+	return fmt.Sprintf(r.Text, r.Args...)
+}
+
+// Unwrap is the verdict underneath the sentence, which is why wrapping a refusal
+// in words costs a caller nothing: errors.Is(err, ErrInvalid) matches whichever
+// way the writer spelled it.
+func (r *Reason) Unwrap() error { return r.Kind }

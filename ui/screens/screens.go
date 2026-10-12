@@ -102,8 +102,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					return page.View{}, httpx.SeeOther(at + "/" + rest.Text(row["id"]))
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := refusal(o, err, res.Schema.Fields)
 			return Form(res, o, at, o.Text("screens.new", "New %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, true), nil
 		})
 
@@ -135,8 +135,8 @@ func Mount(router *httpx.Router, s page.Shell, o Options, res httpx.Resource) {
 					return page.View{}, httpx.SeeOther(item)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := refusal(o, err, res.Schema.Fields)
 			return Form(res, o, item, o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, false), nil
 		})
 
@@ -283,10 +283,23 @@ func mountSingleton(router *httpx.Router, s page.Shell, o Options, res httpx.Res
 					return page.View{}, httpx.SeeOther(at)
 				}
 			}
-			errs, detail := rest.FieldErrors(err, res.Schema.Fields)
 			o := localized(o, req)
+			errs, detail := refusal(o, err, res.Schema.Fields)
 			return Form(res, o, at, o.Text("screens.edit_item", "Edit %s", o.Noun(res.Module, res.Entity, res.Name, 1)), sent, errs, detail, false), nil
 		})
+}
+
+// refusal is a refused write read back as the form needs it — which controls are
+// at fault and the sentence above them — in the language this page is being
+// answered in. A module refusing its own field keeps that sentence and its catalogue
+// entry (fault.Reason), and the entry is what lets the same reason reach the reader
+// in their own language; a refusal with no entry behind its key, and a shell with no
+// catalogue at all, are shown the sentence as it was written.
+func refusal(o Options, err error, fields []crud.Field) (map[string]string, string) {
+	if o.Locale == nil {
+		return rest.FieldErrors(err, fields)
+	}
+	return rest.FieldErrorsIn(err, fields, o.Locale)
 }
 
 // localized is the shell's options with this request's language. Options is a

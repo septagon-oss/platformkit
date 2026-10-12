@@ -32,6 +32,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -653,15 +654,32 @@ func Fault(err error) error {
 	case errors.Is(err, crud.ErrNotFound):
 		return problem.NotFound("no such row, or none this tenant may see")
 	case errors.Is(err, crud.ErrInvalid):
-		return problem.New(http.StatusUnprocessableEntity, err.Error())
+		return refusing(err, problem.New(http.StatusUnprocessableEntity, err.Error()))
 	case errors.Is(err, crud.ErrConflict):
 		if _, unique := errors.AsType[*crud.UniqueConflict](err); unique {
+			// The sentence is this package's own, standing in for whatever the
+			// driver said, so no writer's key travels with it: there is nothing to
+			// translate that anybody wrote.
 			return problem.Conflict("A record already uses one of these values. Change the duplicate value and try again.")
 		}
-		return problem.Conflict(err.Error())
+		return refusing(err, problem.Conflict(err.Error()))
 	default:
 		return err
 	}
+}
+
+// refusing records which sentence the Detail is, where the error underneath it
+// named one. The problem document keeps the writer's language — a program reads the
+// status and the code — and what travels in Refusal is the pointer a page reads: the
+// key the same sentence is kept under in the writer's own catalogue, so the person
+// looking at a refusal page is handed the sentence in the language the rest of the
+// page is in. An error with no sentence of its own, and one whose writer ships no
+// catalogue, are answered as they always were.
+func refusing(err error, p *problem.Problem) *problem.Problem {
+	if reason, ok := errors.AsType[*fault.Reason](err); ok && reason.Key != "" {
+		p.Refusal = reason
+	}
+	return p
 }
 
 // idInput is the item routes' path parameter.

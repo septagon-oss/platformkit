@@ -332,7 +332,12 @@ func validate(ctx context.Context, e any) error {
 		return nil
 	}
 	if err := v.Validate(ctx); err != nil {
-		return fmt.Errorf("%w: %s", ErrInvalid, err)
+		// Both halves are wrapped, not the sentinel alone and not the reason as
+		// text: errors.Is still answers ErrInvalid, and the refusal the entity
+		// wrote stays reachable as the value it is, so the layer rendering it can
+		// read the sentence off the writer rather than off this wrap. See
+		// fault.Reason.
+		return fmt.Errorf("%w: %w", ErrInvalid, err)
 	}
 	return nil
 }

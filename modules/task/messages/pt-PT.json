@@ -383,5 +383,68 @@
     "plural": {
       "": "Regista um incumprimento se o prazo terminou com a tarefa por resolver. Regista no máximo um."
     }
+  },
+  "invalid.task.title": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "uma tarefa precisa de um título",
+    "plural": {
+      "": "uma tarefa precisa de um título"
+    }
+  },
+  "invalid.task.title.length": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "o título deve ter no máximo 200 caracteres",
+    "plural": {
+      "": "o título deve ter no máximo 200 caracteres"
+    }
+  },
+  "invalid.task.status": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "o estado %q não é um estado do ciclo de vida da tarefa",
+    "plural": {
+      "": "o estado %q não é um estado do ciclo de vida da tarefa"
+    }
+  },
+  "invalid.task.priority": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "a prioridade %q não é uma das prioridades desta instalação",
+    "plural": {
+      "": "a prioridade %q não é uma das prioridades desta instalação"
+    }
+  },
+  "invalid.task.breach.deadline": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "uma violação precisa do prazo que violou",
+    "plural": {
+      "": "uma violação precisa do prazo que violou"
+    }
+  },
+  "invalid.task.resolved_at.extra": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "uma tarefa em %s não pode ter hora de resolução",
+    "plural": {
+      "": "uma tarefa em %s não pode ter hora de resolução"
+    }
+  },
+  "invalid.task.resolved_at.missing": {
+    "references": [
+      "modules/task/contracts/task.go"
+    ],
+    "translation": "uma tarefa em %s precisa de hora de resolução",
+    "plural": {
+      "": "uma tarefa em %s precisa de hora de resolução"
+    }
   }
 }
