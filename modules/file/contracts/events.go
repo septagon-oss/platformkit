@@ -20,11 +20,12 @@ import (
 // record of each one: what it was, its digest, and what the store said when it
 // was asked whether anything was left.
 const (
-	EventUploaded = "file.uploaded"
-	EventDeleted  = "file.deleted"
-	EventRetained = "file.retained"
-	EventReleased = "file.released"
-	EventErased   = "file.erased"
+	EventUploaded   = "file.uploaded"
+	EventDeleted    = "file.deleted"
+	EventRetained   = "file.retained"
+	EventReleased   = "file.released"
+	EventErased     = "file.erased"
+	EventVisibility = "file.visibility"
 )
 
 // Events is every event this module emits, for the manifest. kit/app refuses a
@@ -36,6 +37,7 @@ var Events = []events.Declared{
 	events.Declare[Retained](EventRetained),
 	events.Declare[Released](EventReleased),
 	events.Declare[Erased](EventErased),
+	events.Declare[Visibility](EventVisibility),
 }
 
 // Uploaded is the payload of EventUploaded. It carries the digest as well as
@@ -67,6 +69,13 @@ type Deleted struct {
 	// travels with it or it is lost, and the proof row needs it.
 	Cause   string    `json:"cause"`
 	Subject uuid.UUID `json:"subject,omitempty"`
+	// VariantKeys names the widths of this picture, if it had any, and travels for
+	// the same reason the storage key does — the rows are gone by the time anybody
+	// reads this. A width is a separate object under a name of its own, so nothing
+	// but this list can tell a worker what to remove beside the frame; a removal
+	// that left four widths behind in the bucket would be an erasure that erased
+	// the list and not the picture.
+	VariantKeys []string `json:"variantKeys,omitempty"`
 	// Reason is the sentence a person gave when they asked for this removal, and
 	// it travels for the same reason the storage key does: the row is gone by the
 	// time anybody reads this, and the worker that removes the bytes is the one
@@ -86,10 +95,31 @@ type Retained struct {
 }
 
 // Released is the payload of EventReleased. The file goes back to its class's
-// policy, which is the only reason anyone needs to read about it.
+// policy, which is the only reason anyone needs to read about it — except for the
+// second cause, which is named here because the two read differently: a hold
+// lifted is a file that stays, and a file released because nothing shows it
+// anymore is a row that has gone with its bytes.
 type Released struct {
 	FileID uuid.UUID `json:"fileId"`
-	At     time.Time `json:"at"`
+	// Cause is which of the two removals this announces: EraseHold for a hold a
+	// person lifted, EraseUnused for the sweep that reaped a file nobody showed.
+	Cause string    `json:"cause"`
+	At    time.Time `json:"at"`
+}
+
+// Visibility is the payload of EventVisibility: one file's audience, as the
+// ledger recomputed it, and the record whose use of it changed. It is the
+// flip's audit row — the trail keeps the event, its subject, the actor and the
+// trace, and the payload is what says why: which record started or stopped
+// showing this picture. A flip that changes nothing publishes nothing, so one
+// event is one change of audience and not one publish.
+type Visibility struct {
+	FileID     uuid.UUID `json:"fileId"`
+	Visibility string    `json:"visibility"`
+	Module     string    `json:"module"`
+	Entity     string    `json:"entity"`
+	Record     uuid.UUID `json:"record"`
+	At         time.Time `json:"at"`
 }
 
 // Erased is the payload of EventErased, and it is the record an audit trail

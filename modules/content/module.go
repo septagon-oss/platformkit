@@ -42,6 +42,12 @@ type Deps struct {
 	// composition writes this one line; the translation module is told about
 	// content by TranslationSource below, and by nothing else.
 	Translations rest.Translations
+	// Shown asserts, for a record this module publishes, that the files its body
+	// shows are now showing to anonymous readers — or that they stopped. Unwired,
+	// nothing is asserted: an image keeps the visibility its upload asked for, which
+	// for an upload that asked for nothing is private, so a published page shows a
+	// broken picture rather than leaking bytes.
+	Shown rest.FileShown
 }
 
 // TranslationSource is the content entity's row set as the translation module
@@ -113,7 +119,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	resource.RichTextFiles = files
 	resource.FileUses = uses
 	resource.Translations = deps.Translations
-	svc := internal.NewService()
+	svc := internal.NewService(internal.Deps{Shown: deps.Shown})
 	return svc, module.Module{
 		Name:        "content",
 		Migrations:  Migrations.Files,

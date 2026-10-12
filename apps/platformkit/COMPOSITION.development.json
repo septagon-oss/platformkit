@@ -189,7 +189,8 @@
       "provides": [
         "filecontracts.Service",
         "richtext.Files",
-        "rest.FileUses"
+        "rest.FileUses",
+        "rest.FileShown"
       ],
       "needs": [
         {
@@ -356,6 +357,10 @@
         {
           "contract": "rest.Translations",
           "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
         }
       ],
       "after": [

@@ -51,7 +51,7 @@ pkit: file.Module needs filecontracts.Storage from product.Module.
 pkit: file.Module needs jobs.TenantLister from tenant.Module.
 pkit: file.Module reads config.Files.
 pkit: file.Module defines the permission file:read, file:manage, file:erase and file:retain.
-pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released and file.erased.
+pkit: file.Module emits file.uploaded, file.deleted, file.retained, file.released, file.erased and file.visibility.
 pkit: file.Module handles file.deleted.
 pkit: task.Module is built after product.Module and tenant.Module.
 pkit: task.Module needs jobs.TenantLister from tenant.Module.
@@ -91,6 +91,7 @@ pkit: content.Module is built after file.Module and translation.Module.
 pkit: content.Module needs richtext.Files from file.Module.
 pkit: content.Module needs rest.FileUses from file.Module.
 pkit: content.Module needs rest.Translations from translation.Module.
+pkit: content.Module needs rest.FileShown from file.Module.
 pkit: content.Module defines the permission content:read and content:manage.
 pkit: content.Module emits content.content.created, content.content.updated, content.content.deleted, content.published, content.unpublished and content.archived.
 pkit: access.Module is built after product.Module, user.Module, notification.Module, auth.Module and site.Module.
