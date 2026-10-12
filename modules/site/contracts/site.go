@@ -37,28 +37,15 @@ const (
 
 var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 
-// DefaultPrimaryColor is the colour a site that has chosen none is rendered in.
-// It is here rather than in a theme because a theme may be replaced and this is
-// what a tenant's settings say when they say nothing.
-//
-// It is the colour the gate would issue for the one this module first shipped, #2563eb, and it is
-// there because of what the paint does with a colour that cannot read: design.Pair.LegibleAccent
-// measures the accent on each theme's own surfaces and walks a failing colour to the nearest one
-// that clears them, so #2563eb — 4.497:1 on the light canvas, three thousandths under the floor —
-// was never painted anywhere. The row, the settings form and the page named one colour and the
-// browser showed another, in every installation, for every tenant that never opened the settings
-// screen. A default the paint refuses is not a default: the row now holds what the gate issues for
-// the light canvas, and the dark mode keeps the per-mode repair, which is the half no #rrggbb can
-// hold at once (the two canvases are 15.98:1 apart and 4.5 × 4.5 = 20.25 would be needed to read on
-// both).
-//
-// The value is a #rrggbb because the wire says so and the wire is not this module's to change:
-// apps/platformkit/testdata/openapi.json publishes primaryColor with the pattern
-// ^#[0-9a-fA-F]{6}$, and rule B3 in apps/platformkit/wire_compatibility_test.go refuses a change to
-// a published shape whatever the reason and the direction. A row that holds no colour at all — the
-// other way out, and the one that would let the paint say "none chosen" outright — is filed as
-// T-0503 against that rule.
-const DefaultPrimaryColor = "#4164b0"
+// DefaultPrimaryColor is the stored value that means this site named no accent.
+// It is not a colour but the absence of one, which is why it is the empty string:
+// the colour such a site is rendered in belongs to the installation and not to
+// this module, and Service answers it on the way out (see Palette and
+// SiteSettings.Resolve) so that no read, screen or shell is ever handed the empty
+// colour. Storing the absence rather than filling in a colour on write is the
+// decision: a row that recorded the palette's accent would stop following the
+// palette the day the palette moved, and would be a value nobody typed.
+const DefaultPrimaryColor = ""
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
 // and a label longer than a few words is a sentence in a menu.
@@ -132,8 +119,12 @@ type SiteSettings struct {
 	// Theme and PrimaryColor are the whole of what a tenant may say about how
 	// their site looks. A theme that needed more would be a theme with a
 	// stylesheet editor in it.
-	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select;label:Colour scheme" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
-	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#4164b0'" pattern:"^#[0-9a-fA-F]{6}$" ui:"label:Brand colour" doc:"Brand colour, #rrggbb" default:"#4164b0" required:"false" example:"#4164b0"`
+	Theme string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select;label:Colour scheme" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
+	// No `default:` and no `example:` is published: nothing fills a colour in on
+	// write any more, and the value the column holds when nobody chose one is the
+	// empty colour, which the published grammar below does not admit. The write
+	// grammar is the tenant's colour; the read always answers #rrggbb.
+	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:''" pattern:"^#[0-9a-fA-F]{6}$" ui:"label:Brand colour" doc:"Brand colour, #rrggbb. A site that names none is rendered in the installation's own accent; a read always answers #rrggbb" required:"false"`
 
 	// LogoFileID is a file id with no foreign key behind it, which is what
 	// "cross-module dependencies are Go interfaces" costs at the database: this
@@ -170,9 +161,12 @@ type SiteSettings struct {
 // It is a separate interface rather than a fourth method on Service because adding
 // a method to an exported interface is a break to anything outside this repository
 // that implements Service, and the exported-API gate refuses that break rather than
-// treating it as a detail. The implementation is the same object either way —
-// site.Module hands out the Service, site.NewLockedReader hands out this — so the
-// split costs a constructor and buys an unchanged contract.
+// treating it as a detail. The implementation is the same object either way: the
+// composition puts one service under both interfaces, so the split costs a
+// declaration and buys an unchanged contract. It is not a second constructor — a
+// value built outside the wiring cannot reach what the wiring gives the service,
+// and a locked read that resolved a different colour from the unlocked one would
+// be the quiet half of the defect this contract closes.
 type LockedReader interface {
 	// SettingsForUpdate is Settings with the tenant's row locked FOR UPDATE. A
 	// tenant with no row yet gets the defaults, whose revision is 0.
@@ -207,9 +201,9 @@ func (s *SiteSettings) Validate(context.Context) error {
 	if s.Theme == "" {
 		s.Theme = ThemeSystem
 	}
-	if s.PrimaryColor == "" {
-		s.PrimaryColor = DefaultPrimaryColor
-	}
+	// The empty colour is filled in by nothing: it is the stored answer to "did
+	// anybody choose an accent", and the read resolves it against the installation
+	// (Palette). Every guard below therefore measures a colour somebody did type.
 	switch {
 	// Characters, not bytes, here and below: len() counts bytes, so a title of
 	// 60 Chinese characters used to be refused as 180. The same correction is
@@ -227,7 +221,7 @@ func (s *SiteSettings) Validate(context.Context) error {
 		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
 	case !slices.Contains(themes, s.Theme):
 		return fmt.Errorf("theme %q is not one of %v", s.Theme, themes)
-	case !hexColor.MatchString(s.PrimaryColor):
+	case s.PrimaryColor != "" && !hexColor.MatchString(s.PrimaryColor):
 		return fmt.Errorf("%q is not a colour; a primary colour is #rrggbb", s.PrimaryColor)
 	// The accent is drawn on the kit's two canvases, and a colour that vanishes
 	// into one of them is a site whose buttons nobody can find. Both canvases,
@@ -241,7 +235,7 @@ func (s *SiteSettings) Validate(context.Context) error {
 	// `#rrggbb` while the truth were narrower. The sentence names both ratios and
 	// both canvases, because the person on the other end of it can pick another
 	// colour and that is the whole of the fix.
-	case !readsOnBothCanvases(s.PrimaryColor):
+	case s.PrimaryColor != "" && !readsOnBothCanvases(s.PrimaryColor):
 		light, dark, _ := AccentRatios(s.PrimaryColor)
 		return fmt.Errorf("%q reads %.2f:1 against the light canvas and %.2f:1 against the dark one; an accent must read at least %.1f:1 against both (%s and %s)",
 			s.PrimaryColor, light, dark, MinAccentRatio, CanvasLight, CanvasDark)
@@ -281,11 +275,29 @@ type Service interface {
 	// Settings is what this tenant has configured, and the defaults when it has
 	// configured nothing. It never reports "not found": every tenant has a
 	// site, whether or not anybody has saved anything about it.
+	//
+	// The colour it answers is the resolved one: a tenant that named none is
+	// answered the installation's accent for its mode (Palette), so a reader never
+	// sees the stored empty colour. Saving that answer back stores the empty colour
+	// again, which is what makes the read-then-save round trip change nothing.
 	Settings(ctx context.Context, tx db.Tx[db.Tenant]) (*SiteSettings, error)
 
 	// Save writes the settings and publishes site.settings_updated. Saving what
 	// is already stored changes nothing and says nothing, so a screen that
 	// submits its form twice does not invalidate a cache twice.
+	//
+	// A colour that repeats the installation's own is stored as the absence of one
+	// (SiteSettings.ClearInstallationAccent), and the row returned carries the
+	// resolved colour, so echoing a response back changes nothing either. What is
+	// stored, and what the event and the trail report, is the stored value: the
+	// installation's accent is nobody's edit.
+	//
+	// A body that names no colour is that absence as well. The published pattern
+	// admits no empty string, so the empty colour arrives only as a field nobody
+	// sent: a PUT that omits `primaryColor` returns a site that had chosen one to
+	// the installation's accent, at the revision that PUT moves. A caller that means
+	// to keep a colour sends it. Whether that door stays open on PUT is the
+	// composition's — see the module README's Limits.
 	//
 	// It is the door an approved proposal comes through, and it is not gated: the
 	// gate in Deps stands on the route a person types into, not here. Refusing the

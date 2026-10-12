@@ -19,7 +19,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
-	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 )
 
 const connectionPath = "/api/v1/app/connection"
@@ -54,8 +53,17 @@ func TestTheConnectionDocumentAnswersBeforeSignIn(t *testing.T) {
 	if _, answered := document["logoUrl"]; answered {
 		t.Errorf("a workspace with no logo answers logoUrl anyway (%v): the key is omitted rather than emptied, because an empty src is a request against the document's own address", document["logoUrl"])
 	}
-	if document["accent"] != sitecontracts.DefaultPrimaryColor {
-		t.Errorf("the accent is %v, want the colour the kit ships", document["accent"])
+	// The tenant named no accent, so the face answers this composition's own: the
+	// accent of the palette app.go names with Theme(design.Default()). It is resolved
+	// and not stored — the row holds the absence of a colour — which is what lets a
+	// workspace nobody opened the settings form for draw in the colour its own web
+	// page does. The two ratios are the same colour measured against the canvases.
+	if document["accent"] != "#0f5d4e" {
+		t.Errorf("the accent is %v, want the installation's own accent", document["accent"])
+	}
+	if ratio, _ := document["accentRatio"].(map[string]any); ratio["light"] != 6.78 || ratio["dark"] != 2.36 {
+		t.Errorf("accentRatio = %v, want how #0f5d4e reads: 6.78 on the light canvas, 2.36 on the dark one",
+			document["accentRatio"])
 	}
 	if document["theme"] != "system" {
 		t.Errorf("the theme is %v, want system", document["theme"])
@@ -249,7 +257,7 @@ func TestOneHostsFaceIsNotAnotherHostsFace(t *testing.T) {
 		t.Errorf("Acme's own host answers %v / %v", acme["name"], acme["accent"])
 	case globex["name"] != "Globex Corporation":
 		t.Errorf("Globex's host answers the name %v: it is being told about another tenant's site, or about none", globex["name"])
-	case globex["accent"] != sitecontracts.DefaultPrimaryColor || globex["theme"] != "system":
+	case globex["accent"] != "#0f5d4e" || globex["theme"] != "system":
 		t.Errorf("Globex's host answers Acme's look: %v / %v", globex["accent"], globex["theme"])
 	}
 

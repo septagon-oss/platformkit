@@ -37,14 +37,14 @@ type Connection struct {
 	// draws what it is told. Never an empty string, because an empty src is a request
 	// against the document's own address.
 	LogoURL string `json:"logoUrl,omitempty" doc:"Path of this workspace's mark, when it has one" example:"/api/v1/public/file/files/6f2b3a1e-1c3a-4a51-9d1a-2f0f3c4b5a69"`
-	// Accent is the workspace's colour, #rrggbb — the value the tenant's row holds,
-	// which is what the settings form shows and what a shell is asked to match.
-	// Never a corrected value: a colour that can never read is refused at the write,
-	// and a colour that reads differently on the two canvases is measured per mode
-	// where it is painted, by the stylesheet, not here (see
-	// modules/site/contracts/contrast.go for the door's rule and modules/web for the
-	// paint's). A shell that needs the ratio it is drawing on asks AccentRatio.
-	Accent string `json:"accent" doc:"Brand accent, #rrggbb" example:"#4164b0"`
+	// Accent is the workspace's colour, #rrggbb — the colour the web page pins as
+	// --pk-color-accent-default, which is what is stored when a tenant chose one and,
+	// when none was ever chosen, the installation's own accent. Never a corrected
+	// value: a colour that reads badly is refused at the write, and a read resolves
+	// rather than fills (see modules/site/contracts/contrast.go for the rule and why
+	// it rejects rather than adjusts, and modules/site/contracts/accent.go for the
+	// resolution).
+	Accent string `json:"accent" doc:"Brand accent, #rrggbb" example:"#2563eb"`
 	// AccentRatio quotes how that colour reads against the kit's two canvases, in
 	// hundredths. A shell is told the number rather than computing it per platform,
 	// and `theme` says which of the two it is drawing on right now. Both are

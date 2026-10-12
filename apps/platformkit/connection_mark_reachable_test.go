@@ -20,7 +20,6 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
-	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 )
 
 func TestTheDocumentNamesOnlyAMarkTheCallerCanFetch(t *testing.T) {
@@ -48,8 +47,9 @@ func TestTheDocumentNamesOnlyAMarkTheCallerCanFetch(t *testing.T) {
 			url, statusCode(t, cfg, acmeHost, pinnedPublicFile+"/"+private))
 	}
 	// Omitting the mark costs the face nothing else: the name, the colour and the
-	// doors are what a shell needs to draw the screen, and they are all still there.
-	if document["name"] != "Acme Works" || document["accent"] != sitecontracts.DefaultPrimaryColor {
+	// doors are what a shell needs to draw the screen, and they are all still there —
+	// the colour being the installation's own, since this save named none.
+	if document["name"] != "Acme Works" || document["accent"] != "#0f5d4e" {
 		t.Errorf("a workspace with an unreachable mark answers %v, want the face minus the mark alone", document)
 	}
 

@@ -32,7 +32,7 @@ func TestAuthorCannotPublishTheirOwnContent(t *testing.T) {
 	var returned *contracts.Content
 	var refusal error
 	if err := db.Run(ctx, conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		returned, refusal = internal.NewService().Publish(ctx, tx, page.ID)
+		returned, refusal = internal.NewService(internal.Deps{}).Publish(ctx, tx, page.ID)
 		return nil // Commit even on refusal so an accidental mutation remains visible.
 	}); err != nil {
 		t.Fatal(err)

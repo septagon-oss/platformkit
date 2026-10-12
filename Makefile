@@ -112,8 +112,18 @@ help: ## List the targets
 build: ## Compile every package (a check; `make image` builds the artifact)
 	go build -buildvcs=false -o /dev/null ./...
 
+# The same stated per-package bound `check` and `check-race` carry, for the same reason against the
+# same measurement: go test's ten-minute default is a clock nobody in this repository chose, and
+# `apps/platformkit` needs most of it even uncached and unraced. Measured on this program's shared
+# Postgres: 9m51s for the package on a host doing nothing else — nine seconds of headroom on a
+# default the suite does not beat so much as tie — and `panic: test timed out after 10m0s` on one
+# doing something, with the cases that were merely running when the clock rang reported as failures.
+# A goal whose verdict is a race against a clock it never names answers to the load on the box, and
+# every caller of this one is a person or a gate waiting for an answer rather than a coin toss. `check`'s bound is the
+# number, not a new one; it sits before $(TEST_FLAGS) so a caller that passes its own -timeout wins,
+# and scripts/check_architecture_test.sh pins this line byte for byte beside `check`'s own.
 test: ## Test selected packages, reusing successful results when inputs match
-	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- $(TEST_FLAGS)
+	go tool gotestsum $(TEST_OPTIONS) --packages='$(TEST_PACKAGES)' -- -timeout=30m $(TEST_FLAGS)
 
 vet: ## Run go vet
 	go vet ./...
@@ -379,6 +389,16 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 	bash scripts/e2e_health_owner_test.sh
 	bash scripts/e2e_health_requires_own_listener_test.sh
 
+# The journey steps this module publishes are a surface a pinned consumer compiles against, and
+# nothing else here asks them a question: `make check` builds Go, and gate 10 transpiles the two
+# files without asking whether they should exist. So the published names, the specifiers a module
+# zip can carry, the addresses the reference application serves and the hosts a harness step may
+# fall back to are decided here, beside check-apidiff, which makes the same promise about Go. It
+# reads text and builds no fixture tree, so nothing it asks needs node, a browser or a database —
+# the placement argument check-run-owner makes above.
+check-step-library: ## Refuse a published journey step that vanished, or one that cannot load from the pin
+	bash scripts/e2e_step_library_test.sh
+
 # Gate 10's own port choice runs inside `check` rather than only inside gate 10, because the three
 # promises it makes — the port it refuses, the listener it is willing to serve through, and the port
 # it hands Playwright — otherwise fail as a wrong number in a browser run rather than as a red gate
@@ -451,7 +471,7 @@ check-run-owner: ## Refuse a browser run that would drive an application it did 
 # job's own previous archive, and a save path list that differs from its restore in content or order.
 # One `go env` and four sha256sums per call, 0.19s for the whole file, and one reason the CI job's
 # tool step installs a YAML reader beside the database client and the socket probe.
-check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
+check: build vet fmt-check check-loc check-packages check-gucs check-ui check-versions check-run-owner check-pillars check-step-library check-rehearse check-apidiff check-test-inventory ## Everything a pull request must pass
 	go mod tidy -diff
 	# A stated per-package bound, because go test's ten-minute default is not a decision this
 	# repository ever made and the suite grew past it. apps/platformkit's 122 cases each migrate an
@@ -495,6 +515,14 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/mobile_journey_fetch_test.sh
 	bash scripts/ci_go_cache_test.sh
 	bash scripts/make_check_count_default_test.sh
+	# scripts/make_test_timeout_override_test.sh asks the clock's question of that same goal. It dry-runs
+	# `make test` twice — once as everyone runs it, once with a caller's own `-timeout` inside TEST_FLAGS —
+	# and refuses a stated default that vanished or a caller's bound that no longer arrives last. Go honours
+	# the last `-timeout` it is handed, so the order of the two on that line is the whole promise: put the
+	# default after the caller's flags and a shorter ask is answered with the longer bound, which is a suite
+	# ignoring the clock its caller named. Two dry runs in a directory holding only go.mod's module, go and
+	# toolchain lines; nothing is compiled, started or tested.
+	bash scripts/make_test_timeout_override_test.sh
 	# The three cases above read the race recipe's text; this one runs it and asks the binary. It dry-runs
 	# `make check-race` for one package, hands the command it prints back to go with `-n`, and asserts on
 	# the arguments the test binary receives after flag parsing: the stated clock there, go's ten-minute
@@ -626,6 +654,40 @@ check: build vet fmt-check check-loc check-packages check-gucs check-ui check-ve
 	bash scripts/push_tier_reaches_test_imports_test.sh
 	bash scripts/push_tier_reaches_the_package_whose_testdata_changed_test.sh
 	bash scripts/the_inventory_lists_a_javascript_test_test.sh
+	# scripts/e2e_guards_run_before_the_gate_test.sh above asks one goal whether it still runs the two
+	# subjects it exists for. These two ask that question of `check` itself, whose two source gates are
+	# prerequisites, and a prerequisite that leaves the list leaves nothing else red:
+	# `go tool gotestsum --packages='./...'` sees no Python file and no `.spec.ts`, so a `check-pillars`
+	# that dropped out would let ARCHITECTURE.md's citations land on blank lines, and a
+	# `check-step-library` that dropped out would let a published journey step vanish while gate 10 went
+	# on transpiling a file nobody owns. scripts/journey_and_pillar_check_wiring_test.sh dry-runs this
+	# goal and refuses a recipe that has lost either command — a nested `make -n`, the shape
+	# scripts/check_architecture_test.sh already runs from inside this same recipe, measured at 5 ms for
+	# the whole dry run here. scripts/journey_and_pillar_check_refusal_test.sh asks whether that pin
+	# would notice: it deletes one prerequisite at a time from a temporary copy of this Makefile and
+	# refuses each acceptance. Both read text and start nothing, which is the argument
+	# check-step-library makes for itself above, and here it holds twice over — unlike its two subjects
+	# these need no node and no browser either, so nothing argues for a job later than this one. Review 5
+	# found the first wired to nothing: correct at `0012ae0`, run by nobody, and a gate nobody runs is
+	# prose. Wiring it is these two lines.
+	bash scripts/journey_and_pillar_check_wiring_test.sh
+	bash scripts/journey_and_pillar_check_refusal_test.sh
+	# The third and fourth lines here are that argument run once more over itself. Review 6 wrote
+	# scripts/journey_check_recipe_test.sh — the one assertion that both source-gate guards still execute
+	# as children of a parallel make, which is the question `make -n` cannot answer — and the sixth
+	# round adopted its bytes at `f676a6e` unwired, on scope rather than cost: the file measured 0.52 s
+	# standalone and the same inside a recipe at -j2, with make printing `-j2 forced in submake:
+	# resetting jobserver mode`, which is the nested recipe taking its own token pool. Review 6 named
+	# that deferral as the thing left to adopt, and a gate nobody runs is prose, so it is wired here.
+	# scripts/journey_check_recipe_wiring_test.sh is the case this line needs and `f676a6e` deliberately
+	# did not write: `go tool gotestsum --packages='./...'` sees no shell script, so a recipe line that
+	# leaves this list leaves nothing else red. It asks the dry-run recipe for this command, copies this
+	# Makefile to a temporary tree, deletes the one line, and requires the same assertion to fail there —
+	# three dry runs of a goal one of these two prerequisites already dry-runs, 0.2 s for the file.
+	# What pins the last line is nothing: the case has no peer to pin it, and it says so rather than
+	# pretending otherwise. Both files start nothing — no node, no browser, no database, no listener.
+	bash scripts/journey_check_recipe_test.sh
+	bash scripts/journey_check_recipe_wiring_test.sh
 	./scripts/check_imports.sh
 
 # Gate 10's two refusals to drive somebody else's listener, pinned as shell cases rather than as

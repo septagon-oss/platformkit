@@ -77,10 +77,8 @@ func decider(t *testing.T, cfg config.Config, admin *http.Client, box *notificat
 		return false
 	})
 	pass := "a chosen passphrase for " + key
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"`+pass+`"}`); code != http.StatusOK {
-		t.Fatalf("the reset for %s = %d %s, want 200", key, code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"`+pass+`"}`)
 	return signIn(t, cfg, acmeHost, email, pass)
 }
 

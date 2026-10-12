@@ -115,9 +115,7 @@ func TestAPersonRefusedAScreenIsAnsweredInTheTenantsLanguage(t *testing.T) {
 		}
 		return false
 	})
-	if code, body = do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/public/auth/verify-email", `{"token":"`+link+`"}`); code != http.StatusOK && code != http.StatusAccepted {
-		t.Fatalf("confirming the mailbox link = %d %s", code, body)
-	}
+	confirmMailboxLink(t, cfg, acmeHost, link)
 	member := signIn(t, cfg, acmeHost, email, r7MemberPassword)
 
 	// The caller's ranking names only English, at a tenant served in Portuguese alone. Every
