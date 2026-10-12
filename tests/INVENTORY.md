@@ -1,16 +1,16 @@
 # Test inventory and verdicts — platformkit (decision 0088)
 
-One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2637 rows over 1270 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
+One row per test in [`inventory.json`](inventory.json) (`platformkit.test-inventory.v1`): 2745 rows over 1311 files. This file is the table a person ratifies; CI re-checks the JSON — every test in the tree has exactly one row, no row has no test, and the round-named file count never exceeds its ceiling. "Every test" means every file a runner of this repository executes, in whatever language: Go functions, Playwright specs, Maestro flows, `scripts/` pins, and the 89 `node --test` cases under `tools/designexport/openpencil/` that the `editor` job runs (`kind: node` in the JSON). Every column names the measurement that filled it. An empty column is `unmeasured`, never zero, and a verdict beside an unmeasured column is a keep.
 
 ## Scale
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2637 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1270 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
-| Go test functions | 2447 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
-| files named for a round (`review*`, `round*`, `probe*`) | 215 | filename prefix |
-| rows inside them | 347 | same walk |
+| test rows | 2745 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1311 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| Go test functions | 2555 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
+| files named for a round (`review*`, `round*`, `probe*`) | 233 | filename prefix |
+| rows inside them | 377 | same walk |
 | Playwright specs / Maestro flows / `scripts/` pins / node tests | 57 / 1 / 43 / 89 | same walk |
 
 ## Layers and tiers
@@ -18,7 +18,7 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | layer (0088) | rows | tier | predicate that put it there |
 |---|---|---|---|
 | contract | 19 | push, first | asserts a golden or the published API set |
-| behaviour | 2282 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
+| behaviour | 2390 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 278 | merge | package `main` of the reference app: it boots the composition |
 | journey | 58 | nightly | `e2e/`: browser or device |
 
@@ -46,8 +46,8 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1055 | 2290 | not named for a round: 0088 rule 2 does not reach it |
-| `keep-rewrite` | 70 | 132 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
+| `keep` | 1078 | 2368 | not named for a round: 0088 rule 2 does not reach it |
+| `keep-rewrite` | 88 | 162 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 145 | 215 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |
 
@@ -122,7 +122,7 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 | scripts | 43 | 4 | 0 | 0 |
 | migrations | 12 | 5 | 8 | 0 |
 
-`tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (132 keep-rewrite, 215 merge). The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, so they move when the table is regenerated and nothing refuses if they do not.
+`tools` appears with the design tooling's JavaScript cases: one of the 89, `browser/review_round18_authored_role_read.test.mjs`, is named for the round that wrote it, and is the only one the walk has to judge. `files` counts every file in the area — the population the verdicts are drawn from — and the three verdict columns count the rows `inventory.json` carries, so they sum to the `Verdicts` table above (162 keep-rewrite, 215 merge). The figures in this table re-derive from the same rows; unlike the four sections above they are quoted by hand, so they move when the table is regenerated and nothing refuses if they do not.
 
 ## The four composition journeys (0088 layer 3)
 
@@ -138,9 +138,9 @@ The merge target is named by *reach*, not by reading the two files as prose. Whe
 
 | ratchet | today | measured by |
 |---|---|---|
-| round-named test files | 215 before the prune | `summary.round_named_ceiling` in `inventory.json`, re-checked by `scripts/check_test_inventory.sh`: `--write --ceiling N` lowers it, and a rise is refused by the same line that prints the count |
-| `go_test` lines | 148 630 against the 148 700 ceiling | `go run ./tools/locbudget --check` |
-| inventory rows | 2637 | `scripts/check_test_inventory.sh` re-derives them from the tree |
+| round-named test files | 233 before the prune | `summary.round_named_ceiling` in `inventory.json`, re-checked by `scripts/check_test_inventory.sh`: `--write --ceiling N` lowers it, and a rise is refused by the same line that prints the count |
+| `go_test` lines | 155 300 against the 155 300 ceiling | `go run ./tools/locbudget --check` |
+| inventory rows | 2745 | `scripts/check_test_inventory.sh` re-derives them from the tree |
 | coverage | unmeasured tree-wide; measured per package for 10 packages here | `make cover` (new): the prune refuses a figure below the recorded one |
 
 ## What CI re-checks, after the tiers
