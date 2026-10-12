@@ -825,7 +825,57 @@ func languageCases() map[string]func(*testing.T, Fixture) {
 				t.Errorf("a command refused for nobody asking published anyway")
 			}
 		},
+
+		// A session is proof of who somebody was when it was taken, not of what their
+		// account is now. The command reads the row it is about to write, so an account
+		// closed after the sign-in is refused like any other write that contradicts the
+		// row — with 409, which is the verdict that says the account has to be reopened
+		// first, and with nothing written and nothing published.
+		"a closed account is refused its own language": func(t *testing.T, f Fixture) {
+			ready(t, f)
+			ada := openAccount(t, f, "language-closed@acme.test")
+			who := f.As(ada.ID)
+			if _, err := f.Service.SetPreferredLocale(who, f.Tx, "pt-PT"); err != nil {
+				t.Fatalf("the open account's own choice: %v", err)
+			}
+			if _, err := f.Service.Deactivate(f.Ctx, f.Tx, ada.ID); err != nil {
+				t.Fatalf("Deactivate: %v", err)
+			}
+			before := len(languageEvents(f))
+			row, err := f.Service.SetPreferredLocale(who, f.Tx, "en")
+			if !errors.Is(err, contracts.ErrAccountInactive) {
+				t.Errorf("a closed account's own command = %v, want the refusal that says so", err)
+			}
+			if row != nil {
+				t.Errorf("the refusal handed back a row (language %q); a refusal returns nothing to read", row.PreferredLocale)
+			}
+			again, err := f.Service.Get(f.Ctx, f.Tx, ada.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if again.PreferredLocale != "pt-PT" {
+				t.Errorf("the closed account's language is %q, want the choice it made while open", again.PreferredLocale)
+			}
+			if len(languageEvents(f)) != before {
+				t.Errorf("a refusal writes nothing, so it publishes nothing")
+			}
+		},
 	}
+}
+
+// openAccount is a person who may sign in and holds no role: the subject of a
+// case about an account that was open and is not any more, which the last
+// administrator's floor would otherwise refuse to close.
+func openAccount(t *testing.T, f Fixture, email string) *contracts.User {
+	t.Helper()
+	u, err := f.Service.Invite(f.Ctx, f.Tx, email, "")
+	if err != nil {
+		t.Fatalf("Invite %s: %v", email, err)
+	}
+	if err := f.Service.SetPassword(f.Ctx, f.Tx, u.ID, good); err != nil {
+		t.Fatalf("SetPassword: %v", err)
+	}
+	return u
 }
 
 // languageEvents counts the language events published so far, so a case reads its

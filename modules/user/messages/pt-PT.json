@@ -320,5 +320,14 @@
     "plural": {
       "": "Escreve o idioma da própria pessoa com a sessão iniciada, que se sobrepõe à negociação do navegador em cada página que lhe é mostrada e sobrevive a sair e voltar a entrar. Um idioma vazio retira a escolha e deixa-a ao navegador e à predefinição do tenant. Uma marca em que este tenant não é servido é recusada: o conjunto é a declaração do tenant e uma escolha fora dele seria uma preferência que, em silêncio, não significaria nada."
     }
+  },
+  "conflict.user.account_inactive": {
+    "references": [
+      "modules/user/contracts/locale.go"
+    ],
+    "translation": "esta conta está fechada, por isso a sua pessoa não pode alterar o idioma em que é respondida",
+    "plural": {
+      "": "esta conta está fechada, por isso a sua pessoa não pode alterar o idioma em que é respondida"
+    }
   }
 }

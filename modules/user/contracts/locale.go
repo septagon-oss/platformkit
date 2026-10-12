@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 )
 
@@ -31,6 +32,25 @@ type LocalePolicy interface {
 // publishes nothing either. The route that mounts the command answers it as a 401;
 // the command itself only refuses.
 var ErrNoSignIn = errors.New("user: no person is signed in for this transaction")
+
+// ErrAccountInactive is what the account commands answer when the person they
+// stand for no longer holds an open account.
+//
+// It is a conflict and not a permission refusal: the caller may well hold
+// whatever grant the door declares, and the row they stand for is what
+// contradicts the write. Being correctable is the point — the account is
+// reopened through its own lifecycle, and then the same command is accepted —
+// which is why the answer is not 403, a verdict about who is asking rather than
+// about what the row currently is.
+//
+// It is a fault.Reason rather than a bare sentence so the refusal reaches a
+// renderer as a verdict with a sentence of its own, keyed in this module's
+// catalogue, and not as prose to be translated by whoever drew the page.
+var ErrAccountInactive = &fault.Reason{
+	Kind: fault.ErrConflict,
+	Key:  "conflict.user.account_inactive",
+	Text: "this account is closed, so its person cannot change the language it is answered in",
+}
 
 // LocalePolicyFunc adapts a function to LocalePolicy, the way AdministrationFunc
 // adapts one to Administration. Composition with a tenant module passes that
