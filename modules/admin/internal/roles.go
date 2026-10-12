@@ -2,6 +2,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -11,6 +12,7 @@ import (
 	g "maragu.dev/gomponents"
 
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/rest"
@@ -110,7 +112,13 @@ func (p pages) mountRoles(app *httpx.Router) {
 			}
 			form, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return page.View{}, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+				// The body is this screen's own form, so the sentence about it is this
+				// screen's own copy, asked at the key every other word here is asked at.
+				// Handed over as a problem instead, it becomes the router's English at the
+				// head of a page the reader was promised in Portuguese. No page number was
+				// readable either, so the screenful is the first one.
+				return p.rolesView(ctx, r, 0, chrome(r, "roles.denied.unreadable",
+					"This form could not be read, so nothing was changed."))
 			}
 			// The screenful the form was on, so that a refusal and a success
 			// both come back to what the person was reading.
@@ -118,21 +126,77 @@ func (p pages) mountRoles(app *httpx.Router) {
 			if _, err = p.Roles.SetRole(ctx, tx, form.Get("name"), form["permissions"], p.declared); err == nil {
 				return page.View{}, httpx.SeeOther(pageURL(p.at.roles.at, at))
 			}
-			// A refusal names the role or the permission that caused it. The
-			// page comes back with that message on it rather than as the
-			// shell's fault page, which would lose every other role's state
-			// and say "Back to the dashboard" to somebody who is two ticks
-			// from getting it right.
-			refused, named := rest.Fault(err).(*problem.Problem)
-			if !named || refused.Status >= http.StatusInternalServerError {
+			// A refusal names the role or the permission that caused it, in the language
+			// the rest of this page is written in. The page comes back with that message on
+			// it rather than as the shell's fault page, which would lose every other role's
+			// state and say "Back to the dashboard" to somebody who is two ticks from
+			// getting it right.
+			detail, worded := rolesRefusal(r, err)
+			if !worded {
+				// An outage, or a refusal this screen has no sentence for: handed over as
+				// it arrived, because a sentence invented for a fault whose kind is unknown
+				// would put this page's words over whatever the service actually said.
 				return page.View{}, err
 			}
-			// Through kit/rest's own reader, so this screen says what a
-			// generated form says: the message a person can act on, without the
-			// package prefix kit/crud puts in front of it.
-			_, detail := rest.FieldErrors(refused, nil)
 			return p.rolesView(ctx, r, at, detail)
 		})
+}
+
+// rolesRefusal is a refused role write, said in the language of the person whose
+// form was refused.
+//
+// The page owns the words on it. modules/auth owns the rule, the verdict, and the
+// sentence its own problem document and log line print; this screen answers the person
+// who ticked the box with a sentence of its own, asked at the key every other word of
+// it is asked at — the rule internal.accountRefusal already applies to the language
+// control. What the rule refused arrives as the refusal's own arguments
+// (fault.Reason), so the sentence can name the permission or the role without this
+// file reading a name out of another package's prose.
+func rolesRefusal(r page.Request, err error) (detail string, worded bool) {
+	reason, named := errors.AsType[*fault.Reason](err)
+	if !named || reason.Key == "" {
+		return "", false
+	}
+	key, english, known := rolesDeniedCopy(reason.Key)
+	if !known {
+		return "", false
+	}
+	if len(reason.Args) == 0 {
+		return chrome(r, key, english), true
+	}
+	return chromeSentence(r, key, english, reason.Args...), true
+}
+
+// rolesDeniedCopy is which sentence of this screen's own copy answers which refusal
+// from modules/auth, and the source text that sentence falls back to. The fallback is
+// the auth module's own sentence, word for word, because a shell with no catalogue has
+// always said exactly that and the person reading it gains nothing from a second
+// wording of one verdict; what the catalogue adds is the reader's language, which the
+// English file here carries alongside it for the debugging pseudo-locale to transform.
+//
+// The lookup is the refusal's own key, so a rule added over there arrives here as one
+// more line rather than as a guess: an unknown key is no sentence at all, and the
+// caller hands that refusal to the router instead of printing a sentence about
+// something else.
+func rolesDeniedCopy(key string) (catalogKey, english string, known bool) {
+	switch key {
+	case "invalid.auth.role.name":
+		return "roles.denied.name",
+			"role %q is not a lower-case identifier", true
+	case "invalid.auth.role.name.length":
+		return "roles.denied.name.length",
+			"a role name is at most %d characters, and %q is %d", true
+	case "invalid.auth.permission.undeclared":
+		return "roles.denied.permission.undeclared",
+			"no module defines the permission %q, so a role naming it would grant nothing", true
+	case "invalid.auth.permission.operator":
+		return "roles.denied.permission.operator",
+			"%q belongs to the operator of this installation, and %s is not it", true
+	case "invalid.auth.role.last_administration":
+		return "roles.denied.last_administration",
+			"%q is the last role that grants %s, and a tenant that grants it to no role cannot change its roles again", true
+	}
+	return "", "", false
 }
 
 // rolesView reads this tenant's roles and renders one screenful. detail is a
