@@ -50482,6 +50482,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/richtext-image-delayed-upload.spec.ts",
+   "id": "e2e/richtext-image-delayed-upload.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "answering the first image description before the second upload finishes retains both picked images",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/richtext-image-multiple-pick.spec.ts",
    "id": "e2e/richtext-image-multiple-pick.spec.ts",
    "kind": "playwright",
@@ -50548,6 +50568,26 @@
    "layer": "journey",
    "merge_into": "",
    "name": "pasting a URL onto a settled keyboard selection preserves the words and adds the link",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
+   "file": "e2e/richtext-link-title-round-trip.spec.ts",
+   "id": "e2e/richtext-link-title-round-trip.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "an untouched link with a quoted title keeps its words address and title after saving",
    "needs_db": true,
    "pkg": "e2e",
    "round_named": false,
@@ -54017,7 +54057,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1340,
+  "files": 1342,
   "forge_runs": [
    408,
    413,
@@ -54054,7 +54094,7 @@
    "behaviour": 2331,
    "composition": 291,
    "contract": 19,
-   "journey": 84
+   "journey": 86
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -54070,23 +54110,23 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2725,
+  "rows": 2727,
   "tiers": {
    "merge": 1677,
-   "nightly": 84,
+   "nightly": 86,
    "push": 964
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1124,
+   "keep": 1126,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2377,
+   "keep": 2379,
    "keep-rewrite": 133,
    "merge": 215
   }
