@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -1411,14 +1412,28 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// asking dbtest for the URLs again would give this test a fresh schema and
 	// take the tables out from under the application that is serving.
 	owner := dbtest.Open(t, cfg.Database.MigrateURL)
-	longest := func() float64 {
+	// longest answers the age of the oldest open transaction of this installation and
+	// names the backend holding it. The name belongs in the refusal: a bare number says
+	// the claim failed and nothing about which pool to go and look at, and the reader is
+	// left to work out by hand what this one line already knows.
+	longest := func() (float64, string) {
 		var age float64
-		const q = `SELECT COALESCE(EXTRACT(EPOCH FROM max(now() - xact_start)), 0) FROM pg_stat_activity
-			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')`
-		if err := owner.QueryRowContext(t.Context(), q).Scan(&age); err != nil {
-			t.Errorf("read pg_stat_activity: %v", err)
+		var backend string
+		const q = `SELECT EXTRACT(EPOCH FROM now() - xact_start),
+				coalesce(usename::text, '?') || ' at pid ' || pid::text || ': '
+				|| coalesce(left(regexp_replace(query, '\s+', ' ', 'g'), 120), '(no statement seen)')
+			FROM pg_stat_activity
+			WHERE state = 'idle in transaction' AND application_name = current_setting('search_path')
+			ORDER BY xact_start ASC NULLS LAST LIMIT 1`
+		err := owner.QueryRowContext(t.Context(), q).Scan(&age, &backend)
+		if err == sql.ErrNoRows {
+			return 0, ""
 		}
-		return age
+		if err != nil {
+			t.Errorf("read pg_stat_activity: %v", err)
+			return 0, ""
+		}
+		return age, backend
 	}
 
 	// A multipart form whose file part never ends: one byte, then a pause,
@@ -1483,13 +1498,16 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// loop is finished before the server gives up and the handler's own failure
 	// path runs.
 	samples, oldest := 0, 0.0
+	oldestBackend := ""
 	for time.Since(start) < timeout*3/4 {
 		select {
 		case got := <-done:
 			t.Fatalf("upload ended before the read deadline: status=%d error=%v after %s", got.code, got.err, time.Since(start))
 		default:
 		}
-		oldest = max(oldest, longest())
+		if age, backend := longest(); age > oldest {
+			oldest, oldestBackend = age, backend
+		}
 		samples++
 		time.Sleep(20 * time.Millisecond)
 	}
@@ -1503,8 +1521,8 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// other request is in flight, so the only way to be older than the bound is to be
 	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
-		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
-			oldest, limit)
+		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs), held by %s; the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
+			oldest, limit, oldestBackend)
 	}
 
 	var got answer
