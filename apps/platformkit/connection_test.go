@@ -19,6 +19,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/config"
+	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 )
 
 const connectionPath = "/api/v1/app/connection"
@@ -53,7 +54,7 @@ func TestTheConnectionDocumentAnswersBeforeSignIn(t *testing.T) {
 	if _, answered := document["logoUrl"]; answered {
 		t.Errorf("a workspace with no logo answers logoUrl anyway (%v): the key is omitted rather than emptied, because an empty src is a request against the document's own address", document["logoUrl"])
 	}
-	if document["accent"] != "#2563eb" {
+	if document["accent"] != sitecontracts.DefaultPrimaryColor {
 		t.Errorf("the accent is %v, want the colour the kit ships", document["accent"])
 	}
 	if document["theme"] != "system" {
@@ -248,7 +249,7 @@ func TestOneHostsFaceIsNotAnotherHostsFace(t *testing.T) {
 		t.Errorf("Acme's own host answers %v / %v", acme["name"], acme["accent"])
 	case globex["name"] != "Globex Corporation":
 		t.Errorf("Globex's host answers the name %v: it is being told about another tenant's site, or about none", globex["name"])
-	case globex["accent"] != "#2563eb" || globex["theme"] != "system":
+	case globex["accent"] != sitecontracts.DefaultPrimaryColor || globex["theme"] != "system":
 		t.Errorf("Globex's host answers Acme's look: %v / %v", globex["accent"], globex["theme"])
 	}
 

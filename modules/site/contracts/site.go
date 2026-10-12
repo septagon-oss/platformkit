@@ -41,22 +41,24 @@ var themes = []string{ThemeLight, ThemeDark, ThemeSystem}
 // It is here rather than in a theme because a theme may be replaced and this is
 // what a tenant's settings say when they say nothing.
 //
-// It is a #rrggbb because the wire says so, and the wire is not this module's to
-// change: apps/platformkit/testdata/openapi.json publishes primaryColor with the
-// pattern ^#[0-9a-fA-F]{6}$, and apps/platformkit/wire_compatibility_test.go
-// refuses a change to a published shape (rule B3) whatever the reason and whatever
-// the direction — `UPDATE_GOLDEN=1` regenerates a document that is stale, never one
-// that is broken. So "a site with no colour of its own" cannot be a value this
-// field holds: a value a client cannot read, save unchanged and get back is no
-// default at all. A row that does hold none is painted the accent of the palette
-// its sheet links (modules/web .accent). Whether a colour reads is the paint's job,
-// measured per mode, because no #rrggbb reads in both at once: the gate holds
-// accent-default on each theme's own canvas at MinContrast, which asks the two canvases
-// to be 4.5 × 4.5 = 20.25:1 apart where design.Default() puts #f2efe7 (L 0.8638) over
-// #0e1614 (L 0.0072) at 15.98:1 — a ground at 0.0072 needs the other at 1.1078, past the
-// 1.0 a colour reaches: light keeps L at most 0.1531, dark at least 0.2073. Only ""
-// paints itself, and the widening that would let a row hold it is B3's to refuse.
-const DefaultPrimaryColor = "#2563eb"
+// It is the colour the gate would issue for the one this module first shipped, #2563eb, and it is
+// there because of what the paint does with a colour that cannot read: design.Pair.LegibleAccent
+// measures the accent on each theme's own surfaces and walks a failing colour to the nearest one
+// that clears them, so #2563eb — 4.497:1 on the light canvas, three thousandths under the floor —
+// was never painted anywhere. The row, the settings form and the page named one colour and the
+// browser showed another, in every installation, for every tenant that never opened the settings
+// screen. A default the paint refuses is not a default: the row now holds what the gate issues for
+// the light canvas, and the dark mode keeps the per-mode repair, which is the half no #rrggbb can
+// hold at once (the two canvases are 15.98:1 apart and 4.5 × 4.5 = 20.25 would be needed to read on
+// both).
+//
+// The value is a #rrggbb because the wire says so and the wire is not this module's to change:
+// apps/platformkit/testdata/openapi.json publishes primaryColor with the pattern
+// ^#[0-9a-fA-F]{6}$, and rule B3 in apps/platformkit/wire_compatibility_test.go refuses a change to
+// a published shape whatever the reason and the direction. A row that holds no colour at all — the
+// other way out, and the one that would let the paint say "none chosen" outright — is filed as
+// T-0503 against that rule.
+const DefaultPrimaryColor = "#4164b0"
 
 // The bounds. A navigation with more than a dozen links is not a navigation,
 // and a label longer than a few words is a sentence in a menu.
@@ -131,7 +133,7 @@ type SiteSettings struct {
 	// their site looks. A theme that needed more would be a theme with a
 	// stylesheet editor in it.
 	Theme        string `json:"theme" gorm:"type:varchar(10);not null;default:'system'" enum:"light,dark,system" ui:"widget:select;label:Colour scheme" doc:"Colour scheme, or system to follow the visitor's" default:"system" required:"false"`
-	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#2563eb'" pattern:"^#[0-9a-fA-F]{6}$" ui:"label:Brand colour" doc:"Brand colour, #rrggbb" default:"#2563eb" required:"false" example:"#2563eb"`
+	PrimaryColor string `json:"primaryColor" gorm:"type:char(7);not null;default:'#4164b0'" pattern:"^#[0-9a-fA-F]{6}$" ui:"label:Brand colour" doc:"Brand colour, #rrggbb" default:"#4164b0" required:"false" example:"#4164b0"`
 
 	// LogoFileID is a file id with no foreign key behind it, which is what
 	// "cross-module dependencies are Go interfaces" costs at the database: this

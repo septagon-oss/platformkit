@@ -28,7 +28,7 @@ func TestASecondTenantCannotReadOrReplaceTheFirstSitesColour(t *testing.T) {
 	}
 	run(first, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var err error
-		saved, err = svc.Save(ctx, tx, &contracts.SiteSettings{Title: "First", PrimaryColor: "#123456"})
+		saved, err = svc.Save(ctx, tx, &contracts.SiteSettings{Title: "First", PrimaryColor: "#0f5d4e"})
 		return err
 	})
 	run(second, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
@@ -55,7 +55,7 @@ func TestASecondTenantCannotReadOrReplaceTheFirstSitesColour(t *testing.T) {
 	})
 	run(first, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		got, err := svc.Settings(ctx, tx)
-		if err == nil && (got.PrimaryColor != "#123456" || got.Title != "First") {
+		if err == nil && (got.PrimaryColor != "#0f5d4e" || got.Title != "First") {
 			t.Errorf("first tenant's settings changed: %+v", got)
 		}
 		return err
