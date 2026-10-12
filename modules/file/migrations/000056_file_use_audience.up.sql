@@ -1,0 +1,21 @@
+-- Which audience the record that shows this file is showing it to.
+--
+-- A use row says a body names a file. This column says the body's own record was
+-- serving that body to somebody who has not signed in when it was filed — the
+-- one input the visibility rule needs:
+--
+--     files.visibility = 'public' for a file the ledger speaks about if and only
+--     if at least one live use row for it is public.
+--
+-- It is written by exactly one command, Service.SetShown, which the module that
+-- owns the record's public face calls in the transaction that moves the record's
+-- lifecycle — publish, unpublish, archive. Not on insert: a use is filed by
+-- SetUses, which knows nothing about anybody's lifecycle, and the audience is
+-- asserted afterwards by the module that does. So a row arrives false and stays
+-- false until a publish says otherwise, which is the direction that cannot
+-- expose bytes: an edit that fails to record the audience leaves an image private
+-- and readable by its owner, not public and readable by anybody.
+--
+-- Nothing reads it for a file the ledger does not speak about. The site logo has
+-- no use row and no lifecycle, and it keeps the visibility its upload asked for.
+ALTER TABLE file_uses ADD COLUMN public boolean NOT NULL DEFAULT false;
