@@ -96,4 +96,4 @@ COMMENT ON FUNCTION platformkit_ledger_claim_lock() IS
 	'its durable, so kit/events.MoveLedger can refuse a rename under an open claim — the first claim of a '
 	'subscription included, whose durable no committed row names, and a claim still queued behind another '
 	'move''s durable lock, which is why the tenant comes first — instead of taking the whole table; see the '
-	'header of migrations/000054';
+	'header of migrations/000058';

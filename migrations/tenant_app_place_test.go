@@ -1,4 +1,4 @@
-// migrations/000056_tenant_app_place.up.sql places the tenants an app-less boot
+// migrations/000060_tenant_app_place.up.sql places the tenants an app-less boot
 // stamped with the empty slug — the rows 000043 left behind because it had already
 // made the column NOT NULL by the time it ran, and cannot be rewritten. Two cases
 // matter, and they are the two halves of one rule.
@@ -30,7 +30,7 @@ import (
 )
 
 // placedAppFile is the file under test, by the name the ledger carries.
-const placedAppFile = "000056_tenant_app_place.up.sql"
+const placedAppFile = "000060_tenant_app_place.up.sql"
 
 func TestTheEmptySlugPlacementNamesTheTenantItCannotPlace(t *testing.T) {
 	ctx := context.Background()
@@ -68,8 +68,8 @@ func TestTheEmptySlugPlacementNamesTheTenantItCannotPlace(t *testing.T) {
 	slug := "collect"
 	decl := db.Declaration{App: &slug, Hosts: []string{"shop.example.com"},
 		Tenants: map[string]string{"school": "academy"}}
-	// The migration first, then the drain that owns the placement window. 000057
-	// sits behind 000056, so this run stops at the file the worker drains rather than
+	// The migration first, then the drain that owns the placement window. 000061
+	// sits behind 000060, so this run stops at the file the worker drains rather than
 	// bounding its own window (kit/db's planOwner: a file behind a drain cannot apply
 	// until it finishes); the walk, the refusal and the sentence are the file's either
 	// way, and the half that changed is which step of a release runs it.

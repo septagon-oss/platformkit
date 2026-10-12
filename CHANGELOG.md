@@ -8,7 +8,7 @@ installation that sets `nats.app` after running without one finds every claim it
 side of the rename: the same event, handled once already, answered again as a first delivery. `events.MoveLedger`
 is the drain for those two tables. It locks the durables it is about to rename and every tenant that could still be the app's by the end of the move, its own and the ones no app is placed under —
 an INSERT of a claim at an unscoped durable takes its own tenant's shared advisory lock and only then that
-durable's in the schema itself (`migrations/000054_ledger_claim_durable_lock`), and the move asks for the
+durable's in the schema itself (`migrations/000058_ledger_claim_durable_lock`), and the move asks for the
 exclusive ones in the same order and refuses rather than queueing; the tenant's key is what catches the first
 claim of a subscription, which is the one no committed ledger row names a durable from, and taking the two in
 that order is what lets it catch anything at all, because a claim that reached for its durable first can be
@@ -43,8 +43,8 @@ something other than the tenant, which is why this is a drain its owner owns in 
 **Naming an app places the tenants that already exist.** An app-less boot stamped `tenants.app` with the empty
 slug — 000043's own default for a session that named no app — and the file that proved the NULLs is applied,
 checksummed and immutable, so an operator who sets `nats.app` and `app.hosts` afterwards holds a database of
-tenants nobody placed and a release that runs nothing for them. `migrations/000055_tenant_app_refusal` and
-`migrations/000056_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
+tenants nobody placed and a release that runs nothing for them. `migrations/000059_tenant_app_refusal` and
+`migrations/000060_tenant_app_place` are that placement, forward: the explicit mapping wins, a tenant joins the
 app whose declared hosts cover every host it holds, and a tenant neither speaks for stops a boot that named
 itself, by name and having written nothing, so that operator's corrected retry is the same walk. A boot that
 named no app is not stopped, and that half is the line `make check`'s rehearsal drew (v1.1.0 to this tree,
@@ -62,7 +62,7 @@ nothing — which is where 000043's "a tenant does not move between apps" is mad
 consumer and control-plane scope can reach a tenant follows from that one column. A placement that loses the
 row this way is not refused and does not report the tenant as unplaced: it has an app, and the late
 declaration is the one that is wrong about the row. That write now declares the tenant's
-ledger key too (000057), the key an unscoped claim takes and a ledger move asks for
+ledger key too (000061), the key an unscoped claim takes and a ledger move asks for
 exclusively, so a placement either stands in front of a move as its contention refusal or
 lands behind it and owes the move its own boot runs next. Nor is a tenant that joins behind a move which already
 read its ledger a second handling waiting to happen: the mark sits under the durable this tenant's ledger held before the placement, and `events.claim` asks a delivery's own history under both spellings of one subscription's name, so the rename that follows is tidiness and audit and not what the refusal waits on. The declaration has to be on the session that drains, not the one that migrated, so
@@ -156,7 +156,7 @@ screen, shell or device is handed the empty colour where its own document says
 `#rrggbb`. A save of either accent clears it back to the absence before validation and
 before the diff, so the settings form that submits what the read gave it writes
 nothing, publishes nothing and moves no revision; the event and the trail keep
-speaking stored values. `migrations/000054_site_default_accent.up.sql` moves the
+speaking stored values. `migrations/000058_site_default_accent.up.sql` moves the
 column's default and runs no `UPDATE`: a migration cannot tell a colour somebody
 typed from the one that column used to fill in, so every existing row keeps it.
 

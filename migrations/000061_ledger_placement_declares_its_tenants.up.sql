@@ -1,6 +1,6 @@
 -- The write that names a tenant's app declares that tenant's ledger busy.
 --
--- migrations/000054 gives the two delivery ledgers one pair of keys: a claim takes
+-- migrations/000058 gives the two delivery ledgers one pair of keys: a claim takes
 -- the shared advisory lock of its tenant and then of its durable, and
 -- kit/events.MoveLedger asks for both exclusively, refusing rather than queueing.
 -- That pair is why a move can rename a ledger without taking the table — and it has
@@ -11,7 +11,7 @@
 -- those keys, reads the durables its tenants name, renames them, and asks once more —
 -- `unscopedRemains` — whether any unscoped row now sits in one of its tenants. That
 -- last question is the one that has to be honest, and until this file it was not,
--- because the placement walked in beside it. `platformkit_place_tenants` (000055)
+-- because the placement walked in beside it. `platformkit_place_tenants` (000059)
 -- wrote `tenants.app` under no key at all: the row lock it takes serializes it only
 -- against another placement, and a move holds no row lock. So a second declaring boot
 -- — or the same boot's drain, or the release file's own window — could take an empty
@@ -39,7 +39,7 @@
 --
 -- Why a trigger, and not a statement inside `platformkit_place_tenants`. The function
 -- decides *which* tenants to name by reading a snapshot it may lose to a competing
--- walk (000055 states that race and puts its check in the write, `t.app = ''`); a lock
+-- walk (000059 states that race and puts its check in the write, `t.app = ''`); a lock
 -- taken over that reading would be taken over the set the reading believed, and the
 -- set that matters is the set the statement actually wrote — which is the same set only
 -- when nothing raced. A row trigger fires on the row the write reached, so the two
@@ -59,7 +59,7 @@
 -- row that may already hold unscoped rows is the write this key is for, and it is one
 -- statement, one row, and one lock.
 --
--- The key is 000054's, spelled the same way: `events ledger tenant ` || id, hashed by
+-- The key is 000058's, spelled the same way: `events ledger tenant ` || id, hashed by
 -- the same call, so the placement that asks it and the claim that asks it and the move
 -- that refuses them are one key and not three that happen to collide. A placement of
 -- many tenants takes them in whatever order the write reaches them; shared advisory
@@ -68,11 +68,11 @@
 -- cannot close a cycle.
 --
 -- data: exempt reason: this file writes no rows; it puts the declaration on the write
--- that does, migrations/000055's platformkit_place_tenants.
+-- that does, migrations/000059's platformkit_place_tenants.
 CREATE FUNCTION platformkit_ledger_placement_lock() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
-	-- The tenant's own key, the same expression migrations/000054's claim trigger
+	-- The tenant's own key, the same expression migrations/000058's claim trigger
 	-- performs and the same one kit/events/ledger.go's tenantLockKey asks for.
 	PERFORM pg_advisory_xact_lock_shared(hashtextextended('events ledger tenant ' || NEW.id::text, 0));
 	RETURN NEW;
@@ -91,6 +91,6 @@ CREATE TRIGGER platformkit_tenants_app_lock
 
 COMMENT ON FUNCTION platformkit_ledger_placement_lock() IS
 	'platformkit: takes the shared advisory lock of a tenant whose app this transaction is naming, the key '
-	'migrations/000054 gives an unscoped claim and kit/events.MoveLedger asks for exclusively, so no placement '
+	'migrations/000058 gives an unscoped claim and kit/events.MoveLedger asks for exclusively, so no placement '
 	'can commit a tenant into an app whose ledger move is past its final read of that tenant — the move either '
 	'refuses over it or the placement serializes behind it and owes the move its own boot runs next';

@@ -12,20 +12,20 @@
 -- the same proof over again with a different predicate, which is what this file is:
 -- the explicit mapping wins, the host proof places the tenants every one of whose
 -- hosts this composition serves, and anything left over is named and refused by the
--- function 000055 puts there — but refused of a boot that named itself, and of no
+-- function 000059 puts there — but refused of a boot that named itself, and of no
 -- other. The guard and the reason for it are on the statement at the bottom.
 --
 -- Three things it deliberately is not. It is not a re-placement: `app = ''` is the
 -- only row it can touch, because a tenant does not move between apps once it has one
 -- and this file has no evidence about a row somebody already answered — and since the
--- walk is one any number of boots may run at once, the function 000055 puts there
+-- walk is one any number of boots may run at once, the function 000059 puts there
 -- checks the row is still empty at the write itself, not only in the reading that
 -- decided to write it, so two concurrent placements cannot disagree by overwriting the
 -- app the first of them committed. It is not a
 -- guess about a tenant with no host and no mapping — that tenant stops the drain of
 -- a boot that named itself, and stays where it is for every other.
 -- And it is not one statement per tenant: the choice of app is computed once, in
--- `platformkit_place_tenants` (000055), so the write and the refusal cannot drift
+-- `platformkit_place_tenants` (000059), so the write and the refusal cannot drift
 -- apart about who is placeable, which is the only way this file could tell two
 -- stories about one row. That function is what makes this file the *first* run of
 -- a placement rather than the only one: the file is spent when it drains, and the

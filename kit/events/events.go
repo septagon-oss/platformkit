@@ -325,7 +325,7 @@ func Consume(ctx context.Context, conn *db.Conn, t Transport, subs []Subscriptio
 					// The same question again, of the transaction that is about to mark
 					// the work done — and only of a subscription naming no app, because
 					// that is the only subscription whose answer moves. A tenant does not
-					// leave an app (migrations/000043, and 000055 writes an app onto a row
+					// leave an app (migrations/000043, and 000059 writes an app onto a row
 					// that is still empty), so a scoped delivery that passed holdsTenant
 					// cannot be told otherwise; an app-less one can, because the placement
 					// is exactly the act that turns its answer into somebody else's. See
@@ -490,7 +490,7 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 // durable is written only while its tenant names no app — holdsUnscoped re-reads
 // that inside the claim's own transaction and refuses the mark once one is named —
 // and a tenant's app, once written, is never rewritten or moved (migrations/000043,
-// and 000055 checks `app = ”` at the write itself). So an older-spelling mark in this
+// and 000059 checks `app = ”` at the write itself). So an older-spelling mark in this
 // tenant is this subscription's own history, in this tenant, and no other app's.
 // The same holds of the terminal record beside it: a refusal to run a handler an
 // operator already ended is that refusal, seen under the name it was written at.
@@ -499,7 +499,7 @@ func holdsUnscoped(ctx context.Context, tx db.Tx[db.Tenant], tenantID uuid.UUID)
 // naming rather than dressing: two spellings are two primary keys, so an app-less
 // delivery still open across the placement is not serialized against this one the way
 // two deliveries under one name are. It is the window the move's own tenant key exists
-// to make rare (migrations/000057), it needs an app-less consumer still running in a
+// to make rare (migrations/000061), it needs an app-less consumer still running in a
 // tenant that has just been placed, and this package's README names what closing it
 // would cost.
 func claim(tx db.Tx[db.Tenant], id uuid.UUID, durable, older string) (bool, error) {

@@ -444,13 +444,13 @@ write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
   # Read what that does to the one tenant the copy holds rather than assuming it.
   # The migrate command of apps/platformkit always declares a slug, here the empty
   # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
-  # and the empty-slug placement 000056 then finds nothing it may write and refuses
+  # and the empty-slug placement 000060 then finds nothing it may write and refuses
   # nothing: a boot that named no app asserts nothing about whose anybody is, and a
   # tenant left app-less belongs to nobody in particular. The guard, and its reason,
   # are on that file. What this step measures is that upgrade: the release applies
   # over an app-less database of the previous release size. An operator who names
   # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
-  # account for gets the sentence 000055 puts there, which names the tenant and
+  # account for gets the sentence 000059 puts there, which names the tenant and
   # writes nothing.
   hosts:
     - "rehearse.localhost"

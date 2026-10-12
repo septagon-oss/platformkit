@@ -23,11 +23,11 @@
 -- The walk that decides which app a tenant belongs to — the explicit pair first,
 -- then the host proof — has to live in exactly one place, because it is asked by
 -- two callers that can never be allowed to disagree about one row: the release
--- file that places the rows on the way past (`000056`, one window per statement),
+-- file that places the rows on the way past (`000060`, one window per statement),
 -- and every later boot that carries a declaration the release did not have. The
 -- second caller exists because a migration file is spent the moment it drains:
 -- the supported upgrade that installs the release while the deployment still
--- names no app drains 000056 over rows it must not touch, history marks the file
+-- names no app drains 000060 over rows it must not touch, history marks the file
 -- done, and the operator's later `nats.app` would place nothing at all if the
 -- placement lived only in that file — the tenants would sit outside both named
 -- apps forever, served on the legacy durable by a composition that has stopped
@@ -38,7 +38,7 @@
 -- What it returns, and what it refuses not to do: the slugs still empty *within
 -- the keys it was handed*, in slug order, or every remaining row when it was
 -- handed none. It never refuses — the guard over who may be refused for a row
--- nobody placed is the caller's (`000056`'s outer query), and this function is
+-- nobody placed is the caller's (`000060`'s outer query), and this function is
 -- the same call from a boot that merely reports what is left. One statement per
 -- half, and the halves are two statements on purpose: a data-modifying statement
 -- reads the snapshot it began with, so the list of "still nobody's" has to be
@@ -120,13 +120,13 @@ END
 $$;
 
 COMMENT ON FUNCTION platformkit_place_tenants(text, text, text, uuid[]) IS
-	'platformkit: places every tenant still naming no app under the app the passed declaration proves for it (explicit slug=app pair first, then the host proof), within the key list it is handed or over the whole table when handed none, writing only a row that is still empty at the write itself so two concurrent placements cannot replace the app the first one committed, and returns the slugs left empty; called by the placement window of migrations/000056 and by every boot of kit/app that names an app or a mapping, so the two cannot disagree about a row';
+	'platformkit: places every tenant still naming no app under the app the passed declaration proves for it (explicit slug=app pair first, then the host proof), within the key list it is handed or over the whole table when handed none, writing only a row that is still empty at the write itself so two concurrent placements cannot replace the app the first one committed, and returns the slugs left empty; called by the placement window of migrations/000060 and by every boot of kit/app that names an app or a mapping, so the two cannot disagree about a row';
 
 -- Which caller may hand it a list is not its decision either, and that matters: a
 -- boot that named no app asserts nothing about whose anybody's tenant is, and the
 -- placement that stopped it would be refusing this release to every single-app
 -- deployment (see the guard on the statement at the bottom of
--- migrations/000056_tenant_app_place.up.sql). So the caller asks the question and
+-- migrations/000060_tenant_app_place.up.sql). So the caller asks the question and
 -- this prints the answer, which is the only division of the two jobs that keeps the
 -- sentence in one place while leaving "who is answerable for a row" with the
 -- statement that writes the row.

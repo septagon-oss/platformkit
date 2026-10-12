@@ -207,7 +207,7 @@ type Declaration struct {
 	// Tenants is the operator's explicit mapping, tenant slug to app slug, for
 	// the tenant the hosts cannot place. A file that reads it places every row it
 	// names and refuses the rows it does not — the refusal reaches a boot that
-	// named itself, and migrations/000056_tenant_app_place.up.sql says why.
+	// named itself, and migrations/000060_tenant_app_place.up.sql says why.
 	Tenants map[string]string
 }
 

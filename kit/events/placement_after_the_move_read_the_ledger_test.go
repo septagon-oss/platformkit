@@ -99,7 +99,7 @@ func TestAPlacementAfterTheMoveReadsTheLedgerCannotCostATenantItsClaim(t *testin
 
 	// The placement runs from its own connection in its own goroutine, because a cure may
 	// serialize it behind the move it would otherwise overtake: the placement declares the
-	// tenant key the move holds (migrations/000057), so it waits, and a synchronous call
+	// tenant key the move holds (migrations/000061), so it waits, and a synchronous call
 	// here would wait behind the blocker this test still holds — a deadlock of the test's
 	// own making. The wait is one of the safe answers, so the result is read after the
 	// blocker lets both go; what the assertions below ask is unchanged.
@@ -144,7 +144,7 @@ func TestAPlacementAfterTheMoveReadsTheLedgerCannotCostATenantItsClaim(t *testin
 		}
 	}
 	if result.report.Claims != 2 || result.report.Tenants != 2 {
-		// The third safe answer, and the one migrations/000057 makes reachable: the placement
+		// The third safe answer, and the one migrations/000061 makes reachable: the placement
 		// declared the tenant key this move already held, so it serialized behind the move
 		// rather than committing under it, and the tenant it named owes the move that follows
 		// it — which is what a boot that places before it opens its consumers does. No answer

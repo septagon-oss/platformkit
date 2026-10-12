@@ -4,11 +4,11 @@ package app
 // existing tenant under the app that proves it, asked of every boot that declares
 // one rather than of the one release that ships the migration file.
 //
-// The file (migrations/000056_tenant_app_place.up.sql) and this step are the same
-// walk — `platformkit_place_tenants`, created by 000055 — and they are two because
+// The file (migrations/000060_tenant_app_place.up.sql) and this step are the same
+// walk — `platformkit_place_tenants`, created by 000059 — and they are two because
 // a migration file is spent the moment it drains. The upgrade that installs this
 // release while the deployment still names no app is a supported boot; it drains
-// 000056 over rows it must not touch, history marks the file applied, and the
+// 000060 over rows it must not touch, history marks the file applied, and the
 // operator's later `nats.app` arrives to a ledger that says the placement already
 // happened. Without this step those tenants keep the empty app they were stamped
 // with: served, on the legacy durable, outside both named apps, and RelayApp finds
@@ -16,7 +16,7 @@ package app
 // (kit/events/relay.go). Choosing an app name is a deployment decision made after
 // the release is installed, so the placement has to be a deployment step.
 //
-// What it does not inherit is the refusal. migrations/000056 refuses a boot that
+// What it does not inherit is the refusal. migrations/000060 refuses a boot that
 // named itself and left a tenant nobody named, and that is right at the release,
 // where one statement sees every row and the operator is mid-deploy. It would be
 // the wrong answer here: a tenant created after the placement ran is a tenant whose
@@ -29,7 +29,7 @@ package app
 // one database: each composition places on its own boot and on its own tick, over the
 // same rows, with no knowledge of the other. The walk decides from a reading, so the
 // guarantee lives in the write it makes: `platformkit_place_tenants` sets the app of a
-// row only while that row is still empty at the write itself (migrations/000055), which
+// row only while that row is still empty at the write itself (migrations/000059), which
 // leaves the second of two competing placements to find the row already named and write
 // nothing. A tenant's app is decided once (migrations/000043) and which relay, consumer
 // and control-plane scope can reach the tenant follows from it, so the step from empty
@@ -39,7 +39,7 @@ package app
 // row, not the row about itself.
 //
 // The step also declares the tenant's ledger key, in the schema rather than here
-// (migrations/000057's trigger on the row whose app went from nobody's to somebody's),
+// (migrations/000061's trigger on the row whose app went from nobody's to somebody's),
 // and that is what makes two boots safe for each other's *moves* rather than merely
 // consistent about one row. kit/events.MoveLedger holds that key exclusively over every
 // tenant that could still become its app: a placement that arrives first is that move's
