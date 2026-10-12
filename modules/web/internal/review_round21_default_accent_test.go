@@ -2,6 +2,10 @@ package internal
 
 // Review round 21 (T-0107).
 //
+// The measurements below are of the tree this case was written against, where
+// DefaultPrimaryColor was #2563eb; that colour has since moved to the one the gate
+// issues for it, which is the cure this case asked for.
+//
 // Round 19 found the tenant's brand colour painted ungated; `ede5f4a` cured the
 // paint by measuring it through `design.Pair.LegibleAccent` before it is written
 // into the head. That cure has a consequence nobody has looked at, and it is not
@@ -64,20 +68,18 @@ func TestASiteThatChoseNoColourPaintsTheColourTheContractNamesForOne(t *testing.
 				mode, rules, sitecontracts.DefaultPrimaryColor)
 		}
 	}
-	// The same claim from the door below the paint, so the finding cannot be
-	// dismissed as a rendering choice: the contract's default does not clear the
-	// gate the paint now measures with.
-	for _, mode := range []string{"light", "dark"} {
-		got, err := design.Default().LegibleAccent(mode, sitecontracts.DefaultPrimaryColor)
-		if err != nil {
-			t.Errorf("%s: LegibleAccent refuses the contract's own default: %v", mode, err)
-			continue
-		}
-		if got != sitecontracts.DefaultPrimaryColor {
-			t.Errorf("%s: the contract says a site that chose none is rendered in %s and the gate repaints it as %s; a default the paint refuses is a default that is never painted",
-				mode, sitecontracts.DefaultPrimaryColor, got)
-		}
-	}
+	// The second claim the reviewer measured — that design.Default().LegibleAccent
+	// answers #2563eb in both modes, "the same claim from the door below the paint"
+	// — is not asserted here. Root ruled it retired on 2026-10-11; the arithmetic it
+	// asks for does not exist. The gate holds accent-default on each theme's own
+	// canvas at MinContrast 4.5, which needs the two canvases to be 4.5 × 4.5 =
+	// 20.25:1 apart, and design.Default() puts #f2efe7 (L 0.8638) over #0e1614
+	// (L 0.0072) at 15.98:1 — a ground that dark needs the other at L 1.1078, past
+	// the 1.0 a colour can reach. All 16,777,216 #rrggbb values were measured: none
+	// clears the gate in both modes. Only "" answers both, and a row cannot hold it
+	// while the published wire pattern is ^#[0-9a-fA-F]{6}$ (rule B3); that widening
+	// is T-0503. What this case can assert, and does, is the half the system can be
+	// consistent about: the colour the contract names is the colour the paint emits.
 }
 
 // TestAChosenColourThatReadsIsPaintedUnchanged is the guard the finding must not

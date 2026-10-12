@@ -30,10 +30,14 @@ const (
 // (ui/components/shared-web-components.md, with the WCAG non-text-contrast link
 // beside it).
 //
-// It is 3 and not 4.5 for a second, harder reason: 4.5 against both canvases
-// refuses #2563eb, the colour this repository ships as DefaultPrimaryColor, and so
-// it would refuse every tenant that never chose one — a rule that indicts the
-// default is a bug handed to the next person as a rule.
+// It is 3 and not 4.5 for a second, harder reason: the two canvases are 15.98:1
+// apart, and a colour that reads 4.5:1 against both asks them to be 20.25:1 apart,
+// so 4.5 on both canvases refuses every #rrggbb there is — the shipped
+// DefaultPrimaryColor first, and with it every tenant that never chose one. A rule
+// that indicts the whole domain is a bug handed to the next person as a rule. The
+// paint measures the accent at 4.5 against the theme it is painting (design's own
+// gate) and repairs what fails, per mode; this door asks only that a stored colour
+// be visible somewhere, because a row is edited once and read in both schemes.
 const MinAccentRatio = 3.0
 
 // ContrastRatio is the WCAG 2.x contrast ratio between two #rrggbb colours: the
