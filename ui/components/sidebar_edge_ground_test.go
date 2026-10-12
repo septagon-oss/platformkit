@@ -1,12 +1,12 @@
 package components_test
 
-// Review round 21 (T-0107).
+// The ground the coverage case cannot see.
 //
-// Rounds 14, 15 and 16 each found a ground a component's edge is drawn on that
+// Each earlier finding named one more ground a component's edge is drawn on that
 // the gate did not name, and the third of them wrote a coverage case. That case
 // cannot find the next one: when a rule declares no fill of its own it measures
 // the rule on `r16Grounds()`, which it reads out of `design.EdgeRolePairs()`
-// itself (ui/components/review_round16_edge_ground_coverage_test.go:66-79 — "the
+// itself (ui/components/edge_ground_coverage_test.go:66-79 — "the
 // grounds a rule that declares no fill of its own is drawn on. They are read from
 // design.EdgeRolePairs"). A fifth ground is invisible to it by construction: the
 // list it measures against is the list it is testing.
@@ -35,7 +35,7 @@ package components_test
 //
 // So an identity the generator issues, or a client file `Client.Resolve` accepts,
 // can carry a sidebar whose section lines have no edge against the panel they are
-// drawn on, and nothing refuses it. That is the same ground round 11 measured,
+// drawn on, and nothing refuses it. The sidebar's ground was measured once,
 // recorded in the changelog and pinned for the *ring* alone
 // (design/ring_ground_test.go:TestShippedRingHoldsOnTheSidebarGroundTheGateDoesNotName);
 // the line on that ground has never been measured by anything.
@@ -46,13 +46,13 @@ package components_test
 //     the deferral deserves and only the ring has: the shipped palette's own
 //     reading, both themes, at MinContrastGraphic. It passes at these bytes and
 //     fails the day a token change erases the line, which is the failure mode
-//     round 14 filed.
+//     this case exists for.
 //  2. TestTheLineTheSidebarPaintsIsGatedOnTheGroundTheSidebarPaints — the defect.
 //     It fails now: `border-primary` on `surface-inverse` is in no gated list. It
 //     has the same way to pass its predecessors had — name the pair in
 //     design.EdgeRolePairs (the door then refuses a client file and a seed whose
 //     line vanishes) or stop drawing the line there.
-//  3. TestTheSidebarStillDrawsThatLineOnThatGround — the witness, in round 3's
+//  3. TestTheSidebarStillDrawsThatLineOnThatGround — the witness, in the
 //     shape: it fails if the premise itself goes away, so cases 1 and 2 cannot be
 //     made green by the paint quietly leaving the tree.
 
