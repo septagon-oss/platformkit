@@ -1381,10 +1381,16 @@ func blobs(t *testing.T, cfg config.Config) int {
 // The transaction half is measured from outside, through pg_stat_activity,
 // because the claim is about a server-side connection and not about a Go value.
 // dbtest names this installation's pool after the test's schema, so the count is
-// this application's backends and nobody else's. The question it asks is the age
-// of the oldest open transaction rather than how many there are: the application
-// is running its periodic jobs too, and a job's transaction is milliseconds old,
-// while a pinned one keeps getting older for as long as the body trickles.
+// this application's backends and nobody else's.
+//
+// It asks the age of the oldest open transaction of an installation started as the
+// serving half, because that is the only installation this question has an answer
+// for. The worker half runs the outbox relay, the outbox purge and every module's
+// periodic jobs over this same pool, and a transaction of that work stays open for
+// as long as its goroutine keeps a CPU: on a host carrying several suites at once
+// it is seconds old, and no bound separates it from one a client pinned. On role
+// web nothing but a request opens a transaction, so a transaction still open and
+// old at the last sample is the trickling request's own.
 func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	const timeout = 3 * time.Second
 	path, cfg := configure(t)
@@ -1396,7 +1402,7 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	c := compose(cfg)
 	start(t, cfg, c.modules, app.Options{
 		Tenants: c.tenants, Authorize: c.auth, Entitle: c.plans, Authenticate: c.auth.Authenticate,
-		Role: app.All, Transport: memory.New(), Log: quiet(),
+		Role: app.Web, Transport: memory.New(), Log: quiet(),
 	})
 	admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
 
@@ -1493,9 +1499,9 @@ func TestASlowUploadIsCutOffAndHoldsNoTransaction(t *testing.T) {
 	// The bound is half the read timeout, and it is arithmetic rather than taste. A
 	// transaction the upload pinned opens when the request arrives and is still open at
 	// the last sample, so it is at least timeout*3/4 minus one sample interval old —
-	// 2.2s here. A periodic job's transaction is milliseconds old on a quiet machine
-	// and read 0.53s on a loaded CI runner (PR 55, run 144), which a 0.5s bound
-	// refused. timeout/2 sits between the two with margin on both sides.
+	// 2.2s here. Nothing on this role opens a transaction while a body trickles and no
+	// other request is in flight, so the only way to be older than the bound is to be
+	// that transaction. timeout/2 refuses it with a second of room on both sides.
 	if limit := timeout.Seconds() / 2; oldest > limit {
 		t.Errorf("a transaction of this installation was %.2fs old while the body trickled (bound %.2fs); the bytes are stored before the transaction is opened, so a slow client has nothing to hold",
 			oldest, limit)
