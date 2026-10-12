@@ -213,7 +213,7 @@ many there are at once is bounded by the process's own ceiling
 (`internal/decode.go`, one slot per core), which an upload that cannot get one
 inside its wait answers with `ErrBusyDecoding` and a 503 rather than by queueing
 without limit. The encode pass shares those slots and defers instead of failing.
-The release sweep (`file-unused`,
+How often a caller may ask is the other bound and it belongs to the route: the upload declares `httpx.WriteLimits` (60 a minute per person, 300 per tenant), counted after the permission guard and before the body is read, so a spent window answers 429 with `Retry-After` and opens no write. The release sweep (`file-unused`,
 `internal/unused.go`) removes an image stamped `unused_since` further ago than
 `Deps.UnusedAfter` with no live use and no hold, and only ever a file the image
 pass measured (`width > 0`), so a document upload is never reaped by a rule about

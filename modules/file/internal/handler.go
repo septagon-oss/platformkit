@@ -36,6 +36,24 @@ const (
 // a two-value call.
 var streams, streaming = httpx.StreamedBody()
 
+// limits is the kernel's mark for an operation whose writes are counted, and
+// countedUploads its two windows: 60 a minute for one person is more than a page
+// of pictures dragged in at once and less than a script's steady rate, and 300 a
+// minute for one tenant is a fuse beside the decode bound rather than a working
+// limit. Both are constants beside the route that declares them, in the precedent
+// of the public surface's own allowance.
+const (
+	uploadsPerActor     = 60
+	uploadsActorWindow  = "1m"
+	uploadsPerTenant    = 300
+	uploadsTenantWindow = "1m"
+)
+
+var limits, countedUploads = httpx.WriteLimits(
+	httpx.WriteLimit{Per: httpx.LimitPerActor, Limit: uploadsPerActor, Window: uploadsActorWindow},
+	httpx.WriteLimit{Per: httpx.LimitPerTenant, Limit: uploadsPerTenant, Window: uploadsTenantWindow},
+)
+
 // door is what these routes ask of the service: every command of contracts.Service
 // and the width door beside it. The two are one object at every composition — the
 // SQL service answers both — and are named together here rather than on
@@ -117,14 +135,24 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 		Description:   "A multipart form with one file part. The bytes are streamed to storage as they arrive, hashed and counted on the way past; an upload larger than this deployment accepts is refused with 413 and nothing is kept.",
 		Tags:          []string{"file"},
 		DefaultStatus: http.StatusCreated,
-		Errors:        faults,
+		Errors:        append(slices.Clone(faults), http.StatusTooManyRequests),
 		// The second extension is what tells the kernel this route reads its
 		// own request: no schema means no ceiling of huma's, so the kernel
 		// gives it files.max_bytes and a multipart envelope instead of the
 		// megabyte every other route gets. See httpx.StreamedBody.
+		//
+		// The third counts its writes, per person and per tenant: a page's
+		// worth of pictures dragged in at once stays well inside the first, and
+		// the second is a fuse rather than a working limit — an installation
+		// whose decode bound is one frame per core cannot serve a tenant's 300
+		// uploads a minute anyway, and the number that arrives first should be
+		// the one answering Retry-After. Both are constants beside the route, in
+		// the precedent of the public surface's own allowance; a deployment that
+		// needs other numbers is the product's decision, not this module's.
 		Extensions: map[string]any{
 			httpx.EventsExtension: []string{contracts.EventUploaded},
 			streams:               streaming,
+			limits:                countedUploads,
 		},
 		// Declared by hand, with no schema, which is what keeps huma from
 		// reading the body: a schema here would make it decode the whole form

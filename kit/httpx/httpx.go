@@ -498,7 +498,11 @@ func New(cfg Options) (*API, *chi.Mux) {
 	// and before the handler, which is where the two things it does both belong:
 	// nothing above it reads a body, and the transaction it ends for a streaming
 	// route is the one the guards opened.
-	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.bodies)
+	// writeLimits sits between the permission guard and the body reader: a caller
+	// who may not perform the write never spends the allowance, and a refused one
+	// has cost the process nothing but the count, because no byte of the request
+	// had been read and the guards' transaction rolls back untouched.
+	a.api.UseMiddleware(a.tenant, a.traced, a.publicWrites, a.transaction, a.authenticate, a.authorize, a.writeLimits, a.bodies)
 
 	// The API is mounted last and at the root, so a static tree registered
 	// afterwards still takes precedence over it for its own prefix.
@@ -664,7 +668,7 @@ func (a *API) ValidateDeclarations() error {
 			op.Extensions[SurfaceExtension] = string(classify(op.Path))
 		}
 	}
-	var bad, unanswerable []string
+	var bad, unanswerable, uncountable []string
 	for _, op := range a.Recorded() {
 		auth, ok := declarationOf(op)
 		if !ok {
@@ -674,6 +678,14 @@ func (a *API) ValidateDeclarations() error {
 		if auth.Feature() != "" && a.opts.Entitle == nil {
 			unanswerable = append(unanswerable, describe(op)+" needs the "+auth.Feature()+" feature")
 		}
+		if why := checkWriteLimits(describe(op), op); why != "" {
+			uncountable = append(uncountable, why)
+		}
+	}
+	if len(uncountable) > 0 {
+		sort.Strings(uncountable)
+		return fmt.Errorf("httpx: %d operation(s) declare a counted write this kernel cannot count:\n  %s",
+			len(uncountable), strings.Join(uncountable, "\n  "))
 	}
 	if len(unanswerable) > 0 {
 		sort.Strings(unanswerable)
