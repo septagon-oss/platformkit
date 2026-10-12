@@ -75,6 +75,11 @@ var webhookCatalogue = emittedEvents{
 	translationcontracts.EventUpdated,
 	filecontracts.EventUploaded, filecontracts.EventDeleted, filecontracts.EventRetained,
 	filecontracts.EventReleased, filecontracts.EventErased,
+	// The flip the image widths added: a file's audience is recomputed whenever the
+	// records that show it change, so an image is public while something shows it and
+	// private again when the last of them stops. A subscriber that watches what an
+	// installation exposes needs that moment, not only the upload.
+	filecontracts.EventVisibility,
 	billingcontracts.EventPlanCreated, billingcontracts.EventPlanUpdated, billingcontracts.EventPlanDeleted,
 	billingcontracts.EventSubscribed, billingcontracts.EventCancelled, billingcontracts.EventRenewed,
 	billingcontracts.EventPastDue,
