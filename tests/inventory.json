@@ -2542,6 +2542,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/inventory_go_test_ceiling_test.go",
+   "id": "apps/platformkit/inventory_go_test_ceiling_test.go#TestTheInventoryQuotesItsDeclaredGoTestCeiling",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTheInventoryQuotesItsDeclaredGoTestCeiling",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/invitation_acceptance_signs_in_test.go",
    "id": "apps/platformkit/invitation_acceptance_signs_in_test.go#TestAcceptingAnInvitationSignsThePersonIn",
    "kind": "go",
@@ -55781,7 +55800,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1396,
+  "files": 1397,
   "forge_runs": [
    408,
    413,
@@ -55816,7 +55835,7 @@
   ],
   "layers": {
    "behaviour": 2402,
-   "composition": 329,
+   "composition": 330,
    "contract": 19,
    "journey": 67
   },
@@ -55834,9 +55853,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2817,
+  "rows": 2818,
   "tiers": {
-   "merge": 1761,
+   "merge": 1762,
    "nightly": 67,
    "push": 989
   },
@@ -55844,13 +55863,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1180,
+   "keep": 1181,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2469,
+   "keep": 2470,
    "keep-rewrite": 133,
    "merge": 215
   }
