@@ -14,14 +14,18 @@ import (
 	"testing"
 )
 
-// raisedIn returns every `screens.` key the Go source of one package asks for.
+// raisedIn returns every catalogue key the Go source of one package asks for, of
+// each prefix named — the `screens.` vocabulary unless another is asked for.
 //
 // The parser is the point: the alternative is a list somebody maintains beside the
 // renderers, which is a second source of the same fact and goes wrong exactly when
 // a screen gains a label — the case this gate exists to catch. Test files are left
 // out because a key a test invents is not a key a person is ever shown.
-func raisedIn(t *testing.T, dir string) []string {
+func raisedIn(t *testing.T, dir string, prefixes ...string) []string {
 	t.Helper()
+	if len(prefixes) == 0 {
+		prefixes = []string{"screens."}
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("%s cannot be read: %v", dir, err)
@@ -42,8 +46,12 @@ func raisedIn(t *testing.T, dir string) []string {
 			if !ok || literal.Kind != token.STRING {
 				return true
 			}
-			if text, err := strconv.Unquote(literal.Value); err == nil && strings.HasPrefix(text, "screens.") {
-				set[text] = true
+			if text, err := strconv.Unquote(literal.Value); err == nil {
+				for _, prefix := range prefixes {
+					if strings.HasPrefix(text, prefix) {
+						set[text] = true
+					}
+				}
 			}
 			return true
 		})
@@ -59,7 +67,9 @@ func raisedIn(t *testing.T, dir string) []string {
 // cataloguedIn returns the keys one embedded catalogue directory carries, in every
 // locale it ships. The `screens.` vocabulary is the words a generated screen says,
 // and both of the packages that write those screens are read: ui/screens mounts the
-// forms whose titles come from the same keys.
+// forms whose titles come from the same keys, and the sentences kit/rest's form
+// reader refuses those forms with are kept here because no other catalogue is ever
+// drawn on to say them.
 func cataloguedIn(t *testing.T) []string {
 	t.Helper()
 	locales, err := fs.Glob(Catalogues(), "*.json")
@@ -97,6 +107,7 @@ func cataloguedIn(t *testing.T) []string {
 func TestTheScreenVocabularyAndTheCatalogueAreOneList(t *testing.T) {
 	t.Parallel()
 	raised := append(raisedIn(t, "."), raisedIn(t, filepath.Join("..", "screens"))...)
+	raised = append(raised, raisedIn(t, filepath.Join("..", "..", "kit", "rest"), "invalid.rest.")...)
 	slices.Sort(raised)
 	raised = slices.Compact(raised)
 	catalogued := cataloguedIn(t)

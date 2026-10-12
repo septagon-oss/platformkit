@@ -16,6 +16,13 @@ import (
 // the readable fallback, so it is worded where it is used and the catalogue is
 // what a deployment that answers in more than one language adds.
 //
+// The generated forms are the same surface as the generated lists, and so are the
+// sentences kit/rest's form reader refuses them with: those keys are named by the
+// reader (`invalid.rest.form.` plus the shape of what went wrong, because no module
+// is involved in a value that did not decode) and answered here, because this is the
+// only catalogue a generated form is ever drawn from. rest.invalid and
+// rest.refusedProblem name where they are raised.
+//
 //go:embed messages
 var catalogues embed.FS
 

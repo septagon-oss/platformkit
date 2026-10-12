@@ -25,6 +25,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/entity/display"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 )
@@ -175,12 +176,12 @@ func UpdateValues(body []byte, fields []crud.Field, immutable []string) (map[str
 func formValues(body []byte, fields []crud.Field, refuse []string, update bool) (map[string]any, error) {
 	form, err := url.ParseQuery(string(body))
 	if err != nil {
-		return nil, problem.New(http.StatusUnprocessableEntity, "this form could not be read")
+		return nil, refusedForm("invalid.rest.form.unreadable", "this form could not be read")
 	}
 	// Asked of every posted key before any field is read, so a key that folds
 	// onto a refused name is refused and not merely left out of the lookup.
 	if name := foldedName(form, refuse); name != "" {
-		return nil, invalid(name, "belongs to a route of its own, not to this form")
+		return nil, invalid(name, "invalid.rest.form.routeOfItsOwn", "%s belongs to a route of its own, not to this form", name)
 	}
 	out := map[string]any{}
 	for _, f := range fields {
@@ -220,13 +221,13 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 		case crud.TypeInt:
 			n, err := strconv.ParseInt(text, 10, 64)
 			if err != nil {
-				return nil, invalid(f.Name, "is not a whole number")
+				return nil, invalid(f.Name, "invalid.rest.form.wholeNumber", "%s is not a whole number", f.Name)
 			}
 			out[f.Name] = n
 		case crud.TypeFloat:
 			n, err := strconv.ParseFloat(text, 64)
 			if err != nil {
-				return nil, invalid(f.Name, "is not a number")
+				return nil, invalid(f.Name, "invalid.rest.form.number", "%s is not a number", f.Name)
 			}
 			out[f.Name] = n
 		case crud.TypeTime:
@@ -239,7 +240,7 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 				at, err = time.Parse("2006-01-02T15:04", text)
 			}
 			if err != nil {
-				return nil, invalid(f.Name, "is not a time")
+				return nil, invalid(f.Name, "invalid.rest.form.time", "%s is not a time", f.Name)
 			}
 			out[f.Name] = at.Format(time.RFC3339Nano)
 		case crud.TypeList:
@@ -257,7 +258,7 @@ func formValues(body []byte, fields []crud.Field, refuse []string, update bool) 
 					item, err := coerce(crud.Field{Name: f.Name, Type: f.Elem}, value)
 					number, numeric := item.(float64)
 					if err != nil || (numeric && (math.IsNaN(number) || math.IsInf(number, 0))) {
-						return nil, invalid(f.Name, "contains an invalid "+string(f.Elem))
+						return nil, invalid(f.Name, "invalid.rest.form.listItem", "%s contains an invalid %s", f.Name, f.Elem)
 					}
 					typed = append(typed, item)
 				}
@@ -284,10 +285,40 @@ func Writable(values map[string]any, immutable []string) map[string]any {
 	return out
 }
 
-// invalid is a 422 about one field, in the shape FieldErrors reads back.
-func invalid(field, why string) error {
-	p := problem.New(http.StatusUnprocessableEntity, field+" "+why)
-	p.Errors = []string{field + ": " + why}
+// invalid is a 422 about one field, in the shape FieldErrors reads back: the
+// whole sentence in the Detail, and the same sentence again under the field's own
+// name so the screen marks that control rather than only shouting above it. One
+// sentence in both places is what lets a reader who speaks another language be
+// shown one translated sentence rather than half a page in each of two.
+//
+// The sentence is a fault.Reason — the verdict, the text this package is written
+// in, the key that text is kept under and the arguments it wants — because a form's
+// refusal reaches a person, and that person's language is not this package's to
+// decide. The key names this package and the shape of what went wrong; the
+// catalogue that answers it is the one a generated form is drawn from
+// (ui/resource), the only place these sentences are ever said out loud.
+func invalid(field, key, text string, args ...any) error {
+	reason := &fault.Reason{Kind: crud.ErrInvalid, Key: key, Text: text, Args: args}
+	return refusedProblem(reason, field)
+}
+
+// refusedForm is the one refusal of this package's that is not about a field: the
+// body that arrived was not a form at all, so there is no control to mark and the
+// sentence stands on its own.
+func refusedForm(key, text string, args ...any) error {
+	return refusedProblem(&fault.Reason{Kind: crud.ErrInvalid, Key: key, Text: text, Args: args}, "")
+}
+
+// refusedProblem is a keyed refusal in the problem shape the form reads back: the
+// Detail is the writer's sentence, Errors repeats it under the field it is about,
+// and Refusal is what carries it — so the page shows the same sentence in the
+// reader's language and the problem document and the log keep this one.
+func refusedProblem(reason *fault.Reason, field string) error {
+	p := problem.New(http.StatusUnprocessableEntity, reason.Error())
+	if field != "" {
+		p.Errors = []string{field + ": " + reason.Error()}
+	}
+	p.Refusal = reason
 	return p
 }
 
