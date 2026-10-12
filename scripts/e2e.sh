@@ -225,7 +225,10 @@ YAML
 
 # The second installation's own file, for the tenant no customer of the first is
 # served at. Same rule as write_config: the port appears twice, so a run that has
-# to move the second port rewrites the file rather than patching two lines.
+# to move the second port rewrites the file rather than patching two lines. It carries
+# every key the composition refuses to build without, because it is the same composition
+# as the first installation's and not a smaller one: run `bootstrap` on a file that omits
+# one and the second tenant's installation dies before it serves a word.
 write_second_config() {
 	cat >"$work/second.yaml" <<YAML
 server:
@@ -244,6 +247,11 @@ audit:
   retention_days: 365
 files:
   dir: "$work/files-two"
+# The second installation wraps a signing secret the way the first does, with bytes of
+# its own: each gets its own database, port, password and wrapping key, because each is
+# a deployment of its own. None of what it signs is verified anywhere by this fixture.
+webhook:
+  secret_key: "fedcba9876543210fedcba9876543210"
 YAML
 }
 
