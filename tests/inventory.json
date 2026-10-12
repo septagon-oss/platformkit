@@ -33317,6 +33317,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/scim/internal/patch_document_atomicity_test.go",
+   "id": "modules/scim/internal/patch_document_atomicity_test.go#TestProtocolPatchAppliesOperationsInOrderOrCommitsNothing",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestProtocolPatchAppliesOperationsInOrderOrCommitsNothing",
+   "needs_db": true,
+   "pkg": "modules/scim/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/scim/internal/protocol_error_schema_test.go",
    "id": "modules/scim/internal/protocol_error_schema_test.go#TestAProtocolRefusalCanBeDecodedAsASCIMError",
    "kind": "go",
@@ -53151,7 +53170,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1300,
+  "files": 1301,
   "forge_runs": [
    408,
    413,
@@ -53185,7 +53204,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2323,
+   "behaviour": 2324,
    "composition": 280,
    "contract": 20,
    "journey": 58
@@ -53204,9 +53223,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2681,
+  "rows": 2682,
   "tiers": {
-   "merge": 1682,
+   "merge": 1683,
    "nightly": 58,
    "push": 941
   },
@@ -53214,13 +53233,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1085,
+   "keep": 1086,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2334,
+   "keep": 2335,
    "keep-rewrite": 132,
    "merge": 215
   }
