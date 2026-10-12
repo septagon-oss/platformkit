@@ -126,7 +126,16 @@ func (s *service) person(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID)
 	return personaldata.Subject{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, Handle: u.Handle}, nil
 }
 
+// Export is the read, and it asks who is asking before it reads.
+//
+// It is a command of this module and not only a step of the walk: another module that
+// composes it reaches it with no route in front of it, and a route that checked its caller
+// is not a command that may assume it. The person's own copy asks nothing; anybody else's
+// copy is `subject:export`'s; the walk that names no caller is the trusted runner.
 func (s *service) Export(ctx context.Context, tx db.Tx[db.Tenant], subject uuid.UUID) (*contracts.Bundle, error) {
+	if err := ownOrAnother(ctx, subject, contracts.PermissionExport); err != nil {
+		return nil, err
+	}
 	sj, err := s.person(ctx, tx, subject)
 	if err != nil {
 		return nil, err
@@ -196,7 +205,18 @@ func write(zw *zip.Writer, name string, body []byte) error {
 	return nil
 }
 
+// Erase is the irreversible one, so it asks its grant of every caller, the person's own
+// included — the same rule RequestErase states at the door, because this is the command
+// that does the work and a door's check is only one caller deep. A refusal arrives before
+// the person is read, before any contributor is asked, before a receipt exists and before
+// an event is published, so the caller's transaction rolls back nothing that happened.
 func (s *service) Erase(ctx context.Context, tx db.Tx[db.Tenant], in contracts.EraseInput) (*contracts.Erasure, error) {
+	actor, named := actsAs(ctx)
+	if named {
+		if err := ceiling(ctx, actor, contracts.PermissionErase); err != nil {
+			return nil, err
+		}
+	}
 	sj, err := s.person(ctx, tx, in.Subject)
 	if err != nil {
 		return nil, err

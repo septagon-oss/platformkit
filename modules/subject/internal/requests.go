@@ -75,6 +75,44 @@ func ceiling(ctx context.Context, actor uuid.UUID, permission string) error {
 	return nil
 }
 
+// actsAs is who the transaction is doing this for, decided from the transaction itself.
+//
+// It is never the id a caller passed. A command that reads a row by an id it was handed
+// cannot also take that id's word for who is asking — that is the difference between a
+// lookup and an authorisation, and it is why the two commands whose subject a caller
+// supplies (Export, Erase) ask this instead of asking their caller.
+func actsAs(ctx context.Context) (uuid.UUID, bool) {
+	if a, ok := tenancy.ActorFrom(ctx); ok {
+		return a, true
+	}
+	// A credential with no actor beside it still names a user; a context with neither
+	// names nobody, and the caller says so by ignoring the second result.
+	if p, ok := tenancy.PrincipalFrom(ctx); ok {
+		return p.UserID, true
+	}
+	return uuid.Nil, false
+}
+
+// ownOrAnother is the grant rule a read of a person's rows asks of the caller: nothing
+// for the person's own copy — Article 15 is a right, and a right that needed a key is a
+// favour (ADR 0020 §7) — and `permission` for anybody else's, of the caller's own
+// credential, inside the transaction that is about to read.
+//
+// A context that names no identity at all is a runner inside the installation: the export
+// walk, which produces the bundle for a row a person already asked for. It is bounded by
+// the tenant its transaction is bound to and by nothing it could be told, which is the
+// same rule ceiling states for a credential-less caller.
+func ownOrAnother(ctx context.Context, subject uuid.UUID, permission string) error {
+	actor, ok := actsAs(ctx)
+	if !ok {
+		return nil
+	}
+	if subject == actor {
+		permission = ""
+	}
+	return ceiling(ctx, actor, permission)
+}
+
 // RequestExport files the ask and publishes the fact, in one transaction.
 func (s *service) RequestExport(ctx context.Context, tx db.Tx[db.Tenant], in contracts.RequestExportInput) (*contracts.Request, error) {
 	if len(in.Reason) > contracts.MaxReason {
@@ -92,11 +130,7 @@ func (s *service) RequestExport(ctx context.Context, tx db.Tx[db.Tenant], in con
 	// A person's own copy asks no grant — Article 15 is a right, and a right that needed a
 	// key is a favour (ADR 0020 §7). Anybody else's copy is `subject:export`'s, and the
 	// command asks that of its own accord rather than trusting the door that reached it.
-	permission := ""
-	if in.Subject != actor {
-		permission = contracts.PermissionExport
-	}
-	if err := ceiling(ctx, actor, permission); err != nil {
+	if err := ownOrAnother(ctx, in.Subject, contracts.PermissionExport); err != nil {
 		return nil, err
 	}
 	return s.file(ctx, tx, contracts.Request{
@@ -310,13 +344,11 @@ func (s *service) store() (contracts.BundleSource, error) {
 // operator says the caller reached this as a holder of `subject:export` rather than as the
 // person who filed the row. It is the route's statement about the door it authenticated,
 // and this command does not take it on trust: it asks the same grant of the caller's own
-// credential that the route asked, so a module composing this service gets the refusal the
-// door gives rather than a read of anybody's request.
+// credential that the route asked, and it asks whose credential this is at all, so the
+// requester id below is a row to look up and never a claim about who is asking.
 func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*contracts.Request, error) {
-	if operator {
-		if err := ceiling(ctx, actor, contracts.PermissionExport); err != nil {
-			return nil, err
-		}
+	if err := ceiling(ctx, actor, operatorPermission(operator)); err != nil {
+		return nil, err
 	}
 	row := &contracts.Request{}
 	if err := tx.DB().WithContext(ctx).Where("id = ?", request).First(row).Error; err != nil {
@@ -328,6 +360,16 @@ func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, act
 	return row, nil
 }
 
+// What the caller came through the operator's door for is the read grant; what they came
+// through their own door for is nothing beyond being who they are — which `ceiling` still
+// asks, by holding the claimed identity to the credential the transaction carries.
+func operatorPermission(operator bool) string {
+	if operator {
+		return contracts.PermissionExport
+	}
+	return ""
+}
+
 // Mint opens the seven-day door onto one bundle.
 //
 // The caller is either the person who asked or a holder of `subject:export`. The route says
@@ -335,14 +377,13 @@ func (s *service) Request(ctx context.Context, tx db.Tx[db.Tenant], request, act
 // caller's own credential, because a request id is not a capability, naming a row is not
 // authorisation to open it, and a boolean a caller passes is not a fact this command knows.
 // What it always checks is the requester: somebody else's request answers not-found, which is
-// the answer that does not confirm the row exists.
+// the answer that does not confirm the row exists — and a caller whose own credential is not
+// the requester they name never gets as far as the row.
 func (s *service) Mint(ctx context.Context, tx db.Tx[db.Tenant], request, actor uuid.UUID, operator bool) (*contracts.Link, error) {
 	// Asked before the row is read: a refusal has to be the refusal that writes nothing,
 	// and a mint that moved the bundle's hold before it refused would not be that.
-	if operator {
-		if err := ceiling(ctx, actor, contracts.PermissionExport); err != nil {
-			return nil, err
-		}
+	if err := ceiling(ctx, actor, operatorPermission(operator)); err != nil {
+		return nil, err
 	}
 	row := &contracts.Request{}
 	if err := tx.DB().WithContext(ctx).Where("id = ?", request).First(row).Error; err != nil {
