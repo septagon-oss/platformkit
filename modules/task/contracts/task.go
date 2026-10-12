@@ -11,7 +11,6 @@ package contracts
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -21,6 +20,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
 )
 
@@ -117,38 +117,52 @@ func (t *Task) IsOverdue(now time.Time) bool {
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses: a title that differs
 // only in whitespace is the same title, and two callers must not disagree.
+//
+// Each refusal is a fault.Reason rather than a bare sentence: the verdict, the
+// sentence the check is written in, and the entry of modules/task/messages that
+// same sentence is kept under. Whoever renders the refusal then chooses — a form
+// marks the control with the reader's own Portuguese, the problem document and the
+// log keep this text, and a composition with no catalogue reads this text too.
+// The words are the task module's, because the rule that refused is.
 func (t *Task) Validate(context.Context) error {
 	// Match the JSON schema and varchar limit in characters, before normalization.
 	if utf8.RuneCountInString(t.Title) > 200 {
-		return fmt.Errorf("title must have at most 200 characters")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.title.length",
+			Text: "title must have at most 200 characters"}
 	}
 	t.Title = strings.TrimSpace(t.Title)
 	if t.Title == "" {
-		return fmt.Errorf("a task needs a title")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.title",
+			Text: "a task needs a title"}
 	}
 	if t.Status == "" {
 		t.Status = StatusOpen
 	}
 	if !slices.Contains(statuses, t.Status) {
-		return fmt.Errorf("status %q is not a lifecycle state", t.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.status",
+			Text: "status %q is not a lifecycle state", Args: []any{t.Status}}
 	}
 	if t.Priority == "" {
 		t.Priority = PriorityNormal
 	}
 	if !slices.Contains(priorities, t.Priority) {
-		return fmt.Errorf("priority %q is not a priority", t.Priority)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.priority",
+			Text: "priority %q is not a priority", Args: []any{t.Priority}}
 	}
 	if t.SLABreached && t.SLADeadline == nil {
-		return fmt.Errorf("a breach needs the deadline it broke")
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.breach.deadline",
+			Text: "a breach needs the deadline it broke"}
 	}
 	// Both halves of "resolved means resolved at a time", so a resolved task
 	// can always answer when.
 	resolved := t.Status == StatusResolved || t.Status == StatusClosed
 	if t.ResolvedAt != nil && !resolved {
-		return fmt.Errorf("a %s task cannot have a resolution time", t.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.resolved_at.extra",
+			Text: "a %s task cannot have a resolution time", Args: []any{t.Status}}
 	}
 	if resolved && t.ResolvedAt == nil {
-		return fmt.Errorf("a %s task needs a resolution time", t.Status)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.task.resolved_at.missing",
+			Text: "a %s task needs a resolution time", Args: []any{t.Status}}
 	}
 	return nil
 }

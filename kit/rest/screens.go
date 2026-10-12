@@ -300,6 +300,30 @@ func invalid(field, why string) error {
 // substring, so a message about "subtitle" marked "title" — the wrong control,
 // with the right message, which is the confusing half of both.
 func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
+	return FieldErrorsIn(err, fields, nil)
+}
+
+// Words is a request's language, as far as a form's refusal needs it: one
+// sentence asked of the catalogue the reader is being answered from. kit/locale's
+// Locale satisfies it; this package names the port rather than importing that one
+// because reading a refusal costs a lookup and not a negotiation.
+type Words interface {
+	Text(key, fallback string, args ...any) string
+}
+
+// FieldErrorsIn is FieldErrors told in the language words answers in: the same
+// controls marked, the same sentence above them, and — where the module that
+// refused the write ships its copy in this composition — that sentence read in the
+// reader's own language rather than the one the Go source is written in. Which
+// control is at fault is worked out from the source sentence first, because the
+// source sentence is the one that names the field: a Portuguese reason says
+// "título", and a match on the English word would lose the marker from the control
+// the moment the reason was translated.
+//
+// A refusal whose writer named no key, a composition that wired no catalogue, and a
+// catalogue with no entry for the key are all answered the source sentence, which is
+// what FieldErrors answers.
+func FieldErrorsIn(err error, fields []crud.Field, words Words) (map[string]string, string) {
 	p, ok := err.(*problem.Problem)
 	if !ok {
 		return nil, err.Error()
@@ -322,7 +346,38 @@ func FieldErrors(err error, fields []crud.Field) (map[string]string, string) {
 			}
 		}
 	}
+	if said, source := spoken(p, words); said != "" {
+		for name, message := range out {
+			if message == source {
+				out[name] = said
+			}
+		}
+		if detail == source {
+			detail = said
+		}
+	}
 	return out, detail
+}
+
+// spoken is the writer's own sentence for this refusal, in the reader's language,
+// and the source sentence it stands for ("" for "" when there is no such sentence
+// to ask about). Three things have to hold: the writer carried one, the caller can
+// ask a language, and the Detail actually printed is that sentence — either bare or
+// behind the marker kit/crud puts in front of a refusal. A Detail this package or a
+// driver wrote instead keeps its own words: copy keyed to a sentence nobody is being
+// shown would be a sentence swapped in under the reader's eyes.
+func spoken(p *problem.Problem, words Words) (said, source string) {
+	if p.Refusal == nil || words == nil {
+		return "", ""
+	}
+	source = p.Refusal.Error()
+	if p.Detail != source && !strings.HasSuffix(p.Detail, ": "+source) {
+		return "", source
+	}
+	if translated := words.Text(p.Refusal.Key, source, p.Refusal.Args...); translated != source {
+		return translated, source
+	}
+	return "", source
 }
 
 // mentions reports whether detail names field as a word of its own.
