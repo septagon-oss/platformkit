@@ -154,9 +154,26 @@ type match struct {
 // identifier first: an address and a name as whole words wherever they sit, and a handle as
 // the @-mention it always is, or — in a row that names the person by id — as the bare word
 // too. See Subject.Known.
-func matches(s Subject) []match {
-	out := make([]match, 0, 3)
-	for _, id := range s.Known() {
+//
+// For a jsonb column each identifier joins a second time, as the document's serialisation
+// spells it: see jsonEscaped.
+func matches(s Subject, isJSON bool) []match {
+	ids := s.Known()
+	if isJSON {
+		// Appended rather than replacing, so both spellings are searched in one statement:
+		// a document that arrived through a client that had already escaped once holds the
+		// raw text inside the serialised one, and a scrub of a jsonb column that reached only
+		// for the stored text would certify that row clean.
+		escaped := make([]Identifier, 0, len(ids))
+		for _, id := range ids {
+			if e := jsonEscaped(id.Value); e != id.Value {
+				escaped = append(escaped, Identifier{Value: e, Login: id.Login})
+			}
+		}
+		ids = append(ids, escaped...)
+	}
+	out := make([]match, 0, len(ids))
+	for _, id := range ids {
 		if id.Login {
 			out = append(out, match{pattern: mentionPattern(id.Value), ownPattern: boundedPattern(id.Value)})
 			continue
@@ -164,6 +181,48 @@ func matches(s Subject) []match {
 		out = append(out, match{pattern: boundedPattern(id.Value)})
 	}
 	return out
+}
+
+// jsonEscaped is how Postgres writes one string when it serialises a jsonb document, which
+// is the text a scrub of a jsonb column searches: `payload::text` is not the string that
+// went in, and a name containing a quote or a backslash is not the same bytes on both sides
+// of that cast. `Jo "JJ" Jones` is stored as `{"displayName":"Jo \\"JJ\\" Jones"}` — in the
+// text the scrub runs over, `Jo \"JJ\" Jones` — so the raw pattern matches nothing there and
+// the person's whole name survives an erasure that reported success.
+//
+// It is written out rather than produced by encoding/json because the two serialisers do not
+// agree, and the one that decides what is in the column is the server: Go escapes U+2028 and
+// U+2029 and, by default, `<`, `>` and `&`, none of which jsonb escapes. A name with a `&`
+// in it is not rare, and a pattern for a spelling the document never holds leaves the name
+// where it was while the re-read asks the same pattern and answers that nothing is left.
+func jsonEscaped(s string) string {
+	var out strings.Builder
+	out.Grow(len(s) + 8)
+	for _, r := range s {
+		switch r {
+		case '"':
+			out.WriteString(`\"`)
+		case '\\':
+			out.WriteString(`\\`)
+		case '\b':
+			out.WriteString(`\b`)
+		case '\f':
+			out.WriteString(`\f`)
+		case '\n':
+			out.WriteString(`\n`)
+		case '\r':
+			out.WriteString(`\r`)
+		case '\t':
+			out.WriteString(`\t`)
+		default:
+			if r < 0x20 {
+				fmt.Fprintf(&out, `\u%04x`, r)
+				continue
+			}
+			out.WriteRune(r)
+		}
+	}
+	return out.String()
 }
 
 // ownRow is the SQL that says a row carries this person's own id in one of its own columns.
@@ -195,7 +254,7 @@ func query(s Subject, table string, columns []string, isJSON bool,
 			return nil, fmt.Errorf("personaldata: %s.%s is not a column name this scrub will write into SQL", table, c)
 		}
 	}
-	ids := matches(s)
+	ids := matches(s, isJSON)
 	if len(ids) == 0 || len(columns) == 0 {
 		return nil, nil
 	}
