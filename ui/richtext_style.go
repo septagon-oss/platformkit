@@ -1,4 +1,4 @@
-package forms
+package ui
 
 import (
 	"github.com/septagon-oss/platformkit/ui/css"
@@ -19,7 +19,7 @@ import (
 // Every rule that would set display names `:not([hidden])`. The chrome is drawn
 // hidden and the browser reveals it, so an unguarded display declaration would
 // paint a toolbar with no editor behind it on every page with no JavaScript.
-func RichTextChrome() *css.Sheet {
+func richTextChrome() *css.Sheet {
 	v := func(name string) css.Value { return css.VarRef(name, "") }
 	lit := css.Literal
 	step := func(s style.Spacing) css.Value { return lit(s.Value()) }
