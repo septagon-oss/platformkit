@@ -214,6 +214,12 @@ The brief's rule, and the reason a per-person command is not a `DELETE`:
   `totp_factors`, `recovery_codes`, `first_factor_proofs` rows and `api_tokens` rows are deleted. A
   secret that outlives its person is a door. `sessions` are ended, and their `user_agent`/`ip` scrubbed
   where the row is kept as history;
+- **a person the directory hides is still held**: the lookup an export and an erasure make is the
+  owner's `user.Service.Retained`, the row without `deleted_at IS NULL`. Soft deletion hides a row
+  from a screen and from a sign-in; it does not forget the address, the name or the handle in it, so
+  a command that could not reach that row would answer "erased" about a table that still says who
+  the person is. The ordinary directory's filter stays exactly where it was — a hidden row signs
+  nobody in and is not findable by `Get` — and the tenant bound of both reads is row-level security's;
 - audit rows survive, anonymised: `actor` keeps the id, `payload` is scrubbed, `client_ip` becomes
   NULL. An address is personal data; `request_id` and `traceparent` are opaque and stay, because
   removing them would break the trail's own promise ("every row this trace touched") for no
