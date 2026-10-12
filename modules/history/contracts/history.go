@@ -150,10 +150,12 @@ type Rule struct {
 // Defaults is the rule the module runs when its composition says nothing.
 func Defaults() Rule { return Rule{Days: DefaultDays, Versions: DefaultVersions} }
 
-// Fault names the rule that cannot be run: a period of nothing, or a ceiling of
-// nothing, would sweep a tenant's whole history on its first hour. A rule that
-// keeps nothing is not a retention policy, and refusing it is the only answer that
-// leaves the versions standing.
+// Fault names the rule that cannot be run: a period or a ceiling below one would
+// sweep a tenant's whole history on its first hour. Zero is not such a rule — it is
+// the composition saying nothing, which takes the defaults above — so what this
+// refuses is the negative a mis-typed setting arrives as. A rule that keeps nothing
+// is not a retention policy, and refusing it is the only answer that leaves the
+// versions standing.
 func (r Rule) Fault() string {
 	days, versions := r.orDefaults()
 	if days < 1 || versions < 1 {
@@ -176,10 +178,14 @@ func (r Rule) Keep(rank int, committedAt, now time.Time) bool {
 
 func (r Rule) orDefaults() (days, versions int) {
 	days, versions = r.Days, r.Versions
-	if days <= 0 {
+	// Zero is the absence of a sentence, so it takes the default; a negative is a
+	// sentence that says something impossible, and Fault is what answers it. Folding
+	// the two together would leave that refusal unreachable and a nonsense rule
+	// standing as a rule.
+	if days == 0 {
 		days = DefaultDays
 	}
-	if versions <= 0 {
+	if versions == 0 {
 		versions = DefaultVersions
 	}
 	return days, versions

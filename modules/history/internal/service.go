@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/lib/pq"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
@@ -64,6 +63,10 @@ var _ contracts.Service = (*Service)(nil)
 // the caller's whole write rolls back with it: two versions cannot be one write, and
 // a store that renumbered to fit would be a store whose numbers mean nothing.
 func (s *Service) Record(ctx context.Context, tx db.Tx[db.Tenant], in contracts.Input) (uuid.UUID, error) {
+	// One row back, into one id: the row scan of database/sql rather than the
+	// result mapping of the ORM, because the id is the version's address in the
+	// file ledger and has to arrive intact. The same reason modules/file's and
+	// modules/auth's own RETURNING reads give the row scan.
 	var id uuid.UUID
 	err := tx.DB().WithContext(ctx).Raw(
 		"INSERT INTO "+table+
@@ -71,7 +74,7 @@ func (s *Service) Record(ctx context.Context, tx db.Tx[db.Tenant], in contracts.
 			" VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?::jsonb, ?, ?) RETURNING id",
 		db.TenantOf(tx).ID, in.Module, in.Entity, in.Record, in.Locale, in.Version,
 		string(in.Fields), changedJSON(in.Changed), in.Reason, refsJSON(in.Refs),
-		nilIfNil(in.Actor), in.At.UTC()).Scan(&id).Error
+		nilIfNil(in.Actor), in.At.UTC()).Row().Scan(&id)
 	if err != nil {
 		if strings.Contains(err.Error(), "history_versions_number") {
 			return uuid.Nil, fmt.Errorf("%w: %s/%s %s version %d", contracts.ErrDuplicateNumber,
@@ -117,7 +120,7 @@ func (s *Service) Page(ctx context.Context, tx db.Tx[db.Tenant], q contracts.Que
 	out, err := versions(ctx, tx, selectVersion+
 		" WHERE module = ? AND entity = ? AND record_id = ? AND locale = ? AND version < ?"+
 		" ORDER BY version DESC LIMIT ?",
-		q.Module, q.Entity, q.Record, q.Locale, beforeOrMax(q.Before))
+		q.Module, q.Entity, q.Record, q.Locale, beforeOrMax(q.Before), limit)
 	if err != nil {
 		return nil, fmt.Errorf("history: read the versions of %s/%s %s: %w", q.Module, q.Entity, q.Record, err)
 	}
@@ -166,7 +169,7 @@ func (s *Service) Prune(ctx context.Context, tx db.Tx[db.Tenant], rule contracts
 		for _, d := range doomed {
 			ids = append(ids, d.id)
 		}
-		res := tx.DB().WithContext(ctx).Exec("DELETE FROM "+table+" WHERE id IN ?", pq.Array(ids))
+		res := tx.DB().WithContext(ctx).Exec("DELETE FROM "+table+" WHERE id IN ?", ids)
 		if res.Error != nil {
 			return removed, fmt.Errorf("history: remove the versions retention released: %w", res.Error)
 		}
