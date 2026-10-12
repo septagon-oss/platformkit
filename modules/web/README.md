@@ -8,7 +8,13 @@ own and no data of its own — two public routes, `/` and `/{slug}`, and nothing
 to declare. A tenant's theme and primary colour are pinned on the document, the
 accent as an unlayered inline declaration — the one style written outside
 `ui.Compose`, guarded to `#rrggbb`, and unlayered because a tenant's palette is
-meant to outrank the layers — and the prose sheet in
+meant to outrank the layers. A colour the tenant chose is one declaration for both
+modes, because the site module measured it against both canvases before storing it;
+a colour that is the installation's own accent is written back the way the
+installation writes it, per mode, in the same three spellings
+[`ui/style.ThemeVars`](../../ui/style/theme.go) uses, because one `char(7)` column
+cannot tell "nobody chose" from "typed, and it happens to be the palette's"; and a
+value that is neither is dropped and lets the linked sheet speak. The prose sheet in
 [internal/style.go](internal/style.go) styles rendered Markdown in the same
 `ui/style` steps the components use.
 

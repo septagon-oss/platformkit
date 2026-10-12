@@ -42,6 +42,29 @@ const (
 	// trail that answers "when did I kick that one out, and was it before the
 	// laptop I forgot about".
 	EventSessionRevoked = "auth.session_revoked"
+	// EventNoLinkRequested is a sign-up for an address this tenant already has an
+	// account at: the route said the same thing it says about an address it created,
+	// and it asks the worker to hand the transport the message that says no link was
+	// sent. It is not a failure and it names no judgement about the address — it is
+	// the sign-up route's half of the rule that a call which names an address hands
+	// exactly one message to the transport whichever branch it took, so that the
+	// public delivery door can answer that call from its own record and not from
+	// somebody else's (modules/auth/internal/no_link.go, contracts.MailReport).
+	//
+	// The send stays out of the request for the reason VerificationRequested gives:
+	// a mail handed to a transport inside the transaction that can still roll back
+	// is a mail the record would describe wrongly.
+	EventNoLinkRequested = "auth.no_link_requested"
+	// EventMailFailed is one mail this module could not send. It exists because
+	// an operator has to be able to see failed sign-up mail in the trail, and
+	// modules/audit records an event by its having been emitted
+	// (modules/audit/module.go's SubscribeAll) — nothing is registered anywhere to
+	// make that true, and auth.login_failed is the precedent for a declared auth
+	// event nobody subscribes to by name.
+	//
+	// It is published in the same transaction as the delivery record that says the
+	// mail failed, so the state and its event commit together or neither does.
+	EventMailFailed = "auth.mail_failed"
 	// EventAdministrationRefused is a write to a role this module refused because
 	// it would have left the tenant with nobody who can sign in and administer it.
 	// It records an attempt that did not happen: the refused write rolls back, so
@@ -70,7 +93,24 @@ var Events = []events.Declared{
 	events.Declare[APITokenRevoked](EventAPITokenRevoked),
 	events.Declare[RegistrationRequested](EventRegistrationRequested),
 	events.Declare[VerificationRequested](EventVerificationRequested),
+	events.Declare[NoLinkRequested](EventNoLinkRequested),
+	events.Declare[MailFailed](EventMailFailed),
 	events.Declare[AdministrationRefused](EventAdministrationRefused),
+}
+
+// NoLinkRequested is the payload of EventNoLinkRequested: this address asked to
+// register, somebody has an account there, and no link will follow this call. It
+// carries the address for the reason ResetRequested does — an address that asked is
+// what an account under attack looks like — and nothing else: no user id, no status,
+// no reason, because the subscriber needs only the mailbox to write to and the trail
+// keeps what an operator reads back.
+type NoLinkRequested struct {
+	Email string    `json:"email"`
+	At    time.Time `json:"at"`
+	// Served is the address the request that asked was answered at, for the reason
+	// ResetRequested and VerificationRequested give: the sentence is rendered in the
+	// worker, and the "ask again" it points at is the address the person typed.
+	Served string `json:"served,omitempty"`
 }
 
 // ResetRequested is the payload of EventResetRequested: this address asked for
@@ -184,6 +224,38 @@ type LoginFailed struct {
 	IP     string    `json:"ip,omitempty"`
 	Locked bool      `json:"locked"`
 	At     time.Time `json:"at"`
+}
+
+// MailFailed is the payload of EventMailFailed: a mail this module sends itself
+// did not go. An operator sees it beside the delivery record
+// (modules/notification/contracts/mail.go) and the trail says what the record
+// says — the same redacted sentence, the same address.
+//
+// It carries no token, no hash, no subject, no body, no link and no URL. kit/audit
+// copies every payload into audit_events.payload, so a field here is a field in
+// the trail forever, and the whole reason this module mails a set-password link
+// itself rather than through a notice is that the token may not be in a row.
+//
+// Traceparent and RequestID are in the payload as well as in the envelope, because
+// a nested Publish inside a handler reads its trace off the delivery's span and a
+// process that installs no provider injects nothing: the envelope's member would
+// then be NULL, while these two strings are the delivered event's own members and
+// are there whatever the deployment runs.
+type MailFailed struct {
+	// Kind is which mail: MailSetPassword or MailVerification.
+	Kind string `json:"kind"`
+	// Recipient is the address that asked, contracts.EmailKey'd. An address that
+	// asked is what an account under attack looks like, and ResetRequested and
+	// LoginFailed already carry it for that reason.
+	Recipient string `json:"recipient"`
+	// Reason is what the transport said, through
+	// notificationcontracts.RedactMailReason — the same bytes the record holds.
+	Reason string `json:"reason"`
+	// RequestID is the id the call that started this was answered with, and the
+	// handle the person's own screen reads the outcome back with.
+	RequestID   string    `json:"requestId,omitempty"`
+	Traceparent string    `json:"traceparent,omitempty"`
+	At          time.Time `json:"at"`
 }
 
 // The second factor's three events, and the one that closes a set.

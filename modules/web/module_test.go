@@ -131,11 +131,61 @@ func TestTheHomeIsThePublishedPageTheSettingsName(t *testing.T) {
 			t.Errorf("missing %q", want)
 		}
 	}
+	// A colour this tenant did choose is one declaration and no mode rules: it was
+	// measured against both canvases before it was stored, so it belongs on either,
+	// and a document that rewrote it per mode would be the installation speaking
+	// over a choice somebody made.
+	if strings.Contains(body, `[data-theme="dark"]{--pk-color-accent-default`) {
+		t.Error("a tenant's own accent was rewritten for the dark mode")
+	}
 	if strings.Contains(body, "<script") || strings.Contains(body, "platformkit-theme") {
 		t.Error("a pinned document carried a script or the visitor's theme")
 	}
 	if status, page := get(t, h, "/welcome"); status != http.StatusOK || !strings.Contains(page, "Welcome home") {
 		t.Fatalf("the page by slug: %d", status)
+	}
+}
+
+// TestASiteThatNamedNoAccentIsRenderedInTheInstallationAccent is the acceptance
+// seen from a browser: a tenant that never chose a colour is rendered in the
+// accent the installation's own sheet is composed from, in each mode, and the old
+// constant appears nowhere. The web shell already held the pair; what it did with
+// one colour for both modes is what this changes — a single value pinned over both
+// would be the light green on ink and the dark green on paper.
+func TestASiteThatNamedNoAccentIsRenderedInTheInstallationAccent(t *testing.T) {
+	h, settings, contents := site(t)
+	// The same pair the shell composes its stylesheet from, answering the port the
+	// settings service reads a resolved colour through: which is why the document
+	// below answers these two values and not a third.
+	theme := design.Default()
+	settings.Palette = sitecontracts.PaletteFunc(func(mode string) string {
+		if mode == sitecontracts.ThemeDark {
+			return theme.Dark.AccentDefault
+		}
+		return theme.Light.AccentDefault
+	})
+	if _, err := settings.Save(t.Context(), db.Tx[db.Tenant]{}, &sitecontracts.SiteSettings{
+		Title: "Acme", HomeSlug: "welcome", Theme: sitecontracts.ThemeSystem,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	contents.Put(&contentcontracts.Content{Slug: "welcome", Title: "Welcome home", Kind: "page", Body: "# Hello\n"})
+	status, body := get(t, h, "/")
+	if status != http.StatusOK {
+		t.Fatalf("status %d: %s", status, body)
+	}
+	for _, want := range []string{
+		":root{--pk-color-accent-default:" + theme.Light.AccentDefault + "}",
+		`[data-theme="dark"]{--pk-color-accent-default:` + theme.Dark.AccentDefault + "}",
+		"@media (prefers-color-scheme: dark){:root:not([data-theme]){--pk-color-accent-default:" +
+			theme.Dark.AccentDefault + "}}",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("a site with no accent of its own is missing %q", want)
+		}
+	}
+	if strings.Contains(body, "#2563eb") {
+		t.Error("the withdrawn default colour is still in the document")
 	}
 }
 
