@@ -51,6 +51,7 @@ import (
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
 	"github.com/septagon-oss/platformkit/modules/change"
 	changecontracts "github.com/septagon-oss/platformkit/modules/change/contracts"
+	"github.com/septagon-oss/platformkit/modules/content"
 	"github.com/septagon-oss/platformkit/modules/file"
 	filecontracts "github.com/septagon-oss/platformkit/modules/file/contracts"
 	notificationcontracts "github.com/septagon-oss/platformkit/modules/notification/contracts"
@@ -89,6 +90,7 @@ func product(cfg config.Config) *pkit.Module {
 		// same key rather than letting a gate be whichever module built last.
 		pkit.Provides[rest.Gate](),
 		pkit.Provides[webcontracts.Links](),
+		pkit.Provides[rest.TranslationSource](),
 		pkit.Provides[admincontracts.Signin](),
 		pkit.Provides[admincontracts.Locale](),
 		pkit.Provides[tenantcontracts.Languages](),
@@ -157,6 +159,17 @@ func product(cfg config.Config) *pkit.Module {
 			SignIn:     pinnedWorkspace,
 			PublicFile: func(id string) string { return pinnedPublicFile + "/" + id },
 		})
+		// Which entity's records this product's public site renders, as the
+		// translation port has to be handed it. It is a value and not a call: the
+		// row set is derived from the entity's own schema tags, so naming it here
+		// builds nothing and needs nobody — which is why this is the one edge the
+		// sentence cannot draw between two modules. content needs the port that
+		// holds the other languages, translation needs to know which table has
+		// fields worth holding them for, and an edge in either direction between
+		// the two is a cycle the resolver would refuse. So the application names
+		// the entity — the same line this composition wrote by hand before the
+		// resolver existed, now said in a place the graph can read.
+		pkit.Put[rest.TranslationSource](w, content.TranslationSource())
 		// The form on the shell's login page posts to the auth module's door, and
 		// the link to the registration form is the same value, so neither half can
 		// offer what the other did not mount. The address is the public door as the

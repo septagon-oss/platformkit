@@ -29,6 +29,7 @@ import (
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	translationcontracts "github.com/septagon-oss/platformkit/modules/translation/contracts"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	webhookcontracts "github.com/septagon-oss/platformkit/modules/webhook/contracts"
 )
@@ -64,6 +65,8 @@ var webhookCatalogue = emittedEvents{
 	contentcontracts.EventCreated, contentcontracts.EventUpdated, contentcontracts.EventDeleted,
 	contentcontracts.EventPublished, contentcontracts.EventUnpublished, contentcontracts.EventArchived,
 	sitecontracts.EventSettingsUpdated,
+	// translation, whose one event says a record's other languages moved.
+	translationcontracts.EventUpdated,
 	filecontracts.EventUploaded, filecontracts.EventDeleted, filecontracts.EventRetained,
 	filecontracts.EventReleased, filecontracts.EventErased,
 	billingcontracts.EventPlanCreated, billingcontracts.EventPlanUpdated, billingcontracts.EventPlanDeleted,

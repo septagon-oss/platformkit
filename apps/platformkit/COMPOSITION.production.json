@@ -15,6 +15,7 @@
         "sitecontracts.WriteGate",
         "rest.Gate",
         "webcontracts.Links",
+        "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
         "tenantcontracts.Languages",
@@ -62,6 +63,21 @@
         },
         {
           "contract": "usercontracts.Granting",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
+      "name": "translation",
+      "provides": [
+        "rest.Translations"
+      ],
+      "needs": [
+        {
+          "contract": "rest.TranslationSource",
           "from": "product"
         }
       ],
@@ -363,10 +379,15 @@
         {
           "contract": "rest.FileUses",
           "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
         }
       ],
       "after": [
-        "file"
+        "file",
+        "translation"
       ]
     },
     {
@@ -434,11 +455,20 @@
         {
           "contract": "webcontracts.Links",
           "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
         }
       ],
       "after": [
         "product",
         "file",
+        "translation",
         "content",
         "site"
       ]

@@ -23,7 +23,15 @@ import (
 type Field struct {
 	Definition entity.Field
 	Label      string
-	Options    []components.SelectOption
+	// Help is the line under the control: what resource.Words.FieldHelp answers for
+	// the field — the author's declared `help:` when they wrote one, in the
+	// request's language, the field's Doc when they did not. Empty falls back to
+	// Doc, so a caller that projects no reading words at the control (a design
+	// export, a test) reads what it always read. The label beside it and this line
+	// are the same request's two words: a caller that translates one translates
+	// both.
+	Help    string
+	Options []components.SelectOption
 }
 
 // Model contains a form's already-read values and already-decided field errors.
