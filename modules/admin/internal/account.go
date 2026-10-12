@@ -11,6 +11,31 @@ package internal
 // page carries. A person with no way to say it in the browser has only the JSON
 // route, which is a door for programs and not for the person the language is for.
 
+// # Which order the two reads go in
+//
+// languageControl reads the revision before it reads the choice, and the order is
+// a guarantee rather than a style. The control draws a value and the number that
+// value was taken at, and it is the number that decides whether a submitted form
+// still describes the row. Two reads in one transaction are not one read: at the
+// isolation this installation runs, a write another tab commits between them is
+// seen by the read that follows it and not by the one that came before.
+//
+// Read the choice first and the counter second, and the pair can be an old choice
+// wearing a new revision. The command then finds the revision it expected, accepts,
+// and overwrites the choice the other tab had just made — the one write nobody
+// asked for, on a page that said it was saving the picture it showed. Read the
+// counter first and the most a change in flight can do is draw a value newer than
+// the number beside it: the revision the form brings back is then the one the row
+// has left behind, the command refuses it inside its own transaction, and nothing
+// is written or published.
+//
+// So the pair drawn here is always safe in the direction that matters, and never
+// promised more than that: it is not a snapshot of one row, the two reads can still
+// straddle a change, and what the reader spends when they do is a reload. The
+// counted door is what makes the direction decidable at all — a composition that
+// answers no revision draws no number to place second, and gets the intent door its
+// ports promise instead.
+
 import (
 	"context"
 	"errors"
@@ -76,7 +101,10 @@ type AccountLanguage interface {
 // wrote the POST by hand and is told, in their own language, what is missing.
 type AccountLanguageVersion interface {
 	// Revision answers what revision this person's choice is held at, to draw into
-	// the form and bring back with the next choice.
+	// the form and bring back with the next choice. A caller that draws a choice and
+	// this number together takes this one first: read the other way round, a change
+	// that lands between the two reads leaves the form carrying an old choice at the
+	// revision the command will accept, which is a lost write the server agreed to.
 	Revision(ctx context.Context, tx db.Tx[db.Tenant]) (int64, error)
 	// ChooseAt is Choose at the revision the form was drawn at. A revision the row
 	// has left behind is a conflict that writes nothing and publishes nothing.
@@ -115,16 +143,8 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 	if len(languages) == 0 {
 		return nil
 	}
-	current, err := deps.Language.Preferred(ctx, tx, r.Principal.UserID)
-	if err != nil {
-		slog.Default().Warn("admin: the account language could not be read, so the control is not offered",
-			"principal", r.Principal.UserID.String(), "error", err)
-		return nil
-	}
-	// The revision the choice was drawn at, as a hidden field. It is what makes the
-	// submitted form a change from what the person saw rather than a change to
-	// whatever the row happens to hold by the time it lands — see
-	// AccountLanguageVersion. A door that answers no revision draws no save.
+	// The revision is read first, and that order is the guarantee rather than a
+	// style: see "Which order the two reads go in" at the top of this file.
 	revision := ""
 	if deps.LanguageVersion != nil {
 		at, err := deps.LanguageVersion.Revision(ctx, tx)
@@ -134,6 +154,12 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 			return nil
 		}
 		revision = strconv.FormatInt(at, 10)
+	}
+	current, err := deps.Language.Preferred(ctx, tx, r.Principal.UserID)
+	if err != nil {
+		slog.Default().Warn("admin: the account language could not be read, so the control is not offered",
+			"principal", r.Principal.UserID.String(), "error", err)
+		return nil
 	}
 	// The empty option is the choice to stop choosing: the browser and the tenant's
 	// default answer again. It carries its label from the catalogue on every page,
@@ -180,6 +206,29 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 		Action:         deps.LanguagePath, Label: chrome(r, "account.language", "Language"),
 	}, controls...)
 }
+
+// drawnPair is why the two reads above have one order and not any order.
+//
+// The control draws a value and the number that value was read at, and it is the
+// number that decides whether a submitted form still describes the row. Two reads
+// in one transaction are not one read: at the isolation this installation runs, a
+// write committed by another tab between them is seen by the read that follows it
+// and not by the read that came before. Read the value first and the counter
+// second and the pair can be an old choice wearing a new revision — the command
+// then finds the revision it expected, accepts, and overwrites the choice the
+// other tab had just made, which is the one write nobody asked for. Read the
+// counter first and the most a change in flight can do is draw a value newer than
+// the number beside it: the revision the form brings back is then the one the row
+// has left behind, the command refuses it inside its own transaction, and nothing
+// is written. A stale page costs the reader a reload; a coherent pair accepted at
+// an old revision costs them their colleague's — or their own — later choice.
+//
+// The pair is therefore always safe in the direction that matters, and never
+// promised to be more than that: it is not a snapshot of the row, and the two
+// reads can still straddle a change, which is what the refusal is for. The counted
+// door (AccountLanguageVersion) is what makes the direction decidable at all — a
+// composition that draws no revision has no number to place second, and gets the
+// intent door its ports promise instead.
 
 // offeredLanguages is the language list this tenant declared, its default first.
 // It reads the request's own tenant and asks nothing of any module: the order is
