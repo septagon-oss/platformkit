@@ -103,8 +103,14 @@ func TestSavingTheReadsAnswerStoresTheAbsenceOfAColour(t *testing.T) {
 	}
 
 	var heldDefault string
+	// table_schema is part of the question, not an optimisation: one Postgres
+	// holds one schema per case running in this package, and a case that
+	// reconstructs the pre-move database (default_colour_upgrade_test.go) keeps a
+	// site_settings whose primary_color still defaults to #2563eb. Unscoped, this
+	// read answered that other schema's row.
 	if err := admin.QueryRowContext(t.Context(), `SELECT column_default FROM information_schema.columns
-		WHERE table_name = 'site_settings' AND column_name = 'primary_color'`).Scan(&heldDefault); err != nil {
+		WHERE table_name = 'site_settings' AND column_name = 'primary_color'
+		  AND table_schema = current_schema()`).Scan(&heldDefault); err != nil {
 		t.Fatalf("read the column default: %v", err)
 	}
 	if !strings.HasPrefix(heldDefault, "''") {
@@ -248,12 +254,13 @@ func TestTheColumnDefaultIsTheColourTheContractNames(t *testing.T) {
 	svc := internal.NewService(sitetest.InstallationPalette)
 	got := "not saved"
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		out, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme"})
-		if err != nil {
+		if _, err := svc.Save(ctx, tx, &contracts.SiteSettings{Title: "Acme"}); err != nil {
 			return err
 		}
-		got = out.PrimaryColor
-		return nil
+		// The row, not the save's answer: what a caller is shown is the resolved
+		// colour (contracts.Palette), and what this half asks is what was kept.
+		// btrim because char(7) is blank-padded over the short value.
+		return tx.DB().Raw(`SELECT btrim(primary_color) FROM site_settings`).Row().Scan(&got)
 	})
 	if err != nil {
 		t.Fatalf("save a site that named no colour: %v", err)

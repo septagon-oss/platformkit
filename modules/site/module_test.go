@@ -55,7 +55,17 @@ func mounted(t *testing.T) chi.Router {
 		},
 		Log: slog.New(slog.DiscardHandler),
 	})
-	_, sites := site.New(site.Deps{})
+	// Every real composition names the installation's own accent (Deps.Palette);
+	// this fixture mounts the door such a composition mounts, where a tenant that
+	// chose none is answered the installation's accent rather than the absence its
+	// row holds. The absence is what is stored; it is never what a caller is shown.
+	pair := design.Default()
+	_, sites := site.New(site.Deps{Palette: contracts.PaletteFunc(func(mode string) string {
+		if mode == contracts.ThemeDark {
+			return pair.Dark.AccentDefault
+		}
+		return pair.Light.AccentDefault
+	})})
 	sites.Routes(surfacesOf(api))
 	if err := api.ValidateDeclarations(); err != nil {
 		t.Fatalf("the mounted routes do not declare themselves: %v", err)
