@@ -318,7 +318,7 @@
    "ci_med_s": null,
    "ci_runs": 0,
    "coverage": "",
-   "round_named": 1
+   "round_named": 0
   },
   "migrations": {
    "ci_fails": 0,
@@ -24448,6 +24448,30 @@
   },
   {
    "area": "kit",
+   "assertions_in_file": 4,
+   "evidence": "only file in its package reaching wire.Break",
+   "file": "kit/wire/an_allowance_pair_over_the_kind_covers_no_feature_the_door_gained_test.go",
+   "id": "kit/wire/an_allowance_pair_over_the_kind_covers_no_feature_the_door_gained_test.go#TestAReviewedWideningCoversNoFeatureTheDoorGained",
+   "kind": "go",
+   "layer": "behaviour",
+   "merge_into": "",
+   "name": "TestAReviewedWideningCoversNoFeatureTheDoorGained",
+   "needs_db": false,
+   "pkg": "kit/wire",
+   "rename_to": "an_allowance_pair_over_the_kind_covers_no_feature_the_door_gained_test.go",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [
+    "wire.Break"
+   ],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep-rewrite"
+  },
+  {
+   "area": "kit",
    "evidence": "not-round-named",
    "file": "kit/wire/asyncapi_test.go",
    "id": "kit/wire/asyncapi_test.go#TestAsyncStructureAndLinks",
@@ -24559,29 +24583,6 @@
    "unique_reach": [],
    "unique_reach_kind": "symbols",
    "verdict": "keep"
-  },
-  {
-   "area": "kit",
-   "assertions_in_file": 4,
-   "evidence": "only file in its package reaching wire.Break",
-   "file": "kit/wire/reviewed_widening_gains_no_feature_test.go",
-   "id": "kit/wire/reviewed_widening_gains_no_feature_test.go#TestAReviewedWideningCoversNoFeatureTheDoorGained",
-   "kind": "go",
-   "layer": "behaviour",
-   "merge_into": "",
-   "name": "TestAReviewedWideningCoversNoFeatureTheDoorGained",
-   "needs_db": false,
-   "pkg": "kit/wire",
-   "rename_to": "areviewed_widening_covers_no_feature_the_door_gained_test.go",
-   "round_named": true,
-   "rule": "",
-   "tier": "push",
-   "unique_lines": null,
-   "unique_reach": [
-    "wire.Break"
-   ],
-   "unique_reach_kind": "symbols",
-   "verdict": "keep-rewrite"
   },
   {
    "area": "kit",
@@ -52862,7 +52863,7 @@
    "ui/screens": "19.4% of statements"
   },
   "round_named_ceiling": 22,
-  "round_named_files": 20,
+  "round_named_files": 19,
   "rows": 2657,
   "tiers": {
    "merge": 1639,
