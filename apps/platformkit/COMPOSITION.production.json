@@ -88,7 +88,8 @@
     {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -418,6 +419,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {

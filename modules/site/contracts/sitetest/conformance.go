@@ -21,11 +21,21 @@ import (
 )
 
 // Fixture is one case's world: a Service, the transaction its operations take,
-// and what has been published so far.
+// the palette that installation is drawn with, and what has been published so far.
 type Fixture struct {
 	Ctx     context.Context
 	Tx      db.Tx[db.Tenant]
 	Service contracts.Service
+	// Palette is what this case's installation draws itself with, the same value
+	// the harness built the Service from. A case names a colour through it rather
+	// than writing one out, so the suite says which accent it is pretending and the
+	// assertions below stay true when this file's answer changes.
+	Palette contracts.Palette
+	// Locked is the same service as contracts.LockedReader — the read a caller
+	// about to write is handed — so a case can ask whether the two reads answer the
+	// same thing. Every implementation here is one; a third party's that is not
+	// gets a failure naming the interface rather than a skipped case.
+	Locked contracts.LockedReader
 	// Published is the events the implementation has published, in order. Half
 	// of what Save promises is silence: a screen that submits its form twice
 	// must not invalidate a cache twice.
@@ -65,6 +75,23 @@ func RunService(t *testing.T, h Harness) {
 	}
 }
 
+// InstallationPalette is the accent pair the installation this suite pretends to
+// be is drawn with. Both harnesses build their service from it and hand it back as
+// Fixture.Palette, so the fake's cases are the SQL service's cases.
+//
+// Both values are colours the accent rule *refuses* — #0f5d4e reads 6.78:1 against
+// the light canvas and 2.36:1 against the dark one, #4bbf9c the other way round —
+// and that is the point: the installation's own accent is not a colour a tenant
+// could choose, so every case that sends it back is a form echoing a read and not
+// a hand typing a colour. A suite whose palette were a storable colour could not
+// tell those two apart.
+var InstallationPalette = contracts.PaletteFunc(func(mode string) string {
+	if mode == contracts.ThemeDark {
+		return "#4bbf9c"
+	}
+	return "#0f5d4e"
+})
+
 // acme is a site somebody has configured. Its accent is inside the band the
 // contrast rule keeps — #b45309 reads 4.37:1 on the light canvas and 3.66:1 on the
 // dark one — because this fixture is the input every accepted case saves, and the
@@ -100,10 +127,17 @@ func cases() map[string]func(*testing.T, Fixture) {
 				case got.Theme != contracts.ThemeSystem:
 					t.Errorf("theme is %q, want %q: a tenant that has said nothing has not chosen dark",
 						got.Theme, contracts.ThemeSystem)
-				case got.PrimaryColor != contracts.DefaultPrimaryColor:
-					t.Errorf("the colour is %q, want %q", got.PrimaryColor, contracts.DefaultPrimaryColor)
+				case got.PrimaryColor != f.Palette.Accent(contracts.ThemeLight):
+					// The stored colour is DefaultPrimaryColor — nobody chose one — and what
+					// the read answers is the installation's own. A tenant that has never
+					// opened the form is never handed the empty colour to do with as it likes.
+					t.Errorf("the colour is %q, want the installation's %q",
+						got.PrimaryColor, f.Palette.Accent(contracts.ThemeLight))
 				case got.Title != "" || len(got.Nav) != 0:
 					t.Errorf("an unconfigured site says %+v", got)
+				}
+				if got.Revision != 0 {
+					t.Errorf("an unconfigured site is at revision %d; the number counts writes", got.Revision)
 				}
 			})
 		},
@@ -160,6 +194,10 @@ func cases() map[string]func(*testing.T, Fixture) {
 				{Title: "Acme", PrimaryColor: "red"},
 				{Title: "Acme", PrimaryColor: "#fff"},
 				{Title: "Acme", PrimaryColor: "rgb(1,2,3)"},
+				// Space around nothing is still nothing, and the only thing that makes
+				// it a colour is the grammar: the empty colour is a valid stored value,
+				// " #" is neither a colour nor an absence of one.
+				{Title: "Acme", PrimaryColor: " #"},
 				{Title: "Acme", Theme: "neon"},
 			} {
 				_, err := f.Service.Save(f.Ctx, f.Tx, bad)
@@ -192,7 +230,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 				}
 			}
 			for _, colour := range []string{
-				"#2563eb", // 4.50 / 3.55 — the kit's own default, so the band holds it
+				"#2563eb", // 4.50 / 3.55 — a blue inside the band, and one a tenant may choose
 				"#b45309", // 4.37 / 3.66
 				"#0f766e", // 4.76 / 3.36
 				"#7c3aed", // 4.96 / 3.22
@@ -232,23 +270,133 @@ func cases() map[string]func(*testing.T, Fixture) {
 			mustBe(t, err, crud.ErrInvalid)
 		},
 
-		// The defaults are not caught by the rule they now have to satisfy: an
-		// untouched tenant reads the kit's own accent, and saving that value back
-		// is silent, which is what refuses a threshold of 4.5 and a rule that ran
-		// before Validate filled the default in.
-		"the defaults pass the rule and re-save silently": func(t *testing.T, f Fixture) {
+		// The read's answer is a storable document, and saving it back is not an
+		// edit: a settings form submits what the read gave it, so a save that stored
+		// the installation's accent as this tenant's own would freeze them at the
+		// palette of the day, bump the revision, invalidate a cache and put a line in
+		// the trail that nobody typed. The colour that goes into the row is the empty
+		// one, which is why the second read answers the palette again rather than a
+		// value of its own.
+		"the read's answer, saved back, is not a change": func(t *testing.T, f Fixture) {
+			shown, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			if shown.PrimaryColor == contracts.DefaultPrimaryColor {
+				t.Fatalf("the read answered the empty colour; every door that shows these settings needs a colour")
+			}
+			first := save(t, f, shown)
+			if first.Revision != 1 {
+				t.Errorf("the first save left the row at revision %d", first.Revision)
+			}
+			again, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			var out *contracts.SiteSettings
+			f.silent(t, "saving the read's answer back", func() { out = save(t, f, again) })
+			if out.Revision != 1 {
+				t.Errorf("echoing the read's answer moved the revision to %d; nothing was chosen, so nothing was written", out.Revision)
+			}
+			if out.PrimaryColor != InstallationPalette.Accent(contracts.ThemeLight) {
+				t.Errorf("the save answered %q, want the installation's accent it was given", out.PrimaryColor)
+			}
+		},
+
+		// The echo is compared against both of the installation's accents and not
+		// against the row's own mode, and this is the case that would catch it being
+		// narrowed: a form that changes light to dark sends the accent the read gave
+		// for light. Stored as itself that colour meets the legibility rule and is
+		// refused — a form that cannot change its theme because it never chose a
+		// colour. Clearing it is what lets the theme move and the next read answer the
+		// dark accent.
+		"the theme can change while the accent stays unchosen": func(t *testing.T, f Fixture) {
+			if _, err := f.Service.Save(f.Ctx, f.Tx, &contracts.SiteSettings{Title: "Acme", Theme: contracts.ThemeLight}); err != nil {
+				t.Fatalf("save a light site: %v", err)
+			}
+			shown, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			if shown.PrimaryColor != InstallationPalette.Accent(contracts.ThemeLight) {
+				t.Fatalf("a light site with no accent reads %q", shown.PrimaryColor)
+			}
+			shown.Theme = contracts.ThemeDark
+			save(t, f, shown)
 			got, err := f.Service.Settings(f.Ctx, f.Tx)
 			if err != nil {
 				t.Fatalf("Settings: %v", err)
 			}
-			if got.PrimaryColor != contracts.DefaultPrimaryColor {
-				t.Fatalf("the default colour is %q, want %q", got.PrimaryColor, contracts.DefaultPrimaryColor)
+			if got.PrimaryColor != InstallationPalette.Accent(contracts.ThemeDark) {
+				t.Errorf("the dark site reads %q, want %q: the theme moved and the accent is still nobody's",
+					got.PrimaryColor, InstallationPalette.Accent(contracts.ThemeDark))
 			}
-			if light, dark, ok := contracts.AccentRatios(got.PrimaryColor); !ok || light < contracts.MinAccentRatio || dark < contracts.MinAccentRatio {
-				t.Errorf("the kit's own default reads %v:1 / %v:1 and the rule would refuse it", light, dark)
+		},
+
+		// A colour somebody did choose is not the installation's, whichever door it
+		// is read from and whatever the installation is drawn with.
+		"an accent the tenant chose survives every door": func(t *testing.T, f Fixture) {
+			save(t, f, acme())
+			got, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
 			}
-			f.one(t, "the first save of the defaults", func() { save(t, f, got) })
-			f.silent(t, "saving the defaults back", func() { save(t, f, got) })
+			if got.PrimaryColor != "#b45309" {
+				t.Errorf("Settings answers %q, want the #b45309 this tenant wrote", got.PrimaryColor)
+			}
+			locked, err := f.Locked.SettingsForUpdate(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("SettingsForUpdate: %v", err)
+			}
+			if locked.PrimaryColor != got.PrimaryColor || locked.Revision != got.Revision {
+				t.Errorf("the locked read answers %q at revision %d and the unlocked read %q at %d",
+					locked.PrimaryColor, locked.Revision, got.PrimaryColor, got.Revision)
+			}
+		},
+
+		// Both reads are the same answer, which is what lets a change proposal be
+		// diffed against the document the person was shown: modules/change marshals
+		// what SettingsForUpdate returns, and a proposal merged from the API answer
+		// therefore round-trips — the merged accent is the one the read answered, and
+		// applying it stores the empty colour and moves no revision.
+		"the locked read says what the unlocked read says": func(t *testing.T, f Fixture) {
+			unlocked, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			locked, err := f.Locked.SettingsForUpdate(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("SettingsForUpdate: %v", err)
+			}
+			if locked.PrimaryColor != unlocked.PrimaryColor {
+				t.Errorf("the locked read answers %q and the plain read %q", locked.PrimaryColor, unlocked.PrimaryColor)
+			}
+			if locked.Revision != unlocked.Revision {
+				t.Errorf("the locked read is at revision %d and the plain read at %d", locked.Revision, unlocked.Revision)
+			}
+		},
+
+		// The installation's own accent is not a colour this tenant may hold, and the
+		// door that receives it is the one that says so: a form that sends either
+		// accent back is answered the installation's own colour for the mode it is on,
+		// which — for the accent of the *other* mode — is not the value it sent. Stored
+		// as a chosen colour that second value would be answered back forever, and the
+		// legibility rule behind Save would have refused it as a hand-typed colour
+		// (TestTheAccentRatiosAreTheOnesTheRuleCompared measures both accents under
+		// the threshold on one canvas each).
+		"the installation's own accent is not a tenant's colour": func(t *testing.T, f Fixture) {
+			save(t, f, &contracts.SiteSettings{
+				Title: "Acme", Theme: contracts.ThemeLight,
+				PrimaryColor: InstallationPalette.Accent(contracts.ThemeDark),
+			})
+			got, err := f.Service.Settings(f.Ctx, f.Tx)
+			if err != nil {
+				t.Fatalf("Settings: %v", err)
+			}
+			if got.PrimaryColor != InstallationPalette.Accent(contracts.ThemeLight) {
+				t.Errorf("a light site sent the installation's dark accent and reads %q, want %q: the value was nobody's choice",
+					got.PrimaryColor, InstallationPalette.Accent(contracts.ThemeLight))
+			}
 		},
 
 		// The two numbers a shell is told are the two the rule compared — same
@@ -256,7 +404,7 @@ func cases() map[string]func(*testing.T, Fixture) {
 		"the ratio the document quotes is the ratio the rule used": func(t *testing.T, f Fixture) {
 			light, dark, ok := contracts.AccentRatios("#2563eb")
 			if !ok {
-				t.Fatal("AccentRatios cannot read the kit's own default colour")
+				t.Fatal("AccentRatios cannot read a colour this rule has measured for years")
 			}
 			if light != 4.50 || dark != 3.55 {
 				t.Errorf("#2563eb reads %.2f / %.2f, want 4.50 / 3.55", light, dark)
