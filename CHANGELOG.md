@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+**A `widget:richtext` field is an editor now, and still a textarea.** The field
+draws its own chrome in `ui/forms` — toolbar, selection bubble, `/` command menu,
+link popover, status, counter, draft bar — and `ui/assets/js/richtext.js`, a module
+only the pages that draw one field load, mounts the vendored Tiptap bundle on it and
+keeps the submitted value in step. Images upload to the file API by drag, paste or
+file pick; a record that keeps a write count autosaves against its own ETag and
+compares on a conflict, and one that does not keeps the draft on the device.
+`make richtext-bundle` rebuilds the bundle, and `check-richtext-bundle` keeps it
+under 150 KiB gzipped and equal to a fresh build. Browser evidence is owed: the
+journeys, axe and the Markdown round trip are the next round's.
+
+
 **The wire gate reads the plan feature a door declares.** An operation's authorization
 declaration has three parts — its `kind`, its `permission`, and the plan feature a route
 names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and

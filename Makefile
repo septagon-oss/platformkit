@@ -231,7 +231,7 @@ check-richtext-bundle: ## Fail when the vendored editor bundle is over its gzip 
 # Run it after changing the extension list or a pinned version, and commit the
 # two files together with the manifest and the lock.
 richtext-bundle: ## Rebuild ui/assets/vendor/richtext/editor.js from its lockfile
-	cd tools/richtext-bundle && npm ci --no-audit --no-fund && node build.mjs
+	bash scripts/richtext_bundle_build.sh
 
 check-versions: ## Fail when go.mod replaces a dependency or a go.work file is present
 	./scripts/check_versions.sh
