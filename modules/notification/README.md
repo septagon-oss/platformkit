@@ -26,6 +26,58 @@ never succeed is recorded by the kernel in `platformkit_dead_letters`.
 `delivery_ledger_coverage` — requested channels with a terminal row, over all
 requested channels — is `internal.Coverage`.
 
+The mails a composition sends *outside* a notice are recorded elsewhere, in
+`direct_mail_deliveries` (migration 000044) and through
+[`contracts.MailLedger`](contracts/mail.go): a set-password link and a
+verification link are minted by `modules/auth` and handed to `contracts.Mailer`
+directly, so the secret is in the message and in no row, and until this table
+existed neither the attempt nor its outcome was written down anywhere. One row
+per send, appended in the transaction of the step that decided it, saying who it
+went to, which kind it was (`auth.set_password`, `auth.verification` — the sender
+names its own kinds), what became of it (`sent`, `suppressed`, `failed` with the
+transport's own words redacted by `contracts.RedactMailReason`), and which call
+asked. It holds no subject, body, link or credential.
+**`delivery_ledger_coverage` does not count these rows and never will**: the
+register's number is requested channels of notices with a terminal row, and a
+mail with no notice and no `requested` half would silently narrow what that name
+means. Ask the two tables two questions.
+
+### Limits
+
+* **No retry ladder on this side.** A notice's channel that fails is retried by
+  the outbox and dead-letters; a direct send that fails is acknowledged by the
+  module that made it, so its `failed` row and its `auth.mail_failed` event commit
+  in the transaction of the attempt. That is the trade the ledger is built on — a
+  row that commits with the step it describes or not at all — and what it gives up
+  is named: a transient transport failure on a set-password or verification link is
+  final for that attempt, and the retry is the person asking again, not the queue.
+* **`sent` means "this process proved it", not "it arrived".** The row commits in
+  the transaction that minted the credential; a transaction that aborts after the
+  transport took the message leaves no `sent` row, so the table under-reports a
+  mail that really went rather than over-reporting one that did not. No `requested`
+  row exists to catch the difference, on purpose.
+* **No retention, no export, no screen.** Rows are appended and nothing in this
+  schema deletes or updates them, and the table holds a recipient address, so
+  "what happens to these rows when a person is forgotten" is unanswered here —
+  the platform has no cross-table erasure, and the product that promises to forget
+  people owes that answer. Its one read is used by one public door in
+  `modules/auth`; `Coverage` ignores the table.
+* **One read, by the id of the call that asked.** `MailOutcome` answers one request
+  id, newest-first, and nothing else: no listing, no range, no per-address
+  history, and no method answering "what is the transport doing" from the tenant's
+  newest row. That last one existed until review 3 and is gone because it could not
+  be bounded: the door answered a caller whose own call left no record with whatever
+  refusal the tenant held most recently, and sign-up is public, so an attacker can
+  register a mailbox its relay rejects and refresh that refusal before every probe.
+* **The read takes the kinds to answer among, and holds no list of them.** `MailOutcome(id, kinds...)`
+  answers as if no row of any other kind existed, and answers about every mail of
+  that call when given none; a kind the caller does not name is answered exactly as
+  a call that mailed nothing is. Which kinds a caller names is the caller's business
+  — modules/notification has no list of mail kinds and a CHECK over one module's
+  names would be a schema change every time a module mailed something new — and the
+  reason a caller narrows the read at all is privacy rather than convenience: see
+  `contracts.MailReport` and `modules/auth/internal/email_registration.go`.
+
 ## Authorization
 
 ### Permissions
@@ -38,6 +90,7 @@ The `SendMail` event subscription (`modules/notification/internal/mail.go`) is r
 
 None. No call to `tenancy.Policy` and no `Resource.Kind` appears in the module.
 Scope is the caller: `caller` reads the principal's `UserID` from `tenancy.PrincipalFrom`, never from a parameter, and `ListFor` and `MarkRead` take that id.
+`MailLedger` is written by the module that sent the mail, inside that module's own tenant transaction, and read one way — by the request id of the caller's own call — bounded to that tenant by the table's own row-level security; `direct_mail_deliveries` has no route and no permission of its own.
 
 ### Duties the module enforces itself
 
