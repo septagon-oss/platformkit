@@ -158,9 +158,11 @@ single-use token this module minted. A bundle reachable at `/api/v1/file/files/{
 would be a copy of a person's rows handed to every holder of a broad read key, which is what
 this module's expiry and one-use promises exist to prevent.
 
-Both commands also ask their grant inside their own transaction (`internal.ceiling`): a
-module that composes `subjectcontracts.Service` gets the same refusal the routes give, and a
-person's own copy still asks none.
+Every guarded command also asks its grant inside its own transaction (`internal.ceiling`):
+the two requests, and the operator half of the read and of the mint, where the caller who is
+not the person who asked is held to `subject:export` on their own credential rather than to
+the boolean their caller passed. A module that composes `subjectcontracts.Service` gets the
+same refusal the routes give, and a person's own copy still asks none.
 
 ### Provisioning
 
