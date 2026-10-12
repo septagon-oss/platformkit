@@ -449,7 +449,7 @@
   },
   "conflict.task.closed": {
     "references": [
-      "modules/task/domain/resolve.go"
+      "modules/task/internal/service.go"
     ],
     "translation": "uma tarefa fechada não pode ser resolvida",
     "plural": {
@@ -458,7 +458,7 @@
   },
   "conflict.task.different_resolution": {
     "references": [
-      "modules/task/domain/resolve.go"
+      "modules/task/internal/service.go"
     ],
     "translation": "esta tarefa está resolvida com uma resolução diferente",
     "plural": {

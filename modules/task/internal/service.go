@@ -5,6 +5,7 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -64,6 +65,29 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 	})
 }
 
+// refused puts this module's catalogue behind the domain's two refusals, and only
+// that: the kind underneath stays ErrConflict, so a caller testing the verdict
+// tests what it always tested, and what this package adds is the key the sentence is
+// kept under in modules/task/messages. A decision is taken with no reader in mind and
+// the person refused has one; the domain cannot name that key itself, because
+// scripts/check_packages.sh requires a domain package to depend on nothing, kit/fault
+// included — which is also why the sentence is quoted from the domain rather than
+// written twice.
+func refused(err error) error {
+	for _, keyed := range []struct {
+		raised error
+		key    string
+	}{
+		{domain.ErrClosed, "conflict.task.closed"},
+		{domain.ErrDifferentResolution, "conflict.task.different_resolution"},
+	} {
+		if errors.Is(err, keyed.raised) {
+			return &fault.Reason{Kind: crud.ErrConflict, Key: keyed.key, Text: keyed.raised.Error()}
+		}
+	}
+	return err
+}
+
 // Resolve closes the loop. Repeating it with the resolution already recorded,
 // or with none, changes nothing; a different one on a resolved task is a
 // conflict rather than an overwrite, because the account a task gives of itself
@@ -78,11 +102,7 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	}
 	decision, err := domain.Resolve(task.Status, task.Resolution, resolution)
 	if err != nil {
-		// The refusal arrives as the decision wrote it: the verdict underneath is
-		// already ErrConflict, and the sentence and its key are what let the page the
-		// person is standing on answer in their own language. Wrapping it in this
-		// package's prose would keep the verdict and throw the sentence away.
-		return nil, err
+		return nil, refused(err)
 	}
 	if !decision.Changed {
 		return task, nil
