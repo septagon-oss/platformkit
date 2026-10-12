@@ -2089,6 +2089,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/e2e_installation_keys_test.go",
+   "id": "apps/platformkit/e2e_installation_keys_test.go#TestBothE2EInstallationsDeclareAUsableWebhookKey",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestBothE2EInstallationsDeclareAUsableWebhookKey",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/erasure_audit_test.go",
    "id": "apps/platformkit/erasure_audit_test.go#TestAnErasureLeavesOneAuditRowNamingTheDigestThatIsGone",
    "kind": "go",
@@ -54453,7 +54472,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1350,
+  "files": 1351,
   "forge_runs": [
    408,
    413,
@@ -54488,7 +54507,7 @@
   ],
   "layers": {
    "behaviour": 2366,
-   "composition": 296,
+   "composition": 297,
    "contract": 19,
    "journey": 67
   },
@@ -54506,9 +54525,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2748,
+  "rows": 2749,
   "tiers": {
-   "merge": 1720,
+   "merge": 1721,
    "nightly": 67,
    "push": 961
   },
@@ -54516,13 +54535,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1134,
+   "keep": 1135,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2400,
+   "keep": 2401,
    "keep-rewrite": 133,
    "merge": 215
   }
