@@ -103,8 +103,9 @@ func (s Spec[T]) recordVersion(ctx context.Context, tx db.Tx[db.Tenant], e T, sn
 		Module: s.Module, Entity: s.Entity, Locale: recordLocale(ctx),
 		Record: entity.BaseOf(e).ID, Version: s.revisionOf(fields, e),
 		Fields: document, Changed: changed, Reason: writeReason(ctx),
-		At:   entity.BaseOf(e).UpdatedAt,
-		Refs: bodyReferences(fields, e),
+		At:    entity.BaseOf(e).UpdatedAt,
+		Actor: actorOf(ctx),
+		Refs:  bodyReferences(fields, e),
 	})
 	return err
 }
@@ -230,10 +231,18 @@ func (s Spec[T]) mountHistory(surfaces httpx.Surfaces, read, write *httpx.Router
 			})
 	}
 
+	// A version is the one thing a restore cannot be asked for without; the other
+	// two are conditions with documented defaults, and a body that leaves them out
+	// means the default rather than being refused for not saying it.
 	type restoreArgument struct {
-		Version  int64  `json:"version" doc:"The version to write back, as the list answered it"`
-		Locale   string `json:"locale" doc:"The series to read it from; the record's own language when unset"`
-		Expected int64  `json:"expectedRevision" doc:"The row's write count as the caller read it; a row past it is refused with 412 and writes nothing"`
+		Version int64 `json:"version" doc:"The version to write back, as the list answered it"`
+		// Locale is omitempty in both senses: the series a restore reads from is the
+		// record's own language when the body names none, and a form drawn for the
+		// record cannot be expected to name a tag it was never shown.
+		Locale string `json:"locale,omitempty" doc:"The series to read it from; the record's own language when unset"`
+		// Expected carries no condition when the caller read no revision; the door
+		// then writes as an ordinary PATCH would.
+		Expected int64 `json:"expectedRevision,omitempty" doc:"The row's write count as the caller read it; a row past it is refused with 412 and writes nothing"`
 	}
 	Command(surfaces, s, "restore", "Restore a version of this "+s.Entity,
 		"Writes a new version with the stored one's content. No version is changed or removed, and the row's lifecycle fields are not replayed.",
