@@ -1846,6 +1846,12 @@
               "subject": {
                 "format": "uuid",
                 "type": "string"
+              },
+              "variantKeys": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
               }
             },
             "required": [
@@ -1939,6 +1945,9 @@
                 "format": "date-time",
                 "type": "string"
               },
+              "cause": {
+                "type": "string"
+              },
               "fileId": {
                 "format": "uuid",
                 "type": "string"
@@ -1946,6 +1955,7 @@
             },
             "required": [
               "fileId",
+              "cause",
               "at"
             ],
             "type": "object"
@@ -2046,6 +2056,54 @@
       },
       "summary": "Every tenant's delivery of file.uploaded.",
       "title": "file.uploaded"
+    },
+    "file.visibility": {
+      "address": "platformkit.*.file.visibility",
+      "description": "Published at platformkit.{tenantId}.file.visibility; the wildcard address is every tenant's delivery of this event, and a durable can be given the exact subject of one tenant. The body is a CloudEvents 1.0 envelope whose `data` is the payload schema below; `tenantid` is a required extension attribute.",
+      "messages": {
+        "file.visibility": {
+          "contentType": "application/json",
+          "name": "file.visibility",
+          "payload": {
+            "properties": {
+              "at": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "entity": {
+                "type": "string"
+              },
+              "fileId": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "module": {
+                "type": "string"
+              },
+              "record": {
+                "format": "uuid",
+                "type": "string"
+              },
+              "visibility": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "fileId",
+              "visibility",
+              "module",
+              "entity",
+              "record",
+              "at"
+            ],
+            "type": "object"
+          },
+          "summary": "file — file.visibility",
+          "title": "file.visibility"
+        }
+      },
+      "summary": "Every tenant's delivery of file.visibility.",
+      "title": "file.visibility"
     },
     "notification.created": {
       "address": "platformkit.*.notification.created",
@@ -5060,6 +5118,23 @@
         }
       ],
       "summary": "The file module publishes file.uploaded.",
+      "tags": [
+        {
+          "name": "file"
+        }
+      ]
+    },
+    "file.visibility": {
+      "action": "send",
+      "channel": {
+        "$ref": "#/channels/file.visibility"
+      },
+      "messages": [
+        {
+          "$ref": "#/channels/file.visibility/messages/file.visibility"
+        }
+      ],
+      "summary": "The file module publishes file.visibility.",
       "tags": [
         {
           "name": "file"

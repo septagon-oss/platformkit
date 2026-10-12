@@ -28,7 +28,7 @@ func TestAnotherTenantCannotReadOrPublishContent(t *testing.T) {
 		if row, err := crud.Get[*contracts.Content](tx, page.ID); !errors.Is(err, crud.ErrNotFound) || row != nil {
 			t.Errorf("foreign read = %+v, %v", row, err)
 		}
-		if row, err := internal.NewService().Publish(ctx, tx, page.ID); !errors.Is(err, crud.ErrNotFound) || row != nil {
+		if row, err := internal.NewService(internal.Deps{}).Publish(ctx, tx, page.ID); !errors.Is(err, crud.ErrNotFound) || row != nil {
 			t.Errorf("foreign publish = %+v, %v", row, err)
 		}
 		return nil

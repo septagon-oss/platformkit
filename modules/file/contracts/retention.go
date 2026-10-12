@@ -37,6 +37,13 @@ const (
 	EraseSubject = "subject"
 	// EraseCaller is a delete or an erasure a person asked for.
 	EraseCaller = "caller"
+	// EraseHold is a hold a person lifted: the file stays, and the released event
+	// is the record of the hold ending rather than of a removal.
+	EraseHold = "hold"
+	// EraseUnused is the release sweep removing a file nothing was showing. It is
+	// a cause an erasure row names, and migrations/000055 widens that CHECK with
+	// it, because the sweep's work order has to be certifiable.
+	EraseUnused = "unused"
 )
 
 // kindShape is a class name as the SQL column checks it. The module never
