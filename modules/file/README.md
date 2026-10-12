@@ -158,6 +158,35 @@ row that has moved answers `ErrConflict` and changes nothing. A `PUT` naming no
 revision is a `PUT` that means "last write wins", and this module has no such
 command.
 
+### The library's page
+
+`internal.MountLibrary` serves the screen these reads are for, at the address the
+manifest's one `Nav` entry names: `/app/file/files`, guarded by `file:read` like the
+list door beside it. It is mounted by this module and composed by the application, which
+hands in the shell it already builds and the authorizer its routes already enforce
+(`Deps.Library`, a `*LibraryChrome`); with no chrome wired the module serves no page and
+the surface's own 404 says so, the way `modules/change` answers a queue nobody composed.
+
+One page, three routes, no script. The grid takes its filters as query parameters —
+`q`, `type`, `unused`, `sort`, `page` — so a filtered view is a URL a person can reload
+and send to a colleague; the details panel opens from `?file={id}`, which makes opening
+one a link rather than a click a script has to intercept; and the two write controls are
+`<form method="post">` elements posting to this module's own page routes. POST rather
+than the JSON verb, for the reason `modules/change` gives for its decision forms:
+`kit/httpx` refuses an unsafe request carrying a session cookie unless it is same-site,
+and a form cannot send `PUT` or `DELETE`. The JSON doors are unchanged and are still the
+ones a client that can speak them uses.
+
+What the page decides is nothing. The tiles, the meter and the panel are answers from
+`contracts.Library`, `Service.Uses` and `crud.Get`, so the number on the meter is the
+number `charge` refused against; the caption form carries the `updatedAt` the panel was
+drawn from, so the second copy of that form is refused by `SetAlt` rather than quietly
+winning; and the removal control is disabled while a use row lives while the command
+underneath refuses the same thing whatever the button looks like. The controls a caller
+may not press are absent rather than disabled when the composition's authorizer says so
+— a control that cannot be used is a fact about the page, and the guard on the post is
+what actually decides.
+
 ### The operator boundary
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
@@ -254,6 +283,26 @@ these rows draws from; `WithQuota` on the fake, so a consumer can drive its own 
 empty and get the same refusal the deployment gives; and a caption guarded by the row's
 own `updatedAt` rather than by a second counter, which is the revision guard any future
 single-column edit of a file can copy.
+
+### Composition — the media library's page (T-0316)
+
+**Reused** — `ui/page.Serve` and its `Route`/`Request`/`View`, which is how
+`modules/change`'s two screens are mounted and why this page needs no package of its
+own: it is `modules/file/internal/library_page.go` beside the service it reads, the same
+call `modules/change/internal/reviews.go` made; `ui/components`' `Masonry`, `Media`,
+`DetailList`, `SidePanel`, `EmptyState`, `Toolbar`, `Pagination`, `Alert`, `Form`-family
+controls and `ContentState`, so the grid has no class of its own to style and the states
+are the vocabulary the gallery already documents; `contracts.Library`'s three reads, the
+`file:read`/`file:manage` pair, `Service.Uses`, and the tenant policy that scopes every
+one of them. **Added** — `Deps.Library`/`LibraryChrome`, the one edge that lets a
+composition hand its chrome to a capability that must not guess at it, and the two page
+routes (`POST /files/{id}/alt`, `POST /files/{id}/delete`), which are this module's
+commands wearing a form. **Made reusable** — `LibraryPages.UseReader` and `Remover`, the
+narrow ports a page of this shape asks for instead of the whole `Service`, so a later
+screen (the picker, a record's own image field) takes the one question it needs; the
+revision stamp travelling in the form as the row's own `updatedAt` rather than a second
+counter; and the drawing rule that a write control is absent for a caller the authorizer
+refuses and never merely greyed out.
 
 ## Limits
 

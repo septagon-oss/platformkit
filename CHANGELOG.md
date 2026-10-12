@@ -136,6 +136,26 @@ removals that outrank a page (a subject's erasure, the two sweeps) keep their ow
 identically; the suite's `Delete` cases now show a file surviving until its last use
 ends. `apps/platformkit/testdata/openapi.json` is re-recorded for the three operations.
 
+**The media library has a page at the address its nav entry names.**
+`/app/file/files` is served by `modules/file/internal` (`internal.MountLibrary`) in the
+shell the composition hands it, so the nav entry this module has declared since the
+module existed no longer leads to a 404, and `apps/platformkit`'s
+`knownUnservedNav` debt loses a line by being served. The grid is `Search` over `q`,
+`type`, `unused`, `sort` and `page` — filters as query parameters, so a filtered view is
+a URL — one tile per row and never one per width, the meter is `Quota` (no bar on an
+installation with no ceiling), and `?file={id}` opens one file's panel server-side: its
+facts, the preview at the stored frame, "Used in" read from the use ledger, the caption
+form, and the removal. Two page posts join them, `POST /app/file/files/{id}/alt` and
+`POST /app/file/files/{id}/delete`, both `file:manage`, both real forms because a `<form>`
+cannot send the JSON verb `kit/httpx` guards a cookie-bearing unsafe request against; the
+JSON doors are untouched. The caption carries the `updatedAt` the panel was drawn from,
+so the second copy of the same form is refused 409 and writes nothing, and the removal is
+disabled while a use row lives while the command underneath refuses it regardless.
+The controls a caller may not press are drawn absent rather than disabled, on the
+composition's own answer (`Deps.Library`, a `*file.LibraryChrome` with the shell and the
+authorizer; `apps/platformkit`'s `media` module supplies it), and every sentence the page
+speaks is a key in `modules/file/messages/pt-PT.json`.
+
 **The wire gate reads the plan feature a door declares.** An operation's authorization
 declaration has three parts — its `kind`, its `permission`, and the plan feature a route
 names with `httpx.Auth.Needing`, which `kit/httpx` marshals into `x-platformkit-auth` and
