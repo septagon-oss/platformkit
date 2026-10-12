@@ -68,20 +68,73 @@ func (s Subject) ErasedEmail() string {
 
 // Identifiers are the strings an erase or a scrub must find nothing of, longest
 // first: a name that is a substring of the address is removed with the address and
-// not after it, or the tail of the address would survive its own replacement.
+// not after it, or the tail of the address would survive its own replacement. It is
+// the strings alone; Known is the strings with the rule each one is found by.
 func (s Subject) Identifiers() []string {
-	candidates := []string{s.Email, s.DisplayName, s.Handle}
-	out := make([]string, 0, 3)
+	known := s.Known()
+	out := make([]string, 0, len(known))
+	for _, k := range known {
+		out = append(out, k.Value)
+	}
+	return out
+}
+
+// Identifier is one string a person is known by, and where a scrub may take it for
+// them.
+type Identifier struct {
+	// Value is the string as the person's own row carried it before the erasure.
+	Value string
+
+	// Login says Value is a handle rather than a name or an address: a string picked
+	// out of a namespace of short lower-case words, every one of which is also
+	// somebody else's ordinary word.
+	Login bool
+}
+
+// Known are the strings an erasure must stop finding, longest first, each with the
+// rule that finds it.
+//
+// The rule splits by where the string came from rather than by what it looks like,
+// because the three are not three spellings of one thing. An address and a name are
+// what a person is called, so a whole-word match over the whole tenant finds them
+// wherever somebody wrote about them — which is the case the scrub runs over the
+// tenant and not over the person's own rows for. A handle is drawn from the same
+// characters as the language: the schema accepts "will" as a handle, and "the deploy
+// will run on Monday" is a colleague's sentence about a deployment. So a login is
+// taken for the person where it is written as one — an @-mention, the one form that
+// cannot be prose — and as a bare word only in a row that carries the person's own id.
+// scrub.go owns the matching; the split lives here because only the Subject knows
+// which field a string came out of.
+func (s Subject) Known() []Identifier {
+	candidates := []Identifier{
+		{Value: s.Email},
+		{Value: s.DisplayName},
+		{Value: s.Handle, Login: true},
+	}
+	out := make([]Identifier, 0, len(candidates))
 	for _, c := range candidates {
-		if c = strings.TrimSpace(c); c == "" {
+		if c.Value = strings.TrimSpace(c.Value); c.Value == "" {
 			continue
 		}
-		if !contains(out, c) {
+		if !holds(out, c.Value) {
 			out = append(out, c)
 		}
 	}
 	longestFirst(out)
 	return out
+}
+
+// holds reports whether any identifier already carries this exact string. A person whose
+// display name is spelled exactly like their handle is named by the wider rule, not the
+// narrower one: the two strings are one string, and leaving a name in somebody's notes is
+// the failure this list exists to prevent.
+func holds(ids []Identifier, value string) bool {
+	for _, id := range ids {
+		if id.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 // Data is one module's answer for its own rows. A module contributes it as a Part and
@@ -341,10 +394,10 @@ func contains(hay []string, needle string) bool {
 	return false
 }
 
-func longestFirst(s []string) {
-	for i := 1; i < len(s); i++ {
-		for j := i; j > 0 && len(s[j]) > len(s[j-1]); j-- {
-			s[j], s[j-1] = s[j-1], s[j]
+func longestFirst(ids []Identifier) {
+	for i := 1; i < len(ids); i++ {
+		for j := i; j > 0 && len(ids[j].Value) > len(ids[j-1].Value); j-- {
+			ids[j], ids[j-1] = ids[j-1], ids[j]
 		}
 	}
 }
