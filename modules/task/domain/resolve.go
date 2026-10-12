@@ -3,8 +3,9 @@
 package domain
 
 import (
-	"errors"
 	"strings"
+
+	"github.com/septagon-oss/platformkit/kit/fault"
 )
 
 // Lifecycle states retain the task entity's existing stored and wire values.
@@ -16,9 +17,18 @@ const (
 	StatusClosed       = "closed"
 )
 
+// The two refusals this decision can reach, each a fault.Reason rather than a
+// bare sentence: the verdict, the sentence this module is written in, and the
+// entry of modules/task/messages that sentence is kept under. A decision is taken
+// without a reader in mind, but the person who is refused has one, and the page
+// that draws them asks this key for the sentence in their language. Nothing here
+// knows that a page exists: the key is a name, and whoever renders owns the words
+// it answers with.
 var (
-	ErrClosed              = errors.New("a closed task cannot be resolved")
-	ErrDifferentResolution = errors.New("this task is resolved with a different resolution")
+	ErrClosed = &fault.Reason{Kind: fault.ErrConflict, Key: "conflict.task.closed",
+		Text: "a closed task cannot be resolved"}
+	ErrDifferentResolution = &fault.Reason{Kind: fault.ErrConflict, Key: "conflict.task.different_resolution",
+		Text: "this task is resolved with a different resolution"}
 )
 
 // Resolution describes a proposed change. Changed, rather than Text, determines

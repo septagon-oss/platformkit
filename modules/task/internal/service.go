@@ -12,6 +12,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
 	"github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/task/domain"
@@ -42,7 +43,8 @@ func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee 
 		return nil, err
 	}
 	if task.Status == contracts.StatusResolved || task.Status == contracts.StatusClosed {
-		return nil, fmt.Errorf("%w: a %s task cannot be assigned", crud.ErrConflict, task.Status)
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.task.assign.state",
+			Text: "a %s task cannot be assigned", Args: []any{task.Status}}
 	}
 	if task.AssigneeID != nil && *task.AssigneeID == assignee {
 		return task, nil
@@ -76,7 +78,11 @@ func (s *Service) Resolve(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 	}
 	decision, err := domain.Resolve(task.Status, task.Resolution, resolution)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", crud.ErrConflict, err)
+		// The refusal arrives as the decision wrote it: the verdict underneath is
+		// already ErrConflict, and the sentence and its key are what let the page the
+		// person is standing on answer in their own language. Wrapping it in this
+		// package's prose would keep the verdict and throw the sentence away.
+		return nil, err
 	}
 	if !decision.Changed {
 		return task, nil

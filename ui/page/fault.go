@@ -38,6 +38,7 @@ import (
 	"strconv"
 	"strings"
 
+	kitfault "github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -129,10 +130,13 @@ var refusalParts = []string{
 // own decision could not be made. Every one of those four sentences is kit/httpx's
 // own, written for the page this package renders it on.
 //
-// A 400, a 409 or a 422 is not one of them: it carries a sentence about the
-// caller's own request, written by a module or by the decoder, and translating
-// that is the writer's share — a sentence about the status would paper over the
-// one thing the caller could act on. The 405 belongs with the 404 and the 500 on
+// A 400, a 409 or a 422 written by this layer is not one of them: it carries a
+// sentence about the caller's own request, written by a module or by the decoder,
+// and translating that is the writer's share — a sentence about the status would
+// paper over the one thing the caller could act on. A writer that named its
+// sentence (`fault.Reason`) has taken that share: sentence asks it under the key
+// the writer gave, so the person reading a module's refusal is answered in the
+// language the rest of the page is in. The 405 belongs with the 404 and the 500 on
 // that same ground and not beside the 400: "this address does not accept POST
 // requests" is the kernel's own words about the address and not about the
 // caller's request, and it is the refusal a derived client meets most often of
@@ -211,7 +215,7 @@ func FaultHandler(s Shell) httpx.Fault {
 		req.Locale = loc
 		v, ok := granted(r, loc, status, p.Detail, requestID(p.Instance), s)
 		if !ok {
-			v = fault(status, p.Detail, loc, requestID(p.Instance), s.Back, s.BackLabel)
+			v = fault(status, p.Detail, p.Refusal, loc, requestID(p.Instance), s.Back, s.BackLabel)
 		}
 
 		body := s.Frame(ctx, req, v.Body)
@@ -264,14 +268,14 @@ const (
 	deniedPermissionKey = "fault.AUTH_DENIED.permission"
 )
 
-func fault(status int, detail string, loc *Locale, reference, back, backLabel string) View {
+func fault(status int, detail string, reason *kitfault.Reason, loc *Locale, reference, back, backLabel string) View {
 	line := detail
 	if strings.TrimSpace(line) == "" {
 		// A 500 carries no detail on purpose: the reason is in the log, not for the
 		// browser. The sentence has to be true and useful without it.
 		line = "Something went wrong while handling this."
 	}
-	line, language := sentence(line, loc, status, detail)
+	line, language := sentence(line, loc, status, detail, reason)
 	// A missing grant names the grant and who can give it (UX walkthroughs, 2026-09-30: an editor who signed
 	// in met "Não pode fazer isto." and could not say what to ask for; the administrator helping her could not
 	// tell what to give). The guard already wrote the permission into its detail and the translated sentence
@@ -309,9 +313,23 @@ func fault(status int, detail string, loc *Locale, reference, back, backLabel st
 // ships the copy for it and in the guard's English when it does not, and the
 // language actually on the page ("" for English). The code is kept and the copy
 // after it is what changes — see fault.
-func sentence(line string, loc *Locale, status int, detail string) (text, language string) {
+//
+// There are two ways a sentence exists to be changed. A guard's own refusal is
+// keyed by the code it published, because the guard wrote both the code and the
+// line after it and this package ships the copy. A refusal that arrives with a
+// sentence of its own (`fault.Reason`) is keyed by the entry its writer named, and
+// is answered only when the line being shown *is* that sentence: a refusal wrapped
+// in somebody's further prose keeps that prose rather than have a sentence swapped
+// under the reader's eyes.
+func sentence(line string, loc *Locale, status int, detail string, reason *kitfault.Reason) (text, language string) {
 	text = line
 	if loc == nil {
+		return text, ""
+	}
+	if reason != nil && reason.Key != "" && line == reason.Error() {
+		if said := loc.Text(reason.Key, reason.Error(), reason.Args...); said != reason.Error() {
+			return said, loc.Language
+		}
 		return text, ""
 	}
 	key, lookup := faultKey(detail, status)
@@ -346,7 +364,9 @@ func granted(r *http.Request, loc *Locale, status int, detail, reference string,
 		(ref.Code != httpx.CodeDenied && ref.Code != httpx.CodePolicyDenied) {
 		return document.View{}, false
 	}
-	line, language := sentence("", loc, status, detail)
+	// A withheld grant and a row rule are both worded by the parts below, so there
+	// is no writer's sentence here to ask the catalogue about.
+	line, language := sentence("", loc, status, detail, nil)
 	if line == "" {
 		line = strings.TrimPrefix(detail, ref.Code+": ")
 	}
