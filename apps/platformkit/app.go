@@ -50,6 +50,7 @@ import (
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
 	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -221,6 +222,11 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			site.Module,
 			web.Module,
 			audit.Module,
+			// Outbound webhooks: the machine's half of the same outbox the trail
+			// reads. It needs the tenant lister and this file's own catalogue of
+			// event names, and it is placed here because the events it can be asked
+			// for are everything above it has already declared.
+			webhook.Module,
 			seeding(provision),
 			access(ask),
 			change.Module,

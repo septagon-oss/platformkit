@@ -446,7 +446,14 @@ write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
   # refusal for an operator who has not written this line, not for this step. A
   # --dump copy holding tenants served elsewhere still refuses, and names them.
   hosts:
-    - "rehearse.localhost"'
+    - "rehearse.localhost"
+# The composition of this release names webhook.Module, and that module refuses to
+# be composed without the key wrapping an endpoint signing secret, so the candidate
+# needs the line. The base revision above is given none: that loader has never heard
+# of the key, and kit/config refuses a key it does not know. Thirty-two bytes of
+# this run, which no receiver anywhere verifies a delivery against.
+webhook:
+  secret_key: "0123456789abcdef0123456789abcdef"'
 set +e
 "$work/platformkit" migrate --drain --config "$work/run.yaml" >"$work/run.log" 2>&1
 code=$?

@@ -26,11 +26,11 @@ type Text = resource.Text
 // key: an older shell ignores what it has not read, which is the only reason any
 // of this can move forward without a flag day.
 //
-// What the number cannot do is protect a build that is already installed — the
-// shell in somebody's pocket parses what it was written to parse. So the rule
-// that actually protects it is the one beside this constant: additive, optional,
-// and never a change of meaning. A consumer that must refuse is the *next* build,
-// reading this field, and that is who the field is written for.
+// What the number cannot do is protect the build already installed: the shell in
+// somebody's pocket parses what it was written to parse. It protects it by what it
+// refuses to do to it — additive, optional, never a change of meaning — and moves
+// for a listed resource losing a verb, whose button that build drew and whose
+// address now answers nothing. A verb hidden by a new entry strands nobody.
 const CatalogVersion = 2
 
 // Catalog is the machine-readable form of what a shell shows: every resource
@@ -91,10 +91,10 @@ type Entry struct {
 	// offers all five prints nothing, exactly as it did before this key existed.
 	//
 	// A shell that has not read this key reads an entry that hides a verb as if it
-	// did not — which is why CatalogVersion moves with the first *shipped* resource
-	// that hides one, and why apps/platformkit's ratchet case refuses to let that
-	// move be a memory. An absent key means all five, so it is the shell's next
-	// build that has to require it, reading this field.
+	// did not — which is why CatalogVersion moves when a resource the document had
+	// already listed hides one, and why apps/platformkit's ratchet case refuses to
+	// let that move be a memory. An absent key means all five, so it is the shell's
+	// next build that has to require it, reading this field.
 	Operations []string `json:"operations,omitempty"`
 	// Singleton says a tenant has one of these, at Path itself: a screen for
 	// it is the record and its form, and never a list with a New button on it.
