@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	g "maragu.dev/gomponents"
 
+	kitfault "github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/problem"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -97,20 +98,19 @@ func Serve[I any](r *httpx.Router, s Shell, rt Route, auth httpx.Auth, handler H
 				applyPrivacy(out, v.Sensitive)
 				return out, nil
 			}
-			status, detail := refusal(err)
+			status, detail, reason := refusal(err)
 			if status >= http.StatusInternalServerError {
 				return nil, err
 			}
 			// The refusal of a handler is the same page the kernel's guards render
 			// (fault.go) and is worded the same way: through the locale this shell just
-			// negotiated, with the sentence this shell ships for that verdict. A person
-			// who was refused by a module is looking at the page all the same, and the
-			// copy they are shown is not the reason the language was bought for the shell
-			// that mounted them. `fault` claims a language only over a sentence it
-			// actually replaced, so a verdict no catalogue speaks stays English and says
-			// so — and the reference is empty here because a handler's own 4xx carries no
-			// request id of its own.
-			refused := fault(status, detail, r.Locale, "", s.Back, s.BackLabel)
+			// negotiated, with the sentence this shell ships for that verdict. The
+			// refusal's own sentence travels with it (`reason`) when the writer named
+			// one, which is what lets a module's rule be answered in the reader's
+			// language without this package learning what the rule was; `fault` claims a
+			// language only over a sentence it replaced, so a verdict no catalogue
+			// speaks stays English and says so.
+			refused := fault(status, detail, reason, r.Locale, "", s.Back, s.BackLabel)
 			refused.Sensitive = v.Sensitive
 			v = refused
 		}
@@ -211,11 +211,13 @@ func read(ctx context.Context, c Chrome) Request {
 	return r
 }
 
-// refusal is an error's status and detail: a problem's own, or a 500.
-func refusal(err error) (int, string) {
+// refusal is an error's status, detail and — when the writer of the refusal named
+// its own sentence, which is what carries the catalogue key a page asks that
+// sentence under — that sentence itself: a problem's own, or a 500.
+func refusal(err error) (int, string, *kitfault.Reason) {
 	var p *problem.Problem
 	if errors.As(err, &p) {
-		return p.Status, p.Detail
+		return p.Status, p.Detail, p.Refusal
 	}
-	return http.StatusInternalServerError, ""
+	return http.StatusInternalServerError, "", nil
 }

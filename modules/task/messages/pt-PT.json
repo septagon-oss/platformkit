@@ -446,5 +446,32 @@
     "plural": {
       "": "uma tarefa em %s precisa de hora de resolução"
     }
+  },
+  "conflict.task.closed": {
+    "references": [
+      "modules/task/domain/resolve.go"
+    ],
+    "translation": "uma tarefa fechada não pode ser resolvida",
+    "plural": {
+      "": "uma tarefa fechada não pode ser resolvida"
+    }
+  },
+  "conflict.task.different_resolution": {
+    "references": [
+      "modules/task/domain/resolve.go"
+    ],
+    "translation": "esta tarefa está resolvida com uma resolução diferente",
+    "plural": {
+      "": "esta tarefa está resolvida com uma resolução diferente"
+    }
+  },
+  "conflict.task.assign.state": {
+    "references": [
+      "modules/task/internal/service.go"
+    ],
+    "translation": "uma tarefa em %s não pode ser atribuída",
+    "plural": {
+      "": "uma tarefa em %s não pode ser atribuída"
+    }
   }
 }

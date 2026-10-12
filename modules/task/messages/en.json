@@ -446,5 +446,32 @@
     "plural": {
       "": "a %s task needs a resolution time"
     }
+  },
+  "conflict.task.closed": {
+    "references": [
+      "modules/task/domain/resolve.go"
+    ],
+    "translation": "a closed task cannot be resolved",
+    "plural": {
+      "": "a closed task cannot be resolved"
+    }
+  },
+  "conflict.task.different_resolution": {
+    "references": [
+      "modules/task/domain/resolve.go"
+    ],
+    "translation": "this task is resolved with a different resolution",
+    "plural": {
+      "": "this task is resolved with a different resolution"
+    }
+  },
+  "conflict.task.assign.state": {
+    "references": [
+      "modules/task/internal/service.go"
+    ],
+    "translation": "a %s task cannot be assigned",
+    "plural": {
+      "": "a %s task cannot be assigned"
+    }
   }
 }
