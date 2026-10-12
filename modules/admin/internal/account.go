@@ -10,7 +10,7 @@ package internal
 // rest.CommandOptions.Self names, and the shell is the one surface every signed-in
 // page carries. A person with no way to say it in the browser has only the JSON
 // route, which is a door for programs and not for the person the language is for.
-
+//
 // # Which order the two reads go in
 //
 // languageControl reads the revision before it reads the choice, and the order is
@@ -206,29 +206,6 @@ func languageControl(ctx context.Context, deps frameDeps, r page.Request) g.Node
 		Action:         deps.LanguagePath, Label: chrome(r, "account.language", "Language"),
 	}, controls...)
 }
-
-// drawnPair is why the two reads above have one order and not any order.
-//
-// The control draws a value and the number that value was read at, and it is the
-// number that decides whether a submitted form still describes the row. Two reads
-// in one transaction are not one read: at the isolation this installation runs, a
-// write committed by another tab between them is seen by the read that follows it
-// and not by the read that came before. Read the value first and the counter
-// second and the pair can be an old choice wearing a new revision — the command
-// then finds the revision it expected, accepts, and overwrites the choice the
-// other tab had just made, which is the one write nobody asked for. Read the
-// counter first and the most a change in flight can do is draw a value newer than
-// the number beside it: the revision the form brings back is then the one the row
-// has left behind, the command refuses it inside its own transaction, and nothing
-// is written. A stale page costs the reader a reload; a coherent pair accepted at
-// an old revision costs them their colleague's — or their own — later choice.
-//
-// The pair is therefore always safe in the direction that matters, and never
-// promised to be more than that: it is not a snapshot of the row, and the two
-// reads can still straddle a change, which is what the refusal is for. The counted
-// door (AccountLanguageVersion) is what makes the direction decidable at all — a
-// composition that draws no revision has no number to place second, and gets the
-// intent door its ports promise instead.
 
 // offeredLanguages is the language list this tenant declared, its default first.
 // It reads the request's own tenant and asks nothing of any module: the order is
