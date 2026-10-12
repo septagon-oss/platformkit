@@ -5555,6 +5555,25 @@
   {
    "area": "apps",
    "evidence": "not-round-named",
+   "file": "apps/platformkit/translation_event_app_document_test.go",
+   "id": "apps/platformkit/translation_event_app_document_test.go#TestTranslationEventDocumentsItsPublishingApp",
+   "kind": "go",
+   "layer": "composition",
+   "name": "TestTranslationEventDocumentsItsPublishingApp",
+   "needs_db": true,
+   "pkg": "apps/platformkit",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "apps",
+   "evidence": "not-round-named",
    "file": "apps/platformkit/translation_form_empty_box_test.go",
    "id": "apps/platformkit/translation_form_empty_box_test.go#TestAnEmptyBoxOnTheTranslateFormLeavesTheFieldUntouched",
    "kind": "go",
@@ -53181,7 +53200,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1301,
+  "files": 1302,
   "forge_runs": [
    408,
    413,
@@ -53216,7 +53235,7 @@
   ],
   "layers": {
    "behaviour": 2328,
-   "composition": 278,
+   "composition": 279,
    "contract": 19,
    "journey": 58
   },
@@ -53234,9 +53253,9 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2683,
+  "rows": 2684,
   "tiers": {
-   "merge": 1682,
+   "merge": 1683,
    "nightly": 58,
    "push": 943
   },
@@ -53244,13 +53263,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1086,
+   "keep": 1087,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2336,
+   "keep": 2337,
    "keep-rewrite": 132,
    "merge": 215
   }
