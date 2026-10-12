@@ -15,6 +15,7 @@
 package rest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,12 @@ type Spec[T crud.Entity] struct {
 	// that default is a resource whose images the sweep is entitled to delete
 	// under a published page, which is when this becomes a mount-time refusal.
 	FileUses FileUses
+	// Translations is the door a Spec with a `i18n:"translatable"` field knocks
+	// on: ?lang= reads through it, its commands write through it, and its delete
+	// forgets the record through it. modules/translation implements it and nothing
+	// else does; the composition assigns it by hand, the way RichTextFiles is
+	// assigned, and check() refuses either half wired without the other.
+	Translations Translations
 	// Module is the manifest's name. It prefixes the events, so the events a
 	// Spec publishes are namespaced by the module that mounts it.
 	Module string
@@ -316,26 +323,29 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 	surfaces.RegisterResource(res) // the same entity, for the generated screens
 
+	// The two read doors come in two shapes, and the reason is one rule: a
+	// query parameter nothing reads is not advertised. A resource with a
+	// translatable field gains ?lang= on its list and its read; a resource with
+	// none does not offer the parameter at all, and its JSON is byte-identical to
+	// what it was before this feature existed.
 	if s.offers(httpx.CRUDList) {
-		httpx.Register(read, s.op("list", http.MethodGet, s.Path, 0,
-			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", ")),
-			s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
-				tx, err := transaction(ctx)
+		listOp := s.op("list", http.MethodGet, s.Path, 0,
+			"List "+s.Entity+"s", "Sortable and filterable by: "+strings.Join(names(schema.Fields), ", "))
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *translatedListInput) (*TranslatedPage[T], error) {
+				out, served, err := s.pageRows(ctx, in.page(), schema, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				q, err := in.query(schema.Fields)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				items, total, err := crud.List[T](tx, q)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				out := &Page[T]{}
-				out.Body.Items, out.Body.Total, out.Body.Limit, out.Body.Offset = items, total, q.Limit, q.Offset
+				out.ContentLanguage = served
 				return out, nil
 			})
+		} else {
+			httpx.Register(read, listOp, s.readAuth(), func(ctx context.Context, in *listInput) (*Page[T], error) {
+				out, err := s.plainRows(ctx, *in, schema)
+				return out, err
+			})
+		}
 	}
 
 	if s.offers(httpx.CRUDCreate) {
@@ -363,35 +373,75 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 	}
 
 	if s.offers(httpx.CRUDRead) {
-		httpx.Register(read, s.op("read", http.MethodGet, s.item(), 0,
-			"Read a "+s.Entity, ""),
-			s.readAuth(), func(ctx context.Context, in *idInput) (*taggedItem[T], error) {
-				tx, err := transaction(ctx)
+		readOp := s.op("read", http.MethodGet, s.item(), 0, "Read a "+s.Entity, "")
+		if len(translatableFields[T]()) > 0 {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *translatedIDInput) (*TranslatedItem[T], error) {
+				out, served, err := s.itemRow(ctx, in.ID, in.Lang)
 				if err != nil {
 					return nil, err
 				}
-				e, err := crud.Get[T](tx, in.ID)
+				out.ContentLanguage = served
+				return out, nil
+			})
+		} else {
+			httpx.Register(read, readOp, s.readAuth(), func(ctx context.Context, in *idInput) (*taggedItem[T], error) {
+				e, err := s.oneRow(ctx, in.ID)
 				if err != nil {
-					return nil, Fault(err)
+					return nil, err
 				}
 				return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
 			})
+		}
 	}
 
 	if s.offers(httpx.CRUDUpdate) {
-		httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
-			"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
-			s.writeAuth(), func(ctx context.Context, in *patchInput) (*taggedItem[T], error) {
-				tx, err := transaction(ctx)
-				if err != nil {
-					return nil, err
-				}
-				e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
-				if err != nil {
-					return nil, Fault(err)
-				}
-				return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
-			})
+		if len(translatableFields[T]()) > 0 {
+			// The translated PATCH is the write half of `?lang=`: the parameter
+			// names the language the body is written in, and a body in a language
+			// other than the tenant's own is a translation, not an edit of the
+			// record. The record's own rules and the record's own port decide which
+			// of the two this was; a PATCH that ignored the parameter and wrote the
+			// Portuguese into the English column would destroy a source to file a
+			// translation under the wrong language.
+			//
+			// The row's own tag is honoured by both halves of this one door: a body
+			// quoted against a revision the row has passed is stale whether it came to
+			// edit the record or to file a translation of it, and a translation drafted
+			// against a source the caller no longer holds is the same defect wearing
+			// another language.
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity,
+				"Only the fields present in the body change; read-only fields are refused. With ?lang= naming a language other than the tenant's own, the body writes that language's translation of its fields and the record itself is untouched."),
+				s.writeAuth(), func(ctx context.Context, in *translatedPatchInput) (*taggedItem[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					if in.Lang != "" && in.Lang != db.TenantOf(tx).Languages.Default {
+						e, err := s.localePatch(ctx, tx, in.ID, in.Lang, in.Body, in.IfMatch)
+						return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, Fault(err)
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
+				})
+		} else {
+			httpx.Register(write, s.op("update", http.MethodPatch, s.item(), 0,
+				"Update a "+s.Entity, "Only the fields present in the body change; read-only fields are refused."),
+				s.writeAuth(), func(ctx context.Context, in *patchInput) (*taggedItem[T], error) {
+					tx, err := transaction(ctx)
+					if err != nil {
+						return nil, err
+					}
+					e, err := s.updateRow(ctx, tx, in.ID, schema.Fields, in.Body, in.IfMatch)
+					if err != nil {
+						return nil, Fault(err)
+					}
+					return &taggedItem[T]{ETag: s.revisionTag(schema.Fields, e), Body: e}, nil
+				})
+		}
 	}
 
 	if s.offers(httpx.CRUDDelete) {
@@ -407,6 +457,19 @@ func (s Spec[T]) Mount(surfaces httpx.Surfaces) {
 				}
 				return nil, nil
 			})
+	}
+	// The four translation doors, and only for a resource that declared a field
+	// worth translating: the same rule that keeps `?lang=` off a plain resource's
+	// reads keeps a `translate` command off its writes. They carry the record's own
+	// write permission, which is what guards a translation of it — and a write
+	// guard that names no grant guards nothing here. A translation is written to a
+	// row the caller names, and reaching it asks whose tenant and never whose row;
+	// operationsFault refuses the generic writes for exactly that reason, and a
+	// command mounted beside the refusal would be the way around it. A read-only
+	// resource under a membership guard keeps its reads, `?lang=` included, and
+	// mounts no write door at all.
+	if len(translatableFields[T]()) > 0 && s.writeAuth().NamesAGrant() {
+		s.mountTranslationDoors(surfaces)
 	}
 	for _, field := range schema.Fields {
 		if field.Widget == "richtext" {
@@ -548,6 +611,22 @@ func (s Spec[T]) updateRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.Update(ctx, tx, e, s.bumpRevision(fields, e, write)...); err != nil {
 		return e, err
 	}
+	// A source write that moved a translatable field marks its translations
+	// outdated, in this write's own transaction. The read derives the state from
+	// the source it is holding either way; what lives here is the stored column the
+	// overview counts and the audit trail quotes, and a source write that left it
+	// alone would leave every one of those saying "up to date" about a paragraph
+	// that has since been rewritten.
+	if s.tracksTranslations() {
+		for _, field := range translatableFields[T]() {
+			if !slices.Contains(columns, field.Column) {
+				continue
+			}
+			if err := s.Translations.MarkOutdated(ctx, tx, s.Module, s.Entity, field.Name, id); err != nil {
+				return e, err
+			}
+		}
+	}
 	// The diff is computed after that write and before the event, because crud.Update
 	// runs the entity's own Validate, and Validate normalises: a task trims its title,
 	// so the body's "  second  " and the row's "second" are two answers to what the
@@ -677,6 +756,16 @@ func (s Spec[T]) deleteRow(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUI
 	if err := crud.Delete[T](tx, id, s.SoftDelete); err != nil {
 		return e, err
 	}
+	// The record is gone, so every translation of it is gone with it, in this
+	// same transaction. No foreign key can span two modules' schemas — the rows
+	// live in modules/translation's migration, not this one's — so the promise
+	// this call is what keeps, and the alternative is a table of translations of
+	// records that no longer exist, which no screen can name and no cleanup finds.
+	if s.tracksTranslations() {
+		if err := s.Translations.ForgetRecord(ctx, tx, s.Module, s.Entity, id); err != nil {
+			return e, err
+		}
+	}
 	return e, s.emit(ctx, tx, Deleted, e, s.AfterDelete)
 }
 
@@ -726,6 +815,23 @@ type CommandOptions struct {
 	// adding an item to a basket is httpx.SignedIn(), and the alternative was a
 	// second permission every tenant would have to grant to every shopper.
 	Auth httpx.Auth
+
+	// MapArgs declares, by argument name, the map-valued arguments the schema
+	// derives no field for — because a map column belongs to no screen and no
+	// filter, `derive` leaves maps out of a struct altogether. A command that takes
+	// one value per field of the record it acts on therefore arrives at the catalog
+	// and at every generated form with *nothing* beside its language: `translate`
+	// offers a `values` map keyed by field name, and no reading of
+	// `map[string]string` can learn that this entity has a title and a body.
+	// Declaring the argument is what turns a form that can only refuse an editor
+	// into one that offers a box per field, and a name that is no map argument of
+	// this command refuses to mount.
+	//
+	// It travels by pointer because `CommandOptions` is comparable as published —
+	// apidiff names it — and a struct holding a map is not: the map would have taken
+	// `opts == other` away from every consumer of a type that has nothing to do with
+	// maps. nil says what the zero value always said.
+	MapArgs *MapArgs
 
 	// Collection mounts the command on the collection rather than on a row —
 	// POST {Path}/{verb} — and run is handed uuid.Nil.
@@ -809,6 +915,10 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	// so the form and the JSON route perform one implementation through one
 	// guard. See docs/adr/0007 and httpx.Command.Run.
 	fields := crud.FieldsOf(reflect.TypeFor[I]())
+	fields, err := declareMapArgs(reflect.TypeFor[I](), fields, opts.MapArgs)
+	if err != nil {
+		panic("rest: " + err.Error())
+	}
 	// Endpoint is the command's own absolute address, which is the one path a
 	// shell can no longer derive for itself: once a command may live on the
 	// control-plane surface, {path}/{id}/{verb} stops being the rule. The
@@ -859,6 +969,79 @@ func Command[I any, T crud.Entity](surfaces httpx.Surfaces, spec Spec[T], verb, 
 	Operation(router, op, auth, func(ctx context.Context, tx db.Tx[db.Tenant], _ uuid.UUID, in *commandInput[I]) (T, error) {
 		return answer(ctx, tx, in.ID, in.Body)
 	}, OperationOptions{})
+}
+
+// MapArgs is a command's map-valued arguments, keyed by the JSON name the body uses
+// for them, and declared by whoever owns the command.
+type MapArgs struct {
+	// Args is one declaration per argument: the shape Go cannot state (what each
+	// key's value is) and the keys no reflection can discover.
+	Args map[string]crud.MapArg
+}
+
+// declareMapArgs puts each declared map argument in beside the fields the schema
+// derived, in the order the argument struct declares them, and refuses a
+// declaration describing an argument that is not a map keyed by a string: a key
+// list beside an argument that would ignore it is the bug this option exists to
+// cure, and a mount-time refusal is the only answer that cannot ship.
+func declareMapArgs(in reflect.Type, fields []crud.Field, declared *MapArgs) ([]crud.Field, error) {
+	var args map[string]crud.MapArg
+	if declared != nil {
+		args = declared.Args
+	}
+	if len(args) == 0 {
+		return fields, nil
+	}
+	if in.Kind() == reflect.Pointer {
+		in = in.Elem()
+	}
+	seen := map[string]bool{}
+	for _, sf := range reflect.VisibleFields(in) {
+		declared, ok := args[jsonNameOf(sf)]
+		if !ok {
+			continue
+		}
+		seen[jsonNameOf(sf)] = true
+		t := sf.Type
+		if t.Kind() == reflect.Pointer {
+			t = t.Elem()
+		}
+		if t.Kind() != reflect.Map || t.Key().Kind() != reflect.String {
+			return nil, fmt.Errorf("command argument %q is declared as a map of %s and is %s",
+				jsonNameOf(sf), declared.Elem, sf.Type)
+		}
+		fields = append(fields, crud.Field{
+			Name: jsonNameOf(sf), Type: crud.TypeMap, Elem: declared.Elem,
+			Doc: cmp.Or(declared.Doc, sf.Tag.Get("doc")), Keys: slices.Clone(declared.Keys),
+			Index: sf.Index,
+		})
+	}
+	if len(args) > 0 {
+		leftover := make([]string, 0, len(args))
+		for name := range args {
+			if !seen[name] {
+				leftover = append(leftover, name)
+			}
+		}
+		if len(leftover) == 0 {
+			return fields, nil
+		}
+		slices.Sort(leftover)
+		return nil, fmt.Errorf("command declares map arguments %s and takes none of them",
+			strings.Join(leftover, ", "))
+	}
+	return fields, nil
+}
+
+// jsonNameOf is the name a struct field is addressed by, which is its json tag and
+// otherwise its Go name — the same rule entity/jsonName reads, asked of a field
+// that is deliberately absent from the derived schema.
+func jsonNameOf(sf reflect.StructField) string {
+	name, _, _ := strings.Cut(sf.Tag.Get("json"), ",")
+	if name == "" {
+		return sf.Name
+	}
+	return name
 }
 
 // commandInput is a command's path id and its body. The body is a pointer
@@ -1018,6 +1201,9 @@ func (s Spec[T]) check() {
 	}
 	if bad == "" {
 		bad = widgetFault(crud.Fields[T]())
+	}
+	if bad == "" {
+		bad = s.translationFault()
 	}
 	if bad == "" {
 		for _, field := range crud.Fields[T]() {
