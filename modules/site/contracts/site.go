@@ -24,6 +24,7 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
@@ -134,6 +135,12 @@ func (SiteSettings) TableName() string { return "site_settings" }
 
 // Validate is the entity's own check, run by kit/crud on every write whichever
 // door it came through. It normalises as well as refuses.
+//
+// Each refusal is a fault.Reason — verdict, source sentence, and the key this
+// module's catalogue keeps its translation under — because the person reading a
+// refused save speaks a language this file does not know. A Reason unwraps to
+// ErrInvalid, so errors.Is, kit/rest's 422 and this sentence in a log or a problem
+// document are what they were; only a page asks the catalogue.
 func (s *SiteSettings) Validate(context.Context) error {
 	s.Title = strings.TrimSpace(s.Title)
 	s.Tagline = strings.TrimSpace(s.Tagline)
@@ -150,31 +157,44 @@ func (s *SiteSettings) Validate(context.Context) error {
 	// 60 Chinese characters used to be refused as 180. The same correction is
 	// in modules/content, modules/billing and modules/file.
 	case utf8.RuneCountInString(s.Title) > MaxTitle:
-		return fmt.Errorf("a title is at most %d characters", MaxTitle)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.title.length",
+			Text: "a title is at most %d characters", Args: []any{MaxTitle}}
 	case utf8.RuneCountInString(s.Tagline) > MaxTagline:
-		return fmt.Errorf("a tagline is at most %d characters", MaxTagline)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.tagline.length",
+			Text: "a tagline is at most %d characters", Args: []any{MaxTagline}}
 	// The length first, because the column is varchar(200) and a slug longer
 	// than it is the difference between a 422 that says so and a 500 from the
-	// database. MaxHomeSlug was declared and never read until the review said so.
+	// database — which is why MaxHomeSlug is read here and not only declared
+	// beside the other four bounds.
 	case utf8.RuneCountInString(s.HomeSlug) > MaxHomeSlug:
-		return fmt.Errorf("a home slug is at most %d characters, and that one is %d", MaxHomeSlug, utf8.RuneCountInString(s.HomeSlug))
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.homeSlug.length",
+			Text: "a home slug is at most %d characters, and that one is %d",
+			Args: []any{MaxHomeSlug, utf8.RuneCountInString(s.HomeSlug)}}
 	case s.HomeSlug != "" && !slug.MatchString(s.HomeSlug):
-		return fmt.Errorf("%q is not a slug, so nothing can be served at it", s.HomeSlug)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.homeSlug.form",
+			Text: "%q is not a slug, so nothing can be served at it", Args: []any{s.HomeSlug}}
 	case !slices.Contains(themes, s.Theme):
-		return fmt.Errorf("theme %q is not one of %v", s.Theme, themes)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.theme",
+			Text: "theme %q is not one of %v", Args: []any{s.Theme, themes}}
 	case !hexColor.MatchString(s.PrimaryColor):
-		return fmt.Errorf("%q is not a colour; a primary colour is #rrggbb", s.PrimaryColor)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.primaryColor",
+			Text: "%q is not a colour; a primary colour is #rrggbb", Args: []any{s.PrimaryColor}}
 	case len(s.Nav) > MaxNav:
-		return fmt.Errorf("a navigation is at most %d links", MaxNav)
+		return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.nav.count",
+			Text: "a navigation is at most %d links", Args: []any{MaxNav}}
 	}
 	for i := range s.Nav {
 		item := &s.Nav[i]
 		item.Label, item.Path = strings.TrimSpace(item.Label), strings.TrimSpace(item.Path)
 		switch {
 		case item.Label == "" || utf8.RuneCountInString(item.Label) > MaxLabel:
-			return fmt.Errorf("a link needs a label of at most %d characters, and %q is not one", MaxLabel, item.Label)
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.nav.label",
+				Text: "a link needs a label of at most %d characters, and %q is not one",
+				Args: []any{MaxLabel, item.Label}}
 		case !httpx.LocalPath(item.Path) || utf8.RuneCountInString(item.Path) > MaxPath:
-			return fmt.Errorf("a link points at a path within this site, and %q is not one", item.Path)
+			return &fault.Reason{Kind: fault.ErrInvalid, Key: "invalid.site.settings.nav.path",
+				Text: "a link points at a path within this site, and %q is not one",
+				Args: []any{item.Path}}
 		}
 	}
 	return nil

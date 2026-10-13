@@ -132,6 +132,87 @@
       "": "File id of the logo"
     }
   },
+  "invalid.site.settings.title.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a title is at most %d characters",
+    "plural": {
+      "": "a title is at most %d characters"
+    }
+  },
+  "invalid.site.settings.tagline.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a tagline is at most %d characters",
+    "plural": {
+      "": "a tagline is at most %d characters"
+    }
+  },
+  "invalid.site.settings.homeSlug.length": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a home slug is at most %d characters, and that one is %d",
+    "plural": {
+      "": "a home slug is at most %d characters, and that one is %d"
+    }
+  },
+  "invalid.site.settings.homeSlug.form": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q is not a slug, so nothing can be served at it",
+    "plural": {
+      "": "%q is not a slug, so nothing can be served at it"
+    }
+  },
+  "invalid.site.settings.theme": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "theme %q is not one of %v",
+    "plural": {
+      "": "theme %q is not one of %v"
+    }
+  },
+  "invalid.site.settings.primaryColor": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "%q is not a colour; a primary colour is #rrggbb",
+    "plural": {
+      "": "%q is not a colour; a primary colour is #rrggbb"
+    }
+  },
+  "invalid.site.settings.nav.count": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a navigation is at most %d links",
+    "plural": {
+      "": "a navigation is at most %d links"
+    }
+  },
+  "invalid.site.settings.nav.label": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a link needs a label of at most %d characters, and %q is not one",
+    "plural": {
+      "": "a link needs a label of at most %d characters, and %q is not one"
+    }
+  },
+  "invalid.site.settings.nav.path": {
+    "references": [
+      "modules/site/contracts/site.go"
+    ],
+    "translation": "a link points at a path within this site, and %q is not one",
+    "plural": {
+      "": "a link points at a path within this site, and %q is not one"
+    }
+  },
   "enum.site.settings.light": {
     "references": [
       "modules/site/contracts/site.go"
