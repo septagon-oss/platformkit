@@ -58,7 +58,10 @@ func catalog(surfaces httpx.Surfaces, svc door) {
 	// The caption is not one of the five: it is a claim about a row rather than an
 	// edit of its columns, it carries the instant the caller was shown, and it
 	// publishes file.altered rather than file.updated. Declared with the work
-	// beside it, so a catalog that offers the door is a catalog that can perform it.
+	// beside it, so a catalog that offers the door is a catalog that can perform it
+	// — and with the Endpoint left at the address this verb is mounted at, so the
+	// document keeps saying what every command says: perform it as
+	// POST {path}/{id}/{verb}. handler.go mounts that door beside the PUT one.
 	surfaces.AddCommand("file", "file", httpx.Command{
 		Verb:        "alt",
 		Summary:     "Write what a file says about itself",

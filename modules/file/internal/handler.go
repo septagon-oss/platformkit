@@ -53,10 +53,10 @@ var faults = []int{
 	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
 }
 
-// RegisterRoutes mounts the fourteen operations a file has, over nine paths: the
-// list, one read, the upload, the content door twice (GET and HEAD), the public
-// door twice, the delete, the grant, the hold placed and released, the subject
-// erasure, the meter and the caption.
+// RegisterRoutes mounts every operation a file has: the list, one read, the
+// upload, the content door twice (GET and HEAD), the public door twice, the
+// delete, the grant, the uses, the hold placed and released, the subject
+// erasure, the meter, and the caption at both of its doors.
 //
 // There is no rest.Spec, and the reason is one sentence: a Spec's create route
 // takes a JSON body, and a file arrives as bytes. The list and the read below
@@ -121,34 +121,53 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			return &rest.Item[*contracts.Quota]{Body: q}, nil
 		})
 
-	// The caption. PUT and not PATCH: the pair (alt, decorative) is the whole of
-	// what a caption claims, so writing it is a replacement of a claim and not a
-	// partial edit of one, and the revision travels in the body for the reason
-	// contracts.Library states.
-	httpx.Register(app, huma.Operation{
-		OperationID: "file-file-alt",
-		Method:      http.MethodPut,
-		Path:        path + "/{id}/alt",
-		Summary:     "Write what a file says about itself",
-		Description: "Alt text, or the claim that the image is decorative and says nothing. A file that is empty and not decorative is refused with 422, and one whose updatedAt has moved past expectedUpdatedAt is refused with 409 and stays exactly as it was.",
-		Tags:        []string{"file"},
-		Errors:      append(slices.Clone(faults), http.StatusConflict),
-		Extensions:  map[string]any{httpx.EventsExtension: []string{contracts.EventAltered}},
-	}, httpx.Permission(contracts.PermissionFileManage),
-		func(ctx context.Context, in *altInput) (*rest.Item[*contracts.File], error) {
-			if in.Body == nil {
-				return nil, problem.New(http.StatusUnprocessableEntity, "an alt text, or the claim that the image is decorative")
-			}
-			tx, err := transaction(ctx)
-			if err != nil {
-				return nil, err
-			}
-			f, err := svc.SetAlt(ctx, tx, in.ID, in.Body.Alt, in.Body.Decorative, in.Body.ExpectedUpdatedAt)
-			if err != nil {
-				return nil, fault(err)
-			}
-			return &rest.Item[*contracts.File]{Body: f}, nil
-		})
+	// The caption, at the two doors that perform it.
+	//
+	// PUT is this module's own spelling, and PUT rather than PATCH because the pair
+	// (alt, decorative) is the whole of what a caption claims: writing it is a
+	// replacement of a claim and not a partial edit of one, the revision travels in
+	// the body for the reason contracts.Library states, and the answer is the row
+	// that carries the new claim.
+	//
+	// POST {id}/alt is the door the typed catalog sends a caller to. httpx.Command
+	// documents a row command as POST {Path}/{id}/{Verb}, and that derivation is what
+	// a client which never compiled against this module performs whenever the entry
+	// prints no path of its own — so the verb catalog.go declares has to answer where
+	// the document points, or the catalog offers a door that only the browser it was
+	// hand-written for can open. One handler, one guard and one service call behind
+	// both; two operation ids because the document names each door once, and an id a
+	// generated client calls is the one thing in the document that cannot be renamed
+	// without breaking whoever called it first.
+	caption := func(ctx context.Context, in *altInput) (*rest.Item[*contracts.File], error) {
+		if in.Body == nil {
+			return nil, problem.New(http.StatusUnprocessableEntity, "an alt text, or the claim that the image is decorative")
+		}
+		tx, err := transaction(ctx)
+		if err != nil {
+			return nil, err
+		}
+		f, err := svc.SetAlt(ctx, tx, in.ID, in.Body.Alt, in.Body.Decorative, in.Body.ExpectedUpdatedAt)
+		if err != nil {
+			return nil, fault(err)
+		}
+		return &rest.Item[*contracts.File]{Body: f}, nil
+	}
+	for _, door := range []struct{ operation, method string }{
+		{"file-file-alt", http.MethodPut},
+		{"file-file-alt-command", http.MethodPost},
+	} {
+		httpx.Register(app, huma.Operation{
+			OperationID:   door.operation,
+			Method:        door.method,
+			Path:          path + "/{id}/alt",
+			Summary:       "Write what a file says about itself",
+			Description:   "Alt text, or the claim that the image is decorative and says nothing. A file that is empty and not decorative is refused with 422, and one whose updatedAt has moved past expectedUpdatedAt is refused with 409 and stays exactly as it was. PUT is the whole claim written at once; POST is the same write at the address the catalog's caption command names.",
+			Tags:          []string{"file"},
+			DefaultStatus: http.StatusOK,
+			Errors:        append(slices.Clone(faults), http.StatusConflict),
+			Extensions:    map[string]any{httpx.EventsExtension: []string{contracts.EventAltered}},
+		}, httpx.Permission(contracts.PermissionFileManage), caption)
+	}
 
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-read",
