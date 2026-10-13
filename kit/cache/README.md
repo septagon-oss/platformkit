@@ -30,7 +30,8 @@ four methods and cannot get the invalidation wrong. `cachetest` is the one confo
 suite both adapters run, and its `Store` factory is handed the case rather than a name:
 two calls made with one case are two handles onto one store, and every case is handed a
 store it owns alone — so a backend with one connection has to hand back a handle that
-closes only that handle, which is why the suite's close case is last.
+closes only that handle and addresses a keyspace of the case's own, which is why the
+suite's close case is last.
 
 Sessions, permission grants and entitlements are never cached here, in this process or
 in any store: `modules/auth`'s own kernel says a permission cache is a window in which

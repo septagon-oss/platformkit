@@ -48,9 +48,10 @@ var (
 // `make flakes` does) and only the *testing.T tells one run's case from the next.
 //
 // A backend with one connection cannot hand a store of its own to every case, so
-// the handle it returns has to release only that handle: a Close that reaches the
-// one connection ends every case that follows it. This suite places its close case
-// last, on purpose, so that such a handle is the only one that has to be.
+// the handle it returns has to release only that handle and address a keyspace of
+// the case's own: a Close that reaches the one connection ends every case that
+// follows it. This suite places its close case last, on purpose, so that such a
+// handle is the only one that has to be.
 type Store func(t *testing.T) cache.Cache
 
 // Failing returns one handle onto a store that cannot be reached — no process
