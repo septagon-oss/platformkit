@@ -38,7 +38,7 @@ func TestServiceConforms(t *testing.T) {
 		_, conn := dbtest.Schema(t, file.Migrations)
 		dir := t.TempDir()
 		store := internal.NewLocal(dir)
-		svc := internal.NewService(store, filetest.Limit, 0)
+		svc := internal.NewService(store, filetest.Limit, 0, 0)
 		err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 			run(filetest.Fixture{Ctx: ctx, Tx: tx, Service: svc, Storage: store,
 				Keys:      func() []string { return keysUnder(t, dir) },
@@ -96,7 +96,7 @@ func published(t *testing.T, tx db.Tx[db.Tenant]) []string {
 func TestTheBytesGoBeforeTheRowAndTheRowGoesBeforeTheBytes(t *testing.T) {
 	admin, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
-	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0, 0)
 
 	// An upload in a transaction that then fails.
 	var orphan string
@@ -175,7 +175,7 @@ func TestTheSubscriptionRemovesTheBlobAndConverges(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 	sub := internal.EraseBlobs(store)
 
 	if sub.Module != "file" || sub.Name != contracts.EventDeleted {
@@ -236,7 +236,7 @@ func TestARedeliveryCertifiesOneRemovalOnce(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 	sub := internal.EraseBlobs(store)
 
 	var payload []byte
@@ -313,7 +313,7 @@ func TestARedeliveryCertifiesOneRemovalOnce(t *testing.T) {
 func TestARetentionClassIsAToken(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
-	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0, 0)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		_, err := svc.Upload(ctx, held(tx), contracts.Upload{
@@ -449,7 +449,7 @@ func TestAKeyOneTenantWroteOpensNothingForAnother(t *testing.T) {
 // which is where kit/events reads the actor of an event from too.
 func TestTheUploaderIsTheCaller(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
-	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 0)
+	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 0, 0)
 	me := uuid.New()
 
 	err := db.Run(tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), me), conn,
@@ -479,7 +479,7 @@ func TestARowThatPointsAtNothingIsAnOutage(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		f, err := svc.Upload(ctx, held(tx), contracts.Upload{
@@ -518,7 +518,7 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	// Room for ten bytes, and a per-upload limit far past it, so the refusal
 	// below can only be the quota.
-	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 10)
+	svc := internal.NewService(internal.NewLocal(t.TempDir()), filetest.Limit, 10, 0)
 	other := tenancy.Tenant{ID: uuid.New(), Slug: "other", Name: "Other"}
 
 	put := func(t *testing.T, who tenancy.Tenant, body string) error {
@@ -554,16 +554,16 @@ func TestATenantCannotFillTheDisk(t *testing.T) {
 	}
 }
 
-// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race the review measured:
-// twenty uploads started together, each reading the tenant's total before any
-// of them had inserted a row, each deciding there was room, and 2.9 times the
-// quota on disk. The numbers are the review's — twenty uploads of four thousand
-// bytes against a quota of eight thousand one hundred and ninety-two, so at
-// most two may be stored and eighteen must be refused.
+// TestTheQuotaHoldsUnderTwentyUploadsAtOnce is the race of uploads started
+// together: each reads the tenant's total before any of them has inserted a
+// row, each decides there is room, and the disk ends holding 2.9 times the
+// quota. The shape driven here is twenty uploads of four thousand bytes
+// against a quota of eight thousand one hundred and ninety-two, so at most two
+// may be stored and eighteen must be refused.
 //
 // It is the mutation test for the one line in internal.charge that takes
-// pg_advisory_xact_lock: without it this fails, and it fails by exactly the
-// amount the review reported.
+// pg_advisory_xact_lock: without it this fails, and it fails by an over-run of
+// exactly the concurrency the case drives.
 func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 	const (
 		uploads = 20
@@ -572,7 +572,7 @@ func TestTheQuotaHoldsUnderTwentyUploadsAtOnce(t *testing.T) {
 	)
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
-	svc := internal.NewService(internal.NewLocal(dir), each*2, quota)
+	svc := internal.NewService(internal.NewLocal(dir), each*2, quota, 0)
 
 	var wg sync.WaitGroup
 	errs := make([]error, uploads)
@@ -634,7 +634,7 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
 	store := internal.NewLocal(dir)
-	svc := internal.NewService(store, filetest.Limit, 0)
+	svc := internal.NewService(store, filetest.Limit, 0, 0)
 
 	// One file that committed, and one whose transaction did not.
 	var kept string
@@ -708,7 +708,7 @@ func TestTheOrphansAreSweptUp(t *testing.T) {
 func TestAHoldStopsEveryDoorThatRemovesAFile(t *testing.T) {
 	_, conn := dbtest.Schema(t, file.Migrations)
 	dir := t.TempDir()
-	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0)
+	svc := internal.NewService(internal.NewLocal(dir), filetest.Limit, 0, 0)
 	subject := uuid.New()
 	ctx := tenancy.WithActor(tenancy.WithTenant(t.Context(), acme), subject)
 

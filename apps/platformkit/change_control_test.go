@@ -19,6 +19,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -111,13 +112,33 @@ func TestTheSiteSettingsSwitchDecidesWhichDoorAWriteComesThrough(t *testing.T) {
 	t.Run("off, the form writes", func(t *testing.T) {
 		cfg, _, _, _ := changeFixture(t, false)
 		admin := signIn(t, cfg, acmeHost, adminEmail, adminPass)
-		code, body := do(t, cfg, admin, http.MethodPut, acmeHost, settingsPath,
+		// What the tenant's settings are already on is read first, because a tenant
+		// that arrived with its starter seed has a settings row the seed wrote: the
+		// starter saves the home page a site opens on through this same command
+		// (apps/platformkit/seed.go's site writer), so the settings are on revision
+		// one before anybody signs in and the person's own first save moves them to
+		// two. The switch decides which door a write comes through, not which
+		// revision it lands on, so the assertion asks for the row's next revision
+		// rather than a number that belongs to the tenant's history.
+		code, body := do(t, cfg, admin, http.MethodGet, acmeHost, settingsPath, "")
+		if code != http.StatusOK {
+			t.Fatalf("GET %s = %d %s, want the settings the tenant arrived on", settingsPath, code, body)
+		}
+		var arrived struct {
+			Revision int `json:"revision"`
+		}
+		if err := json.Unmarshal([]byte(body), &arrived); err != nil {
+			t.Fatalf("settings %s: %v", body, err)
+		}
+		next := strconv.Itoa(arrived.Revision + 1)
+
+		code, body = do(t, cfg, admin, http.MethodPut, acmeHost, settingsPath,
 			`{"title":"Acme","theme":"system"}`)
 		if code != http.StatusOK {
 			t.Fatalf("PUT %s = %d %s, want the settings written", settingsPath, code, body)
 		}
-		if !strings.Contains(body, `"revision":1`) {
-			t.Errorf("the first save of a tenant's settings did not report revision 1: %s", body)
+		if !strings.Contains(body, `"revision":`+next) {
+			t.Errorf("saving a tenant's settings did not report the next revision (%s): %s", next, body)
 		}
 	})
 
@@ -201,10 +222,8 @@ func TestTheSecondAccountIsTheOneWhoWritesTheChange(t *testing.T) {
 		}
 		return false
 	})
-	if code, body := do(t, cfg, nil, http.MethodPost, acmeHost, "/api/v1/auth/password/reset",
-		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for grace"}`); code != http.StatusOK {
-		t.Fatalf("the reset = %d %s, want 200", code, body)
-	}
+	redeemMailedLink(t, cfg, nil, acmeHost, "/api/v1/auth/password/reset",
+		`{"token":"`+tokenIn(t, link)+`","new":"a chosen passphrase for grace"}`)
 	grace := signIn(t, cfg, acmeHost, "grace@acme.localhost", "a chosen passphrase for grace")
 
 	// The proposer: the administrator, who holds both grants and is still refused

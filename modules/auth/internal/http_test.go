@@ -609,7 +609,7 @@ func TestTheForgottenPasswordRouteSaysTheSameThingToEverybody(t *testing.T) {
 		t.Fatalf("the request path sent %d messages; it sends none", len(got))
 	}
 	worker(t, conn)
-	sent := mailbox.Sent()
+	sent := linksMailed()
 	if len(sent) != 1 {
 		t.Fatalf("%d links were mailed, want one — for the address that is here", len(sent))
 	}

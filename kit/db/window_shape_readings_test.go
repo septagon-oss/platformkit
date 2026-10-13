@@ -1,15 +1,15 @@
 package db_test
 
-// window_shape_readings_test.go pins the two readings the window makes of a body by its
-// *constructs* rather than by one spelling of them, and the bound that ends a tick whose drain
-// neither reading stopped — which, since the fourteenth round, is a drain that reaches the drained
-// table through a view rather than one that names it and appends.
+// The two readings the window makes of a body are pinned here by their
+// *constructs* rather than by one spelling of them, with the bound that ends a tick whose drain
+// neither reading stopped — a drain that reaches the drained table through a view rather than one
+// that names it and appends.
 //
-// The thirteenth review's first finding was that `batch` as a *binding* was refused by asking
+// `batch` as a *binding* used to be refused by asking
 // the shape for the four characters `batch as (` — so a quoted lower-case name (the same
 // identifier to the server, and a name whose contents the shape puts away) and a name carrying
 // its own column list both reached the server with two CTEs of one name, behind a progress row.
-// Its third finding was a `phase=data` body that writes the column the cursor is ordered by: the
+// The other half is a `phase=data` body that writes the column the cursor is ordered by: the
 // rows it touches land above that cursor, so the table never empties and every window behind the
 // first re-commits rows an earlier one wrote. Both are the same mistake — a rule that reads one
 // spelling of a construct is a rule that reads the spellings it enumerated — and the answer
@@ -26,6 +26,7 @@ package db_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -77,6 +78,16 @@ UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id NOT IN 
 UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`,
 			corrected: `WITH stale (id) AS (SELECT id FROM probe WHERE id < 7)
 UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id NOT IN (SELECT id FROM stale)`,
+		},
+		{
+			// The same binding answered by a body that keeps the rows its own list
+			// names rather than excluding them — the file its author meant, which is
+			// a different correction from the one above and drains the same 6 rows.
+			name: "the name carrying its own column list, corrected by a body that keeps what its list names",
+			refused: `WITH batch (id) AS (SELECT id FROM probe WHERE id < 7)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch)`,
+			corrected: `WITH stale (id) AS (SELECT id FROM probe WHERE id < 7)
+UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id IN (SELECT id FROM stale)`,
 		},
 		{
 			name: "the name as the second member of the list",
@@ -133,6 +144,9 @@ UPDATE probe SET note = 'done' WHERE id IN (SELECT id FROM batch) AND id NOT IN 
 			}
 			if n := countRows(t, admin, "SELECT count(*) FROM probe WHERE note = 'done'"); n != 6 {
 				t.Errorf("%d rows written by the corrected body, want the 6 its own list bounds off", n)
+			}
+			if n := countRows(t, admin, "SELECT count(*) FROM schema_migrations WHERE owner = 'spellings' AND version = 2"); n != 1 {
+				t.Errorf("%d history rows for the drained file, want 1: the refusal above wrote none, so this run is the only one that could have written this one", n)
 			}
 		})
 	}
@@ -270,7 +284,7 @@ func TestOnlyTheWindowKeyIsRefusedAmongWhatABodyWrites(t *testing.T) {
 		},
 		{
 			// The same alias without the word PostgreSQL does not require: one word away
-			// from the leg above, and the re-key the fourteenth round met.
+			// from the leg above, and the re-key a body reaches by the same road.
 			name:   "the alias written without its AS",
 			body:   `UPDATE probe p SET id = id + 1 WHERE p.id IN (SELECT id FROM batch)`,
 			writes: true,
@@ -392,18 +406,100 @@ func TestADataBodyThatEmptiesTheTableItDrainsStillDrains(t *testing.T) {
 
 // TestTheWorkersDrainEndsAtTheBoundATickGivesItself asks what stops a drain that runs forever for
 // a reason the key reading cannot see. It used to be an append to the drained table, which the
-// fourteenth round showed is the same harm as writing the key and is now refused; what is left is
+// key reading cannot see is the same harm as writing the key and is now refused; what is left is
 // the append the body never names — rows put into the table through a view over it, which the
 // server routes wherever the view says. The cursor is right that nothing above it was written yet,
 // and the answer has to be a number, because the alternative is a tick that repeats work and never
 // applies the version.
 //
-// The bound is reached, so the case costs a tick's worth of windows; its own context is the
-// deadline that turns a regression to no bound at all into a failure rather than a hang, and
-// is therefore a generous one: the drain alone on this machine costs 117 s of its own, which
-// is what the old 120 s was measuring — the speed of the disk, not the tick's bound. The
-// assertions below are the case; this bound is only the refusal to hang, as lifecycle_test.go
-// in kit/app already says of the same kind of bound at 90 s.
+// The watch over that case counts the drain's windows rather than the seconds it runs.
+//
+// It used to be a deadline, and a deadline measures the machine, not the drain. The drain the
+// bound stops is 10 000 committed transactions: 117 s with a Postgres to itself — the measurement
+// that moved the number from 120 s to five minutes — and past 300 s during the whole-suite run of
+// 2026-10-08, when every other package in the repository was writing into the same server. Both
+// times the case reported "this drain has no bound" about a drain that was merely slow, which is
+// what any bound on a wait the machine answers eventually reports. A count cannot: it stops the
+// run at twice the rows the tick's own bound allows it to write, a state a drain that stops at its
+// bound is nowhere near at any speed and one that stops nowhere walks into at any speed.
+//
+// The run of 2026-10-06 measured the same drain from the other side and reached the same reading
+// from the other direction: 48.6 s against a Postgres nobody else was migrating into, 304.34 s at
+// load average 38-43 with six other rounds' whole-suite runs asking that server, and 301.35 s again
+// with its commits not waiting for a WAL flush. What one window costs there is the server being
+// scheduled at all — about seven round trips (`runner.budgets`, `BeginTx`, `crossTenants`, `window`,
+// the body, the progress row, the commit: `drainWindow`) paid ten thousand times. Two machines, one
+// conclusion: the seconds are the machine's, the windows are the tick's, and only one of the two
+// bounds anything.
+//
+// The stall line is asked of the same reading, and it is the other half: no window committing for
+// six minutes is a run stuck rather than a run slow. Six minutes is twice what the whole 10 000
+// window drain took at load average 40, so a single window costing more than that is not a busy
+// disk. Behind both stands the per-package bound `make check` states (30m), which is this
+// repository's answer to a test that hangs, and neither line is the case's assertion: the case
+// asserts ErrBackfillBudget, the bound named in its sentence, and the ledger it leaves.
+const (
+	tickWindows       = 10000 // migration_header.go's workerBackfillBatches, named by the report below
+	tickRowsPerWindow = 5     // the `-- pkit: batch=5` windowShapesData declares
+	watchPoll         = 500 * time.Millisecond
+	watchStall        = 6 * time.Minute
+)
+
+// watchDrainWindows stops a drain that will not stop, and says which line stopped it. The reading
+// is the drained table's own highest key, on a pool of the caller's: each committed window puts
+// five rows above the cursor — that is the body this case is written with — so the key counts
+// windows without trusting one thing the runner says about itself. The reason goes to a buffered
+// channel before the cancel, so the caller reads it with a non-blocking receive once Backfill has
+// returned instead of guessing it from a context error that could have come from anywhere.
+func watchDrainWindows(ctx context.Context, cancel context.CancelFunc, admin sqlDB, from int) chan string {
+	overrun := int64(from) + tickRowsPerWindow*2*tickWindows
+	stopped := make(chan string, 1)
+	go func() {
+		reading, poll := context.WithoutCancel(ctx), time.NewTicker(watchPoll)
+		defer poll.Stop()
+		stop := func(reason string) {
+			stopped <- reason
+			cancel()
+		}
+		last, moved := int64(from), time.Now()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-poll.C:
+			}
+			var top int64
+			if err := admin.QueryRowContext(reading, `SELECT coalesce(max(id), 0) FROM probe`).Scan(&top); err != nil {
+				if ctx.Err() == nil {
+					stop(fmt.Sprintf("the watch could not read the drained table: %v", err))
+				}
+				return
+			}
+			// The overrun is asked before the progress below and not after it, because a run that
+			// puts rows into the table on every poll is the run this line exists for. Read the
+			// other way round — advance, then look — the guard only ever looked on a poll where
+			// nothing moved, and the mutated drain this case was run against to check it reached
+			// 484 232 rows, 121 times past its bound, before a poll happened to see no growth.
+			if top >= overrun {
+				stop(fmt.Sprintf("the drained table holds %d rows, twice the %d that the %d windows a tick gives itself may write",
+					top, tickRowsPerWindow*tickWindows, tickWindows))
+				return
+			}
+			if top > last {
+				last, moved = top, time.Now()
+				continue
+			}
+			if stalled := time.Since(moved); stalled >= watchStall {
+				stop(fmt.Sprintf("no window committed in %s", stalled.Round(time.Second)))
+				return
+			}
+		}
+	}()
+	return stopped
+}
+
+// The bound is reached, so the case costs a tick's worth of windows; the watch above is what turns
+// a regression to no bound at all into a failure rather than a hang, counted in those windows.
 func TestTheWorkersDrainEndsAtTheBoundATickGivesItself(t *testing.T) {
 	migrateURL, _ := dbtest.URLs(t)
 	// The probe, and a plain view over it. The append below runs through the view, which is the
@@ -420,19 +516,27 @@ SELECT (SELECT max(id) FROM probe) + row_number() OVER (), 'grown' FROM batch`),
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Minute)
+	admin := dbtest.Open(t, migrateURL)
+	// The rows the probe file wrote are where the counting starts, so the watch measures the
+	// drain's windows and not the size of the table it drains.
+	from := countRows(t, admin, "SELECT coalesce(max(id), 0) FROM probe")
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
+	stopped := watchDrainWindows(ctx, cancel, admin, from)
 	err := db.Backfill(ctx, migrateURL, db.MigrationSource{Owner: "ticks", Files: files})
-	if errors.Is(err, context.DeadlineExceeded) {
-		t.Fatal("the worker's tick did not end on its own: this drain has no bound, and every tick rewrites work while holding the job's advisory lock")
+	cancel() // the watch reads on a context of its own; this is what ends it
+	select {
+	case reason := <-stopped:
+		t.Fatalf("the worker's tick did not end at the bound it gives itself: %s; a drain with no bound "+
+			"rewrites work while holding the job's advisory lock", reason)
+	default:
 	}
 	if !errors.Is(err, db.ErrBackfillBudget) {
 		t.Fatalf("the bound a tick gives itself reported %v, not ErrBackfillBudget; a run that may not be open forever has to say so", err)
 	}
-	if !strings.Contains(err.Error(), "10000 batches of 5") {
+	if !strings.Contains(err.Error(), fmt.Sprintf("%d batches of %d", tickWindows, tickRowsPerWindow)) {
 		t.Errorf("the report does not name the bound it stopped at: %v", err)
 	}
-	admin := dbtest.Open(t, migrateURL)
 	// A bound is a stop and not a refusal: what committed stands, the cursor says where the next
 	// tick starts, and the version is not applied over work that is still there.
 	if n := countRows(t, admin, "SELECT count(*) FROM schema_migration_backfill"); n != 1 {

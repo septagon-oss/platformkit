@@ -449,16 +449,16 @@ func New(ctx context.Context, cfg config.Config, mods []module.Module, opts Opti
 	if _, err := opts.Caches.constructor(cfg.Cache.Adapter); err != nil {
 		return nil, err
 	}
-	// Expanded before it is checked: a module that subscribes to everything is
-	// given the names here, once every manifest is in hand, so where it sits in
-	// the list cannot change what it hears.
-	// The kernel emits one event of its own — event_replayed, the record of an
-	// operator's replay (kit/events.Replay) — and it is declared in the module
-	// list because that is where every event is declared. Declaring it is what
-	// makes module.Expand hand it to the audit module's SubscribeAll, so the act
-	// lands in the tenant's trail beside the actions it re-ran, with the
-	// operator as its actor.
-	mods = append(mods, kernelModule)
+	// Expanded before it is checked, and with the kernel's own manifest last: a
+	// module that subscribes to everything is given the names here, once every
+	// manifest is in hand, so where it sits in the list cannot change what it hears.
+	// The kernel's three events — event_replayed (kit/events.Replay's record of an
+	// operator's replay), security.denied and security.access_requested — are what it
+	// emits whichever modules were composed; a fourth joins them for a deployment
+	// that names an app, the record of moving the delivery ledger onto that app's
+	// durable, and kernelModule says why. Declaring a name is what hands it to the
+	// audit module's SubscribeAll and gives the outbox a payload shape to check.
+	mods = append(mods, kernelModule(opts.App))
 	mods = module.Expand(mods)
 	if err := module.Validate(mods); err != nil {
 		return nil, err
@@ -849,6 +849,13 @@ func (a *App) composeRoutes(store cache.Cache) (*httpx.API, *chi.Mux, error) {
 	if err := a.composeGates(api); err != nil {
 		return nil, nil, err
 	}
+	// The two delivery verbs the installation owns, and only for a composition that
+	// names itself: an app-less deployment has no scoped durable to move onto and no
+	// app to name in the record either verb writes, so both doors would open onto a
+	// zero report. mountLedgerOps and kernelModule below carry the same condition.
+	if a.opts.App.Named() {
+		mountLedgerOps(api, a.opts.App)
+	}
 	// One check, and the reason there is one is that /ready answers a question a
 	// probe can act on: is this instance's database reachable. Modules used to
 	// be able to contribute their own and none ever did in three repositories,
@@ -1069,6 +1076,13 @@ func WorkspaceCatalogRoute[T any](describe func(ctx context.Context, resources [
 // response struct whose fields are not inside a Body is read by huma as a set of
 // headers — the document would have left the OpenAPI description and then the wire.
 type workspaceDocument[T any] struct {
+	// Vary is the header the body was negotiated with: two callers of one address
+	// holding two `Accept-Language` lines get two bodies, so a cache that stores one
+	// must key it by the other. Nothing in this build caches the response —
+	// kit/httpx answers `no-store` on every non-public surface — which is why the
+	// field is written for the next consumer rather than the last, and why it names
+	// only the header that actually changes the bytes.
+	Vary string `header:"Vary"`
 	Body *T
 }
 
@@ -1094,16 +1108,16 @@ func mountWorkspaceCatalog[T any](api *httpx.API, describe func(ctx context.Cont
 		if err != nil {
 			return nil, err
 		}
-		return &workspaceDocument[T]{Body: body}, nil
+		return &workspaceDocument[T]{Vary: "Accept-Language", Body: body}, nil
 	})
 }
 
 // kernelJobs is the periodic work the composition owns because no module does: the
-// outbox relay and the two tables the kernel writes that nothing but time makes
+// outbox relay and the three tables the kernel writes that nothing but time makes
 // smaller. A module's own jobs are appended to this list by work; nothing here
 // reaches a module's table.
 func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
-	return []jobs.Job{
+	list := []jobs.Job{
 		// Parallel, because SKIP LOCKED is already the concurrency control, and
 		// bounded, because a transport that blocks would otherwise hold the
 		// scheduler — and with it the purges and every module's job — for as long
@@ -1117,22 +1131,102 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 		{Name: "outbox-purge", Cron: purgeCron, Run: func(ctx context.Context, conn *db.Conn) error {
 			return events.Purge(ctx, conn)
 		}},
-		// The counters table is written by whoever holds a limiter, and this
-		// composition is one of them: httpx counts anonymous public writes on the
-		// limiter the runner hands it. kit/limit wrote the condition for this line in
-		// advance — "the moment a second module adopts this, the purge belongs beside
-		// the outbox's" — and the condition arrived with the public write limit. The
-		// last field of every key here is an address a caller chooses, so a table
-		// nobody empties grows at somebody else's rate; leaving the purge in
-		// `modules/auth`'s sweep would have made an installation that takes the limit
-		// and not the login page one that never forgets a row.
-		{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge},
-		// The same argument one row over, and the same schedule: a record of a keyed
-		// write holds that caller's own request and answer, and the day the brief
-		// gives it is enforced by this job and nothing else. Leaving it to the hot
-		// path would make a refusal pay for the traffic it is refusing, and leaving
-		// it out entirely would make the table one anybody can grow.
-		{Name: "idempotency-purge", Cron: purgeCron, Run: idempotency.Purge},
+	}
+	// The delivery ledger move, run again. work calls the same step before it
+	// makes any subscription and opens no consumer until it answers, so this line
+	// is not the boot's rescue. It is the pass that runs the step under the
+	// scheduler's own advisory lock
+	// (appname.JobLock), so two replicas of one app contend on one move and never
+	// move each other's rows twice, and a claim an unscoped writer inserts after
+	// boot's move is renamed on the next tick. Once the ledger is scoped it moves
+	// nothing and
+	// emits nothing; it is the price of not having to know when to stop.
+	//
+	// And only for a deployment that names itself, which is the condition the move
+	// answers to in its own body: appname.DurablePrefix is the empty string when no
+	// app is named, so there is no name to move the rows onto and events.MoveLedger
+	// returns the zero report on every pass. Scheduling a step that cannot act on any
+	// input this process can give it would buy two advisory-lock passes a minute that
+	// report nothing; its absence here is what says which shape the process is in.
+	if app.Named() {
+		list = append(list, jobs.Job{Name: "ledger-move", Every: ledgerMoveEvery,
+			Run: func(ctx context.Context, conn *db.Conn) error {
+				_, err := events.MoveLedger(ctx, conn, app, "job:ledger-move")
+				return err
+			}})
+	}
+	// The counters table is written by whoever holds a limiter, and this
+	// composition is one of them: httpx counts anonymous public writes on the
+	// limiter the runner hands it. kit/limit wrote the condition for this line in
+	// advance — "the moment a second module adopts this, the purge belongs beside
+	// the outbox's" — and the condition arrived with the public write limit. The
+	// last field of every key here is an address a caller chooses, so a table
+	// nobody empties grows at somebody else's rate; leaving the purge in
+	// `modules/auth`'s sweep would have made an installation that takes the limit
+	// and not the login page one that never forgets a row.
+	list = append(list, jobs.Job{Name: "limit-purge", Cron: purgeCron, Run: limit.Purge})
+	// The same argument one row over, and the same schedule: a record of a keyed
+	// write holds that caller's own request and answer, and the day the brief
+	// gives it is enforced by this job and nothing else. Leaving it to the hot
+	// path would make a refusal pay for the traffic it is refusing, and leaving
+	// it out entirely would make the table one anybody can grow.
+	return append(list, jobs.Job{Name: "idempotency-purge", Cron: purgeCron, Run: idempotency.Purge})
+}
+
+// ledgerMoveEvery is how often the worker runs the delivery-ledger move on the
+// scheduler. The act is idempotent and does nothing once the ledger is scoped,
+// so this is the price of not having to know when to stop: long enough that a
+// mid-claim delivery has certainly finished (handlerTimeout is 25 s), short
+// enough that a claim an unscoped writer adds between two boots is renamed soon.
+const ledgerMoveEvery = 2 * time.Minute
+
+// ledgerMoveRetry is how long the worker waits before it asks again for a move a
+// mid-claim delivery refused, and it is shorter than the retry job's cadence
+// because the cause is bounded: events.handlerTimeout says a handler holds the
+// durable for at most 25 s, so a refusal is a delivery that is nearly finished,
+// not a condition an operator has to be woken for. A deployment waits this long,
+// at most, between being told to start and serving its tenants' events.
+const ledgerMoveRetry = 5 * time.Second
+
+// moveLedger renames this deployment's delivery ledgers and will not report
+// done until they have moved. It is the gate in front of every subscription the
+// worker makes, which is why a refusal is waited out and not logged past: the
+// rows that stop a handler running a second time are keyed by the durable, and
+// until the rename commits a scoped consumer is replaying work the ledger
+// already holds under the old name (kit/events/ledger.go states the window).
+//
+// Waiting is not crashlooping. The process is up, its probes answer, its jobs
+// are not yet scheduled and no handler runs, so nothing is done twice and
+// nothing is lost; the refusal it is waiting for writes no row and emits no
+// event, and the log line names the app and the reason every time it is asked
+// again. An app that names itself nothing moves nothing by definition —
+// appname.DurablePrefix is empty and MoveLedger answers the zero report — so
+// the gate is open for it on the first pass, which is the same answer the
+// kernel job below gives by not being scheduled at all.
+func (a *App) moveLedger(ctx context.Context, conn *db.Conn) error {
+	for {
+		report, err := events.MoveLedger(ctx, conn, a.opts.App, "boot")
+		if err == nil {
+			if report.Claims != 0 || report.Dead != 0 {
+				a.log.InfoContext(ctx, "app: the delivery ledger moved", "app", a.opts.App.String(),
+					"subscriptions", report.Subscriptions, "claims", report.Claims,
+					"dead_letters", report.Dead, "tenants", report.Tenants)
+			}
+			return nil
+		}
+		// A stop is a stop: the refusal that ends this loop is the context, not
+		// the database, and a process told to leave returns nothing an orchestrator
+		// would read as a crash.
+		if ctx.Err() != nil {
+			return nil
+		}
+		a.log.WarnContext(ctx, "app: the delivery ledger did not move, holding its subscriptions until it does",
+			"app", a.opts.App.String(), "retry", ledgerMoveRetry.String(), "error", err)
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(ledgerMoveRetry):
+		}
 	}
 }
 
@@ -1144,8 +1238,19 @@ func kernelJobs(transport events.Transport, app appname.Name) []jobs.Job {
 // would be left behind forever, and "resumable" would mean "somebody runs a command
 // nobody has read about".
 func (a *App) drainMigrations() jobs.Job {
+	// The declaration travels with the tick for the reason db.BackfillDeclaring
+	// gives: a placement runs where the drain runs, and the composition is the only
+	// party that still knows what it named itself when the tick arrives. A
+	// declaration this configuration cannot make is a refused worker, not a drain
+	// that places nothing and calls it a tick — the same sentence Migrate writes
+	// about the same setting, one step later.
+	decl, err := migrationDeclaration(a.cfg)
+	if err != nil {
+		return jobs.Job{Name: jobs.BackfillJobName, Every: jobs.BackfillEvery,
+			Run: func(context.Context, *db.Conn) error { return err }}
+	}
 	return jobs.BackfillMigrations(jobs.BackfillEvery, a.cfg.Database.MigrateURL,
-		migrationBudget(a.cfg.Database), MigrationSources(a.mods)...)
+		migrationBudget(a.cfg.Database), decl, MigrationSources(a.mods)...)
 }
 
 // work is the worker role: the kernel's own jobs, every module's jobs, and every
@@ -1170,6 +1275,17 @@ func (a *App) work(ctx context.Context, conn *db.Conn, transport events.Transpor
 			s.App = a.opts.App
 			subs = append(subs, s)
 		}
+	}
+	// The ledgers move before any subscription is made, and moveLedger is what
+	// makes that ordering a fact rather than an intention: a refusal parks the
+	// worker here until the rename commits, and no consumer exists while it waits.
+	// Consuming over a ledger that has not moved is the double-handling window
+	// kit/events/ledger.go states, widened from "as long as the move takes" to "as
+	// long as the retry takes" — an event already handled keys its claim under the
+	// old durable, so the first scoped delivery inserts a second claim and runs the
+	// handler again before any retry tick can arrive.
+	if err := a.moveLedger(ctx, conn); err != nil {
+		return err
 	}
 	if err := events.Consume(ctx, conn, transport, subs); err != nil {
 		return err
@@ -1273,13 +1389,38 @@ func validatePermissions(api *httpx.API, mods []module.Module) error {
 // at the INSERT, and a channel in the AsyncAPI document. Without it the kernel
 // would emit an event its own catalogue knows nothing about, and
 // event_schema_coverage would count events it does not.
-var kernelModule = module.Module{
-	Name: module.KernelName,
-	Declared: []events.Declared{
+//
+// The manifest takes the app because one of these three doors is not open to every
+// deployment. platformkit.ledger_moved is emitted only by events.MoveLedger, and
+// that step has nothing to do when no app is named — appname.DurablePrefix is then
+// the empty string, so there is no scoped name to rename a ledger onto and the step
+// answers with the zero report and no event at all (kit/events/ledger.go, and
+// TestAnAppThatNamesNothingMovesNothing beside it). A declaration is a promise about
+// what this composition emits, so the name is declared by the deployments that can
+// emit it and by nobody else: an app-less one would carry a channel every subscriber
+// waits on forever, a subscription whose backlog is empty by construction, and a
+// catalogue entry no publish consults. The same condition keeps the retry job out of
+// kernelJobs above; two lines, one rule.
+func kernelModule(app appname.Name) module.Module {
+	declared := []events.Declared{
 		events.Declare[events.ReplayRecord](events.EventReplayed),
 		events.Declare[Denied](EventDenied),
 		events.Declare[AccessRequested](EventAccessRequested),
-	},
+	}
+	self := module.Module{Name: module.KernelName}
+	if app.Named() {
+		declared = append(declared, events.Declare[events.LedgerMovedRecord](events.EventLedgerMoved))
+		// The two grants the control plane's delivery verbs are guarded by, declared
+		// by the same condition as the routes: kit/app refuses a route guarded by a
+		// permission no manifest defines, and a manifest that defined one no route
+		// uses would be a grant somebody could hand out for a door that is not there.
+		self.Permissions = []module.Permission{
+			{Key: PermissionLedgerMove, Operator: true, Label: "move this app's delivery ledger onto its own durable"},
+			{Key: PermissionEventReplay, Operator: true, Label: "replay one of this app's events"},
+		}
+	}
+	self.Declared = declared
+	return self
 }
 
 // declaredEvents is every event every manifest declares, de-duplicated by name — the

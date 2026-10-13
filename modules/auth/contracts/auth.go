@@ -257,11 +257,59 @@ type Notifier interface {
 type (
 	Mailer = notificationcontracts.Mailer
 	Hosts  = notificationcontracts.HostLookup
+	// MailLedger is the notification module's own record of a mail this module
+	// sent without a notice behind it, named here the way Mailer and Hosts are so
+	// that Deps reads as one list of capabilities.
+	//
+	// It is not a port this module can do without: a composition that wires none
+	// sends its mail exactly as it did before the record existed and leaves no
+	// trace of the attempt, which is the bug rather than a mode to preserve.
+	MailLedger = notificationcontracts.MailLedger
+)
+
+// The mails this module sends itself, named the way every event name is named.
+// They are this module's names for its own mails and belong here, not in the
+// shared ledger: a CHECK or a constant in modules/notification listing them would
+// make the next module that mails a schema change.
+//
+// The `*_no_link` kind is the message this module sends when a request for a link
+// could not be answered with one — nobody has the address, the account cannot be
+// sent a link, the link this call found is still outstanding. It is a separate kind
+// rather than the link's own kind because a record of a mail that is not a link must
+// not read as a record of a link: an operator counting reset links would count
+// messages that carry no credential. And it is mailed and recorded rather than
+// skipped, because the public delivery door answers a caller only from the record its
+// own call caused (contracts.MailReport), so a call that handed nothing to the
+// transport could only be answered from somebody else's row — which is why only the
+// flow that pays for a message per call has its refusals read back to the person
+// standing at it, and the forgotten-password route, pinned to one link and nothing
+// else between a known and an unknown request, does not.
+const (
+	MailSetPassword        = "auth.set_password"
+	MailVerification       = "auth.verification"
+	MailVerificationNoLink = "auth.verification_no_link"
 )
 
 // Service is signing in, signing out, recognising a session, and resolving what
 // a set of roles may do.
 //
+// SignInMethod names the door a session was opened through, and is the value
+// contracts.LoggedIn.Method carries. Two of the three are this module's own doing —
+// a password it checked itself — and the third is a provider's, which is why Open
+// asks for it instead of deciding it: a session opened at a SAML door that the trail
+// called "oidc" is a trail that sends whoever is reading it to the wrong log, at the
+// wrong provider, about the person it is asking about.
+type SignInMethod string
+
+const (
+	// ViaPassword is a session this module opened from credentials it checked itself.
+	ViaPassword SignInMethod = "password"
+	// ViaOIDC is a session opened for an address an OpenID Connect provider verified.
+	ViaOIDC SignInMethod = "oidc"
+	// ViaSAML is a session opened for an address a SAML 2.0 assertion verified.
+	ViaSAML SignInMethod = "saml"
+)
+
 // Every command takes the caller's transaction rather than opening one, so the
 // session row and the event that describes it commit together — with one
 // deliberate exception, described on Login.
@@ -323,10 +371,17 @@ type Service interface {
 	Identify(ctx context.Context, tx db.Tx[db.Tenant], session uuid.UUID, from Client) (*Identity, error)
 
 	// Open creates a session for a user who has already been recognised some
-	// other way. The OIDC callback is its caller: the provider did the verifying,
-	// and what is left is the session this module issues for a password — asked
-	// of the account first, second factor and all, whichever half came through.
-	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client) (*Session, *Identity, error)
+	// other way. The OIDC and SAML callbacks are its callers: the provider did the
+	// verifying, and what is left is the session this module issues for a password —
+	// asked of the account first, second factor and all, whichever half came through.
+	//
+	// `via` names which provider did the verifying, and it is asked for rather than
+	// assumed because the trail this writes says how somebody got in: a session
+	// opened through a SAML assertion that the log called "oidc" would be a log that
+	// blames the wrong door — and the question "did anyone sign in with a password
+	// after we turned single sign-on on" is answered out of that one field. See
+	// contracts.LoggedIn.
+	Open(ctx context.Context, tx db.Tx[db.Tenant], user uuid.UUID, from Client, via SignInMethod) (*Session, *Identity, error)
 
 	// Permissions is the union of what these roles grant in this tenant. A role
 	// nobody defined grants nothing rather than failing: a user carrying a role

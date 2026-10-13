@@ -46,3 +46,109 @@ None. `site:manage` does not set `Operator: true`, and the module registers no `
 The code names no role. A composition grants `site:manage` to the people who configure the tenant's site.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## The accent is measured, not typed-and-hoped
+
+`Validate` refuses a `primaryColor` that reads under `MinAccentRatio` (3:1) against
+*both* kit canvases — `CanvasLight` and `CanvasDark`, which are `design`'s
+`SurfaceCanvas` values, pinned to it by `TestTheCanvasesAreTheKitsOwn` rather than
+imported, because `contracts/` names no theme. The ratios are the WCAG 2.x ones, and
+3:1 is this repository's published target for non-text contrast: 4.5 would refuse
+every colour installed before the band existed, and so every tenant that never chose
+one. It rejects and never adjusts, so the stored row, the served value and the
+trail's diff stay one value; an older out-of-band row still reads and still renders
+(`Settings` answers what is stored, and `AccentRatios` answers how it reads). One
+rule, in `Validate`, so the SQL service, the change apply and `sitetest`'s fake
+cannot disagree.
+
+The rule measures a colour a person typed. `DefaultPrimaryColor` is the empty colour
+— not a colour but the absence of one — and nothing fills a value in on write, so the
+band never measures the installation's own accent, which is not typed and is already
+what the linked stylesheet paints per mode.
+
+## A site that names no accent gets the installation's
+
+`Palette` is the port for that: one method, `Accent(mode)`, answering `#rrggbb` for
+`light` or `dark`. The module asks and the composition answers — `modules/site/provider.go`
+reads the pair the application named with `pkit.App.Theme(pair)` off `pkit.Wiring.Skin()`,
+the seam `modules/web/provider.go` already reads for the stylesheet it composes — for
+the same reason `WriteGate` is asked here and answered there: which colours this
+installation's chrome is drawn with is a fact about the deployment, and a module that
+knew would be a module with a customer in it.
+
+Resolution happens on the way out and never on the way in:
+
+- `Settings` and `SettingsForUpdate` answer `SiteSettings.Resolve` — the stored colour
+  when there is one, the palette's for the row's mode when there is not, and the empty
+  colour when the installation named no palette either. A `system` row resolves against
+  the light accent, the pair's first; a `system` *page* is answered by the browser's own
+  preference, because the shell carries both.
+- `Save` clears a colour equal to either of the installation's two accents back to the
+  empty one (`ClearInstallationAccent`) before `Validate` and before the diff, so the
+  form that submits what the read gave it writes nothing, publishes nothing and leaves
+  the revision where it was. Compared against both modes, or a form could not change
+  its theme: the accent it echoes is the one for the mode it is leaving.
+- The event and the trail speak stored values. `"" → "#b45309"` is a change somebody
+  made; `"" → "#0f5d4e"` is nobody's edit, and a trail row saying so would be a fact
+  that did not happen.
+
+So the row follows the palette rather than recording it: an installation that moves its
+accent on a Tuesday is drawing its tenants' unchosen sites in the new colour on that
+same Tuesday. `TestSavingTheReadsAnswerStoresTheAbsenceOfAColour` pins what the column
+holds; `char(7)` is blank-padded, which is why `Service.stored` trims what it reads.
+
+## Composition
+
+**Reused** — `SiteSettings`, its `Validate`, `hexColor` and `DefaultPrimaryColor`;
+`rest.Singleton`'s public door; `design.Light()/Dark().SurfaceCanvas`; `sitetest`'s
+conformance harness, whose fake shares the rule by calling `Validate`; the `WriteGate`
+shape for a question the module asks and the installation answers; `pkit.Wiring.Skin()`,
+which `modules/web/provider.go` already read for the same fact.
+**Added** — `CanvasLight`, `CanvasDark`, `MinAccentRatio`, `ContrastRatio`,
+`AccentRatios` and the clause in `Validate`: no package here computed a contrast
+ratio, so nothing existing carried the judgement. And `Palette`, `PaletteFunc`,
+`Accent`, `Resolve`, `ClearInstallationAccent` and migration `000054`, new because the
+row could not hold "nobody chose": `Validate` filled a constant in on every write
+door, so no read could distinguish an unchosen accent from the colour installed in
+2024, and the module had no line through which the application's palette could reach
+it.
+**Made reusable** — `ContrastRatio(a, b)` and `AccentRatios`, exported from
+`contracts/`, which any future theme check can call instead of re-deriving
+luminance a second time; `Palette` itself, the second port this module asks and its
+composition answers, so a third (the palette's hover colour, say) is a method and not
+a new module; `contracts.Accent`, which is the whole resolution rule in one function
+the fake, the SQL service and the paint's tests all read the same way; and the pattern
+of `TestTheCanvasesAreTheKitsOwn`, which pins a duplicated theme value to its owner
+rather than to a comment. The test itself lives in the module's external test package
+and nothing can import it — the shape is what is reusable, not the function.
+
+## Limits
+
+The door back to "none" is an omitted field. The published `pattern` admits no empty
+string, so `PUT {"primaryColor":""}` is refused at the wire and moves nothing; a body
+that sends no `primaryColor` at all decodes to the empty colour, which `Validate`
+accepts as the absence of one, and so returns a tenant that had chosen a colour to the
+installation's accent. The generated form always sends the field, which makes this a
+door an API caller walks through rather than one a person can open from the screen.
+Whether returning to the palette is a command of its own, or a field the `PUT` should
+require, is the composition's to decide and nothing in this module branches on the answer.
+
+Recognition is by value, not by intent. A colour somebody types that happens to equal
+either of the installation's two accents is stored as the absence of one, because a row
+that held the palette's own value would stop following the palette the day it moved —
+and the column cannot tell the two readings apart. Both of the reference application's
+accents fail the legibility band (`TestTheAccentRatiosAreTheOnesTheRuleCompared`), so no
+colour a hand can type here collides with one today; an installation whose own accent
+*does* clear the band turns every typed choice of that colour into a follow, silently.
+A product shipping such a palette decides knowingly.
+
+A `system` row resolves against the light accent when a caller needs one colour, because
+`Resolve` answers a colour and not a stylesheet; a `system` *page* is answered by the
+visitor, since `modules/web` writes both accents and lets the browser choose. And a
+composition that names no `Palette` answers the empty colour, which the paint drops — an
+installation with no accent of its own has no accent, and no write is allowed or refused
+by that absence.
+
+`000054` moves the column's default and runs no `UPDATE`: a migration cannot tell the
+colour somebody typed from the one the column used to fill in on every write, so an
+existing row keeps its colour and only a row written after the move can say "none".

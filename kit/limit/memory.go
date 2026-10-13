@@ -46,6 +46,20 @@ func (m *memory) Reserve(ctx context.Context, key string, limit int, w time.Dura
 	return allowed, remaining, left, nil
 }
 
+// Allow is Reserve read down to the verdict, the way the row-backed counter reads
+// it. The memory can never be busy with a key, so no refusal arrives without a
+// count behind it.
+func (m *memory) Allow(ctx context.Context, key string, limit int, w time.Duration) (bool, time.Duration, error) {
+	ok, _, after, err := m.Reserve(ctx, key, limit, w)
+	if err != nil {
+		return false, 0, err
+	}
+	if ok {
+		return true, 0, nil
+	}
+	return false, after, nil
+}
+
 func (m *memory) Count(ctx context.Context, key string, w time.Duration) (int, time.Duration, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

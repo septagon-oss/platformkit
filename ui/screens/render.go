@@ -17,10 +17,14 @@ package screens
 
 import (
 	"context"
+	"fmt"
 
 	g "maragu.dev/gomponents"
 
+	"github.com/google/uuid"
+
 	"github.com/septagon-oss/platformkit/kit/entity"
+	"github.com/septagon-oss/platformkit/kit/entity/display"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	"github.com/septagon-oss/platformkit/ui/components/examples"
@@ -45,7 +49,7 @@ type Options = resource.Options
 // TestTheAdapterCarriesEveryFieldTheRenderersRead fails when one is not.
 func described(r httpx.Resource) resource.Resource {
 	return resource.Resource{Schema: r.Schema, Immutable: r.Immutable, Singleton: r.Singleton,
-		Screen: r.Screen, Operations: r.OperationWords()}
+		Screen: r.Screen, Operations: r.OperationWords(), Present: r.Present}
 }
 
 // view is the whole of what a mounted screen knows: the resource's own shape, and
@@ -77,9 +81,24 @@ func commands(r httpx.Resource, ctx context.Context, at string) []resource.Comma
 		if c.Run == nil {
 			continue
 		}
+		// A `system` command is one no person is offered, so no browser route is
+		// mounted for it. The JSON route keeps its guard unchanged — this narrows
+		// availability, never authority — and a page that offered it would be
+		// offering an action its author said belongs to an operator.
+		if c.Present.System {
+			continue
+		}
+		label := c.Present.Label
+		if label == "" {
+			// The Summary is the label because nothing else was ever offered:
+			// the button word and the API document's own sentence have always
+			// been one string here, and an author who wants them to differ now
+			// has somewhere to say so.
+			label = c.Summary
+		}
 		out = append(out, resource.Command{
-			Verb: c.Verb, Label: c.Summary, Description: c.Description,
-			Fields: c.Fields, Collection: c.Collection, Base: at,
+			Verb: c.Verb, Label: label, Description: c.Description,
+			Fields: c.Fields, Collection: c.Collection, Base: at, Present: c.Present,
 		})
 	}
 	return out
@@ -114,7 +133,30 @@ func detailView(r httpx.Resource, ctx context.Context, o Options, at string, row
 		}
 		rendered[field.Name] = html
 	}
-	return resource.DetailRichText(view(r, ctx, at), o, row, writable, rendered), nil
+	locales, err := localeStates(ctx, r, row)
+	if err != nil {
+		return page.View{}, err
+	}
+	return resource.DetailRichText(view(r, ctx, at), o, row, writable, rendered, locales), nil
+}
+
+// localeStates is the one language question the record screen asks, asked of the
+// resource that mounted it. A resource whose entity translates nothing answers nil
+// and its screen says nothing about languages; a resource that does answers in the
+// request's own transaction, which is why this is the adapter's work and the
+// renderer never sees a closure.
+//
+// The id is the row's own rather than the path's, because a singleton's screen is
+// reached at a path with no id in it and its row has one all the same.
+func localeStates(ctx context.Context, r httpx.Resource, row map[string]any) ([]entity.LocaleState, error) {
+	if r.Locales == nil {
+		return nil, nil
+	}
+	id, err := uuid.Parse(display.Text(row["id"]))
+	if err != nil {
+		return nil, fmt.Errorf("screens: the %s row's id is %q, which is no id: %w", r.Entity, display.Text(row["id"]), err)
+	}
+	return r.Locales(ctx, id)
 }
 
 // List is the list screen of a registered resource. See resource.List.
@@ -124,7 +166,9 @@ func List(r httpx.Resource, o Options, rows []map[string]any, total int64, pageN
 
 // Detail is one row of a registered resource. See resource.Detail.
 func Detail(r httpx.Resource, o Options, row map[string]any, writable bool) page.View {
-	return resource.Detail(described(r), o, row, writable)
+	// No caller and no request, so no language question gets asked: a design
+	// export and a golden file render the record, not its translation standing.
+	return resource.DetailRichText(described(r), o, row, writable, nil, nil)
 }
 
 // Form is the create and edit screen of a registered resource. See resource.Form.

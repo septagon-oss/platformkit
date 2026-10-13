@@ -21,6 +21,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/app"
 	"github.com/septagon-oss/platformkit/kit/events"
 	"github.com/septagon-oss/platformkit/kit/module"
+	wiregate "github.com/septagon-oss/platformkit/kit/wire"
 )
 
 const asyncapiGolden = "testdata/asyncapi.json"
@@ -34,22 +35,7 @@ func TestTheAsyncAPIDocumentIsTheCompositionRendered(t *testing.T) {
 		t.Fatalf("AsyncAPI: %v", err)
 	}
 
-	if os.Getenv("UPDATE_GOLDEN") != "" {
-		if err := os.WriteFile(asyncapiGolden, got, 0o644); err != nil {
-			t.Fatalf("write %s: %v", asyncapiGolden, err)
-		}
-		t.Logf("rewrote %s", asyncapiGolden)
-		return
-	}
-
-	want, err := os.ReadFile(asyncapiGolden)
-	if err != nil {
-		t.Fatalf("read %s: %v (run with UPDATE_GOLDEN=1)", asyncapiGolden, err)
-	}
-	if string(want) != string(got) {
-		t.Fatalf("%s is stale; run with UPDATE_GOLDEN=1.\nfirst difference at byte %d",
-			asyncapiGolden, firstDifference(want, got))
-	}
+	wiregate.Golden(t, asyncapiGolden, func() []byte { return got })
 }
 
 // TestEveryDeclaredEventIsInTheDocumentAndCovered is event_schema_coverage, the

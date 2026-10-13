@@ -34,6 +34,11 @@ var (
 	// withdraw this one — and the refusal *is* the guarantee, because a person who
 	// withdrew their only factor has, without meaning to, turned the account back
 	// into a password.
+	//
+	// "Only factor" is counted among the factors that could still answer: a
+	// credential retired as suspect (auth.factor_suspect) answers no prompt, so an
+	// account holding one retired and one live credential holds one factor, and
+	// withdrawing the live one is this refusal though the tables hold two rows.
 	ErrLastFactor = errors.New("auth: that is the last factor on this account")
 
 	// ErrNoFactor is RotateRecoveryCodes' refusal to hand out recovery codes to a
@@ -45,8 +50,26 @@ var (
 	// ErrNoFactorKey says this deployment set no auth.factor_key, so a secret
 	// could be written only as plaintext. The enrolment routes answer 503 and
 	// write nothing; verification of an already-enrolled factor is unaffected.
+	//
+	// It covers the enrolment of a shared secret and nothing else. A passkey
+	// writes no secret — its credential material is a public key — so a
+	// deployment with no factor key enrols passkeys and answers both passkey
+	// sign-in doors normally, and a person holding only passkeys is still held
+	// at the door by ErrFactorRequired.
 	ErrNoFactorKey = errors.New("auth: no factor key is configured")
 )
+
+// ProblemSecondFactorRequired is the RFC 9457 type a login answers with when the
+// first proof arrived and the second did not. The status cannot say it — 401 is
+// also "those credentials are not right", and the two answers send a person in
+// opposite directions — and the detail is copy a person reads, in the language
+// the request asked for, which makes it a poor thing to test.
+//
+// It exists because the answer to the refusal is a control on the page the
+// refusal appears on: a sign-in form that learns a second factor is missing can
+// then offer the door that answers it. That page reads this type rather than
+// reading the sentence, so translating the sentence moves no control.
+const ProblemSecondFactorRequired = "urn:auth:second-factor-required"
 
 // Factor parameters, in the module that enforces them rather than in
 // configuration: a deployment that lengthens the window or thins the codes has
@@ -87,8 +110,13 @@ const (
 // proves something beside the password"), and the proof itself never leaves the
 // database sealed.
 type Factor struct {
-	ID         uuid.UUID `json:"id"`
-	Kind       string    `json:"kind" enums:"totp" example:"totp"`
+	ID   uuid.UUID `json:"id"`
+	Kind string    `json:"kind" enums:"totp,passkey" example:"passkey"`
+	// Name is what this person called it. Only a passkey has one to give: an
+	// authenticator app holds one secret per account and needs no label to tell
+	// two of them apart, so the field is empty for a TOTP row rather than
+	// invented for it.
+	Name       string    `json:"name,omitempty" maxLength:"40" doc:"What this person called this passkey; empty for a TOTP, which has no name to give"`
 	EnrolledAt time.Time `json:"enrolledAt"`
 }
 
@@ -145,7 +173,9 @@ type Factors interface {
 	// default: a factor is chosen, never imposed.
 	ListFactors(ctx context.Context, tx db.Tx[db.Tenant], userID uuid.UUID) ([]*Factor, error)
 
-	// WithdrawFactor ends one factor. The last one is ErrLastFactor.
+	// WithdrawFactor ends one factor. The last one is ErrLastFactor — the last that
+	// could still answer, which is what the refusal is a refusal of: a credential this
+	// module retired as suspect does not count as a way in, and does not wait for one.
 	WithdrawFactor(ctx context.Context, tx db.Tx[db.Tenant], userID, factor uuid.UUID) error
 
 	// RotateRecoveryCodes spends every unused code this person has and issues a

@@ -17,6 +17,7 @@ package main
 // are what this product adds to them.
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/septagon-oss/platformkit/design"
@@ -26,6 +27,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/locale/providers/xtext"
 	"github.com/septagon-oss/platformkit/kit/module"
 	"github.com/septagon-oss/platformkit/modules/admin"
+	admincontracts "github.com/septagon-oss/platformkit/modules/admin/contracts"
 	"github.com/septagon-oss/platformkit/modules/audit"
 	"github.com/septagon-oss/platformkit/modules/auth"
 	authcontracts "github.com/septagon-oss/platformkit/modules/auth/contracts"
@@ -43,9 +45,12 @@ import (
 	taskcontracts "github.com/septagon-oss/platformkit/modules/task/contracts"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	tenantcontracts "github.com/septagon-oss/platformkit/modules/tenant/contracts"
+	"github.com/septagon-oss/platformkit/modules/translation"
 	"github.com/septagon-oss/platformkit/modules/user"
 	usercontracts "github.com/septagon-oss/platformkit/modules/user/contracts"
 	"github.com/septagon-oss/platformkit/modules/web"
+	webcontracts "github.com/septagon-oss/platformkit/modules/web/contracts"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/pkit"
 	"github.com/septagon-oss/platformkit/ui/page"
 )
@@ -63,22 +68,47 @@ import (
 // place a service is handed over: the same values the resolver put, seen from
 // outside it.
 type composition struct {
-	modules  []module.Module
-	options  app.Options
-	planned  *pkit.Planned
-	tenants  tenantcontracts.Service
-	users    usercontracts.Service
-	auth     authcontracts.Auth
-	notify   notificationcontracts.Service
-	mail     notificationcontracts.Mailer
-	files    filecontracts.Service
-	plans    httpx.Entitler
-	task     taskcontracts.Service
-	content  contentcontracts.Service
+	modules []module.Module
+	options app.Options
+	planned *pkit.Planned
+	tenants tenantcontracts.Service
+	users   usercontracts.Service
+	auth    authcontracts.Auth
+	notify  notificationcontracts.Service
+	mail    notificationcontracts.Mailer
+	files   filecontracts.Service
+	plans   httpx.Entitler
+	// contents, sites, tasks and files are the four owners a seeded record is
+	// written through: this application's seed runs each resource's own write core
+	// rather than a second spelling of it, so it reads the same values its routes
+	// were mounted with. Named in the plural, like tenants and users, because each
+	// is a store of many rows and not the one row.
+	contents contentcontracts.Service
+	tasks    taskcontracts.Service
 	sites    sitecontracts.Service
-	access   httpx.AskForAccess
-	granter  page.Granter
-	messages xtext.Catalog
+	// The three values the workspace's own face is read from, and the two facts
+	// about the installation that no module owns: whether it mounted a password
+	// door at all, and whether a mail could leave it. See connection.go.
+	passkeys     authcontracts.PasskeyDoor
+	links        webcontracts.Links
+	signin       admincontracts.Signin
+	recoveryMail bool
+	// connection is the face this composition mounts at /api/v1/app/connection,
+	// filled below for the same reason `ask` and `shell` are: the mount is written
+	// in the sentence, and the answers come out of the plan.
+	connection *connectionFace
+	// passwordDoor is whether this installation mounted a password door at all,
+	// which is a fact about the composition and not about a tenant: a workspace
+	// with no door cannot be signed in to with a password whatever its person's
+	// account says.
+	passwordDoor bool
+	access       httpx.AskForAccess
+	granter      page.Granter
+	// messages is the copy this composition serves — the same value the sentence
+	// handed to Languages, read here so the shell the kernel's failure page renders
+	// is worded from it rather than from a second read of the same files. It is the
+	// interface and not the provider: composeCopy is what replaces it.
+	messages pkit.Catalogue
 }
 
 // reference is the application, its deployment, and the composition it resolved.
@@ -95,9 +125,30 @@ func compose(cfg config.Config) composition {
 	return composeReference(cfg, pkit.Development).composition
 }
 
+// composeCopy is compose with its copy supplied. `installed` is the catalogue this
+// installation ships and stays the answer to "which languages exist"; `served`, when
+// non-nil, is the value the sentence is worded from, which is how the pseudo-locale
+// gate (kit/locale/providers/pseudo) renders the shipped graph with every reached
+// word marked. It is the same sentence with one of its own words replaced — not a
+// second composition — and no production caller passes one: main.go, start.go,
+// bootstrap.go and migrate.go all arrive through compose or composeReference.
+func composeCopy(cfg config.Config, installed xtext.Catalog, served pkit.Catalogue) composition {
+	return composeReferenceReading(cfg, pkit.Development, installed, served).composition
+}
+
 // composeReference is the sentence and the one resolution of it: the composition,
 // its deployment, and the process's reading of the services it resolved.
 func composeReference(cfg config.Config, env pkit.Environment) reference {
+	return composeReferenceReading(cfg, env, catalogues(), nil)
+}
+
+// composeReferenceReading resolves the sentence over a named catalogue and, optionally,
+// the value it is served in. See composeCopy for what that second value is for and who
+// may name it.
+func composeReferenceReading(cfg config.Config, env pkit.Environment, installed xtext.Catalog, served pkit.Catalogue) reference {
+	if served == nil {
+		served = installed
+	}
 	// The two values the app's own chrome reads and no module can build: the
 	// reach an ask has here, which the access module fills once the two services
 	// it joins exist, and the shell the ask's two pages are drawn in, which is
@@ -109,7 +160,7 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		Transports:  transports(),
 		Caches:      caches(),
 	}
-	a, ask, shell := sentences(cfg)
+	a, ask, shell, provision, face := sentence(cfg, served)
 	p, err := a.Plan(once)
 	if err != nil {
 		// A composition this file wrote that does not resolve is a defect in this
@@ -117,34 +168,68 @@ func composeReference(cfg config.Config, env pkit.Environment) reference {
 		panic("platformkit: " + err.Error())
 	}
 	c := composition{
-		planned: p, modules: p.Modules(), options: p.Options(), messages: catalogues(),
+		planned: p, modules: p.Modules(), options: p.Options(), messages: served,
 		tenants: value[tenantcontracts.Service](p), users: value[usercontracts.Service](p),
 		auth: value[authcontracts.Auth](p), notify: value[notificationcontracts.Service](p),
 		mail: value[notificationcontracts.Mailer](p), files: value[filecontracts.Service](p),
-		plans:   value[httpx.Entitler](p),
-		task:    value[taskcontracts.Service](p),
-		content: value[contentcontracts.Service](p),
-		sites:   value[sitecontracts.Service](p),
-		access:  ask,
+		plans:    value[httpx.Entitler](p),
+		tasks:    value[taskcontracts.Service](p),
+		contents: value[contentcontracts.Service](p),
+		sites:    value[sitecontracts.Service](p),
+		access:   ask,
 		// The words a refusal is allowed to use: the label of the grant that
 		// gates role management, read off the manifest that defines it.
-		granter: refusalGrant(p.Skin()),
+		granter:      refusalGrant(p.Skin()),
+		passkeys:     auth.NewPasskeyDoor(),
+		links:        value[webcontracts.Links](p),
+		signin:       value[admincontracts.Signin](p),
+		recoveryMail: cfg.Mail.Enabled(),
+		connection:   face,
 	}
+	// Whether a password door stands here at all is read off the plan the sentence
+	// resolved and not written as a constant: a composition that took auth out
+	// would otherwise keep advertising a door it stopped mounting, which is the
+	// same lie the ask above is built to avoid.
+	c.passwordDoor = c.auth != nil
 	*shell = faultShell(c.messages, c.granter)
+	// The seed's tenant-creation hook, filled from the plan the sentence resolved
+	// to. It is another of the values this file fills after the resolution, beside
+	// the shell above, the face below and the reach the access module fills, and it
+	// is the one that cannot be a declared need: the hook is contributed to the
+	// tenant module, and the owners it writes through — task's lifecycle service,
+	// the auth service — are built after the tenant module needs them, so a module
+	// that declared both is the cycle pkit names (`seed → task → tenant → seed`).
+	// See seeding's comment in seed.go. Until this line the hook has no owners, and
+	// it says so rather than writing a half-filled tenant's content.
+	*provision = seedProvisioner{
+		users: c.users, contents: c.contents, sites: c.sites, tasks: c.tasks,
+		files: c.files, auth: c.auth, demoPassword: cfg.Demo.Password,
+	}
+	// The face, filled from the composition the plan answered. The mount was
+	// written into the sentence with an empty holder beside it, because a mount is
+	// part of the sentence and the answers are not.
+	*face = connectionFace{describe: c.describe}
 	return reference{app: a, once: once, composition: c}
 }
 
-// sentences is the one statement of this application's composition, and the two
+// sentences is the one statement of this application's composition, and the four
 // values its own chrome reads: the reach an ask has here, which the access module
-// fills once the services it joins exist, and the shell of the ask's two pages,
-// which is drawn from the skin the resolved composition answered with.
+// fills once the services it joins exist, the shell of the ask's two pages, which
+// is drawn from the skin the resolved composition answered with, the seed's
+// tenant-creation hook, which composeReference fills from the resolved plan for
+// the reason seeding gives, and the workspace's own face, whose mount is part of
+// the sentence below while the answers it serves come out of the plan.
 // that boots the reference application goes through it: `run` and `start`, which
 // hand the whole thing to pkit, and appOptions, which is what a test in this
 // repository boots the same composition with when it wants the handler rather
 // than a process. There is one of it because a second statement of a
 // composition is a second composition, and the two drift.
-func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell) {
-	ask, shell := &accessReach{}, &page.Shell{}
+//
+// `served` is the copy that one sentence is worded from: for every caller in this
+// binary, the catalogue `catalogues` loads. composeCopy is the only caller with a
+// different value to name, and sentences is what everybody else calls.
+func sentence(cfg config.Config, served pkit.Catalogue, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+	ask, shell, provision, face := &accessReach{}, &page.Shell{}, &seedProvisioner{}, &connectionFace{}
 	a := pkit.NewApp("platformkit").Use(
 		omitted([]*pkit.Module{
 			product(cfg),
@@ -156,22 +241,41 @@ func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *
 			file.Module,
 			task.Module,
 			billing.Module,
+			// The translations of the module below: one table, no routes and no
+			// permissions of its own. It is named before content because content
+			// needs the port it provides — a page store whose title and body
+			// declare themselves translatable is built after the module that
+			// holds the other languages.
+			translation.Module,
 			content.Module,
 			site.Module,
 			web.Module,
 			audit.Module,
+			// Outbound webhooks: the machine's half of the same outbox the trail
+			// reads. It needs the tenant lister and this file's own catalogue of
+			// event names, and it is placed here because the events it can be asked
+			// for are everything above it has already declared.
+			webhook.Module,
+			seeding(provision),
 			access(ask),
 			change.Module,
 			admin.Module,
 		}, without)...).
 		Theme(design.Default()).
-		Languages(catalogues()).
+		Languages(served).
 		Home(pinnedHome).
 		ErrorPage(func(s pkit.Skin) httpx.Fault { return faultPage(s.Copy, refusalGrant(s)) }).
 		AskForAccess(ask, func(router *httpx.Router) { page.MountAccess(router, *shell) }).
 		Roles(startingRoles()...).
-		WorkspaceCatalog(workspaceCatalog())
-	return a, ask, shell
+		WorkspaceCatalog(workspaceFace(workspaceCatalog(), face.mount))
+	return a, ask, shell, provision, face
+}
+
+// sentences is that sentence in the copy this installation ships, for every caller
+// with no opinion about the words — including the cases that take a module out of
+// the list to ask what the composition resolves to without its provider.
+func sentences(cfg config.Config, without ...string) (*pkit.App, *accessReach, *page.Shell, *seedProvisioner, *connectionFace) {
+	return sentence(cfg, catalogues(), without...)
 }
 
 // omitted takes the names a case asked to leave out of the list. It exists for
@@ -253,6 +357,30 @@ func (r reference) explain(role app.Role) string {
 		return fmt.Sprintf("# COMPOSITION — platformkit\n\nrefused: %v\n", err)
 	}
 	return text
+}
+
+// describe is the same resolution the composition file states in sentences,
+// stated as values: the modules in the order they are built, who supplies whose
+// need, what Choose settled, which implementation this environment picked, the
+// configuration sections each module read and the roles the app recorded. The
+// text is what a person reads and this is what a tool reads, both rendered from
+// the one resolved plan, so the two cannot be settled about different
+// compositions.
+//
+// It is names only — no configuration value, no deployment input, no credential
+// and no tenant row — which is what lets it be committed beside the text file at
+// all: a machine-readable file is a wider surface than a markdown one a reviewer
+// reads, so it takes the narrower statement of what is in it.
+func (r reference) describe() ([]byte, error) {
+	doc, err := r.app.Describe(r.once)
+	if err != nil {
+		return nil, err
+	}
+	out, err := json.MarshalIndent(doc, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("platformkit: the resolved composition cannot be encoded: %w", err)
+	}
+	return append(out, '\n'), nil
 }
 
 // startingRoles is this application's claim about who a tenant begins as, in

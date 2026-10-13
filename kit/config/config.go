@@ -37,6 +37,10 @@ type Config struct {
 	Mail     Mail     `yaml:"mail"`
 	Audit    Audit    `yaml:"audit"`
 	Files    Files    `yaml:"files"`
+	// Webhook is the deployment's share of the outbound webhook sender: the key
+	// that wraps each endpoint's signing secret at rest, which addresses this
+	// deployment is willing to dial, and how long a signed attempt is kept.
+	Webhook Webhook `yaml:"webhook"`
 	// Telemetry is where spans and numbers go. Its zero value exports nothing,
 	// which is the default the runtime ships with: see Telemetry.
 	Telemetry Telemetry `yaml:"telemetry"`
@@ -46,6 +50,23 @@ type Config struct {
 	// and its environment override, rather than through a variable the command
 	// read for itself.
 	Bootstrap Bootstrap `yaml:"bootstrap"`
+	// Seed is what the seed command cannot decide for itself: the operator who
+	// ran it. `--as` names the person a write belongs to, which is attribution
+	// and not permission — a target tenant's admin address is somebody else's
+	// answer. The credential below is the permission side: it is checked against
+	// the installation tenant's own people, and the operator must hold
+	// tenant:manage there, before the command enters the tenant it was pointed
+	// at. Both arrive through the environment like every other secret, because
+	// argv is in the process table and in shell history.
+	//
+	// Empty means nobody proved who they are, and the command refuses rather
+	// than seeding as the database account it happens to be pointed at.
+	Seed Seed `yaml:"seed"`
+	// Demo is read by the seed alone. A demonstration needs people a person can
+	// sign in as, and the password they sign in with is a deployment's answer,
+	// not a fact in a file: nothing under seed/ holds a secret, and the loader
+	// refuses a field that looks like one.
+	Demo Demo `yaml:"demo"`
 	// App is what this composition declares about itself to the things that run
 	// before a request does. The slug lives in nats.app, where kit/appname's
 	// grammar guards it and every name is already formed from it; what is here is
@@ -70,6 +91,56 @@ type Config struct {
 	Flags *Flags `yaml:"flags"`
 }
 
+// readTenantApps parses the operator's placement file: `slug=app` lines, with
+// blank lines and `#` comments allowed. Every refusal names the file and the line,
+// because the file is not in the configuration the person reading the message
+// already has open. Values go through the same grammar as nats.app, so a slug a
+// durable cannot be formed from is refused here and not at the boot that reads it.
+func readTenantApps(path string) (map[string]string, error) {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("app.tenant_apps_file: %w", err)
+	}
+	out := make(map[string]string)
+	for i, line := range strings.Split(string(body), "\n") {
+		where := fmt.Sprintf("app.tenant_apps_file %s:%d", path, i+1)
+		text := strings.TrimSpace(strings.SplitN(line, "#", 2)[0])
+		if text == "" {
+			continue
+		}
+		slug, app, found := strings.Cut(text, "=")
+		if !found {
+			return nil, fmt.Errorf("%s is %q; a line is <tenant-slug>=<app-slug>", where, text)
+		}
+		slug, app = strings.TrimSpace(slug), strings.TrimSpace(app)
+		if slug == "" || app == "" {
+			return nil, fmt.Errorf("%s is %q; both a tenant and an app have to be named", where, text)
+		}
+		if _, err := appname.Parse(app); err != nil {
+			return nil, fmt.Errorf("%s names app %q: %w", where, app, err)
+		}
+		if before, again := out[slug]; again && before != app {
+			return nil, fmt.Errorf("%s maps tenant %s to %q, and the file already maps it to %q", where, slug, app, before)
+		}
+		out[slug] = app
+	}
+	return out, nil
+}
+
+// Seed is the seed command's operator credential. See the field on Config.
+type Seed struct {
+	OperatorEmail    string `yaml:"operator_email"`
+	OperatorPassword string `yaml:"operator_password"`
+}
+
+// Demo is what the demo seed cannot decide for itself: the one password every
+// demo person signs in with. Empty means the seed generates a password per
+// person and prints each once, the way bootstrap does with the administrator's.
+// Supply PLATFORMKIT_DEMO_PASSWORD.
+type Demo struct {
+	Password string `yaml:"password"`
+}
+
 // App is the composition's own declaration, read at the migrating boot and put on
 // that session by kit/db (db.MigrateDeclaring) for migrations/000043_tenant_app
 // to place tenants with. It is a declaration and not a request: nothing at run
@@ -85,6 +156,12 @@ type App struct {
 	// nats.app, and a mapping that does not cover every tenant is refused by the
 	// migration rather than completed by a guess.
 	TenantApps map[string]string `yaml:"tenant_apps"`
+	// TenantAppsFile names a file of `slug=app` lines holding the same placement,
+	// for an operator whose mapping is too long to read in a YAML blob. It is read
+	// at load and merged into TenantApps above, the inline map winning a
+	// disagreement; a line that is not a pair, a tenant mapped twice to two apps or
+	// an app that is not a slug refuses the load. Nothing else reads the key.
+	TenantAppsFile string `yaml:"tenant_apps_file"`
 }
 
 // Flags is the flags block: one boolean per key. See Config.Flags for why the
@@ -179,10 +256,21 @@ type Server struct {
 	ReadTimeout time.Duration `yaml:"read_timeout"`
 }
 
-// Database holds the two roles: the app connects as one, migrations as the other.
+// Database holds the three roles: the app appends as one, migrations run as
+// another, and expiring the audit trail happens as a third. The third is optional
+// and empty means the trail never expires — modules/audit's retention job refuses to
+// run rather than reaching for a role it was not handed, because the application role
+// cannot delete a trail row (migrations/000041_audit_history_append_only.up.sql fences it)
+// and the door that admits an expiry is a role that may delete and may not append.
+//
+// Which one does what: migrate_url migrates (and drains), url appends and reads,
+// retain_url expires. retain_url must not name a superuser or a BYPASSRLS role: the
+// job opens it with db.Open, which refuses such a role precisely because a trim run by
+// one would see every tenant's trail inside the first tenant's transaction.
 type Database struct {
 	URL        string `yaml:"url"`
 	MigrateURL string `yaml:"migrate_url"`
+	RetainURL  string `yaml:"retain_url"`
 	// Omitted values retain kit/db defaults; explicit zero idle/lifetime
 	// disables reuse/retirement. kit/app validates the resolved pool before IO.
 	MaxOpenConns    *int           `yaml:"max_open_conns"`
@@ -387,6 +475,27 @@ type Audit struct {
 	RetentionDays int `yaml:"retention_days"`
 }
 
+// Webhook is what modules/webhook cannot decide for itself: the key that wraps
+// every endpoint's signing secret, whether this deployment dials addresses on the
+// private grid, and how long a finished attempt keeps the payload it signed.
+type Webhook struct {
+	// SecretKey wraps the signing secret of every registered endpoint at rest.
+	// It is 32 bytes — AES-256-GCM's own width — and the module refuses to be
+	// composed without one, because an installation whose key nobody wrote down
+	// cannot move its endpoints to another machine. Put it in
+	// PLATFORMKIT_WEBHOOK_SECRET_KEY, as every other secret here is put; the
+	// development example carries a laptop key so `make run` boots.
+	SecretKey string `yaml:"secret_key"`
+	// AllowLocalEndpoints permits loopback and private ranges to be dialled. It is
+	// deployment-level: no column, field or route carries it, and it never opens
+	// the instance-metadata address. It exists for a developer's laptop running a
+	// receiver beside the application, and for this module's own tests.
+	AllowLocalEndpoints bool `yaml:"allow_local_endpoints"`
+	// RetentionDays is how long a finished delivery row — which holds the whole
+	// event it signed — is kept. Zero means the module's own default.
+	RetentionDays int `yaml:"retention_days"`
+}
+
 // DefaultRetentionDays is a year, the shortest period the obligations that ask
 // for an audit trail at all tend to accept.
 const DefaultRetentionDays = 365
@@ -403,6 +512,12 @@ type Files struct {
 	// gigabyte; a negative number means no quota, which is what a
 	// single-tenant installation wants and a public sign-up must not have.
 	QuotaBytes int64 `yaml:"quota_bytes"`
+	// MaxImagePixels is the largest frame an uploaded image is decoded into: a
+	// file claiming more pixels is refused with the reason rather than
+	// allocated, which is the decompression bomb. Zero means the module's own
+	// default of forty megapixels; it bounds a decode and not an upload, so it
+	// says nothing about how large a file may be (max_bytes does that).
+	MaxImagePixels int `yaml:"max_image_pixels"`
 	// Retention is how long each class of file lives, keyed by the `kind` an
 	// upload carried. It is a table and not a column because a class is the
 	// product's word and a duration is the deployment's: this package parses the
@@ -459,6 +574,7 @@ var keys = []key{
 	{"server.installation_host", "PLATFORMKIT_SERVER_INSTALLATION_HOST", func(c *Config) *string { return &c.Server.InstallationHost }, false},
 	{"database.url", "PLATFORMKIT_DATABASE_URL", func(c *Config) *string { return &c.Database.URL }, true},
 	{"database.migrate_url", "PLATFORMKIT_DATABASE_MIGRATE_URL", func(c *Config) *string { return &c.Database.MigrateURL }, true},
+	{"database.retain_url", "PLATFORMKIT_DATABASE_RETAIN_URL", func(c *Config) *string { return &c.Database.RetainURL }, false},
 	{"nats.url", "PLATFORMKIT_NATS_URL", func(c *Config) *string { return &c.NATS.URL }, true},
 	{"nats.transport", "PLATFORMKIT_NATS_TRANSPORT", func(c *Config) *string { return &c.NATS.Transport }, false},
 	{"nats.username", "PLATFORMKIT_NATS_USERNAME", func(c *Config) *string { return &c.NATS.Username }, false},
@@ -480,9 +596,19 @@ var keys = []key{
 	// credential, and config.yaml is a file somebody will commit.
 	{"auth.factor_key", "PLATFORMKIT_AUTH_FACTOR_KEY", func(c *Config) *string { return &c.Auth.FactorKey }, false},
 	{"mail.password", "PLATFORMKIT_MAIL_PASSWORD", func(c *Config) *string { return &c.Mail.Password }, false},
+	// The fifth: the key that wraps every webhook signing secret. A deployment
+	// that loses it cannot sign again with a secret it never read back, so this one
+	// is written down by whoever can also restore it.
+	{"webhook.secret_key", "PLATFORMKIT_WEBHOOK_SECRET_KEY", func(c *Config) *string { return &c.Webhook.SecretKey }, false},
 	// The third: the first administrator's password, read once by the
 	// bootstrap command and stored nowhere but as an argon2id hash.
 	{"bootstrap.password", "PLATFORMKIT_BOOTSTRAP_PASSWORD", func(c *Config) *string { return &c.Bootstrap.Password }, false},
+	{"demo.password", "PLATFORMKIT_DEMO_PASSWORD", func(c *Config) *string { return &c.Demo.Password }, false},
+	// The seed command's operator, for the same reason as the other three: a
+	// credential is not a flag. Neither is required by the loader, because the
+	// server reads neither and the command refuses an empty pair itself.
+	{"seed.operator_email", "PLATFORMKIT_SEED_OPERATOR_EMAIL", func(c *Config) *string { return &c.Seed.OperatorEmail }, false},
+	{"seed.operator_password", "PLATFORMKIT_SEED_OPERATOR_PASSWORD", func(c *Config) *string { return &c.Seed.OperatorPassword }, false},
 	// No environment override, and still overridable: the sender is a value a
 	// composition knows — one client, one from address — and a deployment that
 	// wrote it in the file wrote it once.
@@ -581,7 +707,35 @@ func Load(path string, overrides ...Override) (Config, error) {
 				path, h.key, h.value)
 		}
 	}
-	// Both URLs are parsed here rather than by the driver, so a typo is a
+	// The operator's placement, read from the file the configuration points at.
+	// The inline map above and this file hold the same fact; the file exists
+	// because a mapping of five thousand tenants does not belong in a YAML blob,
+	// and the two merge with the inline map winning on a disagreement — it is the
+	// one an operator edits beside the setting it describes.
+	//
+	// A line the loader cannot make sense of is a refusal, correctable at the file:
+	// the mapping is the write that puts a tenant under an app, and there is no safe
+	// half of one. What it does *not* refuse is a slug naming no tenant that exists:
+	// the mapping is written by somebody who may be describing the tenant they are
+	// about to create, and the migration that finds a tenant nobody mapped is the
+	// one that refuses (migrations/000059_tenant_app_refusal.up.sql), and only of a
+	// boot that named itself: see the guard on migrations/000060_tenant_app_place.
+	if c.App.TenantAppsFile != "" {
+		fromFile, err := readTenantApps(c.App.TenantAppsFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("config %s: %w", path, err)
+		}
+		if c.App.TenantApps == nil {
+			c.App.TenantApps = map[string]string{}
+		}
+		for slug, app := range fromFile {
+			if _, written := c.App.TenantApps[slug]; !written {
+				c.App.TenantApps[slug] = app
+			}
+		}
+	}
+
+	// All three DSNs are parsed here rather than by the driver, so a typo is a
 	// message naming the key instead of a dial error four steps later.
 	for _, u := range []struct {
 		key   string
@@ -589,10 +743,17 @@ func Load(path string, overrides ...Override) (Config, error) {
 	}{
 		{"database.url", c.Database.URL},
 		{"database.migrate_url", c.Database.MigrateURL},
+		// Optional, so an installation that never expires the trail can leave it
+		// empty; a value that is not a postgres URL is still a typo worth naming.
+		{"database.retain_url", c.Database.RetainURL},
 	} {
+		if u.value == "" {
+			// An optional key that is absent is absent, not malformed.
+			continue
+		}
 		parsed, err := url.Parse(u.value)
 		if err != nil {
-			return Config{}, fmt.Errorf("config %s: %s is not a URL: %w", path, u.key, err)
+			return Config{}, fmt.Errorf("config %s: %s is not a URL: %s", path, u.key, safeReason(u.key, u.value, err))
 		}
 		if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
 			return Config{}, fmt.Errorf("config %s: %s has scheme %q; PlatformKit speaks postgres and nothing else", path, u.key, parsed.Scheme)
@@ -619,8 +780,18 @@ func Load(path string, overrides ...Override) (Config, error) {
 	if c.Audit.RetentionDays == 0 {
 		c.Audit.RetentionDays = DefaultRetentionDays
 	}
+	// The floor is the trigger's, and the trigger cannot read this file: a shorter
+	// period configured is a job that would ask for deletes the database refuses, at
+	// three in the morning, forever. Saying so at boot is the correctable version of
+	// the same mistake — raise the period, or own a lower floor in a deployment
+	// migration that re-creates audit_events_expire_only_after and carries that
+	// decision in its own review.
 	if c.Audit.RetentionDays < 1 {
 		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; a retention period is a number of days", path, c.Audit.RetentionDays)
+	}
+	if c.Audit.RetentionDays < DefaultRetentionDays {
+		return Config{}, fmt.Errorf("config %s: audit.retention_days is %d; the kernel's floor for forgetting audit history is %d days — modules/audit/migrations/000041_audit_history_append_only.up.sql refuses an earlier expiry and no configuration moves it",
+			path, c.Audit.RetentionDays, DefaultRetentionDays)
 	}
 	if c.Server.ReadTimeout == 0 {
 		c.Server.ReadTimeout = DefaultReadTimeout
@@ -652,6 +823,25 @@ func Load(path string, overrides ...Override) (Config, error) {
 		}
 	}
 	return c, nil
+}
+
+// safeReason is url.Parse's own diagnosis with the DSN taken out of it. The parse error
+// quotes the whole value it failed on, and all three of these values are DSNs whose
+// userinfo is a password (decision 0010: an error names the key and the mistake, never
+// the credential). The typo is worth reporting — "invalid URL escape" is what tells a
+// reader to look at the escaping — so the value is replaced rather than the reason
+// dropped. A reason that still carries the userinfo after the replacement says the one
+// true thing instead of leaking: which key, and that it could not be read.
+func safeReason(key, value string, err error) string {
+	reason := strings.ReplaceAll(err.Error(), value, "<"+key+">")
+	rest := value
+	if i := strings.Index(rest, "://"); i >= 0 {
+		rest = rest[i+len("://"):]
+	}
+	if creds, _, hasAt := strings.Cut(rest, "@"); hasAt && strings.Contains(reason, creds) {
+		return "it cannot be read as a URL, and this refusal does not repeat what is in it"
+	}
+	return reason
 }
 
 // validHost reports whether h is a host — a name or an address, optionally with

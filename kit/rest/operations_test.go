@@ -1,6 +1,6 @@
 package rest_test
 
-// operations_test.go is T-0185: a resource states which of the five routes it
+// A resource states which of the five routes it
 // offers, and may state its guard as a declaration instead of a permission.
 //
 // Every case here mounts a real Spec through the real API and answers real

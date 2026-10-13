@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -63,14 +64,31 @@ const MaxSummary = 200
 //	                     on now, which is what the refusal says it was.
 //	ErrUnsupportedSubject correctable by whoever composes the application, who is the
 //	                     only person who can put the subject's binding back.
+//	ErrStaleProposal     correctable by reading the row again: somebody decided it,
+//	                     or applied it, between the form being drawn and the verdict.
+//	ErrAlreadyDecided    the first opinion is on the record, which is what the row is
+//	                     for; the cure is a new proposal, never a second verdict.
+//	ErrNotApproved       correctable by the person who still holds the decision.
+//	ErrNotProposer       immutable for the person holding the request, and cured by
+//	                     the proposer's own hand or by a declined verdict.
+//	ErrProposalOver      the row reached a state with no commands left in it.
+//	ErrVerdict           correctable by the caller: one of the two named verdicts.
 //
 // They are values rather than statuses because the mapping to a status happens
 // once, in kit/rest's Fault, and a module that invents its own status is a module
-// whose refusal a client cannot predict.
+// whose refusal a client cannot predict. Every one of them is also the key a page
+// answers its own copy of the refusal from — see internal.refusalKey — because a
+// refusal a screen cannot name is a refusal a screen can only repeat in English.
 var (
 	ErrSelfReview         = fmt.Errorf("change: the person who proposed a change cannot be the one who decides it")
 	ErrStaleBase          = fmt.Errorf("change: the subject has moved since this diff was made")
 	ErrUnsupportedSubject = fmt.Errorf("change: this composition applies no proposals for that subject")
+	ErrStaleProposal      = fmt.Errorf("change: this proposal moved on since this form was drawn")
+	ErrAlreadyDecided     = fmt.Errorf("change: this proposal has already been decided")
+	ErrNotApproved        = fmt.Errorf("change: only an approved proposal can be applied")
+	ErrNotProposer        = fmt.Errorf("change: only the person who proposed a change can take it back")
+	ErrProposalOver       = fmt.Errorf("change: this proposal is over and takes no further command")
+	ErrVerdict            = fmt.Errorf("change: a verdict is approved or declined")
 )
 
 // Proposal is one change put forward for somebody else to look at.
@@ -260,6 +278,25 @@ type Subject interface {
 	Save(ctx context.Context, tx db.Tx[db.Tenant], merged json.RawMessage) (revision int64, err error)
 }
 
+// Writable is a Subject that says which of its own fields an apply can move. It is a
+// second interface rather than a third method on Subject because an exported interface
+// that grows a method is a break every existing implementation has to answer for, and
+// because not every subject can say: a subject that names nothing is asked nothing.
+//
+// The question exists because Propose's promise is that the reviewed bytes are the
+// applied ones. A diff naming a field no Save writes, a field a command owns outright,
+// or a name that is not a field of the subject at all is a proposal no apply could ever
+// carry out as reviewed — and its own comment says a proposal nobody could apply is
+// refused at the propose door rather than at the review. Refusing it there is what makes
+// "approved, applied, and the row says something else" impossible.
+type Writable interface {
+	// WritableFields names, in the subject's own json field names, the fields a
+	// merged document may move. It is vocabulary, not policy: which of them needs a
+	// proposal at which installation is Protection's question, asked at the direct
+	// doors, and answered by nobody here.
+	WritableFields() []string
+}
+
 // SubjectBinding is one subject this composition can apply. The list of them is
 // written out by one author in the application's composition file, its element
 // types are checked by the compiler, and a subject missing from it does not
@@ -287,8 +324,21 @@ type Refusal struct {
 	SubjectID     uuid.UUID `json:"subjectId"`
 	Path          string    `json:"path"`
 	Permission    string    `json:"permission"`
+	// Fields names, in the entity's own json names, the protected fields this
+	// write would have changed. It is here because the answer a person acting on
+	// this refusal needs is "which field has to go through the proposal door": a
+	// refusal that named the subject but not the field sends them to propose a
+	// change that will be refused for the same reason. Empty means the whole row is
+	// protected, which is what a gate over a one-row-per-tenant entity answers —
+	// site settings is that gate today, and it has no field list to give.
+	Fields []string `json:"fields,omitempty"`
 }
 
 func (r *Refusal) Error() string {
-	return fmt.Sprintf("change: this write is proposed at %s first, which needs %s", r.Path, r.Permission)
+	what := "the whole row"
+	if len(r.Fields) > 0 {
+		what = strings.Join(r.Fields, ", ")
+	}
+	return fmt.Sprintf("change: this write changes %s on %s/%s, and is proposed at %s first, which needs %s",
+		what, r.SubjectModule, r.SubjectEntity, r.Path, r.Permission)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/septagon-oss/platformkit/design"
 	"github.com/septagon-oss/platformkit/kit/httpx"
 	"github.com/septagon-oss/platformkit/kit/module"
+	"github.com/septagon-oss/platformkit/kit/rest"
 	"github.com/septagon-oss/platformkit/kit/richtext"
 	contentcontracts "github.com/septagon-oss/platformkit/modules/content/contracts"
 	sitecontracts "github.com/septagon-oss/platformkit/modules/site/contracts"
@@ -31,13 +32,16 @@ type Deps struct {
 	Files   richtext.Files
 	Theme   design.Pair
 
-	// SignInPath is where a visitor who wants to sign in is sent. The site has
-	// no sign-in of its own — the auth module mints the session and the shell
-	// owns the form — so the address belongs to whoever composed the two, and
-	// this is the line that says where the workspace ended up. A literal here
-	// would be this module naming a surface it does not serve, which is why the
-	// composition writes it and app_test.go asks the running server that the
-	// address it wrote is the address that answers.
+	// SignInPath is where a visitor who wants to sign in is sent: an entry point
+	// into the workspace, which answers with the form itself or turns the visitor
+	// towards it. The site has no sign-in of its own — the auth module mints the
+	// session and the shell owns the form — so the address belongs to whoever
+	// composed the two, and this is the line that says where the workspace ended
+	// up. Which door of which module that is, and how deep into the workspace a
+	// public page may link, are the composition's facts, not this module's. A
+	// literal here would be this module naming a surface it does not serve, which
+	// is why the composition writes it and its own test asks the running server
+	// that the address it wrote is the address that answers.
 	SignInPath string
 
 	// PublicFileURL answers the address of a file a visitor may see, which is
@@ -54,6 +58,18 @@ type Deps struct {
 	// for itself is Go text and declares its own language whatever is composed
 	// here; see Site.view.
 	Messages page.Messages
+
+	// Translations and ContentRows are the site's share of one decision: whether a
+	// page exists in another language at all. They are a pair because the question
+	// "is this page written in Portuguese" is answerable only by whoever holds the
+	// other languages' text (the port, which the composition wires to the
+	// translation module) and whoever knows which entity is a page and which of its
+	// fields are translatable (the row set, which only the content module can name).
+	// Both together or neither. Nil leaves every page in the language it was
+	// authored in and links no alternate, which is what an installation with no
+	// translation module composed is; see Site.serve.
+	Translations rest.Translations
+	ContentRows  rest.TranslationSource
 }
 
 // Module is the manifest: two public routes and nothing else to declare.
@@ -74,6 +90,7 @@ func New(deps Deps) module.Module {
 			internal.Mount(r, internal.Site{
 				Settings: deps.Site, Content: deps.Content, Files: deps.Files, Theme: deps.Theme,
 				SignIn: deps.SignInPath, File: deps.PublicFileURL, Messages: deps.Messages,
+				Translations: deps.Translations, ContentRows: deps.ContentRows,
 			})
 		},
 	}

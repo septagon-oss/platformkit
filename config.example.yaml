@@ -52,6 +52,13 @@ database:
   # Migrations connect as the owner, which holds the DDL rights.
   migrate_url: "postgres://postgres:platformkit@localhost:5432/platformkit?sslmode=disable&connect_timeout=5"
 
+  # The role that may expire the audit trail and may not write it: SELECT and DELETE
+  # on audit_events, SELECT and INSERT on audit_retention_marks, and never SUPERUSER
+  # or BYPASSRLS, or kit/db refuses the connection. Empty means the trail never
+  # expires, and the audit-retention job says so at its first tick rather than
+  # deleting nothing. audit.retention_days below 365 is refused at boot.
+  retain_url: ""
+
   # Per-process pool limits; omitted values retain 16 open, 4 idle, 30m.
   # Account for every replica. All app roles require at least two connections:
   # HTTP detached transactions and job advisory locks need a second connection.
@@ -213,6 +220,16 @@ audit:
 bootstrap:
   password: ""
 
+# The password the demonstration people sign in with, read by the seed alone.
+# Empty means this installation offers no demo sign-in: the demo people are still
+# invited and given their roles, and the file's signIn record is neither asked for
+# nor compared. The password itself belongs in no seed file — nothing under
+# apps/platformkit/seed holds a secret, and the loader refuses a field named for
+# one — and belongs here the way every other secret does: in
+# PLATFORMKIT_DEMO_PASSWORD rather than in this file.
+demo:
+  password: ""
+
 # Where uploaded bytes go, how large one upload may be, and how much disk one
 # tenant may fill. They are the three things modules/file cannot decide for
 # itself: a directory is a deployment's disk, and both limits are how much of it
@@ -227,6 +244,11 @@ files:
   # quota at all, which is what a single-tenant installation wants and what a
   # deployment that lets anybody sign up must not have.
   quota_bytes: 1073741824
+  # The largest frame an uploaded image is decoded into: a file whose header
+  # claims more pixels is refused with the reason rather than allocated, which
+  # is the decompression bomb. It bounds a decode and not an upload — max_bytes
+  # is that — and zero means the module's own forty megapixels.
+  max_image_pixels: 40000000
   # How long each retention class lives, keyed by the `kind` an upload carried.
   # A kind this table does not name is never deleted, only logged, so the empty
   # table below keeps everything and is the safe default for an example. A
@@ -236,6 +258,24 @@ files:
   # lives. An entry with no class name, or one that is not a positive duration,
   # fails the load rather than quietly deleting nothing.
   retention: {}
+
+# Outbound webhooks: the HTTPS addresses a tenant registers so a machine of its own
+# hears what happened here, signed with Standard Webhooks' own headers.
+webhook:
+  # The key that wraps the signing secret of every endpoint at rest. It is 32 bytes,
+  # and the module refuses to be composed without one. This is the laptop's key, the
+  # same kind of default as the database passwords above: a deployment that runs
+  # anywhere but here replaces it with PLATFORMKIT_WEBHOOK_SECRET_KEY, and an
+  # installation that rotates it cannot open the secrets wrapped with the old one, so
+  # this is a value that outlives the file it was first written in.
+  secret_key: "0123456789abcdef0123456789abcdef"
+  # Loopback and private addresses to be dialled. Turn it on next to a receiver on
+  # this machine; leave it off anywhere a tenant could name an address on the
+  # deployment's own network. Neither setting opens the instance-metadata address.
+  allow_local_endpoints: false
+  # How long a finished attempt keeps the whole event it signed. Zero means the
+  # module's own 90 days.
+  retention_days: 0
 
 # What this composition declares about itself, read at the migrating boot and put
 # on that session for migrations/000042_tenant_app to place tenants with. The slug
@@ -256,6 +296,14 @@ app:
   # host can place. Every value goes through the slug's grammar, and the mapping
   # has to cover every tenant left over or the migration refuses the run.
   tenant_apps: {}
+  # The same placement as a file: one <tenant-slug>=<app-slug> line each, blank
+  # lines and # comments allowed. It exists for a mapping too long to read in a
+  # YAML blob, and is merged into the map above at load, the inline map winning a
+  # disagreement. A line that is not a pair, a tenant mapped twice to two apps or
+  # an app that is not a slug refuses the load; a slug naming a tenant that does
+  # not exist yet does not, because the mapping may be describing the tenant the
+  # operator is about to create.
+  # tenant_apps_file: /etc/platformkit/tenant-apps.txt
 
 # Feature flags, under `values:` because the block is a pointer to the map and an
 # installation with no flags writes no `flags:` section at all. One boolean per

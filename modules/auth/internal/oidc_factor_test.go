@@ -2,22 +2,22 @@ package internal_test
 
 // The refusal at the federated door is a step, not a lockout.
 //
-// Review 6's HIGH was that `Service.Open` — the single sign-on callback's only
+// The defect was that `Service.Open` — the single sign-on callback's only
 // caller — opened a session for a person whose account answers with a second
 // factor, while `Service.Login` refuses the same person. `Open` now asks the
 // account the same question, and `TestASingleSignOnLegDoesNotWalkPastAPersonsOwnSecondFactor`
-// (review 6's own file) is the case that says so: it proves nothing is signed in
-// at the federated door, and that a colleague who enrolled nothing still is.
+// in `second_factor_gates_every_door_test.go` is the case that says so: it proves nothing
+// is signed in at the federated door, and that a colleague who enrolled nothing still is.
 //
-// What that case cannot say, because it belongs to a review and not to this
-// branch, is the half the module owes: a person who holds a factor and arrives at
+// What that case does not say is the half this file owes: a person who holds a
+// factor and arrives at
 // the provider is now refused something they were not refused before, so the
 // refusal has to be the same second half of a sign-in the password leg already
 // hands over, and it has to work. This case walks it end to end over the routes —
 // the refused callback, the challenge answered with the person's own code, and the
 // session that comes out — and it holds the refusal to the rule every refused
 // command on this module follows: nothing written, nothing published, no stale
-// row. A fix that locked the person out of their own account would pass review 6's
+// row. A fix that locked the person out of their own account would pass the sibling
 // case and fail this one.
 
 import (

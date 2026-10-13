@@ -43,7 +43,11 @@ Each surface has its own chain, and the difference is not cosmetic:
   size, and a 500 with the body discarded wherever a response is still there to
   discard), caches a safe 2xx for sixty seconds, and puts a limit on an anonymous
   write because it is the one surface with no account to lock out
-  (`Options.WriteLimiter`, counted by tenant, route and address).
+  (`Options.WriteLimiter`, counted by tenant, route and address). A refusal from
+  that counter is a 429 whatever the counter's own reason was — a spent window and
+  an attempt the counter could not record are refused here, and only a store that
+  cannot be reached at all is the outage this kernel fails open on
+  ([kit/limit/README.md](../limit/README.md) owns the four).
 - **App** recognises the caller, refuses an anonymous caller except at a route
   that declares `Public()` — and `AnonymousDoors` lists those, because "the
   workspace admits nobody by default" is only checkable once you can see who it
@@ -122,8 +126,8 @@ surface a route was on lived in prose. **Made reusable:** `Router.Prefix`,
 `Router.Path` and `Router.PagePath`, so a module composes an address instead of
 spelling one; `SurfaceExtension`, the `x-platformkit-surface` key every recorded
 operation carries; `LegacySessionCookies`, which the auth module needs to clear
-what the kernel still reads; and `review_roundN_*_test.go`, the shape a
-reviewer's own pinning file arrives in.
+what the kernel still reads. A test says what it protects in its own name and in the
+comment above it, never in the name of the round that asked for it.
 
 ### One release of the old addresses
 

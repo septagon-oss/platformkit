@@ -4,10 +4,13 @@
 //
 // Content is a page or a post: a slug, a title, a body in Markdown, and a
 // status that decides whether the public site serves it. There are no
-// versions, no categories and no translations. Versions in particular are a
-// module of their own — a history table, a diff, a restore and a retention
-// rule — and the private catalogue has one; what a reference architecture owes
-// is the lifecycle, which is draft, published, archived.
+// versions. There are no translations in this table either: the title and the
+// body declare themselves translatable, and the text of another language lives
+// in the translation module's own table, reached through the record's own door.
+// Versions in particular are a module of their own — a history table, a diff, a
+// restore and a retention rule — and the private catalogue has one; what a
+// reference architecture owes is the lifecycle, which is draft, published,
+// archived.
 package contracts
 
 import (
@@ -20,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
+	"github.com/septagon-oss/platformkit/kit/events"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/septagon-oss/platformkit/kit/crud"
@@ -59,6 +63,16 @@ const (
 	MaxSlug  = 200
 	MaxTitle = 200
 	MaxBody  = 262144
+)
+
+// FieldTitle and FieldBody are the JSON names of the two fields a reader of a
+// page reads. They are spelled here because whoever translates this entity needs
+// them by name — the side-by-side view keys on them, and modules/web reads a
+// page's text through the translation port rather than through this struct — and
+// a name two callers each typed separately is a name neither can trust.
+const (
+	FieldTitle = "title"
+	FieldBody  = "body"
 )
 
 // fold is the transliteration Slugify does before it drops what is left. It is
@@ -120,28 +134,47 @@ type Content struct {
 	// Slug is the name this content is reached by, unique within the tenant. It
 	// is normalised on every write, so two callers cannot disagree about
 	// whether "About Us" and "about-us" are the same page.
-	Slug string `json:"slug" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"URL name, unique within the tenant" example:"about-us"`
-	// Title is what a list and a heading show.
-	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" doc:"Headline" example:"About us"`
+	Slug string `json:"slug" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" ui:"label:Address name;help:Used to build this page's web address" doc:"URL name, unique within the tenant" example:"about-us"`
+	// Title is what a list and a heading show. It is one of the two fields this
+	// entity offers for translation: the text of another language is a row of the
+	// translation module's, not a column here, and `?lang=` on this record's own
+	// door is what puts the two together.
+	Title string `json:"title" gorm:"type:varchar(200);not null" validate:"required" minLength:"1" maxLength:"200" i18n:"translatable" doc:"Headline" example:"About us"`
 	// Body is canonical Markdown. It is normalized on write and rendered on read, so
 	// a change to what the renderer allows applies to everything ever written
 	// rather than to whatever happens to be saved next.
-	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" doc:"The content itself, in Markdown"`
+	Body string `json:"body,omitempty" gorm:"type:text;not null;default:''" maxLength:"262144" ui:"widget:richtext;hide:list" i18n:"translatable" doc:"The content itself, in Markdown"`
 
 	// Kind and Status are closed sets; the enum tag is what a form renders as a
 	// select and what Validate refuses a value outside.
-	Kind   string `json:"kind" gorm:"type:varchar(10);not null;default:'post'" enum:"page,post" ui:"widget:select" doc:"page or post" default:"post" required:"false"`
-	Status string `json:"status" gorm:"type:varchar(10);not null;default:'draft'" enum:"draft,published,archived" ui:"widget:select" doc:"Lifecycle state" default:"draft" required:"false"`
+	Kind   string `json:"kind" gorm:"type:varchar(10);not null;default:'post'" enum:"page,post" ui:"widget:select;label:Type" doc:"page or post" default:"post" required:"false"`
+	Status string `json:"status" gorm:"type:varchar(10);not null;default:'draft'" enum:"draft,published,archived" ui:"widget:select" enumTones:"draft=neutral,published=success,archived=neutral" doc:"Lifecycle state" default:"draft" required:"false"`
 
 	// PublishedAt is when it was published, and nil whenever it is not
 	// published: the two are one fact, and Validate keeps them together.
-	PublishedAt *time.Time `json:"publishedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime" doc:"When this was published" readOnly:"true"`
+	PublishedAt *time.Time `json:"publishedAt,omitempty" gorm:"type:timestamptz" ui:"widget:datetime;label:Published" doc:"When this was published" readOnly:"true"`
 
 	// AuthorID is whoever created it. Validate stamps it from the caller on the
 	// context, so it is the actor of the request that wrote the row and not
 	// something a body can claim; the Spec names it Immutable, so no patch
 	// rewrites a byline.
-	AuthorID uuid.UUID `json:"author,omitempty" gorm:"column:author_id;type:uuid" format:"uuid" ui:"hide:list" doc:"The user who created this" readOnly:"true"`
+	AuthorID uuid.UUID `json:"author,omitempty" gorm:"column:author_id;type:uuid" format:"uuid" ui:"visibility:detail;reference:user/user" doc:"The user who created this" readOnly:"true"`
+	// Changes is what the save that published this payload moved. It is the trail's
+	// field and not the entity's: see events.Change and events.Recorder. The kernel's
+	// own write door fills it from the row it locked just before it publishes
+	// content.content.updated, and clears it before the response is written. The create and the delete
+	// share this payload type and never carry it: only a save replaces a row. It is
+	// no column, no form field, no filter and no REST property — a slice of structs is
+	// no entity field type, the gorm tag drops it from the table and the huma tag drops
+	// it from the REST document — so the one event that ever writes it is the update,
+	// which is where "what changed" has to be to still be readable in a year.
+	Changes []events.Change `json:"changes,omitempty" gorm:"-" hidden:"true"`
+}
+
+// SetChanges is events.Recorder: it lets the kernel's CRUD door report what this
+// save replaced, in the event that says the save happened.
+func (c *Content) SetChanges(changes []events.Change) {
+	c.Changes = changes
 }
 
 // TableName pins the table, so the entity and migrations/000017 agree.

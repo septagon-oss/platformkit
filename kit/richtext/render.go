@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -157,7 +158,21 @@ const (
 type Image struct {
 	Src, SrcSet   string
 	Width, Height int
+
+	// Sizes is the `sizes` attribute this representation asks the browser to lay
+	// the frame out against, or empty for ProseSizes — the one value the format's
+	// own prose column needs and the only one the sanitizer accepts. A port that
+	// could return a `sizes` of its own choosing would be a port that could write
+	// past the rule on the line above it.
+	Sizes string
 }
+
+// ProseSizes is the one sizes attribute this format's prose column asks for: the
+// figure is as wide as the text and never wider than the column. It is a
+// constant rather than a per-image answer because the column is the format's, not
+// the file's, and the writer below and the sanitizer's anchor both read this one
+// string.
+const ProseSizes = "(max-width: 65ch) 100vw, 65ch"
 
 // ErrMissing hides absent, foreign, non-image and audience-inaccessible files alike.
 var ErrMissing = errors.New("richtext: image unavailable")
@@ -209,25 +224,77 @@ func Prepare(ctx context.Context, tx db.Tx[db.Tenant], source string, files File
 	return normal, nil
 }
 
-var filePath = regexp.MustCompile(`^/api/v1/(?:file/files/([0-9a-f-]{36})/content|public/file/files/([0-9a-f-]{36}))$`)
-var srcsetEntry = regexp.MustCompile(`^(/api/v1/(?:file/files/[0-9a-f-]{36}/content|public/file/files/[0-9a-f-]{36})) ([1-9][0-9]*)w$`)
+// filePath is the first-party address this format will name, with or without one
+// of the four planned widths on it. The width set is written out rather than
+// matched as a number because it is a closed set: an address this kernel mounted
+// and a width it never planned are the same string shape apart from the digits,
+// and the digits are what the refusal is about.
+var filePath = regexp.MustCompile(`^/api/v1/(?:file/files/([0-9a-f-]{36})/content|public/file/files/([0-9a-f-]{36}))(\?w=(?:480|960|1440|1920))?$`)
 
+// srcsetEntry is one descriptor of a srcset: that same address, and a width.
+var srcsetEntry = regexp.MustCompile(`^(/api/v1/(?:file/files/[0-9a-f-]{36}/content|public/file/files/[0-9a-f-]{36})(?:\?w=(?:480|960|1440|1920))?) ([1-9][0-9]*)w$`)
+
+// checkImage is the write-time gate a stored body passes through, and the reason
+// a srcset is safe to widen at all: every descriptor of every image of every body
+// is asked here, at the moment the body is accepted, so the HTML a reader is
+// served can name no address this kernel did not mount.
+//
+// Four things, of every descriptor:
+//
+//  1. its URL is exactly the image's own `src`, or that same URL with `?w=` and
+//     its own width on it — never another file, another path, another host, a
+//     scheme-relative `//host` or a `data:` URL;
+//  2. its width is a positive number no larger than the frame's own — a srcset
+//     that promises more pixels than the file holds is a lie to the browser;
+//  3. no width appears twice, which is a candidate list the browser cannot read;
+//  4. exactly one descriptor carries no query, and its width is the frame's — the
+//     stored original, which is what a browser with no candidate it likes falls
+//     back to, and the reason that answer is never an image the file does not
+//     have.
+//
+// This is where TestImageProviderCannotSubstituteAnotherFile lives: a provider
+// that returned another file's URL at any width fails the write, and the body is
+// not stored.
 func checkImage(im Image, id uuid.UUID) error {
 	if im.Width <= 0 || im.Height <= 0 || im.Width > 999999 || im.Height > 999999 {
 		return fmt.Errorf("richtext: invalid file dimensions")
 	}
+	if im.Sizes != "" && im.Sizes != ProseSizes {
+		return fmt.Errorf("richtext: an image provider returned sizes this site does not write")
+	}
 	m := filePath.FindStringSubmatch(im.Src)
-	if len(m) != 3 || (m[1] != id.String() && m[2] != id.String()) {
+	if len(m) != 4 || (m[1] != id.String() && m[2] != id.String()) {
 		return fmt.Errorf("richtext: invalid file URL")
 	}
 	if im.SrcSet == "" {
 		return fmt.Errorf("richtext: missing srcset")
 	}
+	seen := map[int]bool{}
+	originals := 0
 	for _, entry := range strings.Split(im.SrcSet, ", ") {
 		parts := srcsetEntry.FindStringSubmatch(entry)
-		if len(parts) != 3 || parts[1] != im.Src {
+		if len(parts) != 3 {
 			return fmt.Errorf("richtext: invalid srcset")
 		}
+		url, width := parts[1], parts[2]
+		w, err := strconv.Atoi(width)
+		if err != nil || w <= 0 || w > im.Width || seen[w] {
+			return fmt.Errorf("richtext: invalid srcset")
+		}
+		seen[w] = true
+		if url == im.Src {
+			originals++
+			if w != im.Width {
+				return fmt.Errorf("richtext: invalid srcset")
+			}
+			continue
+		}
+		if url != im.Src+"?w="+width {
+			return fmt.Errorf("richtext: invalid srcset")
+		}
+	}
+	if originals != 1 {
+		return fmt.Errorf("richtext: invalid srcset")
 	}
 	return nil
 }
@@ -263,7 +330,11 @@ func (r proseRenderer) paragraph(w util.BufWriter, _ []byte, n ast.Node, enterin
 		if f.first {
 			loading = "eager"
 		}
-		_, _ = fmt.Fprintf(w, `<figure><img src="%s" srcset="%s" width="%d" height="%d" sizes="(max-width: 65ch) 100vw, 65ch" alt="%s" loading="%s" decoding="async">`, html.EscapeString(f.image.Src), html.EscapeString(f.image.SrcSet), f.image.Width, f.image.Height, html.EscapeString(f.alt), loading)
+		sizes := f.image.Sizes
+		if sizes == "" {
+			sizes = ProseSizes
+		}
+		_, _ = fmt.Fprintf(w, `<figure><img src="%s" srcset="%s" width="%d" height="%d" sizes="%s" alt="%s" loading="%s" decoding="async">`, html.EscapeString(f.image.Src), html.EscapeString(f.image.SrcSet), f.image.Width, f.image.Height, html.EscapeString(sizes), html.EscapeString(f.alt), loading)
 		if f.caption != "" {
 			_, _ = w.WriteString("<figcaption>" + html.EscapeString(f.caption) + "</figcaption>")
 		}
@@ -349,8 +420,13 @@ func richTextPolicy(legacy bool) *bluemonday.Policy {
 	p.AllowAttrs("type").Matching(regexp.MustCompile(`^checkbox$`)).OnElements("input")
 	p.AllowAttrs("disabled", "checked").OnElements("input")
 	path := `/api/v1/(?:file/files/[0-9a-f-]{36}/content|public/file/files/[0-9a-f-]{36})`
+	// The width a srcset candidate names, as the closed set it is. Same argument
+	// as checkImage's: the digits are what the refusal is about, and a policy that
+	// matched any `?w=` would let a stored body name an address this kernel
+	// refuses to serve.
+	width := `(?:\?w=(?:480|960|1440|1920))?`
 	p.AllowAttrs("src").Matching(regexp.MustCompile(`^` + path + `$`)).OnElements("img")
-	p.AllowAttrs("srcset").Matching(regexp.MustCompile(`^` + path + ` [1-9][0-9]*w(?:, ` + path + ` [1-9][0-9]*w)*$`)).OnElements("img")
+	p.AllowAttrs("srcset").Matching(regexp.MustCompile(`^` + path + width + ` [1-9][0-9]*w(?:, ` + path + width + ` [1-9][0-9]*w)*$`)).OnElements("img")
 	p.AllowAttrs("width", "height").Matching(regexp.MustCompile(`^[1-9][0-9]{0,5}$`)).OnElements("img")
 	p.AllowAttrs("sizes").Matching(regexp.MustCompile(`^\(max-width: 65ch\) 100vw, 65ch$`)).OnElements("img")
 	p.AllowAttrs("alt").OnElements("img")

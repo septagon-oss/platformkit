@@ -1,9 +1,10 @@
 # Auth module
 
 `modules/auth` is signing in: sessions and passwords, single sign-on through
-each tenant's own OpenID Connect provider (the installation may name one of its
-own, and a tenant's row names another), the roles that decide what a caller may
-do, and the three opt-in registration modes described in
+each tenant's own OpenID Connect or SAML provider (the installation may name one
+of its own over OIDC, and a tenant's row names another of either kind), the roles
+that decide what a caller may do, and the three opt-in registration modes
+described in
 [ARCHITECTURE.md](../../ARCHITECTURE.md#start-at-the-composition). Routes live
 under `/api/v1/auth`, and the doors an anonymous caller may use — the ones
 the public surface serves — under `/api/v1/public/auth`; `role:manage` guards
@@ -36,7 +37,11 @@ another: which of a tenant's roles grant `role:manage`, which is what
 
 ### Permissions
 
-The manifest declares one permission, `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`). It guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate. The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me), change-password and the three session routes (`auth-session-list`, `auth-session-revoke`, `auth-session-revoke-all`) are `httpx.SignedIn()` and act only on the caller: the list names the machines this person is signed in on without ever carrying a session id, and the two revocations end one of them or all of them, including the request that asked. `modules/admin` serves that list as a page at `/app/auth/sessions`. It has no nav entry: `kit/module.Validate` refuses an entry that names no permission ("a link everyone sees is still a decision"), and the two permissions this module could name for it would both be wrong — `role:manage` hides the screen from the members it is for, and inventing a `session:read` for one's own sessions would be a permission no role can be refused. The product that owns the navigation names the entry beside the permission it seeds.
+The manifest declares two permissions. `role:manage` (`contracts.PermissionRoleManage` in `modules/auth/contracts/permissions.go`) guards `auth-role-list` at `GET /api/v1/auth/roles` and `auth-role-set` at `PUT /api/v1/auth/roles/{name}` (`RegisterRoutes` in `modules/auth/internal/handler.go`). It also guards the nav entry `auth/roles` in `modules/auth/module.go`; `modules/admin` serves that screen. There is no `role:read`, and `modules/auth/contracts/permissions.go` says that is deliberate.
+
+`passkey:signin` (`contracts.PermissionPasskeySignIn`) guards one operation, `auth-passkey-sign-in-set` at `POST /api/v1/auth/settings/passkey-sign-in`, which is the tenant's own answer to whether a passkey may be the whole sign-in (`SetPasskeySignIn` in `modules/auth/internal/passkeys.go`, `passkey_routes.go`). It is its own key rather than a borrowing of `role:manage` for the reason `modules/auth/module.go` gives about the session list — borrowing that key for a second purpose "would be the wrong decision twice over" — and it is an ordinary permission rather than an operator one because the row it writes belongs to the tenant whose people it changes, which is the argument `migrations/000035_passkeys.up.sql` makes for the table itself. Nothing in this module seeds it: a tenant's `admin` role holds it through the `*` wildcard `SeedRoles` gives it, and the empty `member` role does not, which is the refusal `modules/auth/internal/the_usernameless_door_opens_for_the_permission_it_changes_test.go` pins. No nav entry names it, for the same reason the session list has none.
+
+The other routes name no permission. Login, forgot-password and reset-password are `httpx.Public()`. Logout, identity (me), change-password and the three session routes (`auth-session-list`, `auth-session-revoke`, `auth-session-revoke-all`) are `httpx.SignedIn()` and act only on the caller: the list names the machines this person is signed in on without ever carrying a session id, and the two revocations end one of them or all of them, including the request that asked. `modules/admin` serves that list as a page at `/app/auth/sessions`. It has no nav entry: `kit/module.Validate` refuses an entry that names no permission ("a link everyone sees is still a decision"), and the two permissions this module could name for it would both be wrong — `role:manage` hides the screen from the members it is for, and inventing a `session:read` for one's own sessions would be a permission no role can be refused. The product that owns the navigation names the entry beside the permission it seeds. The six passkey ceremony routes likewise name none: the enrolment pair is `httpx.SignedIn()` and about the caller's own device, and the four sign-in legs are `httpx.Public()` because the caller has no session by design — what they authenticate is a window the `/login` refusal minted, or a signature over a nonce this server wrote for this tenant's host, and `passkey_routes.go` says why that is not the same thing as nobody.
 
 ### Object scope
 
@@ -48,7 +53,7 @@ None. The code searched shows no use of `tenancy.Policy` in this module. Role wr
 
 ### Public faces
 
-Public routes are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification` and `auth-verify-email` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
+Public faces are registered with `httpx.Public()`: `auth-login`, forgot-password and reset-password in `modules/auth/internal/handler.go`, and, only when the composition opts in, the registration routes (`auth-register` in `registration.go`, `approval_registration.go` and `email_registration.go`, plus `auth-resend-verification`, `auth-verify-email` and `auth-mail-delivery` in `email_registration.go`). Registration acknowledgments are meant to be neutral and not reveal whether an account exists. `auth-mail-delivery` is the one read of the notification module's direct-mail record: keyed by the caller's own `X-Request-ID`, it answers 200 with one field and one of **two** words — `failed` when a transport refused the mail, `pending` for everything else, including a record that says the mail went out. The record it reads is the caller's own and only that one, and only of the two kinds the sign-up and resend flow produce, because every branch of those two routes hands exactly one message to the transport — a link or the message that says no link was sent (`internal/no_link.go`) — so no caller is answered out of somebody else's row and no caller is answered from the absence in front of it. The forgotten-password route is not among those kinds: it mails only the addresses where it found an account, so its refusals are sayable to nobody (see [The record a mail leaves](#the-record-a-mail-leaves)). Review 3 removed the second read that used to stand behind this one — the tenant's newest outcome, for a caller whose own call had left no record — because a stranger could plant the refusal it was answered with. It names no recipient, no kind and no reason, a call that left no record is answered exactly as one from another tenant is, and a call whose mail went is answered exactly as one that mailed nothing, because `sent` about an address is a statement about who has an account here (`contracts.MailReport` is that refusal, and `TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne`, `TestFailedMailDoesNotDiscloseWhetherAnAccountExists`, `TestFailedRegistrationMailDoesNotDiscloseAnExistingAccount` and `TestFailedVerificationResendDoesNotDiscloseAnActiveAccount` are its proofs). Public writes are rate-limited through `kit/limit` via `contracts.Limiter` (`NewLimiter(limit.Postgres(...))` in `modules/auth/internal/service.go`): `Check`/`Failed` for login, `MayAsk` for forgot-password and registration, `MayRedeem` for reset and verify, `AskedAboutMail` for the delivery read — its own budget rather than the redemption one, because the shell polls the read while a person waits for a link and must not spend the link's use on waiting — and `VerificationMail` for resend. The exact response fields for each route were not enumerated for this section.
 
 ### The operator boundary
 
@@ -79,6 +84,191 @@ a user id and no list can name a session by one. **Made reusable:**
 provider cache keyed by issuer rather than by tenant, so two tenants sharing a
 door discover it once; and the discovery-port shape itself — a module that asks
 its composition per request instead of holding a client it resolved at boot.
+
+For the mail record: **Reused** — `internal.record`'s raw-SQL write shape, and
+`verificationLock`'s advisory lock: `offer` takes the same
+`pg_advisory_xact_lock` over `auth/password/<tenant>/<user>` before `recent()`, so
+two reset requests for one person mail one link. The RLS pattern of `000027`,
+`served.go`'s "a fact from the event, needed two frames later" slot (now
+`WithOrigin`/`originOf`, carrying the delivered event's `RequestID` and
+`Traceparent` down to the row that names the call), `contracts.EmailKey` for the
+recipient, and `modules/audit`'s `SubscribeAll`, which puts `auth.mail_failed` on
+the trail with nothing registered anywhere to make that true. **Added** —
+`contracts.MailLedger`, which nothing carried because the two direct sends wrote
+nothing down at all, the `Mails` port on `auth.Deps`, the `auth.mail_failed` event,
+`contracts.Limiter.AskedAboutMail`, and the door. **Made reusable:**
+`contracts.RedactMailReason` and `contracts.MailReport` live in the notification
+module's `contracts/` rather than here, so a second module that mails outside a
+notice records it and answers about it the same way instead of inventing a scrubber
+of its own.
+
+## The record a mail leaves
+
+Two mails go out of this module with no notice behind them — a set-password
+link (`contracts.MailSetPassword`, from a reset request and from an invitation)
+and a verification link (`contracts.MailVerification`, from sign-up and from
+resend). They are recorded in the notification module's `direct_mail_deliveries`
+through `contracts.MailLedger`, in the transaction of the send itself: one row
+per attempt saying who it went to, which kind it was, whether the transport took
+it (`sent`), refused it (`failed`, with the transport's words redacted by
+`contracts.RedactMailReason`) or had nothing to send it through (`suppressed`).
+A refusal is acknowledged rather than retried, which is what lets its row commit,
+and it leaves no credential behind: `offer` restores the token row it found and
+raises no notice, because the in-app copy says "the link is in the email this
+raised" and that sentence is owed only by a record that says `sent`
+(`TestARefusedSetPasswordMailLeavesNoNoticeThatSaysItWasSent`). The failure is on
+the trail as `auth.mail_failed`, in the same transaction as the row.
+
+Nothing in a record is a secret: no subject, body, link, token or hash —
+`TestMailedLinkIsRecordedAndCarriesNoCredential` and
+`TestRefusedMailIsRecordedWithoutItsCredential` scan every base table in the
+schema, enumerated from `information_schema` rather than named, for the token and
+its hash.
+
+The one public read is `POST /api/v1/public/auth/mail-delivery` — see
+[Public faces](#public-faces) for its two words and the reason `sent` is not one
+of them. `ui/assets/js/session.js` asks it after a register or
+resend-verification form is accepted, with the `X-Request-ID` that call was
+answered with, and replaces the neutral acknowledgment with "mail could not be
+sent just now: the mail server refused it" only on `failed`; the neutral sentence
+itself never claims a mail left. It does not ask after the forgotten-password
+form, which has no answer to receive (below). The door's address is the module's
+mount plus `/mail-delivery` — `kit/httpx/surfaces.go`'s shape, not the last
+segment of the route that answered, which is how a `/password/forgot` form came
+to ask a path nobody mounts and to leave a refusal unsaid.
+
+### Limits
+
+* **The door answers two words, and `sent` is not one of them.** A route that
+  mails only addresses where somebody has an account cannot report whether a mail
+  left without reporting who has an account, so a person who asks is told that
+  nothing failed rather than that something succeeded. The brief's "'we sent you a
+  link' is said only when a record says `sent`" is honoured by the shell never
+  claiming it at all; showing `sent` to anybody is a product decision.
+* **Which refusals are sayable is decided by the flow, not by the door.** The door
+  reads its answer among `auth.verification` and `auth.verification_no_link`
+  (`internal/mailDeliveryKinds`), and every branch of the sign-up and resend flow
+  hands exactly one message to the transport — the link where an account awaits
+  one, and the sentence that says no link was sent everywhere else: nobody has the
+  address, the account cannot be sent a link, the account was already verified, a
+  link mailed a moment ago still stands, the address is taken (`auth.no_link_requested`).
+  While a transport refuses everything it refuses both callers alike, which is the
+  only case a public door may speak of.
+* **The forgotten-password flow's refusals are not public.** One link is the whole
+  of what a known and an unknown forgot request cause between them
+  (`TestTheMailDeliveryDoorDoesNotTellAKnownAddressFromAnUnknownOne`), so the
+  no-account branch sends no mail and leaves no record, and a door that answered
+  "that mail was refused" about one of those callers and "that call caused no
+  mail" about the other would have said who has an account. Its `auth.set_password`
+  row is still written and still reaches the trail; what is withheld is the public
+  read of it, and the forgot form is answered by its neutral acknowledgment alone.
+  Buying the word back costs a mail to every address that has nobody behind it.
+* **What the door still leaks, exactly.** A transport that refuses one mailbox and
+  takes another tells a fact about the address it refused, and any word about it
+  names that address. Nothing about the selective case is airtight while it lasts:
+  the only shape that closes it completely is never answering `failed` at all,
+  which leaves the person with a promise of a link nobody sent. The shell's
+  sentence is about the mail server for that reason.
+* **A sign-up for an address that already has an account sends one message.** It
+  says "somebody asked for a link to this address and no link was sent", the same
+  sentence every other no-link branch of the verification flow says, and it is
+  what lets the two sign-ups be answered from their own records. It is mail to a
+  mailbox that asked to register, capped by the same `MayAsk` budget the sign-up
+  itself is capped by — never more than the link it replaced would have cost.
+* **A transient SMTP failure is now final for a direct send.** No outbox retry
+  ladder and no dead letter: the row, the `auth.mail_failed` event and a person who
+  can be told are what took the ladder's place. An invitation whose mail the server
+  refused is therefore not retried, and the inviter learns nothing beyond the trail
+  until the invited person's own screen says so.
+* **No retention or erasure** of the addresses these rows record — the same
+  question `notification_deliveries` lives with, and the product's to answer
+  ([§ Object scope](#object-scope)).
+* **The closed-port journey is not run by `make e2e`.** The harness boots one
+  application whose mail points at the catcher; no second application boots with
+  `mail.port` naming a port nothing listens on, so the `failed` half of the
+  acceptance is proven in Go (`mail_delivery_test.go`, `refused_link_notice_test.go`)
+  and the shell's reading of it is proven against a stubbed door
+  (`e2e/email-verification-forms.spec.ts`), never against a live refused SMTP send.
+
+## A SAML assertion at the same door
+
+`Deps.SAMLProviders` mounts three app-surface routes — `auth-saml-start`,
+`auth-saml-callback` and `auth-saml-metadata` — for a composition that can
+resolve a tenant's identity provider at all, and no route at all for one that
+cannot. The service provider is built per request from the row the `Host`
+resolved and addressed at that host, so two tenants on one installation have two
+entity IDs, two assertion consumer URLs and two metadata documents; what is kept
+between requests is only the parsed IdP document, keyed by its own bytes and by
+the URL it came from — a copy fetched from a URL for an hour and no longer, so an
+IdP that rotates its signing certificate is followed within the hour instead of
+leaving the tenant at 403 until somebody restarts the process. The assertion is
+verified before anything is written: its own signature — a Response that signs its
+envelope and not the assertion inside it is refused, which is *not* the library's
+default and is the case `TestAnUnsignedSAMLAssertionIsRefused` holds at the door —
+its audience against this tenant's entity ID, and an assertion that names no
+audience at all names nobody and is refused, which is likewise *not* the library's
+default (`TestASAMLAssertionWithNoAudienceRestrictionIsRefused`); its subject bound
+in the bearer method, or by the schema's silence, because the library checks a
+subject's recipient and request id for every confirmation it carries and for none
+when it carries none
+(`TestASAMLAssertionBoundToNoBearerIsRefused`); its recipient against this host's
+ACS URL; its window with the library's 180-second skew; and the request it answers,
+which is the browser's own tracking cookie and the reason IdP-initiated sign-in is
+refused rather than allowed with less checking. The address the named attribute
+carries
+then runs the tenant's registration rule and `Service.Open`, the same call the
+OIDC callback finishes with, so the second-factor rule is not re-expressed here
+at all.
+
+Decision 0022, for this delivery. **Reused:** `Service.Open` and everything
+behind it — `ErrFactorRequired`, `markFirstFactorProved`, `refusedAtTheDoor`;
+`users.ByEmail`, `ConfirmAddress` and `contracts.Provisioner`, which is how an
+unknown address stays the tenant's decision rather than a protocol's;
+`discover`'s cached-resolution-and-503 shape for metadata that cannot be fetched;
+the hourly sweep's batched `purge` loop, one arm of which is the replay row's
+expiry; `httpx.Register` with `httpx.Public()`, and `redirectOutput` for the two
+legs. **Added:** the assertion consumer service and the per-tenant SP metadata
+document, because the trace found no served-XML surface and no inbound-POST leg
+anywhere to extend; the replay table `000047_saml_assertion_replays`, whose
+primary key *is* the claim; `contracts.SAMLProvider` and its `SAMLProviders`
+port, naming no SDK; the metadata copy's hour, and the fetch's deadline and
+ceiling; and `Open`'s sign-in-method argument (`ViaOIDC`,
+`ViaSAML`) — the port grew by the one value its own trail already carried,
+because a login the log called "oidc" would send whoever reads it to the wrong
+provider about the person they are asking about. **Made reusable, in the one sense
+the word earns here:** `authtest.SAMLIdP`, the in-process identity provider that can
+emit the unsigned, wrong-audience, wrong-recipient, no-audience and unconfirmed-subject
+variant of an assertion by construction, so a refusal is tested against a document a
+real IdP would send rather than a hand-written one. The two shapes the delivery also
+leaned on are named as shapes and are not importable: the per-request service provider
+(build it from the row, cache only the other party's document, key that cache by the
+document and not by the tenant) and the external credential spent in the same
+transaction as the session it buys live as this module's own `SAML` value and
+`spendAssertion`, unexported, and a later module that wants one moves it out with a
+consumer in front of it rather than reaching over.
+
+What is deliberately not here: the service provider holds no key, so AuthnRequests
+go unsigned and the metadata names no `KeyDescriptor` (`contracts.Secrets` is
+where a key would arrive and a `saml_key_ref` column where it would land, neither
+of which anything reads today); an encrypted assertion is refused rather than
+parsed, and so is one bound holder-of-key or sender-vouches, for the same lack of
+a key; there is no installation-level SAML default to fall back on, unlike
+OIDC — the legs mount on the port alone; and there is no single logout, so
+`auth.Logout` stands as the only way a session ends. Two things about it are named
+rather than hidden. The assertion consumer service is an anonymous POST on the *app*
+surface, so `kit/httpx`'s public-write limit — the Public surface's only limit — does
+not reach it, and what bounds it is this module's own counter: sixty assertions an
+address a minute (`contracts.AssertionsPerAddress`, the rate the kernel counts the
+forms it does gate at), refused ahead of the base64, the parse and the signature so
+the refusal costs less than the work it refuses — and one office behind one NAT is one
+counter, which is the cost the kernel already accepts for the same reason. And the hour
+a document fetched from a metadata URL is trusted for is both the cure and the
+residual: a rotated-in certificate is followed within the hour, and a certificate its
+owner has taken out of service stays trusted here for the same hour. And the
+tracking cookie is `SameSite=None`, which a browser only sends over TLS: local
+development needs a terminator in front of the callback, because no cookie
+attribute makes the IdP's cross-site POST carry one over plain http — `Lax` is the
+other half of the same refusal, which is why the attribute is not a knob to turn.
 
 ## A second factor
 
@@ -185,23 +375,57 @@ refusal and the record in one statement.
   meaning the same thing as the first is two knobs for one policy. Six digits
   across three steps is 3×10⁶ guesses per window, which is nothing to a script,
   so this route needs a rate limit and not only a wide space.
-* **No passkeys.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
-  CBOR/COSE tree — a new module dependency, priced in its own `build(budget)`
-  commit, and a `webauthn.Config` built per request from the resolved host. That
-  is a round of its own and this one did not take it; the `Kind` field on
-  `Factor` and on the two factor events is where it lands when it does, and
-  nothing above has to change for it.
+* **Passkeys are in.** WebAuthn is `github.com/go-webauthn/webauthn` plus its
+  CBOR/COSE tree, priced as a module dependency in its own `build(budget)`
+  commit. A passkey is a
+  second factor whose proof is a signature over a nonce this server minted, and so
+  it is a ceremony rather than a code: `contracts.Passkeys` is beside `Factors`
+  because the only enrolment pair `Factors` offers is shaped by a secret the server
+  hands out, and nothing in that shape is a parameter of a ceremony. Its own
+  `internal/passkeys.go` is the only file in the repository that imports the SDK
+  (`contracts/passkeys.go` names no SDK type, so CBOR and COSE never reach a
+  handler, an event or the contract) and its own `000035_passkeys.up.sql` the only
+  one that adds a challenge table — 000031 declined one for TOTP because RFC 6238
+  already is a challenge, and WebAuthn has no such built-in nonce. Nothing there is
+  sealed: a public key is public, so a deployment with no `auth.factor_key` enrols
+  passkeys and answers both sign-in doors. The two things the library leaves to the
+  relying party are decided where they are enforced: the relying party is built per
+  request from the host that already chose the tenant (so a passkey minted at one
+  tenant's host cannot answer at another's, by construction), and the clone rule —
+  a counter going backwards retires the credential for good and publishes
+  `auth.factor_suspect` — because the library only flags it. `auth.factor_used`
+  names the quieter half: which factor answered. Whether a passkey may be the whole
+  sign-in, with no password offered first, is the tenant's own row in
+  `passkey_settings`, read per request; `TestTheUsernamelessDoorIsTheTenantsOwnRow`
+  is that read, and the read is asked of the answer as well as the prompt — a tenant
+  that shut the door while a ceremony stood open is refused that ceremony
+  (`TestDisablingPasskeySignInRefusesAnOutstandingCeremony`), because the setting is
+  what may open a session here now rather than as at the moment a nonce was minted.
+  The counter is written as a compare-and-set (`UPDATE … WHERE id = ? AND
+  clone_warning = false AND sign_count = ?`), so two assertions carrying one counter
+  settle on one accepted session rather than two, which is the clone rule surviving
+  the interleaving a prompt-per-tab browser creates on its own
+  (`TestConcurrentPasskeyAssertionsRejectARepeatedCounter`). And the refusal to take
+  the last factor away counts the factors that can still answer: a credential retired
+  as suspect is a row and not a way in, so it neither stands in for a usable factor
+  when the last one is being withdrawn nor waits for a favour it cannot use
+  (`TestASuspectPasskeyDoesNotPermitWithdrawingTheLastUsableFactor`,
+  `TestARetiredPasskeyIsWithdrawnAsTheRowThatItIs`). What is *not* here is the administrator's control for that row (the
+  product's), any page, and any attestation policy: this module holds no
+  manufacturer registry, so which AAGUID made an authenticator stays a specialist
+  fact rather than a shared module's table.
 * **Bearer tokens are in** (the brief's item 4) — see the next section, and its
   own list of what is still open there.
-* **No factor page, and the sign-in page has no second step.** `ui` and the
-  admin shell never call `/api/v1/auth/challenge/verify` (only this module's
-  routes and its tests name that path), so a person who enrols a factor through
-  the JSON routes cannot answer the second half from the reference app's sign-in
-  page — the page shows the refusal text and stops. The JSON path does work, and
-  is tested at its address: a correct code there is a 200 and a session cookie.
-  The page work is the shell's, and until it lands, enrolling a factor from a
-  screen that does not know about the challenge route locks a person out of that
-  screen.
+* **No factor page, and the sign-in page answers a passkey, not a code.** The
+  reference app's sign-in page carries the second step for the half that is a
+  ceremony: `modules/admin/internal/pages.go` wires the refusal's own form to
+  `/challenge/passkey/begin` and `/challenge/passkey/verify` and
+  `ui/assets/js/passkeys.js` drives the prompt, which is what
+  `e2e/passkey-second-factor-door.spec.ts` and `e2e/passkeys.spec.ts` walk in a
+  browser. No page calls `/api/v1/auth/challenge/verify`: a TOTP or a recovery
+  code is still answered over the JSON route, which works and is tested at its
+  address — a correct code there is a 200 and a session cookie — while the page
+  shows the refusal text and stops. The code-entry work is the shell's.
 
 ## Bearer tokens for a person's own integrations
 
@@ -238,7 +462,7 @@ a key, replace the recovery codes, withdraw a factor, revoke a session, sign out
 every browser. None of them is reachable from a bearer credential whatever its
 scopes, which is the half that kept a key scoped to one read from widening itself
 back to its holder with two POSTs. `kit/httpx/scoped_credential_test.go` pins both
-halves at the kernel, and `review_r4_a_scoped_key_is_held_to_its_scope_test.go`
+halves at the kernel, and `scoped_key_is_held_to_its_scope_test.go`
 drives them at the routes.
 
 The rule stops there, at the operations that spend it, and one operation in this

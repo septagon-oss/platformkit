@@ -7,7 +7,7 @@ package db_test
 // `Migrate` puts the budgets on its session (kit/db/migrate.go, `apply`) before it asks
 // for the lock back (`stepAwayFromTheCompositionLock`, `stepBackToTheCompositionLock`).
 //
-// The first acquisition is covered by review3_guard_floor_test.go's
+// The first acquisition is covered by source_cannot_declare_floor_past_head_test.go's
 // TestTheCompositionLockWaitsOnTheCallersContextNotOnABudget, which can only cover it
 // because the budgets are not on the session yet. The re-acquisition is no abstraction:
 // every test of this repository that calls `db.Migrate` contends for one advisory lock

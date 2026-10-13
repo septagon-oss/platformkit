@@ -41,7 +41,7 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 		t.Fatalf("pending login = %d", res.Code)
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
-		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}); !errors.Is(err, contracts.ErrCredentials) {
+		if _, _, err := auths.Open(ctx, tx, pending.ID, contracts.Client{}, contracts.ViaOIDC); !errors.Is(err, contracts.ErrCredentials) {
 			t.Fatalf("pending OIDC session = %v", err)
 		}
 		if err := auths.Forget(ctx, tx, pending.Email); err != nil {
@@ -52,8 +52,15 @@ func TestPendingRegistrationCannotRecoverOrSignInBeforeApproval(t *testing.T) {
 		t.Fatal(err)
 	}
 	worker(t, conn)
-	if len(mailbox.Sent()) != 0 {
-		t.Fatal("pending registration received an activation or reset link")
+	// The person whose sign-up is waiting to be approved is handed nothing that
+	// opens a door. Before the no-link message (modules/auth/internal/no_link.go)
+	// this case counted every message; what it has always been about is the
+	// credential, so it now says that in the open: no message this pending account
+	// received carries a token, whichever message it received.
+	for _, letter := range mailbox.Sent() {
+		if authtest.TokenIn(letter.Body) != "" {
+			t.Fatalf("pending registration received a credential (%q to %s)", letter.Subject, letter.To)
+		}
 	}
 	if err := db.Run(tenancy.WithTenant(t.Context(), acme), conn, func(ctx context.Context, tx db.Tx[db.Tenant]) error {
 		var tokens int64

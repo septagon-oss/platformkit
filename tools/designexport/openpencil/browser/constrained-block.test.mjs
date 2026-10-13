@@ -59,7 +59,7 @@ test('real EmptyState keeps enlarged copy and its keyboard action usable at 320p
   } finally { await browser.close() }
 })
 
-test('real EmptyState retains intrinsic centered text, maximum width, linked actions and edits through two saves', async t => {
+test('real EmptyState retains full-width centered text, maximum width, linked actions and edits through two saves', async t => {
   const run = await emptyStateFixture(t)
   const browser = await chromium.launch({ headless: true, args: ['--enable-automation', '--font-render-hinting=none'] })
   const ck = await initCanvasKit(), renderer = new SkiaRenderer(ck, ck.MakeSurface(1, 1)), previous = getTextMeasurer()
@@ -104,7 +104,7 @@ test('real EmptyState retains intrinsic centered text, maximum width, linked act
           matches(graph, instance, (await captureExample(browser, snapshot, id, options)).roots[0])
           const description = graph.getChildren(instance.id)[1]
           assert.equal(description.maxWidth, 448)
-          assert.equal(description.counterAxisSizing, 'HUG')
+          assert.equal(description.counterAxisSizing, 'FILL')
           if (action) assert.equal(graph.getChildren(instance.id)[2].type, 'INSTANCE')
           const property = built.selections[0].properties.find(item => item.name === 'description')
           const before = structuredClone([...graph.getAllNodes()])
