@@ -290,7 +290,7 @@ apply_defaults() {
 	# on a cluster with no platformkit_app it skipped every grant, and the step restored,
 	# seeded, applied the release and printed `ok:` over a copy no application connection
 	# could reach — the copy this comment has always said the step is not measuring.
-	# `scripts/review15_rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
+	# `scripts/rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
 	# branches create the role before they call this, so a role missing by now is that
 	# promise broken, and a step that cannot build the copy it reports on exits 2.
 	role_exists || die 2 "no platformkit_app role on this cluster and none created: refusing to measure a copy whose tables the application role cannot reach"
@@ -331,7 +331,7 @@ restore() { # $1 = database, $2 = dump file (custom format or plain SQL)
 # file this step exists to price — was then applied to the copy by the binary the step
 # built, and reported under the name of a revision that does not contain it. The report
 # is the artefact a release reads, so it names the tree the run was built from, and
-# `scripts/review5_rehearsal_provenance_test.sh` runs this line over a repository holding
+# `scripts/rehearsal_provenance_test.sh` runs this line over a repository holding
 # one committed file and one uncommitted one. The test is on the captured text rather
 # than `| grep -q .`: this script runs under `pipefail`, and a `git status` whose output
 # fills the pipe before `grep -q` has its answer dies of SIGPIPE (141), which `&&` reads
