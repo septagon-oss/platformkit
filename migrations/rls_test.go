@@ -37,15 +37,21 @@ import (
 	"github.com/septagon-oss/platformkit/modules/site"
 	"github.com/septagon-oss/platformkit/modules/subject"
 	"github.com/septagon-oss/platformkit/modules/task"
+	"github.com/septagon-oss/platformkit/modules/translation"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 )
 
 // everything is the kernel's schema and every reference module's, in the order
 // apps/platformkit composes them: the claim below is about every table this
 // repository creates, whichever owner now carries the file.
+// translation sits before content because that is where apps/platformkit/app.go
+// names the module: the translation table is created before the records whose
+// fields it translates, and the walk below migrates in the order the application
+// composes, so a table the application creates is a table the walk has seen.
 var everything = []db.MigrationSource{migrations.Source, user.Migrations, notification.Migrations, auth.Migrations,
-	task.Migrations, billing.Migrations, content.Migrations, site.Migrations, file.Migrations, audit.Migrations,
-	change.Migrations, subject.Migrations}
+	task.Migrations, billing.Migrations, translation.Migrations, content.Migrations, site.Migrations,
+	file.Migrations, audit.Migrations, webhook.Migrations, change.Migrations, subject.Migrations}
 
 // exemption is the marker a table that belongs to no tenant carries, in its
 // own COMMENT, so that "this one is deliberate" is written where the table is
@@ -58,7 +64,7 @@ const exemption = "platformkit:tenant-scoping-exempt"
 // a tenant policy: a policy would have to name a tenant the row does not have.
 // The one door on them is the REVOKE, and it is checked rather than asserted —
 // below, in this walk, from the catalog, and by running the statements from an
-// application connection in kit/db/review_guarantees_test.go. A table added to
+// application connection in kit/db/contention_err_contended_under_budget_deployment_named_test.go. A table added to
 // this list without that door is a table somebody else can write.
 var runnerTables = []string{"schema_migrations", "schema_migration_backfill"}
 

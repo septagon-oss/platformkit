@@ -15,6 +15,7 @@ import (
 	"github.com/septagon-oss/platformkit/modules/task"
 	"github.com/septagon-oss/platformkit/modules/tenant"
 	"github.com/septagon-oss/platformkit/modules/user"
+	"github.com/septagon-oss/platformkit/modules/webhook"
 	"github.com/septagon-oss/platformkit/ui/forms"
 	"github.com/septagon-oss/platformkit/ui/page"
 	"github.com/septagon-oss/platformkit/ui/resource"
@@ -59,5 +60,6 @@ func catalogues() xtext.Catalog {
 		subject.Catalogue(),
 		task.Catalogue(),
 		tenant.Catalogue(),
-		user.Catalogue())
+		user.Catalogue(),
+		webhook.Catalogue())
 }

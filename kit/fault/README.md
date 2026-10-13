@@ -66,14 +66,18 @@ package to pass, and an empty allowance as a recorded boundary.
 
 ### Limits
 
-No dependency count moves here, and this guide does not claim one. Eleven
+No dependency count moves here, and this guide does not claim one. Thirteen
 `contracts/` packages of this repository wrap one of these refusals under the
-adapter's name, and a guide that traced one has to name the rest. Three are a
+adapter's name, and a guide that traced one has to name the rest. Four are a
 module's own contract source: `modules/content/contracts`, whose `Render` wraps
 `crud.ErrInvalid` for a body goldmark cannot read; `modules/file/contracts`,
 whose `Agrees` wraps it for bytes that are not the type they were uploaded as;
-and `modules/user/contracts`, which derives its own `ErrRegistrationExists` from
-`crud.ErrConflict`, so `errors.Is` answers it under either name. Eight are the
+`modules/translation/contracts`, whose `ErrNoMachine` wraps it because an
+installation with no configured provider refuses a suggestion the way a bad
+request does — writing nothing — and the rule lives in `contracts/` so the fake
+and the service refuse in the same words; and `modules/user/contracts`, which
+derives its own `ErrRegistrationExists` from `crud.ErrConflict`, so `errors.Is`
+answers it under either name. Eight are the
 shipped test-support package beside a module's contract, which refuses the way
 the service it stands in for refuses, under the same name:
 `modules/billing/contracts/billingtest`, `modules/content/contracts/contenttest`,
@@ -81,12 +85,19 @@ the service it stands in for refuses, under the same name:
 `modules/notification/contracts/notificationtest`,
 `modules/site/contracts/sitetest`, `modules/task/contracts/tasktest`,
 `modules/tenant/contracts/tenanttest` and `modules/user/contracts/usertest`.
+`modules/translation/contracts/translationtest` is the thirteenth: the conformance
+fake beside the translation port refuses a stale revision, an empty translation
+and an absent review the way `internal.Service` refuses them, under the same
+three names, because a fake that answered differently would let a caller's test
+pass for no reason.
 `modules/auth/contracts` is on neither list: this change moved it to
 `fault.ErrInvalid`, and no file of its own imports `kit/crud` now. None of the
-eleven moves a closure: each names `db.Tx` in its own files and imports
+twelve moves a closure: each names `db.Tx` in its own files and imports
 `kit/crud` or `kit/db` for `crud.Base` and a transaction-aware service, so
 `go list -deps` still lists gorm and `database/sql` for every one of them
-whichever name the sentinel is reached by. The reachability runs from the module
+whichever name the sentinel is reached by — the thirteenth included, since
+`translationtest` imports `kit/crud` for `crud.ErrConflict` and `crud.ErrInvalid`
+and nothing else. The reachability runs from the module
 to the kit package:
 `modules/auth/contracts` reaches `kit/crud` through `modules/user/contracts`,
 which imports it for `crud.Base` and not for a sentinel, and reaches `kit/db`
@@ -110,7 +121,7 @@ this was written for are downstream of this repository — a consumer's
 pin moves. This guide does not name them: ADR 0009 keeps
 a private catalog's capabilities out of a public document, and a name published
 here is not withdrawable. That rule is checked rather than hoped for:
-`review2_public_guide_test.go` in this package refuses a kit guide naming a
-capability this tree does not hold, and `review3_public_documents_test.go` applies
-the same rule to every markdown document the repository publishes, which is where
-a release note or an ADR is read for the name it should not carry.
+`public_documents_test.go` in this package reads every markdown
+document the repository publishes — a kit guide, a release note, an ADR — and refuses
+one that names a capability this tree does not hold, because a published name cannot be
+withdrawn.

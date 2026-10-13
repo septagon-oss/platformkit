@@ -70,7 +70,29 @@ test('a person created in the shell accepts the mailed invitation and lands sign
   const as = await context.newPage();
   await as.goto(link);
   await as.locator('input[name="new"]').fill(person.password);
+  // The request that spends the link is what signs this browser in, so the case waits
+  // for its answer and reads its status — and only its status, because this response's
+  // body belongs to the page's own fetch and asking the network stack for it a second
+  // time waits past the end of the test. The address cannot carry this assertion:
+  // `ui/assets/js/session.js` clears the token out of it as the page loads (a bearer
+  // link in the location bar is one a browser offers to save), so from that moment the
+  // browser stands on the bare `/app/auth/reset` whether the password was refused, is
+  // still being hashed, or has already been accepted — which is why a refused case and
+  // a slow one print the same line. The status is read rather than Playwright's `ok()`
+  // because a browser response calls 0 ok, and 0 is an answer with nothing behind it,
+  // which is no password set. What the journey accepts is the band its success answers
+  // with, below 300; a redirect reaches it as neither status nor refusal, because
+  // session.js posts with `redirect: "error"` and Chromium publishes no response event
+  // for one — that case prints as a wait that never resolved. The same POST is read
+  // this way in e2e/mailed-links.spec.ts.
+  const spent = as.waitForResponse(response =>
+    response.request().method() === 'POST'
+    && new URL(response.url()).pathname.endsWith('/auth/password/reset'));
   await as.locator('form[data-auth-form="reset"] button[type="submit"]').click();
+  const answer = await spent;
+  expect(answer.status() < 300, `the invitation link did not set a password (HTTP ${answer.status()})`).toBe(true);
+  // And only now does the address say anything: an accepted password sends this
+  // browser to the destination the page was rendered with.
   await expect(as).not.toHaveURL(/\/app\/auth\/reset/);
 
   const me = await as.request.get('/api/v1/auth/me');

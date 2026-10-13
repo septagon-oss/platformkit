@@ -1,6 +1,6 @@
 package internal_test
 
-// T-0117's own cases for the per-tenant provider. The conformance suite covers
+// The claims below the command for the per-tenant provider. The conformance suite covers
 // what a command refuses and what it says; these cover the three claims that
 // live below the command, in the schema and the policy, and that a suite run
 // inside one cross-tenant transaction cannot reach:

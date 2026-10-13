@@ -38,6 +38,11 @@ var Module = pkit.NewModule("notification", wire,
 	// shorter name.
 	pkit.Provides[authcontracts.Notifier](),
 	pkit.Provides[contracts.Mailer](),
+	// The ledger of the mails a module sends without a notice behind it. auth
+	// names this same type `authcontracts.MailLedger` — an alias, not a second
+	// interface — so one Put answers both spellings, and the module that records
+	// the attempt is the module that owns the record's table.
+	pkit.Provides[contracts.MailLedger](),
 	pkit.Contributes[personaldata.Part](),
 	pkit.FromDeployment(
 		pkit.Implementation{Name: "smtp", Inputs: []string{"mail.host", "mail.port", "mail.from"}},
@@ -70,6 +75,7 @@ func wire(w *pkit.Wiring) (module.Module, error) {
 	})
 	pkit.Put(w, svc)
 	pkit.Put[authcontracts.Notifier](w, svc)
+	pkit.Put[contracts.MailLedger](w, svc)
 	pkit.Put[contracts.Mailer](w, mailer)
 	pkit.Put[personaldata.Part](w, internal.PersonalData())
 	return manifest, nil

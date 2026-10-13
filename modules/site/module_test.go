@@ -141,7 +141,7 @@ func TestTheAccentRatiosAreTheOnesTheRuleCompared(t *testing.T) {
 		colour      string
 		light, dark float64
 	}{
-		{"#2563eb", 4.50, 3.55}, // the kit's own default
+		{"#2563eb", 4.50, 3.55}, // a blue a tenant may choose, and the colour this column used to default to
 		{"#b45309", 4.37, 3.66},
 		{"#0f766e", 4.76, 3.36},
 		{"#7c3aed", 4.96, 3.22},
@@ -153,6 +153,13 @@ func TestTheAccentRatiosAreTheOnesTheRuleCompared(t *testing.T) {
 		{"#c0ffee", 1.03, 16.42},
 		{"#ffffff", 1.15, 18.36},
 		{"#0e1614", 15.98, 1.00},
+		// The reference palette's own two accents. Neither clears the band, and that
+		// is the fact the resolution rests on: the installation's accent is not a
+		// colour a hand may type here, so the only way either reaches a row is the
+		// read that resolved it. design.Pair is what the application names, and these
+		// two numbers are why a resolved accent is never run through this rule.
+		{"#0f5d4e", 6.78, 2.36}, // design.Light().AccentDefault
+		{"#4bbf9c", 1.98, 8.07}, // design.Dark().AccentDefault
 	} {
 		light, dark, ok := contracts.AccentRatios(tc.colour)
 		switch {
@@ -172,6 +179,36 @@ func TestTheAccentRatiosAreTheOnesTheRuleCompared(t *testing.T) {
 	}
 	if _, err := contracts.ContrastRatio("#2563eb", "canvas"); err == nil {
 		t.Error("ContrastRatio answered for a canvas that is not a colour")
+	}
+}
+
+// TestTheEmptyColourIsStoredAndEveryOtherBadColourIsNot is the write door of the
+// resolution: the empty colour is a legal stored value — that absence is what
+// "the installation's" means — while a colour that is not #rrggbb is still refused,
+// and the legibility rule still refuses a #rrggbb that vanishes into a canvas,
+// including the installation's own accents, which a hand may type and Save clears
+// before the rule ever sees them.
+func TestTheEmptyColourIsStoredAndEveryOtherBadColourIsNot(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	for _, accepted := range []string{"", "   ", "#2563eb", "#b45309"} {
+		s := &contracts.SiteSettings{Title: "Acme", PrimaryColor: accepted}
+		if err := s.Validate(ctx); err != nil {
+			t.Errorf("Validate(%q): %v", accepted, err)
+		}
+	}
+	if s := (&contracts.SiteSettings{}); s.PrimaryColor != contracts.DefaultPrimaryColor {
+		t.Errorf("a zero settings holds %q, want the empty colour: nothing fills a colour in any more",
+			s.PrimaryColor)
+	}
+	for _, refused := range []string{"red", "#fff", "rgb(1,2,3)", " #", "#0f5d4e", "#4bbf9c"} {
+		s := &contracts.SiteSettings{Title: "Acme", PrimaryColor: refused}
+		if err := s.Validate(ctx); err == nil {
+			t.Errorf("Validate(%q) accepted it: the empty colour is the only absence this door takes", refused)
+		}
+	}
+	if err := (&contracts.SiteSettings{Title: "Acme", PrimaryColor: " #2563EB "}).Validate(ctx); err != nil {
+		t.Errorf("a colour typed with room and case is the colour it means: %v", err)
 	}
 }
 

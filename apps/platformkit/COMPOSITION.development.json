@@ -15,9 +15,11 @@
         "sitecontracts.WriteGate",
         "rest.Gate",
         "webcontracts.Links",
+        "rest.TranslationSource",
         "admincontracts.Signin",
         "admincontracts.Locale",
-        "tenantcontracts.Languages"
+        "tenantcontracts.Languages",
+        "webhookcontracts.Catalogue"
       ],
       "contributes": [
         {
@@ -77,9 +79,25 @@
       ]
     },
     {
+      "name": "translation",
+      "provides": [
+        "rest.Translations"
+      ],
+      "needs": [
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
+        }
+      ],
+      "after": [
+        "product"
+      ]
+    },
+    {
       "name": "site",
       "provides": [
-        "sitecontracts.Service"
+        "sitecontracts.Service",
+        "sitecontracts.LockedReader"
       ],
       "uses": [
         {
@@ -152,7 +170,8 @@
       "provides": [
         "notificationcontracts.Service",
         "authcontracts.Notifier",
-        "notificationcontracts.Mailer"
+        "notificationcontracts.Mailer",
+        "notificationcontracts.MailLedger"
       ],
       "needs": [
         {
@@ -189,7 +208,8 @@
       "provides": [
         "filecontracts.Service",
         "richtext.Files",
-        "rest.FileUses"
+        "rest.FileUses",
+        "rest.FileShown"
       ],
       "needs": [
         {
@@ -301,6 +321,32 @@
       ]
     },
     {
+      "name": "webhook",
+      "needs": [
+        {
+          "contract": "jobs.TenantLister",
+          "from": "tenant"
+        },
+        {
+          "contract": "webhookcontracts.Catalogue",
+          "from": "product"
+        }
+      ],
+      "uses": [
+        {
+          "contract": "webhookcontracts.Alerts",
+          "from": ""
+        }
+      ],
+      "after": [
+        "product",
+        "tenant"
+      ],
+      "reads": [
+        "config.Webhook"
+      ]
+    },
+    {
       "name": "auth",
       "provides": [
         "authcontracts.Auth",
@@ -327,6 +373,10 @@
         {
           "contract": "notificationcontracts.HostLookup",
           "from": "tenant"
+        },
+        {
+          "contract": "notificationcontracts.MailLedger",
+          "from": "notification"
         },
         {
           "contract": "authcontracts.OIDCProviders",
@@ -384,6 +434,14 @@
         {
           "contract": "rest.FileUses",
           "from": "file"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.FileShown",
+          "from": "file"
         }
       ],
       "contributes": [
@@ -395,7 +453,8 @@
         }
       ],
       "after": [
-        "file"
+        "file",
+        "translation"
       ]
     },
     {
@@ -416,6 +475,10 @@
         },
         {
           "contract": "sitecontracts.Service",
+          "from": "site"
+        },
+        {
+          "contract": "sitecontracts.LockedReader",
           "from": "site"
         },
         {
@@ -463,11 +526,20 @@
         {
           "contract": "webcontracts.Links",
           "from": "product"
+        },
+        {
+          "contract": "rest.Translations",
+          "from": "translation"
+        },
+        {
+          "contract": "rest.TranslationSource",
+          "from": "product"
         }
       ],
       "after": [
         "product",
         "file",
+        "translation",
         "content",
         "site"
       ]

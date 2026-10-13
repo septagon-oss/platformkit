@@ -101,6 +101,7 @@ The one read that is not a tenant's own is the orphan sweep: a blob no row names
 - `File.Validate` in `modules/file/contracts/file.go` stamps `UploaderID` from `tenancy.ActorFrom`, refuses a `visibility` that is neither `private` nor `public` (`sealed` is not a fourth spelling of visibility: it is a second axis the storing module stamps, and `visibility` is what a caller chooses about its own upload, which the published contract therefore publishes), and refuses a `kind` that is not a token (`contracts.ValidKind`, the same shape `files_kind` CHECKs) — which is the difference between a 422 naming the class and a 500 from the database.
 - `Service.Delete` removes the row in the caller's transaction and publishes `file.deleted`; the bytes go after the commit, in the subscription. It refuses with `contracts.ErrHeld` while a live hold is on the file.
 - `Service.Retain` and `Service.Release` lock the file row with `crud.GetForUpdate` before they write the hold, which is what makes "no live hold" a fact and not a race against the sweep. Placing one is a replace, never a second row (`file_holds` is unique on `(tenant_id, file_id)`); releasing a file with no hold is success, not an error.
+- `Service.SetUses` locks a file whose use it ends `FOR UPDATE`, and a file the new set only names `FOR KEY SHARE`, before it decides anything about either, which is what makes "this image is read by nothing any more" a fact and not a race: two records that drop the last two uses of one picture serialise on it, and the grace period the release sweep measures starts exactly once.
 - `Service.EraseSubject` deletes exactly the files this subject uploaded inside this tenant's transaction, `FOR UPDATE` over the set it is about to remove. One held file refuses the whole erasure with `ErrHeld` and names it, so a refusal writes nothing; a subject with no files answers a receipt of zero and writes nothing either. `fault()` in `internal/handler.go` answers `ErrHeld` with 409 on both doors that refuse it — `rest.Fault` knows the kernel's sentinels and none of this module's, so without that arm the caller's own hold came back as a 500. The `reason` the route is given is filed, not accepted and dropped: it goes into each `file.deleted` work order and lands in the proof row beside the digest, so "why was this person's file removed" is a column read and not a memory — `contracts.MaxErasureReason` caps it and a longer one is refused before any row goes.
 - `internal.Sweep` (the retention job) is `jobs.PerTenant`, so each delete runs inside that tenant's own transaction. Its batch is a batch of the rows its policy covers: the class cutoffs (one `(kind, created_at <= cutoff)` arm per priced class) and the live-hold check are in the query, and both are rechecked before each delete, so `sweepBatch` costs latency and not a file kept past its class. A kind with no configured policy is never read and never deleted — the sweep reports what it removed and sees only the classes it was given.
 - `internal.EraseBlobs`, the subscription, asks the store `Prove` after removing the key and writes `file_erasures` with `verified_at` NULL when the store still reports copies (`versions_seen` above zero) rather than certifying an erasure it could not check. The proof row is written `ON CONFLICT (tenant_id, file_id, cause) DO NOTHING`: Postgres aborts a transaction at its first failing statement, so a redelivery that caught a duplicate-key error would be a transaction that can do nothing else. Zero rows is the answer "already certified", and it writes no second `file.erased`.
@@ -114,6 +115,8 @@ The code shows no rule tying a delete, a hold or an erasure to the uploader.
 Any other file, and a host with no tenant, is a 404.
 A public file is refused a grant (`ErrPublicFile`), so no signed URL ever competes with the open door. Download headers come from `modules/file/contracts/response.go`, and `contracts.MetaFor` hands the same set to the store at `Put` so a bucket-served object carries the `docs/cache.md` policy without a handler here.
 Both public routes are reads; the module has no public write, so `kit/limit` is not applied.
+
+For a file the use ledger speaks about the audience is derived, not remembered: it is public if and only if some live `file_uses` row of it says the record showing it is showing it to somebody who has not signed in (`SetShown`, migrations/000056). The two commands that can end that assertion take it back in the transaction that ends it — `SetShown` when a record leaves the public face, and `SetUses` when the last row that made a file public goes, which is what a record's delete does through `kit/rest`. Bytes whose last public user is gone are therefore anonymously unreadable at once, not when the release sweep arrives a day or two later. A file the ledger has no row for keeps what its uploader asked for: the site logo, named by a bare uuid with no field and no lifecycle, and the media library's hand-raised public upload are those two cases.
 
 ### The operator boundary
 
@@ -170,18 +173,59 @@ a richtext field can mount and `file.RecordUses` as the shape of wiring it;
 row as the server's own account of a frame, which the media library and the editor will
 lay out against instead of decoding a header to learn what an image is.
 
+### Composition — the widths of a stored image (T-0315)
+
+**Reused** — this module's own `Storage`, `Scope`, `Key` and `MetaFor` for the variant
+objects, `internal.Service.charge`'s advisory-locked sum for their quota, `ProcessImage`
+for the frame they are scaled from, `kit/jobs`' `Job` + `PerTenant` + the retention
+sweep's `FOR UPDATE SKIP LOCKED` batch shape for the pass, `crud.GetForUpdate` for the
+claim, `file.deleted` and its `EraseBlobs` subscriber for the bytes of a width whose
+file went, and the existing download door for the read. **Added** — `file_variants`,
+`contracts.VariantWidths`/`VariantHeight`/`VariantKey`, `internal.Variants` and `?w=` on
+both doors: nothing in the tree resized a frame, named a planned width, or knew which
+widths a file could serve, and the plan had to be arithmetic in `contracts/` so the fake
+and the SQL service hold one answer rather than two. **Made reusable** — a variant as
+*not* a file (no `files` row, so no list entry, no use, no second quota), the
+`(file, width)`-derived object name as the idempotency key an encode needs to be
+repeatable, `contracts.VariantServable` and `contracts.WidthOpener` as the two narrow
+ports a consumer of a width takes, and `kit/richtext`'s write-time `checkImage`, which
+now holds every descriptor of a multi-width `srcset` to the one first-party address this
+kernel mounted. The orphan sweep asks both tables which objects a row names, so a width whose own
+row still says `ready` is never removed as an orphan the night after it was built — its object is
+named by `file_variants.storage_key` and by nothing else.
+
 ## Limits
 
-The image pass decodes JPEG, PNG and the first frame of a GIF; a WebP is not an
-image this deployment decodes and is refused at an image door. It stores one
-frame: no variants and no srcset widths exist yet, so a richtext image's srcset
-names the stored frame's own width. The pixel ceiling bounds one frame, not how
+The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
+`golang.org/x/image/webp`, whose decoder registers with `image.DecodeConfig`, so the
+pixel ceiling is still read from a header and not from an allocated frame). A planned
+width is served only once it is built: `?w=` answers 404 rather than falling back to the
+original, because one address with one width has one object to serve, and the encode is
+on the clock (`file-variants`, five minutes), so a fresh upload's srcset names its own
+frame alone until the job has been round. A width that will not fit the tenant's quota
+fails at the encode and is recorded as failed with `reason = 'quota'` — the original was
+already accepted, charged and served, and this module does not reach back to refuse an
+upload. A `failed` row is never retried and nothing reads it automatically yet; the media
+library will. An erasure proof certifies the frame's object, and the widths' removal
+rides the same delivery beside it.
+
+The pixel ceiling bounds one frame, not how
 many frames are decoded at once — concurrent decodes are unbounded until the
-upload route carries a `kit/limit`. No release sweep runs, so a file whose last
-use ends keeps its bytes; when one lands, a resource left on `rest.RecordNoUses`
-becomes the mount-time refusal it is promised to be, and `Service.Delete` has to
-consult the ledger before removing a file that is being shown. Until that guard
-exists a file can be deleted under a body still showing it, and the ledger row
+upload route carries a `kit/limit`. The release sweep (`file-unused`,
+`internal/unused.go`) removes an image stamped `unused_since` further ago than
+`Deps.UnusedAfter` with no live use and no hold, and only ever a file the image
+pass measured (`width > 0`), so a document upload is never reaped by a rule about
+pictures. No arrival is ever stamped: the rule speaks of a use that *ended*, and a
+file the ledger has never named has no such moment to measure from — a site logo
+is a measured image whose only name is a bare uuid outside the ledger, and a stamp at
+upload destroyed one a day after a person configured it. The upload nobody ever saved is
+that boundary's cost, charged to the quota and the retention sweep rather than to a rule
+that cannot tell an unsaved picture from a configured one. A resource left on
+`rest.RecordNoUses` sits on the safe side of that boundary: it files no uses, so nothing
+ever stamps its images and the release sweep never reaches them — mount warns because the
+audience of those images is never derived either, so a published page shows only what its
+uploader made public. `Service.Delete` still has a gap beside all of this: a file can be
+deleted under a body still showing it, and the ledger row
 left behind ends with the next rewrite of that field: an edit, or the record's
 own delete through `kit/rest`, which ends its uses and is not refused by a file
 that went first. Nothing else ends a use. The pass's refusals are

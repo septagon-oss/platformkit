@@ -13,6 +13,13 @@ import (
 // read two tables and is done.
 const BackfillEvery = 5 * time.Second
 
+// BackfillJobName is the name the drain carries, and so the name its advisory lock
+// is taken under (jobs.Job names itself). kit/app writes the job twice — the drain
+// it can build from its configuration, and the one that refuses every tick when that
+// configuration cannot declare what it says about itself — and one name is the
+// difference between one job with two doors and two jobs nobody can tell apart.
+const BackfillJobName = "schema-backfill"
+
 // BackfillMigrations is the worker's half of a phase=data migration. Migrate stops in
 // front of a drain over a table that already has readers — a boot that drained one
 // would hold the installation open for as long as the table takes, and a boot that
@@ -33,12 +40,18 @@ const BackfillEvery = 5 * time.Second
 // opens its own pinned owner connection from migrateURL, as Migrate does. The budget
 // is the one the deployment configured, because the drain is the half of a release that
 // waits longest behind the running application's rows.
-func BackfillMigrations(every time.Duration, migrateURL string, budget db.MigrationBudget, sources ...db.MigrationSource) Job {
+//
+// The declaration travels with it because the drain is where a data file that places
+// rows is run, not the boot that left it pending: db.BackfillDeclaring states why the
+// session state cannot stay on the connection that declared it, and the composition
+// that named its slug and its hosts at Migrate is the only party that still knows them
+// when the tick arrives.
+func BackfillMigrations(every time.Duration, migrateURL string, budget db.MigrationBudget, decl db.Declaration, sources ...db.MigrationSource) Job {
 	return Job{
-		Name:  "schema-backfill",
+		Name:  BackfillJobName,
 		Every: every,
 		Run: func(ctx context.Context, _ *db.Conn) error {
-			return db.BackfillWith(ctx, migrateURL, budget, sources...)
+			return db.BackfillDeclaring(ctx, migrateURL, budget, decl, sources...)
 		},
 	}
 }
