@@ -89,6 +89,14 @@
           "from": "product"
         }
       ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
+        }
+      ],
       "after": [
         "product"
       ]
@@ -336,6 +344,14 @@
         {
           "contract": "webhookcontracts.Alerts",
           "from": ""
+        }
+      ],
+      "contributes": [
+        {
+          "contract": "personaldata.Part",
+          "to": [
+            "subject"
+          ]
         }
       ],
       "after": [
@@ -617,8 +633,10 @@
             "auth",
             "file",
             "task",
+            "translation",
             "content",
             "audit",
+            "webhook",
             "change"
           ]
         }
@@ -630,8 +648,10 @@
         "auth",
         "file",
         "task",
+        "translation",
         "content",
         "audit",
+        "webhook",
         "change"
       ]
     },
