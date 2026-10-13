@@ -260,7 +260,7 @@ func mountCommands(router *httpx.Router, s page.Shell, o Options, res httpx.Reso
 // to the same 422 the API gives, so the form is not a second opinion about what a bad
 // argument means.
 func perform(c httpx.Command, ctx context.Context, id uuid.UUID, body []byte) error {
-	values, err := rest.Values(body, c.Fields, nil)
+	values, err := rest.CommandValues(body, c.Fields)
 	if err != nil {
 		return rest.Fault(err)
 	}

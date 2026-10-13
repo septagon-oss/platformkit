@@ -93,6 +93,14 @@ type VersionQuery struct {
 	Before int64
 }
 
+// CodeVersionUnusable is the refusal a restore answers when the version it was
+// asked to write back is not one this record's series holds. It travels in the
+// problem document, in the log line and in the sentence the page is built from,
+// which is what lets the presentation layer answer a restore refusal in the
+// language the deployment ships: a refusal whose only name is an English sentence
+// can only ever be shown in English.
+const CodeVersionUnusable = "VERSION_UNUSABLE"
+
 // RestoredEvent names the write that brought a stored version back. The contract
 // lives beside the Versions port it describes, and for the same reason: the kit
 // publishes it, for whichever resource asked for history, and the module that
@@ -141,4 +149,26 @@ type Version struct {
 	Reason  string          `json:"reason" doc:"The write's own sentence about why it happened; empty for an ordinary save"`
 	Actor   uuid.UUID       `json:"actor" format:"uuid" doc:"Who made this write; the zero uuid when nobody signed in"`
 	At      time.Time       `json:"at" doc:"When this write committed"`
+}
+
+// History is one versioned resource as a screen reads it: the series beside the
+// row it describes, and the door that writes a stored version back.
+//
+// It is declared here, next to the Versions port it is drawn from, because the
+// screen and the API are mounted by the same Spec and must not disagree about
+// which record the series belongs to. The kernel's own detail page renders the
+// series and the restore control from these two answers; a shell that had to
+// guess the verb of the command that performs a restore would be a second owner
+// of that door, and a shell that could not read the series at all would be a page
+// where a record's past is invisible.
+type History struct {
+	// RestoreVerb is the last path segment of the command this disclosure
+	// performs — "restore" for every resource kit/rest mounts history for. The
+	// screen that carries the panel carries the door with it, so the same command
+	// is never offered twice on one page.
+	RestoreVerb string
+	// Versions answers this record's series, newest first, inside the request's own
+	// transaction and behind the record's own read guard: a caller who may not read
+	// the record is refused here exactly as at the JSON route beside it.
+	Versions func(ctx context.Context, id uuid.UUID) ([]Version, error)
 }

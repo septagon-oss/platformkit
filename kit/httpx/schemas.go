@@ -102,6 +102,9 @@ type Resource struct {
 	// Commands are the lifecycle routes beyond the five, filled in by
 	// Resources from what AddCommand recorded.
 	Commands []Command
+	// History is this resource's version series as a screen reads it, or nil for
+	// a resource whose Spec keeps no versions. See httpx.History.
+	History *History
 	// Singleton says a tenant has exactly one of these and it has no id in its
 	// path: the API is a GET and a PUT on Path itself, with no list, no create
 	// and no delete. A shell that did not know would render a collection whose
@@ -340,6 +343,19 @@ func (a *API) guard(r Resource) Resource {
 			return update(ctx, id, values)
 		}
 	}
+	if r.History != nil && r.History.Versions != nil {
+		// The series is a read of the record, so it wears the record's read guard:
+		// a page that could draw the panel of a record it may not read would be a
+		// door around the permission rather than a screen.
+		h, inner := *r.History, r.History.Versions
+		h.Versions = func(ctx context.Context, id uuid.UUID) ([]Version, error) {
+			if err := a.mayDeclare(ctx, read); err != nil {
+				return nil, err
+			}
+			return inner(ctx, id)
+		}
+		r.History = &h
+	}
 	if remove != nil {
 		r.Delete = func(ctx context.Context, id uuid.UUID) error {
 			if err := a.mayDeclare(ctx, write); err != nil {
@@ -474,12 +490,36 @@ func (a *API) AddCommand(module, entity string, c Command) {
 // commands recorded for it. modules/admin reads it in Routes, which is why the
 // shell is composed last: a module that mounts after it registers a resource no
 // screen was generated for.
+//
+// A command that carries work travels with its own guard, applied here, where the
+// commands join the resource: `Run` is the closure a derived page performs, and a
+// caller who reached it by holding the row's address rather than by passing the
+// route would otherwise be performing a write whose permission they were never
+// asked about. The five CRUD closures get the same wrapping in guard; this is
+// that, for the sixth door, in the one place both a page and the catalog read.
 func (a *API) Resources() []Resource {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	out := append([]Resource(nil), a.resources...)
 	for i := range out {
-		out[i].Commands = a.commands[out[i].Module+"/"+out[i].Entity]
+		commands := a.commands[out[i].Module+"/"+out[i].Entity]
+		if commands != nil {
+			guarded := make([]Command, len(commands))
+			for j, c := range commands {
+				if c.Run != nil {
+					inner, declared := c.Run, c.Auth
+					c.Run = func(ctx context.Context, id uuid.UUID, values map[string]any) error {
+						if err := a.mayDeclare(ctx, declared); err != nil {
+							return err
+						}
+						return inner(ctx, id, values)
+					}
+				}
+				guarded[j] = c
+			}
+			commands = guarded
+		}
+		out[i].Commands = commands
 	}
 	return out
 }
