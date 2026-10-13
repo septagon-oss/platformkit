@@ -6,12 +6,12 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 
 | quantity | value | measured by |
 |---|---|---|
-| test rows | 2935 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
-| files | 1490 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
+| test rows | 2936 | one per Go test function, Playwright test, Maestro flow, pin script, `node --test` case |
+| files | 1491 | `git ls-files` over `*_test.go`, `e2e/**`, `scripts/*_test.*`, `*.test.{js,mjs,ts}` |
 | Go test functions | 2691 | `^func (Test\|Benchmark\|Fuzz\|Example)` |
 | files named for a round (`review*`, `round*`, `probe*`) | 19 | filename prefix |
 | rows inside them | 27 | same walk |
-| Playwright specs / Maestro flows / `scripts/` pins / node tests | 86 / 1 / 68 / 89 | same walk |
+| Playwright specs / Maestro flows / `scripts/` pins / node tests | 87 / 1 / 68 / 89 | same walk |
 
 ## Layers and tiers
 
@@ -20,9 +20,9 @@ One row per test in [`inventory.json`](inventory.json) (`platformkit.test-invent
 | contract | 19 | push, first | asserts a golden or the published API set |
 | behaviour | 2499 | push or merge | one package's rules — Go, or one design-tooling case; push when the package opens no stack |
 | composition | 330 | merge | package `main` of the reference app: it boots the composition (every `scripts/` pin is filed here too, at tier push) |
-| journey | 87 | nightly | `e2e/`: browser or device |
+| journey | 88 | nightly | `e2e/`: browser or device |
 
-Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 003 rows sit in packages that open nothing, 1 845 in packages that do, 87 in the browser. The push tier's headline counts 1 016 and the merge tier's 1 789: the 13-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those five files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
+Tier need is a **package** fact, not a file fact: one test binary per package, so one file that opens Postgres puts every case beside it behind a database. 1 003 rows sit in packages that open nothing, 1 845 in packages that do, 88 in the browser. The push tier's headline counts 1 016 and the merge tier's 1 789: the 13-row difference is the contract-key rows (openapi, asyncapi, golden, mobile flows) that `tier_of` files under push by name while their package opens a stack — a package the selector files under its first row, which for those five files is merge. They run at merge, and the headline counts them at push; `--tier push` refuses such a package outright, so a needs_db package whose alphabetically-first file matches a contract key would have no way to pass. That is a known overstatement, named under `Limits`.
 
 Of the 1 016, 859 are Go rows, 68 are `scripts/` pins and 89 are `node --test` cases. All three shapes run on a pull request, but not from the same line: the Go rows come out of `--tier push`, the pins are recipe lines of `make check` (which `check-push` runs fewer of, named under `Limits`), and the node cases run in the `editor` job — `npm test` over the tool's own `*.test.mjs`, `npm run test:browser` over `browser/`, and two later steps that pass `editor/*.test.mjs` and `preview/<file>` to the runner directly (`.gitea/workflows/ci.yml:741,750,1066,1095`). The headline is what a pull request runs; the selector's list is what `scripts/check_push_tier.sh` runs, and it answers Go packages only.
 
@@ -46,7 +46,7 @@ The `check` job is not where the flakiness is; `journey` — `.gitea/workflows/m
 
 | verdict | files | rows | meaning |
 |---|---|---|---|
-| `keep` | 1305 | 2645 | not named for a round: 0088 rule 2 does not reach it |
+| `keep` | 1306 | 2646 | not named for a round: 0088 rule 2 does not reach it |
 | `keep-rewrite` | 60 | 117 | named for a round, and the only file in its package reaching something — rewritten and renamed for the rule in the same commit (0072) |
 | `merge` | 125 | 173 | a rule a kept sibling in the same package already reaches — `merge_into` names it |
 | `delete` | 0 | 0 | nothing in the file judges anything, and the file is not a TestMain harness, a benchmark or an `// Output:` example |

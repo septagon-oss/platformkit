@@ -54404,6 +54404,26 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
+   "file": "e2e/richtext-saved-images-remain-editable.spec.ts",
+   "id": "e2e/richtext-saved-images-remain-editable.spec.ts",
+   "kind": "playwright",
+   "layer": "journey",
+   "merge_into": "",
+   "name": "saved images load and keep their descriptions when surrounding text is edited",
+   "needs_db": true,
+   "pkg": "e2e",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "nightly",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "e2e",
+   "evidence": "not-round-named",
    "file": "e2e/richtext-table-insertion.spec.ts",
    "id": "e2e/richtext-table-insertion.spec.ts",
    "kind": "playwright",
@@ -58171,7 +58191,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1490,
+  "files": 1491,
   "forge_runs": [
    408,
    413,
@@ -58208,7 +58228,7 @@
    "behaviour": 2499,
    "composition": 330,
    "contract": 19,
-   "journey": 87
+   "journey": 88
   },
   "package_coverage": {
    "kit/config": "71.4% of statements",
@@ -58224,23 +58244,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 2935,
+  "rows": 2936,
   "tiers": {
    "merge": 1832,
-   "nightly": 87,
+   "nightly": 88,
    "push": 1016
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1305,
+   "keep": 1306,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2645,
+   "keep": 2646,
    "keep-rewrite": 117,
    "merge": 173
   }
