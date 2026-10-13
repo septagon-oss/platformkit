@@ -3,7 +3,7 @@
 Status: built, with named debt, 2026-10-11. The kernel half arrived first — the contract, the
 claim, and the boot that refuses a module whose tables say more than its manifest does. The two
 operations are now written too: `modules/subject` holds the request row, the export walk, the
-erasure command and the seven-day single-use link, and eight modules contribute their parts. So the
+erasure command and the seven-day single-use link, and ten modules contribute their parts. So the
 promises in §4 to §7 are about behaviour that exists and is tested, with two exceptions the table
 at the end names rather than hides: a bundle carries file *metadata* and not file bytes, so the
 `MaxBundleBytes` ceiling and its `LeftOut` manifest have nothing to bound, and no command walks the

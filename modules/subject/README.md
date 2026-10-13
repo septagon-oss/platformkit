@@ -143,7 +143,7 @@ entry and no generated screen: see Limits.
 `subject:erase` is an ordinary tenant permission, not an operator one, and that is a
 decision rather than an oversight: an erasure is a person's right answered inside their
 own tenant, and an installation's ability to erase anybody in any tenant would be a
-control-plane door over eight modules' rows at once. Nothing in this module is mounted on
+control-plane door over ten modules' rows at once. Nothing in this module is mounted on
 `r.Ops`. What the operator does own is the *deployment's* copy of the bundle's bytes,
 through the file module's own retention rules — which is why the hold travels with the
 link and is placed by this module rather than assumed.
