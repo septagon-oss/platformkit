@@ -67,7 +67,7 @@ var wholeSurface = []route{
 	{"app", "POST", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "GET", "/api/v1/auth/tokens", "signed_in"},
 	{"app", "POST", "/api/v1/auth/tokens/{id}/revoke", "signed_in"},
-	{"app", "POST", "/api/v1/auth/tokens/revoke-self", "any_credential"},
+	{"app", "POST", "/api/v1/auth/tokens/revoke-self", "bearer_key"},
 	// factor_routes.go — the second factor and its recovery codes.
 	{"app", "POST", "/api/v1/auth/factors/totp/begin", "signed_in"},
 	{"app", "POST", "/api/v1/auth/factors/totp/finish", "signed_in"},

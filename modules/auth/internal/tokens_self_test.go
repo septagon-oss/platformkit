@@ -42,6 +42,18 @@ func refusedWith(t *testing.T, res *httptest.ResponseRecorder, code, what string
 	}
 }
 
+// challenged asserts the kernel's 401 for a request that brought no key it
+// recognises to a key-only door, with the Bearer challenge that names the scheme.
+func challenged(t *testing.T, res *httptest.ResponseRecorder, challenge, what string) {
+	t.Helper()
+	if res.Code != http.StatusUnauthorized || !strings.Contains(res.Body.String(), httpx.CodeAnonymous) {
+		t.Errorf("%s = %d %s, want 401 %s", what, res.Code, res.Body.String(), httpx.CodeAnonymous)
+	}
+	if got := res.Header().Get("WWW-Authenticate"); got != challenge {
+		t.Errorf("%s challenged with %q, want %q", what, got, challenge)
+	}
+}
+
 // TestAKeyMayRevokeItselfWithoutAnyManagementGrant: the key holds role:manage
 // and nothing about keys — there is no token-management permission to hold.
 func TestAKeyMayRevokeItselfWithoutAnyManagementGrant(t *testing.T) {
@@ -84,8 +96,8 @@ func TestAKeyRetiresItselfAndLeavesItsHoldersOtherKeyStanding(t *testing.T) {
 	}
 }
 
-// TestASessionIsRefusedTheSelfRevokeAndLosesNoKey: the refusal is the command's
-// own sentence, not the kernel's CSRF one, and no key is touched.
+// TestASessionIsRefusedTheSelfRevokeAndLosesNoKey: the kernel refuses a session
+// at a key-only door with 403, not the CSRF refusal, and no key is touched.
 func TestASessionIsRefusedTheSelfRevokeAndLosesNoKey(t *testing.T) {
 	router, conn, _ := mount(t, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost", contracts.RoleAdmin)
@@ -93,7 +105,7 @@ func TestASessionIsRefusedTheSelfRevokeAndLosesNoKey(t *testing.T) {
 	key, _ := mintKey(t, router, ada, "Phone")
 
 	refusedWith(t, call(t, router, http.MethodPost, revokeSelf, "", withSession(ada)),
-		"no bearer key to revoke", "a session at the self-revoke")
+		"a session carries none", "a session at the self-revoke")
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(key)); res.Code != http.StatusOK {
 		t.Errorf("a refused self-revoke ended the holder's key: %d", res.Code)
 	}
@@ -103,8 +115,8 @@ func TestASessionIsRefusedTheSelfRevokeAndLosesNoKey(t *testing.T) {
 	}
 }
 
-// TestADeadKeyNeverReachesTheSelfRevoke: the kernel's anonymous refusal, not
-// the handler's, is the proof the request stopped before the command.
+// TestADeadKeyNeverReachesTheSelfRevoke: the kernel's 401 challenge, not the
+// handler's refusal, is the proof the request stopped before the command.
 func TestADeadKeyNeverReachesTheSelfRevoke(t *testing.T) {
 	router, conn, _ := mount(t, auth.OIDC{})
 	person(t, conn, "ada@acme.localhost", contracts.RoleAdmin)
@@ -113,8 +125,8 @@ func TestADeadKeyNeverReachesTheSelfRevoke(t *testing.T) {
 	if res := call(t, router, http.MethodPost, "/api/v1/auth/tokens/"+id+"/revoke", "", withSession(ada)); res.Code != http.StatusOK {
 		t.Fatalf("revoke by id = %d %s", res.Code, res.Body.String())
 	}
-	refusedWith(t, call(t, router, http.MethodPost, revokeSelf, "", bearer(key)),
-		httpx.CodeAnonymous, "a revoked key at the self-revoke")
+	challenged(t, call(t, router, http.MethodPost, revokeSelf, "", bearer(key)),
+		`Bearer error="invalid_token"`, "a revoked key at the self-revoke")
 }
 
 // TestTheSelfRevokeIsTheOneCredentialDoorAKeyMayUse re-pins the ban beside its
@@ -131,8 +143,7 @@ func TestTheSelfRevokeIsTheOneCredentialDoorAKeyMayUse(t *testing.T) {
 		httpx.CodeDenied, "a key listing keys")
 	refusedWith(t, call(t, router, http.MethodPost, "/api/v1/auth/tokens/"+id+"/revoke", "", bearer(key)),
 		httpx.CodeDenied, "a key revoking by id")
-	refusedWith(t, call(t, router, http.MethodPost, revokeSelf, ""),
-		httpx.CodeAnonymous, "nobody at the self-revoke")
+	challenged(t, call(t, router, http.MethodPost, revokeSelf, ""), "Bearer", "nobody at the self-revoke")
 }
 
 // TestAnotherTenantsKeyIsNotACredentialAtTheSelfRevoke: acme's key at globex's
@@ -143,8 +154,8 @@ func TestAnotherTenantsKeyIsNotACredentialAtTheSelfRevoke(t *testing.T) {
 	key, _ := mintKey(t, router, signIn(t, router, "ada@acme.localhost"), "Phone")
 
 	atGlobex := func(r *http.Request) { r.Host, r.URL.Host = secondHost, secondHost }
-	refusedWith(t, call(t, router, http.MethodPost, revokeSelf, "", bearer(key), atGlobex),
-		httpx.CodeAnonymous, "acme's key at globex's self-revoke")
+	challenged(t, call(t, router, http.MethodPost, revokeSelf, "", bearer(key), atGlobex),
+		`Bearer error="invalid_token"`, "acme's key at globex's self-revoke")
 	if res := call(t, router, http.MethodGet, "/api/v1/auth/roles", "", bearer(key)); res.Code != http.StatusOK {
 		t.Errorf("acme's key at acme after globex refused it = %d, want 200", res.Code)
 	}
