@@ -265,7 +265,7 @@ const offerStatement = "INSERT INTO password_tokens (token_hash, tenant_id, user
 	" token_hash = EXCLUDED.token_hash, created_at = EXCLUDED.created_at," +
 	" expires_at = EXCLUDED.expires_at, sent_at = EXCLUDED.sent_at"
 
-// rotate replaces a link this person was already sent: the message goes first,
+// rotate replaces a link this person can be holding: the message goes first,
 // and the credential it names is written only once the transport has taken it.
 //
 // This is offer's ordering reversed, for the one case where the row under the
@@ -472,17 +472,27 @@ func (s *Service) recent(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 	return n > 0, nil
 }
 
-// held reports whether this person was sent a link that still works.
+// held reports whether this person can be holding a link that still works.
 //
 // It is asked beside the cooldown and answers a different question from it: the
 // cooldown counts links sent inside ResetInterval, so a link older than that has
 // stopped limiting requests while it goes on working for another hour. The answer
 // moves exactly one write — ahead of the send, or after it (see rotate) — and it
 // is read off the same one row per person the offer itself writes.
+//
+// Expiry asks it, and no delivery bookkeeping does. sent_at records the send a
+// transport took, which is the fact the cooldown needs and not the fact this one
+// asks: a row can go without that mark and still have a recipient — a link
+// delivered before the column existed answers NULL, and one whose send was
+// interrupted between its commit and its handover answers NULL until its retry.
+// Reading sent_at here would let that bookkeeping author the loss rotate exists to
+// make impossible: the offer would write over a working link, the transport would
+// refuse, and the withdrawal would leave the person with a dead link in the mail
+// and no live one anywhere.
 func (s *Service) held(tx db.Tx[db.Tenant], userID uuid.UUID) (bool, error) {
 	var n int64
 	err := tx.DB().Table("password_tokens").
-		Where("user_id = ? AND sent_at IS NOT NULL AND expires_at > now()", userID).
+		Where("user_id = ? AND expires_at > now()", userID).
 		Count(&n).Error
 	if err != nil {
 		return false, fmt.Errorf("auth: read the delivered password token of %s: %w", userID, err)
