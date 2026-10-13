@@ -22,10 +22,6 @@ const AUTOSAVE_AFTER = 2000;
 const DOCUMENT_SHAPE = 1;
 const LINK_SCHEMES = ["https:", "http:", "mailto:", "tel:"];
 
-for (const root of document.querySelectorAll("[data-richtext]")) {
-	mount(root);
-}
-
 // mount turns one drawn field into one editor. A field the server marked read-only
 // or disabled carries no chrome to bind, and gets nothing: the textarea stays
 // visible and posts as it always did.
@@ -1125,4 +1121,14 @@ function load(control, markdown) {
 	control.textarea.value = markdown;
 	control.textarea.dispatchEvent(new Event("change", { bubbles: true }));
 	count(control);
+}
+
+// The page's fields are mounted here, at the foot of the module, and not at its
+// head: building an editor for a field whose document already holds a picture reads
+// the file-reference constants further up this file while it parses that picture,
+// and a const the module has not evaluated yet throws instead of mounting. Functions
+// are hoisted and constants are not, so a mount at the head works on an empty field
+// and fails on one that already holds a picture.
+for (const root of document.querySelectorAll("[data-richtext]")) {
+	mount(root);
 }
