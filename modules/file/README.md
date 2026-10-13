@@ -187,6 +187,21 @@ may not press are absent rather than disabled when the composition's authorizer 
 — a control that cannot be used is a fact about the page, and the guard on the post is
 what actually decides.
 
+### The catalog entry
+
+`GET /api/v1/app/resources` names `file`/`file`. The routes above answer whether or not
+anybody declares them, and a door nobody can discover is a door only the browser it was
+written for has, so `RegisterRoutes` ends by recording the entity those routes are
+mounted on and the caption as a command with its work beside it: the same `SetAlt`, in
+the request's own transaction, behind the guard registration installs.
+
+Four CRUD doors are named because four answer — the list, the read, the upload and the
+delete. No update is named: a file's bytes are what they are, so the only writable fact
+about one is what it says about itself, and that is a claim with an event rather than a
+`PATCH` over the row. No screen is published. The workspace address a person reads files
+at is the page above, and a generated screen over the same entity would be a second
+library beside it.
+
 ### The operator boundary
 
 None. No key in `permissions` sets `Operator: true`, and there is no `OperatorRead` or `OperatorWrite` route — `file:erase` and `file:retain` are tenant permissions, granted per role like the other two. The module's only cross-tenant reach is its own orphan sweep, which is a job holding the ops surface's system token (`s.Ops.SystemToken()` in `module.go`) and not a route anybody can call.
