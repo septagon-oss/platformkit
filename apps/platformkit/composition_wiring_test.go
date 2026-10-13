@@ -59,7 +59,6 @@ func TestEveryModuleTheCompositionNamesItsEdges(t *testing.T) {
 		"product", "seed", "user", "tenant", "notification", "auth", "emailregistration", "file",
 		"task", "billing", "translation", "content", "site", "web", "audit", "webhook",
 		"change", "access", "admin", "scim",
-
 	} {
 		if !namesAModule(r.modules, name) {
 			t.Errorf("%s.Module is named in Use and answers no manifest in the resolved composition", name)
