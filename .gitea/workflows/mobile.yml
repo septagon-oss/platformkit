@@ -315,7 +315,7 @@ jobs:
           # address neither the pin nor this job named, and the API answers a signed-in read of a
           # release with the document itself, so a redirect is never the shape that works.
           if ! curl -fsS --header "Authorization: token $GITHUB_TOKEN" "$release_url" -o "$meta"; then
-            echo "the job could not read the release at $release_url to find $asset_name: the forge answers its API only for a token that names a user, so PK_MOBILE_TOKEN must be set on this repository to a read-only token for it." >&2
+            echo "the job could not read the release at $release_url to find $asset_name: the API refused this token; set PK_MOBILE_TOKEN on this repository to a read-only token for it." >&2
             exit 1
           fi
           asset_url="$(python3 - "$meta" "$asset_name" "$forge_host" <<'ASSET'
