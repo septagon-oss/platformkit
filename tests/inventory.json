@@ -54304,8 +54304,8 @@
   {
    "area": "e2e",
    "evidence": "not-round-named",
-   "file": "e2e/richtext-image-preview.spec.ts",
-   "id": "e2e/richtext-image-preview.spec.ts",
+   "file": "e2e/richtext-image-renders-the-pixels-its-reference-names.spec.ts",
+   "id": "e2e/richtext-image-renders-the-pixels-its-reference-names.spec.ts",
    "kind": "playwright",
    "layer": "journey",
    "merge_into": "",
