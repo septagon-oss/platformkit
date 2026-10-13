@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+**The conformance suite hands every case a store of its own.** `cachetest.Store` said only that the suite
+"closes what it is given", and the in-process double keyed its store by `t.Name()` — so a case run a
+second time in one process was handed the store its first run had closed and every case of the suite
+answered `cache: this store is closed`. That is what `-count` costs a suite with a shared fixture, and the
+nightly reaches it: `make flakes` runs the push tier with `-count=5` in one `gotestsum` invocation, and
+`kit/cache` is in that tier. The case, not its name, is now the identity — `Store`'s contract says that two
+calls made with one `*testing.T` are two handles onto one store, which is what "two replicas" means here,
+and that a call made with another `t` returns a store that case owns alone; the double keys its map by the
+case and forgets the entry in that case's own cleanup. A new case, `every case is handed a store of its
+own`, holds the lifecycle claim and proves it inside itself: it closes its own store and mints the cases it
+asks about with nested `t.Run`s, so the verdict does not depend on which case runs next — `-shuffle=on`
+moves the top level of a package and never the cases inside a suite. The close case is last and says the
+order is a decision: a backend with one connection cannot hand every case a store of its own, so the
+handle it returns has to release only that handle.
+
 **The delivery ledger moves onto its app's durable.** `kit/appname.Durable` puts the app in front of a
 consumer name, and `platformkit_handled` and `platformkit_dead_letters` key their rows by that name, so an
 installation that sets `nats.app` after running without one finds every claim it already earned on the far
