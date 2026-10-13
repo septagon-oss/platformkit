@@ -290,7 +290,7 @@ apply_defaults() {
 	# on a cluster with no platformkit_app it skipped every grant, and the step restored,
 	# seeded, applied the release and printed `ok:` over a copy no application connection
 	# could reach — the copy this comment has always said the step is not measuring.
-	# `scripts/review15_rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
+	# `scripts/rehearsal_dump_test.sh` stage 3 runs exactly that copy. Both
 	# branches create the role before they call this, so a role missing by now is that
 	# promise broken, and a step that cannot build the copy it reports on exits 2.
 	role_exists || die 2 "no platformkit_app role on this cluster and none created: refusing to measure a copy whose tables the application role cannot reach"
@@ -331,7 +331,7 @@ restore() { # $1 = database, $2 = dump file (custom format or plain SQL)
 # file this step exists to price — was then applied to the copy by the binary the step
 # built, and reported under the name of a revision that does not contain it. The report
 # is the artefact a release reads, so it names the tree the run was built from, and
-# `scripts/review5_rehearsal_provenance_test.sh` runs this line over a repository holding
+# `scripts/rehearsal_provenance_test.sh` runs this line over a repository holding
 # one committed file and one uncommitted one. The test is on the captured text rather
 # than `| grep -q .`: this script runs under `pipefail`, and a `git status` whose output
 # fills the pipe before `grep -q` has its answer dies of SIGPIPE (141), which `&&` reads
@@ -439,12 +439,19 @@ watcher=$!
 
 write_config "$work/run.yaml" "${app_url:-$run_url}" "$run_url" 'app:
   # The declaration this release asks an installation for, written the way an
-  # operator writes it. The copy holds the one tenant the base revision bootstrapped,
-  # served at server.public_host above, and migrations/000043_tenant_app places an
-  # existing tenant under this app only when every host it holds is listed here —
-  # a boot that declares no hosts places nothing and then refuses, which is the
-  # refusal for an operator who has not written this line, not for this step. A
-  # --dump copy holding tenants served elsewhere still refuses, and names them.
+  # operator writes it: hosts and no nats.app, which is what this step has always
+  # handed the candidate, and the shape of a deployment that has not taken a slug.
+  # Read what that does to the one tenant the copy holds rather than assuming it.
+  # The migrate command of apps/platformkit always declares a slug, here the empty
+  # one, so 000043 stamps each row with the empty slug rather than leaving a NULL,
+  # and the empty-slug placement 000060 then finds nothing it may write and refuses
+  # nothing: a boot that named no app asserts nothing about whose anybody is, and a
+  # tenant left app-less belongs to nobody in particular. The guard, and its reason,
+  # are on that file. What this step measures is that upgrade: the release applies
+  # over an app-less database of the previous release size. An operator who names
+  # nats.app and app.hosts gets the placement, and a tenant its declaration cannot
+  # account for gets the sentence 000059 puts there, which names the tenant and
+  # writes nothing.
   hosts:
     - "rehearse.localhost"
 # The composition of this release names webhook.Module, and that module refuses to

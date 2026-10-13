@@ -325,6 +325,18 @@ const (
 	// grant was held and the policy refused this row. kit/rest answers it with the same
 	// code.
 	CodePolicyDenied = "POLICY_DENIED"
+	// The idempotency key's own four refusals, published rather than written into the
+	// calls because a caller that sent a key reads all four of them and the document
+	// declares the header: a code only visible in a log line is a code a client
+	// cannot branch on. The distinction between the last two is the one a client acts
+	// on differently — an in-flight write can be retried and will eventually be
+	// answered, a spent key can only be abandoned.
+	CodeIdempotencyKey         = "IDEMPOTENCY_KEY_INVALID"
+	CodeIdempotencyConflict    = "IDEMPOTENCY_KEY_IN_USE"
+	CodeIdempotencyInFlight    = "IDEMPOTENCY_IN_FLIGHT"
+	CodeIdempotencySpent       = "IDEMPOTENCY_ANSWER_NOT_RECORDED"
+	CodeIdempotencyTooLarge    = "IDEMPOTENCY_BODY_TOO_LARGE"
+	CodeIdempotencyUnavailable = "IDEMPOTENCY_UNAVAILABLE"
 )
 
 // notHere answers the control plane's own answer: the 404 an address nobody

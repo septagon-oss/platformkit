@@ -515,8 +515,8 @@ if [ "$(floor_from_fixture 60000)" -le "$floor_long" ]; then
 	exit 1
 fi
 
-# 3b. The branch the floor exists for. Six rounds of rehearsals measured a passing
-# release and never once ran the lines that report a watcher that sampled nothing, and
+# 3b. The branch the floor exists for. A rehearsal can measure a passing release and
+# never once run the lines that report a watcher that sampled nothing, and
 # a branch that has never run is a promise the documents make three times over. So the
 # branch is run, not read: the four lines are taken out of the step (a case that
 # restated them would pass whatever the step did), given the window and the sample count
@@ -686,7 +686,7 @@ echo 'rehearsal step: each of the four report branches reaches the exit code its
 # 4. Whether \watch fills the file at all. Everything the step says about lock waits is
 # the product of this file's line count, so the sampling is measured and not read: this
 # runs the step's own psql line, taken out of the step, for two seconds, and asks the
-# sample file how many times it filled. Case 2 of scripts/review_rehearsal_test.sh asks
+# sample file how many times it filled. Case 2 of scripts/rehearsal_contention_test.sh asks
 # the same question over that same line for three seconds. It used to run a
 # `psql -c <query> -c '\watch 0.1'` invocation, which psql answers once and then refuses
 # to repeat, and no case written that way could have sampled anything whatever it was
@@ -712,16 +712,16 @@ else
 	echo "rehearsal step: the watch floor is the window the watcher lived for, and its own psql line filled the sample file $watch_samples times in 2s"
 fi
 
-# 5. The line the report is headed with, which two rounds of review wrote cases for and
-# nothing ran. `scripts/review5_rehearsal_provenance_test.sh` runs the step's own
+# 5. The line the report is headed with, which has had cases written for it and was never
+# run by anything. `scripts/rehearsal_provenance_test.sh` runs the step's own
 # candidate line over a tree holding one uncommitted file, and
-# `scripts/review6_provenance_bigtree_test.sh` runs it over one holding five thousand:
+# `scripts/provenance_bigtree_test.sh` runs it over one holding five thousand:
 # the two answers part company there, because a `git status --porcelain | grep -q .` lets
 # `grep` close the pipe while `git` is still writing, and under `pipefail` the step takes
 # the 141 as "clean" and names a bare revision for a tree it built a binary out of. A
 # case nothing runs protects nothing, which is the same argument case 3b makes about the
 # branches above, so both are run here rather than left for whoever remembers.
-for provenance_case in review5_rehearsal_provenance_test.sh review6_provenance_bigtree_test.sh; do
+for provenance_case in rehearsal_provenance_test.sh provenance_bigtree_test.sh; do
 	if ! provenance_out=$(bash "$scripts/$provenance_case" 2>&1); then
 		printf 'FAIL: %s refuses the line the rehearsal report is headed with:\n%s\n' "$provenance_case" "$provenance_out" >&2
 		exit 1
@@ -826,20 +826,43 @@ if [[ "$(test_commands '' check)" != "go tool gotestsum --packages='./...' --  -
 	printf 'FAIL: make check with TEST_COUNT empty must hand gotestsum no count at all, and lose nothing else:\n%s\n' "$(test_commands '' check)" >&2
 	exit 1
 fi
-case "$(race_commands -count=1 check-race)" in
+# The race goal's own line, pinned the same way and for the same two reasons: the count, because a race
+# verdict served out of a build cache across commits is a worse answer than no detector, and the bound,
+# because go test's ten-minute default is a per-package clock nobody here chose and `apps/platformkit` is
+# in this goal's package list. The bound the line states is `check`'s own, and the measurements behind it
+# are written above the line in the Makefile. The bound is matched as a stated minutes value rather than
+# as one number, so the number stays arguable and the parts - the detector, the count, a stated clock -
+# are refused one at a time below, off the expansion rather than off a copy of the line.
+race_pinned="$(race_commands -count=1 check-race)"
+for race_part in "-race" "-count=1" "-timeout"; do
+	case " $race_pinned " in
+	*" $race_part"*) ;;
+	*)
+		echo "FAIL: make check-race no longer carries $race_part; that part is the race gate:" >&2
+		echo "$race_pinned" >&2
+		exit 1
+		;;
+	esac
+done
+case "$race_pinned" in
 	'go test -race -count=1 -timeout='*m' ./'*) ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$(race_commands -count=1 check-race)" >&2; exit 1 ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT=-count=1 is not the fresh, bounded race line:\n%s\n' "$race_pinned" >&2; exit 1 ;;
 esac
 empty_race="$(race_commands '' check-race)"
 case "$empty_race" in
-	'go test -race '*'-timeout=30m '*'./apps/platformkit') ;;
-	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race, its packages or its stated bound:\n%s\n' "$empty_race" >&2; exit 1 ;;
+	# Two spaces where the count was, and the bound still there: an empty TEST_COUNT is a caller taking
+	# its own count out, not this repository taking its clock out. The bound is matched as a stated
+	# minutes value, as in the line above, because the number itself is pinned elsewhere — by
+	# scripts/race_binary_timeout_test.py against the arguments the test binary is handed, and by
+	# scripts/race_bound_not_below_check_bound_test.sh against `check`'s own clock.
+	'go test -race  -timeout='*m' '*./apps/platformkit) ;;
+	*) printf 'FAIL: make check-race with TEST_COUNT empty lost -race, its stated bound or its packages:\n%s\n' "$empty_race" >&2; exit 1 ;;
 esac
 if [[ "$empty_race" == *-count* ]]; then
 	printf 'FAIL: make check-race with TEST_COUNT empty still carries a count:\n%s\n' "$empty_race" >&2
 	exit 1
 fi
-echo 'test feedback: the count is one variable, the CI default stays fresh and an empty value costs only the count'
+echo 'test feedback: the count is one variable, the CI default stays fresh and bounded, and an empty value costs only the count'
 
 # An unrelated PATH formatter must not change formatting or hide tool errors.
 formatting="$temporary/formatting"

@@ -26,6 +26,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/septagon-oss/platformkit/kit/appname"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/internal/syscap"
 	"github.com/septagon-oss/platformkit/kit/tenancy"
@@ -78,7 +79,20 @@ type replayRow struct {
 	TenantID uuid.UUID
 }
 
+// ErrEventOwnedByAnotherApp is the refusal of a replay asked of a deployment that
+// does not consume the event: its tenant belongs to another app, or to none, so the
+// relay that would carry it again belongs elsewhere. A sentinel rather than a bare
+// sentence because the installation's door has to answer "the other installation
+// is the one that can do this" as a status it can name, and because the caller who
+// could correct this asked the wrong process, not the wrong question.
+var ErrEventOwnedByAnotherApp = errors.New("events: the event belongs to another app's tenant")
+
 // Replay gives one event another run and records the act.
+//
+// The caller names no app, so this form asks nothing about whose event it is: it is
+// the verb for a process that consumes whatever reaches it, which is the state an
+// app-less deployment is in. A deployment that names itself calls ReplayForApp, and
+// gets the row's tenant asked before anything is cleared.
 //
 // durable names one subscription's claim, or empty for every subscription that
 // claimed this event — the honest default, since an operator replaying a
@@ -117,6 +131,33 @@ type replayRow struct {
 // variable would be discovering a dependency rather than naming one, so the
 // product mounts the surface, declares the permission, and asks the question there.
 func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
+	return replay(ctx, conn, appname.Name(""), eventID, durable, reason)
+}
+
+// ReplayForApp is Replay asked by the app that consumes the event. The name is the
+// caller's own — this process, not the body's say-so — and it is checked against the
+// row inside the transaction, after the row is locked and before the first claim is
+// cleared, so a refusal writes nothing, emits nothing, and leaves the claims, the
+// dead letters and the publication stamp exactly as they were. An id is not a
+// boundary: it names a row, and the row's tenant names the app that holds it, so the
+// comparison belongs where the write happens.
+func ReplayForApp(ctx context.Context, conn *db.Conn, app appname.Name, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
+	return replay(ctx, conn, app, eventID, durable, reason)
+}
+
+// orNoApp words the answer an event's tenant gives about who holds it, for the
+// sentence that refuses a replay to the wrong deployment. It says which of the two
+// states the row is in — another app's, or nobody's yet — without naming the other
+// slug: the operator who can act on this reads tenants.app themselves, and a log
+// line that answers "whose is it" with another customer's slug answers nothing here.
+func orNoApp(holder string) string {
+	if holder == "" {
+		return "no app yet"
+	}
+	return "another app"
+}
+
+func replay(ctx context.Context, conn *db.Conn, app appname.Name, eventID uuid.UUID, durable, reason string) (ReplayRecord, error) {
 	// An empty reason is a correctable refusal: the same call with a sentence
 	// attached is allowed. It is checked before the transaction opens, because
 	// nothing about the database can make an unstated reason sufficient.
@@ -147,6 +188,26 @@ func Replay(ctx context.Context, conn *db.Conn, eventID uuid.UUID, durable, reas
 		}
 		rec.Name = rows[0].Name
 		tenantID := rows[0].TenantID
+
+		// Whose event this is, asked of the row's own tenant, and before the first
+		// DELETE. A claim names no app, so the outbox row's tenant is the only fact
+		// that says which deployment consumes it — the same fact MoveLedger moves a
+		// ledger by. Without it the verb is a delete keyed on an id: an installation
+		// holding the grant could clear the claims and terminal failures of an event
+		// it will never deliver, and re-stamp a row its own relay does not read —
+		// one app removing the record that another app's handler already finished.
+		// A tenant that belongs to no app is refused by the same sentence: this
+		// process is not the deployment whose consumer will carry the row either.
+		if app.Named() {
+			var holder string
+			if err := tx.DB().Raw(`SELECT COALESCE(app, '') FROM tenants WHERE id = ?`, tenantID).Scan(&holder).Error; err != nil {
+				return fmt.Errorf("events: replay %s: name the app that holds its tenant: %w", eventID, err)
+			}
+			if holder != app.String() {
+				return fmt.Errorf("events: replay %s: its tenant belongs to %s; the deployment that consumes the event replays it; nothing was cleared: %w",
+					eventID, orNoApp(holder), ErrEventOwnedByAnotherApp)
+			}
+		}
 
 		// The claims first, and each statement bounds itself to what the verb
 		// was asked for: one durable's claim, or every subscription's.
