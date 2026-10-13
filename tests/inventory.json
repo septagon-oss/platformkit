@@ -59726,6 +59726,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/mobile_journey_fetch_token_precedence_test.sh",
+   "id": "scripts/mobile_journey_fetch_token_precedence_test.sh",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "mobile_journey_fetch_token_precedence_test.sh",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/openpencil_lock_above_advisory_test.sh",
    "id": "scripts/openpencil_lock_above_advisory_test.sh",
    "kind": "shell_pin",
@@ -61953,7 +61973,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1626,
+  "files": 1627,
   "forge_runs": [
    408,
    413,
@@ -61988,7 +62008,7 @@
   ],
   "layers": {
    "behaviour": 2659,
-   "composition": 365,
+   "composition": 366,
    "contract": 20,
    "journey": 89
   },
@@ -62006,23 +62026,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 3133,
+  "rows": 3134,
   "tiers": {
    "merge": 2003,
    "nightly": 89,
-   "push": 1041
+   "push": 1042
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1441,
+   "keep": 1442,
    "keep-rewrite": 60,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2843,
+   "keep": 2844,
    "keep-rewrite": 117,
    "merge": 173
   }
