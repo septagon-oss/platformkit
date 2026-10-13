@@ -39,15 +39,15 @@ import (
 
 // answeredLimit is one of kit/limit's four rows, held still: what it returns is
 // what the counter returns in that world, including ErrBusy where the counter
-// puts it (Count and Forget) and no error at all where Allow puts the refusal.
+// puts it (Count and Forget) and no error at all where Reserve puts the refusal.
 type answeredLimit struct {
 	ok    bool
 	retry time.Duration
 	err   error
 }
 
-func (a answeredLimit) Allow(context.Context, string, int, time.Duration) (bool, time.Duration, error) {
-	return a.ok, a.retry, a.err
+func (a answeredLimit) Reserve(context.Context, string, int, time.Duration) (bool, int, time.Duration, error) {
+	return a.ok, 0, a.retry, a.err
 }
 
 // writeDoor composes the one public POST this file needs, counted by l, and

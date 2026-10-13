@@ -627,11 +627,11 @@ by construction. Both terms are counted over this composition rather than rememb
 an operation is one `operationId` entry of `apps/platformkit/testdata/openapi.json`,
 the document the composition serves and which a committed case refuses to let drift
 from that file, and the two module terms are the jobs and subscriptions the
-composition's manifests register. That tally expressly does not count the four jobs
-this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge` and
-`schema-backfill` — nor the fifth, `ledger-move`, which only a deployment that names
-`nats.app` schedules and whose one pass renames every tenant's delivery ledger; the run
-span of each carries no tenant either, for the same
+composition's manifests register. That tally expressly does not count the five jobs
+this package registers for itself — `outbox-relay`, `outbox-purge`, `limit-purge`,
+`idempotency-purge` and `schema-backfill` — nor the sixth, `ledger-move`, which only a
+deployment that names `nats.app` schedules and whose one pass renames every tenant's
+delivery ledger; the run span of each carries no tenant either, for the same
 reason `file-reconcile`'s does: each is one pass over every tenant's rows, so the one
 tenant it could name would name none of them.
 `file-reconcile` is the one module boundary that carries no tenant, not the only
