@@ -2,6 +2,7 @@ package httpx_test
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -67,6 +68,20 @@ func TestStoredPostgresRefusalWaitExcludesTimeWaitingForTheCounterLock(t *testin
 		t.Fatal(err)
 	}
 	const path = "/api/v1/public/probe/contended-entries"
+	// The row is parked on while it still has just over two seconds of window left, and
+	// the wait under its lock is two fifths of a second. Both figures belong to the
+	// counter, not to this case: kit/limit ends a wait for one key's row at its own queue
+	// budget — a second — and answers that wait as a refusal that recorded nothing, so the
+	// only wait this case can measure at all is a fraction of a second, and the wait it
+	// states is stated in whole seconds. Reading the row until it is near its end is what
+	// puts the two on the same side of a second boundary: the answer owes the row's
+	// remaining less the wait, and a second boundary is where those two readings part.
+	// The room left under the bound is the room for the wait, its scheduling and a host
+	// doing other things, and a window that closed mid-attempt would reset the count and
+	// read as a missing reservation rather than as what it was.
+	if left := awaitWindowUnder(t, admin, key, window, 2200*time.Millisecond); left < 0 {
+		t.Fatalf("the counter's row never came within 2.2s of its window's end")
+	}
 	answers := make(chan *httptest.ResponseRecorder, 1)
 	go func() { answers <- keyedPost(t, router, http.MethodPost, path, "contended-refusal", "{}") }()
 	// Confirm a real counter statement is blocked before spending time under its lock.
@@ -85,7 +100,7 @@ func TestStoredPostgresRefusalWaitExcludesTimeWaitingForTheCounterLock(t *testin
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	if err := locker.Rollback(); err != nil {
 		t.Fatal(err)
 	}
@@ -118,5 +133,31 @@ func TestStoredPostgresRefusalWaitExcludesTimeWaitingForTheCounterLock(t *testin
 	var remaining, reset int
 	if _, err := fmt.Sscanf(replay.Header().Get(httpx.RateLimitHeader), `"contended-entries";r=%d;t=%d`, &remaining, &reset); err != nil || remaining != 0 || reset < 0 || reset > maximumWait {
 		t.Errorf("replayed RateLimit = %q; deciding counter has at most %d seconds left", replay.Header().Get(httpx.RateLimitHeader), maximumWait)
+	}
+}
+
+// awaitWindowUnder reads a counter row's own remaining window until it falls at or
+// below want, and answers how much was left when it did. A case that has to observe a
+// countdown close to its end reads the row rather than sleeping at the wall: when the
+// window ends is the row's fact, and a wall-clock estimate of it is off by however long
+// the fixture around the seed took. The window is stated in whole seconds, which is how
+// kit/limit's own column holds it.
+func awaitWindowUnder(t *testing.T, admin *sql.DB, key string, window, want time.Duration) time.Duration {
+	t.Helper()
+	q := fmt.Sprintf(`SELECT GREATEST(0, extract(epoch FROM (window_start + interval '%d seconds' - now())))
+		FROM platformkit_limits WHERE key = $1`, int64(window.Seconds()))
+	for {
+		var left float64
+		if err := admin.QueryRowContext(t.Context(), q, key).Scan(&left); err != nil {
+			t.Fatalf("read the counter's own countdown: %v", err)
+		}
+		if remaining := time.Duration(left * float64(time.Second)); remaining <= want {
+			return remaining
+		}
+		select {
+		case <-time.After(20 * time.Millisecond):
+		case <-t.Context().Done():
+			return -1
+		}
 	}
 }
