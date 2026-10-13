@@ -224,14 +224,6 @@ func sayCountedOnto(h http.Header, m measured, refused bool) {
 	}
 }
 
-// sayCountedAgain restates one remembered counter on the answer to the attempt asking
-// again: the reading, worked out against this moment, and no policy line, which the
-// answer keeps among its own headers (keptHeaders, and sayRecorded for why that is the
-// complete account of it).
-func sayCountedAgain(h http.Header, m measured) {
-	h.Set(RateLimitHeader, appendItem(h.Get(RateLimitHeader), m.policy.answer(m.remaining, m.left)))
-}
-
 // recorded is the answer's own account of the ceilings it was decided under: the same
 // readings, in the same order, with each window's closing worked out from the instant
 // that reading was taken. This is what a replay restates, and the reason the numbers are
@@ -268,6 +260,13 @@ func recorded(got []measured) []idempotency.Limit {
 // reported it — the ceiling a caller was told at the moment it was decided has not
 // changed; only the clock has moved.
 //
+// The line is written whole, over whatever a guard above this one left under that name:
+// the anonymous-write guard is spent before the memory is consulted, so a retry arrives
+// with a reading of its own already on the way down, from a counter this answer never
+// consulted. Kept beside the restated ones it is one policy with two quotas and two
+// resets — a client that reads `t=60` and then `t=0` has been told both that the window
+// is open and that it closed.
+//
 // A refusal names the longest of the waits that still run: an answer under two counters
 // is not free to retry until the later of them opens, and a caller told the shorter has
 // been told to come back to a refusal.
@@ -275,16 +274,22 @@ func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now ti
 	if len(limits) == 0 {
 		return
 	}
+	got := make([]measured, 0, len(limits))
 	left := time.Duration(0)
 	for _, l := range limits {
 		// What is left of the window is worked out again; what was left of the quota is
 		// restated. A replay consults no counter — consulting one would be spending the
 		// attempt over again — so the quota line can only be the reading the first
 		// attempt was given, and `t` is the field that says how long that reading held.
-		got := max(l.ResetsAt.Sub(now), 0)
-		sayCountedAgain(h, measured{policy: limitPolicy{name: l.Name, quota: l.Quota, window: l.Window}, remaining: l.Remaining, left: got})
-		left = max(left, got)
+		wait := max(l.ResetsAt.Sub(now), 0)
+		got = append(got, measured{
+			policy:    limitPolicy{name: l.Name, quota: l.Quota, window: l.Window},
+			remaining: l.Remaining,
+			left:      wait,
+		})
+		left = max(left, wait)
 	}
+	h.Set(RateLimitHeader, answerField(got...))
 	if refused {
 		h.Set(RetryAfterHeader, secondsUp(left, 1))
 	}

@@ -175,7 +175,10 @@ only the one that refused, and a field rebuilt from the readings alone would dro
 ceiling no reading was kept for; the quota comes back as the counter reported it; and
 `RateLimit`'s `t` and `Retry-After` are worked out again against the moment the replay is
 answered at, because a refusal that restated a stored wait would tell a caller to sit out
-a window that had already closed. What is left of a window is what the row itself had left
+a window that had already closed. Those readings are the whole of the replayed `RateLimit`
+line, and one item per counter: the anonymous-write guard is spent before the memory is
+consulted, so a retry arrives with a fresh reading of its own on the way down, and a reply
+that kept both would state one policy with two quotas and two resets. What is left of a window is what the row itself had left
 when the event landed in it — the counter measures it against the clock at that instant,
 not the instant its transaction opened, so a key several replicas are waiting on costs a
 caller a shorter window than they were told and never a longer one.

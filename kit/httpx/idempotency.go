@@ -355,11 +355,14 @@ func (a *API) replay(ctx huma.Context, stored idempotency.Answer) {
 		w.Header().Set(h.Name, h.Value)
 	}
 	// The ceilings the write was refused under go on the replay too, with the one
-	// number that ages worked out again. The policy line is already on its way: the
-	// answer kept it among its own headers just above. The reading is the one the
-	// deciding counter gave, and the wait is what is left of the window that refusal
-	// landed in. A replay that said nothing let respond.go's floor stand in — a minute
-	// for a window of an hour — which is a guess where the answer had a number.
+	// number that ages worked out again, and they are the whole of the line: the guard
+	// above this one spends its own counter on the way down to the memory, and that
+	// reading belongs to the exchange asking again, not to the answer it is being given
+	// (sayRecorded). The policy line is already on its way: the answer kept it among its
+	// own headers just above. The reading is the one the deciding counter gave, and the
+	// wait is what is left of the window that refusal landed in. A replay that said
+	// nothing let respond.go's floor stand in — a minute for a window of an hour — which
+	// is a guess where the answer had a number.
 	sayRecorded(w.Header(), stored.Limits, stored.Status == http.StatusTooManyRequests, time.Now().UTC())
 	// Both places, as declared does: the writer holds the answer, and the huma
 	// context holds the verdict the transaction middleware commits or rolls back on.
