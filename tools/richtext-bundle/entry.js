@@ -1,5 +1,5 @@
 // The richtext bundle's single entry. Everything esbuild pulls into
-// ui/assets/vendor/richtext/editor.js arrives through this file, so the set of
+// ui/assets/richtext/editor.js arrives through this file, so the set of
 // third-party code a page loads is one readable list rather than whatever the
 // glue happened to import.
 //

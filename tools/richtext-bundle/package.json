@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Builds ui/assets/vendor/richtext/editor.js: the headless Tiptap editor, its official Markdown extension, and the schema decision 0069 section 1 rules, as one minified ES module.",
+  "description": "Builds ui/assets/richtext/editor.js: the headless Tiptap editor, its official Markdown extension, and the schema decision 0069 section 1 rules, as one minified ES module.",
   "scripts": {
     "build": "node build.mjs"
   },

@@ -240,7 +240,7 @@ check-richtext-bundle: ## Fail when the vendored editor bundle is over its gzip 
 # Rebuild the bundle and its licence file from what package-lock.json pins.
 # Run it after changing the extension list or a pinned version, and commit the
 # two files together with the manifest and the lock.
-richtext-bundle: ## Rebuild ui/assets/vendor/richtext/editor.js from its lockfile
+richtext-bundle: ## Rebuild ui/assets/richtext/editor.js from its lockfile
 	bash scripts/richtext_bundle_build.sh
 
 # The number decision 0075's i18n row reads: the share of the words a person reads on

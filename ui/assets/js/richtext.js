@@ -16,7 +16,7 @@ import {
 	HardBreak, Heading, History, HorizontalRule, Image, Italic, Link, ListItem,
 	Markdown, OrderedList, Paragraph, Placeholder, Strike, TableKit, TaskItem,
 	TaskList, Text, Editor,
-} from "../vendor/richtext/editor.js";
+} from "../richtext/editor.js";
 
 const AUTOSAVE_AFTER = 2000;
 const DOCUMENT_SHAPE = 1;

@@ -19,7 +19,7 @@ set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 repo="$(dirname "$here")"
 project="$repo/tools/richtext-bundle"
-out="${1:-$repo/ui/assets/vendor/richtext}"
+out="${1:-$repo/ui/assets/richtext}"
 
 work="$(mktemp -d "${TMPDIR:-/tmp}/platformkit-richtext-bundle.XXXXXX")"
 trap 'rm -rf "$work"' EXIT

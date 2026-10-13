@@ -40,12 +40,19 @@
 //
 // # The rich text editor bundle
 //
-// assets/vendor/richtext/editor.js is the headless editor a rich text field
-// mounts: Tiptap and its official Markdown extension, built to one minified
-// module by the node project under tools/richtext-bundle and committed, so
-// building this repository needs no package registry. It is no one's controller:
-// a page loads it as an ES module, and only where a rich text field renders, so
-// the bytes stay off every page without one. Its licences travel beside it.
+// assets/richtext/editor.js is the headless editor a rich text field mounts:
+// Tiptap and its official Markdown extension, built to one minified module by
+// the node project under tools/richtext-bundle and committed, so building this
+// repository needs no package registry. It is no one's controller: a page loads
+// it as an ES module, and only where a rich text field renders, so the bytes
+// stay off every page without one. Its licences travel beside it.
+//
+// The directory is not named vendor, and check-richtext-bundle refuses one
+// anywhere in the tree: a Go module zip omits every file below a directory named
+// vendor that holds a directory of its own, so bytes committed there arrive at no
+// consumer, and the //go:embed line below then fails the build of every package
+// that imports ui — in a client's checkout, where ui is resolved by version, and
+// nowhere else.
 //
 // # What is not here
 //
@@ -72,7 +79,7 @@ import (
 	"github.com/septagon-oss/platformkit/ui/style"
 )
 
-//go:embed assets/js/*.js assets/css/*.css assets/vendor/richtext/*.js
+//go:embed assets/js/*.js assets/css/*.css assets/richtext/*.js
 var scripts embed.FS
 
 // Controllers are the browser scripts a page loads, in order. The list is here

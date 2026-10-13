@@ -1,4 +1,4 @@
-// Builds ui/assets/vendor/richtext/editor.js and its LICENSE.md from the exact
+// Builds ui/assets/richtext/editor.js and its LICENSE.md from the exact
 // dependency tree package-lock.json pins.
 //
 // Two promises, both of which `make check` asserts:
