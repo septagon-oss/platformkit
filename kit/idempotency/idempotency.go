@@ -151,7 +151,7 @@ type Store interface {
 	Complete(ctx context.Context, s Scope, claim uuid.UUID, a Answer, at time.Time) error
 }
 
-// table is the one this package owns. See migrations/000044_idempotency.
+// table is the one this package owns. See migrations/000062_idempotency.
 const table = "platformkit_idempotency"
 
 const (
