@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -272,6 +273,72 @@ func AltClaim(alt string, decorative bool) error {
 		return fmt.Errorf("%w: an alt text is at most %d characters, and that one is %d", crud.ErrInvalid, MaxAlt, utf8.RuneCountInString(alt))
 	}
 	return nil
+}
+
+// PickerField is the caller's field name, checked rather than sanitised: the name
+// comes back as a query parameter's key, so anything outside a plain identifier is a
+// request that cannot mean what it says. It is refused as ErrInvalid — typing another
+// name is the cure — and the empty name is refused too, because a picker that guessed
+// which field it answered would put a picture somewhere its owner never asked for.
+func PickerField(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	if !pickerFieldShape.MatchString(name) {
+		return "", fmt.Errorf("%w: a field name is a lower-case identifier — letters, digits, dot and underscore, starting with a letter or digit, and %q is not one", crud.ErrInvalid, name)
+	}
+	return name, nil
+}
+
+// pickerFieldShape is the grammar above: 1 to 64 characters, the first of them not a
+// separator. It is a regexp rather than a loop because the whole of it is one line and
+// the loop would be six.
+var pickerFieldShape = regexp.MustCompile(`^[a-z0-9][a-z0-9_.]{0,63}$`)
+
+// MaxPickerReturn is how long a return address is: a workspace path, and a workspace
+// path longer than this is a caller pasting a query into the wrong box.
+const MaxPickerReturn = 200
+
+// PickerReturns is the one check the picker applies to the address it may send a
+// person to, and it is applied at render, before any "Use image" control is drawn.
+//
+// A bare same-site workspace path is the whole of what is admissible: no scheme, no
+// authority, no fragment, no query (the id is the only value this page puts in a URL,
+// and a caller's query would be a payload this one cannot see), no backslash, no control
+// character. `/app/` is the prefix because a picker's caller is a workspace form, and
+// anything outside the workspace is not a place this module will navigate a person to.
+// The content-security-policy's `form-action 'self'` is the second wall, not the first:
+// a page that drew a button whose action nobody vouched for would still be a page that
+// lied about a door to a caller who reads the markup rather than the headers.
+func PickerReturns(path string) (string, error) {
+	path = strings.TrimSpace(path)
+	switch {
+	case path == "" || utf8.RuneCountInString(path) > MaxPickerReturn:
+		return "", fmt.Errorf("%w: the address to return to is a workspace path of at most %d characters", crud.ErrInvalid, MaxPickerReturn)
+	case strings.ContainsAny(path, "?#\\"):
+		return "", fmt.Errorf("%w: %s is not a bare path; a query, a fragment and an escape have no part in an address this picker will navigate to", crud.ErrInvalid, path)
+	case strings.IndexFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0:
+		return "", fmt.Errorf("%w: the address to return to carries a control character", crud.ErrInvalid)
+	case !strings.HasPrefix(path, "/app/"):
+		return "", fmt.Errorf("%w: %s is not a workspace path; the picker returns to an address under /app/", crud.ErrInvalid, path)
+	}
+	return path, nil
+}
+
+// PickerParameter is the query key the answer arrives under: the caller's own field
+// name, prefixed so the parameter cannot be mistaken for one the called page declared.
+// It is one function because the picker's form and every sentence about it must spell
+// the key the same way.
+func PickerParameter(field string) string { return "pick." + field }
+
+// Pickable is whether "Use image" may be allowed to answer this row, and it is the whole
+// of the gate a picture has to pass to reach a body: it is an image this deployment can
+// draw, its frame was actually measured, and it either says what is in it or says that it
+// is decorative. The third clause is the reason the library refuses an uncaptioned picture
+// to a picker while the grid shows it: the grid is where its caption gets written.
+//
+// There is no fourth condition: no retention class, no visibility, no client.
+func Pickable(f *File) bool {
+	return f != nil && MediaFamily(f.ContentType, f.Width) == FamilyImage &&
+		f.Width > 0 && (f.Decorative || strings.TrimSpace(f.Alt) != "")
 }
 
 // Library is what the media library asks of this module's service: the grid's

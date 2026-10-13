@@ -107,7 +107,16 @@ func (s *Service) Quota(ctx context.Context, tx db.Tx[db.Tenant]) (*contracts.Qu
 }
 
 // SetAlt writes what a picture says about itself. See contracts.Library.
+//
+// The authority question comes first, ahead of the lock and of every read: a caption is a
+// write to somebody's record, and the ceiling a credential carries travels with the call
+// whoever made it, so the command that would otherwise be reachable by pasting a form to a
+// door nobody guarded answers here rather than at the door. The refusal locks nothing,
+// writes nothing and publishes nothing.
 func (s *Service) SetAlt(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID, alt string, decorative bool, expected time.Time) (*contracts.File, error) {
+	if err := contracts.Carries(ctx, contracts.PermissionFileManage); err != nil {
+		return nil, err
+	}
 	f, err := crud.GetForUpdate[*contracts.File](tx, id)
 	if err != nil {
 		return nil, err

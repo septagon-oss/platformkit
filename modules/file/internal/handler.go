@@ -542,6 +542,11 @@ func fault(err error) error {
 	// declarations, and this is where that promise is kept.
 	case errors.Is(err, contracts.ErrHeld), errors.Is(err, contracts.ErrInUse):
 		return problem.Conflict(err.Error())
+	// The caller is recognised and their own credential says no. That is a refusal of the
+	// request as it stands, not of the row, and it is not correctable by anything the
+	// caller has: a 403 names the permission and stops there.
+	case errors.Is(err, contracts.ErrNotPermitted):
+		return problem.New(http.StatusForbidden, err.Error())
 	default:
 		return rest.Fault(err)
 	}

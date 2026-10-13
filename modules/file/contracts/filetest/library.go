@@ -107,6 +107,11 @@ func (f *Fake) SetAlt(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, alt
 	if _, err := contracts.ScopeOf(ctx); err != nil {
 		return nil, err
 	}
+	// The same ceiling the SQL service refuses by, so a consumer that tests against the
+	// fake cannot learn that production answers differently.
+	if err := contracts.Carries(ctx, contracts.PermissionFileManage); err != nil {
+		return nil, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	row, ok := f.rows[id]

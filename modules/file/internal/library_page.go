@@ -46,6 +46,12 @@ import (
 // would be a tile waiting on an object nobody wrote.
 const ThumbnailWidth = 480
 
+// widthQuery is the content door's own parameter, spelled as contentInput declares
+// it (query:"w"). A tile that named the concept instead of the parameter would ask
+// for the stored frame and be answered with it — the door ignores a query it does
+// not declare — so a grid of 480-pixel tiles would fetch and decode every original.
+const widthQuery = "?w="
+
 // LibraryPages is the media library: what it reads, the two commands its controls
 // post to, the shell it is drawn in, and whose answer to "may this caller write"
 // the caption and removal controls reuse.
@@ -85,7 +91,8 @@ type Remover interface {
 // past the one the person was shown, an unreadable database.
 var libraryFaults = []int{
 	http.StatusNotFound, http.StatusConflict,
-	http.StatusUnprocessableEntity, http.StatusServiceUnavailable,
+	http.StatusUnprocessableEntity, http.StatusForbidden,
+	http.StatusServiceUnavailable,
 }
 
 // MountLibrary serves the library and the two writes its controls post.
@@ -109,7 +116,14 @@ func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 	page.Serve(s.App, p.Shell, page.Route{ID: "file-library", Method: http.MethodGet,
 		Path: "/files", Summary: "The media library", Errors: libraryFaults}, read,
 		func(ctx context.Context, r page.Request, in *libraryInput) (page.View, error) {
-			return p.render(ctx, r, where, bytes, in, "")
+			return p.render(ctx, r, where, bytes, in, nil)
+		})
+
+	page.Serve(s.App, p.Shell, page.Route{ID: "file-library-pick", Method: http.MethodGet,
+		Path: "/files/pick", Summary: "Choose one of this tenant's images for a field",
+		Errors: libraryFaults}, read,
+		func(ctx context.Context, r page.Request, in *pickerInput) (page.View, error) {
+			return p.pick(ctx, r, where, bytes, in)
 		})
 
 	page.Serve(s.App, p.Shell, page.Route{ID: "file-library-alt", Method: http.MethodPost,
@@ -118,8 +132,8 @@ func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 		func(ctx context.Context, r page.Request, in *altForm) (page.View, error) {
 			sent, err := url.ParseQuery(string(in.RawBody))
 			if err != nil {
-				return p.render(ctx, r, where, bytes, oneFile(in.ID),
-					said(r, "file.library.refusal.form", "The form could not be read, so nothing was written."))
+				return p.render(ctx, r, where, bytes, oneFile(in.ID), problem.New(http.StatusUnprocessableEntity,
+					said(r, "file.library.refusal.form", "The form could not be read, so nothing was written.")))
 			}
 			tx, ok := httpx.TxFrom(ctx)
 			if !ok {
@@ -128,7 +142,7 @@ func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 			f, err := p.Read.SetAlt(ctx, tx, in.ID, sent.Get("alt"),
 				sent.Get("decorative") == "on", formInstant(sent.Get("updated")))
 			if err != nil {
-				return p.render(ctx, r, where, bytes, oneFile(in.ID), refusal(err, r.Locale))
+				return p.render(ctx, r, where, bytes, oneFile(in.ID), err)
 			}
 			// SeeOther, so a reload cannot write the caption twice, and back to the
 			// panel that now shows the row the command returned.
@@ -149,7 +163,7 @@ func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 				return page.View{}, problem.NotFound("this installation offers no removal control")
 			}
 			if _, err := p.Remove.Delete(ctx, tx, in.ID); err != nil {
-				return p.render(ctx, r, where, bytes, oneFile(in.ID), refusal(err, r.Locale))
+				return p.render(ctx, r, where, bytes, oneFile(in.ID), err)
 			}
 			// Back to the grid, not to the row that is gone.
 			return page.View{}, httpx.SeeOther(where)
@@ -183,6 +197,16 @@ type idForm struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The file to remove"`
 }
 
+// pickerInput is the picker's whole request: whose field is being filled, where the
+// choice goes back to, and the grid's own filters over the eligible pictures.
+type pickerInput struct {
+	Field   string `query:"field" maxLength:"64" doc:"The calling field's own name"`
+	Returns string `query:"returns" maxLength:"200" doc:"The workspace path the choice returns to"`
+	Q       string `query:"q" maxLength:"64" doc:"Part of a file's name"`
+	Sort    string `query:"sort" doc:"One of the six orders contracts.Sorts names"`
+	Page    int    `query:"page" default:"1" minimum:"1" doc:"Which screenful"`
+}
+
 // oneFile is the grid query that opens exactly one row and filters nothing.
 func oneFile(id uuid.UUID) *libraryInput {
 	return &libraryInput{File: id.String()}
@@ -193,8 +217,14 @@ func oneFile(id uuid.UUID) *libraryInput {
 // command re-renders the page the person was on, filters and all, with the refusal
 // above it: a page that dropped them onto a bare grid after saying "something still
 // shows this file" would be a page that had lost their place.
+//
+// refused is the command's own error, or nil. Its status is the page's, so a reload of
+// the answer says what the click did, and its sentence is the one the catalogue
+// translates. Anything else that fails is a refusal of *this* read and leaves as a
+// problem of its own status: no such row is a 404 and a filter nobody can correct is a
+// 422, not the 500 a raw crud error would be in the shell.
 func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes string,
-	in *libraryInput, refused string) (page.View, error) {
+	in *libraryInput, refused error) (page.View, error) {
 	tx, ok := httpx.TxFrom(ctx)
 	if !ok {
 		return page.View{}, storageUnreachable()
@@ -206,36 +236,40 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 		Limit: per, Offset: (at - 1) * per,
 	})
 	if err != nil {
-		return page.View{}, err
+		return page.View{}, fault(err)
 	}
 	meter, err := p.Read.Quota(ctx, tx)
 	if err != nil {
-		return page.View{}, err
+		return page.View{}, fault(err)
 	}
 	may, err := p.mayManage(ctx, r)
 	if err != nil {
-		return page.View{}, err
+		return page.View{}, fault(err)
 	}
 	query := filters(in)
 	last := max(int((total+int64(per)-1)/int64(per)), 1)
 	body := []g.Node{}
 	status := 0
-	if refused != "" {
+	if refused != nil {
 		// The status of a page that refused you is the status of the refusal, so a
-		// reload of the answer says what the click did.
-		status = http.StatusConflict
+		// reload of the answer says what the click did. An answer with no status a
+		// caller can act on is not a refusal of the person at the keyboard, and it
+		// leaves as an error instead of as an alert that quotes the server's log.
+		status = refusalStatus(refused)
+		if status >= http.StatusInternalServerError {
+			return page.View{}, refused
+		}
 		body = append(body, components.Alert(components.AlertProps{
 			Tone: "danger", Title: said(r, "file.library.refusal.title", "That could not be done"),
-			Message: refused, Bordered: true,
+			Message: refusal(refused, r.Locale), Bordered: true,
 		}))
 	}
 	body = append(body,
 		components.Toolbar(components.ToolbarProps{
 			Title: said(r, "file.library.title", "Media library"),
-			Subtitle: fmt.Sprintf("%d %s, %s. %s", total, plural(total, "file", "files"),
-				orderSaid(in.Sort), meterSaid(meter)),
 		}),
-		meterPanel(r, meter),
+		uploadForm(r, bytes, may),
+		meterPanel(r, meter, total),
 		filterForm(r, where, in, query),
 		grid(r, where, bytes, rows, total),
 		components.Pagination(components.PaginationProps{
@@ -246,7 +280,7 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 	if in.File != "" {
 		panel, err := p.panel(ctx, r, where, bytes, in.File, may)
 		if err != nil {
-			return page.View{}, err
+			return page.View{}, fault(err)
 		}
 		body = append(body, panel)
 	}
@@ -266,17 +300,15 @@ func grid(r page.Request, where, bytes string, rows []*contracts.File, total int
 		// Nothing uploaded at all, said as one sentence rather than drawn as an empty
 		// frame: the frame would promise a table with nothing in it.
 		return components.EmptyState(components.EmptyStateProps{
-			Title:       said(r, "file.library.empty.title", "Nothing is in the library yet"),
-			Description: said(r, "file.library.empty", "Files arrive through the upload door; this page reads whatever this tenant is holding."),
-			Bordered:    true,
+			Title:    said(r, "file.library.empty.title", "Nothing is in the library yet"),
+			Bordered: true,
 		})
 	}
 	if len(rows) == 0 {
 		// The filter matched nothing, which is a different fact from the tenant
 		// holding nothing and needs a different sentence and a way out.
 		return components.EmptyState(components.EmptyStateProps{
-			Title:       said(r, "file.library.noResults.title", "Nothing matches"),
-			Description: said(r, "file.library.noResults", "No file in this tenant matches what you asked for. Clear the filters to see all of them."),
+			Title: said(r, "file.library.noResults.title", "Nothing matches those filters"),
 			Action: &components.ButtonProps{
 				Label: said(r, "file.library.clear", "Clear filters"), Href: where, Variant: "secondary",
 			},
@@ -333,7 +365,7 @@ func tile(r page.Request, bytes string, f *contracts.File) (thumb, full componen
 		alt = f.Name
 	}
 	return components.MediaProps{
-		Src: bytes + "/" + f.ID.String() + "/content?width=" + strconv.Itoa(ThumbnailWidth),
+		Src: bytes + "/" + f.ID.String() + "/content" + widthQuery + strconv.Itoa(ThumbnailWidth),
 		Alt: alt, Decorative: f.Decorative, Width: ThumbnailWidth, Height: scaledHeight(f),
 		Lazy: true,
 	}, components.MediaProps{
@@ -409,7 +441,13 @@ func filterForm(r page.Request, where string, in *libraryInput, query string) g.
 // There is no bar, because the kit has no meter component and a page that drew its
 // own would name a class nobody styles. Three numbers and a tone say the same thing,
 // and the tone is the state a person can act on.
-func meterPanel(r page.Request, q *contracts.Quota) g.Node {
+//
+// The sentence beneath the numbers is written when there is a grid above it to sum up.
+// With nothing held the numbers are the whole of what can be said, and a paragraph that
+// restates "Held now: 0 B" is the library's third body size on the one page where it has
+// nothing to add — the design floor permits two, and the other two belong to field help
+// and to an empty region's title.
+func meterPanel(r page.Request, q *contracts.Quota, shown int64) g.Node {
 	items := []components.DetailItem{
 		{Label: said(r, "file.library.meter.used", "Held now"), Value: human(q.Used)},
 	}
@@ -436,19 +474,159 @@ func meterPanel(r page.Request, q *contracts.Quota) g.Node {
 			},
 		)
 	}
-	return components.DetailList(components.DetailListProps{
+	panel := components.DetailListProps{
 		Title:        said(r, "file.library.meter.title", "Storage"),
-		Description:  meterSaid(q),
 		SemanticRole: "file-quota",
 		Items:        items,
+	}
+	if shown > 0 {
+		panel.Description = meterSaid(q)
+	}
+	return components.DetailList(panel)
+}
+
+// uploadForm is the library's one write of bytes: a plain multipart form whose action
+// is this module's own upload door. The door streams the part to storage and answers
+// with the row it wrote, and it is the only upload this module has — a page that posted
+// to a second upload of its own would be a second implementation of a command that
+// already refuses the too-large, the mislabelled and the full.
+//
+// The `image=true` is the door's own claim, not this page's guess about the file: it is
+// what turns bytes no decoder reads into a refusal rather than an attachment, and a
+// library whose grid is full of attachments nobody asked for is the failure it named.
+func uploadForm(r page.Request, bytes string, may bool) g.Node {
+	if !may {
+		// A person who may not upload is shown no control, exactly as the caption and
+		// removal forms work; the post would refuse them either way.
+		return g.Text("")
+	}
+	return h.Form(h.Method("post"), h.Action(bytes+"?image=true"), h.EncType("multipart/form-data"),
+		g.Attr("aria-label", said(r, "file.library.upload.label", "Add a file to the library")),
+		components.Input(components.InputProps{
+			Name: "file", Type: "file", Accept: "image/*",
+			Label: said(r, "file.library.upload.pick", "Choose an image to add"),
+			HelpText: said(r, "file.library.upload.help",
+				"The bytes are counted against the storage above as they arrive, and an upload past what this deployment accepts is refused with nothing kept."),
+		}),
+		components.Button(components.ButtonProps{
+			Type: "submit", Label: said(r, "file.library.upload.send", "Upload"), Variant: "primary",
+		}),
+	)
+}
+
+// pick is the picker: the same grid, narrowed to the pictures a field may take, in a
+// form that navigates back to whoever opened it. It writes nothing — no session key,
+// no row, no event — because a selection a person never saved is not a fact about any
+// record, and a page that stored one would be a page whose later navigation rewrote
+// somebody's draft.
+func (p LibraryPages) pick(ctx context.Context, r page.Request, where, bytes string, in *pickerInput) (page.View, error) {
+	field, err := contracts.PickerField(in.Field)
+	if err != nil {
+		return page.View{}, fault(err)
+	}
+	back, err := contracts.PickerReturns(in.Returns)
+	if err != nil {
+		return page.View{}, fault(err)
+	}
+	tx, ok := httpx.TxFrom(ctx)
+	if !ok {
+		return page.View{}, storageUnreachable()
+	}
+	at := max(in.Page, 1)
+	rows, total, err := p.Read.Search(ctx, tx, contracts.LibraryQuery{
+		Name: in.Q, Family: contracts.FamilyImage, Sort: in.Sort,
+		Limit: p.perPage(), Offset: (at - 1) * p.perPage(),
 	})
+	if err != nil {
+		return page.View{}, fault(err)
+	}
+	per := p.perPage()
+	last := max(int((total+int64(per)-1)/int64(per)), 1)
+	query := url.Values{}
+	if in.Q != "" {
+		query.Set("q", in.Q)
+	}
+	if in.Sort != "" {
+		query.Set("sort", in.Sort)
+	}
+	query.Set("field", field)
+	query.Set("returns", back)
+	body := []g.Node{
+		components.Toolbar(components.ToolbarProps{
+			Title: said(r, "file.library.pick.title", "Choose an image"),
+		}),
+		pickerForm(r, where, bytes, field, back, rows),
+		components.Pagination(components.PaginationProps{
+			CurrentPage: min(at, last), TotalPages: last, BaseURL: where + "/pick?" + query.Encode(),
+			NavigationLabel: said(r, "file.library.pick.pagination", "Image picker pagination"),
+		}),
+	}
+	return page.View{
+		Title: said(r, "file.library.pick.title", "Choose an image"),
+		Body:  body, Sensitive: true,
+	}, nil
+}
+
+// pickerForm is the return contract as markup: one GET form whose action is the path the
+// caller named, one radio per picture that may be chosen, and the caller's own field
+// name as the parameter the answer arrives under. A person who selects and submits is
+// answered by the page that asked, with the id in its query — no script between the two,
+// and a browser with JavaScript off lands in exactly the same place.
+//
+// A row the module will not hand to a body — unmeasured, or with no words and no claim
+// that it is decorative — carries no radio, because a control that will be refused on
+// the called page is a control that lies. It says why instead, and links the panel that
+// can fix it.
+func pickerForm(r page.Request, where, bytes, field, back string, rows []*contracts.File) g.Node {
+	if len(rows) == 0 {
+		return components.EmptyState(components.EmptyStateProps{
+			Title:       said(r, "file.library.pick.none.title", "No picture to choose"),
+			Description: said(r, "file.library.pick.none", "This tenant holds no image this field could carry. Upload one from the library first."),
+			Action: &components.ButtonProps{
+				Label: said(r, "file.library.pick.back", "Back to the library"), Href: where, Variant: "secondary",
+			},
+			Bordered: true,
+		})
+	}
+	tiles := []g.Node{}
+	for _, f := range rows {
+		_, preview := tile(r, bytes, f)
+		if !contracts.Pickable(f) {
+			tiles = append(tiles, h.Div(
+				components.Media(preview),
+				components.Text(components.TextProps{
+					Content: said(r, "file.library.pick.refused", "This one cannot be chosen yet") + " — " +
+						said(r, "file.library.pick.refusedWhy", "a picture has to say what is in it, or say that it is decorative"),
+					Size: "sm", Color: "secondary",
+				}),
+				components.Button(components.ButtonProps{
+					Label: said(r, "file.library.pick.panel", "Write its caption"),
+					Href:  where + "?file=" + f.ID.String(), Variant: "ghost",
+				}),
+			))
+			continue
+		}
+		tiles = append(tiles, h.Label(
+			h.For("pk-picker-"+f.ID.String()),
+			h.Input(h.Type("radio"), h.ID("pk-picker-"+f.ID.String()),
+				h.Name(contracts.PickerParameter(field)), h.Value(f.ID.String())),
+			components.Media(preview),
+			components.Text(components.TextProps{Content: f.Name, Size: "sm"}),
+		))
+	}
+	tiles = append(tiles, components.Button(components.ButtonProps{
+		Type: "submit", Variant: "primary",
+		Label: said(r, "file.library.pick.use", "Use image"),
+	}))
+	return h.Form(append([]g.Node{h.Method("get"), h.Action(back),
+		g.Attr("aria-label", said(r, "file.library.pick.form", "Choose one of this tenant's images"))},
+		tiles...)...)
 }
 
 // panel is one file: what it is, what shows it, what it says about itself, and the
 // two controls a person who may write has. It is drawn server-side from ?file=, so
 // opening it is a link, a URL and a keyboard destination rather than a script's side
-// effect. A row the caller cannot see is the service's own not-found, which the shell
-// renders as its refusal page — another tenant's file is not an empty panel.
+// effect. A row the caller cannot see is a 404 and not an empty panel.
 func (p LibraryPages) panel(ctx context.Context, r page.Request, where, bytes, asked string, may bool) (g.Node, error) {
 	id, err := uuid.Parse(strings.TrimSpace(asked))
 	if err != nil {
@@ -481,7 +659,7 @@ func (p LibraryPages) panel(ctx context.Context, r page.Request, where, bytes, a
 	}
 	body = append(body, usesPanel(r, uses))
 	if may {
-		body = append(body, captionForm(r, where, f), removalForm(r, where, f, uses))
+		body = append(body, captionForm(ctx, r, where, f), removalForm(r, where, f, uses))
 	}
 	return components.SidePanelWithSlots(components.DetailPanelProps{
 		ComponentProps: components.ComponentProps{ID: "file-library-panel-" + f.ID.String()},
@@ -570,9 +748,17 @@ func usesPanel(r page.Request, uses []contracts.UseRow) g.Node {
 // checkbox is the alternative to the textarea rather than a second claim on top of it:
 // contracts.AltClaim refuses both at once and neither, in one sentence this page passes
 // through rather than re-wording.
-func captionForm(r page.Request, where string, f *contracts.File) g.Node {
+//
+// Which of the two the person is making is decided by the checkbox, so `required` belongs
+// to the checkbox's state and to nothing else: a textarea marked required because the row
+// was not decorative when it was drawn would refuse the caption that tick says should be
+// written, and the form would never reach the command that answers it. The snippet below
+// keeps the two in step from load; without a script the rule is still kept, one submit
+// later, by AltClaim's refusal on the page that carried the form.
+func captionForm(ctx context.Context, r page.Request, where string, f *contracts.File) g.Node {
 	return h.Form(h.Method("post"), h.Action(where+"/"+f.ID.String()+"/alt"),
 		g.Attr("aria-label", said(r, "file.library.caption.label", "What this image says about itself")),
+		g.Attr("data-file-caption", ""),
 		components.Textarea(components.TextareaProps{
 			Name: "alt", Value: f.Alt, Rows: 3, MaxLength: contracts.MaxAlt,
 			Label: said(r, "file.library.caption.label", "What this image says about itself"),
@@ -591,8 +777,16 @@ func captionForm(r page.Request, where string, f *contracts.File) g.Node {
 			Type: "submit", Variant: "primary",
 			Label: said(r, "file.library.caption.save", "Save caption"),
 		}),
+		page.InlineScript(ctx, captionToggle),
 	)
 }
+
+// captionToggle is the form's one piece of client-side behaviour: the decorative claim
+// and the required caption are the same decision, and the checkbox is what says it. It
+// asks for the two controls by their component names inside this form alone, and it is
+// carried with the response's content-security-policy nonce, which ui/page renders and
+// nothing else in a module can reach.
+const captionToggle = `(()=>{const f=document.currentScript.closest("form");if(!f)return;const d=f.querySelector("[name=decorative]"),a=f.querySelector("[name=alt]");if(!d||!a)return;const sync=()=>{a.required=!d.checked;a.setAttribute("aria-required",String(!d.checked));if(d.checked)a.value=""};d.addEventListener("change",sync);sync()})()`
 
 // removalForm is the delete — a form rather than the JSON verb for the reason the
 // module's own posts give. It is disabled while the ledger shows the file, with the
@@ -682,30 +876,6 @@ func meterSaid(q *contracts.Quota) string {
 	return fmt.Sprintf("%s of %s held.", human(q.Used), human(q.Limit))
 }
 
-// orderSaid is the order as the subtitle reads it, from the token the query carried.
-// The service refused anything outside contracts.Sorts before this ran, so the six
-// cases are the whole of what reaches it.
-func orderSaid(spec string) string {
-	if spec == "" {
-		spec = contracts.SortDefaultKey
-	}
-	switch spec {
-	case contracts.SortNewest:
-		return "newest first"
-	case contracts.SortOldest:
-		return "oldest first"
-	case contracts.SortName:
-		return "by name"
-	case contracts.SortNameDesc:
-		return "by name, reversed"
-	case contracts.SortSize:
-		return "smallest first"
-	case contracts.SortSizeDesc:
-		return "largest first"
-	}
-	return spec
-}
-
 // familySaid is one filter option in the language of the request.
 func familySaid(r page.Request, family string) string {
 	switch family {
@@ -748,6 +918,18 @@ func frame(r page.Request, f *contracts.File) string {
 		return said(r, "file.library.fact.unmeasured", "not measured")
 	}
 	return fmt.Sprintf("%d × %d", f.Width, f.Height)
+}
+
+// refusalStatus is the status a refused command leaves on the page it re-rendered: a
+// problem's own, or kit/rest's reading of the sentinel underneath it. Those two steps are
+// the ones `fault` takes behind the JSON door, so a caption refused at the page and the
+// same caption refused at PUT answer with one status and not two.
+func refusalStatus(err error) int {
+	var p *problem.Problem
+	if errors.As(fault(err), &p) {
+		return p.Status
+	}
+	return http.StatusInternalServerError
 }
 
 // refusal is the sentence a refused command leaves on the page, in the language the
