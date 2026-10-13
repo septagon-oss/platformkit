@@ -13,8 +13,8 @@ import (
 // asks for Portuguese of a page the tenant translated. The accent a page is drawn
 // in is a fact about the tenant's settings and not about the language asked for,
 // so a tenant that named no accent is painted in the installation's own pair on
-// the Portuguese document exactly as on the English one, and a tenant that chose
-// a colour is painted in that one colour on both.
+// the Portuguese document exactly as on the English one. What a tenant chose is
+// stored, not painted: each mode draws the colour its own canvas clears.
 func TestATranslatedPageIsPaintedInTheInstallationsAccent(t *testing.T) {
 	cfg, admin, _ := publishedTranslationPage(t, map[string]string{"title": "A nossa história", "body": "O parágrafo português."})
 	pair := design.Default()
