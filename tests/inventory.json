@@ -53378,6 +53378,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/incoming_inventory_merge_preserves_decisions_test.py",
+   "id": "scripts/incoming_inventory_merge_preserves_decisions_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "incoming_inventory_merge_preserves_decisions_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/inventory_area_guard_refusals_test.py",
    "id": "scripts/inventory_area_guard_refusals_test.py",
    "kind": "shell_pin",
@@ -55885,7 +55905,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1401,
+  "files": 1402,
   "forge_runs": [
    408,
    413,
@@ -55920,7 +55940,7 @@
   ],
   "layers": {
    "behaviour": 2403,
-   "composition": 327,
+   "composition": 328,
    "contract": 19,
    "journey": 67
   },
@@ -55938,23 +55958,23 @@
   },
   "round_named_ceiling": 22,
   "round_named_files": 19,
-  "rows": 2816,
+  "rows": 2817,
   "tiers": {
    "merge": 1744,
    "nightly": 67,
-   "push": 1005
+   "push": 1006
   },
   "unique_lines_measured_files": 14,
   "unique_lines_zero_files": 11,
   "verdict_files": {
    "delete": 0,
-   "keep": 1215,
+   "keep": 1216,
    "keep-rewrite": 61,
    "merge": 125
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2525,
+   "keep": 2526,
    "keep-rewrite": 118,
    "merge": 173
   }
