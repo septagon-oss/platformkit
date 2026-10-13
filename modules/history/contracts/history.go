@@ -26,16 +26,18 @@ import (
 
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
-	"github.com/septagon-oss/platformkit/kit/rest"
+	"github.com/septagon-oss/platformkit/kit/httpx"
 )
 
 // RestoredEvent and Restored are the write this module supports — a version
-// brought back — spelled where they are published from. The kit owns the sentence
-// because it performs the restore for whichever resource asked for history; this
-// module owns the declaration, which is what makes a composition that mounts a
-// resource with history and no history module a boot refusal rather than an event
-// nobody answers.
-var Events = []events.Declared{events.Declare[rest.Restored](rest.RestoredEvent)}
+// brought back — spelled where they are published from. The contract's own home is
+// kit/httpx, beside the Versions port it describes: kit/rest publishes the event
+// for whichever resource asked for history, and modules/history declares it typed
+// in its manifest, which is what makes a composition that mounts a resource with
+// history and no history module a boot refusal rather than an event nobody
+// answers. A contracts/ package names no SDK and no door, so it names the port's
+// package instead, and these two lines are that.
+var Events = []events.Declared{events.Declare[httpx.Restored](httpx.RestoredEvent)}
 
 // Key is a version: one record's content, in one language, at one number. The
 // tenant is not part of it because it is never an argument — it is the

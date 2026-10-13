@@ -93,20 +93,52 @@ type VersionQuery struct {
 	Before int64
 }
 
+// RestoredEvent names the write that brought a stored version back. The contract
+// lives beside the Versions port it describes, and for the same reason: the kit
+// publishes it, for whichever resource asked for history, and the module that
+// keeps the versions declares it typed in its manifest — a contracts/ package may
+// name no SDK and no door, so this is the one place both readers can reach.
+const RestoredEvent = "history.restored"
+
+// Restored is RestoredEvent's payload: which record, which version came back,
+// which number the write landed on, in which language, and when. From and To are
+// the two numbers a person reads after a restore — “Restored from v3” and the
+// version the record is on now — and the pair is why the payload is not simply
+// the entity: the entity says what the row is, and only this says a version of it
+// was brought back. The json names are the wire contract, spelled the way every
+// other event payload this repository publishes spells itself.
+type Restored struct {
+	Module string    `json:"module" doc:"The module that owns the record"`
+	Entity string    `json:"entity" doc:"The record's entity within that module"`
+	Record uuid.UUID `json:"record" format:"uuid" doc:"The record a version of was written back"`
+	From   int64     `json:"from" doc:"The version that came back"`
+	To     int64     `json:"to" doc:"The number the write landed on"`
+	Locale string    `json:"locale" doc:"The series it was read from, as a BCP-47 tag"`
+	Actor  uuid.UUID `json:"actor" format:"uuid" doc:"Who asked for it; the zero uuid when nobody signed in"`
+	At     time.Time `json:"at" doc:"When the write committed"`
+}
+
 // Version is one stored write. Fields is the document as that write committed it,
 // after normalisation and validation, and it is the half a restore writes back.
 // Actor is uuid.Nil when nobody signed in — a seed, a job, a system write — which
 // is an answer and not an absent row.
+//
+// The json tags are the wire contract, not decoration: this struct is what a
+// record's own address answers its version list with, beside the record body that
+// spells itself id/createdAt/revision. A response that spelled its items with Go's
+// exported names would publish a second contract next to the first, and break every
+// client — the panel, the mobile counterpart, anything generated from the OpenAPI
+// document — the day it was fixed. The names below are the names those readers use.
 type Version struct {
-	ID      uuid.UUID
-	Module  string
-	Entity  string
-	Record  uuid.UUID
-	Locale  string
-	Version int64
-	Fields  json.RawMessage
-	Changed []string
-	Reason  string
-	Actor   uuid.UUID
-	At      time.Time
+	ID      uuid.UUID       `json:"id" format:"uuid" doc:"This version row's own id"`
+	Module  string          `json:"module" doc:"The module that owns the record this version describes"`
+	Entity  string          `json:"entity" doc:"The record's entity within that module"`
+	Record  uuid.UUID       `json:"record" format:"uuid" doc:"The record this is one version of"`
+	Locale  string          `json:"locale" doc:"The language of this version series, as a BCP-47 tag"`
+	Version int64           `json:"version" doc:"This version's number in its series — the row's own write count when the write made it, from 1"`
+	Fields  json.RawMessage `json:"fields" doc:"The record as this write committed it, in the field names the record's own body uses"`
+	Changed []string        `json:"changed" doc:"The fields this write moved; empty on a record's first version, which nothing preceded"`
+	Reason  string          `json:"reason" doc:"The write's own sentence about why it happened; empty for an ordinary save"`
+	Actor   uuid.UUID       `json:"actor" format:"uuid" doc:"Who made this write; the zero uuid when nobody signed in"`
+	At      time.Time       `json:"at" doc:"When this write committed"`
 }

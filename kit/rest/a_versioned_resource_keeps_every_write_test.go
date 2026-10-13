@@ -372,14 +372,12 @@ func TestAVersionedSpecCannotBeMountedWithoutTheStoreOrTheWriteCountIsRefused(t 
 	}
 }
 
-// numbered is the number one entry of a versions page carries.
+// numbered is the number one entry of a versions page carries, under the one
+// spelling the API publishes — the camelCase name the record's own body uses.
+// Accepting the Go field name beside it would let a second wire contract stand.
 func numbered(item map[string]any) int64 {
-	for _, name := range []string{"version", "Version"} {
-		if n, ok := item[name].(float64); ok {
-			return int64(n)
-		}
-	}
-	return 0
+	n, _ := item["version"].(float64)
+	return int64(n)
 }
 
 // refusal is the sentence a mount refused with, or "" when it mounted at all: the
