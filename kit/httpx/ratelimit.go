@@ -267,15 +267,22 @@ func recorded(got []measured) []idempotency.Limit {
 // resets — a client that reads `t=60` and then `t=0` has been told both that the window
 // is open and that it closed.
 //
-// A refusal names the longest of the waits that still run: an answer under two counters
-// is not free to retry until the later of them opens, and a caller told the shorter has
-// been told to come back to a refusal.
+// A refusal names the longest of the waits still running over the counters that were shut
+// when it was decided: an answer under two spent counters is not free to retry until the
+// later of them opens, and a caller told the shorter has been told to come back to a
+// refusal. A counter with quota remaining never shut this answer, so its window does not
+// belong in the wait — an answer refused by a two-second cap inside an open sixty-second
+// one is a two-second refusal, and a caller told sixty sits out fifty-eight seconds of a
+// window that was never the reason they were refused. The open counter's reading still
+// goes on the `RateLimit` line, because the caller is under it; only the wait counts the
+// spent ones. A refusal no kept reading reports as spent names no wait here, and takes
+// respond.go's floor as the answer itself did.
 func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now time.Time) {
 	if len(limits) == 0 {
 		return
 	}
 	got := make([]measured, 0, len(limits))
-	left := time.Duration(0)
+	left, spent := time.Duration(0), false
 	for _, l := range limits {
 		// What is left of the window is worked out again; what was left of the quota is
 		// restated. A replay consults no counter — consulting one would be spending the
@@ -287,10 +294,15 @@ func sayRecorded(h http.Header, limits []idempotency.Limit, refused bool, now ti
 			remaining: l.Remaining,
 			left:      wait,
 		})
-		left = max(left, wait)
+		// A spent quota is what shut an answer. kit/limit answers zero remaining from the
+		// statement that refused, in both of its stores, so a reading that reports quota
+		// left describes a ceiling the caller was still inside.
+		if l.Remaining <= 0 {
+			left, spent = max(left, wait), true
+		}
 	}
 	h.Set(RateLimitHeader, answerField(got...))
-	if refused {
+	if refused && spent {
 		h.Set(RetryAfterHeader, secondsUp(left, 1))
 	}
 }
