@@ -28,7 +28,11 @@ import (
 //
 // Its store is partitioned by the tenant on the context and refuses a context
 // that names none, so a consumer cannot test a command outside a tenant by
-// accident. The three commands go through porttest.Do, which holds every command
+// accident. Every write it accepts moves the row's own Revision, as
+// internal.Service does, so a consumer that reads that number off a fake row
+// sees what the real service would have answered; no command of this port takes
+// a number back from a caller, which is what the suite's declined Stale case
+// states and its guard test watches. The three commands go through porttest.Do, which holds every command
 // to one order — load, decide, and only then write and say so — so a refusal
 // here cannot leave a row written or an event published.
 type Fake struct {
@@ -62,6 +66,9 @@ func (f *Fake) Put(ctx context.Context, task *contracts.Task) uuid.UUID {
 	}
 	if task.Priority == "" {
 		task.Priority = contracts.PriorityNormal
+	}
+	if task.Revision == 0 {
+		task.Revision = 1 // a created row reads 1: there, gorm's default, and here, the line below
 	}
 	task.ID = porttest.Seed(ctx, f.Fake, f.tasks, *task)
 	return task.ID
@@ -99,6 +106,7 @@ func (f *Fake) Assign(ctx context.Context, _ db.Tx[db.Tenant], id, assignee uuid
 				task.Status = contracts.StatusAcknowledged
 			}
 			task.UpdatedAt = f.Clock.Now()
+			task.Revision++
 			return []string{contracts.EventAssigned}
 		},
 	})
@@ -128,7 +136,7 @@ func (f *Fake) Resolve(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID, re
 			}
 			at := f.Clock.Now()
 			task.Status, task.Resolution, task.ResolvedAt = contracts.StatusResolved, decision.Text, &at
-			task.UpdatedAt = at
+			task.UpdatedAt, task.Revision = at, task.Revision+1
 			return []string{contracts.EventResolved}
 		},
 	})
@@ -142,7 +150,7 @@ func (f *Fake) CheckSLA(ctx context.Context, _ db.Tx[db.Tenant], id uuid.UUID) (
 			if task.SLABreached || !task.IsOverdue(f.Clock.Now()) {
 				return nil // the sweep runs every minute forever, so this is the ordinary case
 			}
-			task.SLABreached, task.UpdatedAt = true, f.Clock.Now()
+			task.SLABreached, task.UpdatedAt, task.Revision = true, f.Clock.Now(), task.Revision+1
 			return []string{contracts.EventSLABreached}
 		},
 	})

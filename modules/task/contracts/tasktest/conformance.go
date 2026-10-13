@@ -175,12 +175,17 @@ func Suite(h Harness) porttest.Suite[Fixture] {
 // reason each is not asked. They are the same for all three commands; an
 // operation that owes nothing else more reads them through oweNothingBut.
 var notOwedHere = map[porttest.Kind]string{
-	porttest.Stale: "a task carries no revision field, and nothing below this port owns " +
-		"an optimistic-concurrency check to decline one: kit/crud.Update takes the columns " +
-		"to write and kit/crud.GetForUpdate takes a row lock; neither compares a revision. " +
-		"This package's TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches both, so a " +
-		"kernel that grows the check reddens this sentence rather than leaving it standing. " +
-		"When it does, the case is the harness's to generate and the skip goes away",
+	porttest.Stale: "no command of this port is given a revision to be stale about: Assign, " +
+		"Resolve and CheckSLA take a row id and the value they write, and kit/crud.Update takes " +
+		"the columns to write while kit/crud.GetForUpdate takes a row lock; none of them compares " +
+		"a number a caller sent. A task row does carry its own write count (contracts.Task.Revision, " +
+		"which every write of it moves), and the refusal a stale one earns is modules/change's " +
+		"stale-base rule over a proposal that recorded the number it was made at — a higher tier, " +
+		"reached above this port, not a case below it. " +
+		"TestTheStaleSkipReasonStillStatesWhatTheKernelHas watches the two kernel facts this " +
+		"sentence rests on, so the port that starts taking a number from a caller reddens it " +
+		"rather than leaving the sentence standing; the case would then be the harness's to " +
+		"generate and the skip would go away",
 	porttest.Elsewhere: "the world is one tenant's transaction, so there is no second tenant " +
 		"here to make the refused call from. The fake partitions its store by the tenant on the " +
 		"context and the real service runs under row-level security, which kit/db's " +
