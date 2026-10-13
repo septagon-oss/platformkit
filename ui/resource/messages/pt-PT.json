@@ -68,5 +68,20 @@
     "references": ["ui/resource/resource.go"],
     "translation": "Caminho",
     "plural": { "": "Caminho" }
+  },
+  "screens.history": {
+    "references": ["ui/resource/history.go"],
+    "translation": "Histórico",
+    "plural": { "": "Histórico" }
+  },
+  "screens.history.first": {
+    "references": ["ui/resource/history.go"],
+    "translation": "O registo tal como foi escrito pela primeira vez.",
+    "plural": { "": "O registo tal como foi escrito pela primeira vez." }
+  },
+  "screens.history.restore": {
+    "references": ["ui/resource/history.go"],
+    "translation": "Restaurar esta versão",
+    "plural": { "": "Restaurar esta versão" }
   }
 }

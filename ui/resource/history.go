@@ -66,7 +66,10 @@ type VersionChange struct{ Label, Value string }
 // three pages.
 func historyDisclosure(o Options, p *HistoryPanel) g.Node {
 	if p == nil || len(p.Rows) == 0 {
-		return nil
+		// An empty group rather than a nil node: the caller appends this to the
+		// page's body, and a body carrying a nil node is a render that panics on
+		// every record of every resource that keeps no versions.
+		return g.Group{}
 	}
 	versions := make([]g.Node, 0, len(p.Rows))
 	for _, v := range p.Rows {
