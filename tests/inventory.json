@@ -49688,6 +49688,26 @@
   {
    "area": "scripts",
    "evidence": "not-round-named",
+   "file": "scripts/applied_migration_pin_bookkeeping_test.py",
+   "id": "scripts/applied_migration_pin_bookkeeping_test.py",
+   "kind": "shell_pin",
+   "layer": "composition",
+   "merge_into": "",
+   "name": "applied_migration_pin_bookkeeping_test.py",
+   "needs_db": false,
+   "pkg": "scripts",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "push",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "",
+   "verdict": "keep"
+  },
+  {
+   "area": "scripts",
+   "evidence": "not-round-named",
    "file": "scripts/architecture_pillars_test.py",
    "id": "scripts/architecture_pillars_test.py",
    "kind": "shell_pin",
@@ -52323,7 +52343,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1270,
+  "files": 1271,
   "forge_runs": [
    408,
    413,
@@ -52358,7 +52378,7 @@
   ],
   "layers": {
    "behaviour": 2293,
-   "composition": 267,
+   "composition": 268,
    "contract": 19,
    "journey": 60
   },
@@ -52376,23 +52396,23 @@
   },
   "round_named_ceiling": 215,
   "round_named_files": 215,
-  "rows": 2639,
+  "rows": 2640,
   "tiers": {
    "merge": 1636,
    "nightly": 60,
-   "push": 943
+   "push": 944
   },
   "unique_lines_measured_files": 36,
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1055,
+   "keep": 1056,
    "keep-rewrite": 70,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2292,
+   "keep": 2293,
    "keep-rewrite": 132,
    "merge": 215
   }
