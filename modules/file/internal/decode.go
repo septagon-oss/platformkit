@@ -15,9 +15,12 @@ import (
 //
 // One gate serves the whole process because one process builds one file service
 // (pkit builds it once) and the resource being bounded is the machine, not the
-// request. It is held over the CPU section alone — never across a store read,
-// never across a row write — because a slot held while waiting on somebody
-// else's latency is a slot that is doing nothing while it stops somebody else.
+// request. It is held over one frame's decode and nothing else: no row is written
+// inside a slot, and the round-trip that opens an object is asked for outside one.
+// What is inside is the rest of that object arriving and the CPU that turns it into
+// pixels, because the alternative — buffering the whole photograph before taking a
+// slot — spends the memory this bound exists to protect in order to shorten a hold
+// on a resource whose whole cost is that CPU.
 
 const (
 	// decodeUploadWait is how long an accepted upload waits for a frame slot
@@ -53,7 +56,7 @@ func newDecodeFrames(n int) *decodeGate {
 // request that carried this work is gone, and queueing behind it serves nobody.
 //
 // It never queues past d and never touches the database, which is what makes it
-// safe to hold across the CPU section alone.
+// safe to hold across one frame's decode.
 func (g *decodeGate) wait(ctx context.Context, d time.Duration) (release func(), ok bool) {
 	timer := time.NewTimer(d)
 	defer timer.Stop()

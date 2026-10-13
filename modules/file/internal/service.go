@@ -833,8 +833,10 @@ func (s *Service) reencode(ctx context.Context, scope contracts.Scope, up contra
 	// been agreed to. The object past that header is streamed, not buffered — a
 	// photograph is several megabytes and the probe is one.
 	// Under the process's ceiling: the pixel limit bounds one picture, this bounds
-	// how many there are at once. The store read above stays outside the slot — a
-	// slot held across somebody else's latency is one doing nothing.
+	// how many there are at once. The round-trip that opens the object is asked for
+	// outside a slot, so a store that is slow to answer costs no decode capacity;
+	// the streaming of the bytes happens inside one, which is what holds it for the
+	// length of a decode rather than the length of the CPU alone.
 	release, ok := s.decode.wait(ctx, decodeUploadWait)
 	if !ok {
 		return nil, s.refuseOrKeep(ctx, up, key, contracts.ErrBusyDecoding)

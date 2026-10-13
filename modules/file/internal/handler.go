@@ -29,6 +29,10 @@ import (
 const (
 	path       = "/files"
 	publicPath = "/files/{id}"
+	// usesRoute is this module's own read of "who shows this file", and the
+	// address a refused delete points its caller at. One spelling for the route
+	// and for the pointer, so the two cannot disagree about where it lives.
+	usesRoute = path + "/{id}/uses"
 )
 
 // streams is the kernel's mark for a route that reads the request itself, and
@@ -83,6 +87,14 @@ var faults = []int{
 // could not carry.
 func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 	app, public := surfaces.App, surfaces.Public
+	// The address the door below is mounted at, prefix included. A refusal that
+	// sends a caller somewhere has to name where that thing is served, and only
+	// the router knows: the module owns "/files/{id}/uses" while the surface owns
+	// the /api/v1/<module> in front of it. Composing it here rather than writing
+	// the whole address out is what keeps this module free of a prefix literal it
+	// could easily get wrong — an address assembled from the relative path alone
+	// is one a caller follows into a 404.
+	usesAt := app.Path(usesRoute)
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-list",
 		Method:      http.MethodGet,
@@ -176,6 +188,15 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 			// the body has arrived. See contracts.Tx.
 			f, err := svc.Upload(ctx, transaction, up)
 			if err != nil {
+				// Every frame slot was taken for longer than this route will wait.
+				// The answer then has to say when to come back, and the honest
+				// figure is the wait this refusal already cost: a caller that
+				// guesses either hammers a saturated machine or sits out a minute
+				// for a slot that freed in seconds. The hint goes on the response,
+				// where a retry reads it, and not into the sentence.
+				if errors.Is(err, contracts.ErrBusyDecoding) {
+					httpx.RetryAfter(ctx, decodeUploadWait)
+				}
 				return nil, fault(err)
 			}
 			return &rest.Item[*contracts.File]{Body: f}, nil
@@ -244,7 +265,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 				refused := new(contracts.InUse)
 				if errors.As(err, &refused) {
 					return nil, problem.Conflict(fmt.Sprintf("%s; their uses are at %s",
-						err, strings.Replace(path+"/{id}/uses", "{id}", in.ID.String(), 1)))
+						err, strings.Replace(usesAt, "{id}", in.ID.String(), 1)))
 				}
 				return nil, fault(err)
 			}
@@ -278,7 +299,7 @@ func RegisterRoutes(surfaces httpx.Surfaces, svc door) {
 	httpx.Register(app, huma.Operation{
 		OperationID: "file-file-uses",
 		Method:      http.MethodGet,
-		Path:        path + "/{id}/uses",
+		Path:        usesRoute,
 		Summary:     "List the records that reference a file",
 		Description: "Which record's field, in which locale, shows this file's image — the records a library's details panel links to. A file nobody shows answers an empty list; a file this caller may not read answers 404.",
 		Tags:        []string{"file"},
@@ -524,7 +545,8 @@ func fault(err error) error {
 		return problem.Conflict(err.Error())
 	// Every image slot is taken. Nothing in the request is wrong and nothing is
 	// broken, so it is neither a 4xx nor a 500: it is the answer that says ask
-	// again, which is what the upload's own retry expects to hear.
+	// again, and the route that refused puts the Retry-After beside it — the wait
+	// is the gate's fact and the response is the request's.
 	case errors.Is(err, contracts.ErrBusyDecoding):
 		return problem.New(http.StatusServiceUnavailable, err.Error())
 	default:
