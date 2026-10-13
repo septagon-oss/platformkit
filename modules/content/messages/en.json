@@ -356,5 +356,14 @@
     "plural": {
       "": "%s content cannot have a publication time"
     }
+  },
+  "conflict.content.publish.archived": {
+    "references": [
+      "modules/content/internal/service.go"
+    ],
+    "translation": "archived content is not published from the archive; unpublish it first",
+    "plural": {
+      "": "archived content is not published from the archive; unpublish it first"
+    }
   }
 }

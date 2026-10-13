@@ -447,6 +447,15 @@
       "": "a %s task needs a resolution time"
     }
   },
+  "invalid.task.assignee": {
+    "references": [
+      "modules/task/internal/service.go"
+    ],
+    "translation": "a task is assigned to somebody",
+    "plural": {
+      "": "a task is assigned to somebody"
+    }
+  },
   "conflict.task.closed": {
     "references": [
       "modules/task/internal/service.go"

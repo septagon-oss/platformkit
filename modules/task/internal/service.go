@@ -6,7 +6,6 @@ package internal
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 
@@ -34,7 +33,8 @@ var _ contracts.Service = (*Service)(nil)
 // retried click must not appear in a workload dashboard twice.
 func (s *Service) Assign(ctx context.Context, tx db.Tx[db.Tenant], id, assignee uuid.UUID) (*contracts.Task, error) {
 	if assignee == uuid.Nil {
-		return nil, fmt.Errorf("%w: a task is assigned to somebody", crud.ErrInvalid)
+		return nil, &fault.Reason{Kind: crud.ErrInvalid, Key: "invalid.task.assignee",
+			Text: "a task is assigned to somebody"}
 	}
 	task, err := crud.GetForUpdate[*contracts.Task](tx, id)
 	if err != nil {
