@@ -6,7 +6,6 @@ package internal
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +13,7 @@ import (
 	"github.com/septagon-oss/platformkit/kit/crud"
 	"github.com/septagon-oss/platformkit/kit/db"
 	"github.com/septagon-oss/platformkit/kit/events"
+	"github.com/septagon-oss/platformkit/kit/fault"
 	"github.com/septagon-oss/platformkit/modules/content/contracts"
 )
 
@@ -39,7 +39,11 @@ func (s *Service) Publish(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID
 		// second click on the button is not a second publication.
 		return c, nil
 	case contracts.StatusArchived:
-		return nil, fmt.Errorf("%w: archived content is not published from the archive; unpublish it first", crud.ErrConflict)
+		// Keyed, like every refusal this module ships: the verdict and this sentence
+		// stay what a log line and a problem document print, and the key is where
+		// modules/content/messages keeps them in the reader's own language.
+		return nil, &fault.Reason{Kind: crud.ErrConflict, Key: "conflict.content.publish.archived",
+			Text: "archived content is not published from the archive; unpublish it first"}
 	}
 	at := db.Now()
 	c.Status, c.PublishedAt = contracts.StatusPublished, &at

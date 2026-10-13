@@ -447,6 +447,15 @@
       "": "uma tarefa em %s precisa de hora de resolução"
     }
   },
+  "invalid.task.assignee": {
+    "references": [
+      "modules/task/internal/service.go"
+    ],
+    "translation": "uma tarefa é atribuída a alguém",
+    "plural": {
+      "": "uma tarefa é atribuída a alguém"
+    }
+  },
   "conflict.task.closed": {
     "references": [
       "modules/task/internal/service.go"
