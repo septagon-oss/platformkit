@@ -34797,6 +34797,25 @@
   {
    "area": "modules",
    "evidence": "not-round-named",
+   "file": "modules/scim/internal/group_patch_refusal_retains_grants_test.go",
+   "id": "modules/scim/internal/group_patch_refusal_retains_grants_test.go#TestRefusedGroupPatchPreservesMembershipRolesAndEventIdentities",
+   "kind": "go",
+   "layer": "behaviour",
+   "name": "TestRefusedGroupPatchPreservesMembershipRolesAndEventIdentities",
+   "needs_db": true,
+   "pkg": "modules/scim/internal",
+   "round_named": false,
+   "rule": "",
+   "rule_present": false,
+   "tier": "merge",
+   "unique_lines": null,
+   "unique_reach": [],
+   "unique_reach_kind": "symbols",
+   "verdict": "keep"
+  },
+  {
+   "area": "modules",
+   "evidence": "not-round-named",
    "file": "modules/scim/internal/group_replace_mapping_test.go",
    "id": "modules/scim/internal/group_replace_mapping_test.go#TestReplacingAGroupPreservesTheTenantRoleMapping",
    "kind": "go",
@@ -56340,7 +56359,7 @@
  "schema": "platformkit.test-inventory.v1",
  "summary": {
   "check_job_seconds_median": 2468.0,
-  "files": 1415,
+  "files": 1416,
   "forge_runs": [
    408,
    413,
@@ -56374,7 +56393,7 @@
    578
   ],
   "layers": {
-   "behaviour": 2444,
+   "behaviour": 2445,
    "composition": 315,
    "contract": 20,
    "journey": 67
@@ -56393,9 +56412,9 @@
   },
   "round_named_ceiling": 216,
   "round_named_files": 216,
-  "rows": 2846,
+  "rows": 2847,
   "tiers": {
-   "merge": 1789,
+   "merge": 1790,
    "nightly": 67,
    "push": 990
   },
@@ -56403,13 +56422,13 @@
   "unique_lines_zero_files": 33,
   "verdict_files": {
    "delete": 0,
-   "keep": 1199,
+   "keep": 1200,
    "keep-rewrite": 71,
    "merge": 145
   },
   "verdict_rows": {
    "delete": 0,
-   "keep": 2498,
+   "keep": 2499,
    "keep-rewrite": 133,
    "merge": 215
   }
