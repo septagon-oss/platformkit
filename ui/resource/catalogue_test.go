@@ -69,7 +69,9 @@ func raisedIn(t *testing.T, dir string, prefixes ...string) []string {
 // and both of the packages that write those screens are read: ui/screens mounts the
 // forms whose titles come from the same keys, and the sentences kit/rest's form
 // reader refuses those forms with are kept here because no other catalogue is ever
-// drawn on to say them.
+// drawn on to say them. Both verdicts a form can be refused with are read for the
+// same reason: a duplicate value is a 409 and a value the entity will not hold is a
+// 422, and a person reads either one on the same generated form.
 func cataloguedIn(t *testing.T) []string {
 	t.Helper()
 	locales, err := fs.Glob(Catalogues(), "*.json")
@@ -107,7 +109,7 @@ func cataloguedIn(t *testing.T) []string {
 func TestTheScreenVocabularyAndTheCatalogueAreOneList(t *testing.T) {
 	t.Parallel()
 	raised := append(raisedIn(t, "."), raisedIn(t, filepath.Join("..", "screens"))...)
-	raised = append(raised, raisedIn(t, filepath.Join("..", "..", "kit", "rest"), "invalid.rest.")...)
+	raised = append(raised, raisedIn(t, filepath.Join("..", "..", "kit", "rest"), "invalid.rest.", "conflict.rest.")...)
 	slices.Sort(raised)
 	raised = slices.Compact(raised)
 	catalogued := cataloguedIn(t)

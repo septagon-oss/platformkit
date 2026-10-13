@@ -329,5 +329,78 @@
     "plural": {
       "": "this account is closed, so its person cannot change the language it is answered in"
     }
+  },
+  "invalid.user.email.empty": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "a user needs an email address",
+    "plural": {
+      "": "a user needs an email address"
+    }
+  },
+  "invalid.user.email.form": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "%q is not an email address",
+    "plural": {
+      "": "%q is not an email address"
+    }
+  },
+  "invalid.user.email.length": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "that email address is too long",
+    "plural": {
+      "": "that email address is too long"
+    }
+  },
+  "invalid.user.handle.form": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "handle %q is not 3 to 32 characters of lower-case letters, digits and interior . _ -",
+    "plural": {
+      "": "handle %q is not 3 to 32 characters of lower-case letters, digits and interior . _ -"
+    }
+  },
+  "invalid.user.handle.reserved": {
+    "references": [
+      "modules/user/contracts/user.go",
+      "modules/user/internal/service.go"
+    ],
+    "translation": "handle %q names the platform or a role, not a person",
+    "plural": {
+      "": "handle %q names the platform or a role, not a person"
+    }
+  },
+  "invalid.user.handle.released": {
+    "references": [
+      "modules/user/internal/service.go"
+    ],
+    "translation": "a handle cannot be released once claimed",
+    "plural": {
+      "": "a handle cannot be released once claimed"
+    }
+  },
+  "invalid.user.status": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "status %q is not a lifecycle state",
+    "plural": {
+      "": "status %q is not a lifecycle state"
+    }
+  },
+  "invalid.user.role": {
+    "references": [
+      "modules/user/contracts/user.go"
+    ],
+    "translation": "role %q is not a lower-case identifier",
+    "plural": {
+      "": "role %q is not a lower-case identifier"
+    }
   }
 }

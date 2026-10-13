@@ -50,8 +50,8 @@ type Options struct {
 	Namespace                              string
 	Action, CancelURL, Title               string
 	CancelLabel, SubmitLabel, FailureTitle string
-	// ChooseLabel is the empty choice of a select that already holds a value —
-	// see ControlProps.ChooseLabel. One sentence for the whole form, set by the
+	// ChooseLabel is the empty choice of every select in the form — see
+	// ControlProps.ChooseLabel. One sentence for the whole form, set by the
 	// screen from its own catalog.
 	ChooseLabel string
 	// Notes are this package's sentences about a control rather than about the
