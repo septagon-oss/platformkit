@@ -1,10 +1,10 @@
 package style_test
 
-// The role layer's own gate. TestPaintedRolesClearTheGateTheReadmeClaims (the
-// review round that found the gap) measures the resolved colours pair by pair;
-// this case measures the same claim through the gate the delivery now ships, so
-// the assertion and the API cannot drift apart, and it refuses a role layer that
-// does not clear the floor rather than only accepting the one that does.
+// The role layer's own gate. TestPaintedRolesClearTheGateTheReadmeClaims measures
+// the resolved colours pair by pair; this case measures the same claim through
+// the gate the delivery now ships, so the assertion and the API cannot drift
+// apart, and it refuses a role layer that does not clear the floor rather than
+// only accepting the one that does.
 
 import (
 	"hash/fnv"
@@ -188,8 +188,8 @@ func TestBodyRolePairsCoverTheAccentPaintedAsText(t *testing.T) {
 // same pairs in the names it emits ("--pk-role-fg-muted"), and the two lists have
 // to be one list: same pairs, same order, same floors, each role translated by
 // design's own rule rather than by a naming convention guessed here. The gate is
-// one gate only while that holds; a mirror that drifted is the disagreement review
-// round 5 found, a client's file gated by pairs no stylesheet is built from.
+// one gate only while that holds; a mirror that drifted is the disagreement
+// itself: a client's file gated by pairs no stylesheet is built from.
 func TestRolePairMirrorsSpellTheEmittedNames(t *testing.T) {
 	t.Parallel()
 	for _, c := range []struct {

@@ -130,8 +130,8 @@ func TestClientValidateRefusesWhatTheKernelHasNoMeaningFor(t *testing.T) {
 	}
 }
 
-// The token half is not the door. These three literals came out of the sweep
-// review round 5 ran over the override space this branch opened: each holds all
+// The token half is not the door. These three literals came out of a sweep
+// over the override space this package opens: each holds all
 // 22 token pairs, and each drops a pair the role layer composes under the floor —
 // the accent on the tint mixed from it, and text-primary's own mixed role on the
 // surface a card raises itself onto. Resolve owns the whole gate, so a client's

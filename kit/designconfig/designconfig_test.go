@@ -205,7 +205,7 @@ func resolved(t *testing.T, loaded LoadedClient) (design.Pair, error) {
 // reach on purpose: reading one directory at a time gets a process no further than
 // a Register, so the pair of clients that collide is refused whether they arrived
 // as a tree or one file at a time — and the refusal names both, as it does for the
-// set loader. This is the door review round 1 found open.
+// set loader, so a reader learns which two clients the set holds.
 func TestRegisterRefusesTwoClientsWearingOneIdentity(t *testing.T) {
 	t.Parallel()
 	first, err := LoadClientDesign(os.DirFS("testdata/collide"), "a")

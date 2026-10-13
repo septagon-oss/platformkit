@@ -12,8 +12,8 @@ import (
 // override a brand team writes, and one every token pair survives — moves
 // --pk-role-surface-brand-soft, 12 % of the accent mixed into that surface, out
 // from under the accent painted on it. The token half accepts the pair; the role
-// half measures the brand badge's own label at 3.91:1. Round 5 swept the override
-// space this branch opened and found 98 such literals; this pins one of them, so
+// half measures the brand badge's own label at 3.91:1. A sweep over the override
+// space this package opens found 98 such literals; this pins one of them, so
 // the two halves cannot drift back apart without a case going red.
 func TestTheRoleHalfRefusesAPairTheTokenHalfAccepts(t *testing.T) {
 	t.Parallel()
