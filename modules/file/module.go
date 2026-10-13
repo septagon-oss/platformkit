@@ -231,7 +231,7 @@ func New(deps Deps) (contracts.Service, module.Module) {
 	if deps.Library != nil {
 		library = internal.LibraryPages{
 			Shell: deps.Library.Shell, Authorize: deps.Library.Authorize, PerPage: deps.Library.PerPage,
-			Read: svc, Shown: svc, Remove: svc,
+			Read: svc, Shown: svc, Remove: svc, Add: svc,
 		}
 	}
 	return svc, module.Module{

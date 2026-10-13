@@ -601,5 +601,140 @@
     "plural": {
       "": "Aplicar"
     }
+  },
+  "file.library.pick.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Escolher uma imagem",
+    "plural": {
+      "": "Escolher uma imagem"
+    }
+  },
+  "file.library.pick.form": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Escolher uma das imagens deste tenant",
+    "plural": {
+      "": "Escolher uma das imagens deste tenant"
+    }
+  },
+  "file.library.pick.use": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Usar imagem",
+    "plural": {
+      "": "Usar imagem"
+    }
+  },
+  "file.library.pick.panel": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Escrever a legenda",
+    "plural": {
+      "": "Escrever a legenda"
+    }
+  },
+  "file.library.pick.refused": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Esta ainda não pode ser escolhida",
+    "plural": {
+      "": "Esta ainda não pode ser escolhida"
+    }
+  },
+  "file.library.pick.refusedWhy": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "uma imagem tem de dizer o que contém, ou dizer que é decorativa",
+    "plural": {
+      "": "uma imagem tem de dizer o que contém, ou dizer que é decorativa"
+    }
+  },
+  "file.library.pick.none.title": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nenhuma imagem para escolher",
+    "plural": {
+      "": "Nenhuma imagem para escolher"
+    }
+  },
+  "file.library.pick.none": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Este tenant não tem nenhuma imagem que este campo possa conter. Carregue uma primeiro na biblioteca.",
+    "plural": {
+      "": "Este tenant não tem nenhuma imagem que este campo possa conter. Carregue uma primeiro na biblioteca."
+    }
+  },
+  "file.library.pick.back": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Voltar à biblioteca",
+    "plural": {
+      "": "Voltar à biblioteca"
+    }
+  },
+  "file.library.pick.pagination": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Paginação da seleção de imagens",
+    "plural": {
+      "": "Paginação da seleção de imagens"
+    }
+  },
+  "file.library.upload.label": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Adicionar um ficheiro à biblioteca",
+    "plural": {
+      "": "Adicionar um ficheiro à biblioteca"
+    }
+  },
+  "file.library.upload.pick": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Escolher uma imagem a adicionar",
+    "plural": {
+      "": "Escolher uma imagem a adicionar"
+    }
+  },
+  "file.library.upload.help": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Os bytes são contabilizados no armazenamento acima à medida que chegam, e um envio acima do que esta instalação aceita é recusado sem nada ficar guardado.",
+    "plural": {
+      "": "Os bytes são contabilizados no armazenamento acima à medida que chegam, e um envio acima do que esta instalação aceita é recusado sem nada ficar guardado."
+    }
+  },
+  "file.library.upload.send": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Carregar",
+    "plural": {
+      "": "Carregar"
+    }
+  },
+  "file.library.noPreview": {
+    "references": [
+      "modules/file/internal/library_page.go"
+    ],
+    "translation": "Nada para pré-visualizar aqui",
+    "plural": {
+      "": "Nada para pré-visualizar aqui"
+    }
   }
 }

@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,9 +53,9 @@ const ThumbnailWidth = 480
 // not declare — so a grid of 480-pixel tiles would fetch and decode every original.
 const widthQuery = "?w="
 
-// LibraryPages is the media library: what it reads, the two commands its controls
-// post to, the shell it is drawn in, and whose answer to "may this caller write"
-// the caption and removal controls reuse.
+// LibraryPages is the media library: what it reads, the three commands its
+// controls post to, the shell it is drawn in, and whose answer to "may this
+// caller write" the caption, removal and upload controls reuse.
 //
 // A nil Read mounts nothing at all: a composition that wired this module's doors and
 // no library is an ordinary installation, and the honest answer to a person who asks
@@ -68,6 +69,7 @@ type LibraryPages struct {
 	Read      contracts.Library
 	Shown     UseReader
 	Remove    Remover
+	Add       Storer
 	Authorize httpx.Authorizer
 	PerPage   int
 }
@@ -85,6 +87,13 @@ type Remover interface {
 	Delete(ctx context.Context, tx db.Tx[db.Tenant], id uuid.UUID) (*contracts.File, error)
 }
 
+// Storer is the one command the page's upload control posts to, and the same one the
+// JSON upload door performs: one command, one guard, two faces of it, so the meter on
+// the page and the refusal an upload gets cannot be two sums.
+type Storer interface {
+	Upload(ctx context.Context, tx contracts.Tx, up contracts.Upload) (*contracts.File, error)
+}
+
 // libraryFaults are the statuses this page answers with beyond the shell's defaults,
 // and every one is a status the service underneath already returns: no such file, a
 // row the ledger still shows, a caption that contradicts itself, a row that moved
@@ -95,15 +104,22 @@ var libraryFaults = []int{
 	http.StatusServiceUnavailable,
 }
 
-// MountLibrary serves the library and the two writes its controls post.
+// uploadFaults are those plus the one status no other control on the page can answer
+// with: bytes past what this deployment accepts, which is the refusal an upload is
+// refused by and the only one a person can act on by sending something smaller.
+var uploadFaults = append(slices.Clone(libraryFaults), http.StatusRequestEntityTooLarge)
+
+// MountLibrary serves the library and the three writes its controls post.
 //
-// The guard is the module's own permission on all three — file:read to look,
-// file:manage to caption or remove — asked by the router before a line is rendered,
-// so a person who may only look is given no form rather than a form that will refuse
-// them. The posts are POST and not the JSON verb for the reason modules/change gives
-// at its own decision forms: kit/httpx refuses an unsafe request carrying a session
-// cookie unless it is same-site, and a <form> cannot send DELETE or PUT. The JSON
-// doors stay exactly as they are for a client that can.
+// The guard is the module's own permission on all four — file:read to look,
+// file:manage to caption, remove or add — asked by the router before a line is
+// rendered, so a person who may only look is given no form rather than a form that
+// will refuse them. The posts are POST to this page's own routes and not the JSON
+// verbs, for the reason modules/change gives at its own decision forms: kit/httpx
+// refuses an unsafe request carrying a session cookie unless it is same-site, a
+// <form> cannot send DELETE or PUT, and a person who submits a form from a page has
+// to land on a page. The JSON doors stay exactly as they are for a client that can
+// read the answer.
 func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 	if p.Read == nil {
 		return
@@ -168,6 +184,36 @@ func MountLibrary(s httpx.Surfaces, p LibraryPages) {
 			// Back to the grid, not to the row that is gone.
 			return page.View{}, httpx.SeeOther(where)
 		})
+
+	// The upload. It is a page route and not the JSON door because a form a person
+	// submits from the library has to land them back on the library: the JSON door
+	// answers with the row it wrote, which is the right answer for a program reading
+	// it and a raw document to a person who pressed Upload. The bytes are the same
+	// command either way — the streamed multipart the JSON door reads, read off this
+	// request and given to the same service — so the ceiling, the counting and the
+	// refusal are one rule and not two. Refusals come back as the library page with
+	// the sentence above the grid, because the grid is where the person was.
+	page.Serve(s.App, p.Shell, page.Route{ID: "file-library-upload", Method: http.MethodPost,
+		Path: "/files/upload", Summary: "Add a file to the library",
+		Errors: uploadFaults, StreamsBody: true}, manage,
+		func(ctx context.Context, r page.Request, in *uploadQuery) (page.View, error) {
+			if p.Add == nil {
+				return page.View{}, problem.NotFound("this installation offers no upload control")
+			}
+			up, err := arriving(ctx)
+			if err != nil {
+				return p.render(ctx, r, where, bytes, &libraryInput{}, err)
+			}
+			up.Image = in.Image
+			f, err := p.Add.Upload(ctx, transaction, up)
+			if err != nil {
+				return p.render(ctx, r, where, bytes, &libraryInput{}, err)
+			}
+			// SeeOther, so a reload cannot store the same file twice, and to the panel of
+			// the file that arrived: the one place that says both that it is here and
+			// that it has no caption yet.
+			return page.View{}, httpx.SeeOther(where + "?file=" + f.ID.String())
+		})
 }
 
 // libraryInput is the grid's whole query: the three filters, the order, which
@@ -195,6 +241,14 @@ type altForm struct {
 // idForm is the removal post, which carries nothing but the row it names.
 type idForm struct {
 	ID uuid.UUID `path:"id" format:"uuid" doc:"The file to remove"`
+}
+
+// uploadQuery is the upload post's whole declared input: the claim the door makes
+// about the bytes, spelled as the JSON door spells it. It declares no body because
+// nothing decodes one — the file arrives as the multipart part this route reads off
+// the request, which is what the route's StreamsBody mark is for.
+type uploadQuery struct {
+	Image bool `query:"image" default:"false" doc:"Treat these bytes as an image: measure the frame, and refuse what no decoder reads"`
 }
 
 // pickerInput is the picker's whole request: whose field is being filled, where the
@@ -268,7 +322,7 @@ func (p LibraryPages) render(ctx context.Context, r page.Request, where, bytes s
 		components.Toolbar(components.ToolbarProps{
 			Title: said(r, "file.library.title", "Media library"),
 		}),
-		uploadForm(r, bytes, may),
+		uploadForm(r, where, may),
 		meterPanel(r, meter, total),
 		filterForm(r, where, in, query),
 		grid(r, where, bytes, rows, total),
@@ -419,8 +473,11 @@ func filterForm(r page.Request, where string, in *libraryInput, query string) g.
 				HelpText: said(r, "file.library.filter.unusedHelp",
 					"What the use ledger stamped — the files the release sweep will remove once the grace has run"),
 			}),
+			// Secondary, and the reason is the page's own: the design floor allows one
+			// filled action above the fold, and the library's is adding a file. Filtering
+			// is a read this page is already showing, not the thing to do.
 			components.Button(components.ButtonProps{
-				Type: "submit", Label: said(r, "file.library.filter.apply", "Apply"),
+				Type: "submit", Variant: "secondary", Label: said(r, "file.library.filter.apply", "Apply"),
 			}),
 		),
 	}
@@ -486,21 +543,22 @@ func meterPanel(r page.Request, q *contracts.Quota, shown int64) g.Node {
 }
 
 // uploadForm is the library's one write of bytes: a plain multipart form whose action
-// is this module's own upload door. The door streams the part to storage and answers
-// with the row it wrote, and it is the only upload this module has — a page that posted
-// to a second upload of its own would be a second implementation of a command that
-// already refuses the too-large, the mislabelled and the full.
+// is this page's own upload route, which streams the part to storage through the same
+// command the JSON upload door performs. The person who submits it is answered by the
+// library — the new file's panel, or the grid with the refusal above it — because the
+// JSON door answers with the row it wrote, and a raw JSON document is where a person
+// who pressed Upload should never end up.
 //
 // The `image=true` is the door's own claim, not this page's guess about the file: it is
 // what turns bytes no decoder reads into a refusal rather than an attachment, and a
 // library whose grid is full of attachments nobody asked for is the failure it named.
-func uploadForm(r page.Request, bytes string, may bool) g.Node {
+func uploadForm(r page.Request, where string, may bool) g.Node {
 	if !may {
 		// A person who may not upload is shown no control, exactly as the caption and
 		// removal forms work; the post would refuse them either way.
 		return g.Text("")
 	}
-	return h.Form(h.Method("post"), h.Action(bytes+"?image=true"), h.EncType("multipart/form-data"),
+	return h.Form(h.Method("post"), h.Action(where+"/upload?image=true"), h.EncType("multipart/form-data"),
 		g.Attr("aria-label", said(r, "file.library.upload.label", "Add a file to the library")),
 		components.Input(components.InputProps{
 			Name: "file", Type: "file", Accept: "image/*",

@@ -130,7 +130,10 @@ and `GET /api/v1/file/quota` answers what one tenant is holding. The meter is
 quota is left, while a member of the tenant asking about that tenant's own disk is
 a different question with a different answer. `PUT /api/v1/file/files/{id}/alt`
 (`file:manage`) writes what a picture says about itself and publishes
-`file.altered`.
+`file.altered`. `POST` to that same address performs the identical write, and it is
+there because it is the address the catalog's `alt` command sends a client to (see The
+catalog entry below): a command a document offers at a door that answers `405` is a door
+nobody outside the browser it was hand-written for has.
 
 Four decisions are functions in `contracts/` and not clauses in a query —
 `MediaFamily`, `LibrarySort`, `Quota` and `AltClaim` — because the SQL service and
@@ -167,15 +170,21 @@ hands in the shell it already builds and the authorizer its routes already enfor
 (`Deps.Library`, a `*LibraryChrome`); with no chrome wired the module serves no page and
 the surface's own 404 says so, the way `modules/change` answers a queue nobody composed.
 
-One page, three routes, no script. The grid takes its filters as query parameters —
+One page, four routes, no script. The grid takes its filters as query parameters —
 `q`, `type`, `unused`, `sort`, `page` — so a filtered view is a URL a person can reload
 and send to a colleague; the details panel opens from `?file={id}`, which makes opening
-one a link rather than a click a script has to intercept; and the two write controls are
-`<form method="post">` elements posting to this module's own page routes. POST rather
-than the JSON verb, for the reason `modules/change` gives for its decision forms:
+one a link rather than a click a script has to intercept; and the three write controls are
+`<form method="post">` elements posting to this module's own page routes — `POST
+/files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`, the last of which
+streams the multipart part to storage through the same `Service.Upload` the JSON door
+performs and lands the person on the new file's panel, because the JSON door answers with
+the row it wrote and a raw document is nowhere a person who pressed Upload should land. POST
+rather than the JSON verb, for the reason `modules/change` gives for its decision forms:
 `kit/httpx` refuses an unsafe request carrying a session cookie unless it is same-site,
 and a form cannot send `PUT` or `DELETE`. The JSON doors are unchanged and are still the
-ones a client that can speak them uses.
+ones a client that can speak them uses. The page fills one action above the fold — Upload
+— and the filter's Apply sits in the secondary tone beside it, because the design floor
+allows one thing to do per view.
 
 What the page decides is nothing. The tiles, the meter and the panel are answers from
 `contracts.Library`, `Service.Uses` and `crud.Get`, so the number on the meter is the
@@ -224,6 +233,22 @@ What an operator does instead of a route is two steps beside `make rehearse`: `m
 The code names no role. A composition grants `file:read` to people who may browse, download and mint a grant, `file:manage` to people who may upload and delete, `file:retain` to whoever may keep a file past its class, and `file:erase` to whoever answers a data-protection request — the last two are the ones a broad support role should not hold by default.
 Roles are granted by permission key through the roles API (`PUT /api/v1/auth/roles/{name}`, cited in `modules/user/contracts/administration.go`) or in the composition's own role definitions.
 This repository does not show a client `client.yaml` for this module.
+
+## Interface
+
+**Reused** — `kit/crud`, `kit/db`, `kit/httpx`, `kit/rest` (its error mapping, and the
+`FileUses`/`FileShown` ports other modules hand this one), `kit/events`, `kit/problem`,
+`ui/page` and `ui/components`. **Added** — `contracts.Service` and the narrow ports
+beside it (`Opener`, `WidthOpener`, `Library`, `VariantServable`), which are what a
+consumer imports; the HTTP doors listed above; the library page; and `filetest.Fake`,
+which answers all of them without a database. **Made reusable** —
+`ui/page.Route.StreamsBody`, the mark a page that reads its own request carries so the
+kernel bounds it by `files.max_bytes` rather than by the megabyte every other request
+gets, and `LibraryPages`' narrow ports (`UseReader`, `Remover`, `Storer`), which are
+what a page of this shape asks for instead of the whole `Service`.
+
+Consumers import [contracts/](contracts/) and its [fake](contracts/filetest/), never
+`internal/`.
 
 ## Built on what came before
 
@@ -321,16 +346,44 @@ controls and `ContentState`, so the grid has no class of its own to style and th
 are the vocabulary the gallery already documents; `contracts.Library`'s three reads, the
 `file:read`/`file:manage` pair, `Service.Uses`, and the tenant policy that scopes every
 one of them. **Added** — `Deps.Library`/`LibraryChrome`, the one edge that lets a
-composition hand its chrome to a capability that must not guess at it, and the two page
-routes (`POST /files/{id}/alt`, `POST /files/{id}/delete`), which are this module's
-commands wearing a form. **Made reusable** — `LibraryPages.UseReader` and `Remover`, the
+composition hand its chrome to a capability that must not guess at it, and the three page
+routes (`POST /files/{id}/alt`, `POST /files/{id}/delete` and `POST /files/upload`),
+which are this module's commands wearing a form. **Made reusable** —
+`LibraryPages.UseReader`, `Remover` and `Storer`, the
 narrow ports a page of this shape asks for instead of the whole `Service`, so a later
 screen (the picker, a record's own image field) takes the one question it needs; the
 revision stamp travelling in the form as the row's own `updatedAt` rather than a second
 counter; and the drawing rule that a write control is absent for a caller the authorizer
 refuses and never merely greyed out.
 
+## Verification
+
+`make test TEST_PACKAGES='./modules/file/... ./apps/platformkit/...'` needs the
+development database, object store and broker `make up` starts; the S3 adapter's
+conformance suite fails rather than skips without the store. The library's own cases —
+the caption invariant and its revision guard, tenant isolation on the grid and the
+panel, the read-only credential refused on both surfaces, the meter, the picker, and
+the two browser cases that drive Chromium at a phone's and a desktop's width — are in
+`modules/file/*_test.go`; `modules/file/internal` holds the service and store cases.
+`make check` covers the imports, the ui layers, the budgets and the published OpenAPI
+document. No mobile or native flow runs against any of it: this repository has no
+`native/` directory, and a catalog client's caption is proved by
+`TestTheCatalogsCaptionCommandAnswersWhereTheCatalogSendsIt`, which derives the address
+the way such a client does.
+
 ## Limits
+
+The media library's page is a grid, a meter, a panel and three forms. What it does not
+have yet, and nothing pretends otherwise: no upload progress, cancel or retry (the
+browser's own is all there is), no per-file error tile beside the grid's rows — a
+refused upload answers one alert above the grid and the person re-picks the file — no
+Replace on a stored file, no keyboard-and-axe pass and no Storybook state for the
+picker, and no journey in `e2e/steps` (there is no `file.ts`), so the brief's four
+acceptance journeys are unproved end to end. The picker's answer is a query parameter
+on the address that opened it; nothing in this repository opens the picker or reads that
+answer back, because the field that would is its consumer's share (T-0189). The page's
+markup also still lives in `internal/library_page.go` rather than in an `internal/ui`
+layer of its own.
 
 The image pass decodes JPEG, PNG, the first frame of a GIF and WebP (through
 `golang.org/x/image/webp`, whose decoder registers with `image.DecodeConfig`, so the
